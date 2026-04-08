@@ -1,8 +1,16 @@
-# 🐉 Datenmonster
+<p align="center">
+  <img src="frontend/public/datenmonster.svg" width="100" height="100" alt="Datenmonster Logo" />
+</p>
 
-**Self-hosted ETL & data integration platform by [Holdermann IT](https://datenmonster.com)**
+<h1 align="center">Datenmonster</h1>
 
-> Connect, transform and automate your data pipelines – without cloud dependency.
+<p align="center">
+  <strong>Self-hosted ETL & data integration platform by <a href="https://datenmonster.com">Holdermann IT</a></strong>
+</p>
+
+<p align="center">
+  <em>Connect, transform and automate your data pipelines – without cloud dependency.</em>
+</p>
 
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
@@ -143,4 +151,4 @@ MIT License – see [LICENSE](LICENSE) for details.
 
 - Website: [datenmonster.com](https://datenmonster.com)
 - Support: [datenmonster.com/support](https://datenmonster.com/support)
-- Holdermann IT: [holdermann.me](https://holdermann.me)
+- Holdermann IT: [holdermann-it.de](https://holdermann-it.de)
