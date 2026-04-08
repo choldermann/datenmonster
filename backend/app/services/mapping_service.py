@@ -606,13 +606,36 @@ def _write_target(df, target, t_type, opts, db, mapping_id, mapping_name,
 
 # ─── Transformer anwenden ─────────────────────────────────────────────────────
 
-def _apply_transformer(row: dict, conn: dict) -> Any:
+def _apply_transformer(row: dict, conn: dict, dataset_names: dict = None) -> Any:
     t = conn.get("transformer") or {}
     ttype = t.get("type", "direct")
     src = t.get("source_field") or conn.get("source_field")
+    src_ds_id = conn.get("source_dataset_id")
+
+    def _resolve_field(field_name):
+        """
+        Löst ein Quellfeld auf – berücksichtigt source_dataset_id für eindeutige Zuordnung
+        bei mehreren Datasets mit gleichen Feldnamen.
+        """
+        if field_name is None:
+            return None
+        # 1. source_dataset_id bekannt → ZUERST Prefix-Suche mit Dataset-Namen
+        #    Priorität vor kurzem Namen um Mehrdeutigkeiten aufzulösen
+        if src_ds_id is not None and dataset_names:
+            ds_name = dataset_names.get(src_ds_id)
+            if ds_name:
+                full_key = f"{ds_name}.{field_name}"
+                if full_key in row:
+                    return row[full_key]
+                # Auch verschachtelt: "X.DatasetName.Feldname"
+                for k, v in row.items():
+                    if k.endswith(f".{ds_name}.{field_name}"):
+                        return v
+        # 2. Fallback: direkt vorhanden (voller Prefix oder eindeutiger Name)
+        return row.get(field_name)
 
     if ttype == "direct":
-        return row.get(src)
+        return _resolve_field(src)
 
     elif ttype == "constant":
         return t.get("constant_value", "")
@@ -1712,7 +1735,7 @@ def execute_mapping(
             if not target:
                 continue
             try:
-                val = _apply_transformer(flat_no_prefix, conn)
+                val = _apply_transformer(flat_no_prefix, conn, dataset_names=names)
                 # Nativen Typ beibehalten – kein blindes str()-Cast mehr.
                 # None bleibt None, alles andere bleibt wie es ist.
                 # Strings die "nan"/"None" enthalten → None normalisieren.

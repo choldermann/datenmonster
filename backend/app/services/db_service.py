@@ -145,7 +145,7 @@ def query_preview(conn: DbConnection, sql: str, limit: int = 50) -> dict:
     engine = create_engine(get_engine_str(conn))
     with engine.connect() as c:
         result = c.execute(text(sql))
-        cols = list(result.keys())
+        cols = _dedup_columns(list(result.keys()))
         rows = [_clean_row(cols, row) for row in result.fetchmany(limit)]
         try:
             count_sql = f"SELECT COUNT(*) FROM ({sql}) AS _sub"
@@ -155,12 +155,26 @@ def query_preview(conn: DbConnection, sql: str, limit: int = 50) -> dict:
     return {"columns": cols, "rows": rows, "total_rows": total}
 
 
+def _dedup_columns(cols: list) -> list:
+    """Dedupliziert Spaltennamen – bei JOINs mit SELECT * entstehen Duplikate."""
+    seen = {}
+    result = []
+    for col in cols:
+        if col in seen:
+            seen[col] += 1
+            result.append(f"{col}_{seen[col]}")
+        else:
+            seen[col] = 0
+            result.append(col)
+    return result
+
+
 def query_full(conn: DbConnection, sql: str) -> pd.DataFrame:
     from sqlalchemy import create_engine, text
     engine = create_engine(get_engine_str(conn))
     with engine.connect() as c:
         result = c.execute(text(sql))
-        cols = list(result.keys())
+        cols = _dedup_columns(list(result.keys()))
         rows = [_clean_row(cols, row) for row in result.fetchall()]
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
@@ -171,12 +185,13 @@ def query_full_with_types(conn: DbConnection, sql: str):
     engine = create_engine(get_engine_str(conn))
     with engine.connect() as c:
         result = c.execute(text(sql))
-        cols = list(result.keys())
+        raw_cols = list(result.keys())
+        cols = _dedup_columns(raw_cols)
         # Rohe DB-Typen aus Cursor-Beschreibung
         raw_types = {}
         if result.cursor and result.cursor.description:
-            for desc in result.cursor.description:
-                col_name = desc[0]
+            for i, desc in enumerate(result.cursor.description):
+                col_name = cols[i]  # deduplizierter Name
                 try:
                     raw_types[col_name] = str(desc[1].__name__) if hasattr(desc[1], "__name__") else str(desc[1])
                 except Exception:

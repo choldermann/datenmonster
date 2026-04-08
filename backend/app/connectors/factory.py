@@ -61,8 +61,8 @@ def get_connector(dataset_id: int) -> BaseConnector:
 
             return SqlConnector(db_type=db_type, connection_string=conn_str, sql=ds.source_sql)
 
-        # ── Datei-basierte Datasets (CSV, XLSX, XML) ──────────────────────────
-        elif ds.file_type in ("csv", "xlsx", "xls", "xml", "json"):
+        # ── Datei-basierte Datasets (CSV, XLSX, XML, ODS, Static) ────────────
+        elif ds.file_type in ("csv", "xlsx", "xls", "xml", "json", "ods", "static"):
             from app.connectors.file import FileConnector
             return FileConnector(dataset_id=dataset_id)
 
@@ -81,15 +81,6 @@ def get_connector(dataset_id: int) -> BaseConnector:
                 raise ValueError(f"RestSource {rest_source_id} nicht gefunden")
             from app.connectors.rest import RestApiConnector
             return RestApiConnector(source=src)
-
-        # ── Zukünftige Connector-Typen ────────────────────────────────────────
-        # elif ds.file_type == "rest":
-        #     from app.connectors.rest import RestConnector
-        #     return RestConnector(config=ds.source_config)
-        #
-        # elif ds.file_type == "mongodb":
-        #     from app.connectors.mongo import MongoConnector
-        #     return MongoConnector(config=ds.source_config)
 
         else:
             raise ValueError(f"Kein Connector für file_type='{ds.file_type}' verfügbar")
