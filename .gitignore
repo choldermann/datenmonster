@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Datenmonster – .gitignore
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ─── Sensible Daten ───────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+.admin_password
+*.key
+*.pem
+*.p12
+secrets/
+
+# ─── Datenbank ────────────────────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+data/
+
+# ─── Uploads & generierte Dateien ────────────────────────────────────────────
+uploads/
+backend/uploads/
+backend/data/
+*.json.bak
+dataset_*.json
+dataset_*.parquet
+
+# ─── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.Python
+env/
+venv/
+.venv/
+ENV/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.pnp
+.pnp.js
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+# Docker Volumes werden nicht eingecheckt
+# docker-compose.override.yml kann lokale Anpassungen enthalten
+docker-compose.override.yml
+
+# ─── IDEs & Editoren ──────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+backend/logs/
+
+# ─── Temporäre Dateien ────────────────────────────────────────────────────────
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# ─── Betriebssystem ───────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini

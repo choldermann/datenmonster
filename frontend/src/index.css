@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --accent:      #fce499;
+  --accent-dim:  rgba(252, 228, 153, 0.15);
+  --accent-line: rgba(252, 228, 153, 0.25);
+
+  --bg-main:     #111111;
+  --bg-card:     #181818;
+  --bg-elevated: #1f1f1f;
+
+  --border:      #272727;
+  --border-soft: #1e1e1e;
+
+  --text-main:   #8a8a8a;
+  --text-bright: #d8d8d8;
+  --text-dim:    #4a4a4a;
+
+  --red:   #c0392b;
+  --green: #5a9e6f;
+  --blue:  #4a7fa5;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-main);
+  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Scrollbars ────────────────────────────────────────── */
+::-webkit-scrollbar              { width: 5px; height: 5px; }
+::-webkit-scrollbar-track        { background: var(--bg-main); }
+::-webkit-scrollbar-thumb        { background: #2a2a2a; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover  { background: #383838; }
+
+/* ── Card ──────────────────────────────────────────────── */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.1rem 1.2rem;
+}
+
+/* ── Buttons ───────────────────────────────────────────── */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background-color: var(--accent);
+  color: #111;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.12s;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+.btn-primary:hover    { opacity: 0.85; }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+}
+.btn-ghost:hover    { color: var(--text-main); border-color: #383838; background: rgba(255,255,255,0.03); }
+.btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Inputs ────────────────────────────────────────────── */
+.input {
+  background-color: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-bright);
+  border-radius: 4px;
+  padding: 7px 10px;
+  outline: none;
+  font-size: 13px;
+  width: 100%;
+  transition: border-color 0.15s;
+  font-family: inherit;
+}
+.input:focus        { border-color: var(--accent); }
+.input::placeholder { color: var(--text-dim); }
+
+select.input option {
+  background-color: var(--bg-elevated);
+  color: var(--text-bright);
+}
+
+textarea.input { resize: vertical; }
+
+/* ── Label ─────────────────────────────────────────────── */
+.label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+/* ── Section title ─────────────────────────────────────── */
+.section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+
+/* ── Mono tag ───────────────────────────────────────────── */
+.tag {
+  display: inline-block;
+  font-size: 10px;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+/* ── Accent line (sidebar active) ──────────────────────── */
+.nav-active {
+  background-color: var(--accent) !important;
+  color: #111 !important;
+}
