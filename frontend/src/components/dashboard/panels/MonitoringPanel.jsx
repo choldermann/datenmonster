@@ -490,6 +490,9 @@ export default function MonitoringPanel() {
   const [loading, setLoading] = useState(true);
   const [filterProject, setFilterProject] = useState("all");
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview"); // "overview" | "system"
+  const [systemStats, setSystemStats] = useState(null);
+  const [systemLoading, setSystemLoading] = useState(false);
   const [toggling, setToggling] = useState(null);
   const [deleting, setDeleting] = useState(null);
 
@@ -561,6 +564,18 @@ export default function MonitoringPanel() {
     ? pipelines
     : pipelines.filter(p => String(p.project_id) === filterProject);
 
+  const loadSystem = async () => {
+    setSystemLoading(true);
+    try {
+      const { data } = await api.get("/api/monitoring/system");
+      setSystemStats(data);
+    } catch (e) {
+      console.error("System-Stats Fehler:", e);
+    } finally {
+      setSystemLoading(false);
+    }
+  };
+
   const hasErrors = errors.some(e => e.level === "error");
   const hasWarnings = errors.some(e => e.level === "warning");
   const alertColor = hasErrors ? "#e07070" : hasWarnings ? "#fbbf24" : "#6ee7b7";
@@ -590,6 +605,141 @@ export default function MonitoringPanel() {
           >Aktualisieren</button>
         </div>
       </div>
+
+      {/* Tab Navigation */}
+      <div style={{ display: "flex", gap: 4, borderBottom: "1px solid var(--border)", marginBottom: -4 }}>
+        {[
+          { id: "overview", label: "Übersicht" },
+          { id: "system",   label: "System" },
+        ].map(t => (
+          <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === "system") loadSystem(); }}
+            style={{
+              fontSize: 12, fontWeight: 600, padding: "8px 16px", cursor: "pointer",
+              background: "none", border: "none", borderBottom: activeTab === t.id ? "2px solid var(--accent)" : "2px solid transparent",
+              color: activeTab === t.id ? "var(--accent)" : "var(--text-dim)",
+              marginBottom: -1,
+            }}>{t.label}</button>
+        ))}
+      </div>
+
+      {activeTab === "system" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={loadSystem} style={{ fontSize: 12, padding: "6px 14px", cursor: "pointer",
+              background: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6,
+              color: "var(--text-main)", fontWeight: 500 }}>
+              {systemLoading ? "Lädt..." : "Aktualisieren"}
+            </button>
+          </div>
+
+          {!systemStats && !systemLoading && (
+            <div style={{ padding: "40px", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+              Klick auf Aktualisieren um System-Daten zu laden
+            </div>
+          )}
+
+          {systemStats && (
+            <>
+              {/* Gauge-Kacheln */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
+                {/* CPU */}
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>CPU Auslastung</p>
+                  <p style={{ ...s.kpiValue, color: systemStats.cpu_percent > 80 ? "#e07070" : systemStats.cpu_percent > 50 ? "#fbbf24" : "#6ee7b7" }}>
+                    {systemStats.cpu_percent ?? "—"}%
+                  </p>
+                  <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.cpu_percent ?? 0}%`,
+                      background: systemStats.cpu_percent > 80 ? "#e07070" : systemStats.cpu_percent > 50 ? "#fbbf24" : "#6ee7b7",
+                      transition: "width 0.4s ease" }} />
+                  </div>
+                  <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>{systemStats.cpu_count} Kerne</p>
+                </div>
+
+                {/* RAM */}
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>RAM Auslastung</p>
+                  <p style={{ ...s.kpiValue, color: systemStats.ram_percent > 85 ? "#e07070" : systemStats.ram_percent > 65 ? "#fbbf24" : "#6ee7b7" }}>
+                    {systemStats.ram_percent ?? "—"}%
+                  </p>
+                  <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.ram_percent ?? 0}%`,
+                      background: systemStats.ram_percent > 85 ? "#e07070" : systemStats.ram_percent > 65 ? "#fbbf24" : "#6ee7b7",
+                      transition: "width 0.4s ease" }} />
+                  </div>
+                  <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+                    {systemStats.ram_used_gb} GB / {systemStats.ram_total_gb} GB
+                  </p>
+                </div>
+
+                {/* Disk */}
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>Speicherplatz</p>
+                  <p style={{ ...s.kpiValue, color: systemStats.disk_percent > 90 ? "#e07070" : systemStats.disk_percent > 75 ? "#fbbf24" : "#6ee7b7" }}>
+                    {systemStats.disk_percent ?? "—"}%
+                  </p>
+                  <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.disk_percent ?? 0}%`,
+                      background: systemStats.disk_percent > 90 ? "#e07070" : systemStats.disk_percent > 75 ? "#fbbf24" : "#6ee7b7",
+                      transition: "width 0.4s ease" }} />
+                  </div>
+                  <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+                    {systemStats.disk_free_gb} GB frei / {systemStats.disk_total_gb} GB gesamt
+                  </p>
+                </div>
+              </div>
+
+              {/* Detail-Kacheln */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>SQLite DB</p>
+                  <p style={{ ...s.kpiValue, fontSize: 20, color: "var(--text-bright)" }}>
+                    {systemStats.db_size_mb ?? "—"} MB
+                  </p>
+                </div>
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>Dataset-Daten</p>
+                  <p style={{ ...s.kpiValue, fontSize: 20, color: "var(--text-bright)" }}>
+                    {systemStats.datasets_size_mb ?? "—"} MB
+                  </p>
+                  <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
+                    {systemStats.datasets_count} Dateien
+                  </p>
+                </div>
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>Scheduler-Jobs</p>
+                  <p style={{ ...s.kpiValue, fontSize: 20, color: systemStats.scheduler_jobs > 0 ? "#6ee7b7" : "var(--text-dim)" }}>
+                    {systemStats.scheduler_jobs}
+                  </p>
+                </div>
+                <div style={s.kpi}>
+                  <p style={s.kpiLabel}>Uptime</p>
+                  <p style={{ ...s.kpiValue, fontSize: 20, color: "var(--text-bright)" }}>
+                    {systemStats.uptime_seconds != null
+                      ? systemStats.uptime_seconds < 3600
+                        ? `${Math.floor(systemStats.uptime_seconds / 60)} Min`
+                        : systemStats.uptime_seconds < 86400
+                          ? `${Math.floor(systemStats.uptime_seconds / 3600)} Std`
+                          : `${Math.floor(systemStats.uptime_seconds / 86400)} Tage`
+                      : "—"}
+                  </p>
+                </div>
+              </div>
+
+              {systemStats.psutil_unavailable && (
+                <div style={{ padding: "12px 16px", borderRadius: 8, background: "rgba(251,191,36,0.08)",
+                  border: "1px solid rgba(251,191,36,0.25)", fontSize: 12, color: "#fbbf24" }}>
+                  psutil nicht installiert – CPU/RAM/Disk nicht verfügbar.
+                  Im Container: <code>pip install psutil --break-system-packages</code>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {activeTab === "overview" && (
+      <>
 
       {/* KPI Kacheln */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
@@ -752,6 +902,8 @@ export default function MonitoringPanel() {
 
       {/* System-Log */}
       <SystemLogTable logs={system_logs || []} onDeleteOne={handleDeleteLog} onDeleteAll={handleDeleteAllLogs} deleting={deleting} />
+      </>
+      )}
     </div>
   );
 }

@@ -232,3 +232,59 @@ def delete_all_logs(db: Session = Depends(get_db), user: User = Depends(get_curr
     db.execute(text("DELETE FROM system_logs"))
     db.commit()
     return {"ok": True}
+
+
+@router.get("/system")
+def get_system_stats(user: User = Depends(get_current_user)):
+    """CPU, RAM, Speicherplatz, SQLite-Größe, Dataset-Größe, Uptime, Scheduler-Jobs."""
+    import os, time
+    result = {}
+
+    try:
+        import psutil
+        result["cpu_percent"]  = psutil.cpu_percent(interval=0.5)
+        result["cpu_count"]    = psutil.cpu_count()
+        mem = psutil.virtual_memory()
+        result["ram_total_gb"] = round(mem.total   / 1024**3, 1)
+        result["ram_used_gb"]  = round(mem.used    / 1024**3, 1)
+        result["ram_free_gb"]  = round(mem.available / 1024**3, 1)
+        result["ram_percent"]  = mem.percent
+        disk = psutil.disk_usage("/app/uploads")
+        result["disk_total_gb"] = round(disk.total / 1024**3, 1)
+        result["disk_used_gb"]  = round(disk.used  / 1024**3, 1)
+        result["disk_free_gb"]  = round(disk.free  / 1024**3, 1)
+        result["disk_percent"]  = disk.percent
+        result["uptime_seconds"] = int(time.time() - psutil.boot_time())
+    except ImportError:
+        result["psutil_unavailable"] = True
+
+    try:
+        db_path = "/app/uploads/datenmonster.db"
+        result["db_size_mb"] = round(os.path.getsize(db_path) / 1024**2, 2)
+    except Exception:
+        result["db_size_mb"] = None
+
+    try:
+        upload_dir = "/app/uploads"
+        total = sum(
+            os.path.getsize(os.path.join(upload_dir, f))
+            for f in os.listdir(upload_dir)
+            if f.startswith("dataset_") and f.endswith(".json")
+        )
+        result["datasets_size_mb"] = round(total / 1024**2, 2)
+        result["datasets_count"]   = sum(
+            1 for f in os.listdir(upload_dir)
+            if f.startswith("dataset_") and f.endswith(".json")
+        )
+    except Exception:
+        result["datasets_size_mb"] = None
+        result["datasets_count"]   = 0
+
+    try:
+        from app.services.scheduler_service import get_scheduler
+        sched = get_scheduler()
+        result["scheduler_jobs"] = len(sched.get_jobs()) if sched else 0
+    except Exception:
+        result["scheduler_jobs"] = 0
+
+    return result
