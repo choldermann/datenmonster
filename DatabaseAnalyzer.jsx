@@ -28,7 +28,7 @@ function computeLayout(tables) {
   return positions;
 }
 
-export default function DatabaseAnalyzer({ connection, onClose }) {
+export default function DatabaseAnalyzer({ connection, onClose, projectId = null, onDatasetsImported }) {
   const [phase, setPhase] = useState("config"); // config | loading | done | error
   const [progress, setProgress] = useState(0);
   const [progressMsg, setProgressMsg] = useState("Verbinde mit Datenbank...");
@@ -45,7 +45,50 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
   const [tableLimit, setTableLimit] = useState(100);
   const [schemaFilter, setSchemaFilter] = useState("");
   const [availableSchemas, setAvailableSchemas] = useState([]);
+  const [tableFilter, setTableFilter] = useState("");
+  const [includeRelated, setIncludeRelated] = useState(true);
+  const [markedTables, setMarkedTables] = useState(new Set()); // markierte Tabellen für Import
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null); // { done, failed }
   const svgRef = useRef(null);
+
+  const toggleMark = (tableKey) => {
+    setMarkedTables(prev => {
+      const next = new Set(prev);
+      if (next.has(tableKey)) next.delete(tableKey);
+      else next.add(tableKey);
+      return next;
+    });
+  };
+
+  const importMarkedTables = async () => {
+    if (!markedTables.size || !projectId) return;
+    setImporting(true);
+    setImportResult(null);
+    let done = 0, failed = [];
+    for (const tableKey of markedTables) {
+      const table = schema.tables.find(t => t.key === tableKey);
+      if (!table) continue;
+      // SQL generieren
+      const sql = table.schema && table.schema !== "dbo"
+        ? `SELECT * FROM [${table.schema}].[${table.name}]`
+        : `SELECT * FROM [${table.name}]`;
+      const datasetName = table.name;
+      try {
+        await api.post(`/api/connections/${connection.id}/import`, {
+          sql,
+          dataset_name: datasetName,
+          project_id: projectId,
+        });
+        done++;
+      } catch (e) {
+        failed.push(table.name);
+      }
+    }
+    setImporting(false);
+    setImportResult({ done, failed });
+    setMarkedTables(new Set());
+  };
 
   const startAnalysis = useCallback(async () => {
     setPhase("loading");
@@ -65,6 +108,10 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
     try {
       const params = new URLSearchParams({ table_limit: tableLimit, implicit_limit: 300, timeout: 60 });
       if (schemaFilter) params.append("schema_filter", schemaFilter);
+      if (tableFilter.trim()) {
+        params.append("table_filter", tableFilter.trim());
+        params.append("include_related", includeRelated ? "true" : "false");
+      }
       const { data } = await api.get(`/api/connections/${connection.id}/analyze?${params}`);
       timers.forEach(clearTimeout);
       setProgress(100);
@@ -183,6 +230,23 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
           )}
           <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen aus diesem Schema laden. Leer = alle Schemas.</p>
         </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Tabellenfilter (optional)</label>
+          <input value={tableFilter} onChange={e => setTableFilter(e.target.value)}
+            placeholder="z.B. Rechnung, Artikel, Kunde..."
+            style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none" }} />
+          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen laden deren Name diesen Text enthält. Leer = alle.</p>
+          {tableFilter.trim() && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <input type="checkbox" id="include-related" checked={includeRelated} onChange={e => setIncludeRelated(e.target.checked)}
+                style={{ accentColor: S.accent, cursor: "pointer", width: 14, height: 14 }} />
+              <label htmlFor="include-related" style={{ fontSize: 12, color: S.textMain, cursor: "pointer" }}>
+                Verknüpfte Tabellen einbeziehen
+              </label>
+            </div>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", border: `1px solid ${S.border}`, color: S.textDim }}>Abbrechen</button>
           <button onClick={startAnalysis} style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: "pointer", background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: S.accent }}>Analysieren</button>
@@ -213,6 +277,23 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
       <div style={{ backgroundColor: S.bgCard, border: "1px solid rgba(248,113,113,0.3)", borderRadius: 12, padding: "28px 32px", width: 440, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}>
         <p style={{ fontSize: 14, fontWeight: 700, color: "#f87171", marginBottom: 12 }}>Analyse fehlgeschlagen</p>
         <p style={{ fontSize: 12, color: S.textDim, marginBottom: 20 }}>{error}</p>
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Tabellenfilter (optional)</label>
+          <input value={tableFilter} onChange={e => setTableFilter(e.target.value)}
+            placeholder="z.B. Rechnung, Artikel, Kunde..."
+            style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none" }} />
+          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen laden deren Name diesen Text enthält. Leer = alle.</p>
+          {tableFilter.trim() && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+              <input type="checkbox" id="include-related" checked={includeRelated} onChange={e => setIncludeRelated(e.target.checked)}
+                style={{ accentColor: S.accent, cursor: "pointer", width: 14, height: 14 }} />
+              <label htmlFor="include-related" style={{ fontSize: 12, color: S.textMain, cursor: "pointer" }}>
+                Verknüpfte Tabellen einbeziehen
+              </label>
+            </div>
+          )}
+        </div>
+
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontSize: 12, padding: "7px 14px", borderRadius: 6, background: "transparent", border: `1px solid ${S.border}`, color: S.textDim, cursor: "pointer" }}>Schliessen</button>
           <button onClick={() => setPhase("config")} style={{ fontSize: 12, padding: "7px 14px", borderRadius: 6, background: "rgba(252,228,153,0.1)", border: "1px solid rgba(252,228,153,0.3)", color: S.accent, cursor: "pointer" }}>Einstellungen anpassen</button>
@@ -255,6 +336,16 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
         <button onClick={() => setPhase("config")} style={{ fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "transparent", color: S.textDim }}>
           Einstellungen
         </button>
+        {markedTables.size > 0 && (
+          <button onClick={importMarkedTables} disabled={importing || !projectId} style={{
+            fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 4, cursor: importing ? "wait" : "pointer",
+            border: "1px solid rgba(110,231,183,0.4)", backgroundColor: "rgba(110,231,183,0.12)", color: "#6ee7b7",
+            display: "flex", alignItems: "center", gap: 6,
+          }}>
+            {importing ? <Loader2 size={11} className="animate-spin" /> : null}
+            {importing ? "Importiere..." : `${markedTables.size} Dataset${markedTables.size > 1 ? "s" : ""} importieren`}
+          </button>
+        )}
         <button onClick={onClose} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><X size={16} /></button>
       </div>
 
@@ -305,6 +396,12 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
                     {table.name.length > 22 ? table.name.slice(0, 22) + "..." : table.name}
                   </text>
                   {table.row_count != null && <text x={pos.w - 10} y={22} fontSize={9} fill={S.textDim} textAnchor="end" fontFamily="monospace">{table.row_count.toLocaleString()}</text>}
+                  {markedTables.has(table.key) && (
+                    <rect x={pos.w - 22} y={2} width={20} height={20} rx={4} fill="rgba(110,231,183,0.25)" stroke="#6ee7b7" strokeWidth={1} />
+                  )}
+                  {markedTables.has(table.key) && (
+                    <text x={pos.w - 12} y={16} fontSize={12} fontWeight={700} fill="#6ee7b7" textAnchor="middle">✓</text>
+                  )}
                   <line x1={0} y1={NODE_HEADER} x2={pos.w} y2={NODE_HEADER} stroke={S.border} strokeWidth={1} />
                   {table.columns.map((col, ci) => {
                     const cy = NODE_HEADER + NODE_PADDING + ci * ROW_H;
@@ -331,6 +428,39 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
         </svg>
       </div>
 
+      {/* Import Ergebnis Modal */}
+      {importResult && (
+        <div style={{ position: "absolute", inset: 0, zIndex: 50, backgroundColor: "rgba(0,0,0,0.7)",
+          display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
+            padding: "24px 28px", width: 380, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: S.textBright, marginBottom: 12 }}>
+              Import abgeschlossen
+            </p>
+            <p style={{ fontSize: 12, color: "#6ee7b7", marginBottom: importResult.failed.length ? 8 : 16 }}>
+              ✓ {importResult.done} Dataset{importResult.done !== 1 ? "s" : ""} erfolgreich importiert
+            </p>
+            {importResult.failed.length > 0 && (
+              <p style={{ fontSize: 12, color: "#f87171", marginBottom: 16 }}>
+                ✗ Fehlgeschlagen: {importResult.failed.join(", ")}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setImportResult(null)} style={{
+                fontSize: 12, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                background: "transparent", border: `1px solid ${S.border}`, color: S.textDim,
+              }}>Weiter analysieren</button>
+              {importResult.done > 0 && (
+                <button onClick={() => { setImportResult(null); onDatasetsImported?.(); }} style={{
+                  fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                  background: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                }}>Zum Dashboard</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Detail Panel */}
       {selected && (
         <div style={{ position: "absolute", right: 0, top: 96, bottom: 0, width: 300, backgroundColor: S.bgCard, borderLeft: `1px solid ${S.border}`, display: "flex", flexDirection: "column", zIndex: 10 }}>
@@ -344,6 +474,25 @@ export default function DatabaseAnalyzer({ connection, onClose }) {
             <button onClick={() => setSelected(null)} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><X size={14} /></button>
           </div>
           <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+            {/* Import-Checkbox */}
+            {projectId && (
+              <div style={{ padding: "8px 14px 12px", borderBottom: `1px solid ${S.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input type="checkbox" id="mark-import"
+                    checked={markedTables.has(selected.key)}
+                    onChange={() => toggleMark(selected.key)}
+                    style={{ accentColor: "#6ee7b7", cursor: "pointer", width: 15, height: 15 }} />
+                  <label htmlFor="mark-import" style={{ fontSize: 12, color: "#6ee7b7", cursor: "pointer", fontWeight: 600 }}>
+                    Als Dataset importieren
+                  </label>
+                </div>
+                {markedTables.has(selected.key) && (
+                  <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0 23px" }}>
+                    SELECT * FROM {selected.schema !== "dbo" ? `[${selected.schema}].` : ""}[{selected.name}]
+                  </p>
+                )}
+              </div>
+            )}
             <p style={{ fontSize: 9, fontWeight: 700, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", padding: "4px 14px 8px" }}>Spalten</p>
             {selected.columns.map(col => {
               const tc = TYPE_COLORS[col.type] || "#6a6a6a";

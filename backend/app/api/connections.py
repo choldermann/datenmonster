@@ -298,6 +298,8 @@ def analyze_schema(
     include_row_counts: bool = False,
     table_limit: int = 150,
     schema_filter: Optional[str] = None,
+    table_filter: Optional[str] = None,
+    include_related: bool = False,
     implicit_limit: int = 200,
     timeout: int = 30,
     db: Session = Depends(get_db),
@@ -307,6 +309,8 @@ def analyze_schema(
     Analysiert das Schema einer Datenbankverbindung.
     - table_limit: max. Anzahl Tabellen (default 150)
     - schema_filter: nur ein bestimmtes Schema analysieren (z.B. 'dbo')
+    - table_filter: nur Tabellen laden deren Name diesen String enthält
+    - include_related: auch per FK verknüpfte Tabellen einbeziehen
     - implicit_limit: max. implizite Beziehungen (default 200)
     - timeout: max. Sekunden pro Tabellen-Analyse (default 30)
     """
@@ -358,7 +362,47 @@ def analyze_schema(
 
         # Limit anwenden
         total_tables = len(table_names)
-        truncated = total_tables > table_limit
+
+        # Tabellenfilter anwenden
+        if table_filter and table_filter.strip():
+            tf = table_filter.strip().lower()
+            matched = [t for t in table_names if tf in t[2].lower()]
+
+            if include_related and matched:
+                matched_keys = {t[2] for t in matched}
+                related_keys = set(matched_keys)
+                try:
+                    for schema, tname, table_key in matched:
+                        try:
+                            fks = inspector.get_foreign_keys(tname, schema=schema)
+                            for fk in fks:
+                                ref_schema = fk.get("referred_schema") or schema or ""
+                                ref_table = fk.get("referred_table", "")
+                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema and ref_schema != "dbo" else ref_table
+                                related_keys.add(ref_key)
+                        except Exception:
+                            pass
+                    # Auch Tabellen die auf matched Tabellen zeigen
+                    for other_schema, other_tname, other_key in table_names:
+                        if other_key in related_keys:
+                            continue
+                        try:
+                            other_fks = inspector.get_foreign_keys(other_tname, schema=other_schema)
+                            for fk in other_fks:
+                                ref_schema = fk.get("referred_schema") or other_schema or ""
+                                ref_table = fk.get("referred_table", "")
+                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema and ref_schema != "dbo" else ref_table
+                                if ref_key in matched_keys:
+                                    related_keys.add(other_key)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                table_names = [t for t in table_names if t[2] in related_keys]
+            else:
+                table_names = matched
+
+        truncated = len(table_names) > table_limit
         table_names = table_names[:table_limit]
 
         # ── Pro Tabelle: Spalten, PKs, FKs ───────────────────────────────────
