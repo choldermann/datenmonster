@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle, Database, Loader2, Pencil, Plus, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle, Database, Loader2, Pencil, Plus, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
+import DatabaseAnalyzer from "./DatabaseAnalyzer";
 
 const DEFAULT_PORTS = { mssql: 1433, mysql: 3306, postgresql: 5432 };
 const ACCESS_COLOR = "#fce499";
@@ -468,6 +469,8 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
   const [showImport, setShowImport] = useState(false);
   const [testResults, setTestResults] = useState({});
 
+  const [analyzingConn, setAnalyzingConn] = useState(null);
+
   const load = useCallback(async () => {
     const params = projectId != null ? `?project_id=${projectId}` : "";
     const { data } = await api.get(`/api/connections/${params}`);
@@ -507,6 +510,10 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
           onCancel={() => setShowImport(false)} />
       )}
 
+      {analyzingConn && (
+        <DatabaseAnalyzer connection={analyzingConn} onClose={() => setAnalyzingConn(null)} />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-24" style={{ color: S.textDim }}>
           <Loader2 className="animate-spin mr-2" size={16} />
@@ -527,6 +534,11 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                   </p>
                 </div>
                 <div className="flex items-center gap-1 ml-2 shrink-0">
+                  <button onClick={() => setAnalyzingConn(conn)} className="text-xs px-2 py-0.5 rounded"
+                    style={{ backgroundColor: S.bgEl, color: "#a78bfa", border: `1px solid rgba(167,139,250,0.3)` }}
+                    title="Schema analysieren">
+                    <Search size={10} />
+                  </button>
                   <button onClick={() => testConn(conn)} className="text-xs px-2 py-0.5 rounded"
                     style={{ backgroundColor: S.bgEl, color: S.textDim, border: `1px solid ${S.border}` }} title="Verbindung testen">
                     {testResults[conn.id] === "loading" ? <Loader2 size={10} className="animate-spin" />
