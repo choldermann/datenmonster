@@ -115,14 +115,12 @@ def get_tables(conn: DbConnection) -> list[str]:
         for schema in schemas:
             try:
                 for t in inspector.get_table_names(schema=schema):
-                    prefix = f"{schema}." if schema != "dbo" else ""
-                    all_entries.append(f"{prefix}{t}")
+                    all_entries.append(f"{schema}.{t}")
             except Exception:
                 pass
             try:
                 for v in inspector.get_view_names(schema=schema):
-                    prefix = f"{schema}." if schema != "dbo" else ""
-                    all_entries.append(f"{prefix}{v}")
+                    all_entries.append(f"{schema}.{v}")
             except Exception:
                 pass
 

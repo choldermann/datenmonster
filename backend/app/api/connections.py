@@ -155,8 +155,7 @@ def list_tables_only(conn_id: int, db: Session = Depends(get_db), user: User = D
             for schema in schemas:
                 try:
                     for t in inspector.get_table_names(schema=schema):
-                        prefix = f"{schema}." if schema != "dbo" else ""
-                        tables.append(f"{prefix}{t}")
+                        tables.append(f"{schema}.{t}")
                 except Exception:
                     pass
         else:
@@ -351,8 +350,7 @@ def analyze_schema(
             for schema in schemas:
                 try:
                     for t in inspector.get_table_names(schema=schema):
-                        prefix = f"{schema}." if schema != "dbo" else ""
-                        table_names.append((schema, t, f"{prefix}{t}"))
+                        table_names.append((schema, t, f"{schema}.{t}"))
                 except Exception:
                     pass
         else:
@@ -378,7 +376,7 @@ def analyze_schema(
                             for fk in fks:
                                 ref_schema = fk.get("referred_schema") or schema or ""
                                 ref_table = fk.get("referred_table", "")
-                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema and ref_schema != "dbo" else ref_table
+                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema else ref_table
                                 related_keys.add(ref_key)
                         except Exception:
                             pass
@@ -391,7 +389,7 @@ def analyze_schema(
                             for fk in other_fks:
                                 ref_schema = fk.get("referred_schema") or other_schema or ""
                                 ref_table = fk.get("referred_table", "")
-                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema and ref_schema != "dbo" else ref_table
+                                ref_key = f"{ref_schema}.{ref_table}" if ref_schema else ref_table
                                 if ref_key in matched_keys:
                                     related_keys.add(other_key)
                         except Exception:
@@ -426,7 +424,7 @@ def analyze_schema(
                         ):
                             ref_schema = fk.get("referred_schema") or schema or ""
                             ref_table = fk.get("referred_table", "")
-                            ref_key = f"{ref_schema}.{ref_table}" if ref_schema and ref_schema != "dbo" else ref_table
+                            ref_key = f"{ref_schema}.{ref_table}" if ref_schema else ref_table
                             fks.append({
                                 "from_col": col,
                                 "to_table": ref_key,
