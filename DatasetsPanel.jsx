@@ -239,6 +239,38 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
 
           {tab === "columns" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {isDbDataset ? (
+                <>
+                  <div style={{ padding: "10px 12px", borderRadius: 6, marginBottom: 8,
+                    backgroundColor: "rgba(147,197,253,0.08)", border: "1px solid rgba(147,197,253,0.2)" }}>
+                    <p style={{ fontSize: 12, color: "#93c5fd", margin: 0 }}>
+                      ℹ️ SQL-Dataset – Spalten und Typen werden durch die Datenbankstruktur bestimmt und beim nächsten Requery aktualisiert. Änderungen hier haben keinen dauerhaften Effekt.
+                    </p>
+                  </div>
+                  {cols.map(col => {
+                    const info = colTypes[col] || { type: "string" };
+                    const TC = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
+                    const TL = { integer:"INT", decimal:"DEC", date:"DAT", boolean:"BOL", string:"STR" };
+                    const c = TC[info.type] || "#6a6a6a";
+                    return (
+                      <div key={col} style={{ display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px", borderRadius: 6,
+                        background: "rgba(255,255,255,0.02)", border: "1px solid var(--border)" }}>
+                        <span style={{ fontSize: 8, fontWeight: 700, color: c,
+                          backgroundColor: c + "18", borderRadius: 2, padding: "1px 4px", flexShrink: 0 }}>
+                          {TL[info.type] || info.type?.slice(0,3).toUpperCase()}
+                        </span>
+                        <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-main)",
+                          flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {info.is_primary && <span style={{ marginRight: 4 }}>🔑</span>}
+                          {col}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </>
+              ) : (
+              <>
               <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "0 0 8px" }}>
                 🔑 = Primärschlüssel &nbsp;·&nbsp; AI = Autoincrement (nur Ganzzahl)
               </p>
@@ -295,6 +327,8 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                   </div>
                 );
               })}
+              </>
+              )}
             </div>
           )}
         </div>
