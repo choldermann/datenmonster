@@ -266,29 +266,39 @@ def infer_column_types(df: pd.DataFrame, db_raw_types: dict = None) -> dict:
                 # Leere Spalte → String (sicherer Default)
                 simple = "string"
             else:
-                # 1. Zahlen-Test (direkt)
-                try:
-                    converted = pd.to_numeric(sample, errors="raise")
-                    simple = "integer" if (converted == converted.astype("int64")).all() else "decimal"
-                except Exception:
-                    # 1b. Zahlen-Test mit Komma als Dezimaltrennzeichen
-                    # "1.234,56" → "1234.56" / "1,50" → "1.50"
+                # 0. Vorprüfung: Strings mit führenden Nullen oder nicht-numerischen Zeichen
+                #    sind immer Strings – auch wenn sie rein aus Ziffern bestehen
+                str_sample = sample.astype(str).str.strip()
+                # Führende Nullen: "0010001378254", "007" etc.
+                has_leading_zeros = str_sample.str.match(r"^0\d+$").any()
+                # Nicht-numerische Zeichen (Bindestriche, Buchstaben etc.): "26301756-RI"
+                has_non_numeric = str_sample.str.contains(r"[a-zA-Z\-/\\]", regex=True).any()
+                if has_leading_zeros or has_non_numeric:
+                    simple = "string"
+                else:
+                    # 1. Zahlen-Test (direkt)
                     try:
-                        normalized = (
-                            sample.astype(str)
-                            .str.strip()
-                            .str.replace(r"^\s*[+-]?\d{1,3}(\.\d{3})*(,\d+)?\s*$",
-                                         lambda m: m.group(0).replace(".", "").replace(",", "."),
-                                         regex=True)
-                        )
-                        converted2 = pd.to_numeric(normalized, errors="raise")
-                        simple = "integer" if (converted2 == converted2.astype("int64")).all() else "decimal"
+                        converted = pd.to_numeric(sample, errors="raise")
+                        simple = "integer" if (converted == converted.astype("int64")).all() else "decimal"
                     except Exception:
-                        # 2. Konservativer Datums-Test
-                        if _looks_like_date(sample):
-                            simple = "date"
-                        else:
-                            simple = "string"
+                        # 1b. Zahlen-Test mit Komma als Dezimaltrennzeichen
+                        # "1.234,56" → "1234.56" / "1,50" → "1.50"
+                        try:
+                            normalized = (
+                                sample.astype(str)
+                                .str.strip()
+                                .str.replace(r"^\s*[+-]?\d{1,3}(\.\d{3})*(,\d+)?\s*$",
+                                             lambda m: m.group(0).replace(".", "").replace(",", "."),
+                                             regex=True)
+                            )
+                            converted2 = pd.to_numeric(normalized, errors="raise")
+                            simple = "integer" if (converted2 == converted2.astype("int64")).all() else "decimal"
+                        except Exception:
+                            # 2. Konservativer Datums-Test
+                            if _looks_like_date(sample):
+                                simple = "date"
+                            else:
+                                simple = "string"
 
         result[col] = {"type": simple, "raw": raw}
     return result

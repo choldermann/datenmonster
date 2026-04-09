@@ -37,6 +37,11 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE mappings ADD COLUMN switch_nodes JSON DEFAULT '[]'",
             "ALTER TABLE datasets ADD COLUMN source_mapping_id INTEGER",
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
+            "ALTER TABLE datasets ADD COLUMN cron_expr TEXT",
+            "ALTER TABLE datasets ADD COLUMN auto_refresh INTEGER DEFAULT 0",
+            "ALTER TABLE datasets ADD COLUMN last_refresh_at DATETIME",
+            "ALTER TABLE datasets ADD COLUMN last_refresh_status TEXT",
+            "ALTER TABLE datasets ADD COLUMN last_refresh_msg TEXT",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
@@ -162,6 +167,9 @@ async def lifespan(app: FastAPI):
     from app.services.scheduler_service import start_scheduler, reload_all_jobs
     start_scheduler()
     reload_all_jobs()
+    # Dataset Auto-Refresh Jobs laden
+    from app.services.scheduler_service import reload_all_dataset_jobs
+    reload_all_dataset_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()

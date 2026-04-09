@@ -22,6 +22,11 @@ class Dataset(Base):
     query_config = Column(JSON, nullable=True)
     source_mapping_id = Column(Integer, nullable=True)  # gesetzt wenn Dataset aus Mapping-Output stammt
     project_id = Column(Integer, nullable=True)
+    cron_expr = Column(String, nullable=True)        # Zeitplan für automatisches Requery
+    auto_refresh = Column(Integer, default=0)        # 0=aus, 1=ein
+    last_refresh_at = Column(DateTime(timezone=True), nullable=True)
+    last_refresh_status = Column(String, nullable=True)  # success | error
+    last_refresh_msg = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

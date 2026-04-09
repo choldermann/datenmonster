@@ -214,3 +214,137 @@ def reload_all_jobs():
         logger.info(f"✓ {len(jobs)} Scheduled Jobs geladen")
     finally:
         db.close()
+
+
+# ─── Dataset Auto-Refresh ─────────────────────────────────────────────────────
+
+def _run_dataset_requery(dataset_id: int):
+    """Wird von APScheduler aufgerufen – führt Requery für ein Dataset aus."""
+    from app.core.database import SessionLocal
+    from app.models.dataset import Dataset, DbConnection
+    from app.services.db_service import query_full_with_types
+    from app.services.file_service import dataframe_to_storage, infer_column_types
+    from app.services.db_logger import log as _dblog
+    from datetime import datetime, timezone
+    import time
+
+    db = SessionLocal()
+    started = time.time()
+    try:
+        ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+        if not ds:
+            logger.error(f"Dataset-Requery: Dataset {dataset_id} nicht gefunden")
+            return
+
+        if not ds.source_connection_id or not ds.source_sql:
+            logger.error(f"Dataset-Requery: Dataset {dataset_id} hat keine SQL-Verbindung")
+            return
+
+        conn = db.query(DbConnection).filter(DbConnection.id == ds.source_connection_id).first()
+        if not conn:
+            raise ValueError(f"Verbindung #{ds.source_connection_id} nicht gefunden")
+
+        df, raw_types = query_full_with_types(conn, ds.source_sql)
+        ds.row_count = len(df)
+        ds.columns = df.columns.tolist()
+        ds.column_types = infer_column_types(df, raw_types)
+        ds.updated_at = datetime.now(timezone.utc)
+        ds.last_refresh_at = datetime.now(timezone.utc)
+        ds.last_refresh_status = "success"
+        ds.last_refresh_msg = f"{len(df)} Zeilen geladen"
+        db.commit()
+        dataframe_to_storage(df, ds.id)
+
+        duration = round(time.time() - started, 2)
+        _dblog(db, "success", "datasets", "auto_refresh",
+            f"Dataset '{ds.name}' automatisch aktualisiert: {len(df)} Zeilen in {duration}s",
+            project_id=ds.project_id,
+            rows_processed=len(df),
+            details={"dataset_id": dataset_id, "duration_sec": duration})
+        logger.info(f"✓ Dataset-Requery {dataset_id} '{ds.name}': {len(df)} Zeilen in {duration}s")
+
+    except Exception as e:
+        duration = round(time.time() - started, 2)
+        logger.error(f"✗ Dataset-Requery {dataset_id} fehlgeschlagen: {e}")
+        try:
+            from datetime import datetime, timezone
+            ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
+            if ds:
+                ds.last_refresh_at = datetime.now(timezone.utc)
+                ds.last_refresh_status = "error"
+                ds.last_refresh_msg = str(e)[:300]
+                db.commit()
+            from app.services.db_logger import log as _dblog
+            _dblog(db, "error", "datasets", "auto_refresh_error",
+                f"Dataset-Requery fehlgeschlagen: {str(e)[:200]}",
+                details={"dataset_id": dataset_id, "traceback": __import__('traceback').format_exc()})
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def register_dataset_job(dataset_id: int, cron_expr: str):
+    """Registriert einen Auto-Refresh Job für ein Dataset."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"dataset_{dataset_id}"
+    # Bestehenden Job entfernen
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not cron_expr or not cron_expr.strip():
+        return
+
+    try:
+        parts = cron_expr.strip().split()
+        if len(parts) != 5:
+            logger.warning(f"Ungültiger Cron-Ausdruck für Dataset {dataset_id}: {cron_expr}")
+            return
+        trigger = CronTrigger(
+            minute=parts[0], hour=parts[1],
+            day=parts[2], month=parts[3], day_of_week=parts[4],
+            timezone="Europe/Berlin",
+        )
+        sched.add_job(
+            _run_dataset_requery,
+            trigger=trigger,
+            id=job_id,
+            args=[dataset_id],
+            replace_existing=True,
+        )
+        logger.info(f"Dataset-Job {dataset_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von Dataset-Job {dataset_id}: {e}")
+
+
+def unregister_dataset_job(dataset_id: int):
+    """Entfernt den Auto-Refresh Job eines Datasets."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"dataset_{dataset_id}")
+        logger.info(f"Dataset-Job {dataset_id} entfernt")
+    except Exception:
+        pass
+
+
+def reload_all_dataset_jobs():
+    """Beim Start: alle Datasets mit aktivem Auto-Refresh laden."""
+    from app.core.database import SessionLocal
+    from app.models.dataset import Dataset
+    db = SessionLocal()
+    try:
+        datasets = db.query(Dataset).filter(
+            Dataset.auto_refresh == 1,
+            Dataset.cron_expr != None,
+        ).all()
+        for ds in datasets:
+            register_dataset_job(ds.id, ds.cron_expr)
+        logger.info(f"✓ {len(datasets)} Dataset Auto-Refresh Jobs geladen")
+    finally:
+        db.close()

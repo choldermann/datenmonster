@@ -92,6 +92,11 @@ def dataset_out(ds: Dataset) -> dict:
         "source_mapping_id": ds.source_mapping_id,
         "project_id": ds.project_id,
         "column_types": ds.column_types or {},
+        "cron_expr": ds.cron_expr or "",
+        "auto_refresh": ds.auto_refresh or 0,
+        "last_refresh_at": ds.last_refresh_at.isoformat() if ds.last_refresh_at else None,
+        "last_refresh_status": ds.last_refresh_status or "",
+        "last_refresh_msg": ds.last_refresh_msg or "",
         "created_at": ds.created_at.isoformat() if ds.created_at else None,
         "updated_at": ds.updated_at.isoformat() if ds.updated_at else (ds.created_at.isoformat() if ds.created_at else None),
     }
@@ -478,6 +483,8 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
 
 class DatasetUpdate(BaseModel):
     name: Optional[str] = None
+    cron_expr: Optional[str] = None
+    auto_refresh: Optional[int] = None
 
 
 @router.get("/{dataset_id}")
@@ -493,7 +500,22 @@ def update_dataset(dataset_id: int, data: DatasetUpdate, db: Session = Depends(g
     require_editor(ds.project_id, user, db)
     if data.name:
         ds.name = data.name
+    if data.cron_expr is not None:
+        ds.cron_expr = data.cron_expr or None
+    if data.auto_refresh is not None:
+        ds.auto_refresh = data.auto_refresh
     db.commit()
+
+    # Scheduler-Job registrieren oder entfernen
+    try:
+        from app.services.scheduler_service import register_dataset_job, unregister_dataset_job
+        if ds.auto_refresh and ds.cron_expr:
+            register_dataset_job(ds.id, ds.cron_expr)
+        else:
+            unregister_dataset_job(ds.id)
+    except Exception as e:
+        import logging; logging.getLogger(__name__).warning(f"Scheduler-Update fehlgeschlagen: {e}")
+
     return dataset_out(ds)
 
 

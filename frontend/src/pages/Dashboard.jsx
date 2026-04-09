@@ -483,13 +483,10 @@ export default function Dashboard() {
         />
       )}
 
-      {editingDataset && (editingDataset.file_type?.startsWith("db_")
-        ? <NewDatasetWizard editDataset={editingDataset} projectId={activeProject?.id ?? null}
-            onDone={() => { setEditingDataset(null); loadDatasets(); }}
-            onCancel={() => setEditingDataset(null)} />
-        : <EditDatasetModal dataset={editingDataset}
-            onDone={() => { setEditingDataset(null); loadDatasets(); }}
-            onCancel={() => setEditingDataset(null)} />
+      {editingDataset && (
+        <EditDatasetModal dataset={editingDataset}
+          onDone={() => { setEditingDataset(null); loadDatasets(); }}
+          onCancel={() => setEditingDataset(null)} />
       )}
       {showNewProject && (
         <ProjectModal onDone={() => { setShowNewProject(false); loadProjects(); }} onCancel={() => setShowNewProject(false)} />
