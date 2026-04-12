@@ -5,7 +5,7 @@ import { LOOKUP_COLOR } from "./LookupNode";
 import { CALC_COLOR } from "./CalcNode";
 import { SWITCH_COLOR } from "./SwitchNode";
 
-function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs }) {
+function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick }) {
   const canvasEl = canvasRef.current;
   if (!canvasEl) return null;
 
@@ -506,14 +506,23 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const badgeColor = ttype ? (TYPE_COLORS[ttype] || "#94a3b8") : null;
         const badgeLabel = ttype ? (TYPE_LABELS[ttype] || ttype.toUpperCase().slice(0,3)) : null;
 
+        const pathD = `M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`;
         return (
-          <g key={`m${i}`}>
+          <g key={`m${i}`} style={{ cursor: onConnectionClick ? "pointer" : "default", pointerEvents: onConnectionClick ? "all" : "none" }}>
+            {/* Unsichtbarer dicker Pfad zum einfachen Treffen */}
+            {onConnectionClick && (
+              <path d={pathD} fill="none" stroke="transparent" strokeWidth="12"
+                onClick={(e) => { e.stopPropagation(); onConnectionClick(conn, i); }} />
+            )}
             <path
-              d={`M${x1} ${y1} C${x1+cx} ${y1} ${x2-cx} ${y2} ${x2} ${y2}`}
+              d={pathD}
               fill="none" stroke={color} strokeWidth="1.5"
               strokeOpacity={isClamped ? 0.3 : 0.7}
               strokeDasharray={isClamped ? "4 3" : undefined}
-              markerEnd={isClamped ? undefined : `url(#arr-${isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch ? "direct" : (ti?.value || "direct")})`} />
+              markerEnd={isClamped ? undefined : `url(#arr-${isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch ? "direct" : (ti?.value || "direct")})`}
+              onClick={onConnectionClick ? (e) => { e.stopPropagation(); onConnectionClick(conn, i); } : undefined}
+              onMouseEnter={onConnectionClick ? (e) => { e.currentTarget.style.strokeWidth = "3"; e.currentTarget.style.strokeOpacity = "1"; } : undefined}
+              onMouseLeave={onConnectionClick ? (e) => { e.currentTarget.style.strokeWidth = "1.5"; e.currentTarget.style.strokeOpacity = isClamped ? "0.3" : "0.7"; } : undefined} />
             {badgeLabel && !isClamped && (
               <g>
                 <rect x={midX-14} y={midY-8} width={28} height={16} rx={4}

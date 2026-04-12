@@ -73,10 +73,10 @@ def read_table(mdb_path: str, table: str, limit: int = None) -> pd.DataFrame:
     mdb-export streamt zeilenweise → RAM-schonend auch bei großen Dateien.
     Limit: nur erste N Zeilen lesen (für Preview).
     """
-    # mdb-export gibt standardmäßig die erste Zeile als Header aus.
-    # -H je nach mdbtools-Version unterschiedlich interpretiert → weglassen.
-    # -d: Delimiter (Komma), -q: Quote-Char (")
-    cmd = ["mdb-export", "-d", ",", "-q", '"', mdb_path, table]
+    # mdb-export gibt die erste Zeile als Header aus.
+    # -H unterdrückt den Header – weglassen damit Header erhalten bleibt.
+    # -d: Delimiter (Komma), -Q: kein Quote-Character (vermeidet Parsing-Probleme)
+    cmd = ["mdb-export", "-d", ",", mdb_path, table]
 
     if limit:
         # Für Preview: nur Header + limit Zeilen via head
@@ -108,9 +108,12 @@ def read_table(mdb_path: str, table: str, limit: int = None) -> pd.DataFrame:
     try:
         df = pd.read_csv(
             io.StringIO(csv_data),
+            header=0,          # Erste Zeile immer als Header
             low_memory=False,
             on_bad_lines="warn",
         )
+        # Spaltennamen bereinigen (führende/nachfolgende Leerzeichen)
+        df.columns = [str(c).strip() for c in df.columns]
     except Exception as e:
         raise RuntimeError(f"CSV-Parsing fehlgeschlagen für Tabelle '{table}': {e}")
 

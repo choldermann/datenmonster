@@ -423,7 +423,7 @@ const WEEKDAYS = [
 ];
 
 
-function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onRequery, canEdit = true }) {
+function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRows, onRequery, canEdit = true }) {
   const typeColor = { csv: "#6ee7b7", xlsx: "#93c5fd", xml: "#fcd34d", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
   const typeLabel = { csv: "CSV", xlsx: "XLSX", xml: "XML", db_mssql: "SQL Server", db_mysql: "MySQL" };
   const isPending = dataset.xml_configured === 0;
@@ -465,8 +465,16 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onRequer
                 {requerying ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               </button>
             )}
+            {dataset.file_type === "static" && onEditRows && (
+              <button onClick={(e) => { e.stopPropagation(); onEditRows(dataset); }}
+                className="p-1 rounded" title="Zeilen bearbeiten" style={{ color: S.textDim }}
+                onMouseEnter={(e) => e.currentTarget.style.color = "#6ee7b7"}
+                onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
+                <Table size={13} />
+              </button>
+            )}
             <button onClick={(e) => { e.stopPropagation(); onEdit(dataset); }}
-              className="p-1 rounded" style={{ color: S.textDim }}
+              className="p-1 rounded" title="Einstellungen" style={{ color: S.textDim }}
               onMouseEnter={(e) => e.currentTarget.style.color = S.accent}
               onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
               <Pencil size={13} />

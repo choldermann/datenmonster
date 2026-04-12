@@ -189,6 +189,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 file_type      = "rest_api",
                 row_count      = 0,
                 columns        = columns,
+                column_types   = {},
                 xml_configured = 1,
                 project_id     = body.project_id,
                 query_config   = {"rest_source_id": src.id},

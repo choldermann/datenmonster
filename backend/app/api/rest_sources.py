@@ -314,7 +314,7 @@ def import_rest_source(
             ds.row_count = len(df)
             ds.columns = list(df.columns)
             ds.column_types = col_types
-            ds.file_type = "csv"
+            # file_type bleibt erhalten (rest_api, csv etc.)
             db.commit(); db.refresh(ds)
             dataframe_to_storage(df, ds.id)
             _update_run_status(s, db, "ok", f"{len(df)} Zeilen importiert (replace)", len(df))
@@ -324,12 +324,13 @@ def import_rest_source(
     ds = Dataset(
         name=ds_name,
         original_filename=f"{s.name}.json",
-        file_type="csv",
+        file_type="rest_api",
         xml_configured=1,
         row_count=len(df),
         columns=list(df.columns),
         column_types=col_types,
         project_id=target_project_id,
+        query_config={"rest_source_id": s.id},
     )
     db.add(ds); db.commit(); db.refresh(ds)
     dataframe_to_storage(df, ds.id)

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { ArrowLeft, Calculator, Check, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Trash2, X } from "lucide-react";
@@ -67,6 +68,7 @@ export default function MappingEditor() {
   const [schemaData, setSchemaData] = useState(null);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [editingJoin, setEditingJoin] = useState(null);
+  const [confirmDeleteConn, setConfirmDeleteConn] = useState(null); // { conn, index }
   const [filterEditor, setFilterEditor] = useState(null);
 
   // Join drag state
@@ -647,7 +649,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -1255,6 +1257,47 @@ export default function MappingEditor() {
           onDelete={() => { setJoins((prev) => prev.filter((_, i) => i !== editingJoin)); setEditingJoin(null); }}
         />
       )}
+
+      {/* Verbindung löschen Modal */}
+      {confirmDeleteConn && createPortal(
+        <div onClick={() => setConfirmDeleteConn(null)} style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "var(--bg-card)", border: "1px solid var(--border)",
+            borderRadius: 10, padding: "20px 24px", width: 360,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.7)",
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-bright)", margin: "0 0 10px" }}>
+              Verbindung entfernen
+            </p>
+            <p style={{ fontSize: 12, color: "var(--text-main)", margin: "0 0 6px" }}>
+              <span style={{ color: "#6ee7b7", fontFamily: "monospace" }}>{confirmDeleteConn.conn.source_field}</span>
+              {" → "}
+              <span style={{ color: "var(--accent)", fontFamily: "monospace" }}>{confirmDeleteConn.conn.target_field}</span>
+            </p>
+            <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "0 0 20px" }}>
+              Diese Verbindung wird aus dem Mapping entfernt.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmDeleteConn(null)} style={{
+                fontSize: 12, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                background: "transparent", border: "1px solid var(--border)", color: "var(--text-dim)",
+              }}>Abbrechen</button>
+              <button onClick={() => {
+                setConnections(prev => prev.filter((_, i) => i !== confirmDeleteConn.index));
+                setConfirmDeleteConn(null);
+                triggerLineDraw();
+              }} style={{
+                fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                background: "rgba(224,112,112,0.15)", border: "1px solid rgba(224,112,112,0.4)", color: "#e07070",
+              }}>Verbindung löschen</button>
+            </div>
+          </div>
+        </div>
+      , document.body)}
 
       {filterEditor && (
         <FilterEditor

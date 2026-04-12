@@ -322,6 +322,7 @@ export default function Dashboard() {
                     onDelete={deleteDataset} onClick={setSelected}
                     onConfigure={setConfiguring}
                     onEdit={(ds) => setEditingDataset(ds)}
+                    onEditRows={(ds) => setEditingRows(ds)}
                     onRequery={loadDatasets} />
                 ))}
               </div>
