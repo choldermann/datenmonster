@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Loader2, X, ZoomIn, ZoomOut, Maximize2, Search, ChevronRight, AlertTriangle } from "lucide-react";
+import { Loader2, X, ZoomIn, ZoomOut, Maximize2, Search, ChevronRight, AlertTriangle, Download } from "lucide-react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
 
@@ -48,6 +48,8 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const [tableFilter, setTableFilter] = useState("");
   const [includeRelated, setIncludeRelated] = useState(true);
   const [markedTables, setMarkedTables] = useState(new Set()); // markierte Tabellen für Import
+  const [hiddenTables, setHiddenTables] = useState(new Set()); // ausgeblendete Nodes
+  const [confirmRemove, setConfirmRemove] = useState(null); // { tableKey, tableName }
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null); // { done, failed }
   const svgRef = useRef(null);
@@ -172,10 +174,118 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
     setPan({ x: -(Math.min(...xs)) * zoom + 40, y: -(Math.min(...ys)) * zoom + 40 });
   };
 
+  const exportPng = () => {
+    if (!schema?.tables.length) return;
+
+    const visibleTables = schema.tables.filter(t => !hiddenTables.has(t.key));
+    if (!visibleTables.length) return;
+
+    const padding = 40;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    visibleTables.forEach(t => {
+      const pos = positions[t.key];
+      if (!pos) return;
+      const h = NODE_HEADER + NODE_PADDING + t.columns.length * ROW_H + NODE_PADDING;
+      minX = Math.min(minX, pos.x);
+      minY = Math.min(minY, pos.y);
+      maxX = Math.max(maxX, pos.x + pos.w);
+      maxY = Math.max(maxY, pos.y + h);
+    });
+
+    const contentW = maxX - minX + padding * 2;
+    const contentH = maxY - minY + padding * 2;
+    const scale = 2;
+
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const clone = svg.cloneNode(true);
+    clone.setAttribute("viewBox", `${minX - padding} ${minY - padding} ${contentW} ${contentH}`);
+    clone.setAttribute("width", contentW);
+    clone.setAttribute("height", contentH);
+
+    // Echte CSS-Variablen-Werte vom Browser auslesen
+    const rootStyles = getComputedStyle(document.documentElement);
+    const getVar = (v) => {
+      const raw = v.trim();
+      if (raw.startsWith("var(")) {
+        const varName = raw.slice(4, -1).trim();
+        return rootStyles.getPropertyValue(varName).trim() || "#888";
+      }
+      return raw;
+    };
+
+    // Alle CSS-Variablen die im SVG vorkommen könnten
+    const cssVarMap = {};
+    ["--bg-card","--bg-main","--bg-elevated","--border","--text-main","--text-bright","--text-dim","--accent"].forEach(v => {
+      const val = rootStyles.getPropertyValue(v).trim();
+      if (val) {
+        cssVarMap[`var(${v})`] = val;
+        cssVarMap[v] = val;
+      }
+    });
+
+    // Alle Attribute in allen Elementen ersetzen
+    const replaceVars = (el) => {
+      ["fill", "stroke", "color", "background", "background-color"].forEach(attr => {
+        const val = el.getAttribute(attr);
+        if (val && cssVarMap[val]) el.setAttribute(attr, cssVarMap[val]);
+      });
+      const style = el.getAttribute("style");
+      if (style) {
+        let newStyle = style;
+        Object.entries(cssVarMap).forEach(([k, v]) => {
+          newStyle = newStyle.replaceAll(k, v);
+        });
+        el.setAttribute("style", newStyle);
+      }
+      Array.from(el.children || []).forEach(replaceVars);
+    };
+    replaceVars(clone);
+
+    // Inline-Style für Text-Farben
+    const styleEl = document.createElement("style");
+    styleEl.textContent = `
+      text { font-family: 'Courier New', monospace; }
+    `;
+    clone.insertBefore(styleEl, clone.firstChild);
+
+    const serializer = new XMLSerializer();
+    let svgStr = serializer.serializeToString(clone);
+
+    // Nochmal CSS-Variablen im serialisierten String ersetzen (Fallback)
+    Object.entries(cssVarMap).forEach(([k, v]) => {
+      svgStr = svgStr.replaceAll(k, v);
+    });
+
+    const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width  = contentW * scale;
+      canvas.height = contentH * scale;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#0d0d0d";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0);
+      URL.revokeObjectURL(url);
+      const link = document.createElement("a");
+      link.download = `schema_${connection.name.replace(/[^a-z0-9]/gi, "_")}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    };
+    img.onerror = () => URL.revokeObjectURL(url);
+    img.src = url;
+  };
+
   const computeEdges = () => {
     if (!schema) return [];
     return schema.relationships
       .filter(r => showImplicit || r.type === "foreign_key")
+      .filter(r => !hiddenTables.has(r.from_table) && !hiddenTables.has(r.to_table))
       .map(rel => {
         const from = positions[rel.from_table];
         const to = positions[rel.to_table];
@@ -192,7 +302,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       }).filter(Boolean);
   };
 
-  const filteredTables = schema?.tables.filter(t => !search || t.key.toLowerCase().includes(search.toLowerCase())) || [];
+  const filteredTables = schema?.tables.filter(t => !hiddenTables.has(t.key) && (!search || t.key.toLowerCase().includes(search.toLowerCase()))) || [];
   const edges = phase === "done" ? computeEdges() : [];
 
   // ── Config ────────────────────────────────────────────────────────────────
@@ -332,7 +442,14 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
           <span style={{ fontSize: 10, color: S.textDim, minWidth: 36, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
           <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><ZoomIn size={14} /></button>
           <button onClick={fitScreen} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }} title="Fit to screen"><Maximize2 size={14} /></button>
+          <button onClick={exportPng} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }} title="Als PNG exportieren"><Download size={14} /></button>
         </div>
+        {hiddenTables.size > 0 && (
+          <button onClick={() => setHiddenTables(new Set())} style={{
+            fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer",
+            border: "1px solid rgba(251,191,36,0.4)", backgroundColor: "rgba(251,191,36,0.08)", color: "#fbbf24",
+          }}>↺ {hiddenTables.size} einblenden</button>
+        )}
         <button onClick={() => setPhase("config")} style={{ fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "transparent", color: S.textDim }}>
           Einstellungen
         </button>
@@ -397,11 +514,19 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
                   </text>
                   {table.row_count != null && <text x={pos.w - 10} y={22} fontSize={9} fill={S.textDim} textAnchor="end" fontFamily="monospace">{table.row_count.toLocaleString()}</text>}
                   {markedTables.has(table.key) && (
-                    <rect x={pos.w - 22} y={2} width={20} height={20} rx={4} fill="rgba(110,231,183,0.25)" stroke="#6ee7b7" strokeWidth={1} />
+                    <rect x={pos.w - 44} y={2} width={20} height={20} rx={4} fill="rgba(110,231,183,0.25)" stroke="#6ee7b7" strokeWidth={1} />
                   )}
                   {markedTables.has(table.key) && (
-                    <text x={pos.w - 12} y={16} fontSize={12} fontWeight={700} fill="#6ee7b7" textAnchor="middle">✓</text>
+                    <text x={pos.w - 34} y={16} fontSize={12} fontWeight={700} fill="#6ee7b7" textAnchor="middle">✓</text>
                   )}
+                  {/* X-Button zum Entfernen */}
+                  <g onClick={(e) => { e.stopPropagation(); setConfirmRemove({ tableKey: table.key, tableName: table.name }); }}
+                    style={{ cursor: "pointer" }}
+                    onMouseEnter={e => e.currentTarget.querySelector("rect").setAttribute("fill", "rgba(224,112,112,0.3)")}
+                    onMouseLeave={e => e.currentTarget.querySelector("rect").setAttribute("fill", "rgba(224,112,112,0.1)")}>
+                    <rect x={pos.w - 22} y={2} width={20} height={20} rx={4} fill="rgba(224,112,112,0.1)" stroke="rgba(224,112,112,0.3)" strokeWidth={1} />
+                    <text x={pos.w - 12} y={16} fontSize={11} fontWeight={700} fill="#e07070" textAnchor="middle">✕</text>
+                  </g>
                   <line x1={0} y1={NODE_HEADER} x2={pos.w} y2={NODE_HEADER} stroke={S.border} strokeWidth={1} />
                   {table.columns.map((col, ci) => {
                     const cy = NODE_HEADER + NODE_PADDING + ci * ROW_H;
@@ -456,6 +581,45 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
                   background: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
                 }}>Zum Dashboard</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bestätigungs-Modal Node entfernen */}
+      {confirmRemove && (
+        <div onClick={() => setConfirmRemove(null)} style={{
+          position: "fixed", inset: 0, zIndex: 9999,
+          backgroundColor: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: S.bgCard, border: `1px solid ${S.border}`,
+            borderRadius: 10, padding: "20px 24px", width: 360,
+            boxShadow: "0 24px 60px rgba(0,0,0,0.7)",
+          }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: S.textBright, margin: "0 0 10px" }}>
+              Tabelle ausblenden
+            </p>
+            <p style={{ fontSize: 12, color: S.textMain, margin: "0 0 6px" }}>
+              <span style={{ fontFamily: "monospace", color: S.accent }}>{confirmRemove.tableName}</span>
+            </p>
+            <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 20px" }}>
+              Die Tabelle wird aus dem Diagramm entfernt. Die Analyse wird nicht neu geladen.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button onClick={() => setConfirmRemove(null)} style={{
+                fontSize: 12, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                background: "transparent", border: `1px solid ${S.border}`, color: S.textDim,
+              }}>Abbrechen</button>
+              <button onClick={() => {
+                setHiddenTables(prev => new Set([...prev, confirmRemove.tableKey]));
+                if (selected?.key === confirmRemove.tableKey) setSelected(null);
+                setConfirmRemove(null);
+              }} style={{
+                fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
+                background: "rgba(224,112,112,0.15)", border: "1px solid rgba(224,112,112,0.4)", color: "#e07070",
+              }}>Ausblenden</button>
             </div>
           </div>
         </div>
