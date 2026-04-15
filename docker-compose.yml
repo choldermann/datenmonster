@@ -4,6 +4,7 @@ services:
   backend:
     build: ./backend
     container_name: datenmonster-backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000  # kein --reload
     ports:
       - "8000:8000"
     volumes:

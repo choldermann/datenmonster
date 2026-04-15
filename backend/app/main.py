@@ -160,9 +160,10 @@ async def lifespan(app: FastAPI):
                 db.commit()
     finally:
         db.close()
-    from app.services.scheduler_service import start_scheduler, reload_all_jobs
+    from app.services.scheduler_service import start_scheduler, reload_all_jobs, reload_all_dataset_jobs
     start_scheduler()
     reload_all_jobs()
+    reload_all_dataset_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()
