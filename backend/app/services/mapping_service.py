@@ -1030,7 +1030,9 @@ def execute_mapping(
     """
     errors = []
 
-    if not canvas_nodes:
+    # Transform-SQL-Node kann ohne Canvas-Datasets laufen
+    has_transform_sql = any(sn.get("mode") == "transform" for sn in (sql_nodes or []))
+    if not canvas_nodes and not has_transform_sql:
         return {"columns": [], "rows": [], "total": 0, "errors": ["Keine Datasets auf dem Canvas"]}
 
     if not connections and not agg_nodes:
@@ -1280,6 +1282,64 @@ def execute_mapping(
         except Exception as e:
             errors.append(f"SQL-Node '{out_field}' (Spalte) fehlgeschlagen: {str(e)[:200]}")
             sql_column_data[out_field] = []
+
+    # mode="transform": SQL auf Canvas-Datasets + optionale externe Tabellen
+    # Ergebnis ersetzt den bisherigen result_df komplett
+    transform_sql_nodes = [sn for sn in (sql_nodes or []) if sn.get("mode") == "transform"]
+    if transform_sql_nodes:
+        sn = transform_sql_nodes[0]  # Nur erster Transform-Node
+        sql_text = (sn.get("sql") or "").strip()
+        conn_id = sn.get("connection_id")
+        if sql_text:
+            try:
+                import sqlalchemy as _sa
+                import pandas as _pd_t
+
+                # 1. Temporäre SQLite-DB im Speicher
+                tmp_engine = _sa.create_engine("sqlite:///:memory:")
+
+                # 2. Canvas-Datasets als Tabellen laden
+                for ds_id, df_src in dfs.items():
+                    tbl_name = names.get(ds_id, f"ds_{ds_id}")
+                    # Tabellenname bereinigen (nur Buchstaben/Zahlen/Unterstrich)
+                    import re as _re
+                    tbl_clean = _re.sub(r'[^a-zA-Z0-9_]', '_', tbl_name)
+                    df_src.to_sql(tbl_clean, tmp_engine, if_exists="replace", index=False)
+
+                # 3. Wenn result_df bereits vorhanden (nach JOINs): als "input" laden
+                if result_df is not None and not result_df.empty:
+                    result_df.to_sql("input", tmp_engine, if_exists="replace", index=False)
+
+                # 4. Externe Tabellen per DB-Connection nachladen
+                ext_tables = sn.get("external_tables") or []
+                if conn_id and ext_tables:
+                    ext_engine = _get_sql_engine(conn_id)
+                    for ext in ext_tables:
+                        tbl = ext.get("table")
+                        alias = ext.get("alias") or tbl
+                        if not tbl:
+                            continue
+                        try:
+                            ext_df = _pd_t.read_sql(f"SELECT * FROM {tbl}", ext_engine)
+                            alias_clean = _re.sub(r'[^a-zA-Z0-9_]', '_', alias)
+                            ext_df.to_sql(alias_clean, tmp_engine, if_exists="replace", index=False)
+                        except Exception as ext_e:
+                            errors.append(f"Externe Tabelle '{tbl}' konnte nicht geladen werden: {str(ext_e)[:100]}")
+
+                # 5. SQL ausführen
+                # Wenn keine Canvas-Datasets: direkt auf DB-Connection
+                if not dfs and conn_id:
+                    ext_engine = _get_sql_engine(conn_id)
+                    result_df = _pd_t.read_sql(sql_text, ext_engine)
+                else:
+                    with tmp_engine.connect() as con:
+                        result_df = _pd_t.read_sql(_sa.text(sql_text), con)
+
+                # 6. Output-Felder aus SQL-Node übernehmen
+                sql_output_fields = sn.get("output_fields") or list(result_df.columns)
+
+            except Exception as e:
+                errors.append(f"SQL-Transform fehlgeschlagen: {str(e)[:300]}")
 
     # 4. Transformer auf jede Zeile anwenden
     # ─── Sortierung aus canvas_nodes anwenden ────────────────────────────────────
