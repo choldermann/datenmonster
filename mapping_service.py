@@ -1035,7 +1035,7 @@ def execute_mapping(
     if not canvas_nodes and not has_transform_sql:
         return {"columns": [], "rows": [], "total": 0, "errors": ["Keine Datasets auf dem Canvas"]}
 
-    if not connections and not agg_nodes:
+    if not connections and not agg_nodes and not has_transform_sql:
         return {"columns": [], "rows": [], "total": 0, "errors": ["Keine Zielfelder definiert"]}
 
     # 1. Alle Datasets laden + Filter anwenden
@@ -1075,7 +1075,7 @@ def execute_mapping(
         except Exception as e:
             errors.append(f"Dataset {ds_name} konnte nicht geladen werden: {e}")
 
-    if not dfs:
+    if not dfs and not has_transform_sql:
         return {"columns": [], "rows": [], "total": 0, "errors": errors}
 
     # 2. Joins anwenden (verkette alle Datasets)
@@ -1136,15 +1136,22 @@ def execute_mapping(
                     # prefix columns
                     n = names.get(ds_id, str(ds_id))
                     result_df = result_df.rename(columns={c: f"{n}.{c}" for c in df.columns})
-    else:
+    elif canvas_nodes and dfs:
         # Kein Join: erstes Dataset verwenden, Spalten mit Dataset-Name prefixen
         first_id = canvas_nodes[0]["dataset_id"]
         first_name = names.get(first_id, str(first_id))
         result_df = dfs[first_id].copy()
         result_df = result_df.rename(columns={c: f"{first_name}.{c}" for c in result_df.columns})
+    else:
+        # Keine Canvas-Datasets (z.B. reiner Transform-Node)
+        import pandas as _pd_init
+        result_df = _pd_init.DataFrame()
 
-    if result_df is None or result_df.empty:
+    if (result_df is None or result_df.empty) and not has_transform_sql:
         return {"columns": [], "rows": [], "total": 0, "errors": errors + ["Keine Daten nach Join"]}
+    if result_df is None:
+        import pandas as _pd_empty
+        result_df = _pd_empty.DataFrame()
 
     # 3. Transform-Nodes anwenden (fügen neue Felder zum flat_row hinzu)
     def apply_transform_nodes(flat: dict) -> dict:
@@ -1330,7 +1337,17 @@ def execute_mapping(
                 # Wenn keine Canvas-Datasets: direkt auf DB-Connection
                 if not dfs and conn_id:
                     ext_engine = _get_sql_engine(conn_id)
-                    result_df = _pd_t.read_sql(sql_text, ext_engine)
+                    _exec_sql = sql_text
+                    if is_preview:
+                        import re as _re2
+                        _dialect = ext_engine.dialect.name
+                        _has_limit = bool(_re2.search('TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
+                        if not _has_limit:
+                            if _dialect == 'mssql':
+                                _exec_sql = _re2.sub('(?i)^(\s*SELECT)(\s)', '\\1 TOP ' + str(preview_rows) + '\\2', _exec_sql, count=1)
+                            else:
+                                _exec_sql = _exec_sql + ' LIMIT ' + str(preview_rows)
+                    result_df = _pd_t.read_sql(_exec_sql, ext_engine)
                 else:
                     with tmp_engine.connect() as con:
                         result_df = _pd_t.read_sql(_sa.text(sql_text), con)
@@ -1733,10 +1750,16 @@ def execute_mapping(
                     errors.append(f"Switch-Node Ausgabe fehlgeschlagen: {str(e)[:100]}")
 
     target_columns = [c["target_field"] for c in connections if c.get("target_field")]
+    # Transform-Node: target_columns aus result_df Spalten wenn keine Connections
+    if not target_columns and has_transform_sql and result_df is not None:
+        target_columns = list(result_df.columns)
     output_rows = []
 
-    # Wenn keine Connections aber agg_nodes: Spalten aus result_df
-    if not connections and agg_nodes:
+    # Wenn keine Connections aber agg_nodes oder transform_sql: Spalten aus result_df
+    if not connections and has_transform_sql and result_df is not None:
+        output_rows = result_df.to_dict(orient="records")
+        total = len(output_rows)
+    elif not connections and agg_nodes:
         for _, raw_row in result_df.iterrows():
             flat = {}
             for k, v in dict(raw_row).items():
