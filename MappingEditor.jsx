@@ -793,6 +793,7 @@ export default function MappingEditor() {
                     onUpdate={(updated) => { setSqlNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={(id) => { setSqlNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__sql__${id}`)); }}
                     outputRef={sqlOutputRefs.current[sn.id]}
+                    onRegisterFieldListRef={(key, ref) => { nodeFieldListRefs.current[key] = ref; }}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`sql_${sn.id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
                   />
                 );

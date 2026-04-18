@@ -4,10 +4,17 @@ import api from "../../api/client";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs }) {
+function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, onRegisterFieldListRef }) {
   const [expanded, setExpanded] = useState(true);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaError, setSchemaError] = useState(null);
+  const fieldListRef = useRef(null);
+  const fieldListCallbackRef = (el) => {
+    fieldListRef.current = el;
+    if (el && onRegisterFieldListRef) {
+      onRegisterFieldListRef(`__sql__${node.id}`, { current: el });
+    }
+  };
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -31,6 +38,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
   };
 
   const set = (k, v) => onUpdate({ ...node, [k]: v });
+
+
 
   const loadSchema = useCallback(async () => {
     if (!node.sql?.trim()) return;
@@ -223,7 +232,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
       <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06` }}>
         {mode === "transform" && (node.output_fields || []).length > 0 ? (
           // Transform: scrollbare Liste mit einem Dot pro Output-Feld
-          <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
+          <div ref={fieldListCallbackRef} onScroll={() => { if (onUpdate) onUpdate({ ...node }); }} style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>
                 <span style={{ fontSize: 10, fontFamily: "monospace", color: SQL_NODE_COLOR, opacity: 0.9 }}>{field}</span>

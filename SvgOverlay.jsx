@@ -452,7 +452,17 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
             const outEl = sqlOutputRefs.current[dotKey]?.current || sqlOutputRefs.current[dotKey];
             if (!isInDOM(outEl)) return null;
             const r = toSvg(outEl.getBoundingClientRect());
-            sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
+            const midY = r.top + r.height / 2;
+            // Clamping: prüfe ob Dot im sichtbaren Bereich des scrollbaren Containers liegt
+            const listEl = nodeFieldListRefs?.current?.[`__sql__${nodeId}`]?.current;
+            let clamped = false;
+            let clampedY = midY;
+            if (listEl) {
+              const l = toSvg(listEl.getBoundingClientRect());
+              if (midY < l.top) { clampedY = l.top + 1; clamped = true; }
+              else if (midY > l.bottom) { clampedY = l.bottom - 1; clamped = true; }
+            }
+            sp = { x: r.right, y: clampedY, clamped };
           } else {
             const outEl = sqlOutputRefs.current[nodeId]?.current || sqlOutputRefs.current[nodeId];
             const outElR = outEl?.current || outEl;
