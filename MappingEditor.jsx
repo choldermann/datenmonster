@@ -460,12 +460,20 @@ export default function MappingEditor() {
           URL.revokeObjectURL(url);
         } else {
           // DB-Schreiben oder Dataset speichern via execute
-          await api.post("/api/mappings/execute", {
+          const execResp = await api.post("/api/mappings/execute", {
             ...nodeCtx,
             targets: [target],
             save_as_dataset: !!target.save_as_dataset,
             target_name: target.name || target.target_type,
           });
+          // Fehler in der Response prüfen
+          const execErrors = execResp.data?.errors || [];
+          const failedTargets = (execResp.data?.targets_results || []).filter(t => t.status === "error");
+          if (failedTargets.length > 0) {
+            throw new Error(failedTargets.map(t => t.error || t.name).join(", "));
+          } else if (execErrors.length > 0) {
+            throw new Error(execErrors.join(", "));
+          }
         }
       } catch (e) {
         if (!abortRef.current) errors.push(`"${target.name}": ${e.response?.data?.detail || e.message}`);

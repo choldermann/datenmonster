@@ -512,8 +512,20 @@ def _write_target(df, target, t_type, opts, db, mapping_id, mapping_name,
         try:
             write_mode = opts.get("dataset_write_mode", "replace")
             ds = None
-            if mapping_id:
-                ds = thread_db.query(Dataset).filter(Dataset.source_mapping_id == mapping_id).first()
+            target_name = target.get("name") or "Mapping-Output"
+            # 1. Suche Dataset mit diesem Namen
+            existing_name = thread_db.query(Dataset).filter(Dataset.name == target_name).first()
+            if existing_name:
+                if existing_name.source_mapping_id == mapping_id:
+                    # Gehört diesem Mapping → wiederverwenden
+                    ds = existing_name
+                else:
+                    # Gehört anderem Mapping oder manuell angelegt → Fehler
+                    raise ValueError(f"Ein Dataset mit dem Namen '{target_name}' existiert bereits. Bitte anderen Namen wählen.")
+            elif mapping_id and not existing_name:
+                # Kein Dataset mit diesem Namen → ggf. altes Dataset dieses Mappings vorhanden?
+                # Altes stehen lassen, neues wird weiter unten angelegt
+                pass
             if ds:
                 col_types = ds.column_types or {}
 
@@ -1766,6 +1778,40 @@ def execute_mapping(
                 flat[k] = v
             output_rows.append(flat)
         total = len(output_rows)
+
+    # Transform-Node mit Connections: schneller Pfad ohne iterrows
+    if has_transform_sql and connections and result_df is not None and not result_df.empty:
+        import pandas as _pd_fast
+        # Nur die gemappten Felder aus result_df selektieren
+        mapped_fields = {c.get("source_field"): c.get("target_field") for c in connections if c.get("source_field") and c.get("target_field")}
+        valid_fields = {src: tgt for src, tgt in mapped_fields.items() if src in result_df.columns}
+        if valid_fields:
+            df_mapped = result_df[list(valid_fields.keys())].rename(columns=valid_fields)
+            output_rows = df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records")
+            total = len(output_rows)
+            target_columns = list(valid_fields.values())
+            # Sortierung + Limit
+            if target_options:
+                _sf = [sf for sf in (target_options.get("sort_fields") or []) if sf.get("field") and sf["field"] in df_mapped.columns]
+                if _sf:
+                    try:
+                        _by = [sf["field"] for sf in _sf]
+                        _asc = [sf.get("dir", "asc") == "asc" for sf in _sf]
+                        df_mapped = df_mapped.sort_values(by=_by, ascending=_asc)
+                        output_rows = df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records")
+                    except Exception:
+                        pass
+                _limit = target_options.get("row_limit")
+                if _limit and isinstance(_limit, int) and _limit > 0:
+                    output_rows = output_rows[:_limit]
+            if is_preview and len(output_rows) > 50:
+                output_rows = output_rows[:50]
+            return {
+                "columns": target_columns,
+                "rows": output_rows,
+                "total": total,
+                "errors": errors,
+            }
 
     # Flatten result_df rows to dicts (without prefix for direct lookup)
     # Also build a flat lookup without prefix for transformer source_field matching
