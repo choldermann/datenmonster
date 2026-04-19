@@ -321,6 +321,9 @@ def analyze_schema(
     start_table: Optional[str] = None,
     depth: int = 2,
     selected_tables: Optional[str] = None,
+    path_from: Optional[str] = None,
+    path_to: Optional[str] = None,
+    path_via: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -335,6 +338,7 @@ def analyze_schema(
     - start_table: Starttabelle für FK-Traversierung (z.B. 'dbo.tRechnung' oder 'tRechnung')
     - depth: Traversierungstiefe ab Starttabelle (1-3, default 2)
     - selected_tables: Kommagetrennte Whitelist von Tabellen-Keys – lädt nur diese exakt
+    - path_from / path_to: Pfadfinder – findet kürzesten Weg zwischen zwei Tabellen
     """
     conn = _require_read_conn(conn_id, user, db)
     try:
@@ -392,8 +396,157 @@ def analyze_schema(
 
         total_tables = len(all_table_names)
 
+        # ── Pfadfinder: kürzester Weg zwischen zwei Tabellen ───────────────────
+        if path_from and path_to and path_from.strip() and path_to.strip():
+
+            # Lookups für schnellen Zugriff
+            # tname_lower → canonical key  (z.B. "tbestellung" → "dbo.tBestellung")
+            tname_to_key = {}
+            for e in all_table_names:
+                tname_to_key[e[1].lower()] = e[2]   # nur tabellenname
+                tname_to_key[e[2].lower()] = e[2]   # schema.tabellenname
+            # canonical key → entry tuple
+            key_to_entry = {e[2]: e for e in all_table_names}
+
+            # Tabelle finden (exakt oder partial, case-insensitiv)
+            def find_table(name):
+                name_l = name.strip().lower()
+                resolved = tname_to_key.get(name_l)
+                if resolved:
+                    return resolved
+                for e in all_table_names:
+                    if name_l in e[1].lower():
+                        return e[2]
+                return None
+
+            pf_from = find_table(path_from)
+            pf_to   = find_table(path_to)
+
+            # ── Lazy BFS mit Rückwärts-Kanten ────────────────────────────────
+            import re as _re
+            _reverse_edges = {}
+
+            def _get_neighbors(table_key):
+                entry = key_to_entry.get(table_key)
+                if not entry:
+                    return set()
+                neighbors = set()
+                s, tn, _ = entry
+                # Echte FKs
+                try:
+                    for fk in inspector.get_foreign_keys(tn, schema=s):
+                        ref_schema = fk.get("referred_schema") or s or ""
+                        ref_table  = fk.get("referred_table", "")
+                        ref_key    = f"{ref_schema}.{ref_table}" if ref_schema else ref_table
+                        resolved   = tname_to_key.get(ref_key.lower())
+                        if resolved and resolved != table_key:
+                            neighbors.add(resolved)
+                            _reverse_edges.setdefault(resolved, set()).add(table_key)
+                except Exception:
+                    pass
+                # k-Feld Konvention via Spalten
+                try:
+                    for c in inspector.get_columns(tn, schema=s):
+                        cn = c["name"]
+                        if "_" in cn:
+                            resolved = tname_to_key.get(cn.split("_", 1)[0].lower())
+                            if resolved and resolved != table_key:
+                                neighbors.add(resolved)
+                                _reverse_edges.setdefault(resolved, set()).add(table_key)
+                        if _re.match(r'^k[A-Z]', cn):
+                            resolved = tname_to_key.get(("t" + cn[1:]).lower())
+                            if resolved and resolved != table_key:
+                                neighbors.add(resolved)
+                                _reverse_edges.setdefault(resolved, set()).add(table_key)
+                except Exception:
+                    pass
+                return neighbors
+
+            _nb_cache = {}
+            def get_neighbors(table_key):
+                if table_key not in _nb_cache:
+                    _nb_cache[table_key] = _get_neighbors(table_key)
+                return _nb_cache[table_key] | _reverse_edges.get(table_key, set())
+
+            # Zwischenstationen auflösen
+            via_keys = []
+            if path_via and path_via.strip():
+                for v in path_via.split(","):
+                    v = v.strip()
+                    if v:
+                        rv = find_table(v)
+                        if rv:
+                            via_keys.append(rv)
+
+            # Pre-scan: Ziel zuerst → via rückwärts → Start
+            # Rückwärts-Kanten müssen bekannt sein bevor BFS startet
+            for _wp in (([pf_to] if pf_to else []) + list(reversed(via_keys)) + ([pf_from] if pf_from else [])):
+                get_neighbors(_wp)
+
+
+            def bidi_bfs(start, end, max_depth=6):
+                """Bidirektionaler BFS. Gibt Pfad oder None zurück."""
+                if start == end:
+                    return [start]
+                front_a = {start: [start]}
+                front_b = {end:   [end]}
+                visited_a = {start}
+                visited_b = {end}
+                for _ in range(max_depth):
+                    new_a = {}
+                    for node, path in front_a.items():
+                        for nb in get_neighbors(node):
+                            if nb in visited_b:
+                                return path + list(reversed(front_b[nb]))
+                            if nb not in visited_a:
+                                visited_a.add(nb)
+                                new_a[nb] = path + [nb]
+                    front_a = new_a
+                    new_b = {}
+                    for node, path in front_b.items():
+                        for nb in get_neighbors(node):
+                            if nb in visited_a:
+                                pa = front_a.get(nb, [nb])
+                                return pa + list(reversed(path))
+                            if nb not in visited_b:
+                                visited_b.add(nb)
+                                new_b[nb] = path + [nb]
+                    front_b = new_b
+                    if not front_a and not front_b:
+                        break
+                return None
+
+            if pf_from and pf_to and pf_from != pf_to:
+                # Segment-BFS: jeden Abschnitt zwischen Waypoints separat lösen
+                waypoints = [pf_from] + via_keys + [pf_to]
+                full_path = []
+                all_found = True
+                for i in range(len(waypoints) - 1):
+                    seg = bidi_bfs(waypoints[i], waypoints[i + 1])
+                    if seg is None:
+                        all_found = False
+                        break
+                    full_path = full_path + (seg if not full_path else seg[1:])
+
+                if all_found and full_path:
+                    seen = set(); deduped = []
+                    for k in full_path:
+                        if k not in seen:
+                            seen.add(k); deduped.append(k)
+                    path_keys = set(deduped)
+                    table_names = [e for e in all_table_names if e[2] in path_keys]
+                    order = {k: i for i, k in enumerate(deduped)}
+                    table_names.sort(key=lambda e: order.get(e[2], 99))
+                else:
+                    # Kein vollständiger Pfad → alle Waypoints anzeigen
+                    fallback = {pf_from, pf_to} | set(via_keys)
+                    table_names = [e for e in all_table_names if e[2] in fallback]
+            else:
+                table_names = [e for e in all_table_names if e[2] in {pf_from, pf_to} if e[2]]
+
+
         # ── Whitelist: exakt gewählte Tabellen ───────────────────────────────────
-        if selected_tables and selected_tables.strip():
+        elif selected_tables and selected_tables.strip():
             requested = [t.strip() for t in selected_tables.split(",") if t.strip()]
             # Case-insensitive Match auf table_key oder tname
             selected_set = set(t.lower() for t in requested)

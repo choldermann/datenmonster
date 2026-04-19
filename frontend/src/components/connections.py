@@ -422,8 +422,11 @@ def analyze_schema(
             pf_from = find_table(path_from)
             pf_to   = find_table(path_to)
 
-            # ── Lazy BFS mit Rückwärts-Kanten ────────────────────────────────
+            # ── Lazy BFS: get_columns nur für besuchte Knoten ────────────────
             import re as _re
+
+            # _reverse_edges: table_key → set of tables that point TO this key
+            # Wird beim Lesen jeder Tabelle bidirektional befüllt
             _reverse_edges = {}
 
             def _get_neighbors(table_key):
@@ -441,6 +444,7 @@ def analyze_schema(
                         resolved   = tname_to_key.get(ref_key.lower())
                         if resolved and resolved != table_key:
                             neighbors.add(resolved)
+                            # Rückwärts: resolved → table_key
                             _reverse_edges.setdefault(resolved, set()).add(table_key)
                 except Exception:
                     pass
@@ -466,7 +470,9 @@ def analyze_schema(
             def get_neighbors(table_key):
                 if table_key not in _nb_cache:
                     _nb_cache[table_key] = _get_neighbors(table_key)
+                # Rückwärts-Kanten ergänzen die durch andere Tabellen-Scans entstanden sind
                 return _nb_cache[table_key] | _reverse_edges.get(table_key, set())
+
 
             # Zwischenstationen auflösen
             via_keys = []
@@ -474,18 +480,21 @@ def analyze_schema(
                 for v in path_via.split(","):
                     v = v.strip()
                     if v:
-                        rv = find_table(v)
-                        if rv:
-                            via_keys.append(rv)
+                        resolved_v = find_table(v)
+                        if resolved_v:
+                            via_keys.append(resolved_v)
 
-            # Pre-scan: Ziel zuerst → via rückwärts → Start
-            # Rückwärts-Kanten müssen bekannt sein bevor BFS startet
-            for _wp in (([pf_to] if pf_to else []) + list(reversed(via_keys)) + ([pf_from] if pf_from else [])):
-                get_neighbors(_wp)
+            # Pre-scan ALLER Waypoints – Ziel zuerst, dann rückwärts durch via, dann Start
+            # So sind alle Rückwärts-Kanten bekannt bevor BFS startet
+            _all_wps = (([pf_to] if pf_to else []) +
+                        list(reversed(via_keys)) +
+                        ([pf_from] if pf_from else []))
+            for _wp in _all_wps:
+                get_neighbors(_wp)  # füllt _reverse_edges bidirektional
 
 
             def bidi_bfs(start, end, max_depth=6):
-                """Bidirektionaler BFS. Gibt Pfad oder None zurück."""
+                """Bidirektionaler BFS von start nach end."""
                 if start == end:
                     return [start]
                 front_a = {start: [start]}
@@ -493,57 +502,68 @@ def analyze_schema(
                 visited_a = {start}
                 visited_b = {end}
                 for _ in range(max_depth):
-                    new_a = {}
+                    new_front_a = {}
                     for node, path in front_a.items():
                         for nb in get_neighbors(node):
                             if nb in visited_b:
-                                return path + list(reversed(front_b[nb]))
+                                path_b = front_b[nb]
+                                return path + list(reversed(path_b))
                             if nb not in visited_a:
                                 visited_a.add(nb)
-                                new_a[nb] = path + [nb]
-                    front_a = new_a
-                    new_b = {}
+                                new_front_a[nb] = path + [nb]
+                    front_a = new_front_a
+                    new_front_b = {}
                     for node, path in front_b.items():
                         for nb in get_neighbors(node):
                             if nb in visited_a:
-                                pa = front_a.get(nb, [nb])
-                                return pa + list(reversed(path))
+                                path_a = front_a.get(nb, [nb])
+                                return path_a + list(reversed(path))
                             if nb not in visited_b:
                                 visited_b.add(nb)
-                                new_b[nb] = path + [nb]
-                    front_b = new_b
+                                new_front_b[nb] = path + [nb]
+                    front_b = new_front_b
                     if not front_a and not front_b:
                         break
                 return None
 
             if pf_from and pf_to and pf_from != pf_to:
-                # Segment-BFS: jeden Abschnitt zwischen Waypoints separat lösen
+                # Segment-BFS: von → via[0] → via[1] → ... → to
+                # Jedes Segment wird separat per bidirektionalem BFS gelöst
                 waypoints = [pf_from] + via_keys + [pf_to]
+                # Segment-BFS: jeden Abschnitt separat lösen
                 full_path = []
                 all_found = True
-                for i in range(len(waypoints) - 1):
-                    seg = bidi_bfs(waypoints[i], waypoints[i + 1])
-                    if seg is None:
+                for seg_i in range(len(waypoints) - 1):
+                    seg_start = waypoints[seg_i]
+                    seg_end   = waypoints[seg_i + 1]
+                    seg_path  = bidi_bfs(seg_start, seg_end)
+                    if seg_path is None:
                         all_found = False
                         break
-                    full_path = full_path + (seg if not full_path else seg[1:])
+                    # Erstes Element weglassen (außer beim ersten Segment) um Dopplungen zu vermeiden
+                    if full_path:
+                        full_path += seg_path[1:]
+                    else:
+                        full_path = seg_path
 
                 if all_found and full_path:
-                    seen = set(); deduped = []
+                    # Duplikate entfernen, Reihenfolge beibehalten
+                    seen = set()
+                    deduped = []
                     for k in full_path:
                         if k not in seen:
-                            seen.add(k); deduped.append(k)
+                            seen.add(k)
+                            deduped.append(k)
                     path_keys = set(deduped)
                     table_names = [e for e in all_table_names if e[2] in path_keys]
                     order = {k: i for i, k in enumerate(deduped)}
                     table_names.sort(key=lambda e: order.get(e[2], 99))
                 else:
-                    # Kein vollständiger Pfad → alle Waypoints anzeigen
-                    fallback = {pf_from, pf_to} | set(via_keys)
-                    table_names = [e for e in all_table_names if e[2] in fallback]
+                    # Kein Pfad gefunden → Waypoints + Start/Ziel laden
+                    fallback_keys = {pf_from, pf_to} | set(via_keys)
+                    table_names = [e for e in all_table_names if e[2] in fallback_keys]
             else:
-                table_names = [e for e in all_table_names if e[2] in {pf_from, pf_to} if e[2]]
-
+                table_names = [e for e in all_table_names if e and e[2] in {pf_from, pf_to} if pf_from or pf_to]
 
         # ── Whitelist: exakt gewählte Tabellen ───────────────────────────────────
         elif selected_tables and selected_tables.strip():

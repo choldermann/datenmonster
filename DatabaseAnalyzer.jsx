@@ -53,7 +53,14 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const [startTable, setStartTable] = useState("");
   const [traversalDepth, setTraversalDepth] = useState(2);
   // Whitelist-Modus
-  const [configMode, setConfigMode] = useState("filter"); // "filter" | "start" | "whitelist"
+  const [configMode, setConfigMode] = useState("filter"); // "filter" | "start" | "whitelist" | "path"
+  // Pfadfinder
+  const [pathFrom, setPathFrom] = useState("");
+  const [pathTo, setPathTo] = useState("");
+  const [pathFromSearch, setPathFromSearch] = useState("");
+  const [pathToSearch, setPathToSearch] = useState("");
+  const [pathFromOpen, setPathFromOpen] = useState(false);
+  const [pathToOpen, setPathToOpen] = useState(false); // "filter" | "start" | "whitelist"
   const [whitelistSearch, setWhitelistSearch] = useState("");
   const [whitelistTables, setWhitelistTables] = useState([]); // alle Tabellen für Suche
   const [whitelistLoading, setWhitelistLoading] = useState(false);
@@ -122,7 +129,11 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
     try {
       const params = new URLSearchParams({ table_limit: tableLimit, implicit_limit: 300, timeout: 60 });
       if (schemaFilter) params.append("schema_filter", schemaFilter);
-      if (configMode === "whitelist" && whitelistSelected.length > 0) {
+      if (configMode === "path" && pathFrom.trim() && pathTo.trim()) {
+        params.append("path_from", pathFrom.trim());
+        params.append("path_to", pathTo.trim());
+        params.set("table_limit", 50); // Pfad darf etwas mehr laden
+      } else if (configMode === "whitelist" && whitelistSelected.length > 0) {
         params.append("selected_tables", whitelistSelected.join(","));
       } else if (configMode === "start" && startTable.trim()) {
         params.append("start_table", startTable.trim());
@@ -357,7 +368,8 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const canAnalyze =
     configMode === "filter" ||
     configMode === "start" ||
-    (configMode === "whitelist" && whitelistSelected.length > 0);
+    (configMode === "whitelist" && whitelistSelected.length > 0) ||
+    (configMode === "path" && pathFrom.trim() && pathTo.trim());
 
   if (phase === "config") return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -404,16 +416,17 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
           <div style={{ display: "flex", gap: 0, borderRadius: 6, overflow: "hidden", border: `1px solid ${S.border}`, marginBottom: 14 }}>
             {[
               { key: "filter", label: "Filter" },
-              { key: "start",  label: "⚓ Starttabelle" },
+              { key: "start",  label: "⚓ Start" },
               { key: "whitelist", label: "✓ Auswahl" },
+              { key: "path", label: "→ Pfad" },
             ].map(({ key, label }) => (
               <button key={key} onClick={() => {
                 setConfigMode(key);
-                if (key === "whitelist") loadWhitelistTables();
+                if (key === "whitelist" || key === "path") loadWhitelistTables();
               }} style={{
-                flex: 1, fontSize: 12, padding: "7px 4px", cursor: "pointer",
+                flex: 1, fontSize: 11, padding: "7px 2px", cursor: "pointer",
                 border: "none",
-                borderRight: key !== "whitelist" ? `1px solid ${S.border}` : "none",
+                borderRight: key !== "path" ? `1px solid ${S.border}` : "none",
                 backgroundColor: configMode === key ? "rgba(252,228,153,0.12)" : "transparent",
                 color: configMode === key ? S.accent : S.textDim,
                 fontWeight: configMode === key ? 600 : 400,
@@ -542,13 +555,79 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
               )}
             </div>
           )}
+
+          {/* Modus: Pfadfinder */}
+          {configMode === "path" && (() => {
+            const pathFiltered = (q) => q.length >= 3
+              ? whitelistTables.filter(t => t.toLowerCase().includes(q.toLowerCase())).slice(0, 20)
+              : [];
+            const tableInput = (label, value, setValue, searchVal, setSearch, open, setOpen) => (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 10, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>{label}</label>
+                <div style={{ position: "relative" }}>
+                  {value ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", backgroundColor: S.bgEl, border: "1px solid rgba(252,228,153,0.4)", borderRadius: 4, padding: "6px 10px" }}>
+                      <span style={{ fontSize: 12, fontFamily: "monospace", color: S.accent }}>{value}</span>
+                      <button onClick={() => { setValue(""); setSearch(""); }} style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, display: "flex" }}><X size={12} /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, padding: "6px 10px" }}>
+                        <Search size={12} style={{ color: S.textDim, flexShrink: 0 }} />
+                        <input value={searchVal} onChange={e => { setSearch(e.target.value); setOpen(e.target.value.length >= 3); }}
+                          placeholder="Tabelle suchen (min. 3 Zeichen)..."
+                          style={{ background: "none", border: "none", outline: "none", color: S.textMain, fontSize: 12, flex: 1 }} />
+                        {whitelistLoading && <Loader2 size={12} style={{ color: S.textDim }} className="animate-spin" />}
+                      </div>
+                      {open && pathFiltered(searchVal).length > 0 && (
+                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 4, maxHeight: 160, overflowY: "auto", marginTop: 2, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                          {pathFiltered(searchVal).map(t => (
+                            <div key={t} onClick={() => { setValue(t); setSearch(""); setOpen(false); }}
+                              style={{ padding: "6px 12px", fontSize: 12, fontFamily: "monospace", color: S.textMain, cursor: "pointer", borderBottom: `1px solid ${S.border}` }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                              {t}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            );
+            return (
+              <div>
+                {tableInput("Von", pathFrom, setPathFrom, pathFromSearch, setPathFromSearch, pathFromOpen, setPathFromOpen)}
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                  <span style={{ fontSize: 18, color: S.textDim }}>↓</span>
+                </div>
+                {tableInput("Nach", pathTo, setPathTo, pathToSearch, setPathToSearch, pathToOpen, setPathToOpen)}
+                {pathFrom && pathTo && (
+                  <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.2)", marginTop: 4 }}>
+                    <p style={{ fontSize: 11, color: S.accent, margin: 0 }}>
+                      Sucht kürzesten Weg: <span style={{ fontFamily: "monospace" }}>{pathFrom}</span> → <span style={{ fontFamily: "monospace" }}>{pathTo}</span>
+                    </p>
+                    <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0" }}>
+                      Alle Tabellen auf dem Weg werden automatisch geladen. FK-Beziehungen, k-Felder und JTL-Muster werden berücksichtigt.
+                    </p>
+                  </div>
+                )}
+                {!pathFrom && !pathTo && (
+                  <p style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>
+                    Wähle Start- und Zieltabelle – Datenmonster findet den kürzesten Weg über FK/k-Feld Beziehungen.
+                  </p>
+                )}
+              </div>
+            );
+          })()}
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", border: `1px solid ${S.border}`, color: S.textDim }}>Abbrechen</button>
           <button onClick={startAnalysis} disabled={!canAnalyze}
             style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: canAnalyze ? "pointer" : "not-allowed", background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: canAnalyze ? S.accent : S.textDim, opacity: canAnalyze ? 1 : 0.5 }}>
-            {configMode === "whitelist" && whitelistSelected.length > 0 ? `${whitelistSelected.length} Tabellen analysieren` : "Analysieren"}
+            {configMode === "whitelist" && whitelistSelected.length > 0 ? `${whitelistSelected.length} Tabellen analysieren` : configMode === "path" && pathFrom && pathTo ? `Pfad suchen` : "Analysieren"}
           </button>
         </div>
       </div>
@@ -626,6 +705,11 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
         {schema && configMode === "whitelist" && whitelistSelected.length > 0 && (
           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.3)", color: "#6ee7b7" }}>
             ✓ {whitelistSelected.length} Tabellen (Auswahl)
+          </span>
+        )}
+        {schema && configMode === "path" && pathFrom && pathTo && (
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, backgroundColor: "rgba(252,228,153,0.12)", border: "1px solid rgba(252,228,153,0.3)", color: S.accent }}>
+            → {pathFrom} … {pathTo}
           </span>
         )}
         <div style={{ flex: 1 }} />
