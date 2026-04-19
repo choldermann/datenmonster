@@ -711,8 +711,10 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
                   <rect x={0} y={0} width={pos.w} height={nodeH} rx={6} fill={S.bgCard} stroke={isSelected ? S.accent : S.border} strokeWidth={isSelected ? 2 : 1} />
                   <rect x={0} y={0} width={pos.w} height={NODE_HEADER} rx={6} fill={isSelected ? "rgba(252,228,153,0.12)" : "rgba(255,255,255,0.04)"} />
                   <rect x={0} y={NODE_HEADER - 6} width={pos.w} height={6} fill={isSelected ? "rgba(252,228,153,0.12)" : "rgba(255,255,255,0.04)"} />
-                  {table.schema && table.schema !== "dbo" && <text x={10} y={14} fontSize={8} fill={S.textDim} fontFamily="monospace">{table.schema}</text>}
-                  <text x={10} y={table.schema && table.schema !== "dbo" ? 27 : 22} fontSize={12} fontWeight={700} fill={isSelected ? S.accent : S.textBright} fontFamily="monospace" style={{ pointerEvents: "none" }}>
+                  <text x={10} y={13} fontSize={8} fill={S.textDim} fontFamily="monospace" style={{ pointerEvents: "none" }}>
+                    {table.schema || "dbo"}
+                  </text>
+                  <text x={10} y={27} fontSize={12} fontWeight={700} fill={isSelected ? S.accent : S.textBright} fontFamily="monospace" style={{ pointerEvents: "none" }}>
                     {table.name.length > 22 ? table.name.slice(0, 22) + "..." : table.name}
                   </text>
                   {table.row_count != null && <text x={pos.w - 10} y={22} fontSize={9} fill={S.textDim} textAnchor="end" fontFamily="monospace">{table.row_count.toLocaleString()}</text>}

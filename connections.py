@@ -630,6 +630,53 @@ def analyze_schema(
 
         implicit_rels = implicit_rels[:implicit_limit]
 
+        # ── JTL-Namenskonvention: tTabelle_kFeld → tTabelle.kFeld ────────────
+        # Felder wie "tRechnung_kRechnung" in Tabelle A deuten auf tRechnung.kRechnung
+        jtl_rels = []
+        seen_jtl = set()
+        # Lookup: tabellenname (lower) → table_key
+        tname_lookup = {t["name"].lower(): t["key"] for t in tables}
+        pk_lookup = {t["key"]: set(t["pk_columns"]) for t in tables}
+
+        for t in tables:
+            for col in t["columns"]:
+                col_name = col["name"]
+                # Pattern: tXxx_kYyy oder tXxx_nYyy etc. – enthält Unterstrich nach erstem Wort
+                if "_" not in col_name:
+                    continue
+                parts = col_name.split("_", 1)
+                ref_tname = parts[0].lower()   # z.B. "trechnung"
+                ref_col   = parts[1]            # z.B. "kRechnung"
+                # Ziel-Tabelle muss in unserer Tabellenliste vorhanden sein
+                if ref_tname not in tname_lookup:
+                    continue
+                ref_key = tname_lookup[ref_tname]
+                # Ziel-Spalte muss in Ziel-Tabelle als PK vorhanden sein
+                if ref_col not in pk_lookup.get(ref_key, set()):
+                    continue
+                # Nicht auf sich selbst verweisen
+                if ref_key == t["key"]:
+                    continue
+                # Nicht doppelt mit expliziten FKs
+                already = any(
+                    (r["from_table"] == t["key"] and r["to_table"] == ref_key) or
+                    (r["from_table"] == ref_key and r["to_table"] == t["key"])
+                    for r in explicit_rels
+                )
+                if already:
+                    continue
+                pair = tuple(sorted([t["key"], ref_key, col_name]))
+                if pair in seen_jtl:
+                    continue
+                seen_jtl.add(pair)
+                jtl_rels.append({
+                    "from_table": t["key"],
+                    "from_col": col_name,
+                    "to_table": ref_key,
+                    "to_col": ref_col,
+                    "type": "implicit",
+                })
+
         # Starttabelle in Response mitgeben (für Frontend-Info)
         start_table_key = None
         if start_table and start_table.strip() and tables:
@@ -645,9 +692,9 @@ def analyze_schema(
             "truncated_msg": f"Nur {table_limit} von {total_tables} Tabellen geladen. Schema-Filter oder höheres Limit verwenden." if truncated else None,
             "available_schemas": available_schemas,
             "tables": tables,
-            "relationships": explicit_rels + implicit_rels,
+            "relationships": explicit_rels + implicit_rels + jtl_rels,
             "explicit_count": len(explicit_rels),
-            "implicit_count": len(implicit_rels),
+            "implicit_count": len(implicit_rels) + len(jtl_rels),
             "start_table_key": start_table_key,
         }
 
