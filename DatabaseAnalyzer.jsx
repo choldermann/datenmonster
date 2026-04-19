@@ -49,6 +49,13 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const [includeRelated, setIncludeRelated] = useState(true);
   const [startTable, setStartTable] = useState("");
   const [traversalDepth, setTraversalDepth] = useState(2);
+  // Whitelist-Modus
+  const [configMode, setConfigMode] = useState("filter"); // "filter" | "start" | "whitelist"
+  const [whitelistSearch, setWhitelistSearch] = useState("");
+  const [whitelistTables, setWhitelistTables] = useState([]); // alle Tabellen für Suche
+  const [whitelistLoading, setWhitelistLoading] = useState(false);
+  const [whitelistSelected, setWhitelistSelected] = useState([]); // gewählte Tabellen-Keys
+  const [whitelistDropdownOpen, setWhitelistDropdownOpen] = useState(false);
   const [markedTables, setMarkedTables] = useState(new Set()); // markierte Tabellen für Import
   const [hiddenTables, setHiddenTables] = useState(new Set()); // ausgeblendete Nodes
   const [confirmRemove, setConfirmRemove] = useState(null); // { tableKey, tableName }
@@ -112,10 +119,12 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
     try {
       const params = new URLSearchParams({ table_limit: tableLimit, implicit_limit: 300, timeout: 60 });
       if (schemaFilter) params.append("schema_filter", schemaFilter);
-      if (startTable.trim()) {
+      if (configMode === "whitelist" && whitelistSelected.length > 0) {
+        params.append("selected_tables", whitelistSelected.join(","));
+      } else if (configMode === "start" && startTable.trim()) {
         params.append("start_table", startTable.trim());
         params.append("depth", traversalDepth);
-      } else if (tableFilter.trim()) {
+      } else if (configMode === "filter" && tableFilter.trim()) {
         params.append("table_filter", tableFilter.trim());
         params.append("include_related", includeRelated ? "true" : "false");
       }
@@ -132,7 +141,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       setError(e.response?.data?.detail || e.message);
       setPhase("error");
     }
-  }, [connection.id, tableLimit, schemaFilter, startTable, traversalDepth]);
+  }, [connection.id, tableLimit, schemaFilter, startTable, traversalDepth, configMode, whitelistSelected, tableFilter, includeRelated]);
 
   const startNodeDrag = (e, tableKey) => {
     e.stopPropagation();
@@ -311,9 +320,44 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const edges = phase === "done" ? computeEdges() : [];
 
   // ── Config ────────────────────────────────────────────────────────────────
+  // Whitelist: Tabellen laden (einmalig beim ersten Öffnen des Whitelist-Tabs)
+  const loadWhitelistTables = async () => {
+    if (whitelistTables.length > 0) return; // bereits geladen
+    setWhitelistLoading(true);
+    try {
+      const { data } = await api.get(`/api/connections/${connection.id}/tables-only`);
+      setWhitelistTables(data.tables || []);
+    } catch (e) {
+      // silent fail – Suche zeigt dann nichts
+    } finally {
+      setWhitelistLoading(false);
+    }
+  };
+
+  const whitelistFiltered = whitelistSearch.length >= 3
+    ? whitelistTables.filter(t => t.toLowerCase().includes(whitelistSearch.toLowerCase())).slice(0, 30)
+    : [];
+
+  const addToWhitelist = (tableKey) => {
+    if (!whitelistSelected.includes(tableKey)) {
+      setWhitelistSelected(prev => [...prev, tableKey]);
+    }
+    setWhitelistSearch("");
+    setWhitelistDropdownOpen(false);
+  };
+
+  const removeFromWhitelist = (tableKey) => {
+    setWhitelistSelected(prev => prev.filter(k => k !== tableKey));
+  };
+
+  const canAnalyze =
+    configMode === "filter" ||
+    configMode === "start" ||
+    (configMode === "whitelist" && whitelistSelected.length > 0);
+
   if (phase === "config") return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, backgroundColor: "rgba(0,0,0,0.85)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 12, padding: "28px 32px", width: 440, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}>
+      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 12, padding: "28px 32px", width: 480, boxShadow: "0 24px 60px rgba(0,0,0,0.7)", maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
           <p style={{ fontSize: 15, fontWeight: 700, color: S.textBright, margin: 0 }}>Schema analysieren</p>
           <button onClick={onClose} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><X size={16} /></button>
@@ -321,6 +365,8 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
         <p style={{ fontSize: 12, color: S.textDim, marginBottom: 20 }}>
           <strong style={{ color: S.textMain }}>{connection.name}</strong> · {connection.db_type?.toUpperCase()} · {connection.host}
         </p>
+
+        {/* Max. Tabellen */}
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Max. Tabellen</label>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -328,8 +374,10 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
               <button key={n} onClick={() => setTableLimit(n)} style={{ fontSize: 12, padding: "5px 14px", borderRadius: 4, cursor: "pointer", border: `1px solid ${tableLimit === n ? S.accent : S.border}`, backgroundColor: tableLimit === n ? "rgba(252,228,153,0.1)" : "transparent", color: tableLimit === n ? S.accent : S.textDim }}>{n}</button>
             ))}
           </div>
-          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Harter Stopp – gilt auch bei Starttabelle. Mehr Tabellen = längere Ladezeit.</p>
+          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Harter Stopp – gilt für alle Modi. Mehr Tabellen = längere Ladezeit.</p>
         </div>
+
+        {/* Schema-Filter */}
         <div style={{ marginBottom: 20 }}>
           <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Schema-Filter (optional)</label>
           {availableSchemas.length > 0 ? (
@@ -345,59 +393,159 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
           )}
           <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen aus diesem Schema laden. Leer = alle Schemas.</p>
         </div>
+
+        {/* Modus-Tabs */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Tabellenfilter (optional)</label>
-          <input value={tableFilter} onChange={e => setTableFilter(e.target.value)}
-            placeholder="z.B. Rechnung, Artikel, Kunde..."
-            disabled={!!startTable.trim()}
-            style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: startTable.trim() ? S.textDim : S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none", opacity: startTable.trim() ? 0.4 : 1 }} />
-          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen laden deren Name diesen Text enthält. Wird ignoriert wenn Starttabelle gesetzt.</p>
-          {tableFilter.trim() && !startTable.trim() && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-              <input type="checkbox" id="include-related" checked={includeRelated} onChange={e => setIncludeRelated(e.target.checked)}
-                style={{ accentColor: S.accent, cursor: "pointer", width: 14, height: 14 }} />
-              <label htmlFor="include-related" style={{ fontSize: 12, color: S.textMain, cursor: "pointer" }}>
-                Verknüpfte Tabellen einbeziehen
-              </label>
+          <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 8 }}>Tabellen-Auswahl</label>
+          <div style={{ display: "flex", gap: 0, borderRadius: 6, overflow: "hidden", border: `1px solid ${S.border}`, marginBottom: 14 }}>
+            {[
+              { key: "filter", label: "Filter" },
+              { key: "start",  label: "⚓ Starttabelle" },
+              { key: "whitelist", label: "✓ Auswahl" },
+            ].map(({ key, label }) => (
+              <button key={key} onClick={() => {
+                setConfigMode(key);
+                if (key === "whitelist") loadWhitelistTables();
+              }} style={{
+                flex: 1, fontSize: 12, padding: "7px 4px", cursor: "pointer",
+                border: "none",
+                borderRight: key !== "whitelist" ? `1px solid ${S.border}` : "none",
+                backgroundColor: configMode === key ? "rgba(252,228,153,0.12)" : "transparent",
+                color: configMode === key ? S.accent : S.textDim,
+                fontWeight: configMode === key ? 600 : 400,
+              }}>{label}</button>
+            ))}
+          </div>
+
+          {/* Modus: Filter */}
+          {configMode === "filter" && (
+            <div>
+              <input value={tableFilter} onChange={e => setTableFilter(e.target.value)}
+                placeholder="z.B. Rechnung, Artikel, Kunde... (leer = alle)"
+                style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none" }} />
+              <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>Nur Tabellen laden deren Name diesen Text enthält. Leer = alle Tabellen.</p>
+              {tableFilter.trim() && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                  <input type="checkbox" id="include-related" checked={includeRelated} onChange={e => setIncludeRelated(e.target.checked)}
+                    style={{ accentColor: S.accent, cursor: "pointer", width: 14, height: 14 }} />
+                  <label htmlFor="include-related" style={{ fontSize: 12, color: S.textMain, cursor: "pointer" }}>
+                    Verknüpfte Tabellen einbeziehen
+                  </label>
+                </div>
+              )}
             </div>
           )}
-        </div>
 
-        <div style={{ marginBottom: 20, padding: "12px 14px", borderRadius: 6, border: `1px solid ${startTable.trim() ? "rgba(252,228,153,0.3)" : S.border}`, backgroundColor: startTable.trim() ? "rgba(252,228,153,0.04)" : "transparent" }}>
-          <label style={{ fontSize: 11, fontWeight: 600, color: startTable.trim() ? S.accent : S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>
-            Starttabelle (optional)
-          </label>
-          <input value={startTable} onChange={e => setStartTable(e.target.value)}
-            placeholder="z.B. tRechnung oder dbo.tRechnung"
-            style={{ backgroundColor: S.bgEl, border: `1px solid ${startTable.trim() ? "rgba(252,228,153,0.4)" : S.border}`, borderRadius: 4, color: S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none" }} />
-          <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>
-            Traversiert den FK-Graphen ab dieser Tabelle in alle Richtungen. Tabellenfilter wird dann ignoriert.
-          </p>
-          {startTable.trim() && (
-            <div style={{ marginTop: 10 }}>
-              <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Traversierungstiefe</label>
-              <div style={{ display: "flex", gap: 6 }}>
-                {[1, 2, 3].map(d => (
-                  <button key={d} onClick={() => setTraversalDepth(d)} style={{
-                    fontSize: 12, padding: "5px 16px", borderRadius: 4, cursor: "pointer",
-                    border: `1px solid ${traversalDepth === d ? S.accent : S.border}`,
-                    backgroundColor: traversalDepth === d ? "rgba(252,228,153,0.1)" : "transparent",
-                    color: traversalDepth === d ? S.accent : S.textDim,
-                  }}>
-                    {d === 1 ? "1 – Direkt" : d === 2 ? "2 – Erweitert" : "3 – Tief"}
-                  </button>
-                ))}
-              </div>
+          {/* Modus: Starttabelle */}
+          {configMode === "start" && (
+            <div>
+              <input value={startTable} onChange={e => setStartTable(e.target.value)}
+                placeholder="z.B. tRechnung oder dbo.tRechnung"
+                style={{ backgroundColor: S.bgEl, border: `1px solid ${startTable.trim() ? "rgba(252,228,153,0.4)" : S.border}`, borderRadius: 4, color: S.textMain, fontSize: 12, padding: "7px 10px", width: "100%", boxSizing: "border-box", outline: "none" }} />
               <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>
-                Tiefe 1 = nur direkte Nachbarn · Tiefe 2 = auch deren Nachbarn · Tiefe 3 = drei Ebenen
+                Traversiert den FK-Graphen ab dieser Tabelle in alle Richtungen.
               </p>
+              <div style={{ marginTop: 10 }}>
+                <label style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 6 }}>Traversierungstiefe</label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {[1, 2, 3].map(d => (
+                    <button key={d} onClick={() => setTraversalDepth(d)} style={{
+                      fontSize: 12, padding: "5px 16px", borderRadius: 4, cursor: "pointer",
+                      border: `1px solid ${traversalDepth === d ? S.accent : S.border}`,
+                      backgroundColor: traversalDepth === d ? "rgba(252,228,153,0.1)" : "transparent",
+                      color: traversalDepth === d ? S.accent : S.textDim,
+                    }}>
+                      {d === 1 ? "1 – Direkt" : d === 2 ? "2 – Erweitert" : "3 – Tief"}
+                    </button>
+                  ))}
+                </div>
+                <p style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>
+                  Tiefe 1 = nur direkte Nachbarn · Tiefe 2 = auch deren Nachbarn · Tiefe 3 = drei Ebenen
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Modus: Whitelist / Auswahl */}
+          {configMode === "whitelist" && (
+            <div>
+              {/* Suchfeld + Dropdown */}
+              <div style={{ position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, padding: "6px 10px" }}>
+                  <Search size={13} style={{ color: S.textDim, flexShrink: 0 }} />
+                  <input
+                    value={whitelistSearch}
+                    onChange={e => { setWhitelistSearch(e.target.value); setWhitelistDropdownOpen(e.target.value.length >= 3); }}
+                    placeholder="Tabelle suchen (min. 3 Zeichen)..."
+                    style={{ background: "none", border: "none", outline: "none", color: S.textMain, fontSize: 12, flex: 1 }}
+                  />
+                  {whitelistLoading && <Loader2 size={13} style={{ color: S.textDim }} className="animate-spin" />}
+                </div>
+                {whitelistDropdownOpen && whitelistFiltered.length > 0 && (
+                  <div style={{
+                    position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+                    backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 4,
+                    maxHeight: 200, overflowY: "auto", marginTop: 2,
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+                  }}>
+                    {whitelistFiltered.map(t => (
+                      <div key={t} onClick={() => addToWhitelist(t)}
+                        style={{
+                          padding: "7px 12px", fontSize: 12, fontFamily: "monospace",
+                          color: whitelistSelected.includes(t) ? S.accent : S.textMain,
+                          cursor: "pointer", borderBottom: `1px solid ${S.border}`,
+                          backgroundColor: "transparent",
+                        }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                      >
+                        {whitelistSelected.includes(t) ? "✓ " : ""}{t}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {whitelistDropdownOpen && whitelistSearch.length >= 3 && whitelistFiltered.length === 0 && !whitelistLoading && (
+                  <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100, backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 4, padding: "10px 12px", marginTop: 2 }}>
+                    <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Keine Tabellen gefunden</p>
+                  </div>
+                )}
+              </div>
+              {/* Gewählte Tabellen als Tags */}
+              {whitelistSelected.length > 0 ? (
+                <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {whitelistSelected.map(t => (
+                    <div key={t} style={{
+                      display: "flex", alignItems: "center", gap: 4,
+                      backgroundColor: "rgba(252,228,153,0.1)", border: "1px solid rgba(252,228,153,0.3)",
+                      borderRadius: 4, padding: "3px 8px 3px 10px",
+                    }}>
+                      <span style={{ fontSize: 11, fontFamily: "monospace", color: S.accent }}>{t}</span>
+                      <button onClick={() => removeFromWhitelist(t)} style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, padding: "0 0 0 2px", display: "flex", alignItems: "center" }}>
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ fontSize: 10, color: S.textDim, marginTop: 8 }}>
+                  Noch keine Tabellen gewählt. Suche und klicke auf eine Tabelle um sie hinzuzufügen.
+                </p>
+              )}
+              {whitelistSelected.length > 0 && (
+                <p style={{ fontSize: 10, color: S.textDim, marginTop: 8 }}>
+                  {whitelistSelected.length} Tabelle{whitelistSelected.length !== 1 ? "n" : ""} gewählt · Nur FK-Verbindungen zwischen diesen Tabellen werden angezeigt
+                </p>
+              )}
             </div>
           )}
         </div>
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", border: `1px solid ${S.border}`, color: S.textDim }}>Abbrechen</button>
-          <button onClick={startAnalysis} style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: "pointer", background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: S.accent }}>Analysieren</button>
+          <button onClick={startAnalysis} disabled={!canAnalyze}
+            style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: canAnalyze ? "pointer" : "not-allowed", background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: canAnalyze ? S.accent : S.textDim, opacity: canAnalyze ? 1 : 0.5 }}>
+            {configMode === "whitelist" && whitelistSelected.length > 0 ? `${whitelistSelected.length} Tabellen analysieren` : "Analysieren"}
+          </button>
         </div>
       </div>
     </div>
@@ -466,9 +614,14 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
         <span style={{ fontSize: 14, fontWeight: 700, color: S.textBright }}>Database Analyzer</span>
         <span style={{ fontSize: 11, color: S.textDim, fontFamily: "monospace" }}>{connection.name} · {connection.db_type?.toUpperCase()}</span>
         {schema && <span style={{ fontSize: 11, color: S.textDim }}>{schema.table_count} Tabellen · {schema.explicit_count} FK · {schema.implicit_count} implizit</span>}
-        {schema && startTable.trim() && (
+        {schema && configMode === "start" && startTable.trim() && (
           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, backgroundColor: "rgba(252,228,153,0.12)", border: "1px solid rgba(252,228,153,0.3)", color: S.accent }}>
             ⚓ {startTable.trim()} · Tiefe {traversalDepth}
+          </span>
+        )}
+        {schema && configMode === "whitelist" && whitelistSelected.length > 0 && (
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.3)", color: "#6ee7b7" }}>
+            ✓ {whitelistSelected.length} Tabellen (Auswahl)
           </span>
         )}
         <div style={{ flex: 1 }} />

@@ -140,7 +140,7 @@ def list_tables(conn_id: int, db: Session = Depends(get_db), user: User = Depend
 
 @router.get("/{conn_id}/tables-only")
 def list_tables_only(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Gibt nur echte Tabellen zurück (keine Views) – für Ziel-Auswahl im Mapping Editor."""
+    """Gibt Tabellen und Views zurück – für Whitelist-Auswahl im DatabaseAnalyzer."""
     conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
     if not conn:
         raise HTTPException(404, "Verbindung nicht gefunden")
@@ -166,11 +166,20 @@ def list_tables_only(conn_id: int, db: Session = Depends(get_db), user: User = D
                         tables.append(f"{schema}.{t}")
                 except Exception:
                     pass
+                try:
+                    for v in inspector.get_view_names(schema=schema):
+                        tables.append(f"{schema}.{v}")
+                except Exception:
+                    pass
         else:
             try:
                 tables += inspector.get_table_names()
             except Exception as e:
                 import logging as _l; _l.getLogger("datenmonster").warning(f"Tabellen abrufen fehlgeschlagen: {e}")
+            try:
+                tables += inspector.get_view_names()
+            except Exception:
+                pass
         return {"tables": sorted(set(tables))}
     except Exception as e:
         raise HTTPException(400, str(e)[:500])
@@ -311,6 +320,7 @@ def analyze_schema(
     timeout: int = 30,
     start_table: Optional[str] = None,
     depth: int = 2,
+    selected_tables: Optional[str] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -324,6 +334,7 @@ def analyze_schema(
     - timeout: max. Sekunden pro Tabellen-Analyse (default 30)
     - start_table: Starttabelle für FK-Traversierung (z.B. 'dbo.tRechnung' oder 'tRechnung')
     - depth: Traversierungstiefe ab Starttabelle (1-3, default 2)
+    - selected_tables: Kommagetrennte Whitelist von Tabellen-Keys – lädt nur diese exakt
     """
     conn = _require_read_conn(conn_id, user, db)
     try:
@@ -364,15 +375,35 @@ def analyze_schema(
                         all_table_names.append((schema, t, f"{schema}.{t}"))
                 except Exception:
                     pass
+                try:
+                    for v in inspector.get_view_names(schema=schema):
+                        all_table_names.append((schema, v, f"{schema}.{v}"))
+                except Exception:
+                    pass
         else:
             available_schemas = ["public"]
             for t in inspector.get_table_names():
                 all_table_names.append((None, t, t))
+            try:
+                for v in inspector.get_view_names():
+                    all_table_names.append((None, v, v))
+            except Exception:
+                pass
 
         total_tables = len(all_table_names)
 
+        # ── Whitelist: exakt gewählte Tabellen ───────────────────────────────────
+        if selected_tables and selected_tables.strip():
+            requested = [t.strip() for t in selected_tables.split(",") if t.strip()]
+            # Case-insensitive Match auf table_key oder tname
+            selected_set = set(t.lower() for t in requested)
+            table_names = [
+                e for e in all_table_names
+                if e[2].lower() in selected_set or e[1].lower() in selected_set
+            ]
+
         # ── Starttabelle: FK-Graphen-Traversierung ────────────────────────────
-        if start_table and start_table.strip():
+        elif start_table and start_table.strip():
             st = start_table.strip()
 
             # Starttabelle im all_table_names-Index finden (case-insensitive, mit/ohne Schema)
@@ -431,8 +462,8 @@ def analyze_schema(
                 # Starttabelle nicht gefunden → normaler Lauf mit Hinweis
                 table_names = all_table_names
 
-        # ── Tabellenfilter (nur wenn keine Starttabelle) ──────────────────────
-        elif table_filter and table_filter.strip():
+        # ── Tabellenfilter (nur wenn kein anderer Modus aktiv) ─────────────────
+        elif not selected_tables and table_filter and table_filter.strip():
             tf = table_filter.strip().lower()
             matched = [t for t in all_table_names if tf in t[2].lower()]
 
@@ -469,7 +500,7 @@ def analyze_schema(
                 table_names = [t for t in all_table_names if t[2] in related_keys]
             else:
                 table_names = matched
-        else:
+        elif not selected_tables:
             table_names = all_table_names
 
         # ── Max. Tabellen (harter Stopp) ──────────────────────────────────────
