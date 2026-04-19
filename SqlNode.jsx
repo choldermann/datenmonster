@@ -1,20 +1,16 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronDown, ChevronRight, Database, GripVertical, Plus, X, Minimize2, RefreshCw, Trash2 } from "lucide-react";
 import api from "../../api/client";
+import SqlEditorModal from "./SqlEditorModal";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, onRegisterFieldListRef }) {
+function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs }) {
   const [expanded, setExpanded] = useState(true);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaError, setSchemaError] = useState(null);
-  const fieldListRef = useRef(null);
-  const fieldListCallbackRef = (el) => {
-    fieldListRef.current = el;
-    if (el && onRegisterFieldListRef) {
-      onRegisterFieldListRef(`__sql__${node.id}`, { current: el });
-    }
-  };
+  const [sqlModalOpen, setSqlModalOpen] = useState(false);
+  const [sqlModalValue, setSqlModalValue] = useState("");
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -38,8 +34,6 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
   };
 
   const set = (k, v) => onUpdate({ ...node, [k]: v });
-
-
 
   const loadSchema = useCallback(async () => {
     if (!node.sql?.trim()) return;
@@ -180,12 +174,20 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
 
           {/* SQL */}
           <div>
-            <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: 3 }}>SQL</label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+              <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim }}>SQL</label>
+              <button onClick={(e) => { e.stopPropagation(); setSqlModalValue(node.sql || ""); setSqlModalOpen(true); }}
+                title="SQL-Editor öffnen"
+                style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
+                ⛶ Vollbild
+              </button>
+            </div>
             <textarea
               ref={textareaRef}
               value={node.sql || ""}
               onChange={(e) => set("sql", e.target.value)}
               onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => { e.stopPropagation(); setSqlModalValue(node.sql || ""); setSqlModalOpen(true); }}
               placeholder={mode === "scalar"
                 ? "SELECT name FROM kunden WHERE id = {Kunden.id}"
                 : "SELECT lookup_value FROM ref_table ORDER BY sort_nr"}
@@ -193,6 +195,18 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
               style={{ width: "100%", backgroundColor: S.bgMain, border: `1px solid ${SQL_NODE_COLOR}44`, borderRadius: 4, color: S.textBright, fontSize: 11, fontFamily: "monospace", padding: "5px 7px", outline: "none", resize: "vertical", boxSizing: "border-box", lineHeight: 1.5 }}
             />
           </div>
+
+          {/* SQL Editor Modal */}
+          {sqlModalOpen && (
+            <SqlEditorModal
+              sql={sqlModalValue}
+              connectionId={node.connection_id}
+              dbConnections={dbConnections}
+              canvasNodes={canvasNodes}
+              onSave={(newSql) => { set("sql", newSql); setSqlModalOpen(false); }}
+              onClose={() => setSqlModalOpen(false)}
+            />
+          )}
 
           {/* Output-Feldname (nur Scalar/Column) */}
           {mode !== "transform" && (
@@ -232,7 +246,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
       <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06` }}>
         {mode === "transform" && (node.output_fields || []).length > 0 ? (
           // Transform: scrollbare Liste mit einem Dot pro Output-Feld
-          <div ref={fieldListCallbackRef} onScroll={() => { if (onUpdate) onUpdate({ ...node }); }} style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
+          <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>
                 <span style={{ fontSize: 10, fontFamily: "monospace", color: SQL_NODE_COLOR, opacity: 0.9 }}>{field}</span>
