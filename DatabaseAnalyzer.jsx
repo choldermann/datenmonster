@@ -60,7 +60,10 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const [pathFromSearch, setPathFromSearch] = useState("");
   const [pathToSearch, setPathToSearch] = useState("");
   const [pathFromOpen, setPathFromOpen] = useState(false);
-  const [pathToOpen, setPathToOpen] = useState(false); // "filter" | "start" | "whitelist"
+  const [pathToOpen, setPathToOpen] = useState(false);
+  const [pathVia, setPathVia] = useState([]);
+  const [pathViaSearch, setPathViaSearch] = useState("");
+  const [pathViaOpen, setPathViaOpen] = useState(false); // "filter" | "start" | "whitelist"
   const [whitelistSearch, setWhitelistSearch] = useState("");
   const [whitelistTables, setWhitelistTables] = useState([]); // alle Tabellen für Suche
   const [whitelistLoading, setWhitelistLoading] = useState(false);
@@ -132,6 +135,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       if (configMode === "path" && pathFrom.trim() && pathTo.trim()) {
         params.append("path_from", pathFrom.trim());
         params.append("path_to", pathTo.trim());
+        if (pathVia.length > 0) params.append("path_via", pathVia.join(","));
         params.set("table_limit", 50); // Pfad darf etwas mehr laden
       } else if (configMode === "whitelist" && whitelistSelected.length > 0) {
         params.append("selected_tables", whitelistSelected.join(","));
@@ -596,26 +600,81 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
                 </div>
               </div>
             );
+            const viaFiltered = pathViaSearch.length >= 3
+              ? whitelistTables.filter(t => t.toLowerCase().includes(pathViaSearch.toLowerCase())).slice(0, 20)
+              : [];
+
             return (
               <div>
                 {tableInput("Von", pathFrom, setPathFrom, pathFromSearch, setPathFromSearch, pathFromOpen, setPathFromOpen)}
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-                  <span style={{ fontSize: 18, color: S.textDim }}>↓</span>
+
+                {/* Zwischenstationen */}
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4, marginLeft: 2 }}>
+                    <div style={{ width: 1, height: 10, backgroundColor: S.border }} />
+                  </div>
+                  {pathVia.map((via, idx) => (
+                    <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <div style={{ width: 1, height: 32, backgroundColor: S.border, marginLeft: 2, flexShrink: 0 }} />
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flex: 1,
+                        backgroundColor: S.bgEl, border: "1px solid rgba(110,231,183,0.35)", borderRadius: 4, padding: "5px 10px" }}>
+                        <span style={{ fontSize: 11, fontFamily: "monospace", color: "#6ee7b7" }}>
+                          <span style={{ color: S.textDim, marginRight: 6, fontSize: 9 }}>ÜBER</span>{via}
+                        </span>
+                        <button onClick={() => setPathVia(prev => prev.filter((_, i) => i !== idx))}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, display: "flex" }}>
+                          <X size={11} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {/* Neue Zwischenstation suchen */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <div style={{ width: 1, height: 32, backgroundColor: S.border, marginLeft: 2, flexShrink: 0 }} />
+                    <div style={{ position: "relative", flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.bgEl,
+                        border: `1px solid ${S.border}`, borderRadius: 4, padding: "5px 10px" }}>
+                        <Search size={11} style={{ color: S.textDim, flexShrink: 0 }} />
+                        <input value={pathViaSearch}
+                          onChange={e => { setPathViaSearch(e.target.value); setPathViaOpen(e.target.value.length >= 3); }}
+                          placeholder="Zwischenstation hinzufügen (optional)..."
+                          style={{ background: "none", border: "none", outline: "none", color: S.textDim, fontSize: 11, flex: 1 }} />
+                      </div>
+                      {pathViaOpen && viaFiltered.length > 0 && (
+                        <div style={{ position: "absolute", top: "100%", left: 0, right: 0, zIndex: 100,
+                          backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 4,
+                          maxHeight: 140, overflowY: "auto", marginTop: 2, boxShadow: "0 8px 24px rgba(0,0,0,0.5)" }}>
+                          {viaFiltered.map(t => (
+                            <div key={t} onClick={() => { if (!pathVia.includes(t)) setPathVia(prev => [...prev, t]); setPathViaSearch(""); setPathViaOpen(false); }}
+                              style={{ padding: "5px 12px", fontSize: 11, fontFamily: "monospace", color: S.textMain, cursor: "pointer", borderBottom: `1px solid ${S.border}` }}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.05)"}
+                              onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                              {t}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ width: 1, height: 10, backgroundColor: S.border, marginLeft: 2, marginBottom: 4 }} />
                 </div>
+
                 {tableInput("Nach", pathTo, setPathTo, pathToSearch, setPathToSearch, pathToOpen, setPathToOpen)}
+
                 {pathFrom && pathTo && (
-                  <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.2)", marginTop: 4 }}>
-                    <p style={{ fontSize: 11, color: S.accent, margin: 0 }}>
-                      Sucht kürzesten Weg: <span style={{ fontFamily: "monospace" }}>{pathFrom}</span> → <span style={{ fontFamily: "monospace" }}>{pathTo}</span>
+                  <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)",
+                    border: "1px solid rgba(252,228,153,0.2)", marginTop: 8 }}>
+                    <p style={{ fontSize: 11, color: S.accent, margin: 0, fontFamily: "monospace" }}>
+                      {pathFrom}{pathVia.length > 0 ? " → " + pathVia.join(" → ") : ""} → {pathTo}
                     </p>
                     <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0" }}>
-                      Alle Tabellen auf dem Weg werden automatisch geladen. FK-Beziehungen, k-Felder und JTL-Muster werden berücksichtigt.
+                      {pathVia.length > 0 ? "Sucht Weg über die angegebenen Zwischenstationen." : "Kürzester Weg – füge Zwischenstationen hinzu für mehr Kontrolle."}
                     </p>
                   </div>
                 )}
                 {!pathFrom && !pathTo && (
                   <p style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>
-                    Wähle Start- und Zieltabelle – Datenmonster findet den kürzesten Weg über FK/k-Feld Beziehungen.
+                    Wähle Start- und Zieltabelle – füge optional Zwischenstationen hinzu.
                   </p>
                 )}
               </div>
@@ -709,7 +768,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
         )}
         {schema && configMode === "path" && pathFrom && pathTo && (
           <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, backgroundColor: "rgba(252,228,153,0.12)", border: "1px solid rgba(252,228,153,0.3)", color: S.accent }}>
-            → {pathFrom} … {pathTo}
+            → {pathFrom}{pathVia.length > 0 ? " → " + pathVia.join(" → ") : ""} → {pathTo}
           </span>
         )}
         <div style={{ flex: 1 }} />
