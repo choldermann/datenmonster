@@ -159,7 +159,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       setError(e.response?.data?.detail || e.message);
       setPhase("error");
     }
-  }, [connection.id, tableLimit, schemaFilter, startTable, traversalDepth, configMode, whitelistSelected, tableFilter, includeRelated]);
+  }, [connection.id, tableLimit, schemaFilter, startTable, traversalDepth, configMode, whitelistSelected, tableFilter, includeRelated, pathFrom, pathTo, pathVia]);
 
   const startNodeDrag = (e, tableKey) => {
     e.stopPropagation();
