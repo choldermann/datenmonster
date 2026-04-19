@@ -7,6 +7,7 @@ const TYPE_COLORS = { integer: "#93c5fd", decimal: "#6ee7b7", date: "#fcd34d", b
 const TYPE_LABELS = { integer: "INT", decimal: "DEC", date: "DAT", boolean: "BOL", string: "STR" };
 const FK_COLOR = "#6ee7b7";
 const IMPLICIT_COLOR = "#fcd34d";
+const INFERRED_COLOR = "#fb923c";
 const NODE_W = 220;
 const NODE_HEADER = 36;
 const ROW_H = 22;
@@ -41,7 +42,9 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [panDragging, setPanDragging] = useState(null);
   const [search, setSearch] = useState("");
+  const [showFK, setShowFK] = useState(true);
   const [showImplicit, setShowImplicit] = useState(true);
+  const [showInferred, setShowInferred] = useState(true);
   const [tableLimit, setTableLimit] = useState(25);
   const [schemaFilter, setSchemaFilter] = useState("");
   const [availableSchemas, setAvailableSchemas] = useState([]);
@@ -298,7 +301,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
   const computeEdges = () => {
     if (!schema) return [];
     return schema.relationships
-      .filter(r => showImplicit || r.type === "foreign_key")
+      .filter(r => (showFK && r.type === "foreign_key") || (showImplicit && r.type === "implicit") || (showInferred && r.type === "inferred"))
       .filter(r => !hiddenTables.has(r.from_table) && !hiddenTables.has(r.to_table))
       .map(rel => {
         const from = positions[rel.from_table];
@@ -312,7 +315,8 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
         const fromY = from.y + NODE_HEADER + NODE_PADDING + (fromColIdx >= 0 ? fromColIdx * ROW_H + ROW_H / 2 : ROW_H / 2);
         const toY = to.y + NODE_HEADER + NODE_PADDING + (toColIdx >= 0 ? toColIdx * ROW_H + ROW_H / 2 : ROW_H / 2);
         const cx = (from.x + from.w + to.x) / 2;
-        return { ...rel, path: `M ${from.x + from.w} ${fromY} C ${cx} ${fromY} ${cx} ${toY} ${to.x} ${toY}`, color: rel.type === "foreign_key" ? FK_COLOR : IMPLICIT_COLOR };
+        const edgeColor = rel.type === "foreign_key" ? FK_COLOR : rel.type === "inferred" ? INFERRED_COLOR : IMPLICIT_COLOR;
+        return { ...rel, path: `M ${from.x + from.w} ${fromY} C ${cx} ${fromY} ${cx} ${toY} ${to.x} ${toY}`, color: edgeColor };
       }).filter(Boolean);
   };
 
@@ -637,9 +641,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Tabelle suchen..."
             style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textMain, fontSize: 11, padding: "5px 8px 5px 26px", width: 160, outline: "none" }} />
         </div>
-        <button onClick={() => setShowImplicit(v => !v)} style={{ fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer", border: `1px solid ${showImplicit ? IMPLICIT_COLOR + "66" : S.border}`, backgroundColor: showImplicit ? IMPLICIT_COLOR + "15" : "transparent", color: showImplicit ? IMPLICIT_COLOR : S.textDim }}>
-          Implizit
-        </button>
+
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><ZoomOut size={14} /></button>
           <span style={{ fontSize: 10, color: S.textDim, minWidth: 36, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
@@ -670,14 +672,17 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       </div>
 
       {/* Legende + Truncated-Warnung */}
-      <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "6px 16px", backgroundColor: S.bgCard, borderBottom: `1px solid ${S.border}`, flexShrink: 0, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: FK_COLOR }}>
-          <div style={{ width: 20, height: 2, backgroundColor: FK_COLOR }} /> Foreign Key
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: IMPLICIT_COLOR }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 16px", backgroundColor: S.bgCard, borderBottom: `1px solid ${S.border}`, flexShrink: 0, flexWrap: "wrap" }}>
+        <button onClick={() => setShowFK(v => !v)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, cursor: "pointer", background: "none", border: "none", padding: "2px 6px", borderRadius: 4, opacity: showFK ? 1 : 0.35, color: FK_COLOR }}>
+          <div style={{ width: 20, height: 2, backgroundColor: FK_COLOR, borderRadius: 1 }} /> Foreign Key
+        </button>
+        <button onClick={() => setShowImplicit(v => !v)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, cursor: "pointer", background: "none", border: "none", padding: "2px 6px", borderRadius: 4, opacity: showImplicit ? 1 : 0.35, color: IMPLICIT_COLOR }}>
           <div style={{ width: 20, height: 0, borderTop: `2px dashed ${IMPLICIT_COLOR}` }} /> Implizit
-        </div>
-        <span style={{ fontSize: 10, color: S.textDim }}>Klick = Details · Ziehen = Verschieben · Mausrad = Zoom · Hintergrund ziehen = Pan</span>
+        </button>
+        <button onClick={() => setShowInferred(v => !v)} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, cursor: "pointer", background: "none", border: "none", padding: "2px 6px", borderRadius: 4, opacity: showInferred ? 1 : 0.35, color: INFERRED_COLOR }}>
+          <div style={{ width: 20, height: 0, borderTop: `2px dashed ${INFERRED_COLOR}` }} /> Vermutet (k-Feld)
+        </button>
+        <span style={{ fontSize: 10, color: S.textDim, marginLeft: 8 }}>Klick = Details · Ziehen = Verschieben · Mausrad = Zoom · Hintergrund ziehen = Pan</span>
         {schema?.truncated && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto", fontSize: 11, color: "#fbbf24", padding: "3px 10px", borderRadius: 4, backgroundColor: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)" }}>
             <AlertTriangle size={12} />
@@ -711,11 +716,11 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
                   <rect x={0} y={0} width={pos.w} height={nodeH} rx={6} fill={S.bgCard} stroke={isSelected ? S.accent : S.border} strokeWidth={isSelected ? 2 : 1} />
                   <rect x={0} y={0} width={pos.w} height={NODE_HEADER} rx={6} fill={isSelected ? "rgba(252,228,153,0.12)" : "rgba(255,255,255,0.04)"} />
                   <rect x={0} y={NODE_HEADER - 6} width={pos.w} height={6} fill={isSelected ? "rgba(252,228,153,0.12)" : "rgba(255,255,255,0.04)"} />
-                  <text x={10} y={13} fontSize={8} fill={S.textDim} fontFamily="monospace" style={{ pointerEvents: "none" }}>
-                    {table.schema || "dbo"}
+                  <text x={10} y={13} fontSize={8} fill={isSelected ? S.accent : S.textBright} fontFamily="monospace" style={{ pointerEvents: "none" }} opacity={0.5}>
+                    {table.schema || "dbo"}.
                   </text>
                   <text x={10} y={27} fontSize={12} fontWeight={700} fill={isSelected ? S.accent : S.textBright} fontFamily="monospace" style={{ pointerEvents: "none" }}>
-                    {table.name.length > 22 ? table.name.slice(0, 22) + "..." : table.name}
+                    {table.name.length > 22 ? table.name.slice(0, 22) + "…" : table.name}
                   </text>
                   {table.row_count != null && <text x={pos.w - 10} y={22} fontSize={9} fill={S.textDim} textAnchor="end" fontFamily="monospace">{table.row_count.toLocaleString()}</text>}
                   {markedTables.has(table.key) && (

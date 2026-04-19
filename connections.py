@@ -597,6 +597,7 @@ def analyze_schema(
         implicit_rels = []
         seen_pairs = set()
         key_pattern = re.compile(r'^(k[A-Z]|.*[Ii]d$|.*_id$|.*ID$)')
+        k_prefix_pattern = re.compile(r'^k[A-Z]')
         for field_name, table_keys in field_index.items():
             if len(table_keys) < 2:
                 continue
@@ -606,8 +607,11 @@ def analyze_schema(
                 field_name in next((t["pk_columns"] for t in tables if t["key"] == tk), [])
                 for tk in table_keys
             )
-            if not is_pk_somewhere:
+            # k-Prefix Felder auch ohne PK erlauben (Views haben keine PKs) → Typ "inferred"
+            is_k_prefix = bool(k_prefix_pattern.match(field_name))
+            if not is_pk_somewhere and not is_k_prefix:
                 continue
+            rel_type = "implicit" if is_pk_somewhere else "inferred"
             for i, tk1 in enumerate(table_keys):
                 for tk2 in table_keys[i+1:]:
                     pair = tuple(sorted([tk1, tk2, field_name]))
@@ -625,7 +629,7 @@ def analyze_schema(
                             "from_col": field_name,
                             "to_table": tk2,
                             "to_col": field_name,
-                            "type": "implicit",
+                            "type": rel_type,
                         })
 
         implicit_rels = implicit_rels[:implicit_limit]
@@ -674,7 +678,7 @@ def analyze_schema(
                     "from_col": col_name,
                     "to_table": ref_key,
                     "to_col": ref_col,
-                    "type": "implicit",
+                    "type": "inferred",
                 })
 
         # Starttabelle in Response mitgeben (für Frontend-Info)
@@ -694,7 +698,8 @@ def analyze_schema(
             "tables": tables,
             "relationships": explicit_rels + implicit_rels + jtl_rels,
             "explicit_count": len(explicit_rels),
-            "implicit_count": len(implicit_rels) + len(jtl_rels),
+            "implicit_count": len([r for r in implicit_rels if r["type"] == "implicit"]),
+            "inferred_count": len([r for r in implicit_rels if r["type"] == "inferred"]) + len(jtl_rels),
             "start_table_key": start_table_key,
         }
 
