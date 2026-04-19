@@ -35,7 +35,7 @@ function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constan
         // Fallback: legacy fields-Liste
         targets:         targets?.length ? targets : undefined,
         fields:          !targets?.length ? connections : undefined,
-        preview_rows: 500,  // Mehr Zeilen für korrekte Sortierung
+        preview_rows: 50,
       });
       setResult(data);
     } catch (e) {

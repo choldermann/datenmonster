@@ -1344,7 +1344,7 @@ def execute_mapping(
                         _has_limit = bool(_re2.search('TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
                         if not _has_limit:
                             if _dialect == 'mssql':
-                                _exec_sql = _re2.sub('(?i)^(\s*SELECT)(\s)', '\\1 TOP ' + str(preview_rows) + '\\2', _exec_sql, count=1)
+                                _exec_sql = 'SELECT TOP ' + str(preview_rows) + ' ' + _re2.sub(r'(?i)^\s*SELECT\s+', '', _exec_sql, count=1)
                             else:
                                 _exec_sql = _exec_sql + ' LIMIT ' + str(preview_rows)
                     result_df = _pd_t.read_sql(_exec_sql, ext_engine)
