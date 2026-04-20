@@ -404,7 +404,6 @@ export default function MappingEditor() {
   };
 
   const [isExecuting, setIsExecuting] = useState(false);
-  const [exportSuccess, setExportSuccess] = useState(null);
   const [executeStatus, setExecuteStatus] = useState(null); // { done, total, errors }
   const abortRef = useRef(false);
 
