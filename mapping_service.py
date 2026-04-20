@@ -10,6 +10,31 @@ from typing import List, Dict, Any, Optional
 from app.connectors import get_connector
 
 
+def _rows_to_json(rows: list) -> list:
+    """Konvertiert DataFrame-Rows zu JSON-kompatiblen Werten ohne Locale-Effekte."""
+    import math
+    result = []
+    for row in rows:
+        clean = {}
+        for k, v in row.items():
+            if v is None:
+                clean[k] = None
+            elif hasattr(v, 'item'):  # numpy scalar
+                v = v.item()
+                if isinstance(v, float):
+                    clean[k] = None if math.isnan(v) else (int(v) if v == int(v) else v)
+                else:
+                    clean[k] = v
+            elif isinstance(v, float):
+                clean[k] = None if math.isnan(v) else (int(v) if v == int(v) else v)
+            elif hasattr(v, 'isoformat'):  # datetime
+                clean[k] = v.isoformat()
+            else:
+                clean[k] = v
+        result.append(clean)
+    return result
+
+
 # ─── Sicherer Formel-Evaluator ────────────────────────────────────────────────
 # Ersetzt eval() – erlaubt nur arithmetische Ausdrücke und Vergleiche.
 # Kein Attributzugriff, keine Funktionsaufrufe, kein Import möglich.
@@ -323,7 +348,7 @@ def run_mapping_object(
         df_out = _pd.DataFrame(result["rows"], columns=result["columns"])
         df_out, cast_errors = _apply_target_types(df_out, preview_connections)
         errors.extend(cast_errors)
-        result["rows"] = df_out.where(df_out.notna(), other=None).to_dict("records")
+        result["rows"] = _rows_to_json(df_out.where(df_out.notna(), other=None).to_dict("records"))
 
     # ── column_types immer berechnen ────────────────────────────────────────
     column_types = {}
@@ -1061,19 +1086,13 @@ def execute_mapping(
         ds_name = node.get("dataset_name", str(ds_id))
         try:
             connector = get_connector(ds_id)
-            # normalize=False: Typen (INT, FLOAT) beibehalten für korrekte Cross-DB JOINs
-            # Bei JOINs immer fetch_full() – fetch_preview liefert zu wenig Zeilen für Match
-            _use_normalize = not joins  # Bei JOINs: echte Typen behalten
             if is_preview and not (node.get("filters")) and not agg_nodes and not joins:
-                try:
-                    df = connector.fetch_preview(limit=preview_rows * 3, normalize=False)
-                except TypeError:
-                    df = connector.fetch_preview(limit=preview_rows * 3)
+                # Für reine Vorschau ohne Filter, Aggregation und JOINs: nur preview_rows laden
+                # Bei JOINs immer fetch_full() – sonst keine Übereinstimmungen möglich
+                df = connector.fetch_preview(limit=preview_rows * 3)
             else:
-                try:
-                    df = connector.fetch_full(normalize=False)
-                except TypeError:
-                    df = connector.fetch_full()
+                # Bei Aggregation, Filtern oder JOINs immer alle Daten laden
+                df = connector.fetch_full()
             # Apply cast rules
             cast_rules = node.get("cast_rules") or {}
             if cast_rules:
@@ -1776,7 +1795,7 @@ def execute_mapping(
 
     # Wenn keine Connections aber agg_nodes oder transform_sql: Spalten aus result_df
     if not connections and has_transform_sql and result_df is not None:
-        output_rows = result_df.to_dict(orient="records")
+        output_rows = _rows_to_json(result_df.to_dict(orient="records"))
         total = len(output_rows)
     elif not connections and agg_nodes:
         for _, raw_row in result_df.iterrows():
@@ -1794,7 +1813,7 @@ def execute_mapping(
         valid_fields = {src: tgt for src, tgt in mapped_fields.items() if src in result_df.columns}
         if valid_fields:
             df_mapped = result_df[list(valid_fields.keys())].rename(columns=valid_fields)
-            output_rows = df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records")
+            output_rows = _rows_to_json(df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records"))
             total = len(output_rows)
             target_columns = list(valid_fields.values())
             # Sortierung + Limit
@@ -1805,7 +1824,7 @@ def execute_mapping(
                         _by = [sf["field"] for sf in _sf]
                         _asc = [sf.get("dir", "asc") == "asc" for sf in _sf]
                         df_mapped = df_mapped.sort_values(by=_by, ascending=_asc)
-                        output_rows = df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records")
+                        output_rows = _rows_to_json(df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records"))
                     except Exception:
                         pass
                 _limit = target_options.get("row_limit")
@@ -2104,7 +2123,7 @@ def execute_mapping(
             except Exception as e:
                 errors.append(f"Berechnungs-Node '{calc_type}': {str(e)[:100]}")
 
-        output_rows = df_calc.to_dict("records")
+        output_rows = _rows_to_json(df_calc.to_dict("records"))
 
     # ── Sortierung + Limit aus target_options ──────────────────────────────────
     if target_options and output_rows:
@@ -2155,7 +2174,7 @@ def execute_mapping(
                     _sort_df = _sort_df.sort_values(by=_sort_by_temp, ascending=_asc)
                     # Temporäre Spalten wieder entfernen
                     _sort_df = _sort_df.drop(columns=list(_temp_cols.values()), errors="ignore")
-                    output_rows = _sort_df.to_dict(orient="records")
+                    output_rows = _rows_to_json(_sort_df.to_dict(orient="records"))
             except Exception as _e:
                 errors.append(f"Sortierung fehlgeschlagen: {_e}")
         if _row_limit and isinstance(_row_limit, int) and _row_limit > 0:

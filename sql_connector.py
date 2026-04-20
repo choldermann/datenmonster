@@ -1,7 +1,7 @@
 """
 SqlConnector – MSSQL, MySQL, PostgreSQL via SQLAlchemy.
-Unterstützt Pushdown: Filter, Joins und einfache Transforms
-werden als SQL auf dem Server ausgeführt.
+Liefert echte pandas-Typen (int64, float64, datetime64) statt alles als String.
+Konsistent mit FileConnector der Parquet (typisiert) liest.
 """
 from typing import List, Optional, Iterator
 import pandas as pd
@@ -9,27 +9,44 @@ import pandas as pd
 from app.connectors.base import BaseConnector
 
 
-def _decode_value(v):
-    """Bytes sicher zu String – für pymssql-Rückgaben."""
-    if v is None:
-        return None
-    if isinstance(v, bytes):
-        for enc in ("utf-8", "cp1252", "latin-1"):
-            try:
-                return v.decode(enc)
-            except (UnicodeDecodeError, LookupError):
-                continue
-        return v.decode("latin-1", errors="replace")
-    return v
+def _decode_bytes(df: pd.DataFrame) -> pd.DataFrame:
+    """Konvertiert Bytes-Spalten zu Strings – für pymssql-Rückgaben."""
+    for col in df.columns:
+        sample = df[col].dropna()
+        if len(sample) > 0 and isinstance(sample.iloc[0], bytes):
+            df[col] = df[col].apply(
+                lambda v: v.decode("utf-8", errors="replace") if isinstance(v, bytes) else v
+            )
+    return df
 
 
-def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
+def _fix_types(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Konvertiert alle Werte zu Strings/None – einheitlich wie JSON-Datasets.
-    Ganzzahlen werden ohne Nachkommastelle ausgegeben (1 statt 1.0).
+    Bereinigt DataFrame nach DB-Fetch:
+    - Bytes → String
+    - Decimal → float64
+    - Echte int/float/datetime Typen bleiben erhalten
+    - None/NaT bleiben als pandas NA
+    """
+    df = _decode_bytes(df)
+    for col in df.columns:
+        sample = df[col].dropna()
+        if len(sample) == 0:
+            continue
+        first = sample.iloc[0]
+        # decimal.Decimal → float
+        if hasattr(first, 'is_finite'):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    return df
+
+
+def _to_display(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Konvertiert DataFrame für API-Ausgabe zu Strings.
+    Nur für Endpoints die JSON zurückgeben – NICHT für Mapping-Verarbeitung.
     """
     import math
-    def _convert(v):
+    def _conv(v):
         if v is None:
             return None
         if hasattr(v, '__class__') and v.__class__.__name__ == 'NaTType':
@@ -37,16 +54,18 @@ def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
         if isinstance(v, float):
             if math.isnan(v):
                 return None
-            # Ganzzahlige Floats ohne .0 ausgeben
             if v == int(v):
                 return str(int(v))
             return str(v)
         if isinstance(v, bytes):
-            return _decode_value(v)
+            for enc in ("utf-8", "cp1252", "latin-1"):
+                try:
+                    return v.decode(enc)
+                except Exception:
+                    continue
+            return v.decode("latin-1", errors="replace")
         if isinstance(v, str):
             return v
-        # int, Decimal, numpy-Typen etc.
-        # Prüfe ob Wert ganzzahlig ist
         try:
             iv = int(v)
             if iv == v:
@@ -55,19 +74,15 @@ def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
             pass
         return str(v)
 
-    for col in df.columns:
-        df[col] = df[col].apply(_convert)
-    return df
+    result = df.copy()
+    for col in result.columns:
+        result[col] = result[col].apply(_conv)
+    return result
 
 
 class SqlConnector(BaseConnector):
 
     def __init__(self, db_type: str, connection_string: str, sql: str):
-        """
-        db_type:           'mssql' | 'mysql' | 'postgresql'
-        connection_string: SQLAlchemy connection URL
-        sql:               Source SQL (z.B. 'SELECT * FROM tArtikel')
-        """
         self.db_type = db_type
         self.connection_string = connection_string
         self.sql = sql.strip().rstrip(";")
@@ -84,7 +99,6 @@ class SqlConnector(BaseConnector):
             self._engine = create_engine(
                 self.connection_string,
                 connect_args=connect_args,
-                # Connection pooling für wiederholte Abfragen
                 pool_size=2,
                 max_overflow=3,
                 pool_timeout=30,
@@ -92,9 +106,7 @@ class SqlConnector(BaseConnector):
         return self._engine
 
     def _limit_sql(self, limit: int) -> str:
-        """Dialect-agnostisches LIMIT/TOP – kein Subquery-Wrap um doppelte Spalten zu vermeiden."""
         if self.db_type == "mssql":
-            # TOP direkt in das SELECT injizieren statt Subquery-Wrap
             sql_stripped = self.sql.strip()
             upper = sql_stripped.upper().lstrip()
             if upper.startswith("SELECT DISTINCT "):
@@ -102,69 +114,55 @@ class SqlConnector(BaseConnector):
             elif upper.startswith("SELECT "):
                 return sql_stripped[:7] + f"TOP {limit} " + sql_stripped[7:]
             else:
-                # Fallback: Subquery (z.B. bei CTEs)
                 return f"SELECT TOP {limit} * FROM ({self.sql}) AS _preview"
         else:
             return f"SELECT * FROM ({self.sql}) AS _preview LIMIT {limit}"
 
+    def _execute(self, sql: str) -> pd.DataFrame:
+        """Führt SQL aus und gibt typisierten DataFrame zurück."""
+        from sqlalchemy import text
+        engine = self._get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text(sql))
+            cols = list(result.keys())
+            rows = result.fetchall()
+        if not rows:
+            return pd.DataFrame(columns=cols)
+        df = pd.DataFrame([dict(zip(cols, row)) for row in rows], columns=cols)
+        return _fix_types(df)
+
     def get_columns(self) -> List[str]:
-        return list(self.fetch_preview(limit=1).columns)
+        return list(self._execute(self._limit_sql(1)).columns)
 
     def get_row_count(self) -> Optional[int]:
         from sqlalchemy import text
         try:
             engine = self._get_engine()
             with engine.connect() as conn:
-                if self.db_type == "mssql":
-                    # MSSQL: doppelte Spalten im Subquery verboten → rowcount via @@ROWCOUNT trick
-                    count_sql = f"SELECT COUNT(1) FROM ({self.sql}) AS _cw"
-                else:
-                    count_sql = f"SELECT COUNT(*) FROM ({self.sql}) AS _cw"
+                count_sql = (f"SELECT COUNT(1) FROM ({self.sql}) AS _cw"
+                             if self.db_type == "mssql"
+                             else f"SELECT COUNT(*) FROM ({self.sql}) AS _cw")
                 return conn.execute(text(count_sql)).scalar()
         except Exception:
             return None
 
-    def fetch_preview(self, limit: int = 50, normalize: bool = True) -> pd.DataFrame:
-        from sqlalchemy import text
-        engine = self._get_engine()
-        with engine.connect() as conn:
-            result = conn.execute(text(self._limit_sql(limit)))
-            cols = list(result.keys())
-            rows = [dict(zip(cols, row)) for row in result.fetchall()]
-        df = pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
-        if normalize:
-            return _normalize_df(df)
-        for col in df.columns:
-            try:
-                converted = pd.to_numeric(df[col], errors='ignore')
-                if converted.dtype != object:
-                    df[col] = converted
-            except Exception:
-                pass
-        return df
+    def fetch_preview(self, limit: int = 50) -> pd.DataFrame:
+        """Für Mapping-Verarbeitung: echte Typen."""
+        return self._execute(self._limit_sql(limit))
 
-    def fetch_full(self, normalize: bool = True) -> pd.DataFrame:
-        from sqlalchemy import text
-        engine = self._get_engine()
-        with engine.connect() as conn:
-            result = conn.execute(text(self.sql))
-            cols = list(result.keys())
-            rows = [dict(zip(cols, row)) for row in result.fetchall()]
-        df = pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
-        if normalize:
-            return _normalize_df(df)
-        # Ohne normalize: numerische Spalten als echte Zahlen behalten
-        for col in df.columns:
-            try:
-                converted = pd.to_numeric(df[col], errors='ignore')
-                if converted.dtype != object:
-                    df[col] = converted
-            except Exception:
-                pass
-        return df
+    def fetch_full(self) -> pd.DataFrame:
+        """Für Mapping-Verarbeitung: echte Typen."""
+        return self._execute(self.sql)
+
+    def fetch_preview_display(self, limit: int = 50) -> pd.DataFrame:
+        """Für API-Ausgabe: String-konvertiert."""
+        return _to_display(self._execute(self._limit_sql(limit)))
+
+    def fetch_full_display(self) -> pd.DataFrame:
+        """Für API-Ausgabe: String-konvertiert."""
+        return _to_display(self._execute(self.sql))
 
     def fetch_chunks(self, chunk_size: int = 10000) -> Iterator[pd.DataFrame]:
-        """Stream-basiertes Laden für große Tabellen."""
         from sqlalchemy import text
         engine = self._get_engine()
         with engine.connect() as conn:
@@ -174,9 +172,8 @@ class SqlConnector(BaseConnector):
                 batch = result.fetchmany(chunk_size)
                 if not batch:
                     break
-                rows = [dict(zip(cols, row)) for row in batch]
-                df = pd.DataFrame(rows, columns=cols)
-                yield _normalize_df(df)
+                df = pd.DataFrame([dict(zip(cols, row)) for row in batch], columns=cols)
+                yield _fix_types(df)
 
     def supports_pushdown(self) -> bool:
         return True
@@ -184,16 +181,3 @@ class SqlConnector(BaseConnector):
     @property
     def connector_type(self) -> str:
         return f"sql_{self.db_type}"
-
-    def build_connection_string(db_type: str, host: str, port: int,
-                                database: str, username: str, password: str) -> str:
-        """Hilfsfunktion: baut Connection-String aus Einzelteilen."""
-        if db_type == "mssql":
-            from urllib.parse import quote_plus
-            params = quote_plus(f"DRIVER={{ODBC Driver 18 for SQL Server}};SERVER={host},{port};DATABASE={database};UID={username};PWD={password};TrustServerCertificate=yes")
-            return f"mssql+pyodbc:///?odbc_connect={params}"
-        elif db_type == "mysql":
-            return (f"mysql+pymysql://{username}:{password}@{host}:{port}/{database}?charset=utf8mb4")
-        elif db_type == "postgresql":
-            return (f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}")
-        raise ValueError(f"Unbekannter db_type: {db_type}")

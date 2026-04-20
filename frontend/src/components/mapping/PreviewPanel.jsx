@@ -142,8 +142,8 @@ function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constan
                             const ctype = result.column_types?.[col]?.type;
                             if (val === null || val === undefined) return <span style={{ color: S.textDim, fontStyle: "italic" }}>null</span>;
                             if (ctype === "boolean") return <span style={{ color: val ? "#6ee7b7" : "#e07070" }}>{val ? "✓ true" : "✗ false"}</span>;
-                            if (ctype === "integer") return <span style={{ color: "#93c5fd" }}>{typeof val === "number" ? val.toLocaleString("de-DE") : val}</span>;
-                            if (ctype === "decimal") return <span style={{ color: "#6ee7b7" }}>{typeof val === "number" ? val.toLocaleString("de-DE", { maximumFractionDigits: 6 }) : val}</span>;
+                            if (ctype === "integer") return <span style={{ color: "#93c5fd" }}>{val}</span>;
+                            if (ctype === "decimal") return <span style={{ color: "#6ee7b7" }}>{val}</span>;
                             if (ctype === "date" || ctype === "datetime") return <span style={{ color: "#fcd34d" }}>{String(val)}</span>;
                             return <span style={{ color: S.textMain }}>{String(val)}</span>;
                           })()}
