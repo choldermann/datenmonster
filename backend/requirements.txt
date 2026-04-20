@@ -22,3 +22,4 @@ xhtml2pdf==0.2.16
 reportlab==4.2.5
 cryptography==43.0.3
 duckdb>=1.0.0
+psutil>=5.9.0
