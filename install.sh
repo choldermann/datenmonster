@@ -30,6 +30,7 @@ INSTALL_DIR="${INSTALL_DIR:-$HOME/datenmonster}"
 FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 AUTO_START=true
+AUTO_YES=false
 GITHUB_REPO="https://github.com/HoldermannIT/datenmonster"
 GITHUB_ARCHIVE="https://github.com/HoldermannIT/datenmonster/archive/refs/heads/main.zip"
 
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --dir)        INSTALL_DIR="$2"; shift 2 ;;
     --port)       FRONTEND_PORT="$2"; shift 2 ;;
     --no-start)   AUTO_START=false; shift ;;
+    --yes|-y)     AUTO_YES=true; shift ;;
     --help|-h)
       echo "Verwendung: install.sh [--dir PFAD] [--port PORT] [--no-start]"
       echo "  --dir       Installationsverzeichnis (Standard: ~/datenmonster)"
@@ -487,10 +489,12 @@ main() {
   echo -e "${BOLD}Frontend-Port:${NC}            $FRONTEND_PORT"
   echo -e "${BOLD}Backend-Port:${NC}             $BACKEND_PORT"
   echo ""
-  read -rp "Fortfahren? [J/n] " confirm
-  if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
-    echo "Installation abgebrochen."
-    exit 0
+  if [[ "$AUTO_YES" != "true" ]]; then
+    read -rp "Fortfahren? [J/n] " confirm
+    if [[ "$confirm" == "n" || "$confirm" == "N" ]]; then
+      echo "Installation abgebrochen."
+      exit 0
+    fi
   fi
 
   detect_os
