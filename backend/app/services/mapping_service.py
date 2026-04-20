@@ -1061,13 +1061,19 @@ def execute_mapping(
         ds_name = node.get("dataset_name", str(ds_id))
         try:
             connector = get_connector(ds_id)
+            # normalize=False: Typen (INT, FLOAT) beibehalten für korrekte Cross-DB JOINs
+            # Bei JOINs immer fetch_full() – fetch_preview liefert zu wenig Zeilen für Match
+            _use_normalize = not joins  # Bei JOINs: echte Typen behalten
             if is_preview and not (node.get("filters")) and not agg_nodes and not joins:
-                # Für reine Vorschau ohne Filter, Aggregation und JOINs: nur preview_rows laden
-                # Bei JOINs immer fetch_full() – sonst keine Übereinstimmungen möglich
-                df = connector.fetch_preview(limit=preview_rows * 3)
+                try:
+                    df = connector.fetch_preview(limit=preview_rows * 3, normalize=False)
+                except TypeError:
+                    df = connector.fetch_preview(limit=preview_rows * 3)
             else:
-                # Bei Aggregation, Filtern oder JOINs immer alle Daten laden
-                df = connector.fetch_full()
+                try:
+                    df = connector.fetch_full(normalize=False)
+                except TypeError:
+                    df = connector.fetch_full()
             # Apply cast rules
             cast_rules = node.get("cast_rules") or {}
             if cast_rules:
