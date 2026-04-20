@@ -840,29 +840,73 @@ def _load_dataset(dataset_id: int) -> pd.DataFrame:
 def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
                 left_field: str, right_field: str,
                 join_type: str, left_name: str, right_name: str) -> pd.DataFrame:
-    # Rename columns to avoid conflicts: dataset_name.field
-    left_renamed = {c: f"{left_name}.{c}" if "." not in c else c for c in left_df.columns}
-    right_renamed = {c: f"{right_name}.{c}" if "." not in c else c for c in right_df.columns}
-    left_df = left_df.rename(columns=left_renamed)
-    right_df = right_df.rename(columns=right_renamed)
+    """
+    JOIN via DuckDB – löst Type-Mismatch (INT vs STRING) automatisch,
+    funktioniert mit beliebigen Quellen (MySQL, MSSQL, CSV, Excel...).
+    """
+    import duckdb
+    import re
 
-    left_key = left_renamed.get(left_field, left_field)
-    right_key = right_renamed.get(right_field, right_field)
+    def _safe_alias(name: str) -> str:
+        """Tabellenname für DuckDB-SQL sicher machen."""
+        return re.sub(r'[^a-zA-Z0-9_]', '_', name) if name else "tbl"
 
-    how_map = {
-        "INNER JOIN": "inner",
-        "LEFT JOIN": "left",
-        "RIGHT JOIN": "right",
-        "FULL OUTER JOIN": "outer",
-    }
-    how = how_map.get(join_type, "inner")
+    # Spaltennamen mit Dataset-Prefix versehen (Konflikte vermeiden)
+    def _prefix_columns(df: pd.DataFrame, prefix: str) -> pd.DataFrame:
+        if not prefix:
+            return df
+        renamed = {c: f"{prefix}.{c}" if "." not in c else c for c in df.columns}
+        return df.rename(columns=renamed)
+
+    l_alias = _safe_alias(left_name)  if left_name  else "left_tbl"
+    r_alias = _safe_alias(right_name) if right_name else "right_tbl"
+
+    # Wenn beide Aliase gleich sind (z.B. beide ""), unterscheiden
+    if l_alias == r_alias:
+        r_alias = r_alias + "_r"
+
+    left_prefixed  = _prefix_columns(left_df,  left_name)
+    right_prefixed = _prefix_columns(right_df, right_name)
+
+    left_key  = f"{left_name}.{left_field}"   if left_name  and "." not in left_field  else left_field
+    right_key = f"{right_name}.{right_field}" if right_name and "." not in right_field else right_field
+
+    # Spaltenname für DuckDB escapen (Punkte → Anführungszeichen)
+    def _esc(col: str) -> str:
+        return f'"{col}"'
+
+    join_type_sql = join_type if join_type in (
+        "INNER JOIN", "LEFT JOIN", "RIGHT JOIN", "FULL OUTER JOIN"
+    ) else "INNER JOIN"
+
+    sql = (
+        f"SELECT * FROM left_tbl {join_type_sql} right_tbl "
+        f"ON CAST(left_tbl.{_esc(left_key)} AS VARCHAR) = "
+        f"   CAST(right_tbl.{_esc(right_key)} AS VARCHAR)"
+    )
 
     try:
-        merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"))
+        con = duckdb.connect()
+        con.register("left_tbl",  left_prefixed)
+        con.register("right_tbl", right_prefixed)
+        result = con.execute(sql).df()
+        con.close()
+        return result
     except Exception as e:
-        raise ValueError(f"Join fehlgeschlagen: {e}")
-
-    return merged
+        # Fallback: pandas merge
+        how_map = {
+            "INNER JOIN": "inner", "LEFT JOIN": "left",
+            "RIGHT JOIN": "right", "FULL OUTER JOIN": "outer",
+        }
+        how = how_map.get(join_type, "inner")
+        try:
+            return pd.merge(
+                left_prefixed, right_prefixed,
+                left_on=left_key, right_on=right_key,
+                how=how, suffixes=("", "_r")
+            )
+        except Exception as e2:
+            raise ValueError(f"Join fehlgeschlagen (DuckDB: {e}, pandas: {e2})")
 
 
 # ─── Mapping ausführen ────────────────────────────────────────────────────────
