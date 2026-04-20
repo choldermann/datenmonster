@@ -550,36 +550,42 @@ def get_mapping_schema(
 @router.post("/execute-download")
 def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """
-    Führt ein einzelnes Target aus und gibt die Datei direkt als Download zurück.
-    Wird vom Frontend für den direkten CSV/XLSX/JSON/XML-Download genutzt.
-    """
-    from fastapi.responses import Response
-    from app.services.mapping_service import MappingContext, run_mapping_object, execute_mapping, _apply_target_types
-    from app.services.export_service import export_csv, export_xlsx, export_json, export_xml, export_to_db
+    """Führt ein Target aus und speichert das Ergebnis unter Exporte."""
+    from app.services.mapping_service import execute_mapping, _apply_target_types
     import pandas as pd
 
     ctx = _build_context_from_request(data)
     if not ctx.targets:
         raise HTTPException(400, "Kein Ziel definiert")
 
-    target = ctx.targets[0]
+    target   = ctx.targets[0]
     t_fields = target.get("fields") or []
     t_type   = target.get("target_type", "csv")
     opts     = target.get("target_options") or {}
 
+    if t_type == "db":
+        from app.services.export_service import export_to_db
+        from app.models.dataset import DbConnection
+        try:
+            result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
+        except Exception as e:
+            raise HTTPException(500, f"Mapping-Fehler: {str(e)[:300]}")
+        df = pd.DataFrame(result["rows"], columns=result["columns"])
+        df, _ = _apply_target_types(df, t_fields)
+        conn_id = target.get("target_connection_id")
+        table   = target.get("target_table")
+        if not conn_id or not table:
+            raise HTTPException(400, "DB-Export: connection_id und target_table erforderlich")
+        conn_obj = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+        if not conn_obj:
+            raise HTTPException(404, "Verbindung nicht gefunden")
+        return export_to_db(df, conn_obj, table,
+                            target.get("target_write_mode", "insert"),
+                            key_columns=opts.get("key_columns", []))
+
     try:
         result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
     except Exception as e:
-        try:
-            from app.services.db_logger import log as _dblog
-            _dblog(db, "error", "mappings", "mapping_run_error",
-                f"Mapping-Fehler: {str(e)[:300]}",
-                details={"exception_type": type(e).__name__,
-                         "exception_message": str(e),
-                         "traceback": traceback.format_exc()})
-        except Exception:
-            pass
         raise HTTPException(500, f"Mapping-Fehler: {str(e)[:300]}")
 
     if not result["rows"] and result.get("errors"):
@@ -588,11 +594,9 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     df = pd.DataFrame(result["rows"], columns=result["columns"])
     df, _ = _apply_target_types(df, t_fields)
 
-    # Pflichtfeld-Validierung
-    required_fields = opts.get("required_fields") or []
-    if required_fields:
+    if opts.get("required_fields"):
         missing_vals = []
-        for f in required_fields:
+        for f in opts["required_fields"]:
             if f in df.columns:
                 null_count = int(df[f].isna().sum()) + int((df[f].astype(str).str.strip() == "").sum())
                 if null_count > 0:
@@ -600,43 +604,37 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
         if missing_vals:
             raise HTTPException(400, f"Pflichtfeld-Fehler: {', '.join(missing_vals)}")
 
-    # Duplikat-Entfernung
     if opts.get("deduplicate_enabled"):
         subset = [f for f in (opts.get("deduplicate_fields") or []) if f in df.columns] or None
         df = df.drop_duplicates(subset=subset, keep="first")
 
-    if t_type == "csv":
-        content = export_csv(df, delimiter=opts.get("delimiter", ";"),
-                             encoding=opts.get("encoding", "utf-8-sig"))
-        return Response(content=content, media_type="text/csv",
-                        headers={"Content-Disposition": "attachment; filename=export.csv"})
-    elif t_type == "xlsx":
-        content = export_xlsx(df)
-        return Response(content=content,
-                        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        headers={"Content-Disposition": "attachment; filename=export.xlsx"})
-    elif t_type == "json":
-        content = export_json(df, orient=opts.get("orient", "records"), indent=opts.get("indent", 2))
-        return Response(content=content, media_type="application/json",
-                        headers={"Content-Disposition": "attachment; filename=export.json"})
-    elif t_type == "xml":
-        content = export_xml(df, opts.get("xml_template", {}))
-        return Response(content=content, media_type="application/xml",
-                        headers={"Content-Disposition": "attachment; filename=export.xml"})
-    elif t_type == "db":
-        conn_id = target.get("target_connection_id")
-        table   = target.get("target_table")
-        if not conn_id or not table:
-            raise HTTPException(400, "DB-Export: connection_id und target_table erforderlich")
-        from app.models.dataset import DbConnection
-        conn_obj = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-        if not conn_obj:
-            raise HTTPException(404, "Verbindung nicht gefunden")
-        return export_to_db(df, conn_obj, table,
-                            target.get("target_write_mode", "insert"),
-                            key_columns=opts.get("key_columns", []))
-    else:
-        raise HTTPException(400, f"Unbekannter target_type: {t_type}")
+    mapping_obj = None
+    if data.mapping_id:
+        from app.models.mapping import Mapping as _M
+        mapping_obj = db.query(_M).filter(_M.id == data.mapping_id).first()
+
+    project_name = None
+    if mapping_obj and mapping_obj.project_id:
+        from app.models.project import Project as _P
+        proj = db.query(_P).filter(_P.id == mapping_obj.project_id).first()
+        project_name = proj.name if proj else None
+
+    from app.services.file_export_service import save_export_file
+    export_file = save_export_file(
+        df,
+        user_id=user.id,
+        project_id=mapping_obj.project_id if mapping_obj else None,
+        project_name=project_name,
+        job_id=None,
+        mapping_id=data.mapping_id,
+        mapping_name=mapping_obj.name if mapping_obj else None,
+        target_name=target.get("name") or t_type,
+        target_type=t_type,
+        target_options=opts,
+        db=db,
+        triggered_by="manual",
+    )
+    return {"ok": True, "export_id": export_file.get("id") if isinstance(export_file, dict) else (export_file.id if export_file else None)}
 
 
 
