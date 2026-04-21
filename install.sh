@@ -32,7 +32,7 @@ BACKEND_PORT="${BACKEND_PORT:-8000}"
 AUTO_START=true
 AUTO_YES=false
 GITHUB_REPO="https://github.com/HoldermannIT/datenmonster"
-GITHUB_ARCHIVE="https://github.com/HoldermannIT/datenmonster/archive/refs/heads/main.zip"
+GITHUB_ARCHIVE="https://datenmonster.com/install/datenmonster.zip"
 
 # ─── Parameter parsen ─────────────────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
