@@ -240,13 +240,8 @@ download_datenmonster() {
   mkdir -p "$INSTALL_DIR"
 
   # Download via git clone (bevorzugt) oder ZIP-Fallback
-  if check_command git; then
-    log_info "Klone Repository..."
-    git clone --depth 1 "$GITHUB_REPO.git" "$INSTALL_DIR" 2>/dev/null \
-      || { log_warn "Git clone fehlgeschlagen, versuche ZIP-Download..."; download_zip; }
-  else
-    download_zip
-  fi
+  log_info "Lade ZIP von datenmonster.com..."
+  download_zip
 
   log_ok "Datenmonster heruntergeladen nach: $INSTALL_DIR"
 }
