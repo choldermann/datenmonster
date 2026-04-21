@@ -248,17 +248,27 @@ download_datenmonster() {
 
 download_zip() {
   local tmp_zip="/tmp/datenmonster_install.zip"
-  log_info "Lade ZIP von GitHub..."
+  log_info "Lade ZIP von datenmonster.com..."
   if check_command curl; then
     curl -fsSL "$GITHUB_ARCHIVE" -o "$tmp_zip"
   else
     wget -q "$GITHUB_ARCHIVE" -O "$tmp_zip"
   fi
+  rm -rf "/tmp/datenmonster_extract"
   unzip -q "$tmp_zip" -d "/tmp/datenmonster_extract"
-  # GitHub benennt das Verzeichnis main-branch
+  # Prüfen ob ZIP einen Unterordner enthält (GitHub-Style) oder direkt Dateien
   local extracted_dir
   extracted_dir=$(find /tmp/datenmonster_extract -maxdepth 1 -mindepth 1 -type d | head -1)
-  cp -r "$extracted_dir/." "$INSTALL_DIR/"
+  if [[ -n "$extracted_dir" && -f "$extracted_dir/docker-compose.yml" ]]; then
+    # GitHub-Style: Unterordner vorhanden
+    cp -r "$extracted_dir/." "$INSTALL_DIR/"
+  elif [[ -f "/tmp/datenmonster_extract/docker-compose.yml" ]]; then
+    # Direkt: Dateien im Root der ZIP
+    cp -r "/tmp/datenmonster_extract/." "$INSTALL_DIR/"
+  else
+    # Fallback: alles kopieren
+    cp -r "/tmp/datenmonster_extract/." "$INSTALL_DIR/"
+  fi
   rm -rf "$tmp_zip" "/tmp/datenmonster_extract"
 }
 
