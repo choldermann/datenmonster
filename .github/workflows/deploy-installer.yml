@@ -1,0 +1,34 @@
+name: Deploy Installer Package
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ZIP erstellen (ohne .git und node_modules)
+        run: |
+          zip -r datenmonster.zip . \
+            --exclude "*.git*" \
+            --exclude "*/node_modules/*" \
+            --exclude "*/__pycache__/*" \
+            --exclude "*.pyc" \
+            --exclude "*/uploads/*" \
+            --exclude "*/data/*" \
+            --exclude "*/.env*" \
+            --exclude "*/dist/*"
+
+      - name: Auf Server hochladen
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          source: "datenmonster.zip,install.sh"
+          target: "/var/www/install/"
+          strip_components: 0
