@@ -72,41 +72,45 @@ def _keyword_match(text: str, tables: list) -> list:
         if any(s in text_lower for s in synonyms):
             active_groups.append(group)
 
+    matched_exact = []
+    matched_contains = []
     for table in tables:
         table_lower = table["name"].lower()
-        # Direkte Übereinstimmung mit Synonymen
         for group in active_groups:
-            if any(s in table_lower for s in SYNONYMS[group]):
-                if table not in matched:
-                    matched.append(table)
+            synonyms = SYNONYMS[group]
+            if any(table_lower == s or table_lower == f"t{s}" for s in synonyms):
+                if table not in matched_exact:
+                    matched_exact.append(table)
+                break
+            elif any(s in table_lower for s in synonyms):
+                if table not in matched_contains:
+                    matched_contains.append(table)
                 break
 
-    return matched
+    result = matched_exact + [t for t in matched_contains if t not in matched_exact]
+    return result[:5]
 
 
-def _fk_traversal(matched_tables: list, all_tables: list, relationships: list) -> list:
-    """Findet via FK-Traversal verbundene Tabellen."""
+def _fk_traversal(matched_tables: list, all_tables: list, relationships: list, max_tables: int = 10) -> list:
+    """Findet via FK-Traversal verbundene Tabellen – nur Tiefe 1, max 10 Tabellen."""
     matched_keys = {t["key"] for t in matched_tables}
     result = list(matched_tables)
-
-    # Füge Tabellen hinzu die direkt per FK verbunden sind
     for rel in relationships:
         if rel["type"] != "foreign_key":
             continue
+        if len(result) >= max_tables:
+            break
         from_in = rel["from_table"] in matched_keys
-        to_in = rel["to_table"] in matched_keys
+        to_in   = rel["to_table"]   in matched_keys
         if from_in and not to_in:
-            t = next((t for t in all_tables if t["key"] == rel["to_table"]), None)
+            t = next((x for x in all_tables if x["key"] == rel["to_table"]), None)
             if t and t not in result:
                 result.append(t)
-                matched_keys.add(t["key"])
         elif to_in and not from_in:
-            t = next((t for t in all_tables if t["key"] == rel["from_table"]), None)
+            t = next((x for x in all_tables if x["key"] == rel["from_table"]), None)
             if t and t not in result:
                 result.append(t)
-                matched_keys.add(t["key"])
-
-    return result
+    return result[:max_tables]
 
 
 def _get_relevant_joins(table_keys: set, relationships: list) -> list:
