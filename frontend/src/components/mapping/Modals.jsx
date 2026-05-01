@@ -357,6 +357,7 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
                   {[
                     { v: "replace", l: "Überschreiben", desc: "Dataset wird bei jedem Ausführen komplett ersetzt" },
                     { v: "append",  l: "Anfügen",       desc: "Neue Zeilen werden zum bestehenden Dataset hinzugefügt" },
+                    { v: "upsert",  l: "Upsert",        desc: "Zeilen mit gleichem Primärschlüssel werden aktualisiert, neue werden eingefügt" },
                   ].map(({ v, l, desc }) => (
                     <div key={v} onClick={(e) => { e.stopPropagation(); setDatasetWriteMode(v); }}
                       style={{ flex: 1, padding: "8px 10px", borderRadius: 5, cursor: "pointer", border: `1px solid ${datasetWriteMode === v ? S.accent : S.border}`, backgroundColor: datasetWriteMode === v ? "rgba(252,228,153,0.1)" : "transparent" }}>
@@ -365,6 +366,11 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
                     </div>
                   ))}
                 </div>
+                {datasetWriteMode === "upsert" && (
+                  <p style={{ fontSize: 10, color: "#fbbf24", marginTop: 8, lineHeight: 1.4 }}>
+                    🔑 Upsert benötigt mindestens ein als Primärschlüssel markiertes Feld im Ziel-Dataset. Primärschlüssel können im Dataset-Editor gesetzt werden.
+                  </p>
+                )}
               </div>
             )}
           </div>
