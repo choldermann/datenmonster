@@ -12,6 +12,10 @@ services:
       - datenmonster-data:/app/uploads
     environment:
       - SECRET_KEY=change-this-in-production-please
+      # ADMIN_PASSWORD: beim ersten Start ohne diesen Wert wird ein zufälliges
+      # Passwort generiert und einmalig in den Container-Logs angezeigt.
+      # Danach hier setzen damit es bei Neustarts nicht zurückgesetzt wird.
+      # - ADMIN_PASSWORD=sicheres-passwort-hier-setzen
       - DATABASE_URL=sqlite:///./uploads/datenmonster.db
       - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
     restart: unless-stopped

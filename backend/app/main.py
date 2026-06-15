@@ -142,18 +142,25 @@ async def lifespan(app: FastAPI):
                 pass
     db = SessionLocal()
     try:
-        import os as _os
-        _admin_pw = _os.environ.get("ADMIN_PASSWORD", "admin123")
+        import os as _os, secrets as _secrets
+        _admin_pw_env = _os.environ.get("ADMIN_PASSWORD", "")
         _admin = db.query(User).filter(User.username == "admin").first()
         if not _admin:
+            if _admin_pw_env:
+                _admin_pw = _admin_pw_env
+            else:
+                _admin_pw = _secrets.token_urlsafe(16)
+                print("=" * 60)
+                print(f"  ADMIN-PASSWORT (nur einmalig sichtbar): {_admin_pw}")
+                print("  Bitte sofort notieren und in ADMIN_PASSWORD Env setzen!")
+                print("=" * 60)
             _admin = User(username="admin", hashed_password=hash_password(_admin_pw), is_admin=True)
             db.add(_admin)
             db.commit()
-            print("Admin-User angelegt")
         else:
             _changed = False
-            if _os.environ.get("ADMIN_PASSWORD"):
-                _admin.hashed_password = hash_password(_admin_pw)
+            if _admin_pw_env:
+                _admin.hashed_password = hash_password(_admin_pw_env)
                 _changed = True
                 print("Admin-Passwort aus ADMIN_PASSWORD Env aktualisiert")
             if not getattr(_admin, "is_admin", False):
