@@ -13,7 +13,8 @@ from app.models.scheduled_job import ScheduledJob, JobRun
 from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
-from app.api import auth, monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
+from app import auth
+from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
 from app.api import update as update_api
 

@@ -725,6 +725,7 @@ def get_tables_from_path(
     path = payload.get("path", "").strip()
     if not path:
         raise HTTPException(400, "Kein Dateipfad angegeben")
+    path = _sanitize_server_path(path)
     try:
         tables = list_tables(path)
         return {"tables": tables, "path": path}
@@ -808,6 +809,7 @@ async def preview_access_table(
     table = payload.get("table", "").strip()
     if not path or not table:
         raise HTTPException(400, "path und table sind erforderlich")
+    path = _sanitize_server_path(path)
     try:
         preview = get_table_preview(path, table, limit=5)
         return preview
