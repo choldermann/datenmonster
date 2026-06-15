@@ -98,21 +98,36 @@ def me(current_user: User = Depends(get_current_user)):
     return {"id": current_user.id, "username": current_user.username}
 
 
-@router.post("/register", response_model=Token)
-def register(data: UserCreate, db: Session = Depends(get_db)):
+@router.post("/register")
+def register(data: UserCreate, db: Session = Depends(get_db), admin: User = Depends(get_current_user)):
+    if not getattr(admin, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Nur Administratoren können Benutzer anlegen")
     if db.query(User).filter(User.username == data.username).first():
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Passwort mindestens 6 Zeichen")
     user = User(username=data.username, hashed_password=hash_password(data.password))
     db.add(user); db.commit(); db.refresh(user)
-    token = create_access_token({"sub": user.username})
-    return {"access_token": token, "token_type": "bearer", "username": user.username}
+    return {"id": user.id, "username": user.username}
 
 
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return [{"id": u.id, "username": u.username} for u in db.query(User).filter(User.id != user.id).all()]
+
+
+@router.delete("/users/{user_id}")
+def delete_user(user_id: int, db: Session = Depends(get_db), admin: User = Depends(get_current_user)):
+    if not getattr(admin, "is_admin", False):
+        raise HTTPException(status_code=403, detail="Nur Administratoren können Benutzer löschen")
+    if user_id == admin.id:
+        raise HTTPException(status_code=400, detail="Eigenen Account kann man nicht löschen")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Benutzer nicht gefunden")
+    db.delete(target)
+    db.commit()
+    return {"ok": True}
 
 
 class ChangePassword(BaseModel):

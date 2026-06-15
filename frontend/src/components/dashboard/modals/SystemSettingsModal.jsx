@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Mail, Eye, EyeOff, TestTube } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2 } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
 
@@ -8,6 +8,7 @@ const ACCENT = "#fce499";
 const TABS = [
   { id: "email", label: "E-Mail", icon: "📧" },
   { id: "ai", label: "KI", icon: "✨" },
+  { id: "users", label: "Benutzer", icon: "👤" },
   { id: "appearance", label: "Optik", icon: "🎨", disabled: true },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
   { id: "license", label: "Lizenz", icon: "🔑", disabled: true },
@@ -201,6 +202,99 @@ function AiSettings() {
   );
 }
 
+function UserManagement() {
+  const [users, setUsers] = useState([]);
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [creating, setCreating] = useState(false);
+  const [result, setResult] = useState(null);
+  const [showPw, setShowPw] = useState(false);
+
+  const load = () => api.get("/api/auth/users").then(({ data }) => setUsers(data)).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%" };
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+
+  const handleCreate = async () => {
+    if (!form.username.trim() || form.password.length < 6) {
+      setResult({ ok: false, msg: "Benutzername und Passwort (min. 6 Zeichen) erforderlich" });
+      return;
+    }
+    setCreating(true); setResult(null);
+    try {
+      const { data } = await api.post("/api/auth/register", { username: form.username.trim(), password: form.password });
+      setResult({ ok: true, msg: `Benutzer "${data.username}" angelegt` });
+      setForm({ username: "", password: "" });
+      load();
+    } catch (e) {
+      setResult({ ok: false, msg: e.response?.data?.detail || "Fehler beim Anlegen" });
+    } finally { setCreating(false); }
+  };
+
+  const handleDelete = async (id, name) => {
+    if (!confirm(`Benutzer "${name}" wirklich löschen?`)) return;
+    try {
+      await api.delete(`/api/auth/users/${id}`);
+      load();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Löschen fehlgeschlagen");
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>Benutzer anlegen und verwalten. Nur Administratoren haben Zugriff auf diese Ansicht.</p>
+
+      {/* Bestehende Benutzer */}
+      {users.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <span style={lS}>Bestehende Benutzer</span>
+          {users.map(u => (
+            <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+              <span style={{ fontSize: 12, color: S.textMain }}>{u.username}</span>
+              <button onClick={() => handleDelete(u.id, u.username)}
+                style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
+                title="Benutzer löschen">
+                <Trash2 size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Neuen Benutzer anlegen */}
+      <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+        <span style={lS}>Neuen Benutzer anlegen</span>
+        <div>
+          <label style={lS}>Benutzername</label>
+          <input style={iS} value={form.username} onChange={e => setForm(f => ({ ...f, username: e.target.value }))} placeholder="neuer.benutzer" />
+        </div>
+        <div>
+          <label style={lS}>Passwort</label>
+          <div style={{ position: "relative" }}>
+            <input style={{ ...iS, paddingRight: 36 }} type={showPw ? "text" : "password"}
+              value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder="••••••••" />
+            <button onClick={() => setShowPw(v => !v)}
+              style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0 }}>
+              {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          </div>
+        </div>
+        {result && (
+          <div style={{ padding: "7px 10px", borderRadius: 4, backgroundColor: result.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${result.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
+            <p style={{ fontSize: 11, color: result.ok ? "#6ee7b7" : "#e07070", margin: 0 }}>{result.ok ? "✓" : "✗"} {result.msg}</p>
+          </div>
+        )}
+        <button onClick={handleCreate} disabled={creating}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 12, fontWeight: 700, alignSelf: "flex-start" }}>
+          {creating ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />}
+          Benutzer anlegen
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SystemSettingsModal({ onClose }) {
   const [activeTab, setActiveTab] = useState("email");
 
@@ -231,6 +325,7 @@ export default function SystemSettingsModal({ onClose }) {
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
           {activeTab === "email" && <EmailSettings />}
           {activeTab === "ai" && <AiSettings />}
+          {activeTab === "users" && <UserManagement />}
         </div>
       </div>
     </div>
