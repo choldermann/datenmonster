@@ -161,6 +161,21 @@ async def lifespan(app: FastAPI):
                 status TEXT DEFAULT 'received',
                 error TEXT
             )""",
+            """CREATE TABLE IF NOT EXISTS mail_processing_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                account_hash TEXT NOT NULL,
+                message_id TEXT,
+                uid TEXT NOT NULL,
+                subject TEXT,
+                from_addr TEXT,
+                received_at TEXT,
+                processed_at TEXT,
+                status TEXT DEFAULT 'new',
+                rule_name TEXT,
+                mapping_id INTEGER,
+                error TEXT,
+                UNIQUE(account_hash, uid)
+            )""",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -224,11 +239,21 @@ async def lifespan(app: FastAPI):
     from app.plugins.loader import load_builtin_plugins, load_all_plugins, load_tier2_plugins
     plugin_db = SessionLocal()
     try:
-        load_builtin_plugins(db=plugin_db)   # eingebaute Plugins (web, document, ...)
+        load_builtin_plugins(db=plugin_db)   # eingebaute Plugins (web, document, mail, ...)
         load_all_plugins(db=plugin_db)        # externe Tier-1 Plugins aus /plugins/
         load_tier2_plugins(db=plugin_db)      # Tier-2 Docker-Container-Plugins
     finally:
         plugin_db.close()
+
+    # Mail-Poller für bestehende IMAP-Datasets starten
+    from app.plugins.registry import registry as _plugin_registry
+    _mail_plugin = _plugin_registry.get_source("mail_imap")
+    if _mail_plugin and hasattr(_mail_plugin, "start_pollers_from_db"):
+        _mail_db = SessionLocal()
+        try:
+            _mail_plugin.start_pollers_from_db(db=_mail_db)
+        finally:
+            _mail_db.close()
 
     # EventBus-Listener starten (Redis Pub/Sub)
     from app.services.eventbus import start_listener
@@ -297,6 +322,8 @@ app.include_router(plugins_api.router)
 app.include_router(events_api.router)
 from app.api import web_proxy as web_proxy_api
 app.include_router(web_proxy_api.router)
+from app.api import mail as mail_api
+app.include_router(mail_api.router)
 
 
 @app.get("/api/health")

@@ -16,9 +16,11 @@ def load_builtin_plugins(db=None):
     """Lädt alle eingebauten Tier-1 Plugins (builtin-Paket)."""
     from app.plugins.registry import registry
     from app.plugins.builtin.web import ALL_PLUGINS as WEB_PLUGINS
+    from app.plugins.builtin.mail import ALL_PLUGINS as MAIL_PLUGINS
 
+    all_plugins = WEB_PLUGINS + MAIL_PLUGINS
     loaded = 0
-    for plugin_cls in WEB_PLUGINS:
+    for plugin_cls in all_plugins:
         try:
             instance = plugin_cls()
             registry.register(instance, db=db)
@@ -26,7 +28,7 @@ def load_builtin_plugins(db=None):
         except Exception as e:
             logger.error(f"Builtin-Plugin '{plugin_cls.__name__}' Ladefehler: {e}", exc_info=True)
 
-    logger.info(f"Plugin-Loader: {loaded} eingebautem Plugin(s) geladen (builtin)")
+    logger.info(f"Plugin-Loader: {loaded} eingebaute Plugin(s) geladen (builtin)")
 
 
 def load_all_plugins(db=None):

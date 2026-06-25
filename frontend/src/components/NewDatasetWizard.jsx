@@ -352,6 +352,8 @@ function StepPluginSource({ onDone, projectId }) {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
   const [showVisualSelector, setShowVisualSelector] = useState(false);
+  const [testResult, setTestResult]             = useState(null);
+  const [testing, setTesting]                   = useState(false);
 
   useEffect(() => {
     api.get("/api/plugins/source-types")
@@ -366,6 +368,22 @@ function StepPluginSource({ onDone, projectId }) {
     (st.config_schema || []).forEach((f) => { if (f.default !== undefined) defaults[f.key] = f.default; });
     setConfig(defaults);
     setName(st.label || st.id || "");
+    setTestResult(null);
+  };
+
+  const handleTestMailConnection = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const { data } = await api.post("/api/mail/test-connection", {
+        host: config.host || "", port: Number(config.port) || 993,
+        user: config.user || "", password: config.password || "",
+        ssl: String(config.ssl ?? "true") !== "false",
+        folder: config.folder || "INBOX",
+      });
+      setTestResult(data);
+    } catch (err) {
+      setTestResult({ ok: false, message: err.response?.data?.detail || "Verbindung fehlgeschlagen" });
+    } finally { setTesting(false); }
   };
 
   const handleFieldChange = (key, value) => setConfig((prev) => ({ ...prev, [key]: value }));
@@ -475,6 +493,14 @@ function StepPluginSource({ onDone, projectId }) {
                   onChange={(e) => handleFieldChange(field.key, e.target.value)}
                   placeholder={field.placeholder ?? ""}
                 />
+              ) : field.type === "code" ? (
+                <textarea
+                  style={{ ...inputStyle, fontFamily: "monospace", fontSize: 11, minHeight: 100, resize: "vertical" }}
+                  value={config[field.key] ?? field.default ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  placeholder={field.placeholder || String(field.default ?? "")}
+                  spellCheck={false}
+                />
               ) : (
                 <input
                   style={inputStyle}
@@ -483,8 +509,44 @@ function StepPluginSource({ onDone, projectId }) {
                   placeholder={field.placeholder || String(field.default ?? "")}
                 />
               )}
+              {field.description && (
+                <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 3, lineHeight: 1.4 }}>
+                  {field.description}
+                </p>
+              )}
             </div>
           ))}
+
+          {/* Test-Verbindung – nur für Mail-Quellen */}
+          {selected?.category === "mail" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <button
+                onClick={handleTestMailConnection}
+                disabled={testing || !config.host || !config.user || !config.password}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
+                  borderRadius: 6, fontSize: 12, fontWeight: 600, width: "100%",
+                  cursor: (testing || !config.host || !config.user || !config.password) ? "not-allowed" : "pointer",
+                  border: "1px solid rgba(147,197,253,0.3)",
+                  backgroundColor: "rgba(147,197,253,0.06)",
+                  color: "#93c5fd",
+                  opacity: (!config.host || !config.user || !config.password) ? 0.4 : 1,
+                }}>
+                {testing ? <Loader2 size={13} className="animate-spin" /> : <Database size={13} />}
+                {testing ? "Verbinde…" : "Verbindung testen"}
+              </button>
+              {testResult && (
+                <div className="flex items-start gap-2 text-xs px-3 py-2 rounded" style={{
+                  backgroundColor: testResult.ok ? "rgba(110,231,183,0.07)" : "rgba(220,50,50,0.07)",
+                  border: `1px solid ${testResult.ok ? "rgba(110,231,183,0.25)" : "rgba(220,50,50,0.2)"}`,
+                  color: testResult.ok ? "#6ee7b7" : "#e07070",
+                }}>
+                  {testResult.ok ? <CheckCircle size={12} style={{ marginTop: 1, flexShrink: 0 }} /> : <AlertCircle size={12} style={{ marginTop: 1, flexShrink: 0 }} />}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Visual Selektor – nur für HTML-Dokumentquellen */}
           {selected?.category === "document" && (
