@@ -65,17 +65,21 @@ class CapabilityRegistry:
     def list_plugins(self) -> list:
         return [p.manifest() for p in self._plugins.values()]
 
-    def list_source_types(self) -> list:
-        return [
+    def list_source_types(self, category: str = None) -> list:
+        result = [
             {
                 "id": p.source_type_id,
                 "label": p.source_type_label,
                 "icon": p.source_type_icon,
+                "category": getattr(p, "source_category", "data"),
                 "plugin_id": p.id,
                 "config_schema": p.config_schema,
             }
             for p in self._sources.values()
         ]
+        if category:
+            result = [s for s in result if s["category"] == category]
+        return result
 
     def list_target_types(self) -> list:
         return [

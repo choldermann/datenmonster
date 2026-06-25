@@ -30,6 +30,7 @@ class SourcePlugin(PluginBase):
     source_type_id: str = ""      # z.B. "mongodb" → file_type im Dataset
     source_type_label: str = ""   # z.B. "MongoDB"
     source_type_icon: str = "database"
+    source_category: str = "data"  # "data" | "document" | "web" – für UI-Gruppierung
 
     @abstractmethod
     def test_connection(self, config: dict) -> dict:
