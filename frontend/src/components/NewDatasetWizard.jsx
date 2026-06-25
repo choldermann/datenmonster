@@ -465,6 +465,14 @@ function StepPluginSource({ onDone, projectId }) {
                   onChange={(e) => handleFieldChange(field.key, Number(e.target.value))}
                   placeholder={String(field.default ?? "")}
                 />
+              ) : field.type === "password" ? (
+                <input
+                  type="password"
+                  style={inputStyle}
+                  value={config[field.key] ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  placeholder={field.placeholder ?? ""}
+                />
               ) : (
                 <input
                   style={inputStyle}

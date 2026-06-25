@@ -1,0 +1,73 @@
+{
+  "id": "estatistik-core",
+  "name": "eSTATISTIK.core / Intrastat",
+  "docker_image": "dm-plugin-estatistik:latest",
+  "version": "0.1.0",
+  "description": "Intrastat-Meldungen via eSTATISTIK.core. Erzeugt DatML/XML, validiert via CORE.inspector und sendet via CORE.connect.",
+  "author": "Holdermann IT",
+  "license": "professional",
+  "capabilities": ["target"],
+  "source_type_id": "",
+  "source_type_label": "",
+  "source_type_icon": "",
+  "target_type_id": "estatistik_intrastat",
+  "target_type_label": "eSTATISTIK Intrastat",
+  "config_schema": [
+    {
+      "key": "mode",
+      "label": "Betriebsmodus",
+      "type": "select",
+      "default": "test",
+      "options": ["test", "production"]
+    },
+    {
+      "key": "core_user",
+      "label": "CORE-Benutzerkennung",
+      "type": "string",
+      "placeholder": "z.B. DE123456789"
+    },
+    {
+      "key": "core_password",
+      "label": "CORE-Passwort",
+      "type": "password",
+      "placeholder": "CORE-Zugangspasswort"
+    },
+    {
+      "key": "sender_id",
+      "label": "Absenderkennung",
+      "type": "string",
+      "placeholder": "z.B. DE123456789"
+    },
+    {
+      "key": "reporter_id",
+      "label": "Melderkennung",
+      "type": "string",
+      "placeholder": "z.B. DE123456789"
+    },
+    {
+      "key": "direction",
+      "label": "Meldungsrichtung",
+      "type": "select",
+      "default": "V",
+      "options": ["E", "V"]
+    },
+    {
+      "key": "period",
+      "label": "Meldezeitraum (JJJJMM)",
+      "type": "string",
+      "placeholder": "202601"
+    },
+    {
+      "key": "customs_number",
+      "label": "Zollnummer (optional)",
+      "type": "string",
+      "placeholder": ""
+    },
+    {
+      "key": "company_id",
+      "label": "Unternehmenskennung (optional)",
+      "type": "string",
+      "placeholder": ""
+    }
+  ]
+}

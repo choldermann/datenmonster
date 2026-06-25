@@ -7,7 +7,7 @@ from typing import List, Optional
 import docker
 import httpx
 import redis
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
@@ -254,6 +254,36 @@ async def proxy_fetch(plugin_id: str, body: ProxyBody):
 @app.post("/plugins/{plugin_id}/proxy/write")
 async def proxy_write(plugin_id: str, body: ProxyBody):
     return await _proxy(plugin_id, "write", {"config": body.config, "rows": body.rows or []})
+
+
+# ── Generischer Proxy (für eigene Plugin-Endpunkte wie /api/v1/...) ───────────
+
+@app.api_route("/plugins/{plugin_id}/proxy/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
+async def proxy_generic(plugin_id: str, path: str, request: Request):
+    """Leitet beliebige GET/POST-Anfragen an den Plugin-Container weiter."""
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    status = _container_status(plugin_id)
+    if status != "running":
+        raise HTTPException(503, f"Plugin-Container nicht aktiv (Status: {status})")
+    url = f"{_container_url(plugin_id)}/{path}"
+    body_bytes = await request.body()
+    headers = {"Content-Type": request.headers.get("content-type", "application/json")}
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                content=body_bytes,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"Plugin-Fehler: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(502, f"Proxy-Fehler: {e}")
 
 
 # ── EventBus ──────────────────────────────────────────────────────────────────

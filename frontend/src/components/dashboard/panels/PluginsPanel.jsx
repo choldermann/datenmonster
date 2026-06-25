@@ -88,7 +88,7 @@ function TestModal({ plugin, onClose }) {
                 {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
               </select>
             ) : (
-              <input type={field.type === "number" ? "number" : "text"}
+              <input type={field.type === "number" ? "number" : field.type === "password" ? "password" : "text"}
                 placeholder={field.placeholder || (field.default ?? "")}
                 value={config[field.key] ?? ""}
                 style={iS}
