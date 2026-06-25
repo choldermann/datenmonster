@@ -51,6 +51,8 @@ def _pm_delete(path: str) -> dict:
         raise HTTPException(502, f"Plugin Manager nicht erreichbar: {e}")
 
 
+# ── Tier-1 Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
+
 @router.get("/")
 def list_plugins(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Alle registrierten Plugins mit Status aus der DB."""
@@ -69,21 +71,84 @@ def list_plugins(db: Session = Depends(get_db), user: User = Depends(get_current
 
 @router.get("/capabilities")
 def list_capabilities(user: User = Depends(get_current_user)):
-    """Alle Capabilities: Quell-Typen, Ziel-Typen, Plugins."""
     return registry.list_all_capabilities()
 
 
 @router.get("/source-types")
 def list_source_types(user: User = Depends(get_current_user)):
-    """Plugin-Quell-Typen für Dataset-Wizard."""
     return registry.list_source_types()
 
 
 @router.get("/target-types")
 def list_target_types(user: User = Depends(get_current_user)):
-    """Plugin-Ziel-Typen für Mapping-Editor."""
     return registry.list_target_types()
 
+
+@router.get("/manager/health")
+def plugin_manager_health(user: User = Depends(get_current_user)):
+    """Plugin Manager Health-Check."""
+    return _pm_get("/health")
+
+
+# ── Tier-2 Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
+
+@router.get("/tier2")
+def list_tier2_plugins(user: User = Depends(get_current_user)):
+    """Alle beim Plugin Manager registrierten Tier-2 Plugins (mit Container-Status)."""
+    return _pm_get("/plugins")
+
+
+class Tier2RegisterBody(BaseModel):
+    id: str
+    name: str
+    docker_image: str
+    description: str = ""
+    author: str = ""
+    license: str = "professional"
+    capabilities: List[str] = []
+    config_schema: List[dict] = []
+    source_type_id: str = ""
+    source_type_label: str = ""
+    source_type_icon: str = "container"
+    target_type_id: str = ""
+    target_type_label: str = ""
+
+
+@router.post("/tier2", status_code=201)
+def register_tier2_plugin(body: Tier2RegisterBody, user: User = Depends(get_current_user)):
+    """Tier-2 Plugin beim Plugin Manager registrieren."""
+    result = _pm_post("/plugins", body.model_dump())
+    from app.plugins.tier2_proxy import Tier2Plugin
+    plugin = Tier2Plugin(body.model_dump(), PLUGIN_MANAGER_URL)
+    registry.register(plugin)
+    return result
+
+
+@router.delete("/tier2/{plugin_id}")
+def unregister_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """Tier-2 Plugin entfernen (stoppt und löscht den Container)."""
+    return _pm_delete(f"/plugins/{plugin_id}")
+
+
+@router.post("/tier2/{plugin_id}/start")
+def start_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container für ein Tier-2 Plugin starten."""
+    return _pm_post(f"/plugins/{plugin_id}/start")
+
+
+@router.post("/tier2/{plugin_id}/stop")
+def stop_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container für ein Tier-2 Plugin stoppen."""
+    return _pm_post(f"/plugins/{plugin_id}/stop")
+
+
+@router.get("/tier2/{plugin_id}/status")
+def tier2_plugin_status(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container-Status eines Tier-2 Plugins abfragen."""
+    return _pm_get(f"/plugins/{plugin_id}/status")
+
+
+# ── Wildcard-Routen ZULETZT ───────────────────────────────────────────────────
 
 @router.get("/{plugin_id}")
 def get_plugin(plugin_id: str, user: User = Depends(get_current_user)):
@@ -124,68 +189,3 @@ def get_schema(plugin_id: str, body: TestBody, user: User = Depends(get_current_
         return {"columns": columns}
     except Exception as e:
         raise HTTPException(400, str(e))
-
-
-# ── Tier-2 Plugin Manager Endpunkte ──────────────────────────────────────────
-
-@router.get("/tier2")
-def list_tier2_plugins(user: User = Depends(get_current_user)):
-    """Alle beim Plugin Manager registrierten Tier-2 Plugins (mit Container-Status)."""
-    return _pm_get("/plugins")
-
-
-class Tier2RegisterBody(BaseModel):
-    id: str
-    name: str
-    docker_image: str
-    description: str = ""
-    author: str = ""
-    license: str = "professional"
-    capabilities: List[str] = []
-    config_schema: List[dict] = []
-    source_type_id: str = ""
-    source_type_label: str = ""
-    source_type_icon: str = "container"
-    target_type_id: str = ""
-    target_type_label: str = ""
-
-
-@router.post("/tier2", status_code=201)
-def register_tier2_plugin(body: Tier2RegisterBody, user: User = Depends(get_current_user)):
-    """Tier-2 Plugin beim Plugin Manager registrieren."""
-    result = _pm_post("/plugins", body.model_dump())
-    # Direkt in Capability Registry eintragen ohne Backend-Neustart
-    from app.plugins.tier2_proxy import Tier2Plugin
-    plugin = Tier2Plugin(body.model_dump(), PLUGIN_MANAGER_URL)
-    registry.register(plugin)
-    return result
-
-
-@router.delete("/tier2/{plugin_id}")
-def unregister_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Tier-2 Plugin entfernen (stoppt und löscht den Container)."""
-    return _pm_delete(f"/plugins/{plugin_id}")
-
-
-@router.post("/tier2/{plugin_id}/start")
-def start_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container für ein Tier-2 Plugin starten."""
-    return _pm_post(f"/plugins/{plugin_id}/start")
-
-
-@router.post("/tier2/{plugin_id}/stop")
-def stop_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container für ein Tier-2 Plugin stoppen."""
-    return _pm_post(f"/plugins/{plugin_id}/stop")
-
-
-@router.get("/tier2/{plugin_id}/status")
-def tier2_plugin_status(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container-Status eines Tier-2 Plugins abfragen."""
-    return _pm_get(f"/plugins/{plugin_id}/status")
-
-
-@router.get("/manager/health")
-def plugin_manager_health(user: User = Depends(get_current_user)):
-    """Plugin Manager Health-Check."""
-    return _pm_get("/health")
