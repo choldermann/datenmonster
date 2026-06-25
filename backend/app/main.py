@@ -9,6 +9,7 @@ from app.models.user import User
 from app.models.dataset import Dataset, DbConnection
 from app.models.mapping import Mapping
 from app.models.project import Project, ProjectMember
+from app.models.plugin import Plugin
 from app.models.scheduled_job import ScheduledJob, JobRun
 from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
@@ -17,6 +18,7 @@ from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
 from app.api import update as update_api
+from app.api import plugins as plugins_api
 
 
 @asynccontextmanager
@@ -134,6 +136,19 @@ async def lifespan(app: FastAPI):
                 content JSON NOT NULL,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
+            """CREATE TABLE IF NOT EXISTS plugins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                plugin_id TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                version TEXT,
+                tier INTEGER DEFAULT 1,
+                status TEXT DEFAULT 'active',
+                capabilities JSON DEFAULT '[]',
+                manifest JSON DEFAULT '{}',
+                config JSON DEFAULT '{}',
+                installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME
+            )""",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -192,6 +207,14 @@ async def lifespan(app: FastAPI):
             _sync_pipeline_scheduler(pipeline)
     finally:
         pipe_db.close()
+
+    # Tier-1 Plugins laden und in Capability Registry registrieren
+    from app.plugins.loader import load_all_plugins
+    plugin_db = SessionLocal()
+    try:
+        load_all_plugins(db=plugin_db)
+    finally:
+        plugin_db.close()
 
     yield
     from app.services.scheduler_service import stop_scheduler
@@ -252,6 +275,7 @@ app.include_router(ftp_sources.router)
 app.include_router(rest_sources.router)
 app.include_router(smart_mapping_api.router)
 app.include_router(update_api.router)
+app.include_router(plugins_api.router)
 
 
 @app.get("/api/health")

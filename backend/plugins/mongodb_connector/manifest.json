@@ -1,0 +1,18 @@
+{
+  "id": "mongodb-connector",
+  "name": "MongoDB Connector",
+  "version": "1.0.0",
+  "description": "MongoDB Collections als Datenquelle und Datenziel nutzen.",
+  "author": "Holdermann IT",
+  "license": "free",
+  "capabilities": ["source", "target"],
+  "config_schema": [
+    {"key": "uri",        "label": "MongoDB URI",       "type": "string",  "required": true,  "placeholder": "mongodb://user:pass@host:27017"},
+    {"key": "database",   "label": "Datenbank",         "type": "string",  "required": true},
+    {"key": "collection", "label": "Collection",        "type": "string",  "required": true},
+    {"key": "query",      "label": "Filter (JSON)",     "type": "code",    "default": "{}"},
+    {"key": "limit",      "label": "Max. Zeilen",       "type": "number",  "default": 10000},
+    {"key": "write_mode", "label": "Schreibmodus",      "type": "select",  "default": "insert",
+     "options": ["insert", "replace_collection"]}
+  ]
+}

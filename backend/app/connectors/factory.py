@@ -83,7 +83,18 @@ def get_connector(dataset_id: int) -> BaseConnector:
             from app.connectors.rest import RestApiConnector
             return RestApiConnector(source=src)
 
+        # ── Plugin-Quellen (Tier-1 Plugins) ──────────────────────────────────────
         else:
+            from app.plugins.registry import registry
+            plugin = registry.get_source(ds.file_type)
+            if plugin:
+                query_config = ds.query_config or {}
+                if isinstance(query_config, str):
+                    import json as _json
+                    query_config = _json.loads(query_config)
+                from app.connectors.plugin_connector import PluginConnector
+                return PluginConnector(plugin=plugin, config=query_config)
+
             raise ValueError(f"Kein Connector für file_type='{ds.file_type}' verfügbar")
 
     finally:

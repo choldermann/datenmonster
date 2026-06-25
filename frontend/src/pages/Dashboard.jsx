@@ -5,7 +5,7 @@ import { useProject } from "../context/ProjectContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
-import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
 
 import { S } from "../components/dashboard/constants";
 import MonitoringPanel from "../components/dashboard/panels/MonitoringPanel";
@@ -26,6 +26,7 @@ import TemplatesPanel from "../components/dashboard/panels/TemplatesPanel";
 import ReportsPanel from "../components/dashboard/panels/ReportsPanel";
 import { SchedulerPanel } from "../components/dashboard/panels/SchedulerPanel";
 import DispatcherPanel from "../components/dashboard/panels/DispatcherPanel";
+import PluginsPanel from "../components/dashboard/panels/PluginsPanel";
 import NewDatasetWizard from "../components/NewDatasetWizard";
 
 
@@ -189,6 +190,7 @@ export default function Dashboard() {
     { id: "ftp", label: "FTP / SFTP", icon: Server, badge: 0 },
     { id: "rest", label: "REST API", icon: Wifi, badge: 0 },
     { id: "exports", label: "Exporte", icon: HardDrive, badge: 0 },
+    { id: "plugins", label: "Plugins", icon: Puzzle, badge: 0 },
   ];
 
   const tColor = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
@@ -524,6 +526,9 @@ export default function Dashboard() {
         )}
         {tab === "exports" && (
           <ExportsPanel projectId={activeProject?.id ?? null} />
+        )}
+        {tab === "plugins" && (
+          <PluginsPanel />
         )}
         
       </main>
