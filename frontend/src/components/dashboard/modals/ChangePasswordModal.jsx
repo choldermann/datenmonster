@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { Check, KeyRound, Loader2, X } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
+import Modal from "../shared/Modal";
 
 function ChangePasswordModal({ onClose }) {
   const [current, setCurrent] = useState("");
