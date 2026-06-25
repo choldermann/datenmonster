@@ -29,10 +29,7 @@ services:
     build: ./frontend
     container_name: datenmonster-frontend
     ports:
-      - "5174:5174"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - "5174:80"
     depends_on:
       - backend
     restart: unless-stopped
