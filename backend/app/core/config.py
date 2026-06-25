@@ -37,3 +37,5 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",
 
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/app/uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+PLUGIN_MANAGER_URL = os.getenv("PLUGIN_MANAGER_URL", "")

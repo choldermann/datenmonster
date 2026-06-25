@@ -36,7 +36,7 @@ class CapabilityRegistry:
                     plugin_id=plugin.id,
                     name=plugin.name,
                     version=plugin.version,
-                    tier=1,
+                    tier=getattr(plugin, "tier", 1),
                     status="active",
                     capabilities=plugin.capabilities,
                     manifest=plugin.manifest(),

@@ -1,0 +1,236 @@
+import json
+import logging
+import os
+from pathlib import Path
+from typing import List, Optional
+
+import docker
+import httpx
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Datenmonster Plugin Manager", version="1.0.0")
+
+REGISTRY_FILE = Path(os.getenv("REGISTRY_FILE", "/data/plugins.json"))
+PLUGIN_NETWORK = os.getenv("PLUGIN_NETWORK", "datenmonster")
+PLUGIN_PORT = int(os.getenv("PLUGIN_PORT", "8080"))
+
+
+# ── Registry ─────────────────────────────────────────────────────────────────
+
+def load_reg() -> dict:
+    try:
+        return json.loads(REGISTRY_FILE.read_text()) if REGISTRY_FILE.exists() else {}
+    except Exception:
+        return {}
+
+
+def save_reg(data: dict):
+    REGISTRY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    REGISTRY_FILE.write_text(json.dumps(data, indent=2))
+
+
+def cname(plugin_id: str) -> str:
+    safe = plugin_id.replace("/", "-").replace(":", "-").replace(".", "-")
+    return f"dm-plugin-{safe}"
+
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+
+def _dc() -> docker.DockerClient:
+    return docker.from_env()
+
+
+def _container_status(plugin_id: str) -> str:
+    try:
+        c = _dc().containers.get(cname(plugin_id))
+        return c.status  # running | exited | created | ...
+    except docker.errors.NotFound:
+        return "stopped"
+    except Exception as e:
+        logger.warning(f"Docker-Status für {plugin_id} nicht abrufbar: {e}")
+        return "unknown"
+
+
+# ── Health ────────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    try:
+        _dc().ping()
+        docker_ok = True
+    except Exception:
+        docker_ok = False
+    return {"status": "ok", "docker": docker_ok}
+
+
+# ── Plugin Registry API ───────────────────────────────────────────────────────
+
+@app.get("/plugins")
+def list_plugins():
+    reg = load_reg()
+    result = []
+    for pid, p in reg.items():
+        result.append({**p, "status": _container_status(pid)})
+    return result
+
+
+class RegisterBody(BaseModel):
+    id: str
+    name: str
+    docker_image: str
+    description: str = ""
+    author: str = ""
+    license: str = "professional"
+    capabilities: List[str] = []
+    config_schema: List[dict] = []
+    source_type_id: str = ""
+    source_type_label: str = ""
+    source_type_icon: str = "container"
+    target_type_id: str = ""
+    target_type_label: str = ""
+
+
+@app.post("/plugins", status_code=201)
+def register_plugin(body: RegisterBody):
+    reg = load_reg()
+    reg[body.id] = body.model_dump()
+    save_reg(reg)
+    logger.info(f"Tier-2 Plugin registriert: {body.id} ({body.docker_image})")
+    return {"ok": True, "id": body.id}
+
+
+@app.get("/plugins/{plugin_id}")
+def get_plugin(plugin_id: str):
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    return {**reg[plugin_id], "status": _container_status(plugin_id)}
+
+
+@app.delete("/plugins/{plugin_id}")
+def unregister_plugin(plugin_id: str):
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    try:
+        c = _dc().containers.get(cname(plugin_id))
+        if c.status == "running":
+            c.stop(timeout=10)
+        c.remove()
+    except docker.errors.NotFound:
+        pass
+    except Exception as e:
+        logger.warning(f"Container-Cleanup für {plugin_id}: {e}")
+    del reg[plugin_id]
+    save_reg(reg)
+    return {"ok": True}
+
+
+# ── Container-Lifecycle ───────────────────────────────────────────────────────
+
+@app.post("/plugins/{plugin_id}/start")
+def start_plugin(plugin_id: str):
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    p = reg[plugin_id]
+    dc = _dc()
+
+    try:
+        c = dc.containers.get(cname(plugin_id))
+        if c.status == "running":
+            return {"ok": True, "status": "already_running"}
+        c.remove()
+    except docker.errors.NotFound:
+        pass
+
+    try:
+        logger.info(f"Pulling {p['docker_image']}...")
+        dc.images.pull(p["docker_image"])
+    except Exception as e:
+        logger.warning(f"Pull fehlgeschlagen, versuche lokales Image: {e}")
+
+    try:
+        dc.containers.run(
+            p["docker_image"],
+            name=cname(plugin_id),
+            network=PLUGIN_NETWORK,
+            detach=True,
+            labels={"dm.plugin": "tier2", "dm.plugin.id": plugin_id},
+        )
+        logger.info(f"Tier-2 Plugin gestartet: {cname(plugin_id)}")
+        return {"ok": True, "status": "starting"}
+    except Exception as e:
+        raise HTTPException(500, f"Container-Start fehlgeschlagen: {e}")
+
+
+@app.post("/plugins/{plugin_id}/stop")
+def stop_plugin(plugin_id: str):
+    try:
+        c = _dc().containers.get(cname(plugin_id))
+        c.stop(timeout=15)
+        logger.info(f"Tier-2 Plugin gestoppt: {cname(plugin_id)}")
+        return {"ok": True}
+    except docker.errors.NotFound:
+        return {"ok": True, "status": "already_stopped"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/plugins/{plugin_id}/status")
+def plugin_status(plugin_id: str):
+    return {"plugin_id": plugin_id, "status": _container_status(plugin_id)}
+
+
+# ── Proxy ─────────────────────────────────────────────────────────────────────
+
+def _container_url(plugin_id: str) -> str:
+    return f"http://{cname(plugin_id)}:{PLUGIN_PORT}"
+
+
+async def _proxy(plugin_id: str, endpoint: str, body: dict) -> dict:
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    status = _container_status(plugin_id)
+    if status != "running":
+        raise HTTPException(503, f"Plugin-Container nicht aktiv (Status: {status}). Bitte zuerst starten.")
+    url = f"{_container_url(plugin_id)}/{endpoint}"
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(url, json=body)
+            resp.raise_for_status()
+            return resp.json()
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(e.response.status_code, f"Plugin-Fehler: {e.response.text}")
+    except Exception as e:
+        raise HTTPException(502, f"Proxy-Fehler: {e}")
+
+
+class ProxyBody(BaseModel):
+    config: dict = {}
+    rows: Optional[List[dict]] = None
+
+
+@app.post("/plugins/{plugin_id}/proxy/test")
+async def proxy_test(plugin_id: str, body: ProxyBody):
+    return await _proxy(plugin_id, "test", {"config": body.config})
+
+
+@app.post("/plugins/{plugin_id}/proxy/schema")
+async def proxy_schema(plugin_id: str, body: ProxyBody):
+    return await _proxy(plugin_id, "schema", {"config": body.config})
+
+
+@app.post("/plugins/{plugin_id}/proxy/fetch")
+async def proxy_fetch(plugin_id: str, body: ProxyBody):
+    return await _proxy(plugin_id, "fetch", {"config": body.config})
+
+
+@app.post("/plugins/{plugin_id}/proxy/write")
+async def proxy_write(plugin_id: str, body: ProxyBody):
+    return await _proxy(plugin_id, "write", {"config": body.config, "rows": body.rows or []})

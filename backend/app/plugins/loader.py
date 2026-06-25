@@ -4,6 +4,8 @@ import sys
 import logging
 from pathlib import Path
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 # Plugins liegen in backend/plugins/ → im Container /app/plugins/
@@ -27,7 +29,37 @@ def load_all_plugins(db=None):
         except Exception as e:
             logger.error(f"Plugin '{plugin_dir.name}' Ladefehler: {e}", exc_info=True)
 
-    logger.info(f"Plugin-Loader: {loaded} Plugin(s) geladen aus {PLUGIN_DIR}")
+    logger.info(f"Plugin-Loader: {loaded} Tier-1 Plugin(s) geladen aus {PLUGIN_DIR}")
+
+
+def load_tier2_plugins(db=None):
+    """Lädt Tier-2 Plugin-Metadaten vom Plugin Manager und registriert sie."""
+    from app.core.config import PLUGIN_MANAGER_URL
+    from app.plugins.registry import registry
+    from app.plugins.tier2_proxy import Tier2Plugin
+
+    if not PLUGIN_MANAGER_URL:
+        logger.info("PLUGIN_MANAGER_URL nicht gesetzt – Tier-2 Plugins übersprungen.")
+        return
+
+    try:
+        resp = httpx.get(f"{PLUGIN_MANAGER_URL}/plugins", timeout=5.0)
+        resp.raise_for_status()
+        plugins_data = resp.json()
+    except Exception as e:
+        logger.warning(f"Plugin Manager nicht erreichbar ({PLUGIN_MANAGER_URL}): {e}")
+        return
+
+    loaded = 0
+    for pm_data in plugins_data:
+        try:
+            plugin = Tier2Plugin(pm_data, PLUGIN_MANAGER_URL)
+            registry.register(plugin, db=db)
+            loaded += 1
+        except Exception as e:
+            logger.error(f"Tier-2 Plugin '{pm_data.get('id')}' Ladefehler: {e}", exc_info=True)
+
+    logger.info(f"Plugin-Loader: {loaded} Tier-2 Plugin(s) geladen von {PLUGIN_MANAGER_URL}")
 
 
 def _load_plugin(plugin_dir: Path, registry, db):

@@ -23,6 +23,23 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - DATABASE_URL=sqlite:///./uploads/datenmonster.db
       - ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
+      - PLUGIN_MANAGER_URL=http://plugin-manager:9001
+    networks:
+      - datenmonster
+    restart: unless-stopped
+
+  plugin-manager:
+    build: ./plugin-manager
+    container_name: datenmonster-plugin-manager
+    ports:
+      - "9001:9001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - plugin-manager-data:/data
+    environment:
+      - PLUGIN_NETWORK=datenmonster
+    networks:
+      - datenmonster
     restart: unless-stopped
 
   frontend:
@@ -32,7 +49,14 @@ services:
       - "5174:80"
     depends_on:
       - backend
+    networks:
+      - datenmonster
     restart: unless-stopped
 
 volumes:
   datenmonster-data:
+  plugin-manager-data:
+
+networks:
+  datenmonster:
+    name: datenmonster

@@ -209,10 +209,11 @@ async def lifespan(app: FastAPI):
         pipe_db.close()
 
     # Tier-1 Plugins laden und in Capability Registry registrieren
-    from app.plugins.loader import load_all_plugins
+    from app.plugins.loader import load_all_plugins, load_tier2_plugins
     plugin_db = SessionLocal()
     try:
         load_all_plugins(db=plugin_db)
+        load_tier2_plugins(db=plugin_db)
     finally:
         plugin_db.close()
 
