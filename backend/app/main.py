@@ -295,6 +295,8 @@ app.include_router(smart_mapping_api.router)
 app.include_router(update_api.router)
 app.include_router(plugins_api.router)
 app.include_router(events_api.router)
+from app.api import web_proxy as web_proxy_api
+app.include_router(web_proxy_api.router)
 
 
 @app.get("/api/health")

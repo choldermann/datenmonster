@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Upload, Database, X, ChevronRight, ChevronLeft,
-  Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle,
+  Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle, MousePointer,
 } from "lucide-react";
 import api from "../api/client";
+import VisualSelectorModal from "./dataset/VisualSelectorModal";
 
 const S = {
   accent: "var(--accent)", bgMain: "var(--bg-main)", bgCard: "var(--bg-card)",
@@ -350,6 +351,7 @@ function StepPluginSource({ onDone, projectId }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [showVisualSelector, setShowVisualSelector] = useState(false);
 
   useEffect(() => {
     api.get("/api/plugins/source-types")
@@ -445,7 +447,7 @@ function StepPluginSource({ onDone, projectId }) {
               placeholder="z.B. Testdaten Faker" autoFocus />
           </div>
 
-          {(selected.config_schema || []).map((field) => (
+          {(selected.config_schema || []).filter(f => !f.hidden).map((field) => (
             <div key={field.key}>
               <label style={labelStyle}>{field.label}</label>
               {field.type === "select" ? (
@@ -483,6 +485,46 @@ function StepPluginSource({ onDone, projectId }) {
               )}
             </div>
           ))}
+
+          {/* Visual Selektor – nur für HTML-Dokumentquellen */}
+          {selected?.category === "document" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <button
+                onClick={() => setShowVisualSelector(true)}
+                disabled={!config.url?.trim()}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
+                  borderRadius: 6, cursor: config.url?.trim() ? "pointer" : "not-allowed",
+                  border: config.visual_selector_config
+                    ? "1px solid rgba(110,231,183,0.5)"
+                    : "1px solid rgba(252,228,153,0.3)",
+                  backgroundColor: config.visual_selector_config
+                    ? "rgba(110,231,183,0.07)"
+                    : "rgba(252,228,153,0.05)",
+                  color: config.visual_selector_config ? "#6ee7b7" : "var(--accent)",
+                  fontSize: 12, fontWeight: 600, width: "100%",
+                  opacity: config.url?.trim() ? 1 : 0.4,
+                }}>
+                <MousePointer size={14} />
+                {config.visual_selector_config
+                  ? `Visual Selektor aktiv (${config.visual_selector_config.selections?.length ?? 0} Felder) — bearbeiten`
+                  : "Visual Selektor öffnen"}
+              </button>
+              {!config.url?.trim() && (
+                <p style={{ fontSize: 10, color: "var(--text-dim)" }}>
+                  Bitte erst eine URL eingeben.
+                </p>
+              )}
+              {config.visual_selector_config && (
+                <button
+                  onClick={() => handleFieldChange("visual_selector_config", null)}
+                  style={{ fontSize: 10, color: "var(--text-dim)", background: "none",
+                    border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                  ✕ Visual Selektor zurücksetzen
+                </button>
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -498,6 +540,20 @@ function StepPluginSource({ onDone, projectId }) {
           {saving ? <Loader2 size={14} className="animate-spin" /> : <Puzzle size={14} />}
           {saving ? "Wird erstellt…" : "Plugin-Dataset erstellen"}
         </button>
+      )}
+
+      {showVisualSelector && (
+        <VisualSelectorModal
+          initialUrl={config.url || ""}
+          initialConfig={config.visual_selector_config || null}
+          onSave={(visualCfg, effectiveUrl) => {
+            handleFieldChange("visual_selector_config", visualCfg);
+            handleFieldChange("extract_type", "css_selector");
+            if (effectiveUrl && !config.url) handleFieldChange("url", effectiveUrl);
+            setShowVisualSelector(false);
+          }}
+          onClose={() => setShowVisualSelector(false)}
+        />
       )}
     </div>
   );
