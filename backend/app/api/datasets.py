@@ -355,6 +355,31 @@ def get_dataset_data(
     user: User = Depends(get_current_user),
 ):
     ds = _get_ds(dataset_id, db)
+
+    _FILE_TYPES = {"csv", "xlsx", "xls", "xml", "json", "ods", "static"}
+    _DB_TYPES = {"db_mssql", "db_mysql", "db_postgresql"}
+    is_plugin = ds.file_type not in _FILE_TYPES and ds.file_type not in _DB_TYPES and ds.file_type != "rest_api"
+
+    if is_plugin:
+        try:
+            from app.connectors.factory import get_connector
+            connector = get_connector(dataset_id)
+            df = connector.fetch_preview(limit=page_size * 10)
+        except Exception as e:
+            raise HTTPException(500, f"Plugin-Fehler: {e}")
+
+        if df.empty:
+            return {"columns": list(df.columns), "preview": [], "total": 0, "page": page, "page_size": page_size}
+
+        total = len(df)
+        start = page * page_size
+        slice_df = df.iloc[start:start + page_size]
+        records = [
+            {k: (str(v) if v is not None else "") for k, v in row.items()}
+            for row in slice_df.to_dict(orient="records")
+        ]
+        return {"columns": list(df.columns), "preview": records, "total": total, "page": page, "page_size": page_size}
+
     try:
         return read_dataset(dataset_id, page, page_size)
     except FileNotFoundError:
@@ -378,9 +403,17 @@ def create_plugin_dataset(
 ):
     """Legt ein Plugin-Quell-Dataset an (Tier-1 oder Tier-2)."""
     from app.plugins.registry import registry
-    if not registry.get_source(body.source_type_id):
+    plugin = registry.get_source(body.source_type_id)
+    if not plugin:
         raise HTTPException(400, f"Keine Plugin-Quelle mit ID '{body.source_type_id}' gefunden")
     require_editor(body.project_id, user, db)
+
+    # Spalten live vom Plugin holen
+    try:
+        cols = plugin.get_columns(body.query_config)
+    except Exception:
+        cols = []
+
     ds = Dataset(
         name=body.name,
         original_filename=None,
@@ -389,8 +422,8 @@ def create_plugin_dataset(
         project_id=body.project_id,
         xml_configured=1,
         row_count=0,
-        columns=[],
-        column_types={},
+        columns=cols,
+        column_types={c: "string" for c in cols},
     )
     db.add(ds)
     db.commit()
@@ -491,12 +524,31 @@ def create_dataset_from_mapping(
 
 @router.post("/{dataset_id}/requery")
 def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Führt das gespeicherte SQL eines DB-Datasets erneut aus und aktualisiert die Daten."""
+    """Führt das gespeicherte SQL eines DB-Datasets / Plugin-Datasets erneut aus und aktualisiert Metadaten."""
     from app.models.dataset import DbConnection
     from app.services.db_service import query_full
 
     ds = _get_ds(dataset_id, db)
     require_editor(ds.project_id, user, db)
+
+    # ── Plugin-Dataset: Spalten + Zeilenzahl live holen ──────────────────────
+    _FILE_TYPES = {"csv", "xlsx", "xls", "xml", "json", "ods", "static"}
+    _DB_TYPES = {"db_mssql", "db_mysql", "db_postgresql"}
+    if ds.file_type not in _FILE_TYPES and ds.file_type not in _DB_TYPES and ds.file_type != "rest_api":
+        from app.connectors.factory import get_connector
+        try:
+            connector = get_connector(dataset_id)
+            df = connector.fetch_preview(limit=10000)
+            from datetime import datetime, timezone
+            ds.columns = list(df.columns)
+            ds.column_types = {c: "string" for c in df.columns}
+            ds.row_count = len(df)
+            ds.updated_at = datetime.now(timezone.utc)
+            db.commit()
+            db.refresh(ds)
+            return dataset_out(ds)
+        except Exception as e:
+            raise HTTPException(500, f"Plugin-Fehler beim Requery: {e}")
 
     if not ds.source_connection_id or not ds.source_sql:
         raise HTTPException(400, "Dataset hat keine gespeicherte SQL-Abfrage")
