@@ -37,6 +37,7 @@ export default function MappingEditor() {
   const [allDatasets, setAllDatasets] = useState([]);
   const [targetColumnTypes, setTargetColumnTypes] = useState({});
   const [dbConnections, setDbConnections] = useState([]);
+  const [pluginTargetTypes, setPluginTargetTypes] = useState([]);
   const [previewDataset, setPreviewDataset] = useState(null);
   const [canvasNodes, setCanvasNodes] = useState([]);
   const [targets, setTargets] = useState([]); // multi-target array
@@ -175,6 +176,7 @@ export default function MappingEditor() {
     const excludeParam = id && id !== "new" ? `${p ? "&" : "?"}exclude_mapping_id=${id}` : "";
     api.get(`/api/datasets/${p}${excludeParam}`).then(({ data }) => setAllDatasets(Array.isArray(data) ? data : []));
     api.get(`/api/connections/${p}`).then(({ data }) => setDbConnections(Array.isArray(data) ? data : []));
+    api.get("/api/plugins/target-types").then(({ data }) => setPluginTargetTypes(Array.isArray(data) ? data : [])).catch(() => {});
     if (id && id !== "new") {
       api.get(`/api/mappings/${id}`).then(({ data }) => {
         setName(data.name);
@@ -1449,6 +1451,7 @@ export default function MappingEditor() {
         <TargetConfigModal
           target={null}
           dbConnections={dbConnections}
+          pluginTargetTypes={pluginTargetTypes}
           onSave={(newTarget) => {
             if (newTarget.target_type === "db" && newTarget.target_table) {
               const dup = targets.find((t) => t.target_type === "db" && t.target_table === newTarget.target_table);
@@ -1466,6 +1469,7 @@ export default function MappingEditor() {
         <TargetConfigModal
           target={targets.find((t) => t.id === editingTargetId)}
           dbConnections={dbConnections}
+          pluginTargetTypes={pluginTargetTypes}
           onSave={(updated) => {
             if (updated.target_type === "db" && updated.target_table) {
               const dup = targets.find((t) => t.id !== editingTargetId && t.target_type === "db" && t.target_table === updated.target_table);

@@ -84,6 +84,19 @@ def list_target_types(user: User = Depends(get_current_user)):
     return registry.list_target_types()
 
 
+@router.get("/target-schema/{target_type_id}")
+def get_target_schema(target_type_id: str, user: User = Depends(get_current_user)):
+    """Zielfelder eines Plugin-Ziels abfragen."""
+    plugin = registry.get_target(target_type_id)
+    if not plugin:
+        raise HTTPException(404, f"Ziel-Plugin '{target_type_id}' nicht gefunden")
+    try:
+        columns = plugin.get_columns({})
+        return {"columns": columns}
+    except Exception as e:
+        raise HTTPException(502, f"Schema-Abruf fehlgeschlagen: {e}")
+
+
 @router.get("/manager/health")
 def plugin_manager_health(user: User = Depends(get_current_user)):
     """Plugin Manager Health-Check."""

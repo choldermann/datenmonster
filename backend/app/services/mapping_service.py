@@ -522,6 +522,17 @@ def run_mapping_object(
     return result
 
 
+_BUILTIN_TARGET_TYPES = {"csv", "xlsx", "json", "xml", "db", "dataset"}
+
+
+def _is_plugin_target(t_type: str) -> bool:
+    """True wenn t_type kein eingebauter Typ ist und in der CapabilityRegistry als Ziel registriert."""
+    if t_type in _BUILTIN_TARGET_TYPES:
+        return False
+    from app.plugins.registry import registry as _registry
+    return _registry.is_plugin_target(t_type)
+
+
 def _write_target(df, target, t_type, opts, db, mapping_id, mapping_name,
                   project_id, project_name, user_id, triggered_by, scheduled_job_id):
     """Schreibt einen DataFrame in das angegebene Ziel."""
@@ -668,6 +679,20 @@ def _write_target(df, target, t_type, opts, db, mapping_id, mapping_name,
                          key_columns=opts.get("key_columns", []))
         finally:
             thread_db.close()
+
+    elif _is_plugin_target(t_type):
+        from app.plugins.registry import registry as _registry
+        plugin = _registry.get_target(t_type)
+        if not plugin:
+            raise ValueError(f"Plugin-Ziel '{t_type}' nicht in Registry")
+        plugin_config = opts.get("plugin_config") or {}
+        rows = df.to_dict("records")
+        result = plugin.write(rows, plugin_config)
+        errors = result.get("errors") or []
+        if errors and not result.get("written"):
+            raise ValueError(f"Plugin-Schreibfehler: {'; '.join(str(e) for e in errors)}")
+        logger.info(f"  Plugin-Ziel '{t_type}': {result.get('written', len(rows))} Zeilen, "
+                    f"entry_stamp={result.get('entry_stamp', '-')}, mode={result.get('mode', '-')}")
 
     else:
         # CSV / XLSX / JSON / XML → Datei speichern

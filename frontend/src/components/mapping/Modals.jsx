@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Check, ChevronDown, Loader2, Plus, Settings, Trash2, Type, X } from "lucide-react";
 import api from "../../api/client";
-import { S, TARGET_TYPES, TARGET_TYPE_COLORS } from "./constants";
+import { S, TARGET_TYPES, TARGET_TYPE_COLORS, PLUGIN_TARGET_DEFAULT_COLOR } from "./constants";
 
 function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose }) {
   const [cols, setCols] = useState([]);
@@ -147,7 +147,7 @@ function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose })
 }
 
 // ─── TargetConfigModal ────────────────────────────────────────────────────────
-function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
+function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSave, onClose }) {
   const isNew = !target;
   const [name, setName] = useState(target?.name || "");
   const [targetType, setTargetType] = useState(target?.target_type || "csv");
@@ -163,6 +163,14 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
   const [deduplicateEnabled, setDeduplicateEnabled] = useState(target?.target_options?.deduplicate_enabled || false);
   const [sortFields, setSortFields] = useState(target?.target_options?.sort_fields || []);
   const [rowLimit, setRowLimit] = useState(target?.target_options?.row_limit || "");
+
+  // Plugin-Target State
+  const [pluginConfig, setPluginConfig] = useState(target?.target_options?.plugin_config || {});
+  const [pluginFields, setPluginFields] = useState(null); // null = noch nicht geladen
+  const [schemaLoading, setSchemaLoading] = useState(false);
+
+  const activePluginType = pluginTargetTypes.find(p => p.id === targetType);
+  const isPluginTarget = !!activePluginType;
 
   // Felder aus target.fields extrahieren für Validierung
   const availableFields = (target?.fields || []).map(f => f.target_field).filter(Boolean);
@@ -193,31 +201,57 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
       .finally(() => setTablesLoading(false));
   }, [connId, targetType]);
 
+  // Schema laden wenn Plugin-Ziel gewählt (nur für neue Targets)
+  useEffect(() => {
+    if (!isPluginTarget || !isNew) return;
+    setSchemaLoading(true);
+    setPluginFields(null);
+    api.get(`/api/plugins/target-schema/${targetType}`)
+      .then(({ data }) => setPluginFields(data.columns || []))
+      .catch(() => setPluginFields([]))
+      .finally(() => setSchemaLoading(false));
+  }, [targetType, isPluginTarget, isNew]);
+
   // Wenn Verbindung wechselt: Tabelle zurücksetzen
   const handleConnChange = (newConnId) => {
     setConnId(newConnId);
     setTable("");
   };
 
-  const buildTargetObj = () => ({
-    id: target?.id || `t_${Date.now()}`,
-    name: name.trim() || targetType.toUpperCase(),
-    target_type: targetType,
-    target_connection_id: targetType === "db" ? (parseInt(connId) || null) : null,
-    target_table: targetType === "db" ? table : "",
-    target_write_mode: writeMode,
-    target_options: {
-      ...opts,
-      dataset_write_mode: datasetWriteMode,
-      required_fields: requiredFields,
-      deduplicate_enabled: deduplicateEnabled,
-      deduplicate_fields: deduplicateFields,
-      sort_fields: sortFields.filter(sf => sf.field),
-      row_limit: rowLimit ? parseInt(rowLimit) : null,
-    },
-    save_as_dataset: saveAsDataset,
-    fields: target?.fields || [],
-  });
+  const buildTargetObj = () => {
+    let fields;
+    if (isPluginTarget) {
+      if (isNew && pluginFields) {
+        fields = pluginFields.map(col => ({
+          target_field: col, source_field: null, source_dataset_id: null, transformer: { type: "direct" },
+        }));
+      } else {
+        fields = target?.fields || [];
+      }
+    } else {
+      fields = target?.fields || [];
+    }
+    return {
+      id: target?.id || `t_${Date.now()}`,
+      name: name.trim() || (activePluginType?.label || targetType.toUpperCase()),
+      target_type: targetType,
+      target_connection_id: targetType === "db" ? (parseInt(connId) || null) : null,
+      target_table: targetType === "db" ? table : "",
+      target_write_mode: writeMode,
+      target_options: {
+        ...opts,
+        ...(isPluginTarget ? { plugin_config: pluginConfig } : {}),
+        dataset_write_mode: datasetWriteMode,
+        required_fields: requiredFields,
+        deduplicate_enabled: deduplicateEnabled,
+        deduplicate_fields: deduplicateFields,
+        sort_fields: sortFields.filter(sf => sf.field),
+        row_limit: rowLimit ? parseInt(rowLimit) : null,
+      },
+      save_as_dataset: saveAsDataset,
+      fields,
+    };
+  };
 
   const handleSubmit = () => {
     // Bei DB-Typ: erst FieldPicker öffnen
@@ -282,6 +316,15 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
                     {t.label}
                   </button>
                 ))}
+                {pluginTargetTypes.map((p) => {
+                  const c = TARGET_TYPE_COLORS[p.id] || PLUGIN_TARGET_DEFAULT_COLOR;
+                  return (
+                    <button key={p.id} onClick={() => { setTargetType(p.id); setPluginConfig({}); }}
+                      style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${targetType === p.id ? c : S.border}`, backgroundColor: targetType === p.id ? c + "22" : S.bgMain, color: targetType === p.id ? c : S.textDim }}>
+                      {p.label}
+                    </button>
+                  );
+                })}
               </div>
             </div>
             {/* CSV options */}
@@ -335,6 +378,37 @@ function TargetConfigModal({ target, dbConnections, onSave, onClose }) {
                   </p>
                 )}
               </>
+            )}
+            {/* Plugin-Ziel Konfiguration */}
+            {isPluginTarget && activePluginType && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(167,139,250,0.07)", border: "1px solid rgba(167,139,250,0.2)", fontSize: 11, color: "#c4b5fd" }}>
+                  Plugin-Ziel · {activePluginType.label}
+                </div>
+                {(activePluginType.config_schema || []).map((field) => (
+                  <div key={field.key}>
+                    <label style={lS}>{field.label}{field.required ? " *" : ""}</label>
+                    {field.type === "select" ? (
+                      <select style={iS} value={pluginConfig[field.key] ?? field.default ?? ""} onChange={(e) => setPluginConfig(prev => ({ ...prev, [field.key]: e.target.value }))}>
+                        {(field.options || []).map(o => <option key={o} value={o}>{o}</option>)}
+                      </select>
+                    ) : field.type === "password" ? (
+                      <input type="password" style={iS} value={pluginConfig[field.key] ?? ""} onChange={(e) => setPluginConfig(prev => ({ ...prev, [field.key]: e.target.value }))} placeholder={field.placeholder || ""} autoComplete="new-password" />
+                    ) : (
+                      <input type={field.type === "number" ? "number" : "text"} style={iS} value={pluginConfig[field.key] ?? field.default ?? ""} onChange={(e) => setPluginConfig(prev => ({ ...prev, [field.key]: e.target.value }))} placeholder={field.placeholder || ""} />
+                    )}
+                  </div>
+                ))}
+                {isNew && (
+                  <div style={{ fontSize: 11, color: S.textDim, borderTop: `1px solid ${S.border}`, paddingTop: 8 }}>
+                    {schemaLoading ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}><Loader2 size={11} className="animate-spin" /> Lade Zielfelder…</span>
+                    ) : pluginFields !== null ? (
+                      <span>Zielfelder: <span style={{ fontFamily: "monospace", color: "#c4b5fd" }}>{pluginFields.join(", ")}</span></span>
+                    ) : null}
+                  </div>
+                )}
+              </div>
             )}
             {/* Als Dataset speichern */}
             <div
