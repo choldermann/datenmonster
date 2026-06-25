@@ -74,6 +74,41 @@ def _apply_config_deep(obj, config: dict):
     return obj
 
 
+# Felder die Dataset-Integer-IDs enthalten (für ID-Umschreibung beim Export/Import)
+_DS_ID_KEYS = {"dataset_id", "left_dataset_id", "right_dataset_id",
+               "lookup_dataset_id", "source_dataset_id"}
+
+
+def _rewrite_ids_export(obj, int_to_str: dict):
+    """Ersetzt Integer-Dataset-IDs durch Template-String-IDs (z.B. 42 → 'ds_42')."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if k in _DS_ID_KEYS and isinstance(v, int) and v in int_to_str:
+                result[k] = int_to_str[v]
+            else:
+                result[k] = _rewrite_ids_export(v, int_to_str)
+        return result
+    if isinstance(obj, list):
+        return [_rewrite_ids_export(i, int_to_str) for i in obj]
+    return obj
+
+
+def _rewrite_ids_install(obj, str_to_int: dict):
+    """Ersetzt Template-String-IDs durch echte Integer-Dataset-IDs beim Install."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if k in _DS_ID_KEYS and isinstance(v, str) and v in str_to_int:
+                result[k] = str_to_int[v]
+            else:
+                result[k] = _rewrite_ids_install(v, str_to_int)
+        return result
+    if isinstance(obj, list):
+        return [_rewrite_ids_install(i, str_to_int) for i in obj]
+    return obj
+
+
 @router.post("/install")
 def install_template(body: InstallBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """
@@ -242,94 +277,57 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         created["datasets"].append({"id": ds.id, "name": ds.name, "file_type": file_type})
 
     # ── Mappings anlegen ──────────────────────────────────────────────────────
+    CONST_TYPE_MAP = {
+        "now": "current_datetime", "today": "current_date", "date": "current_date",
+        "datetime": "current_datetime", "uuid": "uuid", "year": "current_year",
+    }
+
     mapping_id_map = {}
     for m_def in content.get("mappings", []):
-        src_ds_id = ds_id_map.get(m_def.get("source_dataset"))
 
-        # dataset_columns aus dem Source-Dataset holen
-        src_columns = []
-        if src_ds_id:
-            src_ds = db.query(Dataset).filter(Dataset.id == src_ds_id).first()
-            if src_ds:
-                src_columns = src_ds.columns or []
-
-        canvas_nodes = []
-        if src_ds_id:
+        # ── Canvas Nodes ────────────────────────────────────────────────────
+        if m_def.get("canvas_nodes"):
+            # Exportiertes Template: Template-IDs → echte IDs
+            canvas_nodes = _rewrite_ids_install(m_def["canvas_nodes"], ds_id_map)
+        else:
+            # Einfaches manuelles Template mit source_dataset
+            src_ds_id = ds_id_map.get(m_def.get("source_dataset"))
+            src_columns = []
+            if src_ds_id:
+                src_ds = db.query(Dataset).filter(Dataset.id == src_ds_id).first()
+                if src_ds:
+                    src_columns = src_ds.columns or []
             canvas_nodes = [{
-                "id": str(src_ds_id),
-                "dataset_id": src_ds_id,
-                "dataset_columns": src_columns,
-                "x": 40,
-                "y": 80,
-            }]
+                "id": str(src_ds_id), "dataset_id": src_ds_id,
+                "dataset_columns": src_columns, "x": 40, "y": 80,
+            }] if src_ds_id else []
 
-        # Feldverbindungen aufbauen
-        effective_ds_id = str(src_ds_id) if src_ds_id else "1"
-        # Constant-Node output_fields sammeln für source-Erkennung
-        const_output_fields = {cn.get("output_field") for cn in m_def.get("constant_nodes", [])}
-        # REST-Node output_fields sammeln
-        rest_output_fields = set()
-        if m_def.get("rest_node"):
-            for rm in m_def["rest_node"].get("response_mappings", []):
-                if rm.get("output_field"):
-                    rest_output_fields.add(rm["output_field"])
+        # ── Joins ────────────────────────────────────────────────────────────
+        joins = _rewrite_ids_install(m_def.get("joins", []) or [], ds_id_map)
 
-        connections = []
-        for f in m_def.get("fields", []):
-            src = f.get("source_field")
-            explicit_source = f.get("source", "")
-            # source_dataset_id je nach Herkunft setzen
-            if explicit_source == "constant" or src in const_output_fields:
-                # SvgOverlay erwartet "__const__<nodeId>" – passende constant_node finden
-                matching_cn = next(
-                    (cn for cn in m_def.get("constant_nodes", [])
-                     if cn.get("output_field") == src),
-                    None
-                )
-                cn_id = matching_cn.get("id", "c1") if matching_cn else "c1"
-                src_id = f"__const__{cn_id}"
-            elif explicit_source == "rest" or src in rest_output_fields:
-                src_id = "__rest__rn1"
-            else:
-                src_id = effective_ds_id
-            connections.append({
-                "source_dataset_id": src_id,
-                "source_field": src,
-                "target_field": f.get("target_field"),
-            })
+        # ── SQL Nodes — unterstützt plural (Export) und singular (manuell) ──
+        if m_def.get("sql_nodes"):
+            sql_nodes = [
+                dict(n, sql=_apply_config(n.get("sql", ""), config))
+                for n in m_def["sql_nodes"]
+            ]
+        elif m_def.get("sql_node"):
+            sn = m_def["sql_node"]
+            sql_nodes = [{"id": "sql1", "sql": _apply_config(sn.get("sql", ""), config),
+                          "x": 200, "y": 100}]
+        else:
+            sql_nodes = []
 
-        # SQL Node
-        sql_nodes = []
-        if m_def.get("sql_node"):
-            sql = _apply_config(m_def["sql_node"].get("sql", ""), config)
-            sql_nodes = [{"id": "sql1", "sql": sql, "x": 200, "y": 100}]
-
-        # Constant Nodes (z.B. Zeitstempel)
-        # const_type Mapping: Template-Werte → mapping_service Werte
-        CONST_TYPE_MAP = {
-            "now":      "current_datetime",
-            "today":    "current_date",
-            "date":     "current_date",
-            "datetime": "current_datetime",
-            "uuid":     "uuid",
-            "year":     "current_year",
-        }
-
+        # ── Constant Nodes ───────────────────────────────────────────────────
         constant_nodes = []
         for cn in m_def.get("constant_nodes", []):
             raw_type = cn.get("const_type", "current_datetime")
-            mapped_type = CONST_TYPE_MAP.get(raw_type, raw_type)
-            constant_nodes.append({
-                "id": cn.get("id", "c1"),
-                "const_type": mapped_type,
-                "output_field": cn.get("output_field", "timestamp"),
-                "x": 40,
-                "y": 200,
-            })
+            constant_nodes.append({**cn, "const_type": CONST_TYPE_MAP.get(raw_type, raw_type)})
 
-        # REST Nodes (Batch-Lookup)
-        rest_nodes = []
-        if m_def.get("rest_node"):
+        # ── REST Nodes — unterstützt plural (Export) und singular (manuell) ─
+        if m_def.get("rest_nodes"):
+            rest_nodes = [_apply_config_deep(rn, config) for rn in m_def["rest_nodes"]]
+        elif m_def.get("rest_node"):
             rn = _apply_config_deep(m_def["rest_node"], config)
             rest_nodes = [{
                 "id": "rn1",
@@ -344,30 +342,80 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 "response_mappings": rn.get("response_mappings", []),
                 "x": 300, "y": 80,
             }]
+        else:
+            rest_nodes = []
 
-        # Write-Mode
-        write_mode = m_def.get("write_mode", "replace")
+        # ── Pass-through Node-Typen (keine Dataset-IDs, kein Umbau nötig) ──
+        agg_nodes       = m_def.get("agg_nodes") or []
+        transform_nodes = m_def.get("transform_nodes") or []
+        calc_nodes      = m_def.get("calc_nodes") or []
+        sort_nodes      = m_def.get("sort_nodes") or []
+        # lookup/switch referenzieren Dataset-IDs → umschreiben
+        lookup_nodes = _rewrite_ids_install(m_def.get("lookup_nodes") or [], ds_id_map)
+        switch_nodes = _rewrite_ids_install(m_def.get("switch_nodes") or [], ds_id_map)
 
-        targets = [{
-            "id": "t1",
-            "name": m_def.get("name", "Export"),
-            "target_type": m_def.get("target_type", "dataset"),
-            "target_name": _apply_config(m_def.get("target_filename", "export"), config),
-            "write_mode": write_mode,
-            # dataset target_type: save_as_dataset Flag + write_mode weitergeben
-            "save_as_dataset": m_def.get("target_type", "dataset") == "dataset",
-            "target_options": {"dataset_write_mode": write_mode},
-            "fields": connections,
-        }]
+        # ── Targets ──────────────────────────────────────────────────────────
+        if m_def.get("targets"):
+            # Vollständig exportiertes Template: Dataset-IDs + Platzhalter ersetzen
+            targets = _rewrite_ids_install(
+                _apply_config_deep(m_def["targets"], config), ds_id_map
+            )
+        else:
+            # Einfaches manuelles Template: einzelnes Ziel konstruieren
+            src_ds_id_fb = ds_id_map.get(m_def.get("source_dataset"))
+            effective_ds_id = str(src_ds_id_fb) if src_ds_id_fb else "1"
+            const_output_fields = {cn.get("output_field") for cn in m_def.get("constant_nodes", [])}
+            rest_output_fields = set()
+            if m_def.get("rest_node"):
+                for rm in m_def["rest_node"].get("response_mappings", []):
+                    if rm.get("output_field"):
+                        rest_output_fields.add(rm["output_field"])
+            connections = []
+            for f in m_def.get("fields", []):
+                src_f = f.get("source_field")
+                explicit_source = f.get("source", "")
+                if explicit_source == "constant" or src_f in const_output_fields:
+                    matching_cn = next(
+                        (cn for cn in m_def.get("constant_nodes", [])
+                         if cn.get("output_field") == src_f), None
+                    )
+                    cn_id = matching_cn.get("id", "c1") if matching_cn else "c1"
+                    src_id = f"__const__{cn_id}"
+                elif explicit_source == "rest" or src_f in rest_output_fields:
+                    src_id = "__rest__rn1"
+                else:
+                    src_id = effective_ds_id
+                connections.append({
+                    "source_dataset_id": src_id,
+                    "source_field": src_f,
+                    "target_field": f.get("target_field"),
+                })
+            write_mode = m_def.get("write_mode", "replace")
+            targets = [{
+                "id": "t1",
+                "name": m_def.get("name", "Export"),
+                "target_type": m_def.get("target_type", "dataset"),
+                "target_name": _apply_config(m_def.get("target_filename", "export"), config),
+                "write_mode": write_mode,
+                "save_as_dataset": m_def.get("target_type", "dataset") == "dataset",
+                "target_options": {"dataset_write_mode": write_mode},
+                "fields": connections,
+            }]
 
         m = Mapping(
             name=m_def.get("name", "Mapping"),
             project_id=body.project_id,
             canvas_nodes=canvas_nodes,
-            joins=[],
+            joins=joins,
             sql_nodes=sql_nodes,
+            agg_nodes=agg_nodes,
+            transform_nodes=transform_nodes,
             constant_nodes=constant_nodes,
             rest_nodes=rest_nodes,
+            lookup_nodes=lookup_nodes,
+            calc_nodes=calc_nodes,
+            switch_nodes=switch_nodes,
+            sort_nodes=sort_nodes,
             targets=targets,
         )
         db.add(m)
@@ -558,6 +606,9 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
         "hinweise": [],
     }
 
+    # Mapping von echten Dataset-IDs auf Template-String-IDs für ID-Umschreibung
+    ds_real_to_tpl = {ds_id: f"ds_{ds_id}" for ds_id in (body.dataset_ids or [])}
+
     for ds_id in (body.dataset_ids or []):
         ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
         if ds:
@@ -577,19 +628,26 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
     for m_id in (body.mapping_ids or []):
         m = db.query(Mapping).filter(Mapping.id == m_id).first()
         if m:
-            targets = m.targets or []
-            if isinstance(targets, str):
-                targets = json.loads(targets)
+            targets_raw = m.targets or []
+            if isinstance(targets_raw, str):
+                targets_raw = json.loads(targets_raw)
             content["mappings"].append({
                 "id": f"mapping_{m_id}",
                 "name": m.name,
-                "canvas_nodes": m.canvas_nodes or [],
-                "joins": m.joins or [],
-                "sql_nodes": getattr(m, "sql_nodes", None) or [],
-                "agg_nodes": getattr(m, "agg_nodes", None) or [],
-                "transform_nodes": getattr(m, "transform_nodes", None) or [],
-                "constant_nodes": getattr(m, "constant_nodes", None) or [],
-                "targets": targets,
+                # canvas_nodes und joins enthalten Integer-IDs → auf Template-IDs umschreiben
+                "canvas_nodes": _rewrite_ids_export(m.canvas_nodes or [], ds_real_to_tpl),
+                "joins":        _rewrite_ids_export(m.joins or [], ds_real_to_tpl),
+                "sql_nodes":       m.sql_nodes or [],
+                "agg_nodes":       m.agg_nodes or [],
+                "transform_nodes": m.transform_nodes or [],
+                "constant_nodes":  m.constant_nodes or [],
+                "rest_nodes":      getattr(m, "rest_nodes",   None) or [],
+                "lookup_nodes":    _rewrite_ids_export(getattr(m, "lookup_nodes", None) or [], ds_real_to_tpl),
+                "calc_nodes":      getattr(m, "calc_nodes",   None) or [],
+                "switch_nodes":    _rewrite_ids_export(getattr(m, "switch_nodes", None) or [], ds_real_to_tpl),
+                "sort_nodes":      getattr(m, "sort_nodes",   None) or [],
+                # targets enthalten ebenfalls Dataset-IDs in source_dataset_id → umschreiben
+                "targets": _rewrite_ids_export(targets_raw, ds_real_to_tpl),
             })
 
     for p_id in (body.pipeline_ids or []):
