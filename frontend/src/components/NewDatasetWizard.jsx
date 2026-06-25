@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Upload, Database, X, ChevronRight, ChevronLeft,
-  Loader2, CheckCircle, FileText, Code2, AlertCircle,
+  Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle,
 } from "lucide-react";
 import api from "../api/client";
 
@@ -36,6 +36,10 @@ function StepChoose({ onChoose }) {
         {
           key: "sql", icon: Database, color: "#c4b5fd", bg: "rgba(196,181,253,0.1)",
           title: "SQL-Abfrage", sub: "Dataset aus einer Datenbankverbindung abfragen",
+        },
+        {
+          key: "plugin", icon: Puzzle, color: "#6ee7b7", bg: "rgba(110,231,183,0.1)",
+          title: "Plugin-Quelle", sub: "Dataset aus einem installierten Plugin generieren",
         },
       ].map(({ key, icon: Icon, color, bg, title, sub }) => (
         <button
@@ -332,6 +336,161 @@ function TableFieldPicker({ connId, tables, label, selectedTable, selectedFields
             })}
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── Step: Plugin Source ─────────────────────────────────────────────────────
+function StepPluginSource({ onDone, projectId }) {
+  const [sourceTypes, setSourceTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [config, setConfig] = useState({});
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/plugins/source-types")
+      .then(({ data }) => { setSourceTypes(data); if (data.length === 1) selectType(data[0]); })
+      .catch(() => setError("Plugin-Quellen konnten nicht geladen werden"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const selectType = (st) => {
+    setSelected(st);
+    const defaults = {};
+    (st.config_schema || []).forEach((f) => { if (f.default !== undefined) defaults[f.key] = f.default; });
+    setConfig(defaults);
+    setName(st.label || st.id || "");
+  };
+
+  const handleFieldChange = (key, value) => setConfig((prev) => ({ ...prev, [key]: value }));
+
+  const handleCreate = async () => {
+    if (!selected || !name.trim()) return;
+    setSaving(true); setError("");
+    try {
+      await api.post("/api/datasets/plugin", {
+        name: name.trim(),
+        source_type_id: selected.id,
+        query_config: config,
+        project_id: projectId ?? null,
+      });
+      setSuccess(true);
+      setTimeout(onDone, 800);
+    } catch (err) {
+      setError(err.response?.data?.detail || "Dataset konnte nicht erstellt werden");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (success) return (
+    <div className="flex flex-col items-center justify-center py-12 gap-3">
+      <CheckCircle size={40} style={{ color: "#6ee7b7" }} />
+      <p className="text-sm font-medium" style={{ color: S.textBright }}>Dataset erstellt!</p>
+    </div>
+  );
+
+  if (loading) return (
+    <div className="flex items-center justify-center py-12 gap-2" style={{ color: S.textDim }}>
+      <Loader2 size={16} className="animate-spin" /> Lade Plugin-Quellen…
+    </div>
+  );
+
+  if (!loading && sourceTypes.length === 0) return (
+    <div className="text-center py-12">
+      <Puzzle size={32} className="mx-auto mb-3" style={{ color: S.textDim }} />
+      <p className="text-sm" style={{ color: S.textMain }}>Keine Plugin-Quellen verfügbar</p>
+      <p className="text-xs mt-1" style={{ color: S.textDim }}>Zuerst ein Tier-2 Plugin starten oder ein Tier-1 Source-Plugin installieren</p>
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-5">
+      {/* Plugin-Quelle wählen */}
+      {sourceTypes.length > 1 && (
+        <div>
+          <label style={labelStyle}>Plugin-Quelle</label>
+          <div className="flex flex-col gap-2">
+            {sourceTypes.map((st) => (
+              <button key={st.id} onClick={() => selectType(st)}
+                className="flex items-center gap-4 p-3 rounded-lg text-left transition-all"
+                style={{
+                  backgroundColor: selected?.id === st.id ? "rgba(110,231,183,0.08)" : S.bgEl,
+                  border: `1px solid ${selected?.id === st.id ? "#6ee7b7" : S.border}`,
+                }}>
+                <Puzzle size={16} style={{ color: "#6ee7b7", flexShrink: 0 }} />
+                <div>
+                  <p className="text-xs font-medium" style={{ color: S.textBright }}>{st.label}</p>
+                  <p className="text-xs" style={{ color: S.textDim }}>{st.id}</p>
+                </div>
+                {selected?.id === st.id && (
+                  <CheckCircle size={14} style={{ color: "#6ee7b7", marginLeft: "auto" }} />
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Konfigurationsfelder */}
+      {selected && (
+        <>
+          <div>
+            <label style={labelStyle}>Dataset-Name</label>
+            <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)}
+              placeholder="z.B. Testdaten Faker" autoFocus />
+          </div>
+
+          {(selected.config_schema || []).map((field) => (
+            <div key={field.key}>
+              <label style={labelStyle}>{field.label}</label>
+              {field.type === "select" ? (
+                <select
+                  style={{ ...inputStyle, paddingTop: "0.5rem", paddingBottom: "0.5rem" }}
+                  value={config[field.key] ?? field.default ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}>
+                  {(field.options || []).map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              ) : field.type === "number" ? (
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={config[field.key] ?? field.default ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, Number(e.target.value))}
+                  placeholder={String(field.default ?? "")}
+                />
+              ) : (
+                <input
+                  style={inputStyle}
+                  value={config[field.key] ?? field.default ?? ""}
+                  onChange={(e) => handleFieldChange(field.key, e.target.value)}
+                  placeholder={field.placeholder || String(field.default ?? "")}
+                />
+              )}
+            </div>
+          ))}
+        </>
+      )}
+
+      {error && (
+        <div className="flex items-center gap-2 text-xs px-3 py-2 rounded"
+          style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "#e07070" }}>
+          <AlertCircle size={13} /> {error}
+        </div>
+      )}
+
+      {selected && (
+        <button onClick={handleCreate} disabled={saving || !name.trim()} className="btn-primary w-full justify-center">
+          {saving ? <Loader2 size={14} className="animate-spin" /> : <Puzzle size={14} />}
+          {saving ? "Wird erstellt…" : "Plugin-Dataset erstellen"}
+        </button>
+      )}
     </div>
   );
 }
@@ -1016,7 +1175,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
   const [step, setStep] = useState(editDataset ? "sql" : "choose");
   const [dsName, setDsName] = useState(editDataset?.name || "");
 
-  const titles = { choose: "Neues Dataset", file: "Datei hochladen" };
+  const titles = { choose: "Neues Dataset", file: "Datei hochladen", plugin: "Plugin-Quelle", sql: "SQL-Abfrage" };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1037,7 +1196,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
               </button>
             )}
             <h2 className="text-sm font-semibold shrink-0" style={{ color: S.textBright }}>
-              {editDataset ? "SQL-Dataset bearbeiten" : step === "sql" ? "SQL-Abfrage" : titles[step]}
+              {editDataset ? "SQL-Dataset bearbeiten" : titles[step] || step}
             </h2>
             {step === "sql" && (
               <input
@@ -1066,6 +1225,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
         <div className="flex-1 overflow-y-auto px-6 py-5" style={{ scrollbarWidth: "thin" }}>
           {step === "choose" && <StepChoose onChoose={(p) => setStep(p)} />}
           {step === "file" && <StepFileUpload onDone={onDone} projectId={projectId} />}
+          {step === "plugin" && <StepPluginSource onDone={onDone} projectId={projectId} />}
           {step === "sql" && <StepSqlQuery onDone={onDone} name={dsName} setName={setDsName} editDataset={editDataset} projectId={projectId} />}
         </div>
       </div>

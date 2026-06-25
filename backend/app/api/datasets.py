@@ -363,6 +363,41 @@ def get_dataset_data(
 
 # ─── Liste ────────────────────────────────────────────────────────────────────
 
+class PluginDatasetCreate(BaseModel):
+    name: str
+    source_type_id: str
+    query_config: dict = {}
+    project_id: Optional[int] = None
+
+
+@router.post("/plugin")
+def create_plugin_dataset(
+    body: PluginDatasetCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Legt ein Plugin-Quell-Dataset an (Tier-1 oder Tier-2)."""
+    from app.plugins.registry import registry
+    if not registry.get_source(body.source_type_id):
+        raise HTTPException(400, f"Keine Plugin-Quelle mit ID '{body.source_type_id}' gefunden")
+    require_editor(body.project_id, user, db)
+    ds = Dataset(
+        name=body.name,
+        original_filename=None,
+        file_type=body.source_type_id,
+        query_config=body.query_config,
+        project_id=body.project_id,
+        xml_configured=1,
+        row_count=0,
+        columns=[],
+        column_types={},
+    )
+    db.add(ds)
+    db.commit()
+    db.refresh(ds)
+    return dataset_out(ds)
+
+
 @router.get("/")
 def list_datasets(
     project_id: Optional[int] = None,
