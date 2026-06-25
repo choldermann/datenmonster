@@ -240,6 +240,7 @@ function Tier2Card({ plugin, onStart, onStop, onDelete, busy }) {
   const statusColor = CONTAINER_STATUS_COLOR[plugin.status] || "#6b7280";
   const isRunning = plugin.status === "running";
   const isStarting = plugin.status === "starting";
+  const [testing, setTesting] = useState(false);
 
   return (
     <div style={{ borderRadius: 8, border: `1px solid ${S.border}`,
@@ -277,6 +278,14 @@ function Tier2Card({ plugin, onStart, onStop, onDelete, busy }) {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+        {isRunning && (
+          <button onClick={() => setTesting(true)} disabled={busy}
+            style={{ fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: busy ? "not-allowed" : "pointer",
+              backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
+              color: "#6ee7b7", display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.5 : 1 }}>
+            <Zap size={11} /> Test
+          </button>
+        )}
         {isRunning ? (
           <button onClick={onStop} disabled={busy}
             style={{ fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: busy ? "wait" : "pointer",
@@ -303,6 +312,7 @@ function Tier2Card({ plugin, onStart, onStop, onDelete, busy }) {
           <Trash2 size={13} />
         </button>
       </div>
+      {testing && <TestModal plugin={plugin} onClose={() => setTesting(false)} />}
     </div>
   );
 }
