@@ -82,7 +82,7 @@ function TestModal({ plugin, onClose }) {
               </select>
             ) : (
               <input type={field.type === "number" ? "number" : "text"}
-                placeholder={field.placeholder || field.default ?? ""}
+                placeholder={field.placeholder || (field.default ?? "")}
                 value={config[field.key] ?? ""}
                 style={iS}
                 onChange={e => setConfig(c => ({ ...c, [field.key]: e.target.value }))} />
