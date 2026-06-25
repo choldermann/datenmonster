@@ -13,7 +13,7 @@ from app.services.file_service import (
     infer_column_types,
 )
 from app.core.config import UPLOAD_DIR
-from app.api.projects import require_editor
+from app.api.projects import require_editor, get_accessible_project_ids, can_read_project
 import pandas as pd
 
 
@@ -372,7 +372,13 @@ def list_datasets(
 ):
     q = db.query(Dataset)
     if project_id is not None:
+        if not can_read_project(project_id, user, db):
+            raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
         q = q.filter(Dataset.project_id == project_id)
+    else:
+        accessible = get_accessible_project_ids(user, db)
+        if accessible is not None:
+            q = q.filter((Dataset.project_id.in_(accessible)) | (Dataset.project_id.is_(None)))
     if exclude_mapping_id is not None:
         q = q.filter(
             (Dataset.source_mapping_id == None) |

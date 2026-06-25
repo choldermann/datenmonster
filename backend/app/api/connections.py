@@ -103,7 +103,11 @@ def create_connection(data: ConnectionCreate, db: Session = Depends(get_db), use
 @router.post("/import-connection")
 def import_connection(data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kopiert eine bestehende Verbindungskonfiguration in ein neues Projekt."""
-    conn = DbConnection(**data.model_dump())
+    require_editor(data.project_id, user, db)
+    d = data.model_dump()
+    if d.get("password"):
+        d["password"] = encrypt_credential(d["password"])
+    conn = DbConnection(**d)
     db.add(conn); db.commit(); db.refresh(conn)
     return conn_out(conn)
 
@@ -129,9 +133,7 @@ def test_conn_by_id(conn_id: int, db: Session = Depends(get_db), user: User = De
 
 @router.get("/{conn_id}/tables")
 def list_tables(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    conn = _require_read_conn(conn_id, user, db)
     try:
         return {"tables": get_tables(conn)}
     except Exception as e:
@@ -141,9 +143,7 @@ def list_tables(conn_id: int, db: Session = Depends(get_db), user: User = Depend
 @router.get("/{conn_id}/tables-only")
 def list_tables_only(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Gibt Tabellen und Views zurück – für Whitelist-Auswahl im DatabaseAnalyzer."""
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    conn = _require_read_conn(conn_id, user, db)
     try:
         from sqlalchemy import create_engine, inspect
         from app.services.db_service import get_engine_str
@@ -187,9 +187,7 @@ def list_tables_only(conn_id: int, db: Session = Depends(get_db), user: User = D
 
 @router.get("/{conn_id}/columns")
 def list_columns(conn_id: int, table: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    conn = _require_read_conn(conn_id, user, db)
     try:
         from sqlalchemy import create_engine, inspect
         from app.services.db_service import get_engine_str

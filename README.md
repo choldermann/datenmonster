@@ -56,6 +56,19 @@
 
 ## 🚀 Quick Start
 
+> [!WARNING]
+> **Pflicht vor dem ersten Start:** Konfiguriere `.env` mit einem sicheren `SECRET_KEY`.
+> Ohne diesen Schritt startet der Container nicht.
+>
+> ```bash
+> cp .env.example .env
+> # SECRET_KEY generieren und in .env eintragen:
+> echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
+> ```
+>
+> Die `.env`-Datei enthält Passwörter und darf **niemals** ins Repository committed werden
+> (sie ist bereits in `.gitignore` eingetragen).
+
 ### Option 1 – Installer (recommended)
 
 **Linux / macOS:**
@@ -73,14 +86,20 @@ irm https://install.datenmonster.com/install.ps1 | iex
 ```bash
 git clone https://github.com/HoldermannIT/datenmonster.git
 cd datenmonster
+
+# 1. Konfiguration anlegen und SECRET_KEY setzen (Pflicht!)
 cp .env.example .env
-# Edit .env and set your passwords
+echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
+# Optional: ADMIN_PASSWORD in .env setzen, sonst wird ein Zufallspasswort
+# beim ersten Start generiert und einmalig in den Container-Logs angezeigt.
+
+# 2. Starten
 docker compose up --build -d
 ```
 
 Then open: **http://localhost:5173**
 
-Default login: `admin` / *(see your .env)*
+Default login: `admin` / *(Passwort aus `.env` oder beim ersten Start aus den Container-Logs)*
 
 ---
 

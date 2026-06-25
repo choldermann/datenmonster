@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 from pydantic import BaseModel
@@ -6,6 +6,11 @@ from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.models.setting import SystemSetting
+
+
+def _require_admin(user: User):
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren können System-Einstellungen ändern")
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -29,6 +34,7 @@ def set_setting(db, key: str, value: str):
 
 @router.get("/email")
 def get_email_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
     result = {}
     for key in EMAIL_KEYS:
         short = key.replace("smtp_", "")
@@ -52,6 +58,7 @@ class EmailConfig(BaseModel):
 
 @router.post("/email")
 def save_email_settings(body: EmailConfig, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
     data = body.dict()
     for key, value in data.items():
         # Passwort nicht überschreiben wenn maskiert
@@ -63,6 +70,7 @@ def save_email_settings(body: EmailConfig, db: Session = Depends(get_db), user: 
 
 @router.post("/email/test")
 def test_email(body: EmailConfig, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
     from app.services.email_service import send_email
 
     # Echtes Passwort laden wenn maskiert
@@ -101,11 +109,13 @@ class AiConfig(BaseModel):
 
 @router.get("/ai")
 def get_ai_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
     key = get_setting(db, "claude_api_key", "")
     return {"claude_api_key": "••••••••" if key else ""}
 
 @router.post("/ai")
 def save_ai_settings(body: AiConfig, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
     if body.claude_api_key and body.claude_api_key != "••••••••":
         set_setting(db, "claude_api_key", body.claude_api_key)
     return {"ok": True}

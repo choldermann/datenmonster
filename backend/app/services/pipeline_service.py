@@ -37,11 +37,22 @@ def run_pipeline(pipeline, db) -> dict:
     start_time = log_pipeline_start(db, pipeline)
     logger.info(f"Pipeline '{pipeline.name}': {len(order)} Nodes in Reihenfolge")
 
+    skipped = set()  # Node-IDs die wegen Dispatcher-Branch übersprungen werden
+
     try:
         for nid in order:
             node = nodes.get(nid)
             if not node:
                 continue
+
+            # Branch-Routing: Node überspringen wenn Dispatcher ihn ausgeschlossen hat
+            if nid in skipped:
+                results[nid] = {"status": "skipped", "message": "Übersprungen (Dispatcher-Bedingung nicht erfüllt)"}
+                for c in connections:
+                    if c["from_node"] == nid:
+                        skipped.add(c["to_node"])
+                continue
+
             ntype = node.get("type", "")
             config = node.get("config", {})
             node_start = datetime.now(timezone.utc)
@@ -94,6 +105,11 @@ def run_pipeline(pipeline, db) -> dict:
                     match = _check_conditions(df, filename, conditions, mode, db=db)
                     results[nid] = {"status": "ok", "match": match,
                                     "message": f"Bedingung {'erfüllt' if match else 'nicht erfüllt'}"}
+                    # Branch-Routing: Nodes auf dem nicht genommenen Pfad überspringen
+                    dropped_port = "no_match" if match else "match"
+                    for c in connections:
+                        if c["from_node"] == nid and c.get("from_port") == dropped_port:
+                            skipped.add(c["to_node"])
 
                 elif ntype == "mapping":
                     mapping_id = config.get("mapping_id")
@@ -169,7 +185,6 @@ def run_pipeline(pipeline, db) -> dict:
                         results[nid] = {"status": "ok", "message": "E-Mail übersprungen"}
 
                 elif ntype == "condition":
-                    field = config.get("field", "")
                     operator = config.get("operator", "gt")
                     value = config.get("value", "0")
                     prev_data = _get_prev_data(nid, connections, results)
@@ -183,6 +198,11 @@ def run_pipeline(pipeline, db) -> dict:
                         met = bool(prev_rows)
                     results[nid] = {"status": "ok", "condition_met": met,
                                     "message": f"Bedingung {'erfüllt' if met else 'nicht erfüllt'}"}
+                    # Branch-Routing: Nodes auf dem nicht genommenen Pfad überspringen
+                    dropped_port = "no" if met else "yes"
+                    for c in connections:
+                        if c["from_node"] == nid and c.get("from_port") == dropped_port:
+                            skipped.add(c["to_node"])
 
                 elif ntype == "rest_fetch":
                     from app.models.rest_source import RestSource
@@ -256,7 +276,32 @@ def run_pipeline(pipeline, db) -> dict:
                             details={"rest_source": src.name})
 
                 elif ntype == "ftp_upload":
-                    results[nid] = {"status": "ok", "message": "FTP-Upload noch nicht implementiert"}
+                    ftp_source_id = config.get("ftp_source_id")
+                    remote_dir = config.get("remote_dir", "/")
+                    filename = config.get("filename", "export.csv")
+                    filename = filename.replace("{datum}", datetime.now(timezone.utc).strftime("%Y%m%d"))
+                    if not ftp_source_id:
+                        results[nid] = {"status": "error", "message": "Kein FTP-Ziel konfiguriert"}
+                    else:
+                        from app.models.ftp_source import FtpSource
+                        from app.services.ftp_service import upload_file_ftp_source
+                        import pandas as pd
+                        src = db.query(FtpSource).filter(FtpSource.id == ftp_source_id).first()
+                        if not src:
+                            results[nid] = {"status": "error", "message": f"FTP-Quelle {ftp_source_id} nicht gefunden"}
+                        else:
+                            prev_data = _get_prev_data(nid, connections, results)
+                            df = prev_data.get("df")
+                            if df is None:
+                                df = pd.DataFrame(index=range(prev_data.get("rows", 0)))
+                            row_count = upload_file_ftp_source(src, df, remote_dir, filename)
+                            results[nid] = {"status": "ok", "message": f"{filename} hochgeladen ({row_count} Zeilen)"}
+                            log(db, "success", "pipeline_service", "node_ftp_upload",
+                                f"FTP-Upload: {filename} → {src.name}:{remote_dir}",
+                                entity_id=pipeline.id, entity_name=pipeline.name,
+                                project_id=getattr(pipeline, "project_id", None),
+                                rows_processed=row_count,
+                                details={"ftp_source": src.name, "remote_dir": remote_dir, "filename": filename})
 
             except Exception as e:
                 tb = traceback.format_exc()

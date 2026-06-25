@@ -50,13 +50,17 @@ def _check_conditions(df: pd.DataFrame, filename: str, conditions: list, mode: s
                 else:
                     results.append(False)
 
-            elif ctype == "row_count_gt":
+            elif ctype in ("row_count_gt", "rows_gt"):
                 threshold = int(cond.get("threshold", 0))
                 results.append(len(df) > threshold)
 
-            elif ctype == "row_count_lt":
+            elif ctype in ("row_count_lt", "rows_lt"):
                 threshold = int(cond.get("threshold", 0))
                 results.append(len(df) < threshold)
+
+            elif ctype in ("row_count_eq", "rows_eq"):
+                threshold = int(cond.get("threshold", 0))
+                results.append(len(df) == threshold)
 
             elif ctype == "xml_tag_exists":
                 root = get_xml_root()

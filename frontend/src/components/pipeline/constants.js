@@ -28,6 +28,7 @@ export const NODE_TYPES = [
   { type: "rest_fetch", label: "REST Fetch",    icon: "🌐", color: NODE_COLORS.rest_fetch,  desc: "REST API abrufen" },
   { type: "dispatcher", label: "Verzweigung",   icon: "🔀", color: NODE_COLORS.dispatcher,  desc: "Bedingungen & Verzweigung" },
   { type: "mapping",    label: "Mapping",       icon: "⚙️", color: NODE_COLORS.mapping,     desc: "Mapping ausführen" },
+  { type: "condition",  label: "Bedingung",     icon: "❓", color: NODE_COLORS.condition,   desc: "Wenn/Dann Verzweigung" },
   { type: "ftp_upload", label: "FTP Upload",    icon: "📤", color: NODE_COLORS.ftp_upload,  desc: "Datei hochladen" },
   { type: "email",      label: "E-Mail",        icon: "📧", color: NODE_COLORS.email,       desc: "E-Mail senden" },
 ];

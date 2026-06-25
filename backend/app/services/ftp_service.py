@@ -115,6 +115,45 @@ def delete_file_sftp(sftp, remote_dir: str, filename: str):
         raise
 
 
+# ─── Upload ───────────────────────────────────────────────────────────────────
+
+def upload_file_ftp(ftp, remote_dir: str, filename: str, data: bytes):
+    """Lädt Bytes als Datei auf FTP-Server hoch."""
+    path = f"{remote_dir.rstrip('/')}/{filename}"
+    ftp.storbinary(f"STOR {path}", io.BytesIO(data))
+
+
+def upload_file_sftp(sftp, remote_dir: str, filename: str, data: bytes):
+    """Lädt Bytes als Datei auf SFTP-Server hoch."""
+    path = f"{remote_dir.rstrip('/')}/{filename}"
+    sftp.putfo(io.BytesIO(data), path)
+
+
+def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename: str) -> int:
+    """Exportiert DataFrame als CSV und lädt auf FTP/SFTP-Ziel hoch. Gibt Zeilenanzahl zurück."""
+    password = decrypt_credential(source.password) if source.password else ""
+    data = df.to_csv(index=False).encode("utf-8")
+
+    if (source.protocol or "ftp") == "sftp":
+        sftp = _connect_sftp(source.host, source.port, source.username, password)
+        try:
+            upload_file_sftp(sftp, remote_dir, filename, data)
+        finally:
+            sftp._ssh.close()
+    else:
+        ftp = _connect_ftp(source.host, source.port, source.username, password)
+        try:
+            upload_file_ftp(ftp, remote_dir, filename, data)
+        finally:
+            try:
+                ftp.quit()
+            except Exception:
+                pass
+
+    logger.info(f"FTP-Upload abgeschlossen: {remote_dir.rstrip('/')}/{filename} ({len(df)} Zeilen)")
+    return len(df)
+
+
 # ─── Datei parsen ─────────────────────────────────────────────────────────────
 
 def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0) -> pd.DataFrame:

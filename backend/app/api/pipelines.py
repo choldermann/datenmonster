@@ -37,15 +37,16 @@ def _sync_pipeline_scheduler(p: Pipeline):
 
         job_id = f"pipeline_{p.id}"
 
-        # Trigger-Node mit Cron suchen
+        # Trigger-Node mit Cron suchen — nur bei trigger_mode "schedule" (oder Default)
         cron_expr = None
         if p.active:
             for node in (p.nodes or []):
                 if node.get("type") == "trigger":
                     cfg = node.get("config", {})
-                    cron_expr = cfg.get("cron", "").strip()
-                    if cron_expr:
-                        break
+                    if cfg.get("trigger_mode", "schedule") == "schedule":
+                        cron_expr = cfg.get("cron", "").strip()
+                    # manual / ftp_event → kein Cron-Job
+                    break
 
         if cron_expr and p.active:
             # Cron-Ausdrücke können mit ";" getrennt sein (mehrere)

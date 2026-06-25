@@ -11,6 +11,7 @@ import PipelineSvgOverlay from "../components/pipeline/SvgOverlay";
 import TriggerNode from "../components/pipeline/nodes/TriggerNode";
 import FtpNode from "../components/pipeline/nodes/FtpNode";
 import DispatcherNode from "../components/pipeline/nodes/DispatcherNode";
+import ConditionNode from "../components/pipeline/nodes/ConditionNode";
 import MappingNode from "../components/pipeline/nodes/MappingNode";
 import { FtpUploadNode, EmailNode } from "../components/pipeline/nodes/OutputNodes";
 import RestFetchNode from "../components/pipeline/nodes/RestFetchNode";
@@ -216,6 +217,12 @@ export default function PipelineEditor() {
           inputPortRef={nInRef()}
           inputPortDrop={onDrop()}
           outputPortRefs={[nOutRef("match"), nOutRef("no_match")]} />;
+
+      case "condition":
+        return <ConditionNode {...common}
+          inputPortRef={nInRef()}
+          inputPortDrop={onDrop()}
+          outputPortRefs={[nOutRef("yes"), nOutRef("no")]} />;
 
       case "mapping":
         return <MappingNode {...common}

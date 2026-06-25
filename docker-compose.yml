@@ -11,20 +11,25 @@ services:
       - ./backend:/app
       - datenmonster-data:/app/uploads
     environment:
-      - SECRET_KEY=change-this-in-production-please
-      # ADMIN_PASSWORD: beim ersten Start ohne diesen Wert wird ein zufälliges
-      # Passwort generiert und einmalig in den Container-Logs angezeigt.
-      # Danach hier setzen damit es bei Neustarts nicht zurückgesetzt wird.
-      # - ADMIN_PASSWORD=sicheres-passwort-hier-setzen
+      # ┌─────────────────────────────────────────────────────────────────┐
+      # │  SICHERHEITSHINWEIS – vor dem ersten Start:                     │
+      # │  cp .env.example .env                                           │
+      # │  echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env             │
+      # │  Die .env-Datei niemals ins Repository committen!               │
+      # └─────────────────────────────────────────────────────────────────┘
+      - SECRET_KEY=${SECRET_KEY}
+      # ADMIN_PASSWORD: ohne Wert wird ein Zufallspasswort generiert und
+      # einmalig in den Container-Logs angezeigt. Danach in .env setzen.
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - DATABASE_URL=sqlite:///./uploads/datenmonster.db
-      - ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+      - ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
     restart: unless-stopped
 
   frontend:
     build: ./frontend
     container_name: datenmonster-frontend
     ports:
-      - "5173:5173"
+      - "5174:5174"
     volumes:
       - ./frontend:/app
       - /app/node_modules
