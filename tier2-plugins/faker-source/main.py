@@ -9,14 +9,31 @@ Konfigurations-Felder:
 """
 
 import logging
+import os
 from typing import List, Optional
 
+import requests
 from faker import Faker
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+PLUGIN_ID = os.getenv("PLUGIN_ID", "faker-source")
+PLUGIN_MANAGER_URL = os.getenv("PLUGIN_MANAGER_URL", "http://plugin-manager:9001")
+
+
+def fire_event(payload: dict = {}):
+    """Signalisiert dem Backend via EventBus, dass neue Daten verfügbar sind."""
+    try:
+        requests.post(
+            f"{PLUGIN_MANAGER_URL}/plugins/{PLUGIN_ID}/event",
+            json={"payload": payload},
+            timeout=5.0,
+        )
+    except Exception as e:
+        logger.warning(f"EventBus fire_event fehlgeschlagen: {e}")
 
 app = FastAPI(title="Datenmonster Plugin: Faker Datengenerator", version="1.0.0")
 

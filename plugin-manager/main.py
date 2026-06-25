@@ -19,6 +19,7 @@ REGISTRY_FILE = Path(os.getenv("REGISTRY_FILE", "/data/plugins.json"))
 PLUGIN_NETWORK = os.getenv("PLUGIN_NETWORK", "datenmonster")
 PLUGIN_PORT = int(os.getenv("PLUGIN_PORT", "8080"))
 REDIS_URL = os.getenv("REDIS_URL", "")
+PLUGIN_MANAGER_SELF_URL = os.getenv("PLUGIN_MANAGER_SELF_URL", "http://plugin-manager:9001")
 CHANNEL_PLUGIN_TRIGGER = "dm.plugin.trigger"
 
 
@@ -176,6 +177,10 @@ def start_plugin(plugin_id: str):
             network=PLUGIN_NETWORK,
             detach=True,
             labels={"dm.plugin": "tier2", "dm.plugin.id": plugin_id},
+            environment={
+                "PLUGIN_ID": plugin_id,
+                "PLUGIN_MANAGER_URL": PLUGIN_MANAGER_SELF_URL,
+            },
         )
         logger.info(f"Tier-2 Plugin gestartet: {cname(plugin_id)}")
         return {"ok": True, "status": "starting"}
