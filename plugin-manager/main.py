@@ -6,6 +6,7 @@ from typing import List, Optional
 
 import docker
 import httpx
+import redis
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
@@ -17,6 +18,20 @@ app = FastAPI(title="Datenmonster Plugin Manager", version="1.0.0")
 REGISTRY_FILE = Path(os.getenv("REGISTRY_FILE", "/data/plugins.json"))
 PLUGIN_NETWORK = os.getenv("PLUGIN_NETWORK", "datenmonster")
 PLUGIN_PORT = int(os.getenv("PLUGIN_PORT", "8080"))
+REDIS_URL = os.getenv("REDIS_URL", "")
+CHANNEL_PLUGIN_TRIGGER = "dm.plugin.trigger"
+
+
+def _redis_publish(payload: dict):
+    if not REDIS_URL:
+        logger.warning("REDIS_URL nicht gesetzt – Event wird nicht veröffentlicht.")
+        return
+    try:
+        r = redis.from_url(REDIS_URL, decode_responses=True)
+        r.publish(CHANNEL_PLUGIN_TRIGGER, json.dumps(payload))
+        logger.info(f"EventBus published → {CHANNEL_PLUGIN_TRIGGER}: {payload}")
+    except Exception as e:
+        logger.warning(f"Redis publish fehlgeschlagen: {e}")
 
 
 # ── Registry ─────────────────────────────────────────────────────────────────
@@ -234,3 +249,25 @@ async def proxy_fetch(plugin_id: str, body: ProxyBody):
 @app.post("/plugins/{plugin_id}/proxy/write")
 async def proxy_write(plugin_id: str, body: ProxyBody):
     return await _proxy(plugin_id, "write", {"config": body.config, "rows": body.rows or []})
+
+
+# ── EventBus ──────────────────────────────────────────────────────────────────
+
+class EventBody(BaseModel):
+    payload: dict = {}
+
+
+@app.post("/plugins/{plugin_id}/event")
+def plugin_event(plugin_id: str, body: EventBody):
+    """Tier-2 Plugin feuert ein Event – wird auf dm.plugin.trigger publiziert."""
+    reg = load_reg()
+    if plugin_id not in reg:
+        raise HTTPException(404, "Plugin nicht gefunden")
+    p = reg[plugin_id]
+    event_payload = {
+        "plugin_id": plugin_id,
+        "source_type_id": p.get("source_type_id", ""),
+        **body.payload,
+    }
+    _redis_publish(event_payload)
+    return {"ok": True, "channel": CHANNEL_PLUGIN_TRIGGER, "payload": event_payload}

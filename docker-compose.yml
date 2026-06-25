@@ -24,6 +24,16 @@ services:
       - DATABASE_URL=sqlite:///./uploads/datenmonster.db
       - ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
       - PLUGIN_MANAGER_URL=http://plugin-manager:9001
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    networks:
+      - datenmonster
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: datenmonster-redis
     networks:
       - datenmonster
     restart: unless-stopped
@@ -38,6 +48,7 @@ services:
       - plugin-manager-data:/data
     environment:
       - PLUGIN_NETWORK=datenmonster
+      - REDIS_URL=redis://redis:6379
     networks:
       - datenmonster
     restart: unless-stopped

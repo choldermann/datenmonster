@@ -19,6 +19,7 @@ from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, 
 from app.api import smart_mapping as smart_mapping_api
 from app.api import update as update_api
 from app.api import plugins as plugins_api
+from app.api import events as events_api
 
 
 @asynccontextmanager
@@ -149,6 +150,17 @@ async def lifespan(app: FastAPI):
                 installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 updated_at DATETIME
             )""",
+            """CREATE TABLE IF NOT EXISTS event_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                received_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                channel TEXT NOT NULL,
+                plugin_id TEXT,
+                source_type_id TEXT,
+                payload JSON DEFAULT '{}',
+                triggered_mappings JSON DEFAULT '[]',
+                status TEXT DEFAULT 'received',
+                error TEXT
+            )""",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -217,6 +229,10 @@ async def lifespan(app: FastAPI):
     finally:
         plugin_db.close()
 
+    # EventBus-Listener starten (Redis Pub/Sub)
+    from app.services.eventbus import start_listener
+    start_listener()
+
     yield
     from app.services.scheduler_service import stop_scheduler
     stop_scheduler()
@@ -277,6 +293,7 @@ app.include_router(rest_sources.router)
 app.include_router(smart_mapping_api.router)
 app.include_router(update_api.router)
 app.include_router(plugins_api.router)
+app.include_router(events_api.router)
 
 
 @app.get("/api/health")
