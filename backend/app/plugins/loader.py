@@ -4,7 +4,7 @@ import sys
 import logging
 from pathlib import Path
 
-import httpx
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ def load_tier2_plugins(db=None):
         return
 
     try:
-        resp = httpx.get(f"{PLUGIN_MANAGER_URL}/plugins", timeout=5.0)
+        resp = requests.get(f"{PLUGIN_MANAGER_URL}/plugins", timeout=5.0)
         resp.raise_for_status()
         plugins_data = resp.json()
     except Exception as e:

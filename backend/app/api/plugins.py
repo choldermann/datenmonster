@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import List, Optional
-import httpx
+import requests
 from app.core.database import get_db
 from app.core.config import PLUGIN_MANAGER_URL
 from app.api.auth import get_current_user
@@ -20,10 +20,10 @@ def _pm(path: str) -> str:
 
 def _pm_get(path: str) -> dict:
     try:
-        resp = httpx.get(_pm(path), timeout=10.0)
+        resp = requests.get(_pm(path), timeout=10.0)
         resp.raise_for_status()
         return resp.json()
-    except httpx.HTTPStatusError as e:
+    except requests.HTTPError as e:
         raise HTTPException(e.response.status_code, e.response.text)
     except Exception as e:
         raise HTTPException(502, f"Plugin Manager nicht erreichbar: {e}")
@@ -31,10 +31,10 @@ def _pm_get(path: str) -> dict:
 
 def _pm_post(path: str, body: dict = None) -> dict:
     try:
-        resp = httpx.post(_pm(path), json=body or {}, timeout=60.0)
+        resp = requests.post(_pm(path), json=body or {}, timeout=60.0)
         resp.raise_for_status()
         return resp.json()
-    except httpx.HTTPStatusError as e:
+    except requests.HTTPError as e:
         raise HTTPException(e.response.status_code, e.response.text)
     except Exception as e:
         raise HTTPException(502, f"Plugin Manager nicht erreichbar: {e}")
@@ -42,10 +42,10 @@ def _pm_post(path: str, body: dict = None) -> dict:
 
 def _pm_delete(path: str) -> dict:
     try:
-        resp = httpx.delete(_pm(path), timeout=10.0)
+        resp = requests.delete(_pm(path), timeout=10.0)
         resp.raise_for_status()
         return resp.json()
-    except httpx.HTTPStatusError as e:
+    except requests.HTTPError as e:
         raise HTTPException(e.response.status_code, e.response.text)
     except Exception as e:
         raise HTTPException(502, f"Plugin Manager nicht erreichbar: {e}")

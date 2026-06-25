@@ -1,7 +1,7 @@
 import logging
 from typing import List
 
-import httpx
+import requests
 
 from app.plugins.base import SourcePlugin, TargetPlugin
 
@@ -50,7 +50,7 @@ class Tier2Plugin(SourcePlugin, TargetPlugin):
     def _proxy(self, endpoint: str, body: dict) -> dict:
         url = f"{self._pm_url}/plugins/{self.id}/proxy/{endpoint}"
         try:
-            resp = httpx.post(url, json=body, timeout=120.0)
+            resp = requests.post(url, json=body, timeout=120.0)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
