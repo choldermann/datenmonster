@@ -760,7 +760,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -1023,6 +1023,12 @@ export default function MappingEditor() {
                   const ti = TRANSFORMER_TYPES.find((t) => t.value === (conn.transformer?.type || "direct"));
                   const isEditing = editingConnection === idx;
                   const srcField = conn.transformer?.source_field || conn.source_field;
+                  // Typ-Kompatibilitätsprüfung
+                  const _isSpecialSrc = typeof conn.source_dataset_id === "string";
+                  const _srcNode = !_isSpecialSrc ? canvasNodes.find(n => n.dataset_id == conn.source_dataset_id) : null;
+                  const _srcType = _srcNode?.dataset_column_types?.[conn.source_field]?.type;
+                  const _tgtType = targetColumnTypes[conn.target_field]?.type;
+                  const _typeIncompat = !conn.target_type && _srcType && _tgtType && _srcType !== _tgtType && !(_srcType === "integer" && _tgtType === "decimal");
                   return (
                     <div key={`${conn.target_field}-${idx}`}
                       ref={(el) => { if (el) targetRefs.current[conn.target_field] = el; }}
@@ -1077,6 +1083,13 @@ export default function MappingEditor() {
                           const c = TYPE_COLORS[conn.target_type] || "#94a3b8";
                           return <span style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", color: c, border: `1px solid ${c}`, borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>{TYPE_LABELS[conn.target_type] || conn.target_type}</span>;
                         })()}
+                        {/* Typ-Inkompatibilitäts-Warnung */}
+                        {_typeIncompat && (
+                          <span title={`Typ-Konflikt: ${_srcType} → ${_tgtType}. Bitte einen Cast konfigurieren.`}
+                            style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", color: "#f97316", border: "1px solid #f97316", borderRadius: 3, padding: "1px 4px", flexShrink: 0, cursor: "help" }}>
+                            ⚠ {_srcType?.slice(0,3).toUpperCase()}→{_tgtType?.slice(0,3).toUpperCase()}
+                          </span>
+                        )}
                         <button onClick={(e) => { e.stopPropagation(); removeConnection(idx); }} style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
                           onMouseEnter={(e) => { e.currentTarget.style.color = "#e07070"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; }}>

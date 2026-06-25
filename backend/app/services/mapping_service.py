@@ -214,31 +214,29 @@ def _apply_target_types(df: pd.DataFrame, connections: List[Dict]) -> tuple:
         try:
             if ttype == "integer":
                 converted = pd.to_numeric(df[col], errors="coerce").astype("Int64")
+                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                 if on_error == "skip":
-                    bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                     skip_mask = skip_mask | bad
                 elif on_error == "error":
-                    bad_vals = df[col][converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")]
-                    if not bad_vals.empty:
-                        errors.append(f"Zieltyp INT '{col}': {len(bad_vals)} nicht konvertierbare Werte")
+                    if bad.any():
+                        errors.append(f"Zieltyp INT '{col}': {bad.sum()} nicht konvertierbare Werte")
+                        continue  # Spalte nicht mit NaN überschreiben
                 df[col] = converted
 
             elif ttype == "decimal":
                 s = df[col].astype(str).str.strip()
                 if decimal_sep == ",":
-                    # "1.234,56" → "1234.56"
                     s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
                 else:
-                    # "1,234.56" → "1234.56"
                     s = s.str.replace(",", "", regex=False)
                 converted = pd.to_numeric(s, errors="coerce")
+                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                 if on_error == "skip":
-                    bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                     skip_mask = skip_mask | bad
                 elif on_error == "error":
-                    bad_vals = df[col][converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")]
-                    if not bad_vals.empty:
-                        errors.append(f"Zieltyp DEC '{col}': {len(bad_vals)} nicht konvertierbare Werte")
+                    if bad.any():
+                        errors.append(f"Zieltyp DEC '{col}': {bad.sum()} nicht konvertierbare Werte")
+                        continue  # Spalte nicht mit NaN überschreiben
                 df[col] = converted
 
             elif ttype in ("date", "datetime"):
@@ -246,13 +244,13 @@ def _apply_target_types(df: pd.DataFrame, connections: List[Dict]) -> tuple:
                     converted = pd.to_datetime(df[col], format=date_fmt, errors="coerce")
                 else:
                     converted = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
+                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                 if on_error == "skip":
-                    bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
                     skip_mask = skip_mask | bad
                 elif on_error == "error":
-                    bad_vals = df[col][converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")]
-                    if not bad_vals.empty:
-                        errors.append(f"Zieltyp DATE '{col}': {len(bad_vals)} nicht konvertierbare Werte")
+                    if bad.any():
+                        errors.append(f"Zieltyp DATE '{col}': {bad.sum()} nicht konvertierbare Werte")
+                        continue  # Spalte nicht mit NaN überschreiben
                 out_fmt = "%Y-%m-%d %H:%M:%S" if ttype == "datetime" else "%Y-%m-%d"
                 df[col] = converted.dt.strftime(out_fmt).where(converted.notna(), other=None)
 
@@ -1014,18 +1012,38 @@ def _apply_cast_rules(df, cast_rules: dict) -> tuple:
         on_error = rule.get("on_error", "null")
         try:
             if cast_type == "integer":
-                df[field] = pd.to_numeric(df[field], errors="coerce").astype("Int64")
+                converted = pd.to_numeric(df[field], errors="coerce").astype("Int64")
+                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
+                if on_error == "skip":
+                    skip_mask = skip_mask | bad
+                elif on_error == "error" and bad.any():
+                    errors.append(f"Konvertierung INT '{field}': {bad.sum()} nicht konvertierbare Werte")
+                    continue
+                df[field] = converted
             elif cast_type == "decimal":
                 sep = rule.get("decimal_sep", ".")
+                s = df[field].astype(str).str.strip()
                 if sep == ",":
-                    df[field] = df[field].astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
-                df[field] = pd.to_numeric(df[field], errors="coerce")
+                    s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
+                else:
+                    s = s.str.replace(",", "", regex=False)
+                converted = pd.to_numeric(s, errors="coerce")
+                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
+                if on_error == "skip":
+                    skip_mask = skip_mask | bad
+                elif on_error == "error" and bad.any():
+                    errors.append(f"Konvertierung DEC '{field}': {bad.sum()} nicht konvertierbare Werte")
+                    continue
+                df[field] = converted
             elif cast_type in ("date", "datetime"):
                 fmt = rule.get("date_format", "%d.%m.%Y")
                 converted = pd.to_datetime(df[field], format=fmt, errors="coerce")
+                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
                 if on_error == "skip":
-                    bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
                     skip_mask = skip_mask | bad
+                elif on_error == "error" and bad.any():
+                    errors.append(f"Konvertierung DATE '{field}': {bad.sum()} nicht konvertierbare Werte")
+                    continue
                 if cast_type == "date":
                     df[field] = converted.dt.strftime("%Y-%m-%d")
                 else:
