@@ -31,7 +31,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-5173}"
 BACKEND_PORT="${BACKEND_PORT:-8000}"
 AUTO_START=true
 AUTO_YES=false
-GITHUB_REPO="https://github.com/HoldermannIT/datenmonster"
+GITHUB_REPO="https://github.com/choldermann/datenmonster"
 GITHUB_ARCHIVE="https://datenmonster.com/install/datenmonster.zip"
 
 # ─── Parameter parsen ─────────────────────────────────────────────────────────

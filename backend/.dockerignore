@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.bak
+.env
+.env.*
+debug_*.py
+fix_*.py
+app/uploads/
+data/

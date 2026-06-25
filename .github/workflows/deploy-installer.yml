@@ -21,7 +21,10 @@ jobs:
             --exclude "*/uploads/*" \
             --exclude "*/data/*" \
             --exclude "*/.env*" \
-            --exclude "*/dist/*"
+            --exclude "*/dist/*" \
+            --exclude "backend/debug_*.py" \
+            --exclude "backend/fix_*.py" \
+            --exclude "*.bak"
 
       - name: Zielverzeichnis sicherstellen
         uses: appleboy/ssh-action@v1.0.3
