@@ -1133,28 +1133,36 @@ def execute_mapping(
         ds_name = node.get("dataset_name", str(ds_id))
         try:
             connector = get_connector(ds_id)
-            if is_preview and not (node.get("filters")) and not agg_nodes and not joins:
-                # Für reine Vorschau ohne Filter, Aggregation und JOINs: nur preview_rows laden
-                # Bei JOINs immer fetch_full() – sonst keine Übereinstimmungen möglich
+            filters = node.get("filters") or {}
+            pushdown_used = False
+
+            if filters and connector.supports_pushdown() and hasattr(connector, "fetch_filtered"):
+                # SQL-Pushdown: Filter direkt auf dem DB-Server ausführen
+                limit = (preview_rows * 3) if is_preview else None
+                df = connector.fetch_filtered(filters, limit=limit)
+                pushdown_used = True
+            elif is_preview and not filters and not agg_nodes and not joins:
+                # Reine Vorschau ohne Filter/Agg/Join: nur Vorschauzeilen laden
                 df = connector.fetch_preview(limit=preview_rows * 3)
             else:
-                # Bei Aggregation, Filtern oder JOINs immer alle Daten laden
                 df = connector.fetch_full()
+
             # Apply cast rules
             cast_rules = node.get("cast_rules") or {}
             if cast_rules:
                 df, cast_errors = _apply_cast_rules(df, cast_rules)
                 errors.extend(cast_errors)
 
-            # Apply field filters
-            filters = node.get("filters") or {}
-            for field, expr in filters.items():
-                if not expr or field not in df.columns:
-                    continue
-                try:
-                    df = _apply_filter(df, field, expr)
-                except Exception as fe:
-                    errors.append(f"Filter '{field} {expr}' fehlgeschlagen: {fe}")
+            # Pandas-Filter nur wenn kein Pushdown erfolgt ist
+            if not pushdown_used:
+                for field, expr in filters.items():
+                    if not expr or field not in df.columns:
+                        continue
+                    try:
+                        df = _apply_filter(df, field, expr)
+                    except Exception as fe:
+                        errors.append(f"Filter '{field} {expr}' fehlgeschlagen: {fe}")
+
             dfs[ds_id] = df
             names[ds_id] = ds_name
         except Exception as e:

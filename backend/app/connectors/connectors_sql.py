@@ -159,6 +159,64 @@ class SqlConnector(BaseConnector):
                 df = pd.DataFrame(rows, columns=cols)
                 yield _normalize_df(df)
 
+    def _build_where(self, filters: dict):
+        """Übersetzt {field: expr}-Dict in (WHERE-Klausel, params-Dict) für SQLAlchemy text()."""
+        if not filters:
+            return "", {}
+
+        def quote(name):
+            if self.db_type == "mssql":    return f"[{name}]"
+            elif self.db_type == "mysql":  return f"`{name}`"
+            else:                           return f'"{name}"'
+
+        def cast_text(col_expr):
+            if self.db_type == "mssql":   return f"CAST({col_expr} AS NVARCHAR(MAX))"
+            elif self.db_type == "mysql": return f"CAST({col_expr} AS CHAR)"
+            else:                          return f"CAST({col_expr} AS TEXT)"
+
+        parts, params = [], {}
+        for i, (field, expr) in enumerate(filters.items()):
+            if not expr:
+                continue
+            expr = expr.strip()
+            col = quote(field)
+            pname = f"_f{i}"
+            if expr.upper().startswith("LIKE "):
+                pattern = expr[5:].strip().strip('"').strip("'")
+                params[pname] = pattern
+                parts.append(f"{cast_text(col)} LIKE :{pname}")
+            else:
+                for op in (">=", "<=", "!=", "=", ">", "<"):
+                    if expr.startswith(op):
+                        raw = expr[len(op):].strip().strip('"').strip("'")
+                        params[pname] = raw
+                        sql_op = "<>" if op == "!=" else op
+                        parts.append(f"{col} {sql_op} :{pname}")
+                        break
+
+        return (" AND ".join(parts), params) if parts else ("", {})
+
+    def fetch_filtered(self, filters: dict, limit: int = None) -> pd.DataFrame:
+        """Lädt Daten mit WHERE-Filter direkt auf dem DB-Server."""
+        from sqlalchemy import text
+        where, params = self._build_where(filters)
+        if self.db_type == "mssql":
+            top = f"TOP {limit} " if limit else ""
+            sql = f"SELECT {top}* FROM ({self.sql}) AS _f"
+        else:
+            sql = f"SELECT * FROM ({self.sql}) AS _f"
+        if where:
+            sql += f" WHERE {where}"
+        if limit and self.db_type != "mssql":
+            sql += f" LIMIT {limit}"
+        engine = self._get_engine()
+        with engine.connect() as conn:
+            result = conn.execute(text(sql), params)
+            cols = list(result.keys())
+            rows = [dict(zip(cols, row)) for row in result.fetchall()]
+        df = pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+        return _normalize_df(df)
+
     def supports_pushdown(self) -> bool:
         return True
 

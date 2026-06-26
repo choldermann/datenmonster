@@ -118,18 +118,76 @@ class SqlConnector(BaseConnector):
         else:
             return f"SELECT * FROM ({self.sql}) AS _preview LIMIT {limit}"
 
-    def _execute(self, sql: str) -> pd.DataFrame:
+    def _execute(self, sql: str, params: dict = None) -> pd.DataFrame:
         """Führt SQL aus und gibt typisierten DataFrame zurück."""
         from sqlalchemy import text
         engine = self._get_engine()
         with engine.connect() as conn:
-            result = conn.execute(text(sql))
+            result = conn.execute(text(sql), params or {})
             cols = list(result.keys())
             rows = result.fetchall()
         if not rows:
             return pd.DataFrame(columns=cols)
         df = pd.DataFrame([dict(zip(cols, row)) for row in rows], columns=cols)
         return _fix_types(df)
+
+    def _build_where(self, filters: dict):
+        """Übersetzt {field: expr}-Dict in (WHERE-Klausel, params-Dict)."""
+        if not filters:
+            return "", {}
+
+        def quote(name):
+            if self.db_type == "mssql":   return f"[{name}]"
+            elif self.db_type == "mysql": return f"`{name}`"
+            else:                          return f'"{name}"'
+
+        def cast_text(col_expr):
+            # MSSQL: TRY_CONVERT mit Style 120 → ISO-Format (2022-01-04 07:57:40)
+            # Fallback auf CAST für nicht-datetime Spalten
+            if self.db_type == "mssql":
+                return f"ISNULL(TRY_CONVERT(NVARCHAR(30), {col_expr}, 120), CAST({col_expr} AS NVARCHAR(MAX)))"
+            elif self.db_type == "mysql":
+                return f"CAST({col_expr} AS CHAR)"
+            else:
+                return f"CAST({col_expr} AS TEXT)"
+
+        parts, params = [], {}
+        for i, (field, expr) in enumerate(filters.items()):
+            if not expr:
+                continue
+            expr = expr.strip()
+            col = quote(field)
+            pname = f"_f{i}"
+            col_as_text = cast_text(col)
+            if expr.upper().startswith("LIKE "):
+                pattern = expr[5:].strip().strip('"').strip("'")
+                params[pname] = pattern
+                parts.append(f"{col_as_text} LIKE :{pname}")
+            else:
+                for op in (">=", "<=", "!=", "=", ">", "<"):
+                    if expr.startswith(op):
+                        raw = expr[len(op):].strip().strip('"').strip("'")
+                        params[pname] = raw
+                        sql_op = "<>" if op == "!=" else op
+                        # Immer Text-Vergleich: vermeidet Typ-Konvertierungsfehler
+                        parts.append(f"{col_as_text} {sql_op} :{pname}")
+                        break
+
+        return (" AND ".join(parts), params) if parts else ("", {})
+
+    def fetch_filtered(self, filters: dict, limit: int = None) -> pd.DataFrame:
+        """Lädt Daten mit WHERE-Filter direkt auf dem DB-Server."""
+        where, params = self._build_where(filters)
+        if self.db_type == "mssql":
+            top = f"TOP {limit} " if limit else ""
+            sql = f"SELECT {top}* FROM ({self.sql}) AS _f"
+        else:
+            sql = f"SELECT * FROM ({self.sql}) AS _f"
+        if where:
+            sql += f" WHERE {where}"
+        if limit and self.db_type != "mssql":
+            sql += f" LIMIT {limit}"
+        return self._execute(sql, params)
 
     def get_columns(self) -> List[str]:
         return list(self._execute(self._limit_sql(1)).columns)
