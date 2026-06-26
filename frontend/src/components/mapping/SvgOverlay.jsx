@@ -174,6 +174,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
     }
 
     // Wenn der Node minimiert ist: kein Clamping, direkt die ref-Position nehmen
+    if (!isInDOM(srcEl)) return null;
     const isMinimized = (canvasNodes || []).find(n => n.dataset_id == datasetId)?.minimized;
     const s = toSvg(srcEl.getBoundingClientRect());
     const midY = s.top + s.height / 2;
@@ -631,7 +632,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const getBodyX = (dsId, isOutput) => {
           const bodyRef = nodeBodyRefs?.current?.[dsId];
           const bodyEl = bodyRef?.current || bodyRef;
-          if (!bodyEl) return null;
+          if (!isInDOM(bodyEl)) return null;
           const br = toSvg(bodyEl.getBoundingClientRect());
           return isOutput ? br.right : br.left;
         };
@@ -667,7 +668,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const getBodyMidY = (dsId) => {
           const bodyRef = nodeBodyRefs?.current?.[dsId];
           const bodyEl = bodyRef?.current || bodyRef;
-          if (!bodyEl) return 0;
+          if (!isInDOM(bodyEl)) return 0;
           const br = toSvg(bodyEl.getBoundingClientRect());
           return br.top + br.height / 2;
         };
