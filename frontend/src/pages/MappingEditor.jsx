@@ -222,12 +222,33 @@ export default function MappingEditor() {
 
   const handleCanvasDrop = useCallback((e) => {
     e.preventDefault();
+    const rect = canvasRef.current.getBoundingClientRect();
+    const dropX = Math.max(0, e.clientX - rect.left + canvasRef.current.scrollLeft - 80);
+    const dropY = Math.max(0, e.clientY - rect.top + canvasRef.current.scrollTop - 20);
+
+    const nodeType = e.dataTransfer.getData("node_type");
+    if (nodeType) {
+      const id = Math.random().toString(36).slice(2, 9);
+      if (nodeType === "transform") setTransformNodes((prev) => [...prev, { id, x: dropX, y: dropY, type: "number_format", config: defaultConfig("number_format"), inputs: [], output_field: `transform_${prev.length + 1}` }]);
+      else if (nodeType === "constant") setConstantNodes((prev) => [...prev, { id, x: dropX, y: dropY, const_type: "static_text", const_value: "", output_field: `konstante_${prev.length + 1}` }]);
+      else if (nodeType === "sql") setSqlNodes((prev) => [...prev, { id, x: dropX, y: dropY, connection_id: null, sql: "", mode: "scalar", output_field: `sql_${prev.length + 1}` }]);
+      else if (nodeType === "agg") setAggNodes((prev) => [...prev, { id, x: dropX, y: dropY, fields: [] }]);
+      else if (nodeType === "rest") setRestNodes((prev) => [...prev, { id, x: dropX, y: dropY, url: "", method: "GET", input_field: "", auth: { type: "none" }, data_path: "", response_mappings: [] }]);
+      else if (nodeType === "lookup") setLookupNodes((prev) => [...prev, { id, x: dropX, y: dropY, input_field: "", lookup_dataset_id: null, lookup_key_col: "", on_missing: "null", output_mappings: [] }]);
+      else if (nodeType === "calc") setCalcNodes((prev) => [...prev, { id, x: dropX, y: dropY, calc_type: "cumsum", input_field: "", output_field: "", order_field: "", order_dir: "asc", group_field: "", window_size: 3 }]);
+      else if (nodeType === "switch") setSwitchNodes((prev) => [...prev, { id, x: dropX, y: dropY, output_field: "", branches: [
+        { id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" },
+        { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" },
+      ]}]);
+      setTimeout(triggerLineDraw, 50);
+      return;
+    }
+
     const dsId = parseInt(e.dataTransfer.getData("dataset_id"));
     if (!dsId) return;
     if (canvasNodes.find((n) => n.dataset_id === dsId)) return;
     const ds = allDatasets.find((d) => d.id === dsId);
     if (!ds) return;
-    const rect = canvasRef.current.getBoundingClientRect();
     setCanvasNodes((prev) => [...prev, { dataset_id: ds.id, dataset_name: ds.name, dataset_columns: ds.columns || [], dataset_column_types: ds.column_types || {}, dataset_file_type: ds.file_type, dataset_row_count: ds.row_count || 0, x: Math.max(0, e.clientX - rect.left - 115), y: Math.max(0, e.clientY - rect.top - 20) }]);
   }, [allDatasets, canvasNodes]);
 
@@ -651,78 +672,78 @@ export default function MappingEditor() {
           {/* Add nodes buttons */}
           <div style={{ padding: "8px 10px", borderTop: `1px solid ${S.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
             {canEdit && (
-              <button
+              <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "transform")}
                 onClick={() => {
                   const id = Math.random().toString(36).slice(2, 9);
                   setTransformNodes((prev) => [...prev, { id, x: 300, y: 120, type: "number_format", config: defaultConfig("number_format"), inputs: [], output_field: `transform_${prev.length + 1}` }]);
                 }}
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "rgba(129,140,248,0.08)", border: "1px dashed rgba(129,140,248,0.35)", color: "#818cf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+                style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(129,140,248,0.08)", border: "1px dashed rgba(129,140,248,0.35)", color: "#818cf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(129,140,248,0.16)"}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(129,140,248,0.08)"}>
                 <Plus size={12} /> Transform hinzufügen
               </button>
             )}
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "constant")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setConstantNodes((prev) => [...prev, { id, x: 340, y: 80 + prev.length * 40, const_type: "static_text", const_value: "", output_field: `konstante_${prev.length + 1}` }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "rgba(167,139,250,0.08)", border: "1px dashed rgba(167,139,250,0.35)", color: "#a78bfa", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(167,139,250,0.08)", border: "1px dashed rgba(167,139,250,0.35)", color: "#a78bfa", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(167,139,250,0.16)"}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(167,139,250,0.08)"}>
               <Plus size={12} /> Konstante hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "sql")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setSqlNodes((prev) => [...prev, { id, x: 360, y: 80 + prev.length * 50, connection_id: null, sql: "", mode: "scalar", output_field: `sql_${prev.length + 1}` }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "rgba(56,189,248,0.08)", border: "1px dashed rgba(56,189,248,0.35)", color: "#38bdf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(56,189,248,0.08)", border: "1px dashed rgba(56,189,248,0.35)", color: "#38bdf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.16)"}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.08)"}>
               <Plus size={12} /> SQL Node hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "agg")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setAggNodes((prev) => [...prev, { id, x: 400, y: 80 + prev.length * 60, fields: [] }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: "rgba(245,158,11,0.08)", border: "1px dashed rgba(245,158,11,0.35)", color: "#f59e0b", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(245,158,11,0.08)", border: "1px dashed rgba(245,158,11,0.35)", color: "#f59e0b", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(245,158,11,0.16)"}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(245,158,11,0.08)"}>
               <Layers size={12} /> Aggregation hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "rest")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setRestNodes((prev) => [...prev, { id, x: 420, y: 80 + prev.length * 60, url: "", method: "GET", input_field: "", auth: { type: "none" }, data_path: "", response_mappings: [] }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: `${REST_NODE_COLOR}10`, border: `1px dashed ${REST_NODE_COLOR}44`, color: REST_NODE_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: `${REST_NODE_COLOR}10`, border: `1px dashed ${REST_NODE_COLOR}44`, color: REST_NODE_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${REST_NODE_COLOR}20`}
               onMouseLeave={(e) => e.currentTarget.style.backgroundColor = `${REST_NODE_COLOR}10`}>
               <Globe size={12} /> REST Node hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "lookup")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setLookupNodes(prev => [...prev, { id, x: 480, y: 80 + prev.length * 60, input_field: "", lookup_dataset_id: null, lookup_key_col: "", on_missing: "null", output_mappings: [] }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: LOOKUP_COLOR + "10", border: "1px dashed " + LOOKUP_COLOR + "44", color: LOOKUP_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: LOOKUP_COLOR + "10", border: "1px dashed " + LOOKUP_COLOR + "44", color: LOOKUP_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = LOOKUP_COLOR + "20"}
               onMouseLeave={e => e.currentTarget.style.backgroundColor = LOOKUP_COLOR + "10"}>
               <Search size={12} /> Lookup Node hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "calc")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setCalcNodes(prev => [...prev, { id, x: 540, y: 80 + prev.length * 60, calc_type: "cumsum", input_field: "", output_field: "", order_field: "", order_dir: "asc", group_field: "", window_size: 3 }]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: CALC_COLOR + "10", border: "1px dashed " + CALC_COLOR + "44", color: CALC_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: CALC_COLOR + "10", border: "1px dashed " + CALC_COLOR + "44", color: CALC_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = CALC_COLOR + "20"}
               onMouseLeave={e => e.currentTarget.style.backgroundColor = CALC_COLOR + "10"}>
               <Calculator size={12} /> Berechnung hinzufügen
             </button>
-            <button
+            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "switch")}
               onClick={() => {
                 const id = Math.random().toString(36).slice(2, 9);
                 setSwitchNodes(prev => [...prev, { id, x: 600, y: 80 + prev.length * 60, output_field: "", branches: [
@@ -730,7 +751,7 @@ export default function MappingEditor() {
                   { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }
                 ]}]);
               }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "pointer", backgroundColor: SWITCH_COLOR + "10", border: "1px dashed " + SWITCH_COLOR + "44", color: SWITCH_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
+              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: SWITCH_COLOR + "10", border: "1px dashed " + SWITCH_COLOR + "44", color: SWITCH_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
               onMouseEnter={e => e.currentTarget.style.backgroundColor = SWITCH_COLOR + "20"}
               onMouseLeave={e => e.currentTarget.style.backgroundColor = SWITCH_COLOR + "10"}>
               <GitBranch size={12} /> Switch Node hinzufügen
