@@ -309,7 +309,7 @@ export default function MappingEditor() {
 
   const removeNode = useCallback((dsId) => {
     setCanvasNodes((prev) => prev.filter((n) => n.dataset_id !== dsId));
-    setConnections((prev) => prev.filter((c) => c.source_dataset_id !== dsId));
+    setTargets((prev) => prev.map((t) => ({ ...t, fields: (t.fields || []).filter((c) => c.source_dataset_id !== dsId) })));
     setJoins((prev) => prev.filter((j) => j.left_dataset_id !== dsId && j.right_dataset_id !== dsId));
   }, []);
 
