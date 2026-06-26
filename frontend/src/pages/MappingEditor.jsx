@@ -73,6 +73,7 @@ export default function MappingEditor() {
   const [confirmDeleteConn, setConfirmDeleteConn] = useState(null); // { conn, index }
   const [showSmartMapping, setShowSmartMapping] = useState(false);
   const [renamingTargetField, setRenamingTargetField] = useState(null); // { oldName, value }
+  const [editingDefault, setEditingDefault] = useState(null); // { idx, value }
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -409,6 +410,11 @@ export default function MappingEditor() {
 
   const removeConnection = (idx) => setConnections((prev) => prev.filter((_, i) => i !== idx));
   const updateTransformer = (idx, transformer) => setConnections((prev) => prev.map((c, i) => i === idx ? { ...c, transformer } : c));
+
+  const applyDefaultValue = (idx, value) => {
+    setEditingDefault(null);
+    setConnections((prev) => prev.map((c, i) => i === idx ? { ...c, default_value: value === "" ? undefined : value } : c));
+  };
 
   const applyTargetFieldRename = (oldName, newName) => {
     const trimmed = newName.trim();
@@ -1156,17 +1162,50 @@ export default function MappingEditor() {
                           <X size={10} />
                         </button>
                       </div>
-                      {srcField && (
-                        <div style={{ marginLeft: 22, marginTop: 2 }}>
-                          {conn.transformer?.type === "formula" ? (
+                      <div style={{ marginLeft: 22, marginTop: 2 }}>
+                        {srcField ? (
+                          conn.transformer?.type === "formula" ? (
                             <span style={{ fontSize: 9, fontFamily: "monospace", color: S.textDim, fontStyle: "italic" }}>ƒ {conn.transformer.formula?.slice(0, 28)}{(conn.transformer.formula?.length || 0) > 28 ? "…" : ""}</span>
                           ) : conn.transformer?.type === "constant" ? (
                             <span style={{ fontSize: 9, fontFamily: "monospace", color: S.textDim }}>= „{conn.transformer.constant_value}"</span>
                           ) : (
                             <span style={{ fontSize: 9, fontFamily: "monospace", color: S.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>← {srcField}</span>
-                          )}
-                        </div>
-                      )}
+                          )
+                        ) : editingDefault?.idx === idx ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }} onClick={(e) => e.stopPropagation()}>
+                            <span style={{ fontSize: 9, color: S.textDim, fontFamily: "monospace", flexShrink: 0 }}>=</span>
+                            <input
+                              autoFocus
+                              value={editingDefault.value}
+                              onChange={(e) => setEditingDefault((d) => ({ ...d, value: e.target.value }))}
+                              onBlur={() => applyDefaultValue(idx, editingDefault.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") applyDefaultValue(idx, editingDefault.value);
+                                if (e.key === "Escape") setEditingDefault(null);
+                                e.stopPropagation();
+                              }}
+                              placeholder="Standardwert…"
+                              style={{ flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid #6ee7b755", borderRadius: 3, color: "#6ee7b7", fontFamily: "monospace", fontSize: 9, padding: "1px 4px", outline: "none" }}
+                            />
+                          </div>
+                        ) : conn.default_value != null && conn.default_value !== "" ? (
+                          <span
+                            style={{ fontSize: 9, fontFamily: "monospace", color: "#6ee7b7", cursor: "pointer" }}
+                            onClick={(e) => { e.stopPropagation(); setEditingDefault({ idx, value: conn.default_value }); }}
+                            title="Standardwert bearbeiten">
+                            = „{conn.default_value}"
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingDefault({ idx, value: "" }); }}
+                            style={{ fontSize: 9, color: S.textDim, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "monospace" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = "#6ee7b7"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; }}
+                            title="Standardwert setzen (wird verwendet wenn kein Quellfeld verbunden)">
+                            + Standard
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

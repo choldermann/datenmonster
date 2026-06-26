@@ -2008,6 +2008,10 @@ def execute_mapping(
                 # None bleibt None, alles andere bleibt wie es ist.
                 # Strings die "nan"/"None" enthalten → None normalisieren.
                 if val is None:
+                    # Fallback auf default_value wenn kein source_field verbunden
+                    if conn.get("source_field") is None and (conn.get("transformer") or {}).get("type", "direct") == "direct":
+                        val = conn.get("default_value")
+                if val is None:
                     out_row[target] = None
                 elif isinstance(val, str) and val.strip().lower() in ("nan", "none", ""):
                     out_row[target] = None
