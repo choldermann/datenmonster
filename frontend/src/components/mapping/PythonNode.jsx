@@ -6,7 +6,7 @@ export const PYTHON_NODE_COLOR = "#22c55e";
 
 const DOT = 10;
 
-export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs }) {
+export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const C = PYTHON_NODE_COLOR;
@@ -52,10 +52,10 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
       onClick={(e) => e.stopPropagation()}
       style={{
         position: "absolute", left: node.x, top: node.y,
-        width: 300, zIndex: 10, userSelect: "none",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-        borderRadius: 6, border: "1px solid " + C + "55",
-        backgroundColor: S.bgCard, overflow: "visible",
+        width: 300, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
+        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
+        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : "1px solid " + C + "55",
+        backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
       }}
     >
       {/* Header */}

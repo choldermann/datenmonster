@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowUpDown, Eye, FileText, GripVertical, Loader2, Minimize2, X } from "lucide-react";
 import api from "../../api/client";
 import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from "./constants";
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
 
-function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh }) {
+function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx }) {
   const dragState = useRef(null);
   const resizeState = useRef(null);
   const FIELD_H = 28;
@@ -106,6 +107,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
   const activeCastCount = Object.keys(castRules).length;
   const [showSortEditor, setShowSortEditor] = useState(false);
   const [castEditor, setCastEditor] = useState(null); // { field, currentCast }
+  const [debugTooltip, setDebugTooltip] = useState(null); // { field, x, y }
 
   // Register the field-list scroll container so SvgOverlay can clamp lines
   useEffect(() => {
@@ -177,7 +179,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
 
   return (
     <>
-    <div ref={nodeBodyRef} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
+    <div ref={nodeBodyRef} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? "0 0 0 2px #38bdf8, 0 0 24px #38bdf855, 0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: debugHighlight ? "1.5px solid #38bdf8aa" : `1px solid ${S.border}`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "grab", backgroundColor: S.bgEl, borderBottom: `1px solid ${S.border}` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
@@ -266,9 +268,19 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                 height: FIELD_H, display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "0 10px", cursor: "grab", borderBottom: `1px solid ${S.border}`,
                 backgroundColor: isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent",
+                position: "relative",
               }}
-              onMouseEnter={(e) => { if (!isPending && !isJoinPending) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent"; }}
+              onMouseEnter={(e) => {
+                if (!isPending && !isJoinPending) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)";
+                if (debugSampleRows?.length) {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setDebugTooltip({ field, x: rect.right + 8, y: rect.top + rect.height / 2 });
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent";
+                setDebugTooltip(null);
+              }}
             >
               <span style={{ fontSize: 11, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isJoinPending ? JOIN_COLOR : isPending ? S.accent : hasFilter ? "#a78bfa" : conn ? "#6ee7b7" : S.textMain, display: "flex", alignItems: "center", gap: 0 }}>
                 {(() => {
@@ -453,6 +465,29 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
         onClose={() => setCastEditor(null)}
       />
     )}
+
+    {/* Debug Field Tooltip – via Portal damit overflow:hidden den Node nicht clippt */}
+    {debugTooltip && debugSampleRows?.length > 0 && createPortal((() => {
+      const rowIdx = debugSelectedRowIdx !== null && debugSelectedRowIdx !== undefined ? debugSelectedRowIdx : null;
+      const rows = rowIdx !== null ? [debugSampleRows[rowIdx]].filter(Boolean) : debugSampleRows.slice(0, 5);
+      const values = rows.map(r => r?.[debugTooltip.field] !== undefined ? r[debugTooltip.field] : undefined).filter(v => v !== undefined);
+      if (!values.length) return null;
+      return (
+        <div style={{
+          position: "fixed", left: debugTooltip.x, top: debugTooltip.y, transform: "translateY(-50%)",
+          zIndex: 9999, backgroundColor: "#0f172a", border: "1px solid rgba(56,189,248,0.5)",
+          borderRadius: 6, padding: "7px 11px", minWidth: 130, maxWidth: 240,
+          boxShadow: "0 8px 28px rgba(0,0,0,0.8)", pointerEvents: "none",
+        }}>
+          <p style={{ fontSize: 9, fontWeight: 700, color: "#38bdf8", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.07em" }}>{debugTooltip.field}</p>
+          {values.map((v, i) => (
+            <p key={i} style={{ fontSize: 10, color: v === null ? "#475569" : "#e2e8f0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: v === null ? "italic" : "normal", lineHeight: 1.6 }}>
+              {v === null ? "null" : String(v)}
+            </p>
+          ))}
+        </div>
+      );
+    })(), document.body)}
     </>
   );
 }

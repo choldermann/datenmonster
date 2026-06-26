@@ -83,6 +83,8 @@ export default function MappingEditor() {
   const [editingDefault, setEditingDefault] = useState(null); // { idx, value }
   const [debugTrace, setDebugTrace] = useState(null);  // null = hidden, object = showing
   const [debugLoading, setDebugLoading] = useState(false);
+  const [debugActiveStageId, setDebugActiveStageId] = useState(null);
+  const [debugSelectedRowIdx, setDebugSelectedRowIdx] = useState(null);
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -622,6 +624,8 @@ export default function MappingEditor() {
   const handleDebugRun = async () => {
     setDebugLoading(true);
     setDebugTrace(null);
+    setDebugActiveStageId(null);
+    setDebugSelectedRowIdx(null);
     try {
       const payload = {
         canvas_nodes: canvasNodes, joins,
@@ -640,6 +644,17 @@ export default function MappingEditor() {
       setDebugLoading(false);
     }
   };
+
+  // Sample-Daten pro Dataset für Feld-Tooltips
+  const debugSamplesMap = {};
+  if (debugTrace?.trace) {
+    for (const stage of debugTrace.trace) {
+      if (stage.type === "dataset" && stage.id?.startsWith("dataset_")) {
+        const dsId = parseInt(stage.id.split("_")[1]);
+        if (!isNaN(dsId)) debugSamplesMap[dsId] = stage.sample || [];
+      }
+    }
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: S.bgMain }}>
@@ -897,7 +912,11 @@ export default function MappingEditor() {
                   pendingSource={pendingSource} pendingJoin={pendingJoin}
                   onRemove={removeNode} onPositionChange={handlePositionChange} onResize={handleNodeResize} fieldRefs={fieldRefs}
                   onSortChange={(dsId, sorts) => setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, sorts } : n))}
-                  onSchemaRefresh={(dsId, colTypes) => setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...colTypes } } : n))} />
+                  onSchemaRefresh={(dsId, colTypes) => setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...colTypes } } : n))}
+                  debugHighlight={debugActiveStageId === `dataset_${node.dataset_id}`}
+                  debugSampleRows={debugSamplesMap[node.dataset_id] || []}
+                  debugSelectedRowIdx={debugSelectedRowIdx}
+                />
               ))}
 
               {transformNodes.map((tn) => {
@@ -910,6 +929,7 @@ export default function MappingEditor() {
                     outputRef={transformOutputRefs.current[tn.id]}
                     inputRefs={transformInputRefs}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`transform_${id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
+                    debugHighlight={debugActiveStageId === "transform"}
                   />
                 );
               })}
@@ -955,6 +975,7 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setAggNodes((prev) => prev.map((n) => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={(updated) => { setAggNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={(id) => { setAggNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__agg__${id}`)); }}
+                    debugHighlight={debugActiveStageId === "agg"}
                   />
                 );
               })}
@@ -984,6 +1005,7 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setCalcNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={updated => { setCalcNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={id => { setCalcNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__calc__" + id)); }}
+                    debugHighlight={debugActiveStageId === "calc"}
                   />
                 );
               })}
@@ -1025,6 +1047,7 @@ export default function MappingEditor() {
                   onPositionChange={(id, x, y) => { setPythonNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                   onUpdate={(updated) => { setPythonNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                   onRemove={(id) => { setPythonNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__python__" + id)); }}
+                  debugHighlight={debugActiveStageId === "python"}
                 />
               ))}
 
@@ -1069,7 +1092,11 @@ export default function MappingEditor() {
               trace={debugTrace.trace || []}
               totalDurationMs={debugTrace.total_duration_ms || 0}
               errors={debugTrace.result?.errors || []}
-              onClose={() => setDebugTrace(null)}
+              activeStageId={debugActiveStageId}
+              onStageSelect={setDebugActiveStageId}
+              selectedRowIdx={debugSelectedRowIdx}
+              onRowSelect={setDebugSelectedRowIdx}
+              onClose={() => { setDebugTrace(null); setDebugActiveStageId(null); setDebugSelectedRowIdx(null); }}
             />
           )}
         </div>

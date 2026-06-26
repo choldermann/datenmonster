@@ -346,7 +346,7 @@ const selS = { padding: "3px 4px", backgroundColor: "var(--bg-main)", border: "1
 
 // ─── TransformNode ────────────────────────────────────────────────────────────
 
-export default function TransformNode({ node, onPositionChange, onUpdate, onRemove, outputRef, inputRefs , onMiniPortsReady }) {
+export default function TransformNode({ node, onPositionChange, onUpdate, onRemove, outputRef, inputRefs, onMiniPortsReady, debugHighlight }) {
   const dragState = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -396,10 +396,11 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
 
   return (
     <div style={{
-      position: "absolute", left: node.x, top: node.y, width: 240, zIndex: 12,
-      backgroundColor: S.bgCard, border: `1px solid ${NODE_BORDER}`,
-      borderRadius: 7, overflow: "hidden", boxShadow: `0 6px 24px rgba(0,0,0,0.5), 0 0 0 1px ${NODE_BORDER}`,
-      userSelect: "none",
+      position: "absolute", left: node.x, top: node.y, width: 240, zIndex: debugHighlight ? 22 : 12,
+      backgroundColor: S.bgCard, border: debugHighlight ? "1.5px solid #818cf8cc" : `1px solid ${NODE_BORDER}`,
+      borderRadius: 7, overflow: "hidden",
+      boxShadow: debugHighlight ? `0 0 0 2px #818cf8, 0 0 20px #818cf855, 0 6px 24px rgba(0,0,0,0.5)` : `0 6px 24px rgba(0,0,0,0.5), 0 0 0 1px ${NODE_BORDER}`,
+      userSelect: "none", transition: "box-shadow 0.2s, border-color 0.2s",
     }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown}

@@ -86,7 +86,7 @@ function InputDot({ part, index, inputPortRefs, nodeId, onDrop, onUpdate, onMini
   );
 }
 
-function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields , onMiniPortsReady }) {
+function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields, onMiniPortsReady, debugHighlight }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -163,7 +163,7 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
 
   return (
     <div draggable={false} onClick={e => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: `1px solid ${CALC_COLOR}55`, backgroundColor: S.bgCard, overflow: "hidden" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${CALC_COLOR}, 0 0 20px ${CALC_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: debugHighlight ? `1.5px solid ${CALC_COLOR}cc` : `1px solid ${CALC_COLOR}55`, backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}
