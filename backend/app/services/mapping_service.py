@@ -822,8 +822,12 @@ def _apply_filter(df: pd.DataFrame, field: str, expr: str) -> pd.DataFrame:
     # LIKE operator
     if expr.upper().startswith("LIKE "):
         pattern = expr[5:].strip().strip('"').strip("'")
-        # Convert SQL LIKE % to regex .*
-        regex = re.escape(pattern).replace(r"\%", ".*").replace(r"\_", ".")
+        # re.escape() in Python 3.7+ does NOT escape % or _, so we must convert
+        # wildcards character-by-character before escaping the rest
+        regex = "".join(
+            ".*" if c == "%" else "." if c == "_" else re.escape(c)
+            for c in pattern
+        )
         return df[df[field].astype(str).str.match(f"^{regex}$", case=False, na=False)]
 
     # Comparison operators: >= <= != = > <
