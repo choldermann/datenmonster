@@ -32,6 +32,8 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 | **Lookup-Node** | grün | Dataset-Lookup per Schlüsselfeld, on_missing konfigurierbar | v1.0 |
 | **Switch-Node** | orange | Bedingte Verzweigung (has_rows, Schwellenwert, always) | v1.0 |
 | **Python-Node** | grün | Freies Python-Skript mit DataFrame-Zugriff, eigene Output-Felder | 2026-06-26 |
+| **Expression-Node** | lila | Formelausdrücke: upper/lower/concat/if_/round/today/regex_match u.v.m. | 2026-06-26 |
+| **Datenqualität-Node** | cyan | Validierungsregeln: required, email, PLZ, IBAN, EAN, Regex u.v.m. | 2026-06-26 |
 
 ### Transform-Node Operationen (2026-06-26)
 - **Zahlen:** Runden, Tausendertrennzeichen, Min/Max-Clamp, Betrag, Vorzeichen
@@ -76,12 +78,13 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 - Jede Stage aufklappbar mit Sample-Tabelle (5 Zeilen)
 - Fehler-Badge pro Stage, Gesamtfehler im Header
 
-### Phase 2 – Interaktiver Debug (2026-06-26)
+### Phase 2 – Interaktiver Debug + Node Statistics (2026-06-26)
 - **Canvas-Glow**: Stage-Karte anklicken → passende Canvas-Nodes leuchten in Stage-Farbe auf
 - **Feld-Tooltips**: Im Debug-Modus erscheint beim Hover über ein Dataset-Feld ein Tooltip mit den Sample-Werten
 - **Row Inspector**: Zeile in Sample-Tabelle anklicken → Detailansicht aller Felder dieser Zeile
 - **Step-Through**: Prev/Next-Pfeile und Breadcrumb-Dots navigieren Stage für Stage
 - **"Zeile X verfolgen"**-Badge im Panel-Header mit Clear-Button
+- **Node Statistics**: Nach Debug-Run zeigt jeder Node-Typ (Dataset, Transform, Agg, Calc, Python, Expression, DQ) Zeilenanzahl und Fehleranzahl als kleinen Badge
 
 ---
 
