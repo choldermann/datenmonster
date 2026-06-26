@@ -254,6 +254,14 @@ export default function MappingEditor() {
     const newNode = { dataset_id: ds.id, dataset_name: ds.name, dataset_columns: ds.columns || [], dataset_column_types: ds.column_types || {}, dataset_file_type: ds.file_type, dataset_row_count: ds.row_count || 0, x: Math.max(0, e.clientX - rect.left - 115), y: Math.max(0, e.clientY - rect.top - 20) };
     setCanvasNodes((prev) => [...prev, newNode]);
     _applyAutoJoins(newNode, canvasNodes);
+    if (ds.file_type?.startsWith("db_")) {
+      const hasSchema = Object.values(ds.column_types || {}).some(t => t?.is_primary != null);
+      if (!hasSchema) {
+        api.post(`/api/datasets/${ds.id}/detect-schema`).then(({ data }) => {
+          if (data?.column_types) setCanvasNodes(prev => prev.map(n => n.dataset_id === ds.id ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...data.column_types } } : n));
+        }).catch(() => {});
+      }
+    }
   }, [allDatasets, canvasNodes]);
 
   const _applyAutoJoins = (newNode, existingNodes) => {
