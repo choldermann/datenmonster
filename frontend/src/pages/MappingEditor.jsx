@@ -45,6 +45,7 @@ export default function MappingEditor() {
   const [showNewTarget, setShowNewTarget] = useState(false); // new target wizard
   const [editingTargetId, setEditingTargetId] = useState(null); // target config editor
   const [joins, setJoins] = useState([]);
+  const [autoJoinNotice, setAutoJoinNotice] = useState(null); // { joins: [...], timeout }
   const [transformNodes, setTransformNodes] = useState([]);
   const [constantNodes, setConstantNodes] = useState([]);
   const [sqlNodes, setSqlNodes] = useState([]);
@@ -250,8 +251,39 @@ export default function MappingEditor() {
     if (canvasNodes.find((n) => n.dataset_id === dsId)) return;
     const ds = allDatasets.find((d) => d.id === dsId);
     if (!ds) return;
-    setCanvasNodes((prev) => [...prev, { dataset_id: ds.id, dataset_name: ds.name, dataset_columns: ds.columns || [], dataset_column_types: ds.column_types || {}, dataset_file_type: ds.file_type, dataset_row_count: ds.row_count || 0, x: Math.max(0, e.clientX - rect.left - 115), y: Math.max(0, e.clientY - rect.top - 20) }]);
+    const newNode = { dataset_id: ds.id, dataset_name: ds.name, dataset_columns: ds.columns || [], dataset_column_types: ds.column_types || {}, dataset_file_type: ds.file_type, dataset_row_count: ds.row_count || 0, x: Math.max(0, e.clientX - rect.left - 115), y: Math.max(0, e.clientY - rect.top - 20) };
+    setCanvasNodes((prev) => [...prev, newNode]);
+    _applyAutoJoins(newNode, canvasNodes);
   }, [allDatasets, canvasNodes]);
+
+  const _applyAutoJoins = (newNode, existingNodes) => {
+    const newTypes = newNode.dataset_column_types || {};
+    const newPks = Object.keys(newTypes).filter(f => newTypes[f]?.is_primary);
+    const newFks = Object.keys(newTypes).filter(f => newTypes[f]?.is_fk);
+    const detected = [];
+    for (const existing of existingNodes) {
+      const et = existing.dataset_column_types || {};
+      const existingPks = Object.keys(et).filter(f => et[f]?.is_primary);
+      const existingFks = Object.keys(et).filter(f => et[f]?.is_fk);
+      // New node FK → existing PK
+      for (const fk of newFks) {
+        if (existingPks.includes(fk)) detected.push({ left_dataset_id: newNode.dataset_id, left_field: fk, right_dataset_id: existing.dataset_id, right_field: fk, join_type: "INNER JOIN" });
+      }
+      // Existing FK → new PK
+      for (const pk of newPks) {
+        if (existingFks.includes(pk)) detected.push({ left_dataset_id: existing.dataset_id, left_field: pk, right_dataset_id: newNode.dataset_id, right_field: pk, join_type: "INNER JOIN" });
+      }
+    }
+    if (detected.length === 0) return;
+    setJoins(prev => {
+      const fresh = detected.filter(dj => !prev.some(j => j.left_dataset_id === dj.left_dataset_id && j.right_dataset_id === dj.right_dataset_id && j.left_field === dj.left_field));
+      if (fresh.length === 0) return prev;
+      const notice = { count: fresh.length, names: fresh.map(j => j.left_field) };
+      setAutoJoinNotice(notice);
+      setTimeout(() => setAutoJoinNotice(null), 5000);
+      return [...prev, ...fresh];
+    });
+  };
 
   const handlePositionChange = useCallback((dsId, x, y, toggleMinimize = false) => {
     setCanvasNodes((prev) => prev.map((n) => {
@@ -778,6 +810,11 @@ export default function MappingEditor() {
             {pendingJoin && (
               <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: `${JOIN_COLOR}18`, border: `1px solid ${JOIN_COLOR}`, color: JOIN_COLOR }}>
                 Join: „{pendingJoin.field}" → Feld im anderen Dataset klicken · ESC abbr.
+              </div>
+            )}
+            {autoJoinNotice && (
+              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid #6ee7b3", color: "#6ee7b3", whiteSpace: "nowrap" }}>
+                🔗 {autoJoinNotice.count} Join{autoJoinNotice.count > 1 ? "s" : ""} automatisch erkannt: {autoJoinNotice.names.join(", ")}
               </div>
             )}
 
