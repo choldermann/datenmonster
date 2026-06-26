@@ -59,6 +59,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
         type: ct[col]?.type || "string",
         raw: ct[col]?.raw || "manual",
         is_primary: ct[col]?.is_primary || false,
+        is_fk: ct[col]?.is_fk || false,
         autoincrement: ct[col]?.autoincrement || false,
       };
     }
@@ -261,8 +262,9 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                           {TL[info.type] || info.type?.slice(0,3).toUpperCase()}
                         </span>
                         <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-main)",
-                          flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {info.is_primary && <span style={{ marginRight: 4 }}>🔑</span>}
+                          flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+                          {info.is_primary && <span title="Primärschlüssel" style={{ fontSize: 10 }}>🔑</span>}
+                          {!info.is_primary && info.is_fk && <span title="Fremdschlüssel" style={{ fontSize: 8, fontWeight: 800, color: "#fb923c", backgroundColor: "#fb923c18", borderRadius: 2, padding: "1px 3px", lineHeight: 1 }}>FK</span>}
                           {col}
                         </span>
                       </div>
@@ -271,8 +273,12 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                 </>
               ) : (
               <>
-              <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "0 0 8px" }}>
-                🔑 = Primärschlüssel &nbsp;·&nbsp; AI = Autoincrement (nur Ganzzahl)
+              <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <span>🔑 = Primärschlüssel</span>
+                <span>·</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 8, fontWeight: 800, color: "#fb923c", backgroundColor: "#fb923c18", borderRadius: 2, padding: "1px 3px" }}>FK</span> = Fremdschlüssel</span>
+                <span>·</span>
+                <span>AI = Autoincrement (nur Ganzzahl)</span>
               </p>
               {cols.length === 0 && (
                 <p style={{ fontSize: 12, color: "var(--text-dim)" }}>Keine Spalten vorhanden.</p>
@@ -287,8 +293,9 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                       border: `1px solid ${info.is_primary ? "rgba(251,191,36,0.2)" : "var(--border)"}` }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 34px", gap: 8, alignItems: "center" }}>
                       <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-bright)",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {info.is_primary && <span style={{ marginRight: 5 }}>🔑</span>}
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
+                        {info.is_primary && <span title="Primärschlüssel" style={{ fontSize: 10, flexShrink: 0 }}>🔑</span>}
+                        {!info.is_primary && info.is_fk && <span title="Fremdschlüssel" style={{ fontSize: 8, fontWeight: 800, color: "#fb923c", backgroundColor: "#fb923c18", borderRadius: 2, padding: "1px 3px", lineHeight: 1, flexShrink: 0 }}>FK</span>}
                         {col}
                       </span>
                       <select value={info.type}
@@ -864,7 +871,10 @@ function DataExplorer({ dataset, onClose, onColumnTypesChange }) {
                         }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                           {columnTypes?.[col]?.is_primary && (
-                            <span title="Primärschlüssel" style={{ fontSize: 11, lineHeight: 1, cursor: "default" }}>🔑</span>
+                            <span title="Primärschlüssel" style={{ fontSize: 11, lineHeight: 1, cursor: "default", flexShrink: 0 }}>🔑</span>
+                          )}
+                          {!columnTypes?.[col]?.is_primary && columnTypes?.[col]?.is_fk && (
+                            <span title="Fremdschlüssel" style={{ fontSize: 8, fontWeight: 800, color: "#fb923c", backgroundColor: "#fb923c18", borderRadius: 2, padding: "1px 3px", lineHeight: 1, flexShrink: 0 }}>FK</span>
                           )}
                           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis" }}>{col}</span>
                           <TypeBadgeEditor
