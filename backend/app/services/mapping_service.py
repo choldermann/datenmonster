@@ -1354,6 +1354,39 @@ def execute_mapping(
                         start = int(cfg.get("start", 0))
                         length = cfg.get("length")
                         flat[out_field] = val[start:start + int(length)] if length else val[start:]
+                    elif op == "left":
+                        n = int(cfg.get("n", 1))
+                        flat[out_field] = val[:n]
+                    elif op == "right":
+                        n = int(cfg.get("n", 1))
+                        flat[out_field] = val[-n:] if n else ""
+                    elif op == "substr_range":
+                        s = max(1, int(cfg.get("range_start", 1)))
+                        e = max(s, int(cfg.get("range_end", s)))
+                        flat[out_field] = val[s - 1:e]
+                    elif op == "split":
+                        delim = cfg.get("delimiter", ";")
+                        idx = max(1, int(cfg.get("part_index", 1)))
+                        parts = val.split(delim)
+                        flat[out_field] = parts[idx - 1] if idx <= len(parts) else ""
+                    elif op == "length":
+                        flat[out_field] = len(val)
+                    elif op == "reverse":
+                        flat[out_field] = val[::-1]
+                    elif op == "regex_extract":
+                        import re as _re
+                        pattern = cfg.get("pattern", "")
+                        group = int(cfg.get("group", 0))
+                        if pattern:
+                            m = _re.search(pattern, val)
+                            flat[out_field] = m.group(group) if m else ""
+                        else:
+                            flat[out_field] = ""
+                    elif op == "regex_replace":
+                        import re as _re
+                        pattern = cfg.get("pattern", "")
+                        repl = cfg.get("repl", "")
+                        flat[out_field] = _re.sub(pattern, repl, val) if pattern else val
                     else: flat[out_field] = val
 
                 elif tn_type == "concat":

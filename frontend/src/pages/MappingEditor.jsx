@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
-import { ArrowLeft, Calculator, Check, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowLeft, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Trash2, Type, Wand2, X } from "lucide-react";
 import api from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
@@ -22,6 +22,7 @@ import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
 import CanvasMinimap from "../components/mapping/CanvasMinimap";
+import NodePaletteModal from "../components/mapping/NodePaletteModal";
 import { ExportModal, ContextMenu, TargetConfig, TargetAddField } from "../components/mapping/ExportModal";
 import { FieldPickerModal, TargetConfigModal } from "../components/mapping/Modals";
 
@@ -141,6 +142,9 @@ export default function MappingEditor() {
     setTimeout(triggerLineDraw, 300);
   };
   const [filterEditor, setFilterEditor] = useState(null);
+  const [openGroups, setOpenGroups] = useState({ transform: true, query: true, calc: true, logic: true });
+  const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
+  const [paletteInfo, setPaletteInfo] = useState(null);
 
   // Join drag state
   const [pendingJoin, setPendingJoin] = useState(null);
@@ -721,93 +725,63 @@ export default function MappingEditor() {
               );
             })}
           </div>
-          {/* Add nodes buttons */}
-          <div style={{ padding: "8px 10px", borderTop: `1px solid ${S.border}`, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-            {canEdit && (
-              <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "transform")}
-                onClick={() => {
-                  const id = Math.random().toString(36).slice(2, 9);
-                  setTransformNodes((prev) => [...prev, { id, x: 300, y: 120, type: "number_format", config: defaultConfig("number_format"), inputs: [], output_field: `transform_${prev.length + 1}` }]);
-                }}
-                style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(129,140,248,0.08)", border: "1px dashed rgba(129,140,248,0.35)", color: "#818cf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(129,140,248,0.16)"}
-                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(129,140,248,0.08)"}>
-                <Plus size={12} /> Transform hinzufügen
-              </button>
-            )}
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "constant")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setConstantNodes((prev) => [...prev, { id, x: 340, y: 80 + prev.length * 40, const_type: "static_text", const_value: "", output_field: `konstante_${prev.length + 1}` }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(167,139,250,0.08)", border: "1px dashed rgba(167,139,250,0.35)", color: "#a78bfa", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(167,139,250,0.16)"}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(167,139,250,0.08)"}>
-              <Plus size={12} /> Konstante hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "sql")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setSqlNodes((prev) => [...prev, { id, x: 360, y: 80 + prev.length * 50, connection_id: null, sql: "", mode: "scalar", output_field: `sql_${prev.length + 1}` }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(56,189,248,0.08)", border: "1px dashed rgba(56,189,248,0.35)", color: "#38bdf8", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.16)"}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(56,189,248,0.08)"}>
-              <Plus size={12} /> SQL Node hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "agg")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setAggNodes((prev) => [...prev, { id, x: 400, y: 80 + prev.length * 60, fields: [] }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: "rgba(245,158,11,0.08)", border: "1px dashed rgba(245,158,11,0.35)", color: "#f59e0b", fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(245,158,11,0.16)"}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "rgba(245,158,11,0.08)"}>
-              <Layers size={12} /> Aggregation hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "rest")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setRestNodes((prev) => [...prev, { id, x: 420, y: 80 + prev.length * 60, url: "", method: "GET", input_field: "", auth: { type: "none" }, data_path: "", response_mappings: [] }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: `${REST_NODE_COLOR}10`, border: `1px dashed ${REST_NODE_COLOR}44`, color: REST_NODE_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = `${REST_NODE_COLOR}20`}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = `${REST_NODE_COLOR}10`}>
-              <Globe size={12} /> REST Node hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "lookup")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setLookupNodes(prev => [...prev, { id, x: 480, y: 80 + prev.length * 60, input_field: "", lookup_dataset_id: null, lookup_key_col: "", on_missing: "null", output_mappings: [] }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: LOOKUP_COLOR + "10", border: "1px dashed " + LOOKUP_COLOR + "44", color: LOOKUP_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = LOOKUP_COLOR + "20"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = LOOKUP_COLOR + "10"}>
-              <Search size={12} /> Lookup Node hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "calc")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setCalcNodes(prev => [...prev, { id, x: 540, y: 80 + prev.length * 60, calc_type: "cumsum", input_field: "", output_field: "", order_field: "", order_dir: "asc", group_field: "", window_size: 3 }]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: CALC_COLOR + "10", border: "1px dashed " + CALC_COLOR + "44", color: CALC_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = CALC_COLOR + "20"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = CALC_COLOR + "10"}>
-              <Calculator size={12} /> Berechnung hinzufügen
-            </button>
-            <button draggable onDragStart={(e) => e.dataTransfer.setData("node_type", "switch")}
-              onClick={() => {
-                const id = Math.random().toString(36).slice(2, 9);
-                setSwitchNodes(prev => [...prev, { id, x: 600, y: 80 + prev.length * 60, output_field: "", branches: [
-                  { id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" },
-                  { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }
-                ]}]);
-              }}
-              style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", borderRadius: 5, cursor: "grab", backgroundColor: SWITCH_COLOR + "10", border: "1px dashed " + SWITCH_COLOR + "44", color: SWITCH_COLOR, fontSize: 11, fontWeight: 600, justifyContent: "center" }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = SWITCH_COLOR + "20"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = SWITCH_COLOR + "10"}>
-              <GitBranch size={12} /> Switch Node hinzufügen
-            </button>
+          {/* Node Palette Accordion */}
+          <div style={{ borderTop: `1px solid ${S.border}`, flexShrink: 0, overflowY: "auto", scrollbarWidth: "thin" }}>
+            {[
+              {
+                id: "transform", label: "Transformation",
+                items: [
+                  canEdit && { type: "transform", Icon: Wand2,      color: "#818cf8", title: "Transform Node",  onAdd: () => { const id = Math.random().toString(36).slice(2,9); setTransformNodes(prev => [...prev, { id, x: 300, y: 120, type: "number_format", config: defaultConfig("number_format"), inputs: [], output_field: `transform_${prev.length+1}` }]); } },
+                  {            type: "constant",  Icon: Type,       color: "#a78bfa", title: "Konstante",       onAdd: () => { const id = Math.random().toString(36).slice(2,9); setConstantNodes(prev => [...prev, { id, x: 340, y: 80+prev.length*40, const_type: "static_text", const_value: "", output_field: `konstante_${prev.length+1}` }]); } },
+                ].filter(Boolean),
+              },
+              {
+                id: "query", label: "Abfrage & Daten",
+                items: [
+                  { type: "sql",    Icon: Code2,      color: "#38bdf8",      title: "SQL Node",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSqlNodes(prev => [...prev, { id, x: 360, y: 80+prev.length*50, connection_id: null, sql: "", mode: "scalar", output_field: `sql_${prev.length+1}` }]); } },
+                  { type: "rest",   Icon: Globe,      color: REST_NODE_COLOR, title: "REST Node",   onAdd: () => { const id = Math.random().toString(36).slice(2,9); setRestNodes(prev => [...prev, { id, x: 420, y: 80+prev.length*60, url: "", method: "GET", input_field: "", auth: { type: "none" }, data_path: "", response_mappings: [] }]); } },
+                  { type: "lookup", Icon: Search,     color: LOOKUP_COLOR,   title: "Lookup Node", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setLookupNodes(prev => [...prev, { id, x: 480, y: 80+prev.length*60, input_field: "", lookup_dataset_id: null, lookup_key_col: "", on_missing: "null", output_mappings: [] }]); } },
+                ],
+              },
+              {
+                id: "calc", label: "Berechnung",
+                items: [
+                  { type: "agg",  Icon: Layers,     color: "#f59e0b",  title: "Aggregation", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setAggNodes(prev => [...prev, { id, x: 400, y: 80+prev.length*60, fields: [] }]); } },
+                  { type: "calc", Icon: Calculator,  color: CALC_COLOR, title: "Berechnung",  onAdd: () => { const id = Math.random().toString(36).slice(2,9); setCalcNodes(prev => [...prev, { id, x: 540, y: 80+prev.length*60, calc_type: "cumsum", input_field: "", output_field: "", order_field: "", order_dir: "asc", group_field: "", window_size: 3 }]); } },
+                ],
+              },
+              {
+                id: "logic", label: "Logik",
+                items: [
+                  { type: "switch", Icon: GitBranch, color: SWITCH_COLOR, title: "Switch Node", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSwitchNodes(prev => [...prev, { id, x: 600, y: 80+prev.length*60, output_field: "", branches: [{ id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" }, { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }] }]); } },
+                ],
+              },
+            ].map(group => (
+              <div key={group.id}>
+                <button onClick={() => toggleGroup(group.id)}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", padding: "6px 12px", background: "none", border: "none", borderBottom: `1px solid ${S.border}`, cursor: "pointer", color: S.textDim, fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                  <span>{group.label}</span>
+                  {openGroups[group.id] ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
+                </button>
+                {openGroups[group.id] && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, padding: "8px 10px", borderBottom: `1px solid ${S.border}` }}>
+                    {group.items.map(item => (
+                      <button key={item.type} draggable
+                        onDragStart={e => e.dataTransfer.setData("node_type", item.type)}
+                        onClick={() => setPaletteInfo(item)}
+                        title={item.title + " – klicken für Info, ziehen zum Platzieren"}
+                        style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, cursor: "grab", backgroundColor: item.color + "18", border: `1px solid ${item.color}45`, color: item.color, flexShrink: 0, transition: "background-color 0.15s, border-color 0.15s" }}
+                        onMouseEnter={e => { e.currentTarget.style.backgroundColor = item.color + "35"; e.currentTarget.style.borderColor = item.color + "90"; }}
+                        onMouseLeave={e => { e.currentTarget.style.backgroundColor = item.color + "18"; e.currentTarget.style.borderColor = item.color + "45"; }}>
+                        <item.Icon size={15} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -1672,6 +1646,9 @@ export default function MappingEditor() {
       {contextMenu && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} onJoin={startJoinFromContext} onClose={() => setContextMenu(null)} />
       )}
+
+      {/* Node Palette Info Modal */}
+      <NodePaletteModal info={paletteInfo} onClose={() => setPaletteInfo(null)} />
     </div>
   );
 }

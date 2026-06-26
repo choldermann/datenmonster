@@ -108,21 +108,31 @@ function DateFormatConfig({ config, onChange }) {
 function TextConfig({ config, onChange }) {
   const u = (k, v) => onChange({ ...config, [k]: v });
   const OPS = [
-    { value: "trim",    label: "Trim (Leerzeichen entfernen)" },
-    { value: "upper",   label: "GROSSBUCHSTABEN" },
-    { value: "lower",   label: "kleinbuchstaben" },
-    { value: "replace", label: "Ersetzen (Find → Replace)" },
-    { value: "prefix",  label: "Präfix hinzufügen" },
-    { value: "suffix",  label: "Suffix hinzufügen" },
-    { value: "substr",  label: "Teilstring (Start, Länge)" },
+    { value: "trim",         label: "Trim (Leerzeichen entfernen)" },
+    { value: "upper",        label: "GROSSBUCHSTABEN" },
+    { value: "lower",        label: "kleinbuchstaben" },
+    { value: "replace",      label: "Ersetzen (Find → Replace)" },
+    { value: "prefix",       label: "Präfix hinzufügen" },
+    { value: "suffix",       label: "Suffix hinzufügen" },
+    { value: "substr",       label: "Teilstring (Start + Länge)" },
+    { value: "left",         label: "Erste N Zeichen" },
+    { value: "right",        label: "Letzte N Zeichen" },
+    { value: "substr_range", label: "Von Position X bis Y" },
+    { value: "split",         label: "Aufteilen & Teil N" },
+    { value: "length",        label: "Zeichenlänge" },
+    { value: "reverse",       label: "Umkehren (Reverse)" },
+    { value: "regex_extract", label: "Regex: Muster extrahieren" },
+    { value: "regex_replace", label: "Regex: Muster ersetzen" },
   ];
+  const op = config.operation ?? "trim";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-      <select value={config.operation ?? "trim"} onChange={(e) => u("operation", e.target.value)}
+      <select value={op} onChange={(e) => u("operation", e.target.value)}
         style={{ ...selS, width: "100%" }}>
         {OPS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
-      {config.operation === "replace" && (
+
+      {op === "replace" && (
         <>
           <input value={config.find ?? ""} onChange={(e) => u("find", e.target.value)}
             style={{ ...inpS, width: "100%" }} placeholder="Suchen..." />
@@ -130,17 +140,87 @@ function TextConfig({ config, onChange }) {
             style={{ ...inpS, width: "100%" }} placeholder="Ersetzen durch..." />
         </>
       )}
-      {(config.operation === "prefix" || config.operation === "suffix") && (
+      {(op === "prefix" || op === "suffix") && (
         <input value={config.affix ?? ""} onChange={(e) => u("affix", e.target.value)}
-          style={{ ...inpS, width: "100%" }} placeholder={config.operation === "prefix" ? "Präfix..." : "Suffix..."} />
+          style={{ ...inpS, width: "100%" }} placeholder={op === "prefix" ? "Präfix..." : "Suffix..."} />
       )}
-      {config.operation === "substr" && (
+      {op === "substr" && (
         <div style={{ display: "flex", gap: 4 }}>
           <input type="number" value={config.start ?? 0} onChange={(e) => u("start", parseInt(e.target.value))}
             style={{ ...inpS, width: 55 }} placeholder="Start" />
           <input type="number" value={config.length ?? ""} onChange={(e) => u("length", parseInt(e.target.value))}
             style={{ ...inpS, width: 55 }} placeholder="Länge" />
         </div>
+      )}
+      {(op === "left" || op === "right") && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, flexShrink: 0 }}>Anzahl Zeichen</label>
+          <input type="number" min={1} value={config.n ?? 1} onChange={(e) => u("n", parseInt(e.target.value))}
+            style={{ ...inpS, width: 55 }} placeholder="N" />
+        </div>
+      )}
+      {op === "substr_range" && (
+        <>
+          <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 9, color: S.textDim }}>Von Position</label>
+              <input type="number" min={1} value={config.range_start ?? 1} onChange={(e) => u("range_start", parseInt(e.target.value))}
+                style={{ ...inpS, width: "100%", marginTop: 2 }} placeholder="1" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 9, color: S.textDim }}>Bis Position</label>
+              <input type="number" min={1} value={config.range_end ?? 5} onChange={(e) => u("range_end", parseInt(e.target.value))}
+                style={{ ...inpS, width: "100%", marginTop: 2 }} placeholder="5" />
+            </div>
+          </div>
+          <p style={{ fontSize: 8, color: S.textDim }}>Position 1 = erstes Zeichen, beide Grenzen inklusive</p>
+        </>
+      )}
+      {op === "split" && (
+        <>
+          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            <label style={{ fontSize: 9, color: S.textDim, width: 70, flexShrink: 0 }}>Trennzeichen</label>
+            <input value={config.delimiter ?? ";"} onChange={(e) => u("delimiter", e.target.value)}
+              style={{ ...inpS, flex: 1, fontFamily: "monospace" }} placeholder=";" />
+          </div>
+          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            <label style={{ fontSize: 9, color: S.textDim, width: 70, flexShrink: 0 }}>Teil Nr.</label>
+            <input type="number" min={1} value={config.part_index ?? 1} onChange={(e) => u("part_index", parseInt(e.target.value))}
+              style={{ ...inpS, width: 55 }} placeholder="1" />
+          </div>
+          <p style={{ fontSize: 8, color: S.textDim }}>Teil 1 = erstes Segment nach dem Aufteilen</p>
+        </>
+      )}
+      {op === "length" && (
+        <p style={{ fontSize: 9, color: S.textDim }}>Gibt die Anzahl der Zeichen als Zahl zurück.</p>
+      )}
+      {op === "reverse" && (
+        <p style={{ fontSize: 9, color: S.textDim }}>Kehrt die Reihenfolge aller Zeichen um.</p>
+      )}
+      {(op === "regex_extract" || op === "regex_replace") && (
+        <>
+          <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+            <label style={{ fontSize: 9, color: S.textDim, width: 70, flexShrink: 0 }}>Muster (Regex)</label>
+            <input value={config.pattern ?? ""} onChange={(e) => u("pattern", e.target.value)}
+              style={{ ...inpS, flex: 1, fontFamily: "monospace" }} placeholder="z.B. \d+" />
+          </div>
+          {op === "regex_replace" && (
+            <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <label style={{ fontSize: 9, color: S.textDim, width: 70, flexShrink: 0 }}>Ersetzen durch</label>
+              <input value={config.repl ?? ""} onChange={(e) => u("repl", e.target.value)}
+                style={{ ...inpS, flex: 1, fontFamily: "monospace" }} placeholder="Ersetzung (\\1 für Gruppen)" />
+            </div>
+          )}
+          {op === "regex_extract" && (
+            <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+              <label style={{ fontSize: 9, color: S.textDim, width: 70, flexShrink: 0 }}>Gruppe Nr.</label>
+              <input type="number" min={0} value={config.group ?? 0} onChange={(e) => u("group", parseInt(e.target.value))}
+                style={{ ...inpS, width: 55 }} />
+              <span style={{ fontSize: 8, color: S.textDim }}>0 = ganzer Match</span>
+            </div>
+          )}
+          <p style={{ fontSize: 8, color: S.textDim }}>Python-Regex-Syntax · leer lassen = kein Ergebnis</p>
+        </>
       )}
     </div>
   );
