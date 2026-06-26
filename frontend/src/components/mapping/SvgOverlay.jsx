@@ -4,8 +4,9 @@ import { REST_NODE_COLOR } from "./RestNode";
 import { LOOKUP_COLOR } from "./LookupNode";
 import { CALC_COLOR } from "./CalcNode";
 import { SWITCH_COLOR } from "./SwitchNode";
+import { PYTHON_NODE_COLOR } from "./PythonNode";
 
-function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
+function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
   const canvasEl = canvasRef.current;
   if (!canvasEl) return null;
 
@@ -134,6 +135,20 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
       const fieldIdx = (restNode.response_mappings || []).findIndex(m => m.output_field === sourceField);
       const dotKey = `${nodeId}_${fieldIdx >= 0 ? fieldIdx : 0}`;
       const outEl = restOutputRefs.current[dotKey]?.current || restOutputRefs.current[dotKey];
+      if (!isInDOM(outEl)) return null;
+      const r = toSvg(outEl.getBoundingClientRect());
+      return { x: r.right, y: r.top + r.height / 2, clamped: false };
+    }
+
+    // Python node output dot
+    if (String(datasetId).startsWith("__python__")) {
+      const nodeId = String(datasetId).replace("__python__", "");
+      if (!pythonOutputRefs?.current) return null;
+      const pythonNode = pythonNodes?.find(n => n.id === nodeId);
+      if (!pythonNode) return null;
+      const fieldIdx = (pythonNode.output_fields || []).findIndex(f => f === sourceField);
+      const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+      const outEl = pythonOutputRefs.current[dotKey]?.current || pythonOutputRefs.current[dotKey];
       if (!isInDOM(outEl)) return null;
       const r = toSvg(outEl.getBoundingClientRect());
       return { x: r.right, y: r.top + r.height / 2, clamped: false };
@@ -418,16 +433,18 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const isLookup = String(conn.source_dataset_id).startsWith("__lookup__");
         const isCalc = String(conn.source_dataset_id).startsWith("__calc__");
         const isSwitch = String(conn.source_dataset_id).startsWith("__switch__");
+        const isPython = String(conn.source_dataset_id).startsWith("__python__");
+        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython;
         const srcKey = `${conn.source_dataset_id}__${conn.source_field}`;
-        const srcEl = (isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch) ? null : fieldRefs.current[srcKey];
+        const srcEl = isSpecialNode ? null : fieldRefs.current[srcKey];
         const tgtEl = targetRefs.current[conn.target_field];
 
         // Minimierter Node: srcEl zeigt auf Port-Dot direkt
-        const miniNode = (!isTransform && !isConst && !isSql && !isAgg && !isRest && !isLookup && !isCalc && !isSwitch)
+        const miniNode = !isSpecialNode
           ? ((canvasNodes || []).find(n => n.dataset_id == conn.source_dataset_id && n.minimized) || null)
           : null;
 
-        if ((!srcEl && !miniNode && !isTransform && !isConst && !isSql && !isAgg && !isRest && !isLookup && !isCalc && !isSwitch) || !tgtEl) return null;
+        if ((!srcEl && !miniNode && !isSpecialNode) || !tgtEl) return null;
 
         let sp;
         if (isSwitch) {
@@ -506,6 +523,17 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           if (!isInDOM(outEl)) return null;
           const r = toSvg(outEl.getBoundingClientRect());
           sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
+        } else if (isPython) {
+          const nodeId = String(conn.source_dataset_id).replace("__python__", "");
+          if (!pythonOutputRefs?.current) return null;
+          const pythonNode = pythonNodes?.find(n => n.id === nodeId);
+          if (!pythonNode) return null;
+          const fieldIdx = (pythonNode.output_fields || []).findIndex(f => f === conn.source_field);
+          const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+          const outEl = pythonOutputRefs.current[dotKey]?.current || pythonOutputRefs.current[dotKey];
+          if (!isInDOM(outEl)) return null;
+          const r = toSvg(outEl.getBoundingClientRect());
+          sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
         } else if (miniNode) {
           // srcEl ist Output-Port-Dot → toSvg gibt korrekte scroll-bereinigte Koordinate
           if (srcEl) {
@@ -524,7 +552,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const x2 = tp.x, y2 = tp.y;
         const cx = Math.min(120, Math.abs(x2 - x1) * 0.5);
         const ti = TRANSFORMER_TYPES.find((t) => t.value === (conn.transformer?.type || "direct"));
-        const color = isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "#6ee7b7");
+        const color = isPython ? PYTHON_NODE_COLOR : isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "#6ee7b7");
         const isClamped = sp.clamped || tp.clamped;
 
         // target_type Badge
@@ -538,7 +566,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
 
         // Typ-Kompatibilitätswarnung: nur für reguläre Dataset-Connections ohne expliziten Cast
         let typeWarn = false;
-        if (!isSwitch && !isCalc && !isLookup && !isRest && !isAgg && !isSql && !isConst && !isTransform && !ttype && conn.source_field && conn.target_field) {
+        if (!isSwitch && !isCalc && !isLookup && !isRest && !isAgg && !isSql && !isConst && !isTransform && !isPython && !ttype && conn.source_field && conn.target_field) {
           const srcNode = canvasNodes?.find(n => n.dataset_id == conn.source_dataset_id);
           const srcType = srcNode?.dataset_column_types?.[conn.source_field]?.type;
           const tgtType = targetColumnTypes?.[conn.target_field]?.type;
@@ -563,7 +591,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
               fill="none" stroke={connColor} strokeWidth="1.5"
               strokeOpacity={isClamped ? 0.3 : 0.7}
               strokeDasharray={typeWarn ? "5 3" : isClamped ? "4 3" : undefined}
-              markerEnd={isClamped ? undefined : `url(#arr-${isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch ? "direct" : (ti?.value || "direct")})`}
+              markerEnd={isClamped ? undefined : `url(#arr-${isSpecialNode ? "direct" : (ti?.value || "direct")})`}
               onClick={onConnectionClick ? (e) => { e.stopPropagation(); onConnectionClick(conn, i); } : undefined}
               onMouseEnter={onConnectionClick ? (e) => { e.currentTarget.style.strokeWidth = "3"; e.currentTarget.style.strokeOpacity = "1"; } : undefined}
               onMouseLeave={onConnectionClick ? (e) => { e.currentTarget.style.strokeWidth = "1.5"; e.currentTarget.style.strokeOpacity = isClamped ? "0.3" : "0.7"; } : undefined} />

@@ -140,6 +140,7 @@ class MappingContext:
     calc_nodes:      List[Dict] = field(default_factory=list)
     switch_nodes:    List[Dict] = field(default_factory=list)
     sort_nodes:      List[Dict] = field(default_factory=list)
+    python_nodes:    List[Dict] = field(default_factory=list)
     targets:         List[Dict] = field(default_factory=list)
 
     @classmethod
@@ -156,7 +157,8 @@ class MappingContext:
             rest_nodes      = getattr(mapping, "rest_nodes",   None) or [],
             lookup_nodes    = getattr(mapping, "lookup_nodes", None) or [],
             calc_nodes      = getattr(mapping, "calc_nodes",   None) or [],
-            switch_nodes    = getattr(mapping, "switch_nodes", None) or [],
+            switch_nodes    = getattr(mapping, "switch_nodes",  None) or [],
+            python_nodes    = getattr(mapping, "python_nodes",  None) or [],
             targets         = _migrate_legacy_targets(mapping),
         )
 
@@ -175,6 +177,7 @@ class MappingContext:
             calc_nodes      = self.calc_nodes,
             switch_nodes    = self.switch_nodes,
             sort_nodes      = self.sort_nodes,
+            python_nodes    = self.python_nodes,
             preview_rows    = preview_rows,
         )
 
@@ -1111,6 +1114,63 @@ def _apply_cast_rules(df, cast_rules: dict) -> tuple:
 
     return df, errors
 
+
+def _exec_python_script(script: str, row: dict, timeout_sec: int = 3) -> tuple:
+    """
+    Führt ein User-Python-Skript sicher aus.
+    Wraps the script in a function so `return row` works.
+    Returns (new_row_dict, None) on success, (None, error_str) on failure.
+    """
+    import threading
+    import math as _math, re as _re, json as _json
+    import decimal as _decimal, statistics as _statistics, string as _string
+    from datetime import datetime as _datetime, date as _date, timedelta as _timedelta
+
+    _allowed_builtins = {
+        "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
+        "enumerate": enumerate, "filter": filter, "float": float, "format": format,
+        "getattr": getattr, "hasattr": hasattr, "int": int, "isinstance": isinstance,
+        "iter": iter, "len": len, "list": list, "map": map, "max": max, "min": min,
+        "next": next, "range": range, "repr": repr, "reversed": reversed, "round": round,
+        "set": set, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+        "type": type, "zip": zip, "None": None, "True": True, "False": False,
+        "print": lambda *a, **kw: None,
+    }
+    _globs = {
+        "__builtins__": _allowed_builtins,
+        "math": _math, "re": _re, "json": _json,
+        "decimal": _decimal, "statistics": _statistics, "string": _string,
+        "datetime": _datetime, "date": _date, "timedelta": _timedelta,
+    }
+
+    _result = {"value": None, "error": None}
+
+    def _run():
+        try:
+            indented = "\n".join("    " + line for line in script.splitlines()) or "    pass"
+            wrapped = f"def __fn__(row):\n{indented}\n__ret__ = __fn__(row)"
+            local_ns = {"row": dict(row)}
+            exec(wrapped, dict(_globs), local_ns)
+            ret = local_ns.get("__ret__")
+            if ret is None:
+                _result["error"] = "Kein Rückgabewert (return row vergessen?)"
+            elif not isinstance(ret, dict):
+                _result["error"] = f"Skript muss ein dict zurückgeben, nicht {type(ret).__name__}"
+            else:
+                _result["value"] = ret
+        except Exception as _e:
+            import traceback as _tb
+            lines = [l for l in _tb.format_exc().strip().splitlines() if l.strip()]
+            _result["error"] = (lines[-1] if lines else str(_e))[:300]
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout_sec)
+    if t.is_alive():
+        return None, f"Timeout nach {timeout_sec}s"
+    return _result["value"], _result["error"]
+
+
 def execute_mapping(
     canvas_nodes: List[Dict],
     connections: List[Dict],
@@ -1124,6 +1184,7 @@ def execute_mapping(
     calc_nodes: List[Dict] = None,
     switch_nodes: List[Dict] = None,
     sort_nodes: List[Dict] = None,
+    python_nodes: List[Dict] = None,
     target_options: Dict = None,
     preview_rows: int = 50,
 ) -> Dict[str, Any]:
@@ -2294,6 +2355,25 @@ def execute_mapping(
                 errors.append(f"Berechnungs-Node '{calc_type}': {str(e)[:100]}")
 
         output_rows = _rows_to_json(df_calc.to_dict("records"))
+
+    # ── Python Script Nodes ────────────────────────────────────────────────────
+    for pn in (python_nodes or []):
+        script = (pn.get("script") or "").strip()
+        if not script:
+            continue
+        node_errors = []
+        new_rows = []
+        for row in output_rows:
+            new_row, err = _exec_python_script(script, row)
+            if err:
+                node_errors.append(err)
+                new_rows.append(row)
+            else:
+                new_rows.append(new_row)
+        output_rows = new_rows
+        if node_errors:
+            errors.append(f"Python-Node '{pn.get('id','?')}': {node_errors[0]}" +
+                          (f" (+ {len(node_errors)-1} weitere)" if len(node_errors) > 1 else ""))
 
     # ── Sortierung + Limit aus target_options ──────────────────────────────────
     if target_options and output_rows:

@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
-import { ArrowLeft, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Trash2, Type, Wand2, X } from "lucide-react";
+import { ArrowLeft, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
 import api from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
@@ -20,6 +20,7 @@ import RestNode, { REST_NODE_COLOR } from "../components/mapping/RestNode";
 import LookupNode, { LOOKUP_COLOR } from "../components/mapping/LookupNode";
 import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
+import PythonNode, { PYTHON_NODE_COLOR } from "../components/mapping/PythonNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
 import CanvasMinimap from "../components/mapping/CanvasMinimap";
 import NodePaletteModal from "../components/mapping/NodePaletteModal";
@@ -66,6 +67,8 @@ export default function MappingEditor() {
   const calcInputPortRefs = useRef({});
   const [switchNodes, setSwitchNodes] = useState([]);
   const switchOutputRefs = useRef({});
+  const [pythonNodes, setPythonNodes] = useState([]);
+  const pythonOutputRefs = useRef({});
   const [pendingSource, setPendingSource] = useState(null);
   const [editingConnection, setEditingConnection] = useState(null);
   const [editingTargetTypeIdx, setEditingTargetTypeIdx] = useState(null); // idx der Connection deren target_type editiert wird
@@ -198,6 +201,7 @@ export default function MappingEditor() {
         setLookupNodes(data.lookup_nodes || []);
         setCalcNodes(data.calc_nodes || []);
         setSwitchNodes(data.switch_nodes || []);
+        setPythonNodes(data.python_nodes || []);
         const loadedTargets = data.targets || [];
         setTargets(loadedTargets);
         if (loadedTargets.length > 0) setActiveTargetId(loadedTargets[0].id);
@@ -205,7 +209,7 @@ export default function MappingEditor() {
     }
   }, [id]);
 
-  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes]);
+  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes]);
 
   // Mouse move for join drag preview
   useEffect(() => {
@@ -247,6 +251,7 @@ export default function MappingEditor() {
         { id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" },
         { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" },
       ]}]);
+      else if (nodeType === "python") setPythonNodes((prev) => [...prev, { id, x: dropX, y: dropY, script: "", output_fields: [] }]);
       setTimeout(triggerLineDraw, 50);
       return;
     }
@@ -480,7 +485,7 @@ export default function MappingEditor() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, targets, project_id: projectId };
+      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, targets, project_id: projectId };
       if (id && id !== "new") {
         await api.put(`/api/mappings/${id}`, payload);
       } else {
@@ -527,6 +532,7 @@ export default function MappingEditor() {
       lookup_nodes:    lookupNodes,
       calc_nodes:      calcNodes,
       switch_nodes:    switchNodes,
+      python_nodes:    pythonNodes,
       mapping_id:      id && id !== "new" ? parseInt(id) : null,
       project_id:      projectId || null,
     };
@@ -596,6 +602,7 @@ export default function MappingEditor() {
           transform_nodes: transformNodes, constant_nodes: constantNodes,
           sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
           lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
+          python_nodes: pythonNodes,
           targets: targets.length ? targets : undefined,
           fields: activeTarget?.fields || connections,
           preview_rows: 50,
@@ -751,9 +758,10 @@ export default function MappingEditor() {
                 ],
               },
               {
-                id: "logic", label: "Logik",
+                id: "logic", label: "Logik & Skript",
                 items: [
                   { type: "switch", Icon: GitBranch, color: SWITCH_COLOR, title: "Switch Node", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSwitchNodes(prev => [...prev, { id, x: 600, y: 80+prev.length*60, output_field: "", branches: [{ id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" }, { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }] }]); } },
+                  { type: "python", Icon: Terminal, color: PYTHON_NODE_COLOR, title: "Python Script", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setPythonNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, script: "", output_fields: [] }]); } },
                 ],
               },
             ].map(group => (
@@ -824,7 +832,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -978,6 +986,15 @@ export default function MappingEditor() {
                 );
               })}
 
+              {pythonNodes.map((pn) => (
+                <PythonNode key={pn.id} node={pn}
+                  outputRefs={pythonOutputRefs}
+                  onPositionChange={(id, x, y) => { setPythonNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
+                  onUpdate={(updated) => { setPythonNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
+                  onRemove={(id) => { setPythonNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__python__" + id)); }}
+                />
+              ))}
+
             </div>
 
             <CanvasMinimap
@@ -991,6 +1008,7 @@ export default function MappingEditor() {
               lookupNodes={lookupNodes}
               calcNodes={calcNodes}
               switchNodes={switchNodes}
+              pythonNodes={pythonNodes}
               tick={lineTick}
             />
           </div>
@@ -1008,6 +1026,7 @@ export default function MappingEditor() {
             lookupNodes={lookupNodes}
             calcNodes={calcNodes}
             switchNodes={switchNodes}
+            pythonNodes={pythonNodes}
             targets={targets}
           />
         </div>

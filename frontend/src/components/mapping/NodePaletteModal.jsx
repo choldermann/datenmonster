@@ -86,6 +86,18 @@ export const NODE_INFO = {
     ],
     status: "Vollständig implementiert",
   },
+  python: {
+    desc: "Führt eigene Python-Logik auf jedem Datensatz aus — für komplexe Transformationen, die kein Standard-Node abdeckt.",
+    features: [
+      "row-Dict mit allen aktuellen Feldern als Eingabe",
+      "Neue Felder anlegen, bestehende überschreiben oder löschen",
+      "Zugriff auf math, re, json, decimal, statistics, datetime",
+      "Tab-Einrückung im Editor; Fehler stoppen nur die betroffene Zeile",
+      "Sicherheits-Sandbox: kein Dateisystem, kein Netzwerk, kein import",
+      "Timeout nach 3 Sekunden pro Zeile",
+    ],
+    status: "Vollständig implementiert",
+  },
 };
 
 export default function NodePaletteModal({ info, onClose }) {

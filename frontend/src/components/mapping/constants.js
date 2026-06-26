@@ -29,7 +29,8 @@ export const JOIN_COLOR    = "#f97316";
 export const FILTER_COLOR  = "#a78bfa";
 export const SORT_COLOR    = "#34d399";
 export const SQL_NODE_COLOR = "#38bdf8";
-export const AGG_COLOR     = "#f59e0b";
+export const AGG_COLOR       = "#f59e0b";
+export const PYTHON_NODE_COLOR = "#22c55e";
 
 export const DATE_FORMATS = ["YYYY-MM-DD", "DD.MM.YYYY", "YYYYMMDD", "MM/DD/YYYY", "DD/MM/YYYY"];
 

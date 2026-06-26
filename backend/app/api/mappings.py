@@ -26,6 +26,7 @@ class MappingCreate(BaseModel):
     lookup_nodes:    Optional[List[Any]] = []
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
+    python_nodes:    Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []
     # Legacy-Felder (werden in targets migriert)
     fields:                  Optional[List[Any]] = []
@@ -49,6 +50,7 @@ class PreviewRequest(BaseModel):
     lookup_nodes:    Optional[List[Any]] = []
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
+    python_nodes:    Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []   # vollständige Targets (bevorzugt)
     preview_rows:    Optional[int] = 50
 
@@ -65,6 +67,7 @@ class ExecuteRequest(BaseModel):
     lookup_nodes:    Optional[List[Any]] = []
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
+    python_nodes:    Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []
     # Legacy
     fields:                  Optional[List[Any]] = []
@@ -136,6 +139,7 @@ def _build_context_from_request(data) -> "MappingContext":
         lookup_nodes    = getattr(data, "lookup_nodes",    None) or [],
         calc_nodes      = getattr(data, "calc_nodes",      None) or [],
         switch_nodes    = getattr(data, "switch_nodes",    None) or [],
+        python_nodes    = getattr(data, "python_nodes",    None) or [],
         targets         = targets,
     )
 
@@ -163,8 +167,9 @@ def mapping_out(m: Mapping, db: Session) -> dict:
         "agg_nodes":      m.agg_nodes       or [],
         "rest_nodes":     getattr(m, "rest_nodes",   None) or [],
         "lookup_nodes":   getattr(m, "lookup_nodes", None) or [],
-        "calc_nodes":     getattr(m, "calc_nodes",   None) or [],
-        "switch_nodes":   getattr(m, "switch_nodes", None) or [],
+        "calc_nodes":     getattr(m, "calc_nodes",    None) or [],
+        "switch_nodes":   getattr(m, "switch_nodes",  None) or [],
+        "python_nodes":   getattr(m, "python_nodes",  None) or [],
         "targets":        _migrate_legacy_targets(m),
         "project_id":     m.project_id,
         "created_at":     m.created_at.isoformat() if m.created_at else None,
@@ -236,6 +241,7 @@ def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
         sql_nodes=data.sql_nodes,         agg_nodes=data.agg_nodes,
         rest_nodes=data.rest_nodes or [], lookup_nodes=data.lookup_nodes or [],
         calc_nodes=data.calc_nodes or [], switch_nodes=data.switch_nodes or [],
+        python_nodes=data.python_nodes or [],
         targets=data.targets,             project_id=data.project_id,
     )
     db.add(m); db.commit(); db.refresh(m)
@@ -270,8 +276,9 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     m.agg_nodes       = data.agg_nodes
     m.rest_nodes      = data.rest_nodes   or []
     m.lookup_nodes    = data.lookup_nodes or []
-    m.calc_nodes      = data.calc_nodes   or []
-    m.switch_nodes    = data.switch_nodes or []
+    m.calc_nodes      = data.calc_nodes    or []
+    m.switch_nodes    = data.switch_nodes  or []
+    m.python_nodes    = data.python_nodes  or []
     m.targets         = data.targets
     m.project_id      = data.project_id
     db.commit(); db.refresh(m)
