@@ -72,6 +72,7 @@ export default function MappingEditor() {
   const [editingJoin, setEditingJoin] = useState(null);
   const [confirmDeleteConn, setConfirmDeleteConn] = useState(null); // { conn, index }
   const [showSmartMapping, setShowSmartMapping] = useState(false);
+  const [renamingTargetField, setRenamingTargetField] = useState(null); // { oldName, value }
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -387,6 +388,15 @@ export default function MappingEditor() {
 
   const removeConnection = (idx) => setConnections((prev) => prev.filter((_, i) => i !== idx));
   const updateTransformer = (idx, transformer) => setConnections((prev) => prev.map((c, i) => i === idx ? { ...c, transformer } : c));
+
+  const applyTargetFieldRename = (oldName, newName) => {
+    const trimmed = newName.trim();
+    setRenamingTargetField(null);
+    if (!trimmed || trimmed === oldName) return;
+    if (connections.find((c) => c.target_field === trimmed)) return;
+    setConnections((prev) => prev.map((c) => c.target_field === oldName ? { ...c, target_field: trimmed } : c));
+    setTimeout(triggerLineDraw, 50);
+  };
 
   const [savedToast, setSavedToast] = useState(false);
 
@@ -1031,11 +1041,15 @@ export default function MappingEditor() {
                   const _srcType = _srcNode?.dataset_column_types?.[conn.source_field]?.type;
                   const _tgtType = targetColumnTypes[conn.target_field]?.type;
                   const _typeIncompat = !conn.target_type && _srcType && _tgtType && _srcType !== _tgtType && !(_srcType === "integer" && _tgtType === "decimal");
+                  const isSchemaField = !!targetColumnTypes[conn.target_field];
+                  const isPluginField = pluginTargetTypes.some(p => p.id === activeTarget?.target_type);
+                  const isRenameable = !isSchemaField && !isPluginField;
+                  const isRenamingThis = renamingTargetField?.oldName === conn.target_field;
                   return (
                     <div key={`${conn.target_field}-${idx}`}
                       ref={(el) => { if (el) targetRefs.current[conn.target_field] = el; }}
                       draggable
-                      onDragStart={(e) => { e.dataTransfer.setData("conn_idx", idx); e.currentTarget.style.opacity = "0.4"; }}
+                      onDragStart={(e) => { if (isRenamingThis) { e.preventDefault(); return; } e.dataTransfer.setData("conn_idx", idx); e.currentTarget.style.opacity = "0.4"; }}
                       onDragEnd={(e) => { e.currentTarget.style.opacity = "1"; }}
                       onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderTop = `2px solid ${S.accent}`; }}
                       onDragLeave={(e) => { e.currentTarget.style.borderTop = "2px solid transparent"; }}
@@ -1075,7 +1089,23 @@ export default function MappingEditor() {
                             const c = TC[ct.type] || "#6a6a6a";
                             return <span style={{ width: 28, flexShrink: 0, fontSize: 8, fontWeight: 700, color: c, backgroundColor: c + "18", borderRadius: 2, padding: "1px 3px", marginRight: 4, textAlign: "center" }}>{TL[ct.type] || ct.type?.slice(0,3).toUpperCase()}</span>;
                           })()}
-                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conn.target_field}</span>
+                          {isRenamingThis ? (
+                            <input
+                              autoFocus
+                              value={renamingTargetField.value}
+                              onChange={(e) => setRenamingTargetField((r) => ({ ...r, value: e.target.value }))}
+                              onBlur={() => applyTargetFieldRename(conn.target_field, renamingTargetField.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") applyTargetFieldRename(conn.target_field, renamingTargetField.value);
+                                if (e.key === "Escape") setRenamingTargetField(null);
+                                e.stopPropagation();
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ background: "rgba(255,255,255,0.08)", border: "1px solid var(--accent)", borderRadius: 3, color: "inherit", fontFamily: "monospace", fontSize: "inherit", fontWeight: "inherit", padding: "0 4px", width: "100%", outline: "none" }}
+                            />
+                          ) : (
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conn.target_field}</span>
+                          )}
                         </span>
                         {conn.source_field && <span style={{ fontSize: 9, color: ti?.color || "#6ee7b7", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{ti?.label}</span>}
                         {/* target_type Badge */}
@@ -1091,6 +1121,13 @@ export default function MappingEditor() {
                             style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", color: "#f97316", border: "1px solid #f97316", borderRadius: 3, padding: "1px 4px", flexShrink: 0, cursor: "help" }}>
                             ⚠ {_srcType?.slice(0,3).toUpperCase()}→{_tgtType?.slice(0,3).toUpperCase()}
                           </span>
+                        )}
+                        {isRenameable && !isRenamingThis && (
+                          <button onClick={(e) => { e.stopPropagation(); setRenamingTargetField({ oldName: conn.target_field, value: conn.target_field }); }} title="Feldname umbenennen" style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = S.accent || "#a78bfa"; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; }}>
+                            <Pencil size={9} />
+                          </button>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); removeConnection(idx); }} style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
                           onMouseEnter={(e) => { e.currentTarget.style.color = "#e07070"; }}
