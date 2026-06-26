@@ -21,6 +21,7 @@ import LookupNode, { LOOKUP_COLOR } from "../components/mapping/LookupNode";
 import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
+import CanvasMinimap from "../components/mapping/CanvasMinimap";
 import { ExportModal, ContextMenu, TargetConfig, TargetAddField } from "../components/mapping/ExportModal";
 import { FieldPickerModal, TargetConfigModal } from "../components/mapping/Modals";
 
@@ -1004,6 +1005,20 @@ export default function MappingEditor() {
               })}
 
             </div>
+
+            <CanvasMinimap
+              canvasRef={canvasRef}
+              canvasNodes={canvasNodes}
+              transformNodes={transformNodes}
+              constantNodes={constantNodes}
+              sqlNodes={sqlNodes}
+              aggNodes={aggNodes}
+              restNodes={restNodes}
+              lookupNodes={lookupNodes}
+              calcNodes={calcNodes}
+              switchNodes={switchNodes}
+              tick={lineTick}
+            />
           </div>
 
           {/* Preview Panel */}
