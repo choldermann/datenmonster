@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
-import { ArrowLeft, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
+import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
 import api from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
@@ -22,6 +22,7 @@ import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PythonNode, { PYTHON_NODE_COLOR } from "../components/mapping/PythonNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
+import DebugPanel from "../components/mapping/DebugPanel";
 import CanvasMinimap from "../components/mapping/CanvasMinimap";
 import NodePaletteModal from "../components/mapping/NodePaletteModal";
 import { ExportModal, ContextMenu, TargetConfig, TargetAddField } from "../components/mapping/ExportModal";
@@ -80,6 +81,8 @@ export default function MappingEditor() {
   const [showSmartMapping, setShowSmartMapping] = useState(false);
   const [renamingTargetField, setRenamingTargetField] = useState(null); // { oldName, value }
   const [editingDefault, setEditingDefault] = useState(null); // { idx, value }
+  const [debugTrace, setDebugTrace] = useState(null);  // null = hidden, object = showing
+  const [debugLoading, setDebugLoading] = useState(false);
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -616,6 +619,28 @@ export default function MappingEditor() {
       setSchemaLoading(false); }
   };
 
+  const handleDebugRun = async () => {
+    setDebugLoading(true);
+    setDebugTrace(null);
+    try {
+      const payload = {
+        canvas_nodes: canvasNodes, joins,
+        transform_nodes: transformNodes, constant_nodes: constantNodes,
+        sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
+        lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
+        python_nodes: pythonNodes,
+        targets: targets.length ? targets : undefined,
+        fields: !targets.length ? connections : undefined,
+      };
+      const { data } = await api.post("/api/mappings/debug-run", payload);
+      setDebugTrace(data);
+    } catch (e) {
+      alert("Debug-Fehler: " + (e.response?.data?.detail || e.message));
+    } finally {
+      setDebugLoading(false);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: S.bgMain }}>
 
@@ -679,6 +704,14 @@ export default function MappingEditor() {
             onMouseEnter={e => e.currentTarget.style.color = S.accent}
             onMouseLeave={e => { if (!showSchema) e.currentTarget.style.color = S.textDim; }}>
             <Layers size={13} /> Schema
+          </button>
+
+          {/* Debug-Run Button */}
+          <button onClick={handleDebugRun} disabled={debugLoading} title="Debug-Run: Pipeline-Trace mit Zeilenzahlen pro Stufe"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 4, border: `1px solid ${debugTrace ? "#818cf866" : S.border}`, background: debugTrace ? "rgba(129,140,248,0.1)" : "none", color: debugTrace ? "#818cf8" : S.textDim, fontSize: 11, cursor: debugLoading ? "not-allowed" : "pointer", opacity: debugLoading ? 0.6 : 1 }}
+            onMouseEnter={e => { if (!debugLoading) { e.currentTarget.style.color = "#818cf8"; e.currentTarget.style.borderColor = "#818cf866"; } }}
+            onMouseLeave={e => { if (!debugTrace) { e.currentTarget.style.color = S.textDim; e.currentTarget.style.borderColor = S.border; } }}>
+            {debugLoading ? <Loader2 size={13} className="animate-spin" /> : <Bug size={13} />} Debug
           </button>
 
           <button onClick={handleExecuteAll} disabled={targets.length === 0 && !isExecuting}
@@ -793,7 +826,7 @@ export default function MappingEditor() {
           </div>
         </div>
 
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
 
           {/* Canvas area */}
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
@@ -1029,6 +1062,16 @@ export default function MappingEditor() {
             pythonNodes={pythonNodes}
             targets={targets}
           />
+
+          {/* Debug Panel */}
+          {debugTrace && (
+            <DebugPanel
+              trace={debugTrace.trace || []}
+              totalDurationMs={debugTrace.total_duration_ms || 0}
+              errors={debugTrace.result?.errors || []}
+              onClose={() => setDebugTrace(null)}
+            />
+          )}
         </div>
 
         {/* RIGHT: Multi-Target Panel */}

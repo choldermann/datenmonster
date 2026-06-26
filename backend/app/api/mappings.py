@@ -329,6 +329,59 @@ def preview_mapping(data: PreviewRequest, db: Session = Depends(get_db),
         raise HTTPException(500, f"Vorschau-Fehler: {str(e)[:300]}")
 
 
+# ─── Debug-Run ────────────────────────────────────────────────────────────────
+
+@router.post("/debug-run")
+def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """Führt das Mapping aus und gibt einen Debug-Trace zurück."""
+    import time as _time
+    try:
+        ctx = _build_context_from_request(data)
+        if data.targets:
+            ctx.targets = data.targets
+        elif data.fields:
+            ctx.targets = [{"id": "preview", "name": "Vorschau",
+                            "target_type": "preview", "fields": data.fields}]
+
+        _trace = []
+        import time as _t
+        _t0 = _t.perf_counter()
+
+        from app.services.mapping_service import execute_mapping
+        connections = []
+        for t in (ctx.targets or []):
+            connections.extend(t.get("fields") or [])
+
+        result = execute_mapping(
+            canvas_nodes=ctx.canvas_nodes,
+            connections=connections,
+            joins=ctx.joins,
+            transform_nodes=ctx.transform_nodes,
+            constant_nodes=ctx.constant_nodes,
+            sql_nodes=ctx.sql_nodes,
+            agg_nodes=ctx.agg_nodes,
+            rest_nodes=ctx.rest_nodes,
+            lookup_nodes=ctx.lookup_nodes,
+            calc_nodes=ctx.calc_nodes,
+            switch_nodes=ctx.switch_nodes,
+            python_nodes=ctx.python_nodes,
+            preview_rows=100,
+            _debug_trace=_trace,
+        )
+
+        total_ms = int((_t.perf_counter() - _t0) * 1000)
+        return {
+            "trace": _trace,
+            "result": result,
+            "total_duration_ms": total_ms,
+        }
+    except Exception as e:
+        import traceback, logging
+        logging.error("Debug-Run error: " + traceback.format_exc())
+        raise HTTPException(500, f"Debug-Fehler: {str(e)[:300]}")
+
+
 # ─── Execute ──────────────────────────────────────────────────────────────────
 
 @router.post("/sql-schema")

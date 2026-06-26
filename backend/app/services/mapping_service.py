@@ -1187,12 +1187,16 @@ def execute_mapping(
     python_nodes: List[Dict] = None,
     target_options: Dict = None,
     preview_rows: int = 50,
+    _debug_trace: list = None,
 ) -> Dict[str, Any]:
     """
     Führt das Mapping aus und gibt Vorschau-Daten zurück.
     Returns: { columns, rows, total, errors }
     """
     errors = []
+    output_rows = []   # initialized early to prevent NameError in REST/Lookup sections
+    _dbg_t = __import__('time').perf_counter if _debug_trace is not None else None
+    _dbg_err_idx = 0   # track error count per stage
 
     # Transform-SQL-Node kann ohne Canvas-Datasets laufen
     has_transform_sql = any(sn.get("mode") == "transform" for sn in (sql_nodes or []))
@@ -1247,6 +1251,21 @@ def execute_mapping(
 
             dfs[ds_id] = df
             names[ds_id] = ds_name
+            if _debug_trace is not None:
+                import time as _t_mod
+                _debug_trace.append({
+                    "id": f"dataset_{ds_id}",
+                    "label": f"Dataset: {ds_name}",
+                    "type": "dataset",
+                    "rows_in": None,
+                    "rows_out": len(df),
+                    "errors": len(errors) - _dbg_err_idx,
+                    "duration_ms": 0,
+                    "sample": _rows_to_json(df.head(5).to_dict("records")),
+                    "icon": "database",
+                    "meta": {"has_filter": bool(node.get("filters"))},
+                })
+                _dbg_err_idx = len(errors)
         except Exception as e:
             errors.append(f"Dataset {ds_name} konnte nicht geladen werden: {e}")
 
@@ -1327,6 +1346,23 @@ def execute_mapping(
     if result_df is None:
         import pandas as _pd_empty
         result_df = _pd_empty.DataFrame()
+
+    if _debug_trace is not None and joins:
+        _prev = sum(s["rows_out"] for s in _debug_trace if s["type"] == "dataset") or 0
+        _sample = [] if result_df is None or result_df.empty else _rows_to_json(result_df.head(5).to_dict("records"))
+        _debug_trace.append({
+            "id": "join",
+            "label": f"JOIN ({len(joins)} Verbindung{'en' if len(joins)>1 else ''})",
+            "type": "join",
+            "rows_in": _prev,
+            "rows_out": 0 if result_df is None else len(result_df),
+            "errors": len(errors) - _dbg_err_idx,
+            "duration_ms": 0,
+            "sample": _sample,
+            "icon": "join",
+            "meta": {},
+        })
+        _dbg_err_idx = len(errors)
 
     # 3. Transform-Nodes anwenden (fügen neue Felder zum flat_row hinzu)
     _auto_id_counters: dict = {}
@@ -1723,6 +1759,22 @@ def execute_mapping(
         result_df = _pd.DataFrame(all_flat) if all_flat else result_df.iloc[0:0]
         total = len(result_df)
 
+        if _debug_trace is not None and agg_nodes:
+            _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+            _sample = [] if result_df is None or result_df.empty else _rows_to_json(result_df.head(5).to_dict("records"))
+            _debug_trace.append({
+                "id": "agg",
+                "label": f"Aggregation ({len(agg_nodes)} Node{'s' if len(agg_nodes)>1 else ''})",
+                "type": "agg",
+                "rows_in": _prev_r,
+                "rows_out": len(result_df) if result_df is not None else 0,
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": _sample,
+                "icon": "agg",
+                "meta": {},
+            })
+            _dbg_err_idx = len(errors)
 
     # ─── REST API Nodes: pro Zeile API-Call ────────────────────────────────────
     if rest_nodes and output_rows:
@@ -2202,6 +2254,22 @@ def execute_mapping(
 
         output_rows.append(out_row)
 
+    if _debug_trace is not None:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        _debug_trace.append({
+            "id": "transform",
+            "label": "Transform & Mapping",
+            "type": "transform",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": len(errors) - _dbg_err_idx,
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "wand",
+            "meta": {"transform_nodes": len(transform_nodes or []), "constant_nodes": len(constant_nodes or [])},
+        })
+        _dbg_err_idx = len(errors)
+
     if calc_nodes and output_rows:
         import pandas as pd
         df_calc = pd.DataFrame(output_rows)
@@ -2356,6 +2424,22 @@ def execute_mapping(
 
         output_rows = _rows_to_json(df_calc.to_dict("records"))
 
+        if _debug_trace is not None and calc_nodes:
+            _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+            _debug_trace.append({
+                "id": "calc",
+                "label": f"Berechnung ({len(calc_nodes)} Node{'s' if len(calc_nodes)>1 else ''})",
+                "type": "calc",
+                "rows_in": _prev_r,
+                "rows_out": len(output_rows),
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": output_rows[:5],
+                "icon": "calculator",
+                "meta": {},
+            })
+            _dbg_err_idx = len(errors)
+
     # ── Python Script Nodes ────────────────────────────────────────────────────
     for pn in (python_nodes or []):
         script = (pn.get("script") or "").strip()
@@ -2374,6 +2458,22 @@ def execute_mapping(
         if node_errors:
             errors.append(f"Python-Node '{pn.get('id','?')}': {node_errors[0]}" +
                           (f" (+ {len(node_errors)-1} weitere)" if len(node_errors) > 1 else ""))
+
+    if _debug_trace is not None and python_nodes:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        _debug_trace.append({
+            "id": "python",
+            "label": f"Python Script ({len(python_nodes)} Node{'s' if len(python_nodes)>1 else ''})",
+            "type": "python",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": len(errors) - _dbg_err_idx,
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "code",
+            "meta": {},
+        })
+        _dbg_err_idx = len(errors)
 
     # ── Sortierung + Limit aus target_options ──────────────────────────────────
     if target_options and output_rows:
@@ -2433,6 +2533,21 @@ def execute_mapping(
     # Preview: nach Sortierung auf display_rows begrenzen
     if is_preview and len(output_rows) > 50:
         output_rows = output_rows[:50]
+
+    if _debug_trace is not None:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        _debug_trace.append({
+            "id": "output",
+            "label": "Ausgabe",
+            "type": "output",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": len(errors),
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "target",
+            "meta": {"columns": len(target_columns) if 'target_columns' in dir() else 0},
+        })
 
     return {
         "columns": target_columns,
