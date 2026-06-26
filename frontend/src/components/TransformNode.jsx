@@ -20,7 +20,9 @@ const NODE_BORDER  = "rgba(129,140,248,0.35)";
 
 export const TRANSFORM_TYPES = [
   { value: "number_format", label: "Zahlenformat",  icon: "123", color: "#34d399" },
+  { value: "number_calc",   label: "Zahlenrechnung", icon: "±",  color: "#6ee7b7" },
   { value: "date_format",   label: "Datumsformat",  icon: "📅",  color: "#f9a8d4" },
+  { value: "date_calc",     label: "Datumsrechnung", icon: "🗓",  color: "#fb923c" },
   { value: "text",          label: "Text",           icon: "Aa",  color: "#93c5fd" },
   { value: "concat",        label: "Verkettung",     icon: "⊕",   color: "#fbbf24" },
 ];
@@ -29,7 +31,9 @@ export const TRANSFORM_TYPES = [
 export function defaultConfig(type) {
   switch (type) {
     case "number_format": return { decimal_sep: ",", thousands_sep: ".", decimals: 2 };
+    case "number_calc":   return { operation: "add", value: 0 };
     case "date_format":   return { input_format: "%Y-%m-%d", output_format: "%d.%m.%Y" };
+    case "date_calc":     return { operation: "day", input_format: "%Y-%m-%d" };
     case "text":          return { operation: "trim", find: "", replace: "" };
     case "concat":        return { separator: " ", template: "" };
     default: return {};
@@ -249,6 +253,93 @@ function ConcatConfig({ config, onChange, inputs }) {
   );
 }
 
+function NumberCalcConfig({ config, onChange }) {
+  const u = (k, v) => onChange({ ...config, [k]: v });
+  const op = config.operation ?? "add";
+  const OPS = [
+    { value: "add",      label: "Addition  (Feld + Wert)" },
+    { value: "subtract", label: "Subtraktion (Feld − Wert)" },
+    { value: "multiply", label: "Multiplikation (Feld × Wert)" },
+    { value: "divide",   label: "Division (Feld ÷ Wert)" },
+    { value: "modulo",   label: "Modulo (Feld mod Wert)" },
+    { value: "min",      label: "Min (Feld, Wert)" },
+    { value: "max",      label: "Max (Feld, Wert)" },
+    { value: "auto_id",  label: "AutoID (laufende Nummer)" },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <select value={op} onChange={(e) => u("operation", e.target.value)} style={{ ...selS, width: "100%" }}>
+        {OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {op !== "auto_id" && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, width: 55, flexShrink: 0 }}>
+            {op === "min" || op === "max" ? "Vergleichswert" : "Wert"}
+          </label>
+          <input type="number" value={config.value ?? 0} onChange={(e) => u("value", parseFloat(e.target.value))}
+            style={{ ...inpS, flex: 1 }} placeholder="0" />
+        </div>
+      )}
+      {op === "auto_id" && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, width: 55, flexShrink: 0 }}>Startwert</label>
+          <input type="number" value={config.start_at ?? 1} onChange={(e) => u("start_at", parseInt(e.target.value))}
+            style={{ ...inpS, width: 60 }} placeholder="1" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DateCalcConfig({ config, onChange }) {
+  const u = (k, v) => onChange({ ...config, [k]: v });
+  const op = config.operation ?? "day";
+  const OPS = [
+    { value: "day",      label: "Tag (1–31)" },
+    { value: "month",    label: "Monat (1–12)" },
+    { value: "year",     label: "Jahr (4-stellig)" },
+    { value: "hour",     label: "Stunde (0–23)" },
+    { value: "minute",   label: "Minute (0–59)" },
+    { value: "second",   label: "Sekunde (0–59)" },
+    { value: "add_days", label: "AddDays (Datum + N Tage)" },
+    { value: "days_diff",label: "DaysDiff (Tage zwischen zwei Feldern)" },
+    { value: "now",      label: "Now (aktueller Zeitstempel)" },
+  ];
+  const needsSecondField = op === "days_diff";
+  const needsDays = op === "add_days";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+      <select value={op} onChange={(e) => u("operation", e.target.value)} style={{ ...selS, width: "100%" }}>
+        {OPS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {op !== "now" && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, width: 55, flexShrink: 0 }}>Datumsformat</label>
+          <input value={config.input_format ?? "%Y-%m-%d"} onChange={(e) => u("input_format", e.target.value)}
+            style={{ ...inpS, flex: 1, fontFamily: "monospace" }} placeholder="%Y-%m-%d" />
+        </div>
+      )}
+      {needsDays && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, width: 55, flexShrink: 0 }}>Tage</label>
+          <input type="number" value={config.days ?? 0} onChange={(e) => u("days", parseInt(e.target.value))}
+            style={{ ...inpS, width: 60 }} placeholder="0" />
+        </div>
+      )}
+      {needsSecondField && (
+        <p style={{ fontSize: 8, color: S.textDim }}>2. Eingabefeld per Drag hinzufügen (Enddatum)</p>
+      )}
+      {op === "now" && (
+        <div style={{ display: "flex", gap: 5, alignItems: "center" }}>
+          <label style={{ fontSize: 9, color: S.textDim, width: 55, flexShrink: 0 }}>Ausgabeformat</label>
+          <input value={config.now_format ?? "%Y-%m-%d %H:%M:%S"} onChange={(e) => u("now_format", e.target.value)}
+            style={{ ...inpS, flex: 1, fontFamily: "monospace" }} placeholder="%Y-%m-%d %H:%M:%S" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Shared input styles
 const inpS = { padding: "3px 6px", backgroundColor: "var(--bg-main)", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-bright)", fontSize: 10, outline: "none" };
 const selS = { padding: "3px 4px", backgroundColor: "var(--bg-main)", border: "1px solid var(--border)", borderRadius: 3, color: "var(--text-main)", fontSize: 10, outline: "none" };
@@ -397,9 +488,11 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
         <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 7 }}>
           <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 5 }}>Konfiguration</p>
           {node.type === "number_format" && <NumberFormatConfig config={node.config} onChange={updateConfig} />}
-          {node.type === "date_format"   && <DateFormatConfig   config={node.config} onChange={updateConfig} />}
-          {node.type === "text"          && <TextConfig          config={node.config} onChange={updateConfig} />}
-          {node.type === "concat"        && <ConcatConfig        config={node.config} onChange={updateConfig} inputs={node.inputs} />}
+          {node.type === "number_calc"  && <NumberCalcConfig   config={node.config} onChange={updateConfig} />}
+          {node.type === "date_format"  && <DateFormatConfig   config={node.config} onChange={updateConfig} />}
+          {node.type === "date_calc"    && <DateCalcConfig     config={node.config} onChange={updateConfig} />}
+          {node.type === "text"         && <TextConfig          config={node.config} onChange={updateConfig} />}
+          {node.type === "concat"       && <ConcatConfig        config={node.config} onChange={updateConfig} inputs={node.inputs} />}
         </div>
 
         {/* Output */}

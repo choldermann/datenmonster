@@ -4,13 +4,14 @@ import { S } from "./constants";
 
 export const NODE_INFO = {
   transform: {
-    desc: "Wandelt Feldwerte um — ideal für Formatierungen vor der Ausgabe.",
+    desc: "Wandelt Feldwerte um — ideal für Formatierungen und Berechnungen vor der Ausgabe.",
     features: [
       "Zahlenformat: Dezimalstellen, Tausend- und Dezimaltrennzeichen",
-      "Datumsformat: DE ↔ ISO ↔ US, beliebige Eingabe-/Ausgabeformate",
+      "Zahlenrechnung: +, −, ×, ÷, Modulo, Min, Max, AutoID",
+      "Datumsformat: DE ↔ ISO ↔ US, beliebige Formate",
+      "Datumsrechnung: Tag/Monat/Jahr/Stunde/Minute/Sekunde, AddDays, DaysDiff, Now",
       "Zeichenkette: Trim, GROSS/klein, Ersetzen, Prefix, Suffix",
-      "Zeichenkette: Erste/Letzte N Zeichen, Von Position X bis Y",
-      "Zeichenkette: Aufteilen & Teil N, Länge, Umkehren",
+      "Zeichenkette: Erste/Letzte N Zeichen, Von X bis Y, Aufteilen & Teil N, Länge, Umkehren",
       "Zeichenkette: Regex extrahieren (Gruppe N) oder ersetzen",
       "Verkettung: mehrere Quellfelder mit Trennzeichen zusammenführen",
     ],

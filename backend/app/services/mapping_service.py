@@ -1268,6 +1268,8 @@ def execute_mapping(
         result_df = _pd_empty.DataFrame()
 
     # 3. Transform-Nodes anwenden (fügen neue Felder zum flat_row hinzu)
+    _auto_id_counters: dict = {}
+
     def apply_transform_nodes(flat: dict) -> dict:
         def get_val(field):
             """Robust field lookup: exact, then prefix-stripped."""
@@ -1388,6 +1390,61 @@ def execute_mapping(
                         repl = cfg.get("repl", "")
                         flat[out_field] = _re.sub(pattern, repl, val) if pattern else val
                     else: flat[out_field] = val
+
+                elif tn_type == "number_calc":
+                    src = inputs[0]["source_field"] if inputs else None
+                    raw = get_val(src) if src else None
+                    op  = cfg.get("operation", "add")
+                    if op == "auto_id":
+                        # _auto_id_counters persists across rows via closure – use row index
+                        flat[out_field] = _auto_id_counters.get(out_field, cfg.get("start_at", 1) - 1) + 1
+                        _auto_id_counters[out_field] = flat[out_field]
+                    else:
+                        try:
+                            num = float(str(raw).replace(",", ".")) if raw is not None else 0.0
+                            val2 = float(cfg.get("value", 0))
+                            if   op == "add":      flat[out_field] = num + val2
+                            elif op == "subtract": flat[out_field] = num - val2
+                            elif op == "multiply": flat[out_field] = num * val2
+                            elif op == "divide":   flat[out_field] = num / val2 if val2 != 0 else None
+                            elif op == "modulo":   flat[out_field] = num % val2 if val2 != 0 else None
+                            elif op == "min":      flat[out_field] = min(num, val2)
+                            elif op == "max":      flat[out_field] = max(num, val2)
+                            else:                  flat[out_field] = num
+                        except (ValueError, TypeError):
+                            flat[out_field] = None
+
+                elif tn_type == "date_calc":
+                    from datetime import datetime as _dt, timedelta as _td
+                    src = inputs[0]["source_field"] if inputs else None
+                    raw = str(get_val(src) or "").strip() if src else ""
+                    op  = cfg.get("operation", "day")
+                    fmt = cfg.get("input_format", "%Y-%m-%d")
+                    def _parse(s):
+                        for f in [fmt, "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y", "%Y-%m-%dT%H:%M:%S"]:
+                            try: return _dt.strptime(s, f)
+                            except: pass
+                        return None
+                    if op == "now":
+                        flat[out_field] = _dt.now().strftime(cfg.get("now_format", "%Y-%m-%d %H:%M:%S"))
+                    else:
+                        dt = _parse(raw)
+                        if dt is None:
+                            flat[out_field] = None
+                        elif op == "day":      flat[out_field] = dt.day
+                        elif op == "month":    flat[out_field] = dt.month
+                        elif op == "year":     flat[out_field] = dt.year
+                        elif op == "hour":     flat[out_field] = dt.hour
+                        elif op == "minute":   flat[out_field] = dt.minute
+                        elif op == "second":   flat[out_field] = dt.second
+                        elif op == "add_days":
+                            flat[out_field] = (dt + _td(days=int(cfg.get("days", 0)))).strftime(fmt)
+                        elif op == "days_diff":
+                            src2 = inputs[1]["source_field"] if len(inputs) > 1 else None
+                            raw2 = str(get_val(src2) or "").strip() if src2 else ""
+                            dt2  = _parse(raw2)
+                            flat[out_field] = (dt2 - dt).days if dt2 else None
+                        else: flat[out_field] = None
 
                 elif tn_type == "concat":
                     sep = cfg.get("separator", " ")
