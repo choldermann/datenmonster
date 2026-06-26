@@ -294,6 +294,11 @@ export default function MappingEditor() {
     triggerLineDraw();
   }, [triggerLineDraw]);
 
+  const handleNodeResize = useCallback((dsId, width, height) => {
+    setCanvasNodes((prev) => prev.map((n) => n.dataset_id !== dsId ? n : { ...n, width, height }));
+    triggerLineDraw();
+  }, [triggerLineDraw]);
+
   const removeNode = useCallback((dsId) => {
     setCanvasNodes((prev) => prev.filter((n) => n.dataset_id !== dsId));
     setConnections((prev) => prev.filter((c) => c.source_dataset_id !== dsId));
@@ -866,7 +871,7 @@ export default function MappingEditor() {
                   onRegisterNodeRef={(id, ref, bodyRef) => { nodeFieldListRefs.current[id] = ref; if (bodyRef) nodeBodyRefs.current[id] = bodyRef; }}
                   onFieldListScroll={triggerLineDraw}
                   pendingSource={pendingSource} pendingJoin={pendingJoin}
-                  onRemove={removeNode} onPositionChange={handlePositionChange} fieldRefs={fieldRefs}
+                  onRemove={removeNode} onPositionChange={handlePositionChange} onResize={handleNodeResize} fieldRefs={fieldRefs}
                   onSortChange={(dsId, sorts) => setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, sorts } : n))}
                   onSchemaRefresh={(dsId, colTypes) => setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...colTypes } } : n))} />
               ))}

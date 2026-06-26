@@ -5,9 +5,12 @@ import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from 
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
 
-function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, fieldRefs, onSortChange, onSchemaRefresh }) {
+function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh }) {
   const dragState = useRef(null);
+  const resizeState = useRef(null);
   const FIELD_H = 28;
+  const [nodeWidth, setNodeWidth] = useState(node.width || 230);
+  const [nodeHeight, setNodeHeight] = useState(node.height || 300);
   const filters = node.filters || {};
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
@@ -67,6 +70,30 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   }, [node.x, node.y, node.dataset_id, onPositionChange]);
+
+  const handleResizeMouseDown = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    resizeState.current = { startX: e.clientX, startY: e.clientY, startW: nodeWidth, startH: nodeHeight };
+    const onMove = (ev) => {
+      if (!resizeState.current) return;
+      const newW = Math.max(180, resizeState.current.startW + ev.clientX - resizeState.current.startX);
+      const newH = Math.max(100, resizeState.current.startH + ev.clientY - resizeState.current.startY);
+      setNodeWidth(newW);
+      setNodeHeight(newH);
+    };
+    const onUp = (ev) => {
+      if (resizeState.current) {
+        const newW = Math.max(180, resizeState.current.startW + ev.clientX - resizeState.current.startX);
+        const newH = Math.max(100, resizeState.current.startH + ev.clientY - resizeState.current.startY);
+        if (onResize) onResize(node.dataset_id, newW, newH);
+      }
+      resizeState.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [nodeWidth, nodeHeight, node.dataset_id, onResize]);
 
   const clickTimers = useRef({});
   const fieldListRef = useRef(null);
@@ -150,7 +177,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
 
   return (
     <>
-    <div ref={nodeBodyRef} style={{ position: "absolute", left: node.x, top: node.y, width: 230, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
+    <div ref={nodeBodyRef} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "grab", backgroundColor: S.bgEl, borderBottom: `1px solid ${S.border}` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
@@ -193,7 +220,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
       </div>
 
       {/* Fields */}
-      <div ref={fieldListRef} onScroll={onFieldListScroll} style={{ maxHeight: 300, overflowY: "auto", scrollbarWidth: "thin" }}>
+      <div ref={fieldListRef} onScroll={onFieldListScroll} style={{ maxHeight: nodeHeight, overflowY: "auto", scrollbarWidth: "thin" }}>
         {fields.map((field) => {
           const conn = connections.find((c) => c.source_dataset_id === node.dataset_id && c.source_field === field);
           const hasJoin = joins.some((j) => (j.left_dataset_id === node.dataset_id && j.left_field === field) || (j.right_dataset_id === node.dataset_id && j.right_field === field));
@@ -293,7 +320,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
       </div>
 
       {/* Footer */}
-      <div style={{ padding: "5px 10px", borderTop: `1px solid ${S.border}`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ padding: "5px 10px", borderTop: `1px solid ${S.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", position: "relative" }}>
         <span style={{ fontSize: 10, fontFamily: "monospace", color: S.textDim }}>{fields.length} Felder</span>
         <div style={{ display: "flex", gap: 6 }}>
           {activeFilterCount > 0 && (
@@ -306,6 +333,16 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
             <span style={{ fontSize: 9, color: JOIN_COLOR, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>JOIN</span>
           )}
         </div>
+        {/* Resize handle */}
+        <div
+          onMouseDown={handleResizeMouseDown}
+          title="Größe ändern"
+          style={{ position: "absolute", right: 3, bottom: 3, width: 10, height: 10, cursor: "nwse-resize", opacity: 0.4,
+            backgroundImage: "linear-gradient(135deg, transparent 30%, #888 30%, #888 40%, transparent 40%, transparent 60%, #888 60%, #888 70%, transparent 70%)",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = "0.4"}
+        />
       </div>
     </div>
 
