@@ -5,7 +5,7 @@ import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from 
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
 
-function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, fieldRefs, onSortChange }) {
+function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, fieldRefs, onSortChange, onSchemaRefresh }) {
   const dragState = useRef(null);
   const FIELD_H = 28;
   const filters = node.filters || {};
@@ -13,6 +13,20 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewMode, setPreviewMode] = useState("full"); // "full" | "filtered"
+  const [schemaLoading, setSchemaLoading] = useState(false);
+
+  const isDbDataset = node.dataset_file_type?.startsWith("db_");
+
+  const detectSchema = async (e) => {
+    e.stopPropagation();
+    setSchemaLoading(true);
+    try {
+      const { data } = await api.post(`/api/datasets/${node.dataset_id}/detect-schema`);
+      if (data?.column_types && onSchemaRefresh) onSchemaRefresh(node.dataset_id, data.column_types);
+    } catch { /* silent */ } finally {
+      setSchemaLoading(false);
+    }
+  };
 
   const hasFilters = Object.values(filters).some(Boolean);
 
@@ -153,6 +167,13 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
           onMouseLeave={(e) => (e.currentTarget.style.color = activeSortCount > 0 ? SORT_COLOR : S.textDim)}>
           <ArrowUpDown size={12} />
         </button>
+        {isDbDataset && (
+          <button onClick={detectSchema} title="PK/FK aus DB-Schema erkennen" style={{ color: schemaLoading ? S.accent : S.textDim, flexShrink: 0, lineHeight: 1 }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = S.accent)}
+            onMouseLeave={(e) => (e.currentTarget.style.color = schemaLoading ? S.accent : S.textDim)}>
+            {schemaLoading ? <Loader2 size={12} className="animate-spin" /> : <span style={{ fontSize: 11, lineHeight: 1 }}>🔑</span>}
+          </button>
+        )}
         <button onClick={openPreview} title="Vorschau" style={{ color: S.textDim, flexShrink: 0, lineHeight: 1 }}
           onMouseEnter={(e) => (e.currentTarget.style.color = S.accent)}
           onMouseLeave={(e) => (e.currentTarget.style.color = S.textDim)}>
@@ -223,9 +244,18 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
               onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent"; }}
             >
               <span style={{ fontSize: 11, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isJoinPending ? JOIN_COLOR : isPending ? S.accent : hasFilter ? "#a78bfa" : conn ? "#6ee7b7" : S.textMain, display: "flex", alignItems: "center", gap: 0 }}>
-                <span style={{ width: 14, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>
-                  {node.dataset_column_types?.[field]?.is_primary ? "🔑" : ""}
-                </span>
+                {(() => {
+                  const ti = node.dataset_column_types?.[field];
+                  if (ti?.is_primary) return (
+                    <span title="Primärschlüssel" style={{ width: 14, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>🔑</span>
+                  );
+                  if (ti?.is_fk) return (
+                    <span title="Fremdschlüssel" style={{ width: 14, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                      <span style={{ fontSize: 7, fontWeight: 800, color: "#fb923c", backgroundColor: "#fb923c18", borderRadius: 2, padding: "1px 2px", lineHeight: 1 }}>FK</span>
+                    </span>
+                  );
+                  return <span style={{ width: 14, flexShrink: 0 }} />;
+                })()}
                 <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{field}</span>
               </span>
               <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>

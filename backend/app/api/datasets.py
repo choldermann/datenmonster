@@ -564,6 +564,70 @@ def create_dataset_from_mapping(
     return dataset_out(ds)
 
 
+# ─── PK/FK-Schema-Erkennung ──────────────────────────────────────────────────
+
+def _enrich_with_key_info(col_types: dict, conn, sql: str) -> None:
+    """
+    Liest PK- und FK-Informationen aus dem DB-Schema und setzt is_primary / is_fk
+    in col_types. Funktioniert nur bei einfachen SELECT * FROM [schema.]table Abfragen.
+    Ändert col_types in-place.
+    """
+    import re
+    from app.services.db_service import get_engine_str
+    from sqlalchemy import create_engine, inspect
+
+    # Tabellennamen aus SQL extrahieren (nur einfache FROM schema.table Abfragen)
+    sql_clean = re.sub(r'--[^\n]*', '', sql)  # Inline-Kommentare entfernen
+    match = re.search(
+        r'\bFROM\s+(?:\[?(\w+)\]?\.\[?(\w+)\]?|\[?(\w+)\]?)\s*(?:$|WHERE|ORDER|GROUP|LIMIT|;)',
+        sql_clean.strip(), re.IGNORECASE
+    )
+    if not match:
+        return
+
+    if match.group(1) and match.group(2):
+        schema, table = match.group(1), match.group(2)
+    else:
+        schema, table = None, match.group(3)
+
+    try:
+        engine = create_engine(get_engine_str(conn), connect_args={"timeout": 10, "login_timeout": 10} if conn.db_type == "mssql" else {"connect_timeout": 10})
+        inspector = inspect(engine)
+
+        pk_info = inspector.get_pk_constraint(table, schema=schema)
+        pk_cols = set(pk_info.get("constrained_columns", []))
+
+        fk_cols = set()
+        try:
+            for fk in inspector.get_foreign_keys(table, schema=schema):
+                fk_cols.update(fk.get("constrained_columns", []))
+        except Exception:
+            pass
+
+        for col in list(col_types.keys()):
+            if not isinstance(col_types[col], dict):
+                continue
+            col_type = col_types[col]
+            is_pk = col in pk_cols
+            col_type["is_primary"] = is_pk
+            if is_pk:
+                col_type.pop("is_fk", None)
+            else:
+                # Echte DB-FK oder Namenskonvention: k-Präfix + Integer (JTL/MSSQL)
+                # oder allgemeine Muster (_id, Id-Suffix)
+                is_db_fk = col in fk_cols
+                is_name_fk = (
+                    col_type.get("type") in ("integer",) and (
+                        bool(re.match(r'^k[A-Z]', col)) or              # kRechnung, kKunde
+                        bool(re.search(r'(Id|_id|_key|_ID)$', col))    # orderId, order_id
+                    )
+                )
+                col_type["is_fk"] = is_db_fk or is_name_fk
+        engine.dispose()
+    except Exception:
+        pass
+
+
 # ─── Re-Query (DB-Dataset neu laden) ─────────────────────────────────────────
 
 @router.post("/{dataset_id}/requery")
@@ -606,7 +670,9 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
         from datetime import datetime, timezone
         ds.row_count = len(df)
         ds.columns = df.columns.tolist()
-        ds.column_types = infer_column_types(df)
+        col_types = infer_column_types(df)
+        _enrich_with_key_info(col_types, conn, ds.source_sql)
+        ds.column_types = col_types
         ds.updated_at = datetime.now(timezone.utc)
         db.commit()
         dataframe_to_storage(df, ds.id)
@@ -614,6 +680,35 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
         return dataset_out(ds)
     except Exception as e:
         raise HTTPException(400, f"Re-Query fehlgeschlagen: {str(e)[:400]}")
+
+
+@router.post("/{dataset_id}/detect-schema")
+def detect_schema(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Liest PK/FK-Informationen aus dem DB-Schema und aktualisiert column_types."""
+    from app.models.dataset import DbConnection
+    from sqlalchemy.orm.attributes import flag_modified
+
+    ds = _get_ds(dataset_id, db)
+    require_editor(ds.project_id, user, db)
+
+    if not ds.source_connection_id or not ds.source_sql:
+        raise HTTPException(400, "Dataset hat keine gespeicherte DB-Verbindung")
+
+    conn = db.query(DbConnection).filter(DbConnection.id == ds.source_connection_id).first()
+    if not conn:
+        raise HTTPException(404, f"Verbindung #{ds.source_connection_id} nicht gefunden")
+
+    col_types = dict(ds.column_types or {})
+    try:
+        _enrich_with_key_info(col_types, conn, ds.source_sql)
+    except Exception as e:
+        raise HTTPException(500, f"Schema-Erkennung fehlgeschlagen: {e}")
+
+    ds.column_types = col_types
+    flag_modified(ds, "column_types")
+    db.commit()
+    db.refresh(ds)
+    return {"ok": True, "column_types": ds.column_types}
 
 
 # ─── Umbenennen ───────────────────────────────────────────────────────────────
