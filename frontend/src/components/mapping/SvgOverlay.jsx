@@ -6,7 +6,7 @@ import { CALC_COLOR } from "./CalcNode";
 import { SWITCH_COLOR } from "./SwitchNode";
 import { PYTHON_NODE_COLOR } from "./PythonNode";
 
-function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
+function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, exprOutputRefs, exprNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
   const canvasEl = canvasRef.current;
   if (!canvasEl) return null;
 
@@ -149,6 +149,20 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
       const fieldIdx = (pythonNode.output_fields || []).findIndex(f => f === sourceField);
       const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
       const outEl = pythonOutputRefs.current[dotKey]?.current || pythonOutputRefs.current[dotKey];
+      if (!isInDOM(outEl)) return null;
+      const r = toSvg(outEl.getBoundingClientRect());
+      return { x: r.right, y: r.top + r.height / 2, clamped: false };
+    }
+
+    // Expression node output dot
+    if (String(datasetId).startsWith("__expr__")) {
+      const nodeId = String(datasetId).replace("__expr__", "");
+      if (!exprOutputRefs?.current) return null;
+      const exprNode = exprNodes?.find(n => n.id === nodeId);
+      if (!exprNode) return null;
+      const fieldIdx = (exprNode.output_fields || []).findIndex(f => f.name === sourceField);
+      const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+      const outEl = exprOutputRefs.current[dotKey]?.current || exprOutputRefs.current[dotKey];
       if (!isInDOM(outEl)) return null;
       const r = toSvg(outEl.getBoundingClientRect());
       return { x: r.right, y: r.top + r.height / 2, clamped: false };
@@ -434,7 +448,8 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const isCalc = String(conn.source_dataset_id).startsWith("__calc__");
         const isSwitch = String(conn.source_dataset_id).startsWith("__switch__");
         const isPython = String(conn.source_dataset_id).startsWith("__python__");
-        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython;
+        const isExpr   = String(conn.source_dataset_id).startsWith("__expr__");
+        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython || isExpr;
         const srcKey = `${conn.source_dataset_id}__${conn.source_field}`;
         const srcEl = isSpecialNode ? null : fieldRefs.current[srcKey];
         const tgtEl = targetRefs.current[conn.target_field];
@@ -531,6 +546,17 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           const fieldIdx = (pythonNode.output_fields || []).findIndex(f => f === conn.source_field);
           const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
           const outEl = pythonOutputRefs.current[dotKey]?.current || pythonOutputRefs.current[dotKey];
+          if (!isInDOM(outEl)) return null;
+          const r = toSvg(outEl.getBoundingClientRect());
+          sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
+        } else if (isExpr) {
+          const nodeId = String(conn.source_dataset_id).replace("__expr__", "");
+          if (!exprOutputRefs?.current) return null;
+          const exprNode = exprNodes?.find(n => n.id === nodeId);
+          if (!exprNode) return null;
+          const fieldIdx = (exprNode.output_fields || []).findIndex(f => f.name === conn.source_field);
+          const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+          const outEl = exprOutputRefs.current[dotKey]?.current || exprOutputRefs.current[dotKey];
           if (!isInDOM(outEl)) return null;
           const r = toSvg(outEl.getBoundingClientRect());
           sp = { x: r.right, y: r.top + r.height / 2, clamped: false };

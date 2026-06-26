@@ -14,9 +14,11 @@ const NODE_COLORS = {
   calc:      "rgba(251,113,133,0.6)",
   sw:        "rgba(251,191,36,0.6)",
   python:    "rgba(34,197,94,0.6)",
+  expr:      "rgba(232,121,249,0.6)",
+  quality:   "rgba(6,182,212,0.6)",
 };
 
-function buildNodes({ canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes }) {
+function buildNodes({ canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes }) {
   return [
     ...canvasNodes.map(n => ({ x: n.x, y: n.y, w: n.width || 230, h: n.height || 260, c: NODE_COLORS.dataset })),
     ...transformNodes.map(n => ({ x: n.x, y: n.y, w: 200, h: 130, c: NODE_COLORS.transform })),
@@ -27,7 +29,9 @@ function buildNodes({ canvasNodes, transformNodes, constantNodes, sqlNodes, aggN
     ...lookupNodes.map(n =>    ({ x: n.x, y: n.y, w: 240, h: 160, c: NODE_COLORS.lookup })),
     ...calcNodes.map(n =>      ({ x: n.x, y: n.y, w: 220, h: 150, c: NODE_COLORS.calc })),
     ...switchNodes.map(n =>    ({ x: n.x, y: n.y, w: 240, h: 160, c: NODE_COLORS.sw })),
-    ...(pythonNodes || []).map(n => ({ x: n.x, y: n.y, w: 300, h: 200, c: NODE_COLORS.python })),
+    ...(pythonNodes  || []).map(n => ({ x: n.x, y: n.y, w: 300, h: 200, c: NODE_COLORS.python })),
+    ...(exprNodes    || []).map(n => ({ x: n.x, y: n.y, w: 320, h: 180, c: NODE_COLORS.expr })),
+    ...(qualityNodes || []).map(n => ({ x: n.x, y: n.y, w: 340, h: 200, c: NODE_COLORS.quality })),
   ];
 }
 
@@ -36,6 +40,7 @@ export default function CanvasMinimap({
   canvasNodes = [], transformNodes = [], constantNodes = [],
   sqlNodes = [], aggNodes = [], restNodes = [], lookupNodes = [],
   calcNodes = [], switchNodes = [], pythonNodes = [],
+  exprNodes = [], qualityNodes = [],
   tick,
 }) {
   const cvs = useRef(null);
@@ -47,7 +52,7 @@ export default function CanvasMinimap({
     const canvas = cvs.current;
     if (!el || !canvas) return;
 
-    const nodes = buildNodes({ canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes });
+    const nodes = buildNodes({ canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes });
 
     if (nodes.length === 0) { setVisible(false); return; }
 
@@ -112,7 +117,7 @@ export default function CanvasMinimap({
     ctx.lineWidth   = 1;
     ctx.strokeRect(vx, vy, vw, vh);
 
-  }, [canvasRef, canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes]);
+  }, [canvasRef, canvasNodes, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes]);
 
   // Redraw when nodes change or canvas scrolls
   useEffect(() => { draw(); }, [draw, tick]);

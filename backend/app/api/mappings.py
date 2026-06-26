@@ -27,6 +27,8 @@ class MappingCreate(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    expr_nodes:      Optional[List[Any]] = []
+    quality_nodes:   Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []
     # Legacy-Felder (werden in targets migriert)
     fields:                  Optional[List[Any]] = []
@@ -51,6 +53,8 @@ class PreviewRequest(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    expr_nodes:      Optional[List[Any]] = []
+    quality_nodes:   Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []   # vollständige Targets (bevorzugt)
     preview_rows:    Optional[int] = 50
 
@@ -68,6 +72,8 @@ class ExecuteRequest(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    expr_nodes:      Optional[List[Any]] = []
+    quality_nodes:   Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []
     # Legacy
     fields:                  Optional[List[Any]] = []
@@ -140,6 +146,8 @@ def _build_context_from_request(data) -> "MappingContext":
         calc_nodes      = getattr(data, "calc_nodes",      None) or [],
         switch_nodes    = getattr(data, "switch_nodes",    None) or [],
         python_nodes    = getattr(data, "python_nodes",    None) or [],
+        expr_nodes      = getattr(data, "expr_nodes",      None) or [],
+        quality_nodes   = getattr(data, "quality_nodes",   None) or [],
         targets         = targets,
     )
 
@@ -168,8 +176,10 @@ def mapping_out(m: Mapping, db: Session) -> dict:
         "rest_nodes":     getattr(m, "rest_nodes",   None) or [],
         "lookup_nodes":   getattr(m, "lookup_nodes", None) or [],
         "calc_nodes":     getattr(m, "calc_nodes",    None) or [],
-        "switch_nodes":   getattr(m, "switch_nodes",  None) or [],
-        "python_nodes":   getattr(m, "python_nodes",  None) or [],
+        "switch_nodes":   getattr(m, "switch_nodes",    None) or [],
+        "python_nodes":   getattr(m, "python_nodes",   None) or [],
+        "expr_nodes":     getattr(m, "expr_nodes",     None) or [],
+        "quality_nodes":  getattr(m, "quality_nodes",  None) or [],
         "targets":        _migrate_legacy_targets(m),
         "project_id":     m.project_id,
         "created_at":     m.created_at.isoformat() if m.created_at else None,
@@ -242,6 +252,7 @@ def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
         rest_nodes=data.rest_nodes or [], lookup_nodes=data.lookup_nodes or [],
         calc_nodes=data.calc_nodes or [], switch_nodes=data.switch_nodes or [],
         python_nodes=data.python_nodes or [],
+        expr_nodes=data.expr_nodes or [], quality_nodes=data.quality_nodes or [],
         targets=data.targets,             project_id=data.project_id,
     )
     db.add(m); db.commit(); db.refresh(m)
@@ -277,8 +288,10 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     m.rest_nodes      = data.rest_nodes   or []
     m.lookup_nodes    = data.lookup_nodes or []
     m.calc_nodes      = data.calc_nodes    or []
-    m.switch_nodes    = data.switch_nodes  or []
-    m.python_nodes    = data.python_nodes  or []
+    m.switch_nodes    = data.switch_nodes   or []
+    m.python_nodes    = data.python_nodes   or []
+    m.expr_nodes      = data.expr_nodes     or []
+    m.quality_nodes   = data.quality_nodes  or []
     m.targets         = data.targets
     m.project_id      = data.project_id
     db.commit(); db.refresh(m)
@@ -366,6 +379,8 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
             calc_nodes=ctx.calc_nodes,
             switch_nodes=ctx.switch_nodes,
             python_nodes=ctx.python_nodes,
+            expr_nodes=ctx.expr_nodes,
+            quality_nodes=ctx.quality_nodes,
             preview_rows=100,
             _debug_trace=_trace,
         )

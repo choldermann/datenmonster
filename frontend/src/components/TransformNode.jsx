@@ -346,7 +346,7 @@ const selS = { padding: "3px 4px", backgroundColor: "var(--bg-main)", border: "1
 
 // ─── TransformNode ────────────────────────────────────────────────────────────
 
-export default function TransformNode({ node, onPositionChange, onUpdate, onRemove, outputRef, inputRefs, onMiniPortsReady, debugHighlight }) {
+export default function TransformNode({ node, onPositionChange, onUpdate, onRemove, outputRef, inputRefs, onMiniPortsReady, debugHighlight, debugStats }) {
   const dragState = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -517,6 +517,12 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
               title="Ausgabe ins Ziel ziehen" />
           </div>
         </div>
+        {debugStats && (
+          <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: "1px solid rgba(129,140,248,0.15)" }}>
+            <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
+            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+          </div>
+        )}
       </div>
     </div>
   );

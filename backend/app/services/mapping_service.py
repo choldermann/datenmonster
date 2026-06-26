@@ -141,6 +141,8 @@ class MappingContext:
     switch_nodes:    List[Dict] = field(default_factory=list)
     sort_nodes:      List[Dict] = field(default_factory=list)
     python_nodes:    List[Dict] = field(default_factory=list)
+    expr_nodes:      List[Dict] = field(default_factory=list)
+    quality_nodes:   List[Dict] = field(default_factory=list)
     targets:         List[Dict] = field(default_factory=list)
 
     @classmethod
@@ -158,7 +160,9 @@ class MappingContext:
             lookup_nodes    = getattr(mapping, "lookup_nodes", None) or [],
             calc_nodes      = getattr(mapping, "calc_nodes",   None) or [],
             switch_nodes    = getattr(mapping, "switch_nodes",  None) or [],
-            python_nodes    = getattr(mapping, "python_nodes",  None) or [],
+            python_nodes    = getattr(mapping, "python_nodes",   None) or [],
+            expr_nodes      = getattr(mapping, "expr_nodes",     None) or [],
+            quality_nodes   = getattr(mapping, "quality_nodes",  None) or [],
             targets         = _migrate_legacy_targets(mapping),
         )
 
@@ -178,6 +182,8 @@ class MappingContext:
             switch_nodes    = self.switch_nodes,
             sort_nodes      = self.sort_nodes,
             python_nodes    = self.python_nodes,
+            expr_nodes      = self.expr_nodes,
+            quality_nodes   = self.quality_nodes,
             preview_rows    = preview_rows,
         )
 
@@ -1171,6 +1177,77 @@ def _exec_python_script(script: str, row: dict, timeout_sec: int = 3) -> tuple:
     return _result["value"], _result["error"]
 
 
+def _eval_expression(expr: str, row: dict):
+    """Wertet einen Formelausdruck aus. {feldname} wird durch row["feldname"] ersetzt."""
+    import re as _re, datetime as _dt, math as _math
+    expr_py = _re.sub(r'\{(\w+)\}', r'__r__["\1"]', expr)
+
+    def _upper(s):   return str(s).upper()  if s is not None else None
+    def _lower(s):   return str(s).lower()  if s is not None else None
+    def _trim(s):    return str(s).strip()  if s is not None else None
+    def _concat(*a): return "".join(str(x) for x in a if x is not None)
+    def _replace(s, old, new): return str(s).replace(str(old), str(new)) if s is not None else None
+    def _substr(s, start, length=None):
+        s2 = str(s) if s is not None else ""
+        return s2[int(start):int(start)+int(length)] if length is not None else s2[int(start):]
+    def _len(s):     return len(str(s)) if s is not None else 0
+    def _coalesce(*a):
+        for x in a:
+            if x is not None and str(x) != "": return x
+        return None
+    def _if_(cond, then, else_=None): return then if cond else else_
+    def _round_(n, d=0): return round(float(n), int(d)) if n is not None else None
+    def _int_(s):    return int(float(str(s))) if s is not None else None
+    def _float_(s):  return float(str(s))      if s is not None else None
+    def _str_(s):    return str(s)             if s is not None else None
+    def _now():      return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def _today():    return _dt.date.today().strftime("%Y-%m-%d")
+    def _pad(s, w, ch=" "): return str(s).ljust(int(w), ch[0]) if s is not None else None
+    def _regex_match(s, pat):
+        import re as _r2
+        return bool(_r2.search(pat, str(s))) if s is not None else False
+
+    ns = {
+        "__r__": row, "__builtins__": {},
+        "upper": _upper, "lower": _lower, "trim": _trim,
+        "concat": _concat, "replace": _replace, "substr": _substr,
+        "len": _len, "coalesce": _coalesce, "if_": _if_,
+        "round": _round_, "int": _int_, "float": _float_, "str": _str_,
+        "now": _now, "today": _today, "pad": _pad,
+        "regex_match": _regex_match,
+        "abs": abs, "max": max, "min": min,
+        "sqrt": _math.sqrt, "floor": _math.floor, "ceil": _math.ceil,
+        "True": True, "False": False, "None": None,
+    }
+    return eval(expr_py, ns)  # noqa: S307
+
+
+_DQ_VALIDATORS = {
+    "required":  lambda v, _: v is not None and str(v).strip() != "",
+    "number":    lambda v, _: (lambda s: s.lstrip("-").replace(".", "", 1).isdigit())(str(v).strip()) if v is not None else False,
+    "email":     lambda v, _: bool(__import__("re").fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(v).strip())) if v is not None else False,
+    "plz_de":    lambda v, _: bool(__import__("re").fullmatch(r"\d{5}", str(v).strip())) if v is not None else False,
+    "phone":     lambda v, _: bool(__import__("re").fullmatch(r"[\d\s\+\-\(\)\/]{7,20}", str(v).strip())) if v is not None else False,
+    "iban":      lambda v, _: bool(__import__("re").fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", str(v).replace(" ", "").upper())) if v is not None else False,
+    "ean":       lambda v, _: bool(__import__("re").fullmatch(r"\d{8}|\d{13}", str(v).strip())) if v is not None else False,
+    "vat_id":    lambda v, _: bool(__import__("re").fullmatch(r"[A-Z]{2}[A-Z0-9]{2,12}", str(v).replace(" ", "").upper())) if v is not None else False,
+    "regex":     lambda v, rule: bool(__import__("re").search(rule.get("pattern", ".*"), str(v))) if v is not None else False,
+    "date":      lambda v, _: _validate_date(v),
+    "url":       lambda v, _: bool(__import__("re").match(r"https?://\S+", str(v).strip())) if v is not None else False,
+}
+
+def _validate_date(v):
+    if v is None: return False
+    import datetime as _dt2
+    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            _dt2.datetime.strptime(str(v).strip(), fmt)
+            return True
+        except ValueError:
+            pass
+    return False
+
+
 def execute_mapping(
     canvas_nodes: List[Dict],
     connections: List[Dict],
@@ -1185,6 +1262,8 @@ def execute_mapping(
     switch_nodes: List[Dict] = None,
     sort_nodes: List[Dict] = None,
     python_nodes: List[Dict] = None,
+    expr_nodes: List[Dict] = None,
+    quality_nodes: List[Dict] = None,
     target_options: Dict = None,
     preview_rows: int = 50,
     _debug_trace: list = None,
@@ -2229,6 +2308,42 @@ def execute_mapping(
                         flat_no_prefix[out_field] = row_result[0] if row_result else None
             except Exception as e:
                 flat_no_prefix[out_field] = f"[SQL-Fehler: {str(e)[:80]}]"
+
+        # Apply expr nodes (evaluated per row so connections can pick up outputs)
+        for en in (expr_nodes or []):
+            for field_def in (en.get("output_fields") or []):
+                fname = (field_def.get("name") or "").strip()
+                fexpr = (field_def.get("expr") or "").strip()
+                if not fname or not fexpr:
+                    continue
+                try:
+                    flat_no_prefix[fname] = _eval_expression(fexpr, flat_no_prefix)
+                except Exception as _ee:
+                    flat_no_prefix[fname] = None
+                    errors.append(f"Expression '{fname}': {str(_ee)[:100]}")
+
+        # Apply quality nodes (adds __dq_valid__ + __dq_errors__ per row)
+        for qn in (quality_nodes or []):
+            _rules = qn.get("rules") or []
+            if not _rules:
+                continue
+            _row_errors = []
+            for _rule in _rules:
+                _field = _rule.get("field", "")
+                _rtype = _rule.get("type", "required")
+                _validator = _DQ_VALIDATORS.get(_rtype)
+                if not _validator:
+                    continue
+                try:
+                    _ok = _validator(flat_no_prefix.get(_field), _rule)
+                except Exception:
+                    _ok = False
+                if not _ok:
+                    _msg = _rule.get("message") or f"{_field}: {_rtype} Fehler"
+                    _row_errors.append(_msg)
+            flat_no_prefix["__dq_valid__"] = len(_row_errors) == 0
+            flat_no_prefix["__dq_errors__"] = _row_errors
+
         out_row = {}
         for conn in connections:
             target = conn.get("target_field")
@@ -2472,6 +2587,42 @@ def execute_mapping(
             "sample": output_rows[:5],
             "icon": "code",
             "meta": {},
+        })
+        _dbg_err_idx = len(errors)
+
+    # Expression nodes and quality nodes are processed per-row in Phase 1
+    # (inside the result_df.iterrows() loop above) so connections can resolve their output fields.
+    # Here we just add debug trace entries if needed.
+    if _debug_trace is not None and expr_nodes:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        _debug_trace.append({
+            "id": "expr",
+            "label": f"Formeln ({len(expr_nodes)} Node{'s' if len(expr_nodes)>1 else ''})",
+            "type": "expr",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": len(errors) - _dbg_err_idx,
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "function-square",
+            "meta": {},
+        })
+        _dbg_err_idx = len(errors)
+
+    if _debug_trace is not None and quality_nodes:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        dq_invalid = sum(1 for r in output_rows if r.get("__dq_valid__") is False)
+        _debug_trace.append({
+            "id": "quality",
+            "label": f"Datenqualität ({len(quality_nodes)} Node{'s' if len(quality_nodes)>1 else ''})",
+            "type": "quality",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": dq_invalid,
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "shield-check",
+            "meta": {"invalid": dq_invalid},
         })
         _dbg_err_idx = len(errors)
 

@@ -3,7 +3,7 @@ import { GripVertical, Layers, X, Plus, Minimize2 } from "lucide-react";
 import { S, AGG_COLOR, AGG_FUNCTIONS } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, nodeRef, onMiniPortsReady, debugHighlight }) {
+function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, nodeRef, onMiniPortsReady, debugHighlight, debugStats }) {
   const internalRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -159,6 +159,12 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
           <Plus size={10} /> Feld hinzufügen
         </button>
       </div>
+      {debugStats && (
+        <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid ${AGG_COLOR}22` }}>
+          <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
+          {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+        </div>
+      )}
       </div>{/* /Body */}
     </div>
   );

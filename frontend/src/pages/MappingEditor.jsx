@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
-import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
+import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, FunctionSquare, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, ShieldCheck, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
 import api from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
@@ -21,6 +21,8 @@ import LookupNode, { LOOKUP_COLOR } from "../components/mapping/LookupNode";
 import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PythonNode, { PYTHON_NODE_COLOR } from "../components/mapping/PythonNode";
+import ExprNode, { EXPR_NODE_COLOR } from "../components/mapping/ExprNode";
+import DataQualityNode, { DQ_NODE_COLOR } from "../components/mapping/DataQualityNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
 import DebugPanel from "../components/mapping/DebugPanel";
 import CanvasMinimap from "../components/mapping/CanvasMinimap";
@@ -70,6 +72,9 @@ export default function MappingEditor() {
   const switchOutputRefs = useRef({});
   const [pythonNodes, setPythonNodes] = useState([]);
   const pythonOutputRefs = useRef({});
+  const [exprNodes, setExprNodes] = useState([]);
+  const exprOutputRefs = useRef({});
+  const [qualityNodes, setQualityNodes] = useState([]);
   const [pendingSource, setPendingSource] = useState(null);
   const [editingConnection, setEditingConnection] = useState(null);
   const [editingTargetTypeIdx, setEditingTargetTypeIdx] = useState(null); // idx der Connection deren target_type editiert wird
@@ -207,6 +212,8 @@ export default function MappingEditor() {
         setCalcNodes(data.calc_nodes || []);
         setSwitchNodes(data.switch_nodes || []);
         setPythonNodes(data.python_nodes || []);
+        setExprNodes(data.expr_nodes || []);
+        setQualityNodes(data.quality_nodes || []);
         const loadedTargets = data.targets || [];
         setTargets(loadedTargets);
         if (loadedTargets.length > 0) setActiveTargetId(loadedTargets[0].id);
@@ -214,7 +221,7 @@ export default function MappingEditor() {
     }
   }, [id]);
 
-  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes]);
+  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes]);
 
   // Mouse move for join drag preview
   useEffect(() => {
@@ -257,6 +264,8 @@ export default function MappingEditor() {
         { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" },
       ]}]);
       else if (nodeType === "python") setPythonNodes((prev) => [...prev, { id, x: dropX, y: dropY, script: "", output_fields: [] }]);
+      else if (nodeType === "expr") setExprNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Expression", output_fields: [] }]);
+      else if (nodeType === "quality") setQualityNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Datenqualität", rules: [] }]);
       setTimeout(triggerLineDraw, 50);
       return;
     }
@@ -490,7 +499,7 @@ export default function MappingEditor() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, targets, project_id: projectId };
+      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, targets, project_id: projectId };
       if (id && id !== "new") {
         await api.put(`/api/mappings/${id}`, payload);
       } else {
@@ -538,6 +547,8 @@ export default function MappingEditor() {
       calc_nodes:      calcNodes,
       switch_nodes:    switchNodes,
       python_nodes:    pythonNodes,
+      expr_nodes:      exprNodes,
+      quality_nodes:   qualityNodes,
       mapping_id:      id && id !== "new" ? parseInt(id) : null,
       project_id:      projectId || null,
     };
@@ -607,7 +618,7 @@ export default function MappingEditor() {
           transform_nodes: transformNodes, constant_nodes: constantNodes,
           sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
           lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
-          python_nodes: pythonNodes,
+          python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
           targets: targets.length ? targets : undefined,
           fields: activeTarget?.fields || connections,
           preview_rows: 50,
@@ -632,7 +643,7 @@ export default function MappingEditor() {
         transform_nodes: transformNodes, constant_nodes: constantNodes,
         sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
         lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
-        python_nodes: pythonNodes,
+        python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
         targets: targets.length ? targets : undefined,
         fields: !targets.length ? connections : undefined,
       };
@@ -645,10 +656,12 @@ export default function MappingEditor() {
     }
   };
 
-  // Sample-Daten pro Dataset für Feld-Tooltips
+  // Sample-Daten + Stats pro Stage für Feld-Tooltips und Node Statistics
   const debugSamplesMap = {};
+  const debugStatsMap = {};
   if (debugTrace?.trace) {
     for (const stage of debugTrace.trace) {
+      debugStatsMap[stage.id] = { rows_in: stage.rows_in, rows_out: stage.rows_out, errors: stage.errors, duration_ms: stage.duration_ms };
       if (stage.type === "dataset" && stage.id?.startsWith("dataset_")) {
         const dsId = parseInt(stage.id.split("_")[1]);
         if (!isNaN(dsId)) debugSamplesMap[dsId] = stage.sample || [];
@@ -808,8 +821,10 @@ export default function MappingEditor() {
               {
                 id: "logic", label: "Logik & Skript",
                 items: [
-                  { type: "switch", Icon: GitBranch, color: SWITCH_COLOR, title: "Switch Node", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSwitchNodes(prev => [...prev, { id, x: 600, y: 80+prev.length*60, output_field: "", branches: [{ id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" }, { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }] }]); } },
-                  { type: "python", Icon: Terminal, color: PYTHON_NODE_COLOR, title: "Python Script", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setPythonNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, script: "", output_fields: [] }]); } },
+                  { type: "switch",  Icon: GitBranch,      color: SWITCH_COLOR,      title: "Switch Node",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSwitchNodes(prev => [...prev, { id, x: 600, y: 80+prev.length*60, output_field: "", branches: [{ id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" }, { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }] }]); } },
+                  { type: "python",  Icon: Terminal,        color: PYTHON_NODE_COLOR,  title: "Python Script", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setPythonNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, script: "", output_fields: [] }]); } },
+                  { type: "expr",    Icon: FunctionSquare,  color: EXPR_NODE_COLOR,    title: "Expression",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setExprNodes(prev => [...prev, { id, x: 680, y: 80+prev.length*60, label: "Expression", output_fields: [] }]); } },
+                  { type: "quality", Icon: ShieldCheck,     color: DQ_NODE_COLOR,      title: "Datenqualität", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setQualityNodes(prev => [...prev, { id, x: 720, y: 80+prev.length*60, label: "Datenqualität", rules: [] }]); } },
                 ],
               },
             ].map(group => (
@@ -880,7 +895,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -916,6 +931,7 @@ export default function MappingEditor() {
                   debugHighlight={debugActiveStageId === `dataset_${node.dataset_id}`}
                   debugSampleRows={debugSamplesMap[node.dataset_id] || []}
                   debugSelectedRowIdx={debugSelectedRowIdx}
+                  debugStats={debugStatsMap[`dataset_${node.dataset_id}`]}
                 />
               ))}
 
@@ -930,6 +946,7 @@ export default function MappingEditor() {
                     inputRefs={transformInputRefs}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`transform_${id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
                     debugHighlight={debugActiveStageId === "transform"}
+                    debugStats={debugStatsMap["transform"]}
                   />
                 );
               })}
@@ -976,6 +993,7 @@ export default function MappingEditor() {
                     onUpdate={(updated) => { setAggNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={(id) => { setAggNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__agg__${id}`)); }}
                     debugHighlight={debugActiveStageId === "agg"}
+                    debugStats={debugStatsMap["agg"]}
                   />
                 );
               })}
@@ -1006,6 +1024,7 @@ export default function MappingEditor() {
                     onUpdate={updated => { setCalcNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={id => { setCalcNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__calc__" + id)); }}
                     debugHighlight={debugActiveStageId === "calc"}
+                    debugStats={debugStatsMap["calc"]}
                   />
                 );
               })}
@@ -1048,6 +1067,28 @@ export default function MappingEditor() {
                   onUpdate={(updated) => { setPythonNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                   onRemove={(id) => { setPythonNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__python__" + id)); }}
                   debugHighlight={debugActiveStageId === "python"}
+                  debugStats={debugStatsMap["python"]}
+                />
+              ))}
+
+              {exprNodes.map((en) => (
+                <ExprNode key={en.id} node={en}
+                  outputRefs={exprOutputRefs}
+                  onPositionChange={(id, x, y) => { setExprNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
+                  onUpdate={(updated) => { setExprNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
+                  onRemove={(id) => { setExprNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__expr__" + id)); }}
+                  debugHighlight={debugActiveStageId === "expr"}
+                  debugStats={debugStatsMap["expr"]}
+                />
+              ))}
+
+              {qualityNodes.map((qn) => (
+                <DataQualityNode key={qn.id} node={qn}
+                  onPositionChange={(id, x, y) => { setQualityNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
+                  onUpdate={(updated) => { setQualityNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); }}
+                  onRemove={(id) => { setQualityNodes(prev => prev.filter(n => n.id !== id)); }}
+                  debugHighlight={debugActiveStageId === "quality"}
+                  debugStats={debugStatsMap["quality"]}
                 />
               ))}
 
@@ -1065,6 +1106,8 @@ export default function MappingEditor() {
               calcNodes={calcNodes}
               switchNodes={switchNodes}
               pythonNodes={pythonNodes}
+              exprNodes={exprNodes}
+              qualityNodes={qualityNodes}
               tick={lineTick}
             />
           </div>
@@ -1083,6 +1126,8 @@ export default function MappingEditor() {
             calcNodes={calcNodes}
             switchNodes={switchNodes}
             pythonNodes={pythonNodes}
+            exprNodes={exprNodes}
+            qualityNodes={qualityNodes}
             targets={targets}
           />
 

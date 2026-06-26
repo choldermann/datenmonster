@@ -3,7 +3,7 @@ import { Loader2, ChevronDown } from "lucide-react";
 import api from "../../api/client";
 import { S } from "./constants";
 
-function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, targets }) {
+function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes, targets }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -32,6 +32,8 @@ function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constan
         calc_nodes:      calcNodes,
         switch_nodes:    switchNodes,
         python_nodes:    pythonNodes,
+        expr_nodes:      exprNodes,
+        quality_nodes:   qualityNodes,
         // Targets bevorzugen (inkl. target_type pro Connection)
         // Fallback: legacy fields-Liste
         targets:         targets?.length ? targets : undefined,

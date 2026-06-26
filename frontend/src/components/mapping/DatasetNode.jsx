@@ -6,7 +6,7 @@ import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from 
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
 
-function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx }) {
+function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx, debugStats }) {
   const dragState = useRef(null);
   const resizeState = useRef(null);
   const FIELD_H = 28;
@@ -370,6 +370,9 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
             <Eye size={14} style={{ color: S.accent }} />
             <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{node.dataset_name}</span>
             <span style={{ fontSize: 11, fontFamily: "monospace", color: S.textDim }}>
+              {debugStats ? (
+                <span style={{ color: "#38bdf8" }}>↓ {(debugStats.rows_out ?? 0).toLocaleString()} geladen · </span>
+              ) : null}
               {node.dataset_row_count?.toLocaleString() || 0} Zeilen · {(node.dataset_columns || []).length} Spalten
             </span>
             {hasFilters && (

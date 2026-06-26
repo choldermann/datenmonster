@@ -86,7 +86,7 @@ function InputDot({ part, index, inputPortRefs, nodeId, onDrop, onUpdate, onMini
   );
 }
 
-function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields, onMiniPortsReady, debugHighlight }) {
+function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields, onMiniPortsReady, debugHighlight, debugStats }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -289,6 +289,12 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
             />
           </div>
         </div>
+        {debugStats && (
+          <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid ${CALC_COLOR}22` }}>
+            <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
+            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+          </div>
+        )}
       </div>
     </div>
   );

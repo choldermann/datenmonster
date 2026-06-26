@@ -21,7 +21,9 @@ class Mapping(Base):
     calc_nodes   = Column(JSON, default=list)
     switch_nodes = Column(JSON, default=list)   # [{id, x, y, fields}]
     sort_nodes   = Column(JSON, default=list)   # [{id, x, y, sort_fields: [{field, dir}]}]
-    python_nodes = Column(JSON, default=list)   # [{id, x, y, script, output_fields: [str]}]
+    python_nodes  = Column(JSON, default=list)   # [{id, x, y, script, output_fields: [str]}]
+    expr_nodes    = Column(JSON, default=list)   # [{id, x, y, output_fields: [{name, expr}]}]
+    quality_nodes = Column(JSON, default=list)   # [{id, x, y, label, rules: [{field, type, ...}]}]
     target_type = Column(String, nullable=True)
     target_connection_id = Column(Integer, nullable=True)
     target_table = Column(String, nullable=True)
