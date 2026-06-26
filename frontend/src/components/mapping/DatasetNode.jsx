@@ -12,16 +12,36 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewMode, setPreviewMode] = useState("full"); // "full" | "filtered"
 
-  const openPreview = async (e) => {
-    e.stopPropagation();
-    setShowPreview(true);
+  const hasFilters = Object.values(filters).some(Boolean);
+
+  const loadPreview = async (mode) => {
     setPreviewLoading(true);
+    setPreviewData(null);
     try {
-      const { data } = await api.get(`/api/datasets/${node.dataset_id}/data?page=0&page_size=100`);
-      setPreviewData(data);
+      if (mode === "filtered" && hasFilters) {
+        const { data } = await api.post(`/api/datasets/${node.dataset_id}/filtered-preview`, { filters, limit: 200 });
+        setPreviewData(data);
+      } else {
+        const { data } = await api.get(`/api/datasets/${node.dataset_id}/data?page=0&page_size=200`);
+        setPreviewData(data);
+      }
     } catch { setPreviewData(null); }
     finally { setPreviewLoading(false); }
+  };
+
+  const openPreview = (e) => {
+    e.stopPropagation();
+    const mode = hasFilters ? "filtered" : "full";
+    setPreviewMode(mode);
+    setShowPreview(true);
+    loadPreview(mode);
+  };
+
+  const switchPreviewMode = (mode) => {
+    setPreviewMode(mode);
+    loadPreview(mode);
   };
 
   const handleMouseDown = useCallback((e) => {
@@ -273,6 +293,19 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
             <span style={{ fontSize: 11, fontFamily: "monospace", color: S.textDim }}>
               {node.dataset_row_count?.toLocaleString() || 0} Zeilen · {(node.dataset_columns || []).length} Spalten
             </span>
+            {hasFilters && (
+              <div style={{ display: "flex", gap: 2, marginLeft: 12, backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 6, padding: 2 }}>
+                {[["full", "Vollständig"], ["filtered", `Gefiltert (${Object.values(filters).filter(Boolean).length})`]].map(([mode, label]) => (
+                  <button key={mode} onClick={() => switchPreviewMode(mode)}
+                    style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 4, cursor: "pointer", border: "none", transition: "all 0.15s",
+                      backgroundColor: previewMode === mode ? S.accent + "22" : "transparent",
+                      color: previewMode === mode ? S.accent : S.textDim,
+                      outline: previewMode === mode ? `1px solid ${S.accent}55` : "none" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             <button onClick={() => setShowPreview(false)}
               style={{ marginLeft: "auto", color: S.textDim, lineHeight: 1 }}
               onMouseEnter={(e) => e.currentTarget.style.color = S.textBright}
@@ -320,7 +353,13 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
           {/* Footer */}
           {previewData && (
             <div style={{ padding: "8px 18px", borderTop: `1px solid ${S.border}`, backgroundColor: S.bgEl, flexShrink: 0 }}>
-              <span style={{ fontSize: 11, color: S.textDim }}>Zeigt bis zu 100 Zeilen · Gesamtdatensätze: <span style={{ color: S.textBright }}>{node.dataset_row_count?.toLocaleString() || 0}</span></span>
+              {previewMode === "filtered" && hasFilters ? (
+                <span style={{ fontSize: 11, color: S.textDim }}>
+                  <span style={{ color: FILTER_COLOR, fontWeight: 600 }}>{previewData.total ?? previewData.preview?.length}</span> Treffer nach Filter · max. 200 Zeilen angezeigt · Gesamt: <span style={{ color: S.textBright }}>{node.dataset_row_count?.toLocaleString() || 0}</span>
+                </span>
+              ) : (
+                <span style={{ fontSize: 11, color: S.textDim }}>Zeigt bis zu 200 Zeilen · Gesamtdatensätze: <span style={{ color: S.textBright }}>{node.dataset_row_count?.toLocaleString() || 0}</span></span>
+              )}
             </div>
           )}
         </div>

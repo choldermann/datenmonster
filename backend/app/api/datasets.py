@@ -346,6 +346,50 @@ def xml_configure(
 
 # ─── Dataset-Daten lesen (Explorer) ──────────────────────────────────────────
 
+class FilteredPreviewRequest(BaseModel):
+    filters: dict = {}
+    limit: int = 200
+
+
+@router.post("/{dataset_id}/filtered-preview")
+def get_filtered_preview(
+    dataset_id: int,
+    req: FilteredPreviewRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Gibt eine gefilterte Vorschau eines Datasets zurück (SQL-Pushdown wenn möglich)."""
+    from app.connectors.factory import get_connector
+    from app.services.mapping_service import _apply_filter
+
+    ds = _get_ds(dataset_id, db)
+    connector = get_connector(dataset_id)
+
+    try:
+        if req.filters and connector.supports_pushdown() and hasattr(connector, "fetch_filtered"):
+            df = connector.fetch_filtered(req.filters, limit=req.limit)
+        else:
+            df = connector.fetch_full()
+            for field, expr in req.filters.items():
+                if not expr or field not in df.columns:
+                    continue
+                df = _apply_filter(df, field, expr)
+            df = df.head(req.limit)
+    except Exception as e:
+        raise HTTPException(500, f"Filter-Fehler: {e}")
+
+    def _fmt(v):
+        if v is None:
+            return None
+        import math
+        if isinstance(v, float) and math.isnan(v):
+            return None
+        return str(v)
+
+    records = [{c: _fmt(row[c]) for c in df.columns} for row in df.to_dict(orient="records")]
+    return {"columns": list(df.columns), "preview": records, "total": len(records)}
+
+
 @router.get("/{dataset_id}/data")
 def get_dataset_data(
     dataset_id: int,

@@ -156,10 +156,16 @@ class SqlConnector(BaseConnector):
             if not expr:
                 continue
             expr = expr.strip()
+            expr_upper = expr.upper()
             col = quote(field)
             pname = f"_f{i}"
             col_as_text = cast_text(col)
-            if expr.upper().startswith("LIKE "):
+
+            if expr_upper == "IS NULL":
+                parts.append(f"{col} IS NULL")
+            elif expr_upper == "IS NOT NULL":
+                parts.append(f"{col} IS NOT NULL")
+            elif expr_upper.startswith("LIKE "):
                 pattern = expr[5:].strip().strip('"').strip("'")
                 params[pname] = pattern
                 parts.append(f"{col_as_text} LIKE :{pname}")
@@ -167,10 +173,17 @@ class SqlConnector(BaseConnector):
                 for op in (">=", "<=", "!=", "=", ">", "<"):
                     if expr.startswith(op):
                         raw = expr[len(op):].strip().strip('"').strip("'")
-                        params[pname] = raw
                         sql_op = "<>" if op == "!=" else op
-                        # Immer Text-Vergleich: vermeidet Typ-Konvertierungsfehler
-                        parts.append(f"{col_as_text} {sql_op} :{pname}")
+                        if raw == "":
+                            # != "" → nicht leer und nicht NULL
+                            # = ""  → leer oder NULL
+                            if op == "!=":
+                                parts.append(f"({col} IS NOT NULL AND {col_as_text} <> '')")
+                            else:
+                                parts.append(f"({col} IS NULL OR {col_as_text} = '')")
+                        else:
+                            params[pname] = raw
+                            parts.append(f"{col_as_text} {sql_op} :{pname}")
                         break
 
         return (" AND ".join(parts), params) if parts else ("", {})

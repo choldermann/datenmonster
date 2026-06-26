@@ -816,26 +816,42 @@ def _apply_transformer(row: dict, conn: dict, dataset_names: dict = None) -> Any
 def _apply_filter(df: pd.DataFrame, field: str, expr: str) -> pd.DataFrame:
     """
     Parst Ausdrücke wie: > 100  |  = "aktiv"  |  != ""  |  LIKE %GmbH%  |  >= 2024-01-01
+                         IS NULL  |  IS NOT NULL
     """
     expr = expr.strip()
+    expr_upper = expr.upper()
+    col = df[field]
+
+    # IS NULL / IS NOT NULL
+    if expr_upper == "IS NULL":
+        return df[col.isna()]
+    if expr_upper == "IS NOT NULL":
+        return df[col.notna()]
 
     # LIKE operator
-    if expr.upper().startswith("LIKE "):
+    if expr_upper.startswith("LIKE "):
         pattern = expr[5:].strip().strip('"').strip("'")
-        # re.escape() in Python 3.7+ does NOT escape % or _, so we must convert
-        # wildcards character-by-character before escaping the rest
         regex = "".join(
             ".*" if c == "%" else "." if c == "_" else re.escape(c)
             for c in pattern
         )
-        return df[df[field].astype(str).str.match(f"^{regex}$", case=False, na=False)]
+        return df[col.astype(str).str.match(f"^{regex}$", case=False, na=False)]
 
     # Comparison operators: >= <= != = > <
     for op in (">=", "<=", "!=", "=", ">", "<"):
         if expr.startswith(op):
             raw_val = expr[len(op):].strip().strip('"').strip("'")
-            col = df[field]
-            # Try numeric comparison
+
+            # Sonderfall: != "" und = "" — NULL-bewusster Vergleich
+            if raw_val == "":
+                if op == "!=":
+                    # Nicht leer und nicht NULL
+                    return df[col.notna() & (col.astype(str) != "")]
+                else:  # op == "="
+                    # Leer oder NULL
+                    return df[col.isna() | (col.astype(str) == "")]
+
+            # Numerischer Vergleich
             try:
                 num_val = float(raw_val)
                 col_num = pd.to_numeric(col, errors="coerce")
@@ -844,12 +860,15 @@ def _apply_filter(df: pd.DataFrame, field: str, expr: str) -> pd.DataFrame:
                 return df[ops[op](num_val)]
             except ValueError:
                 pass
-            # String comparison
-            col_str = col.astype(str)
+
+            # String-Vergleich (NULL-sicher: NaN/None werden nie gleich einem String sein)
+            col_str = col.where(col.notna(), other=None).astype(str)
             ops_str = {"=": col_str.__eq__, "!=": col_str.__ne__,
                        ">=": col_str.__ge__, "<=": col_str.__le__,
                        ">": col_str.__gt__, "<": col_str.__lt__}
-            return df[ops_str[op](raw_val)]
+            mask = ops_str[op](raw_val)
+            # NULL-Zeilen immer ausschließen bei Vergleichen (wie SQL)
+            return df[mask & col.notna()]
 
     return df  # no-op if unrecognized
 
@@ -1137,8 +1156,10 @@ def execute_mapping(
             pushdown_used = False
 
             if filters and connector.supports_pushdown() and hasattr(connector, "fetch_filtered"):
-                # SQL-Pushdown: Filter direkt auf dem DB-Server ausführen
-                limit = (preview_rows * 3) if is_preview else None
+                # SQL-Pushdown: Filter direkt auf dem DB-Server ausführen.
+                # Bei Joins kein Limit setzen – ein begrenzter Sample würde Join-Keys
+                # aus der anderen Tabelle verfehlen und leere Ergebnisse liefern.
+                limit = (preview_rows * 3) if (is_preview and not joins) else None
                 df = connector.fetch_filtered(filters, limit=limit)
                 pushdown_used = True
             elif is_preview and not filters and not agg_nodes and not joins:
