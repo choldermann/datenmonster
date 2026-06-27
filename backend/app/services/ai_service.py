@@ -63,6 +63,10 @@ class AIService:
             result.append(token)
         return "".join(result)
 
+    async def complete_with_context(self, user_message: str, system: str = "") -> str:
+        """Single-shot completion (non-streaming) — for structured JSON output."""
+        return await self._complete([{"role": "user", "content": user_message}], system)
+
     async def stream_with_context(self, user_message: str, system: str = ""):
         """Generic streaming entry-point used by the Context Builder."""
         async for token in self._stream([{"role": "user", "content": user_message}], system):

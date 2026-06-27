@@ -235,6 +235,54 @@ async def generate_expression(
     return _sse_stream(svc.stream_with_context(user_msg, system))
 
 
+# ── Dataset-Vorschlag ────────────────────────────────────────────────────────
+
+class SuggestDatasetsRequest(BaseModel):
+    connection_id: int
+    description: str
+
+@router.post("/suggest-datasets")
+async def suggest_datasets(
+    body: SuggestDatasetsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Ask the AI to propose datasets for a given task description and DB schema."""
+    svc = _require_ai(db)
+    ctx = AIContextBuilder(db)
+    system, context = ctx.dataset_suggest_context(body.connection_id, body.description)
+    raw = await svc.complete_with_context(context, system)
+
+    # Strip markdown code fences if model wrapped output
+    import re as _re
+    cleaned = _re.sub(r"^```[a-zA-Z]*\s*", "", raw.strip(), flags=_re.MULTILINE)
+    cleaned = _re.sub(r"```\s*$", "", cleaned, flags=_re.MULTILINE).strip()
+
+    # Find JSON array in response
+    start = cleaned.find("[")
+    end   = cleaned.rfind("]")
+    if start == -1 or end == -1:
+        raise HTTPException(400, f"KI hat kein gültiges JSON zurückgegeben: {raw[:300]}")
+
+    import json as _json
+    try:
+        suggestions = _json.loads(cleaned[start:end+1])
+    except Exception as e:
+        raise HTTPException(400, f"JSON-Parsing fehlgeschlagen: {e} — Antwort: {raw[:300]}")
+
+    # Validate and normalize each suggestion
+    result = []
+    for s in suggestions:
+        if isinstance(s, dict) and s.get("name") and s.get("sql"):
+            result.append({
+                "name":    str(s["name"]).strip(),
+                "sql":     str(s["sql"]).strip(),
+                "purpose": str(s.get("purpose", "")).strip(),
+            })
+
+    return {"suggestions": result, "raw": raw}
+
+
 # ── Mapping-Vorschlag ────────────────────────────────────────────────────────
 
 class SuggestMappingRequest(BaseModel):

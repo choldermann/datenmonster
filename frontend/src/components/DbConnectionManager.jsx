@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle, Database, Loader2, Pencil, Plus, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { CheckCircle, Database, Loader2, Pencil, Plus, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
 import DatabaseAnalyzer from "./DatabaseAnalyzer";
+import AiDatasetWizard from "./AiDatasetWizard";
 
 const DEFAULT_PORTS = { mssql: 1433, mysql: 3306, postgresql: 5432 };
 const ACCESS_COLOR = "#fce499";
@@ -470,6 +471,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
   const [testResults, setTestResults] = useState({});
 
   const [analyzingConn, setAnalyzingConn] = useState(null);
+  const [aiWizardConn, setAiWizardConn]   = useState(null);
 
   const load = useCallback(async () => {
     const params = projectId != null ? `?project_id=${projectId}` : "";
@@ -516,6 +518,12 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
           onDatasetsImported={() => { setAnalyzingConn(null); onDatasetCreated?.(); }} />
       )}
 
+      {aiWizardConn && (
+        <AiDatasetWizard connection={aiWizardConn} projectId={projectId}
+          onDone={() => { onDatasetCreated?.(); }}
+          onClose={() => setAiWizardConn(null)} />
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-24" style={{ color: S.textDim }}>
           <Loader2 className="animate-spin mr-2" size={16} />
@@ -540,6 +548,11 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                     style={{ backgroundColor: S.bgEl, color: "#a78bfa", border: `1px solid rgba(167,139,250,0.3)` }}
                     title="Schema analysieren">
                     <Search size={10} />
+                  </button>
+                  <button onClick={() => setAiWizardConn(conn)} className="text-xs px-2 py-0.5 rounded"
+                    style={{ backgroundColor: S.bgEl, color: "#fce499", border: `1px solid rgba(252,228,153,0.3)` }}
+                    title="KI-Dataset-Assistent">
+                    <Sparkles size={10} />
                   </button>
                   <button onClick={() => testConn(conn)} className="text-xs px-2 py-0.5 rounded"
                     style={{ backgroundColor: S.bgEl, color: S.textDim, border: `1px solid ${S.border}` }} title="Verbindung testen">

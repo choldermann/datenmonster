@@ -132,5 +132,18 @@ export const explainError = (error, nodeType, code, mappingId, nodeId, onToken) 
     node_id: nodeId,
   }, onToken);
 
+export async function suggestDatasets(connectionId, description) {
+  const resp = await fetch(`${BASE}/suggest-datasets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ connection_id: connectionId, description }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
 export const suggestMapping = (mappingId, onToken) =>
   streamRequest("/suggest-mapping", { mapping_id: mappingId }, onToken);

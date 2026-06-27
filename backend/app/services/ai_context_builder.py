@@ -304,6 +304,20 @@ _ERROR_SYSTEM = (
     "und schlage 1-3 konkrete Lösungen vor. Sei präzise und praktisch."
 )
 
+_DATASET_SUGGEST_SYSTEM = (
+    "Du bist ein Datenbank-Experte und hilfst dabei, passende Datasets für ETL-Aufgaben vorzuschlagen. "
+    "Analysiere das Datenbankschema und die Aufgabenbeschreibung des Benutzers. "
+    "Antworte AUSSCHLIESSLICH mit einem gültigen JSON-Array — kein Markdown, keine Erklärung, "
+    "kein Text vor oder nach dem Array. Format:\n"
+    '[{"name":"DatasetName","sql":"SELECT ...","purpose":"Was dieses Dataset enthält"}]\n'
+    "Regeln:\n"
+    "- Maximal 5 Datasets, jedes mit einer eigenständigen SQL-Abfrage\n"
+    "- Namen: kurz, beschreibend, ohne Leerzeichen (Unterstriche erlaubt)\n"
+    "- SQL: korrekt für den angegebenen DB-Typ, nur Tabellen aus dem Schema verwenden\n"
+    "- Exakte Schema.Tabellen-Namen aus dem Schema übernehmen\n"
+    "- Jedes Dataset soll eine klar abgegrenzte, thematisch zusammenhängende Datenmenge sein"
+)
+
 _MAPPING_SUGGEST_SYSTEM = (
     "Du bist Experte für Daten-Mapping. Analysiere Quell- und Zielfelder und schlage "
     "sinnvolle Verknüpfungen vor. "
@@ -436,6 +450,20 @@ class AIContextBuilder:
             context_parts.append(f"{label}:\n{code}")
 
         return _ERROR_SYSTEM, "\n\n".join(context_parts)
+
+    # ── Dataset-Vorschlag ─────────────────────────────────────────────────────
+
+    def dataset_suggest_context(self, connection_id: int, description: str) -> tuple[str, str]:
+        """Context for suggesting datasets from a DB connection schema."""
+        conn = self._get_conn(connection_id)
+        if not conn:
+            return _DATASET_SUGGEST_SYSTEM, f"Aufgabe: {description}"
+        schema_text = _load_schema_from_connection(conn)
+        msg = (
+            f"Datenbankschema:\n{schema_text}\n\n"
+            f"Aufgabe des Benutzers: {description}"
+        )
+        return _DATASET_SUGGEST_SYSTEM, msg
 
     # ── Mapping field suggestion ─────────────────────────────────────────────
 
