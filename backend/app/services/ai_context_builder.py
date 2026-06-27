@@ -349,11 +349,12 @@ _DATASET_SUGGEST_SYSTEM = (
     "write SQL SELECT queries that retrieve the needed data.\n\n"
     "Output ONLY a JSON array. No text before or after. Example output:\n"
     "[\n"
-    '  {"name":"Rechnungen_Basis","sql":"SELECT r.kRechnung, r.cRechnungNr, r.dErstellt FROM dbo.tRechnung r","purpose":"Alle Rechnungen mit Nummer und Datum"},\n'
-    '  {"name":"Rechnungen_Lieferant","sql":"SELECT r.kRechnung, l.cFirma FROM dbo.tRechnung r JOIN dbo.tLieferant l ON r.kLieferant = l.kLieferant","purpose":"Rechnungen mit Lieferantenname"}\n'
+    '  {"name":"Rechnungen_Basis","sql":"SELECT * FROM dbo.tRechnung","purpose":"Alle Rechnungen komplett"},\n'
+    '  {"name":"Rechnungen_Lieferant","sql":"SELECT r.*, l.cFirma, l.cStrasse, l.cOrt FROM dbo.tRechnung r JOIN dbo.tLieferant l ON r.kLieferant = l.kLieferant","purpose":"Rechnungen mit Lieferantendaten"}\n'
     "]\n\n"
     "Rules:\n"
     "- Each item has exactly 3 keys: name (no spaces, use underscores), sql (a SELECT statement), purpose (one sentence)\n"
+    "- ALWAYS select all columns: use SELECT * for single tables, SELECT t.* plus needed join columns for JOINs\n"
     "- sql must be a real SELECT query using tables from the schema — NOT sample data, NOT INSERT/UPDATE\n"
     "- Use exact schema.table names from the provided schema\n"
     "- Maximum 5 items\n"

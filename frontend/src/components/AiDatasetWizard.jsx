@@ -334,7 +334,7 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
       if (!s?.length) { setError("KI hat keine Vorschläge generiert. Beschreibung oder Tabellenauswahl anpassen?"); return; }
       setSuggestions(s);
       const sel = {}; const n = {}; const sq = {};
-      s.forEach((ds, i) => { sel[i] = true; n[i] = ds.name; sq[i] = ds.sql; });
+      s.forEach((ds, i) => { sel[i] = false; n[i] = ds.name; sq[i] = ds.sql; });
       setSelSug(sel); setNames(n); setSqls(sq); setExpanded({});
     } catch (e) {
       setError(e.message);
