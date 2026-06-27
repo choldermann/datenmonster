@@ -4,6 +4,15 @@ import { S } from "./constants";
 
 const ACCENT = "#fce499";
 
+function ThinkingDots() {
+  const [dots, setDots] = useState(1);
+  useEffect(() => {
+    const t = setInterval(() => setDots(d => d >= 3 ? 1 : d + 1), 500);
+    return () => clearInterval(t);
+  }, []);
+  return <span style={{ letterSpacing: 2 }}>{"•".repeat(dots)}<span style={{ opacity: 0 }}>{"•".repeat(3 - dots)}</span></span>;
+}
+
 /**
  * Universelles KI-Streaming-Modal.
  *
@@ -30,6 +39,7 @@ export default function AiStreamModal({
   readOnly = false,
   autoGenerate = false,
   noApply = false,
+  warning = null,
 }) {
   const [description, setDescription] = useState(initialDescription);
   const [result, setResult]           = useState("");
@@ -95,7 +105,36 @@ export default function AiStreamModal({
           </button>
         </div>
 
+        {/* Fortschrittsbalken */}
+        {streaming && (
+          <div style={{ height: 2, backgroundColor: "rgba(252,228,153,0.12)", position: "relative", overflow: "hidden" }}>
+            <div style={{
+              position: "absolute", top: 0, left: 0, height: "100%",
+              width: result ? "100%" : "60%",
+              backgroundColor: ACCENT,
+              transition: result ? "width 0.3s ease" : "none",
+              animation: result ? "none" : "aiSweep 1.4s ease-in-out infinite",
+            }} />
+          </div>
+        )}
+        <style>{`
+          @keyframes aiSweep {
+            0%   { left: -60%; width: 60%; }
+            100% { left: 100%; width: 60%; }
+          }
+        `}</style>
+
         <div style={{ flex: 1, overflowY: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+          {warning && (
+            <div style={{
+              padding: "7px 10px", borderRadius: 4, fontSize: 11, lineHeight: 1.5,
+              backgroundColor: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)",
+              color: "#fbbf24", display: "flex", gap: 7, alignItems: "flex-start",
+            }}>
+              <span style={{ marginTop: 1 }}>⚠</span>
+              <span>{warning}</span>
+            </div>
+          )}
           {/* Beschreibungsfeld */}
           {!readOnly && (
             <div>
@@ -133,6 +172,15 @@ export default function AiStreamModal({
                 <div style={{ padding: "8px 10px", borderRadius: 4, backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)", fontSize: 11, color: "#e07070" }}>
                   ✗ {error}
                 </div>
+              ) : streaming && !result ? (
+                <div style={{
+                  backgroundColor: "rgba(0,0,0,0.25)", border: `1px solid ${S.border}`, borderRadius: 4,
+                  padding: "16px 10px", display: "flex", alignItems: "center", justifyContent: "center",
+                  gap: 10, color: S.textDim, fontSize: 11,
+                }}>
+                  <Loader2 size={13} style={{ color: ACCENT, animation: "spin 1s linear infinite" }} />
+                  <span style={{ color: ACCENT }}>Modell denkt nach <ThinkingDots /></span>
+                </div>
               ) : (
                 <div
                   ref={resultRef}
@@ -145,7 +193,7 @@ export default function AiStreamModal({
                   }}
                 >
                   {result}
-                  {streaming && <span style={{ color: ACCENT, animation: "pulse 1s infinite" }}>▌</span>}
+                  {streaming && <span style={{ color: ACCENT }}>▌</span>}
                 </div>
               )}
             </div>

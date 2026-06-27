@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, WifiOff } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download } from "lucide-react";
 import api from "../../../api/client";
-import { getStatus as getAiStatus } from "../../../services/aiService";
+import { testConnection as testAiConnection, listModels, pullModel } from "../../../services/aiService";
 import { S } from "../constants";
 
 const ACCENT = "#fce499";
@@ -168,6 +168,9 @@ function AiSettings() {
   const [saved,   setSaved]     = useState(false);
   const [testing, setTesting]   = useState(false);
   const [testResult, setTestResult] = useState(null);
+  const [installedModels, setInstalledModels] = useState([]);
+  const [pulling, setPulling]   = useState(false);
+  const [pullProgress, setPullProgress] = useState(null); // {status, percent, completed, total}
 
   useEffect(() => {
     api.get("/api/settings/ai").then(({ data }) => {
@@ -180,11 +183,41 @@ function AiSettings() {
         }
       }
     }).catch(() => {}).finally(() => setLoading(false));
+
+    listModels().then(({ models }) => setInstalledModels(models || [])).catch(() => {});
   }, []);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const effectiveModel = useCustom ? customModel : form.ai_model;
+  const modelInstalled = installedModels.some(m => m === effectiveModel || m.startsWith(effectiveModel + ":"));
+
+  const handlePull = async () => {
+    setPulling(true);
+    setPullProgress({ status: "Verbinde...", percent: 0 });
+    try {
+      await pullModel(effectiveModel, (chunk) => {
+        if (chunk.status === "error") {
+          setPullProgress({ status: `Fehler: ${chunk.error}`, percent: 0, error: true });
+          return;
+        }
+        const percent = chunk.total > 0 ? Math.round((chunk.completed / chunk.total) * 100) : null;
+        setPullProgress({
+          status: chunk.status || "...",
+          percent,
+          completed: chunk.completed,
+          total: chunk.total,
+        });
+      });
+      setPullProgress({ status: "Fertig!", percent: 100, done: true });
+      setInstalledModels(prev => prev.includes(effectiveModel) ? prev : [...prev, effectiveModel]);
+      setTimeout(() => setPullProgress(null), 3000);
+    } catch (e) {
+      setPullProgress({ status: `Fehler: ${e.message}`, percent: 0, error: true });
+    } finally {
+      setPulling(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true); setSaved(false);
@@ -200,7 +233,7 @@ function AiSettings() {
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
-      const status = await getAiStatus();
+      const status = await testAiConnection(form.ai_base_url, effectiveModel);
       if (status.ollama_reachable) {
         setTestResult({
           ok: true,
@@ -253,23 +286,73 @@ function AiSettings() {
 
           {/* Modell */}
           <div>
-            <label style={lS}>Modell</label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <label style={{ ...lS, marginBottom: 0 }}>Modell</label>
+              {effectiveModel && (
+                <span style={{
+                  fontSize: 9, padding: "2px 6px", borderRadius: 10, fontWeight: 700,
+                  backgroundColor: modelInstalled ? "rgba(110,231,183,0.12)" : "rgba(251,191,36,0.12)",
+                  color: modelInstalled ? "#6ee7b7" : "#fbbf24",
+                  border: `1px solid ${modelInstalled ? "rgba(110,231,183,0.3)" : "rgba(251,191,36,0.3)"}`,
+                }}>
+                  {modelInstalled ? "✓ installiert" : "nicht geladen"}
+                </span>
+              )}
+            </div>
             {!useCustom ? (
               <select style={{ ...iS, cursor: "pointer" }}
                 value={form.ai_model}
-                onChange={e => set("ai_model", e.target.value)}>
+                onChange={e => { set("ai_model", e.target.value); setPullProgress(null); }}>
                 {PRESET_MODELS.map(m => (
                   <option key={m.id} value={m.id}>{m.label}</option>
                 ))}
               </select>
             ) : (
-              <input style={iS} value={customModel} onChange={e => setCustomModel(e.target.value)}
+              <input style={iS} value={customModel}
+                onChange={e => { setCustomModel(e.target.value); setPullProgress(null); }}
                 placeholder="z.B. deepseek-coder-v2:lite" />
             )}
-            <button onClick={() => { setUseCustom(v => !v); setCustomModel(""); }}
+            <button onClick={() => { setUseCustom(v => !v); setCustomModel(""); setPullProgress(null); }}
               style={{ marginTop: 4, background: "none", border: "none", color: S.textDim, fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
               {useCustom ? "← Aus der Liste wählen" : "Anderes Modell eingeben →"}
             </button>
+
+            {/* Download-Bereich */}
+            {!modelInstalled && effectiveModel && !pulling && !pullProgress && (
+              <button onClick={handlePull}
+                style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, border: "1px solid rgba(251,191,36,0.4)", backgroundColor: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 11, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+                <Download size={12} /> Modell jetzt herunterladen
+              </button>
+            )}
+
+            {/* Fortschrittsanzeige */}
+            {(pulling || pullProgress) && (
+              <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 4, backgroundColor: "rgba(0,0,0,0.25)", border: `1px solid ${pullProgress?.error ? "rgba(224,112,112,0.3)" : pullProgress?.done ? "rgba(110,231,183,0.3)" : "rgba(252,228,153,0.2)"}` }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: pullProgress?.percent != null ? 6 : 0 }}>
+                  <span style={{ fontSize: 10, color: pullProgress?.error ? "#e07070" : pullProgress?.done ? "#6ee7b7" : ACCENT }}>
+                    {pullProgress?.error ? "✗ " : pullProgress?.done ? "✓ " : "⬇ "}
+                    {pullProgress?.status || "Verbinde..."}
+                  </span>
+                  {pullProgress?.percent != null && (
+                    <span style={{ fontSize: 10, color: S.textDim }}>{pullProgress.percent}%</span>
+                  )}
+                </div>
+                {pullProgress?.percent != null && !pullProgress.done && !pullProgress.error && (
+                  <div style={{ height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{
+                      height: "100%", borderRadius: 2, backgroundColor: ACCENT,
+                      width: `${pullProgress.percent}%`,
+                      transition: "width 0.3s ease",
+                    }} />
+                  </div>
+                )}
+                {pulling && pullProgress?.percent == null && (
+                  <div style={{ height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: "40%", backgroundColor: ACCENT, animation: "aiSweep 1.4s ease-in-out infinite" }} />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Timeout */}
@@ -288,14 +371,6 @@ function AiSettings() {
               <p style={{ fontSize: 11, color: testResult.ok ? "#6ee7b7" : "#e07070", margin: 0, lineHeight: 1.5 }}>{testResult.msg}</p>
             </div>
           )}
-
-          <div style={{ padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.05)", border: "1px solid rgba(252,228,153,0.12)", fontSize: 10, color: S.textDim, lineHeight: 1.7 }}>
-            <strong style={{ color: S.textMain, fontSize: 11 }}>Modell laden (einmalig):</strong><br />
-            Öffne ein Terminal und führe aus:<br />
-            <code style={{ color: ACCENT, fontFamily: "monospace" }}>
-              docker exec -it datenmonster-ollama ollama pull {effectiveModel}
-            </code>
-          </div>
         </>
       )}
 

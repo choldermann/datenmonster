@@ -48,6 +48,39 @@ export async function streamRequest(endpoint, body, onToken) {
   return full;
 }
 
+export async function listModels() {
+  const resp = await fetch(`${BASE}/models`, {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
+export async function pullModel(model, onProgress) {
+  const resp = await fetch(`${BASE}/pull-model`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ model }),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim();
+      if (raw === "[DONE]") return;
+      try { onProgress(JSON.parse(raw)); } catch { /* ignore */ }
+    }
+  }
+}
+
 export async function getStatus() {
   const resp = await fetch(`${BASE}/status`, {
     headers: { Authorization: `Bearer ${getToken()}` },
@@ -56,13 +89,23 @@ export async function getStatus() {
   return resp.json();
 }
 
+export async function testConnection(baseUrl, model) {
+  const resp = await fetch(`${BASE}/test-connection`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ base_url: baseUrl, model }),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 // Context Builder API — backend assembles all context automatically
 
-export const explainSql = (sql, connectionId, onToken) =>
-  streamRequest("/explain-sql", { sql, connection_id: connectionId }, onToken);
+export const explainSql = (sql, connectionId, mappingId, onToken) =>
+  streamRequest("/explain-sql", { sql, connection_id: connectionId, mapping_id: mappingId }, onToken);
 
-export const generateSql = (description, connectionId, onToken) =>
-  streamRequest("/generate-sql", { description, connection_id: connectionId }, onToken);
+export const generateSql = (description, connectionId, mappingId, onToken) =>
+  streamRequest("/generate-sql", { description, connection_id: connectionId, mapping_id: mappingId }, onToken);
 
 export const generatePython = (description, mappingId, nodeId, currentScript, onToken) =>
   streamRequest("/generate-python", {

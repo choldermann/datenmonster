@@ -167,6 +167,46 @@ def _schema_for_sql(conn, sql: str) -> str:
     return "\n".join(result_lines) if len(result_lines) > 1 else full_schema
 
 
+def _get_mapping_datasets(db: Session, mapping_id: int) -> list[dict]:
+    """Return info about datasets already on the mapping canvas: name, source_table, columns."""
+    from app.models.mapping import Mapping
+    from app.models.dataset import Dataset
+
+    mapping = db.query(Mapping).filter(Mapping.id == mapping_id).first()
+    if not mapping:
+        return []
+
+    result = []
+    for cn in (mapping.canvas_nodes or []):
+        ds_id = cn.get("dataset_id")
+        if not ds_id:
+            continue
+        ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
+        if not ds:
+            continue
+        cols = [c if isinstance(c, str) else c.get("name", "") for c in (ds.columns or [])]
+
+        source_table = None
+        # 1. Try query_config (DB-datasets created via table selector)
+        qc = ds.query_config or {}
+        if isinstance(qc, dict):
+            tbl = qc.get("table") or qc.get("source_table")
+            schema = qc.get("schema") or qc.get("db_schema")
+            if tbl:
+                source_table = f"{schema}.{tbl}" if schema else tbl
+        # 2. Fallback: parse from source_sql
+        if not source_table and ds.source_sql:
+            tables = _extract_tables_from_sql(ds.source_sql)
+            source_table = tables[0] if tables else None
+
+        result.append({
+            "name": ds.name,
+            "source_table": source_table,
+            "columns": [c for c in cols if c],
+        })
+    return result
+
+
 def _get_mapping_fields(db: Session, mapping_id: int) -> list[str]:
     """Collect all output field names available in a mapping (from all node types)."""
     from app.models.mapping import Mapping
@@ -232,7 +272,9 @@ def _get_mapping_fields(db: Session, mapping_id: int) -> list[str]:
 _SQL_SYSTEM = (
     "Du bist ein erfahrener SQL-Experte und hilfst in der ETL-Plattform Datenmonster. "
     "Du kennst MSSQL, MySQL und PostgreSQL. Halte SQL-Abfragen korrekt, lesbar und effizient. "
-    "Wenn du SQL generierst, antworte NUR mit dem SQL-Code – kein Markdown, keine Erklärung. "
+    "WICHTIG: Wenn im Kontext 'Verfügbare Tabellen' aufgelistet sind, darfst du NUR diese Tabellen verwenden. "
+    "Keine anderen Tabellen erfinden oder wählen. "
+    "Wenn du SQL generierst, antworte NUR mit dem SQL-Code – kein Markdown, keine Erklärung, keine Kommentare. "
     "Wenn du SQL erklärst, antworte präzise auf Deutsch."
 )
 
@@ -282,7 +324,7 @@ class AIContextBuilder:
 
     # ── SQL ──────────────────────────────────────────────────────────────────
 
-    def sql_explain_context(self, sql: str, connection_id: Optional[int]) -> tuple[str, str]:
+    def sql_explain_context(self, sql: str, connection_id: Optional[int], mapping_id: Optional[int] = None) -> tuple[str, str]:
         """Context for explaining an existing SQL query."""
         if connection_id:
             conn = self._get_conn(connection_id)
@@ -290,25 +332,68 @@ class AIContextBuilder:
         else:
             schema_text = ""
 
-        context = ""
+        context_parts = []
+        if mapping_id:
+            datasets = _get_mapping_datasets(self.db, mapping_id)
+            if datasets:
+                lines = ["Datasets im aktuellen Mapping (bevorzugt verwenden):"]
+                for ds in datasets:
+                    line = f"  - {ds['name']}"
+                    if ds["source_table"]:
+                        line += f" (Tabelle: {ds['source_table']})"
+                    if ds["columns"]:
+                        line += f" — Felder: {', '.join(ds['columns'][:10])}"
+                    lines.append(line)
+                context_parts.append("\n".join(lines))
         if schema_text:
-            context = f"Datenbankschema:\n{schema_text}\n\n"
-        context += f"SQL-Abfrage:\n{sql}"
-        return _SQL_SYSTEM, context
+            context_parts.append(f"Datenbankschema:\n{schema_text}")
+        context_parts.append(f"SQL-Abfrage:\n{sql}")
+        return _SQL_SYSTEM, "\n\n".join(context_parts)
 
-    def sql_generate_context(self, description: str, connection_id: Optional[int]) -> tuple[str, str]:
+    def sql_generate_context(self, description: str, connection_id: Optional[int], mapping_id: Optional[int] = None) -> tuple[str, str]:
         """Context for generating a new SQL query from a description."""
-        if connection_id:
-            conn = self._get_conn(connection_id)
-            schema_text = _load_schema_from_connection(conn) if conn else ""
-        else:
-            schema_text = ""
+        context_parts = []
 
-        context = ""
-        if schema_text:
-            context = f"Datenbankschema (alle verfügbaren Tabellen/Views/Spalten):\n{schema_text}\n\n"
-        context += f"Aufgabe: {description}"
-        return _SQL_SYSTEM, context
+        # Datasets already on the canvas — if present, use ONLY these; skip full schema.
+        # A small model gets confused by 80 tables and picks the wrong one.
+        datasets = _get_mapping_datasets(self.db, mapping_id) if mapping_id else []
+
+        if datasets:
+            lines = [
+                "Verfügbare Tabellen (NUR diese verwenden — keine anderen Tabellen!):",
+            ]
+            for ds in datasets:
+                line = f"  - Dataset '{ds['name']}'"
+                if ds["source_table"]:
+                    line += f"  →  SQL-Tabellenname: {ds['source_table']}"
+                else:
+                    line += f"  →  (kein DB-Tabellenname bekannt, Dataset-Name verwenden)"
+                lines.append(line)
+                if ds["columns"]:
+                    lines.append(f"    Spalten: {', '.join(ds['columns'][:30])}")
+            context_parts.append("\n".join(lines))
+            # No full schema when datasets are known — keeps the model focused
+        elif connection_id:
+            # No mapping datasets available → send only a compact table list (no columns).
+            # Sending a full 80-table schema with all columns overwhelms small models.
+            conn = self._get_conn(connection_id)
+            if conn:
+                schema_text = _load_schema_from_connection(conn)
+                # Extract only the "Tabelle X.Y:" header lines for a compact overview
+                table_names = [
+                    line.replace("Tabelle ", "").rstrip(":")
+                    for line in schema_text.split("\n")
+                    if line.startswith("Tabelle ")
+                ]
+                if table_names:
+                    compact = (
+                        f"Verfügbare Tabellen in der Datenbank (kompakte Übersicht — "
+                        f"bitte Tabellennamen exakt so im SQL verwenden):\n"
+                        + "\n".join(f"  - {t}" for t in table_names)
+                    )
+                    context_parts.append(compact)
+
+        return _SQL_SYSTEM, "\n\n".join(context_parts)
 
     # ── Python ───────────────────────────────────────────────────────────────
 

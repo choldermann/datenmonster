@@ -14,16 +14,23 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [sqlModalValue, setSqlModalValue] = useState("");
   const [aiMode, setAiMode] = useState(null); // "explain" | "generate"
+  const [pendingSchemaDetect, setPendingSchemaDetect] = useState(false);
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
   useEffect(() => {
     if (node.minimized) {
-      // Output-Ref auf rechten Port-Dot zeigen lassen
       if (outputRef) outputRef.current = miniRightRef.current;
       if (onMiniPortsReady) onMiniPortsReady(node.id, miniLeftRef.current, miniRightRef.current);
     }
   }, [node.minimized, onMiniPortsReady]);
+
+  useEffect(() => {
+    if (pendingSchemaDetect && node.sql?.trim()) {
+      setPendingSchemaDetect(false);
+      loadSchema();
+    }
+  }, [pendingSchemaDetect, node.sql]);
 
   const handleMouseDown = (e) => {
     if (e.target.closest("button") || e.target.closest("select") || e.target.closest("textarea") || e.target.closest("input")) return;
@@ -293,8 +300,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             />
           )}
 
-          {/* Output-Feldname (nur Scalar/Column) */}
-          {mode !== "transform" && mode !== "lookup" && (
+          {/* Output-Feldname (nur Scalar/Column, wenn noch kein Schema erkannt) */}
+          {mode !== "transform" && mode !== "lookup" && (node.output_fields || []).length === 0 && (
             <div>
               <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: 3 }}>Output-Feldname</label>
               <input value={node.output_field || ""}
@@ -306,33 +313,31 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             </div>
           )}
 
-          {/* Schema erkennen Button (Transform + Lookup) */}
-          {(mode === "transform" || mode === "lookup") && (
+          {/* Schema erkennen Button – alle Modi */}
+          {node.sql?.trim() && (
             <div>
-              <button onClick={loadSchema} disabled={schemaLoading || !node.sql?.trim()}
+              <button onClick={loadSchema} disabled={schemaLoading}
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, padding: "5px 0", borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR,
-                  opacity: !node.sql?.trim() ? 0.4 : 1 }}>
+                  border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
                 <RefreshCw size={10} className={schemaLoading ? "animate-spin" : ""} />
-                {schemaLoading ? "Schema wird erkannt..." : "Schema erkennen"}
+                {schemaLoading ? "Erkenne Spalten..." : "Spalten aus SELECT erkennen"}
               </button>
               {schemaError && <p style={{ fontSize: 9, color: "#e07070", marginTop: 4 }}>⚠ {schemaError}</p>}
-              {(node.output_fields || []).length === 0 && !schemaError && (
-                <p style={{ fontSize: 9, color: S.textDim, marginTop: 4, fontStyle: "italic" }}>
-                  {mode === "lookup"
-                    ? "SQL eingeben → Schema erkennen → Output-Felder verbinden"
-                    : "SQL eingeben → Schema erkennen → Felder mappen"}
-                </p>
+              {(node.output_fields || []).length > 0 && (
+                <button onClick={() => onUpdate({ ...node, output_fields: [] })}
+                  style={{ marginTop: 3, width: "100%", fontSize: 9, padding: "3px 0", borderRadius: 4, cursor: "pointer",
+                    border: `1px solid ${S.border}`, background: "none", color: S.textDim }}>
+                  ✕ Zurück zu Einzel-Output
+                </button>
               )}
             </div>
           )}
         </div>
       )}
 
-      {/* Output dots */}
+      {/* Output dots — output_fields (multi) hat immer Vorrang vor output_field (single) */}
       <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06` }}>
-        {(mode === "transform" || mode === "lookup") && (node.output_fields || []).length > 0 ? (
-          // Transform / Lookup: scrollbare Liste mit einem Dot pro Output-Feld
+        {(node.output_fields || []).length > 0 ? (
           <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>
@@ -352,7 +357,6 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             ))}
           </div>
         ) : (
-          // Scalar/Column: einzelner Dot
           <div style={{ padding: "6px 10px", display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
             <span style={{ fontSize: 9, fontFamily: "monospace", color: SQL_NODE_COLOR, opacity: 0.8 }}>
               {node.output_field || "–"}
@@ -378,7 +382,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
         readOnly
         autoGenerate
         noApply
-        onGenerate={(_desc, onToken) => explainSql(node.sql || "", node.connection_id || null, onToken)}
+        onGenerate={(_desc, onToken) => explainSql(node.sql || "", node.connection_id || null, mappingId, onToken)}
         onClose={() => setAiMode(null)}
       />
     )}
@@ -386,10 +390,14 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
       <AiStreamModal
         title="✨ SQL generieren"
         placeholder='z.B. "Alle Kunden die im letzten Monat keine Bestellung hatten"'
-        onGenerate={(desc, onToken) => generateSql(desc, node.connection_id || null, onToken)}
-        onApply={(sql) => set("sql", sql.trim())}
+        onGenerate={(desc, onToken) => generateSql(desc, node.connection_id || null, mappingId, onToken)}
+        onApply={(sql) => {
+          onUpdate({ ...node, sql: sql.trim(), output_fields: [] });
+          setPendingSchemaDetect(true);
+        }}
         onClose={() => setAiMode(null)}
         applyLabel="SQL übernehmen"
+        warning={!mappingId ? "Mapping noch nicht gespeichert – die KI kennt keine Canvas-Datasets und wählt Tabellen nur anhand des Prompts. Bitte Mapping zuerst speichern für bessere Ergebnisse." : null}
       />
     )}
     </>

@@ -426,8 +426,13 @@ def get_sql_schema(
     if not sql_text:
         return {"columns": [], "error": "Kein SQL angegeben"}
 
-    # :param_name Platzhalter (Lookup-Modus) durch NULL ersetzen für Schema-Erkennung
+    # Markdown-Codeblöcke entfernen (KI packt manchmal ```sql ... ``` drum)
     import re as _re_schema
+    sql_text = _re_schema.sub(r"^```[a-zA-Z]*\s*", "", sql_text, flags=_re_schema.MULTILINE)
+    sql_text = _re_schema.sub(r"```\s*$", "", sql_text, flags=_re_schema.MULTILINE)
+    sql_text = sql_text.strip()
+
+    # :param_name Platzhalter (Lookup-Modus) durch NULL ersetzen für Schema-Erkennung
     sql_text = _re_schema.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", "NULL", sql_text)
 
     try:
@@ -471,31 +476,26 @@ def get_sql_schema(
                 except Exception as e:
                     pass
 
-        # SQL mit LIMIT 0 ausführen
-        # Erst versuchen in SQLite (Canvas-Datasets), dann direkt auf DB-Connection
+        # SQL mit LIMIT 0 ausführen.
+        # Wenn eine externe DB-Connection gesetzt ist, direkt dort abfragen (MSSQL/MySQL).
+        # Andernfalls SQLite mit den Canvas-Datasets versuchen.
         columns = None
-        
-        # Versuche auf SQLite (Canvas-Datasets)
-        try:
+
+        if conn_id:
+            from app.services.mapping_service import _get_sql_engine
+            ext_engine = _get_sql_engine(conn_id)
+            with ext_engine.connect() as con:
+                try:
+                    result = con.execute(_sa.text(f"SELECT TOP 0 * FROM ({sql_text}) __q"))
+                except Exception:
+                    result = con.execute(_sa.text(f"SELECT * FROM ({sql_text}) __q WHERE 1=0"))
+                columns = list(result.keys())
+        else:
+            # Nur Canvas-Datasets → SQLite
             with tmp_engine.connect() as con:
                 test_sql = f"SELECT * FROM ({sql_text}) __q LIMIT 0"
                 result = con.execute(_sa.text(test_sql))
                 columns = list(result.keys())
-        except Exception as sqlite_err:
-            # Fallback: direkt auf DB-Connection ausführen (für externe Tabellen)
-            if conn_id:
-                from app.services.mapping_service import _get_sql_engine
-                from app.core.security import decrypt_credential
-                ext_engine = _get_sql_engine(conn_id)
-                with ext_engine.connect() as con:
-                    # TOP 0 für MSSQL, LIMIT 0 für andere
-                    try:
-                        result = con.execute(_sa.text(f"SELECT TOP 0 * FROM ({sql_text}) __q"))
-                    except Exception:
-                        result = con.execute(_sa.text(f"SELECT * FROM ({sql_text}) __q WHERE 1=0"))
-                    columns = list(result.keys())
-            else:
-                raise sqlite_err
 
         return {"columns": columns or [], "error": None}
 

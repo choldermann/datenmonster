@@ -1,3 +1,4 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -6,6 +7,8 @@ from typing import Optional
 import json
 
 from app.core.database import get_db
+
+log = logging.getLogger("datenmonster")
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.services.ai_service import build_ai_service, PRESET_MODELS
@@ -27,6 +30,69 @@ def _sse_stream(async_gen):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"
     return StreamingResponse(generator(), media_type="text/event-stream")
+
+
+# ── Modell-Verwaltung ─────────────────────────────────────────────────────────
+
+@router.get("/models")
+async def list_models(user: User = Depends(get_current_user)):
+    """Return list of locally installed Ollama models."""
+    from app.api.settings import get_setting
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    finally:
+        db.close()
+    try:
+        async with __import__("httpx").AsyncClient(timeout=10) as c:
+            r = await c.get(f"{base_url}/api/tags")
+            data = r.json()
+            return {"models": [m["name"] for m in data.get("models", [])]}
+    except Exception as e:
+        return {"models": [], "error": str(e)}
+
+
+class PullModelRequest(BaseModel):
+    model: str
+
+@router.post("/pull-model")
+async def pull_model(
+    body: PullModelRequest,
+    user: User = Depends(get_current_user),
+):
+    """Stream Ollama pull progress as SSE."""
+    from app.api.settings import get_setting
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    finally:
+        db.close()
+
+    async def generate():
+        import httpx, json as _json
+        try:
+            async with httpx.AsyncClient(timeout=None) as c:
+                async with c.stream(
+                    "POST", f"{base_url}/api/pull",
+                    json={"name": body.model, "stream": True},
+                ) as resp:
+                    async for line in resp.aiter_lines():
+                        if not line.strip():
+                            continue
+                        try:
+                            chunk = _json.loads(line)
+                            yield f"data: {_json.dumps(chunk)}\n\n"
+                            if chunk.get("status") == "success":
+                                break
+                        except Exception:
+                            pass
+        except Exception as e:
+            yield f"data: {_json.dumps({'status': 'error', 'error': str(e)})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ── Status ────────────────────────────────────────────────────────────────────
@@ -51,6 +117,22 @@ async def ai_status(db: Session = Depends(get_db), user: User = Depends(get_curr
     return result
 
 
+class TestConnectionRequest(BaseModel):
+    base_url: str = "http://ollama:11434"
+    model: str = "qwen2.5-coder:3b"
+
+@router.post("/test-connection")
+async def test_connection(
+    body: TestConnectionRequest,
+    user: User = Depends(get_current_user),
+):
+    """Tests a given Ollama URL and model without requiring ai_enabled=true."""
+    from app.services.ai_service import AIService
+    svc = AIService(base_url=body.base_url, model=body.model)
+    status = await svc.check_status()
+    return status
+
+
 # ── SQL ───────────────────────────────────────────────────────────────────────
 
 class ExplainSqlRequest(BaseModel):
@@ -66,7 +148,7 @@ async def explain_sql(
 ):
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
-    system, context = ctx.sql_explain_context(body.sql, body.connection_id)
+    system, context = ctx.sql_explain_context(body.sql, body.connection_id, body.mapping_id)
     return _sse_stream(svc.stream_with_context(context, system))
 
 
@@ -83,8 +165,11 @@ async def generate_sql(
 ):
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
-    system, context = ctx.sql_generate_context(body.description, body.connection_id)
-    return _sse_stream(svc.stream_with_context(f"{context}\n\nAufgabe: {body.description}", system))
+    system, context = ctx.sql_generate_context(body.description, body.connection_id, body.mapping_id)
+    full_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
+    print(f"[AI generate-sql] mapping_id={body.mapping_id} conn_id={body.connection_id} context_len={len(context)}", flush=True)
+    print(f"[AI generate-sql] MSG:\n{full_msg[:600]}", flush=True)
+    return _sse_stream(svc.stream_with_context(full_msg, system))
 
 
 # ── Python ────────────────────────────────────────────────────────────────────
