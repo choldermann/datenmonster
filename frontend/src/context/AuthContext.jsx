@@ -22,7 +22,11 @@ export function AuthProvider({ children }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     localStorage.setItem("dm_token", data.access_token);
-    setUser({ username: data.username });
+    setUser({
+      username:       data.username,
+      is_admin:       data.is_admin ?? false,
+      is_portal_only: data.is_portal_only ?? false,
+    });
     return data;
   };
 

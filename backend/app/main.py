@@ -60,6 +60,10 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN is_portal_only BOOLEAN DEFAULT 0",
+            "ALTER TABLE forms ADD COLUMN slug TEXT",
+            "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
+            "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -335,8 +339,10 @@ app.include_router(update_api.router)
 app.include_router(plugins_api.router)
 app.include_router(events_api.router)
 from app.api import forms as forms_api
+from app.api import portal as portal_api
 from app.api import web_proxy as web_proxy_api
 app.include_router(forms_api.router)
+app.include_router(portal_api.router)
 app.include_router(web_proxy_api.router)
 from app.api import mail as mail_api
 app.include_router(mail_api.router)

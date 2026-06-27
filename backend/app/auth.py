@@ -57,6 +57,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 class UserCreate(BaseModel):
     username: str
     password: str
+    is_portal_only: bool = False
 
 
 class Token(BaseModel):
@@ -90,12 +91,23 @@ def login(
     _clear_attempts(f"ip:{client_ip}")
     _clear_attempts(f"user:{form.username}")
     token = create_access_token({"sub": user.username})
-    return {"access_token": token, "token_type": "bearer", "username": user.username}
+    return {
+        "access_token":   token,
+        "token_type":     "bearer",
+        "username":       user.username,
+        "is_admin":       bool(getattr(user, "is_admin", False)),
+        "is_portal_only": bool(getattr(user, "is_portal_only", False)),
+    }
 
 
 @router.get("/me")
 def me(current_user: User = Depends(get_current_user)):
-    return {"id": current_user.id, "username": current_user.username}
+    return {
+        "id":             current_user.id,
+        "username":       current_user.username,
+        "is_admin":       bool(getattr(current_user, "is_admin", False)),
+        "is_portal_only": bool(getattr(current_user, "is_portal_only", False)),
+    }
 
 
 @router.post("/register")
@@ -106,14 +118,46 @@ def register(data: UserCreate, db: Session = Depends(get_db), admin: User = Depe
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Passwort mindestens 6 Zeichen")
-    user = User(username=data.username, hashed_password=hash_password(data.password))
+    user = User(
+        username=data.username,
+        hashed_password=hash_password(data.password),
+        is_portal_only=data.is_portal_only,
+    )
     db.add(user); db.commit(); db.refresh(user)
-    return {"id": user.id, "username": user.username}
+    return {
+        "id": user.id, "username": user.username,
+        "is_portal_only": bool(user.is_portal_only),
+    }
 
 
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    return [{"id": u.id, "username": u.username} for u in db.query(User).filter(User.id != user.id).all()]
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+    return [
+        {"id": u.id, "username": u.username,
+         "is_admin": bool(getattr(u, "is_admin", False)),
+         "is_portal_only": bool(getattr(u, "is_portal_only", False))}
+        for u in db.query(User).all()
+    ]
+
+
+@router.patch("/users/{user_id}")
+def update_user(user_id: int, data: dict, db: Session = Depends(get_db),
+                admin: User = Depends(get_current_user)):
+    if not getattr(admin, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Benutzer nicht gefunden")
+    if "is_portal_only" in data:
+        target.is_portal_only = bool(data["is_portal_only"])
+    if "is_admin" in data and admin.id != user_id:
+        target.is_admin = bool(data["is_admin"])
+    db.commit()
+    return {"id": target.id, "username": target.username,
+            "is_admin": bool(target.is_admin),
+            "is_portal_only": bool(getattr(target, "is_portal_only", False))}
 
 
 @router.delete("/users/{user_id}")

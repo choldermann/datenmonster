@@ -20,7 +20,10 @@ export default function Login() {
 
   const handleLogin = async () => {
     setError(""); setLoading(true);
-    try { await login(username, password); navigate("/dashboard"); }
+    try {
+      const data = await login(username, password);
+      navigate(data.is_portal_only ? "/portal" : "/dashboard");
+    }
     catch { setError("Falscher Benutzername oder Passwort"); }
     finally { setLoading(false); }
   };
