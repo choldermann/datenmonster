@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider } from "./context/ProjectContext";
+import { aiDownloadStore } from "./store/aiDownloadStore";
 import Login from "./pages/Login";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
@@ -36,6 +38,40 @@ function DefaultRedirect() {
   return <Navigate to={user.is_portal_only ? "/portal" : "/dashboard"} replace />;
 }
 
+function AiDownloadBanner() {
+  const [dl, setDl] = useState(aiDownloadStore.getState());
+  useEffect(() => aiDownloadStore.subscribe(setDl), []);
+
+  if (!dl.pulling && !dl.done) return null;
+
+  const ACCENT = "#fce499";
+  const barColor = dl.done ? "#6ee7b7" : dl.error ? "#e07070" : ACCENT;
+
+  return (
+    <div style={{
+      position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999,
+      backgroundColor: "#1a1a2e", borderTop: `1px solid ${barColor}30`,
+      padding: "6px 20px", display: "flex", alignItems: "center", gap: 12,
+      boxShadow: "0 -4px 20px rgba(0,0,0,0.4)",
+    }}>
+      <span style={{ fontSize: 11, color: barColor, whiteSpace: "nowrap", fontWeight: 600 }}>
+        {dl.done ? "✓" : dl.error ? "✗" : "⬇"} Modell-Download{dl.model ? `: ${dl.model}` : ""}
+      </span>
+      <div style={{ flex: 1, height: 4, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: 2, overflow: "hidden" }}>
+        {dl.percent != null ? (
+          <div style={{ height: "100%", width: `${dl.percent}%`, backgroundColor: barColor, borderRadius: 2, transition: "width 0.4s ease" }} />
+        ) : (
+          <div style={{ height: "100%", width: "35%", backgroundColor: barColor, borderRadius: 2, animation: "aiSweep 1.4s ease-in-out infinite" }} />
+        )}
+      </div>
+      <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap" }}>
+        {dl.done ? "Fertig!" : dl.error ? dl.status : dl.percent != null ? `${dl.percent}%` : dl.status || "..."}
+      </span>
+      <style>{`@keyframes aiSweep { 0% { margin-left:-35% } 100% { margin-left:100% } }`}</style>
+    </div>
+  );
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -63,6 +99,7 @@ export default function App() {
               {/* Fallback */}
               <Route path="*" element={<DefaultRedirect />} />
             </Routes>
+            <AiDownloadBanner />
           </BrowserRouter>
         </ProjectProvider>
       </AuthProvider>

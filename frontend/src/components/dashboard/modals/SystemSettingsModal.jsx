@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download } from "lucide-react";
 import api from "../../../api/client";
 import { testConnection as testAiConnection, listModels, pullModel } from "../../../services/aiService";
+import { aiDownloadStore } from "../../../store/aiDownloadStore";
 import { S } from "../constants";
 
 const ACCENT = "#fce499";
@@ -146,11 +147,87 @@ function EmailSettings() {
 
 
 const PRESET_MODELS = [
-  { id: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B — minimal, schnell (~2 GB RAM)" },
-  { id: "qwen2.5-coder:3b",   label: "Qwen 2.5 Coder 3B — Mittelweg (~4 GB RAM) [Standard]" },
-  { id: "qwen2.5-coder:7b",   label: "Qwen 2.5 Coder 7B — beste Code-Qualität (~8 GB RAM)" },
-  { id: "llama3.2:3b",        label: "Llama 3.2 3B — Erklärungen, gut auf Deutsch (~2 GB RAM)" },
-  { id: "phi4-mini",          label: "Phi-4 Mini — Reasoning, Allrounder (~2.5 GB RAM)" },
+  {
+    id: "qwen2.5-coder:1.5b",
+    name: "Qwen 2.5 Coder 1.5B",
+    ram: "~1 GB",
+    cpu: true,
+    strengths: ["SQL", "Code", "sehr schnell"],
+    note: "Für schwache Hardware — begrenzte Anweisungsfolge",
+  },
+  {
+    id: "qwen2.5-coder:3b",
+    name: "Qwen 2.5 Coder 3B",
+    ram: "~2 GB",
+    cpu: true,
+    strengths: ["SQL", "Code"],
+    note: "Schneller Kompromiss für CPU-Only Setups",
+  },
+  {
+    id: "qwen2.5-coder:7b",
+    name: "Qwen 2.5 Coder 7B",
+    ram: "~5 GB",
+    cpu: true,
+    strengths: ["SQL", "Code", "Kontext"],
+    note: "Beste Code-Qualität auf reiner CPU — empfohlen",
+    recommended: true,
+  },
+  {
+    id: "qwen2.5-coder:14b",
+    name: "Qwen 2.5 Coder 14B",
+    ram: "~9 GB",
+    cpu: false,
+    strengths: ["SQL", "Code", "komplex"],
+    note: "Sehr hohe Qualität, setzt GPU voraus",
+  },
+  {
+    id: "qwen2.5-coder:32b",
+    name: "Qwen 2.5 Coder 32B",
+    ram: "~20 GB",
+    cpu: false,
+    strengths: ["SQL", "Code", "Architektur"],
+    note: "Professionell, nur mit leistungsfähiger GPU",
+  },
+  {
+    id: "llama3.2:3b",
+    name: "Llama 3.2 3B",
+    ram: "~2 GB",
+    cpu: true,
+    strengths: ["Deutsch", "Erklärungen", "Chat"],
+    note: "Gut für deutsche Erklärungen, schwach bei SQL",
+  },
+  {
+    id: "llama3.1:8b",
+    name: "Llama 3.1 8B",
+    ram: "~5 GB",
+    cpu: true,
+    strengths: ["Deutsch", "Allrounder", "Reasoning"],
+    note: "Stark für Erklärungen & Allgemeinwissen auf CPU",
+  },
+  {
+    id: "mistral:7b",
+    name: "Mistral 7B",
+    ram: "~4 GB",
+    cpu: true,
+    strengths: ["Deutsch", "Code", "Allrounder"],
+    note: "Bewährtes Allrounder-Modell, gut auf Deutsch",
+  },
+  {
+    id: "deepseek-coder:6.7b",
+    name: "DeepSeek Coder 6.7B",
+    ram: "~4 GB",
+    cpu: true,
+    strengths: ["Code", "SQL", "Präzision"],
+    note: "Auf Code spezialisiert, sehr präzise bei SQL",
+  },
+  {
+    id: "phi4-mini",
+    name: "Phi-4 Mini",
+    ram: "~2.5 GB",
+    cpu: true,
+    strengths: ["Reasoning", "Allrounder"],
+    note: "Microsoft Phi-4 — stark im logischen Denken",
+  },
 ];
 
 function AiSettings() {
@@ -184,7 +261,12 @@ function AiSettings() {
       }
     }).catch(() => {}).finally(() => setLoading(false));
 
-    listModels().then(({ models }) => setInstalledModels(models || [])).catch(() => {});
+    const refreshModels = () =>
+      listModels().then(({ models }) => setInstalledModels(models || [])).catch(() => {});
+    refreshModels();
+    // Alle 10s aktualisieren solange die Komponente offen ist (laufende Downloads)
+    const interval = setInterval(refreshModels, 10000);
+    return () => clearInterval(interval);
   }, []);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -195,25 +277,31 @@ function AiSettings() {
   const handlePull = async () => {
     setPulling(true);
     setPullProgress({ status: "Verbinde...", percent: 0 });
+    aiDownloadStore.set({ pulling: true, model: effectiveModel, status: "Verbinde...", percent: 0, done: false, error: null });
     try {
       await pullModel(effectiveModel, (chunk) => {
         if (chunk.status === "error") {
-          setPullProgress({ status: `Fehler: ${chunk.error}`, percent: 0, error: true });
+          const p = { status: `Fehler: ${chunk.error}`, percent: 0, error: true };
+          setPullProgress(p);
+          aiDownloadStore.set({ ...p, pulling: false });
           return;
         }
         const percent = chunk.total > 0 ? Math.round((chunk.completed / chunk.total) * 100) : null;
-        setPullProgress({
-          status: chunk.status || "...",
-          percent,
-          completed: chunk.completed,
-          total: chunk.total,
-        });
+        const p = { status: chunk.status || "...", percent, completed: chunk.completed, total: chunk.total };
+        setPullProgress(p);
+        aiDownloadStore.set({ ...p, pulling: true, model: effectiveModel });
       });
       setPullProgress({ status: "Fertig!", percent: 100, done: true });
+      aiDownloadStore.set({ pulling: false, status: "Fertig!", percent: 100, done: true });
       setInstalledModels(prev => prev.includes(effectiveModel) ? prev : [...prev, effectiveModel]);
-      setTimeout(() => setPullProgress(null), 3000);
+      setTimeout(() => {
+        setPullProgress(null);
+        aiDownloadStore.set({ pulling: false, model: null, status: null, percent: null, done: false });
+      }, 4000);
     } catch (e) {
-      setPullProgress({ status: `Fehler: ${e.message}`, percent: 0, error: true });
+      const p = { status: `Fehler: ${e.message}`, percent: 0, error: true };
+      setPullProgress(p);
+      aiDownloadStore.set({ ...p, pulling: false });
     } finally {
       setPulling(false);
     }
@@ -286,34 +374,66 @@ function AiSettings() {
 
           {/* Modell */}
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-              <label style={{ ...lS, marginBottom: 0 }}>Modell</label>
-              {effectiveModel && (
-                <span style={{
-                  fontSize: 9, padding: "2px 6px", borderRadius: 10, fontWeight: 700,
-                  backgroundColor: modelInstalled ? "rgba(110,231,183,0.12)" : "rgba(251,191,36,0.12)",
-                  color: modelInstalled ? "#6ee7b7" : "#fbbf24",
-                  border: `1px solid ${modelInstalled ? "rgba(110,231,183,0.3)" : "rgba(251,191,36,0.3)"}`,
-                }}>
-                  {modelInstalled ? "✓ installiert" : "nicht geladen"}
-                </span>
-              )}
-            </div>
+            <label style={lS}>Modell</label>
             {!useCustom ? (
-              <select style={{ ...iS, cursor: "pointer" }}
-                value={form.ai_model}
-                onChange={e => { set("ai_model", e.target.value); setPullProgress(null); }}>
-                {PRESET_MODELS.map(m => (
-                  <option key={m.id} value={m.id}>{m.label}</option>
-                ))}
-              </select>
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, paddingRight: 2 }}>
+                {PRESET_MODELS.map(m => {
+                  const isSelected = form.ai_model === m.id;
+                  const isInstalled = installedModels.some(i => i === m.id || i.startsWith(m.id + ":"));
+                  return (
+                    <div key={m.id}
+                      onClick={() => { set("ai_model", m.id); setPullProgress(null); }}
+                      style={{
+                        padding: "7px 10px", borderRadius: 5, cursor: "pointer",
+                        border: `1px solid ${isSelected ? ACCENT : S.border}`,
+                        backgroundColor: isSelected ? "rgba(252,228,153,0.06)" : S.bgEl,
+                        transition: "border-color 0.15s",
+                      }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, color: isSelected ? ACCENT : S.textBright, flex: 1 }}>
+                          {m.name}
+                        </span>
+                        {m.recommended && (
+                          <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 8, backgroundColor: "rgba(252,228,153,0.15)", color: ACCENT, border: `1px solid rgba(252,228,153,0.3)`, fontWeight: 700 }}>
+                            ★ Empfohlen
+                          </span>
+                        )}
+                        {isInstalled && (
+                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "#6ee7b7" }}>
+                            <Check size={10} /> installiert
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ display: "flex", gap: 4, marginTop: 5, flexWrap: "wrap", alignItems: "center" }}>
+                        <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid ${S.border}` }}>
+                          {m.ram}
+                        </span>
+                        <span style={{
+                          fontSize: 9, padding: "1px 5px", borderRadius: 4, fontWeight: 700,
+                          backgroundColor: m.cpu ? "rgba(110,231,183,0.1)" : "rgba(139,92,246,0.1)",
+                          color: m.cpu ? "#6ee7b7" : "#a78bfa",
+                          border: `1px solid ${m.cpu ? "rgba(110,231,183,0.25)" : "rgba(139,92,246,0.25)"}`,
+                        }}>
+                          {m.cpu ? "CPU" : "GPU"}
+                        </span>
+                        {m.strengths.map(s => (
+                          <span key={s} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 4, backgroundColor: "rgba(255,255,255,0.04)", color: S.textDim, border: `1px solid ${S.border}` }}>
+                            {s}
+                          </span>
+                        ))}
+                      </div>
+                      <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0", lineHeight: 1.4 }}>{m.note}</p>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <input style={iS} value={customModel}
                 onChange={e => { setCustomModel(e.target.value); setPullProgress(null); }}
                 placeholder="z.B. deepseek-coder-v2:lite" />
             )}
             <button onClick={() => { setUseCustom(v => !v); setCustomModel(""); setPullProgress(null); }}
-              style={{ marginTop: 4, background: "none", border: "none", color: S.textDim, fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              style={{ marginTop: 6, background: "none", border: "none", color: S.textDim, fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
               {useCustom ? "← Aus der Liste wählen" : "Anderes Modell eingeben →"}
             </button>
 
@@ -350,6 +470,11 @@ function AiSettings() {
                   <div style={{ height: 3, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
                     <div style={{ height: "100%", width: "40%", backgroundColor: ACCENT, animation: "aiSweep 1.4s ease-in-out infinite" }} />
                   </div>
+                )}
+                {pulling && !pullProgress?.done && !pullProgress?.error && (
+                  <p style={{ fontSize: 9, color: S.textDim, margin: "6px 0 0", lineHeight: 1.4 }}>
+                    Ollama lädt im Hintergrund weiter, auch wenn du dieses Fenster schließt. Einstellungen neu öffnen um Status zu sehen.
+                  </p>
                 )}
               </div>
             )}
