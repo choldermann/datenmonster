@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, Play, FileText } from "lucide-react";
+import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
 
-export default function FormsPanel({ projectId, canEdit }) {
+export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   const navigate = useNavigate();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -13,7 +13,9 @@ export default function FormsPanel({ projectId, canEdit }) {
     setLoading(true);
     try {
       const { data } = await api.get("/api/forms/", { params: projectId ? { project_id: projectId } : {} });
-      setForms(data || []);
+      const list = data || [];
+      setForms(list);
+      onCountChange?.(list.length);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
   };
@@ -91,12 +93,23 @@ export default function FormsPanel({ projectId, canEdit }) {
 
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: S.textBright, margin: 0,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {f.name}
-                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: S.textBright, margin: 0,
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {f.portal_config?.icon && <span style={{ marginRight: 4 }}>{f.portal_config.icon}</span>}
+                        {f.name}
+                      </p>
+                      {f.published && (
+                        <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 8,
+                          backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
+                          color: "#6ee7b7", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                          <Globe size={8} /> Live
+                        </span>
+                      )}
+                    </div>
                     <p style={{ fontSize: 10, color: S.textDim, margin: "3px 0 0" }}>
                       v{f.version} · {new Date(f.updated_at).toLocaleDateString("de-DE")}
+                      {f.slug && ` · /app/${f.slug}`}
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
@@ -108,6 +121,16 @@ export default function FormsPanel({ projectId, canEdit }) {
                       onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.08)"}>
                       <Play size={11} />
                     </button>
+                    {f.published && f.slug && (
+                      <button onClick={() => navigate(`/app/${f.slug}`)} title="Im Portal öffnen"
+                        style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                          borderRadius: 5, border: "1px solid rgba(110,231,183,0.2)",
+                          backgroundColor: "transparent", color: "#6ee7b7", cursor: "pointer", opacity: 0.7 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+                        onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}>
+                        <ExternalLink size={11} />
+                      </button>
+                    )}
                     {canEdit && (
                       <>
                         <button onClick={() => navigate(`/forms/${f.id}`)} title="Bearbeiten"

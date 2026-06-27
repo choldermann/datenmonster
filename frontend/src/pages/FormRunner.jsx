@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle } from "lucide-react";
 import api from "../api/client";
+import WidgetRenderer from "../components/forms/WidgetRenderer";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -192,45 +193,48 @@ export default function FormRunner() {
           </div>
         )}
 
-        {/* Results */}
-        {results && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {Object.entries(results).map(([actionId, result]) => {
-              const action = actions.find(a => a.id === actionId);
-              return (
-                <div key={actionId} style={{ backgroundColor: S.bgCard,
-                  border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
-                  <div style={{ padding: "10px 16px", borderBottom: `1px solid ${S.border}`,
-                    display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: S.textBright }}>
-                      {action?.label || actionId}
-                    </span>
-                    {result.total !== undefined && (
-                      <span style={{ fontSize: 10, color: S.textDim }}>
-                        {result.total} Zeilen
-                      </span>
-                    )}
-                  </div>
-                  {result.error ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14,
-                      color: "#e07070", fontSize: 11 }}>
-                      <AlertCircle size={13} /> {result.error}
-                    </div>
-                  ) : (
-                    <ResultTable columns={result.columns} rows={result.rows} />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        {/* Widget-Ergebnisse */}
+        {results && widgets.length > 0 && (
+          <WidgetRenderer widgets={widgets} results={results} allowDownload={true} />
         )}
 
-        {/* Widgets (Phase 4) */}
-        {widgets.length > 0 && !results && (
-          <p style={{ fontSize: 11, color: S.textDim, textAlign: "center" }}>
-            {widgets.length} Widget(s) — Formular ausführen um Daten zu laden
-          </p>
-        )}
+        {/* Rohtabellen für Aktionen ohne Widget */}
+        {results && (() => {
+          const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
+          const rawActions = actions.filter(a => !widgetActionIds.has(a.id));
+          if (!rawActions.length) return null;
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 16,
+              marginTop: widgets.length > 0 ? 16 : 0 }}>
+              {rawActions.map(action => {
+                const result = results[action.id];
+                if (!result) return null;
+                return (
+                  <div key={action.id} style={{ backgroundColor: S.bgCard,
+                    border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${S.border}`,
+                      display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: S.textBright }}>
+                        {action.label || action.id}
+                      </span>
+                      {result.total !== undefined && (
+                        <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
+                      )}
+                    </div>
+                    {result.error ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14,
+                        color: "#e07070", fontSize: 11 }}>
+                        <AlertCircle size={13} /> {result.error}
+                      </div>
+                    ) : (
+                      <ResultTable columns={result.columns} rows={result.rows} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

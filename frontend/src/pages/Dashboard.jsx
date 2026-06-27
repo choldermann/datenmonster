@@ -5,7 +5,7 @@ import { useProject } from "../context/ProjectContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
-import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
 
 import { S } from "../components/dashboard/constants";
 import MonitoringPanel from "../components/dashboard/panels/MonitoringPanel";
@@ -23,7 +23,6 @@ import { RestApiPanel } from "../components/dashboard/panels/RestApiPanel";
 import AccessImportPanel from "../components/dashboard/panels/AccessImportPanel";
 import PipelinesPanel from "../components/dashboard/panels/PipelinesPanel";
 import TemplatesPanel from "../components/dashboard/panels/TemplatesPanel";
-import ReportsPanel from "../components/dashboard/panels/ReportsPanel";
 import FormsPanel from "../components/dashboard/panels/FormsPanel";
 import { SchedulerPanel } from "../components/dashboard/panels/SchedulerPanel";
 import DispatcherPanel from "../components/dashboard/panels/DispatcherPanel";
@@ -79,6 +78,7 @@ export default function Dashboard() {
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [mappings, setMappings] = useState([]);
+  const [formsCount, setFormsCount] = useState(0);
   const [datasetSearch, setDatasetSearch] = useState("");
   const [mappingSearch, setMappingSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -133,6 +133,14 @@ export default function Dashboard() {
     } catch {}
   }, [projectId]);
 
+  const loadFormsCount = useCallback(async () => {
+    try {
+      const p = projectId != null ? `?project_id=${projectId}` : "";
+      const { data } = await api.get(`/api/forms/${p}`);
+      setFormsCount(Array.isArray(data) ? data.length : 0);
+    } catch {}
+  }, [projectId]);
+
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { if (tab === "datasets" || tab === "ftp" || tab === "rest") loadDatasets(); }, [tab, loadDatasets]);
 
@@ -143,6 +151,8 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [tab, loadDatasets]);
   useEffect(() => { if (tab === "mappings") loadMappings(); }, [tab, loadMappings]);
+  useEffect(() => { loadFormsCount(); }, [loadFormsCount]);
+  useEffect(() => { if (tab === "forms") loadFormsCount(); }, [tab, loadFormsCount]);
   // Scheduler und Dispatcher brauchen mappings – sicherstellen dass sie geladen sind
   useEffect(() => {
     if ((tab === "scheduler" || tab === "dispatcher") && mappings.length === 0) {
@@ -187,8 +197,7 @@ export default function Dashboard() {
     { id: "mappings",   label: "Mappings",   icon: GitBranch, badge: mappings.length },
     { id: "pipelines",  label: "Pipelines",  icon: GitBranch, badge: 0 },
     { id: "templates",  label: "Templates",  icon: Package,   badge: 0 },
-    { id: "forms",      label: "Formulare",  icon: BarChart2, badge: 0 },
-    { id: "reports",    label: "Reports",    icon: BarChart2, badge: 0 },
+    { id: "forms",      label: "Formulare",  icon: FileText,  badge: formsCount },
     { id: "ftp", label: "FTP / SFTP", icon: Server, badge: 0 },
     { id: "rest", label: "REST API", icon: Wifi, badge: 0 },
     { id: "exports", label: "Exporte", icon: HardDrive, badge: 0 },
@@ -518,10 +527,8 @@ export default function Dashboard() {
           <TemplatesPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
         )}
         {tab === "forms" && (
-          <FormsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
-        )}
-        {tab === "reports" && (
-          <ReportsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
+          <FormsPanel projectId={activeProject?.id ?? null} canEdit={canEdit}
+            onCountChange={setFormsCount} />
         )}
         {tab === "scheduler" && (
           <SchedulerPanel mappings={mappings} projectId={activeProject?.id ?? null} canEdit={canEdit} />
