@@ -345,17 +345,19 @@ _ERROR_SYSTEM = (
 )
 
 _DATASET_SUGGEST_SYSTEM = (
-    "You are a database expert. Your ONLY output is a valid JSON array. "
-    "No explanations, no markdown, no text before or after the array. "
-    "Output format (strictly):\n"
-    '[{"name":"DatasetName","sql":"SELECT ...","purpose":"short description"}]\n'
+    "You are a database expert. Your job: given a schema and a task description, "
+    "write SQL SELECT queries that retrieve the needed data.\n\n"
+    "Output ONLY a JSON array. No text before or after. Example output:\n"
+    "[\n"
+    '  {"name":"Rechnungen_Basis","sql":"SELECT r.kRechnung, r.cRechnungNr, r.dErstellt FROM dbo.tRechnung r","purpose":"Alle Rechnungen mit Nummer und Datum"},\n'
+    '  {"name":"Rechnungen_Lieferant","sql":"SELECT r.kRechnung, l.cFirma FROM dbo.tRechnung r JOIN dbo.tLieferant l ON r.kLieferant = l.kLieferant","purpose":"Rechnungen mit Lieferantenname"}\n'
+    "]\n\n"
     "Rules:\n"
-    "- Maximum 5 datasets, each with a standalone SQL query\n"
-    "- Names: short, descriptive, no spaces (underscores allowed)\n"
-    "- SQL: correct for the given DB type, use ONLY table names from the schema\n"
-    "- Use exact schema.table names as shown in the schema\n"
-    "- If you add any text outside the JSON array, the response is invalid\n"
-    "IMPORTANT: Start your response immediately with [ and end with ]"
+    "- Each item has exactly 3 keys: name (no spaces, use underscores), sql (a SELECT statement), purpose (one sentence)\n"
+    "- sql must be a real SELECT query using tables from the schema — NOT sample data, NOT INSERT/UPDATE\n"
+    "- Use exact schema.table names from the provided schema\n"
+    "- Maximum 5 items\n"
+    "- Start with [ and end with ] — nothing else"
 )
 
 _MAPPING_SUGGEST_SYSTEM = (

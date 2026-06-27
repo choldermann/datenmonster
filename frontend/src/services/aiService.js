@@ -160,13 +160,14 @@ export async function suggestDatasets(connectionId, description, onToken) {
       try {
         const msg = JSON.parse(raw);
         if (msg.error) throw new Error(msg.error);
-        if (msg.result) return { suggestions: msg.result };
+        if (Array.isArray(msg.result)) return { suggestions: msg.result };
         if (msg.token && onToken) onToken(msg.token);
       } catch (e) {
         if (e.message && !e.message.startsWith("JSON")) throw e;
       }
     }
   }
+  return { suggestions: [] };
 }
 
 export const suggestMapping = (mappingId, onToken) =>
