@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE mappings ADD COLUMN switch_nodes JSON DEFAULT '[]'",
             "ALTER TABLE mappings ADD COLUMN expr_nodes JSON DEFAULT '[]'",
             "ALTER TABLE mappings ADD COLUMN quality_nodes JSON DEFAULT '[]'",
+            "ALTER TABLE mappings ADD COLUMN param_nodes JSON DEFAULT '[]'",
             "ALTER TABLE datasets ADD COLUMN source_mapping_id INTEGER",
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",

@@ -23,6 +23,7 @@ import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PythonNode, { PYTHON_NODE_COLOR } from "../components/mapping/PythonNode";
 import ExprNode, { EXPR_NODE_COLOR } from "../components/mapping/ExprNode";
 import DataQualityNode, { DQ_NODE_COLOR } from "../components/mapping/DataQualityNode";
+import ParamsNode, { PARAMS_NODE_COLOR } from "../components/mapping/ParamsNode";
 import PreviewPanel from "../components/mapping/PreviewPanel";
 import DebugPanel from "../components/mapping/DebugPanel";
 import CanvasMinimap from "../components/mapping/CanvasMinimap";
@@ -75,6 +76,8 @@ export default function MappingEditor() {
   const [exprNodes, setExprNodes] = useState([]);
   const exprOutputRefs = useRef({});
   const [qualityNodes, setQualityNodes] = useState([]);
+  const [paramNodes, setParamNodes] = useState([]);
+  const paramOutputRefs = useRef({});
   const [pendingSource, setPendingSource] = useState(null);
   const [editingConnection, setEditingConnection] = useState(null);
   const [editingTargetTypeIdx, setEditingTargetTypeIdx] = useState(null); // idx der Connection deren target_type editiert wird
@@ -214,6 +217,7 @@ export default function MappingEditor() {
         setPythonNodes(data.python_nodes || []);
         setExprNodes(data.expr_nodes || []);
         setQualityNodes(data.quality_nodes || []);
+        setParamNodes(data.param_nodes || []);
         const loadedTargets = data.targets || [];
         setTargets(loadedTargets);
         if (loadedTargets.length > 0) setActiveTargetId(loadedTargets[0].id);
@@ -221,7 +225,7 @@ export default function MappingEditor() {
     }
   }, [id]);
 
-  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes]);
+  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes, paramNodes]);
 
   // Mouse move for join drag preview
   useEffect(() => {
@@ -266,6 +270,7 @@ export default function MappingEditor() {
       else if (nodeType === "python") setPythonNodes((prev) => [...prev, { id, x: dropX, y: dropY, script: "", output_fields: [] }]);
       else if (nodeType === "expr") setExprNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Expression", output_fields: [] }]);
       else if (nodeType === "quality") setQualityNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Datenqualität", rules: [] }]);
+      else if (nodeType === "params") setParamNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Formular-Parameter", fields: [] }]);
       setTimeout(triggerLineDraw, 50);
       return;
     }
@@ -499,7 +504,7 @@ export default function MappingEditor() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, targets, project_id: projectId };
+      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, param_nodes: paramNodes, targets, project_id: projectId };
       if (id && id !== "new") {
         await api.put(`/api/mappings/${id}`, payload);
       } else {
@@ -549,6 +554,7 @@ export default function MappingEditor() {
       python_nodes:    pythonNodes,
       expr_nodes:      exprNodes,
       quality_nodes:   qualityNodes,
+      param_nodes:     paramNodes,
       mapping_id:      id && id !== "new" ? parseInt(id) : null,
       project_id:      projectId || null,
     };
@@ -825,6 +831,7 @@ export default function MappingEditor() {
                   { type: "python",  Icon: Terminal,        color: PYTHON_NODE_COLOR,  title: "Python Script", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setPythonNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, script: "", output_fields: [] }]); } },
                   { type: "expr",    Icon: FunctionSquare,  color: EXPR_NODE_COLOR,    title: "Expression",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setExprNodes(prev => [...prev, { id, x: 680, y: 80+prev.length*60, label: "Expression", output_fields: [] }]); } },
                   { type: "quality", Icon: ShieldCheck,     color: DQ_NODE_COLOR,      title: "Datenqualität", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setQualityNodes(prev => [...prev, { id, x: 720, y: 80+prev.length*60, label: "Datenqualität", rules: [] }]); } },
+                  { type: "params",  Icon: Database,         color: PARAMS_NODE_COLOR,  title: "Params Node",   onAdd: () => { const id = Math.random().toString(36).slice(2,9); setParamNodes(prev => [...prev, { id, x: 760, y: 80+prev.length*60, label: "Formular-Parameter", fields: [] }]); } },
                 ],
               },
             ].map(group => (
@@ -895,7 +902,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} paramOutputRefs={paramOutputRefs} paramNodes={paramNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -1092,6 +1099,15 @@ export default function MappingEditor() {
                 />
               ))}
 
+              {paramNodes.map((pn) => (
+                <ParamsNode key={pn.id} node={pn}
+                  outputRefs={paramOutputRefs}
+                  onPositionChange={(id, x, y) => { setParamNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
+                  onUpdate={(updated) => { setParamNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
+                  onRemove={(id) => { setParamNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__params__" + id)); }}
+                />
+              ))}
+
             </div>
 
             <CanvasMinimap
@@ -1108,6 +1124,7 @@ export default function MappingEditor() {
               pythonNodes={pythonNodes}
               exprNodes={exprNodes}
               qualityNodes={qualityNodes}
+              paramNodes={paramNodes}
               tick={lineTick}
             />
           </div>
@@ -1128,6 +1145,7 @@ export default function MappingEditor() {
             pythonNodes={pythonNodes}
             exprNodes={exprNodes}
             qualityNodes={qualityNodes}
+            paramNodes={paramNodes}
             targets={targets}
           />
 
@@ -1224,7 +1242,7 @@ export default function MappingEditor() {
                   const srcDsId = e.dataTransfer.getData("source_dataset_id");
                   const srcField = e.dataTransfer.getData("source_field");
                   if (!srcField || !srcDsId) return;
-                  const dsId = srcDsId.startsWith("__transform__") || srcDsId.startsWith("__const__") || srcDsId.startsWith("__sql__") || srcDsId.startsWith("__agg__") ? srcDsId : parseInt(srcDsId);
+                  const dsId = srcDsId.startsWith("__transform__") || srcDsId.startsWith("__const__") || srcDsId.startsWith("__sql__") || srcDsId.startsWith("__agg__") || srcDsId.startsWith("__params__") ? srcDsId : parseInt(srcDsId);
                   e.preventDefault(); e.stopPropagation();
                   setConnections((prev) => {
                     if (prev.find((c) => c.target_field === srcField)) return prev;
@@ -1260,7 +1278,7 @@ export default function MappingEditor() {
                         const srcDsIdRaw = e.dataTransfer.getData("source_dataset_id");
                         const draggedField = e.dataTransfer.getData("source_field");
                         if (draggedField && srcDsIdRaw) {
-                          const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
+                          const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") || srcDsIdRaw.startsWith("__params__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
                           setConnections((prev) => prev.map((c, i) => i === idx ? { ...c, source_dataset_id: srcDsId, source_field: draggedField, transformer: { type: "direct", source_field: draggedField } } : c));
                           setTimeout(triggerLineDraw, 50); return;
                         }
@@ -1393,7 +1411,7 @@ export default function MappingEditor() {
                     const srcDsIdRaw = e.dataTransfer.getData("source_dataset_id");
                     const draggedField = e.dataTransfer.getData("source_field");
                     if (!draggedField || !srcDsIdRaw) return;
-                    const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
+                    const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") || srcDsIdRaw.startsWith("__params__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
                     if (!srcDsId) return;
                     e.preventDefault(); e.stopPropagation();
                     setConnections((prev) => {

@@ -143,6 +143,8 @@ class MappingContext:
     python_nodes:    List[Dict] = field(default_factory=list)
     expr_nodes:      List[Dict] = field(default_factory=list)
     quality_nodes:   List[Dict] = field(default_factory=list)
+    param_nodes:     List[Dict] = field(default_factory=list)
+    run_params:      Dict       = field(default_factory=dict)
     targets:         List[Dict] = field(default_factory=list)
 
     @classmethod
@@ -163,6 +165,7 @@ class MappingContext:
             python_nodes    = getattr(mapping, "python_nodes",   None) or [],
             expr_nodes      = getattr(mapping, "expr_nodes",     None) or [],
             quality_nodes   = getattr(mapping, "quality_nodes",  None) or [],
+            param_nodes     = getattr(mapping, "param_nodes",    None) or [],
             targets         = _migrate_legacy_targets(mapping),
         )
 
@@ -184,6 +187,8 @@ class MappingContext:
             python_nodes    = self.python_nodes,
             expr_nodes      = self.expr_nodes,
             quality_nodes   = self.quality_nodes,
+            param_nodes     = self.param_nodes,
+            run_params      = self.run_params,
             preview_rows    = preview_rows,
         )
 
@@ -1290,6 +1295,8 @@ def execute_mapping(
     python_nodes: List[Dict] = None,
     expr_nodes: List[Dict] = None,
     quality_nodes: List[Dict] = None,
+    param_nodes: List[Dict] = None,
+    run_params: Dict = None,
     target_options: Dict = None,
     preview_rows: int = 50,
     _debug_trace: list = None,
@@ -2295,6 +2302,21 @@ def execute_mapping(
                 short = ".".join(parts[i:])
                 if short not in flat_no_prefix:
                     flat_no_prefix[short] = v
+
+        # Apply param nodes (inject run-time parameter values from form/API)
+        for pn in (param_nodes or []):
+            for field_def in (pn.get("fields") or []):
+                fname = (field_def.get("name") or "").strip()
+                if not fname:
+                    continue
+                val = (run_params or {}).get(fname, field_def.get("default") or "")
+                ftype = field_def.get("type", "text")
+                if ftype == "number" and val not in (None, ""):
+                    try:
+                        val = float(val)
+                    except (ValueError, TypeError):
+                        pass
+                flat_no_prefix[fname] = val
 
         # Apply constant nodes (inject static/dynamic values)
         for cn in (constant_nodes or []):

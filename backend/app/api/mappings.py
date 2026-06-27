@@ -29,6 +29,7 @@ class MappingCreate(BaseModel):
     python_nodes:    Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
+    param_nodes:     Optional[List[Any]] = []
     targets:         Optional[List[Any]] = []
     # Legacy-Felder (werden in targets migriert)
     fields:                  Optional[List[Any]] = []
@@ -55,6 +56,8 @@ class PreviewRequest(BaseModel):
     python_nodes:    Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
+    param_nodes:     Optional[List[Any]] = []
+    run_params:      Optional[dict] = None
     targets:         Optional[List[Any]] = []   # vollständige Targets (bevorzugt)
     preview_rows:    Optional[int] = 50
 
@@ -74,6 +77,8 @@ class ExecuteRequest(BaseModel):
     python_nodes:    Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
+    param_nodes:     Optional[List[Any]] = []
+    run_params:      Optional[dict] = None
     targets:         Optional[List[Any]] = []
     # Legacy
     fields:                  Optional[List[Any]] = []
@@ -148,6 +153,8 @@ def _build_context_from_request(data) -> "MappingContext":
         python_nodes    = getattr(data, "python_nodes",    None) or [],
         expr_nodes      = getattr(data, "expr_nodes",      None) or [],
         quality_nodes   = getattr(data, "quality_nodes",   None) or [],
+        param_nodes     = getattr(data, "param_nodes",     None) or [],
+        run_params      = getattr(data, "run_params",      None) or {},
         targets         = targets,
     )
 
@@ -180,6 +187,7 @@ def mapping_out(m: Mapping, db: Session) -> dict:
         "python_nodes":   getattr(m, "python_nodes",   None) or [],
         "expr_nodes":     getattr(m, "expr_nodes",     None) or [],
         "quality_nodes":  getattr(m, "quality_nodes",  None) or [],
+        "param_nodes":    getattr(m, "param_nodes",    None) or [],
         "targets":        _migrate_legacy_targets(m),
         "project_id":     m.project_id,
         "created_at":     m.created_at.isoformat() if m.created_at else None,
@@ -292,6 +300,7 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     m.python_nodes    = data.python_nodes   or []
     m.expr_nodes      = data.expr_nodes     or []
     m.quality_nodes   = data.quality_nodes  or []
+    m.param_nodes     = data.param_nodes    or []
     m.targets         = data.targets
     m.project_id      = data.project_id
     db.commit(); db.refresh(m)
