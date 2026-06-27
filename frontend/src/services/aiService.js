@@ -132,7 +132,7 @@ export const explainError = (error, nodeType, code, mappingId, nodeId, onToken) 
     node_id: nodeId,
   }, onToken);
 
-export async function suggestDatasets(connectionId, description) {
+export async function suggestDatasets(connectionId, description, onToken) {
   const resp = await fetch(`${BASE}/suggest-datasets`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
@@ -142,7 +142,31 @@ export async function suggestDatasets(connectionId, description) {
     const err = await resp.json().catch(() => ({}));
     throw new Error(err.detail || `HTTP ${resp.status}`);
   }
-  return resp.json();
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim();
+      if (raw === "[DONE]") return;
+      try {
+        const msg = JSON.parse(raw);
+        if (msg.error) throw new Error(msg.error);
+        if (msg.result) return { suggestions: msg.result };
+        if (msg.token && onToken) onToken(msg.token);
+      } catch (e) {
+        if (e.message && !e.message.startsWith("JSON")) throw e;
+      }
+    }
+  }
 }
 
 export const suggestMapping = (mappingId, onToken) =>

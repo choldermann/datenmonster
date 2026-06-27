@@ -18,6 +18,7 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
   const [creating, setCreating]       = useState(false);
   const [results, setResults]         = useState(null);
   const [error, setError]             = useState(null);
+  const [tokenCount, setTokenCount]   = useState(0);
 
   const iS = {
     backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
@@ -27,9 +28,12 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
 
   const handleGenerate = async () => {
     if (!description.trim()) return;
-    setLoading(true); setError(null); setSuggestions(null); setResults(null);
+    setLoading(true); setError(null); setSuggestions(null); setResults(null); setTokenCount(0);
     try {
-      const { suggestions: s } = await suggestDatasets(connection.id, description);
+      const { suggestions: s } = await suggestDatasets(
+        connection.id, description,
+        () => setTokenCount(n => n + 1),
+      );
       if (!s?.length) { setError("KI hat keine Vorschläge generiert. Beschreibung präzisieren?"); return; }
       setSuggestions(s);
       const sel = {}; const n = {}; const sq = {};
@@ -122,7 +126,10 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
           {loading && (
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px", justifyContent: "center", color: S.textDim, fontSize: 11 }}>
               <Loader2 size={14} style={{ color: ACCENT, animation: "spin 1s linear infinite" }} />
-              <span style={{ color: ACCENT }}>KI analysiert Schema und erstellt Vorschläge…</span>
+              <span style={{ color: ACCENT }}>
+                KI analysiert Schema und erstellt Vorschläge…
+                {tokenCount > 0 && <span style={{ opacity: 0.6, marginLeft: 6 }}>({tokenCount} Tokens)</span>}
+              </span>
             </div>
           )}
 
