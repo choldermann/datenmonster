@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, ChevronDown } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import WidgetRenderer from "../components/forms/WidgetRenderer";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -242,9 +243,13 @@ export default function PortalRunner() {
 
   const fields  = form?.fields  || [];
   const actions = form?.actions || [];
+  const widgets = form?.widgets || [];
   const hasButtonField = fields.some(f => f.type === "button");
   const allowDownload  = form?.allow_download || false;
   const rows = groupByRow(fields);
+  // Actions ohne Widget → als Rohtabelle zeigen
+  const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
+  const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id));
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -365,23 +370,33 @@ export default function PortalRunner() {
           </div>
         )}
 
-        {/* ── Ergebnisse ── */}
-        {results && Object.entries(results).map(([actionId, result]) => {
-          const action = actions.find(a => a.id === actionId);
+        {/* ── Widget-Ergebnisse ── */}
+        {results && widgets.length > 0 && (
+          <WidgetRenderer
+            widgets={widgets}
+            results={results}
+            allowDownload={allowDownload}
+          />
+        )}
+
+        {/* ── Rohtabellen für Aktionen ohne Widget ── */}
+        {results && rawResultActions.map(action => {
+          const result = results[action.id];
+          if (!result) return null;
           return (
-            <div key={actionId} style={{ backgroundColor: S.bgCard,
+            <div key={action.id} style={{ backgroundColor: S.bgCard,
               border: `1px solid ${S.border}`, borderRadius: 14,
-              overflow: "hidden", marginBottom: 20 }}>
+              overflow: "hidden", marginBottom: 20, marginTop: widgets.length > 0 ? 20 : 0 }}>
               <div style={{ padding: "14px 20px", borderBottom: `1px solid ${S.border}`,
                 display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: S.textBright }}>
-                  {action?.label || "Ergebnis"}
+                  {action.label || "Ergebnis"}
                 </span>
               </div>
               <ResultTable
                 result={result}
                 formName={form?.name || "export"}
-                actionLabel={action?.label || actionId}
+                actionLabel={action.label || action.id}
                 allowDownload={allowDownload}
               />
             </div>

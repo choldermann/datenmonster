@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { Play, Loader2, AlertCircle, X } from "lucide-react";
 import api from "../../api/client";
+import WidgetRenderer from "./WidgetRenderer";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -85,6 +86,9 @@ const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label"
 export default function FormPreview({ schema, formId, onClose }) {
   const fields  = schema?.fields  || [];
   const actions = schema?.actions || [];
+  const widgets = schema?.widgets || [];
+  const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
+  const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id));
   const [params, setParams] = useState(() => {
     const d = {};
     for (const f of fields) d[f.name] = f.default ?? "";
@@ -185,16 +189,26 @@ export default function FormPreview({ schema, formId, onClose }) {
             </button>
           )}
 
-          {/* Results */}
-          {results && Object.entries(results).map(([actionId, result]) => {
-            const action = actions.find(a => a.id === actionId);
+          {/* Widget-Ergebnisse */}
+          {results && widgets.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <WidgetRenderer widgets={widgets} results={results} allowDownload={false} />
+            </div>
+          )}
+
+          {/* Rohtabellen für Aktionen ohne Widget */}
+          {results && rawResultActions.map(action => {
+            const result = results[action.id];
+            if (!result) return null;
+            const cols = result.columns || [];
+            const rows = result.rows || [];
             return (
-              <div key={actionId} style={{ marginTop: 20, border: `1px solid ${S.border}`,
+              <div key={action.id} style={{ marginTop: 20, border: `1px solid ${S.border}`,
                 borderRadius: 8, overflow: "hidden" }}>
                 <div style={{ padding: "8px 14px", borderBottom: `1px solid ${S.border}`,
                   display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={{ fontSize: 11, fontWeight: 600, color: S.textBright }}>
-                    {action?.label || "Ergebnis"}
+                    {action.label || "Ergebnis"}
                   </span>
                   {result.total !== undefined && (
                     <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
@@ -207,7 +221,7 @@ export default function FormPreview({ schema, formId, onClose }) {
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                       <thead>
                         <tr style={{ backgroundColor: S.bgEl }}>
-                          {(result.columns || []).map(c => (
+                          {cols.map(c => (
                             <th key={c} style={{ padding: "6px 10px", textAlign: "left",
                               borderBottom: `1px solid ${S.border}`, color: S.textDim,
                               fontWeight: 600, whiteSpace: "nowrap" }}>{c}</th>
@@ -215,9 +229,9 @@ export default function FormPreview({ schema, formId, onClose }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {(result.rows || []).map((row, i) => (
+                        {rows.map((row, i) => (
                           <tr key={i} style={{ borderBottom: `1px solid ${S.border}` }}>
-                            {(result.columns || []).map(c => (
+                            {cols.map(c => (
                               <td key={c} style={{ padding: "5px 10px" }}>{row[c] ?? ""}</td>
                             ))}
                           </tr>

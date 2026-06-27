@@ -7,6 +7,7 @@ import FieldPalette from "../components/forms/FieldPalette";
 import FormCanvas from "../components/forms/FormCanvas";
 import FieldProperties from "../components/forms/FieldProperties";
 import ActionsEditor from "../components/forms/ActionsEditor";
+import WidgetsEditor from "../components/forms/WidgetsEditor";
 import FormPreview from "../components/forms/FormPreview";
 
 const S = {
@@ -18,6 +19,7 @@ const S = {
 const TABS = [
   { id: "fields",  label: "Felder" },
   { id: "actions", label: "Aktionen" },
+  { id: "widgets", label: "Widgets" },
 ];
 
 export default function FormEditor() {
@@ -56,6 +58,7 @@ export default function FormEditor() {
   // Derived
   const fields  = schema.fields  || [];
   const actions = schema.actions || [];
+  const widgets = schema.widgets || [];
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
 
   const setFields = useCallback((next) => {
@@ -64,6 +67,10 @@ export default function FormEditor() {
 
   const setActions = useCallback((next) => {
     setSchema(s => ({ ...s, actions: typeof next === "function" ? next(s.actions || []) : next }));
+  }, []);
+
+  const setWidgets = useCallback((next) => {
+    setSchema(s => ({ ...s, widgets: typeof next === "function" ? next(s.widgets || []) : next }));
   }, []);
 
   const updateSelectedField = (updated) => {
@@ -252,6 +259,13 @@ export default function FormEditor() {
             actions={actions}
             onChange={setActions}
             projectId={projectId}
+          />
+        )}
+        {activeTab === "widgets" && (
+          <WidgetsEditor
+            widgets={widgets}
+            actions={actions}
+            onChange={setWidgets}
           />
         )}
 
