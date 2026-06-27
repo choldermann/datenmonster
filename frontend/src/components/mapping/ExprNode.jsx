@@ -51,6 +51,7 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
   });
 
   return (
+    <>
     <div
       draggable={false}
       onClick={(e) => e.stopPropagation()}
@@ -209,5 +210,6 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
         applyLabel="Ausdruck übernehmen"
       />
     )}
+    </>
   );
 }

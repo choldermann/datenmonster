@@ -50,6 +50,7 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
   });
 
   return (
+    <>
     <div
       draggable={false}
       onClick={(e) => e.stopPropagation()}
@@ -208,5 +209,6 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
         applyLabel="Code übernehmen"
       />
     )}
+    </>
   );
 }

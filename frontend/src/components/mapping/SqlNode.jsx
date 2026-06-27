@@ -91,6 +91,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
   }
 
   return (
+    <>
     <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 260, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${SQL_NODE_COLOR}55`, backgroundColor: S.bgCard }}
       onClick={(e) => e.stopPropagation()}>
 
@@ -391,6 +392,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
         applyLabel="SQL übernehmen"
       />
     )}
+    </>
   );
 }
 // ─── Aggregation Node ──────────────────────────────────────────────────────────
