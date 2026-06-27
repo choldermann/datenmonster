@@ -162,6 +162,158 @@ def schema_json_to_text(schema_json: dict, max_tables: int = 120) -> str:
     return "\n".join(lines)
 
 
+# Column names that are internal/system fields — excluded from AI context to reduce noise
+_SYSTEM_COL_LOWER = {
+    "browversion", "derstellt", "dgeaendert", "dmutdat", "nversion",
+    "cjtlwawi", "kbenutzerstellt", "kbenutzergeaendert",
+    "created_at", "updated_at", "timestamp", "rowversion",
+    "npositionslauf", "nlaufnummer",
+}
+
+
+def _filter_system_columns(table: dict) -> dict:
+    """Remove internal/system columns to reduce AI prompt noise."""
+    cols = [c for c in table.get("columns", []) if c["name"].lower() not in _SYSTEM_COL_LOWER]
+    return {**table, "columns": cols or table.get("columns", [])}
+
+
+def _build_fk_graph(tables: list[dict]) -> tuple[dict, dict]:
+    """
+    Returns (outgoing, incoming) adjacency dicts keyed by full_name.
+    outgoing[A] = set of full_names that A references via FK.
+    incoming[A] = set of full_names that reference A via FK.
+    FK column format in schema: "dbo.tLieferant.kLieferant"
+    """
+    outgoing: dict[str, set] = {}
+    incoming: dict[str, set] = {}
+    for tbl in tables:
+        key = tbl["full_name"]
+        outgoing.setdefault(key, set())
+        incoming.setdefault(key, set())
+        for col in tbl.get("columns", []):
+            fk = col.get("fk", "")
+            if not fk:
+                continue
+            # "dbo.tLieferant.kLieferant" → ref_table = "dbo.tLieferant"
+            parts = fk.rsplit(".", 1)
+            if len(parts) == 2:
+                ref = parts[0]
+                outgoing[key].add(ref)
+                incoming.setdefault(ref, set()).add(key)
+    return outgoing, incoming
+
+
+def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
+    """
+    Score keyword against table full_name + column names.
+    Handles German plural/compound forms:
+    - "rechnungen" → stem "rechnung" found in "tRechnung"  (suffix stripping)
+    - "lieferantendaten" → table core "lieferant" found inside keyword  (reverse match)
+    """
+    kl = kw.lower()
+    tname_lower = full_name.lower()
+    score = 0
+
+    # 1. Forward: keyword (or stem up to -4 chars) in table name
+    matched_name = False
+    for stem_len in range(len(kl), max(3, len(kl) - 4), -1):
+        stem = kl[:stem_len]
+        if stem in tname_lower:
+            score += 6 if stem_len == len(kl) else 3
+            matched_name = True
+            break
+
+    # 2. Reverse: table core (strip schema + leading single-char prefix like t/v) found inside keyword
+    #    catches compound keywords: "lieferantendaten" contains "lieferant" from "tLieferant"
+    if not matched_name:
+        table_core = tname_lower.split(".")[-1]           # "trechnung" from "dbo.trechnung"
+        if len(table_core) > 2 and table_core[0] in "tvk":
+            table_core = table_core[1:]                   # "rechnung"
+        if len(table_core) >= 4 and table_core in kl:
+            score += 4
+
+    # 3. Keyword (or stem) in column names
+    for stem_len in range(len(kl), max(3, len(kl) - 4), -1):
+        stem = kl[:stem_len]
+        if stem in col_str:
+            score += 2 if stem_len == len(kl) else 1
+            break
+
+    return score
+
+
+def filter_schema_with_fk_expansion(
+    schema_json: dict, keywords: list[str], max_tables: int = 15
+) -> tuple[dict, list[dict]]:
+    """
+    Returns (filtered_schema_json, table_info_list).
+    Finds keyword-matching tables, expands to FK neighbors (depth 1),
+    removes system columns, caps at max_tables.
+    table_info_list entries have extra keys: match_type, score, col_count.
+    """
+    kw_lower = [k.lower() for k in keywords if len(k) > 2]
+    all_tables = schema_json.get("tables", [])
+    table_by_key = {t["full_name"]: t for t in all_tables}
+
+    # Score tables by keyword match
+    kw_scored: dict[str, int] = {}
+    for tbl in all_tables:
+        col_str = " ".join(c["name"].lower() for c in tbl.get("columns", []))
+        score = sum(_kw_score_against(kw, tbl["full_name"], col_str) for kw in kw_lower)
+        if score > 0:
+            kw_scored[tbl["full_name"]] = score
+
+    outgoing, incoming = _build_fk_graph(all_tables)
+
+    # FK neighbors of keyword-matched tables
+    fk_neighbors: dict[str, tuple[str, int]] = {}
+    for key in kw_scored:
+        for ref in outgoing.get(key, set()):
+            if ref not in kw_scored and ref in table_by_key:
+                fk_neighbors.setdefault(ref, ("fk_parent", 2))
+        for child in incoming.get(key, set()):
+            if child not in kw_scored and child in table_by_key:
+                fk_neighbors.setdefault(child, ("fk_child", 1))
+
+    result: list[dict] = []
+
+    for key, score in sorted(kw_scored.items(), key=lambda x: -x[1]):
+        if key in table_by_key:
+            t = _filter_system_columns(table_by_key[key])
+            result.append({**t, "_match_type": "keyword", "_score": score})
+
+    for key, (mtype, score) in sorted(fk_neighbors.items(), key=lambda x: -x[1][1]):
+        if key in table_by_key:
+            t = _filter_system_columns(table_by_key[key])
+            result.append({**t, "_match_type": mtype, "_score": score})
+
+    if not result:
+        result = [_filter_system_columns(t) for t in all_tables[:max_tables]]
+        for r in result:
+            r["_match_type"] = "fallback"
+            r["_score"] = 0
+
+    result = result[:max_tables]
+
+    clean_tables = [{k: v for k, v in t.items() if not k.startswith("_")} for t in result]
+    filtered_schema = {**schema_json, "tables": clean_tables}
+
+    table_info = [
+        {
+            "full_name":  t["full_name"],
+            "schema":     t.get("schema", ""),
+            "name":       t["name"],
+            "col_count":  len(t["columns"]),
+            "match_type": t["_match_type"],
+            "score":      t["_score"],
+            "columns":    t["columns"],
+        }
+        for t in result
+    ]
+
+    return filtered_schema, table_info
+
+
 def filter_schema_by_keywords(schema_json: dict, keywords: list[str], max_tables: int = 30) -> dict:
     """
     Returns a copy of schema_json with only tables relevant to the given keywords.
@@ -175,15 +327,8 @@ def filter_schema_by_keywords(schema_json: dict, keywords: list[str], max_tables
     kw_lower = [k.lower() for k in keywords if len(k) > 2]
     scored = []
     for tbl in schema_json.get("tables", []):
-        score = 0
-        tname_lower = tbl["full_name"].lower()
-        for kw in kw_lower:
-            if kw in tname_lower:
-                score += 3  # table name match weights more
-        col_names_lower = " ".join(c["name"].lower() for c in tbl.get("columns", []))
-        for kw in kw_lower:
-            if kw in col_names_lower:
-                score += 1
+        col_str = " ".join(c["name"].lower() for c in tbl.get("columns", []))
+        score = sum(_kw_score_against(kw, tbl["full_name"], col_str) for kw in kw_lower)
         if score > 0:
             scored.append((score, tbl))
 

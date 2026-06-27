@@ -237,9 +237,25 @@ async def generate_expression(
 
 # ── Dataset-Vorschlag ────────────────────────────────────────────────────────
 
+class TableContextRequest(BaseModel):
+    connection_id: int
+    description: str
+
+@router.post("/table-context")
+async def table_context(
+    body: TableContextRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Return keyword+FK filtered table list for the dataset wizard UI."""
+    ctx = AIContextBuilder(db)
+    return ctx.get_table_context(body.connection_id, body.description)
+
+
 class SuggestDatasetsRequest(BaseModel):
     connection_id: int
     description: str
+    selected_tables: Optional[list[str]] = None
 
 @router.post("/suggest-datasets")
 async def suggest_datasets(
@@ -250,7 +266,7 @@ async def suggest_datasets(
     """Stream AI dataset suggestions as SSE; final event contains parsed JSON."""
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
-    system, context = ctx.dataset_suggest_context(body.connection_id, body.description)
+    system, context = ctx.dataset_suggest_context(body.connection_id, body.description, body.selected_tables)
 
     async def generate():
         import re as _re

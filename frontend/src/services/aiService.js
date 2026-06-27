@@ -132,11 +132,24 @@ export const explainError = (error, nodeType, code, mappingId, nodeId, onToken) 
     node_id: nodeId,
   }, onToken);
 
-export async function suggestDatasets(connectionId, description, onToken) {
-  const resp = await fetch(`${BASE}/suggest-datasets`, {
+export async function getTableContext(connectionId, description) {
+  const resp = await fetch(`${BASE}/table-context`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
     body: JSON.stringify({ connection_id: connectionId, description }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+export async function suggestDatasets(connectionId, description, selectedTables, onToken) {
+  const resp = await fetch(`${BASE}/suggest-datasets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ connection_id: connectionId, description, selected_tables: selectedTables ?? null }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));

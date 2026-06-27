@@ -495,17 +495,42 @@ class AIContextBuilder:
 
     # ── Dataset-Vorschlag ─────────────────────────────────────────────────────
 
-    def dataset_suggest_context(self, connection_id: int, description: str) -> tuple[str, str]:
-        """Context for suggesting datasets from a DB connection schema."""
-        from app.services.schema_cache_service import extract_keywords
+    def dataset_suggest_context(
+        self, connection_id: int, description: str,
+        selected_tables: list[str] | None = None,
+    ) -> tuple[str, str]:
+        """Context for suggesting datasets.
+        selected_tables: list of full_name strings chosen by the user.
+        If None, auto-filter via keyword+FK expansion.
+        """
+        from app.services.schema_cache_service import (
+            extract_keywords, get_cached_schema,
+            filter_schema_with_fk_expansion, schema_json_to_text,
+        )
         conn = self._get_conn(connection_id)
         if not conn:
             return _DATASET_SUGGEST_SYSTEM, f"Task: {description}\n\nOutput (JSON array only, starting with [):"
 
-        keywords = extract_keywords(description)
-        schema_text = _load_schema_from_connection(conn, keywords=keywords)
+        schema_json = get_cached_schema(conn)
+
+        if schema_json and selected_tables is not None:
+            # User explicitly picked tables
+            sel = set(selected_tables)
+            tables = [t for t in schema_json.get("tables", []) if t["full_name"] in sel]
+            filtered = {**schema_json, "tables": tables}
+            schema_text = schema_json_to_text(filtered)
+        elif schema_json:
+            # Auto: keyword + FK expansion
+            keywords = extract_keywords(description)
+            filtered, _ = filter_schema_with_fk_expansion(schema_json, keywords, max_tables=12)
+            schema_text = schema_json_to_text(filtered)
+        else:
+            # Fallback: live query with keyword filter
+            keywords = extract_keywords(description)
+            schema_text = _load_schema_from_connection(conn, keywords=keywords)
+
         table_count = schema_text.count("\nTabelle ")
-        log.info(f"[AI dataset-suggest] conn={connection_id} keywords={keywords} tables_in_context={table_count}")
+        log.info(f"[AI dataset-suggest] conn={connection_id} tables_in_context={table_count} user_selected={selected_tables is not None}")
 
         msg = (
             f"Database schema:\n{schema_text}\n\n"
@@ -513,6 +538,31 @@ class AIContextBuilder:
             "Output (JSON array only, starting with [):"
         )
         return _DATASET_SUGGEST_SYSTEM, msg
+
+    def get_table_context(self, connection_id: int, description: str) -> dict:
+        """Returns keyword-filtered + FK-expanded table list for UI display."""
+        from app.services.schema_cache_service import (
+            extract_keywords, get_cached_schema, filter_schema_with_fk_expansion,
+        )
+        conn = self._get_conn(connection_id)
+        if not conn:
+            return {"tables": [], "keywords": [], "error": "Verbindung nicht gefunden"}
+
+        schema_json = get_cached_schema(conn)
+        if not schema_json:
+            return {"tables": [], "keywords": [], "error": "Kein Schema-Cache. Bitte ↻ auf der Verbindung klicken."}
+
+        keywords = extract_keywords(description)
+        _, table_info = filter_schema_with_fk_expansion(schema_json, keywords, max_tables=40)
+        log.info(f"[table-context] kw={keywords} → {len(table_info)} tables: {[t['full_name'] for t in table_info[:10]]}")
+
+        # Compact list of ALL tables in schema for the search-and-add box
+        all_tables = [
+            {"full_name": t["full_name"], "col_count": len(t.get("columns", []))}
+            for t in schema_json.get("tables", [])
+        ]
+
+        return {"tables": table_info, "keywords": keywords, "all_tables": all_tables}
 
     # ── Mapping field suggestion ─────────────────────────────────────────────
 
