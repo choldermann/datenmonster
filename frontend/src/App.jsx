@@ -7,6 +7,8 @@ import Dashboard from "./pages/Dashboard";
 import MappingEditor from "./pages/MappingEditor";
 import PipelineEditor from "./pages/PipelineEditor";
 import ReportEditor from "./pages/ReportEditor";
+import FormEditor from "./pages/FormEditor";
+import FormRunner from "./pages/FormRunner";
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -27,6 +29,9 @@ export default function App() {
             <Route path="/mappings/:id" element={<PrivateRoute><MappingEditor /></PrivateRoute>} />
             <Route path="/pipelines/:id" element={<PrivateRoute><PipelineEditor /></PrivateRoute>} />
             <Route path="/reports/:id" element={<PrivateRoute><ReportEditor /></PrivateRoute>} />
+            <Route path="/forms/new" element={<PrivateRoute><FormEditor /></PrivateRoute>} />
+            <Route path="/forms/:id" element={<PrivateRoute><FormEditor /></PrivateRoute>} />
+            <Route path="/forms/:id/run" element={<PrivateRoute><FormRunner /></PrivateRoute>} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </BrowserRouter>

@@ -14,6 +14,7 @@ from app.models.scheduled_job import ScheduledJob, JobRun
 from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
+from app.models.form import Form
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
@@ -45,6 +46,16 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE mappings ADD COLUMN expr_nodes JSON DEFAULT '[]'",
             "ALTER TABLE mappings ADD COLUMN quality_nodes JSON DEFAULT '[]'",
             "ALTER TABLE mappings ADD COLUMN param_nodes JSON DEFAULT '[]'",
+            """CREATE TABLE IF NOT EXISTS forms (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                project_id INTEGER,
+                schema JSON DEFAULT '{}',
+                version INTEGER DEFAULT 1,
+                created_by INTEGER,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
             "ALTER TABLE datasets ADD COLUMN source_mapping_id INTEGER",
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",
@@ -323,7 +334,9 @@ app.include_router(smart_mapping_api.router)
 app.include_router(update_api.router)
 app.include_router(plugins_api.router)
 app.include_router(events_api.router)
+from app.api import forms as forms_api
 from app.api import web_proxy as web_proxy_api
+app.include_router(forms_api.router)
 app.include_router(web_proxy_api.router)
 from app.api import mail as mail_api
 app.include_router(mail_api.router)

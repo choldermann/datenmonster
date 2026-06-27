@@ -24,6 +24,7 @@ import AccessImportPanel from "../components/dashboard/panels/AccessImportPanel"
 import PipelinesPanel from "../components/dashboard/panels/PipelinesPanel";
 import TemplatesPanel from "../components/dashboard/panels/TemplatesPanel";
 import ReportsPanel from "../components/dashboard/panels/ReportsPanel";
+import FormsPanel from "../components/dashboard/panels/FormsPanel";
 import { SchedulerPanel } from "../components/dashboard/panels/SchedulerPanel";
 import DispatcherPanel from "../components/dashboard/panels/DispatcherPanel";
 import PluginsPanel from "../components/dashboard/panels/PluginsPanel";
@@ -186,6 +187,7 @@ export default function Dashboard() {
     { id: "mappings",   label: "Mappings",   icon: GitBranch, badge: mappings.length },
     { id: "pipelines",  label: "Pipelines",  icon: GitBranch, badge: 0 },
     { id: "templates",  label: "Templates",  icon: Package,   badge: 0 },
+    { id: "forms",      label: "Formulare",  icon: BarChart2, badge: 0 },
     { id: "reports",    label: "Reports",    icon: BarChart2, badge: 0 },
     { id: "ftp", label: "FTP / SFTP", icon: Server, badge: 0 },
     { id: "rest", label: "REST API", icon: Wifi, badge: 0 },
@@ -514,6 +516,9 @@ export default function Dashboard() {
         )}
         {tab === "templates" && (
           <TemplatesPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
+        )}
+        {tab === "forms" && (
+          <FormsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
         )}
         {tab === "reports" && (
           <ReportsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
