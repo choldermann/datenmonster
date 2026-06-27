@@ -1,14 +1,17 @@
-import { useRef } from "react";
-import { Code, GripVertical, Plus, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { Code, GripVertical, Plus, Sparkles, X } from "lucide-react";
 import { S } from "./constants";
+import AiStreamModal from "./AiStreamModal";
+import { generatePython } from "../../services/aiService";
 
 export const PYTHON_NODE_COLOR = "#22c55e";
 
 const DOT = 10;
 
-export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight }) {
+export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, aiEnabled, mappingId }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
+  const [aiOpen, setAiOpen] = useState(false);
   const C = PYTHON_NODE_COLOR;
 
   const handleMouseDown = (e) => {
@@ -73,6 +76,12 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
           Python Script
         </span>
         <span style={{ fontSize: 9, color: S.textDim, fontFamily: "monospace" }}>#{node.id.slice(0, 6)}</span>
+        {aiEnabled && (
+          <button onClick={() => setAiOpen(true)} title="✨ Python-Code mit KI generieren"
+            style={{ background: "none", border: "none", color: "#fce499", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center" }}>
+            <Sparkles size={11} />
+          </button>
+        )}
         <button
           onClick={() => onRemove(node.id)}
           style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0 }}
@@ -188,5 +197,16 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
         </div>
       </div>
     </div>
+
+    {aiOpen && (
+      <AiStreamModal
+        title="✨ Python-Code generieren"
+        placeholder='z.B. "Netto aus Brutto berechnen, MwSt 19%"'
+        onGenerate={(desc, onToken) => generatePython(desc, mappingId, node.id, node.script || "", onToken)}
+        onApply={(code) => onUpdate({ ...node, script: code })}
+        onClose={() => setAiOpen(false)}
+        applyLabel="Code übernehmen"
+      />
+    )}
   );
 }

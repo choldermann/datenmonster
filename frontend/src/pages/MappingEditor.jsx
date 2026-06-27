@@ -93,6 +93,8 @@ export default function MappingEditor() {
   const [debugLoading, setDebugLoading] = useState(false);
   const [debugActiveStageId, setDebugActiveStageId] = useState(null);
   const [debugSelectedRowIdx, setDebugSelectedRowIdx] = useState(null);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -201,6 +203,7 @@ export default function MappingEditor() {
     api.get(`/api/datasets/${p}${excludeParam}`).then(({ data }) => setAllDatasets(Array.isArray(data) ? data : []));
     api.get(`/api/connections/${p}`).then(({ data }) => setDbConnections(Array.isArray(data) ? data : []));
     api.get("/api/plugins/target-types").then(({ data }) => setPluginTargetTypes(Array.isArray(data) ? data : [])).catch(() => {});
+    api.get("/api/ai/status").then(({ data }) => setAiEnabled(!!data?.enabled)).catch(() => {});
     if (id && id !== "new") {
       api.get(`/api/mappings/${id}`).then(({ data }) => {
         setName(data.name);
@@ -983,6 +986,8 @@ export default function MappingEditor() {
                     outputRef={sqlOutputRefs.current[sn.id]}
                     onRegisterFieldListRef={(key, ref) => { nodeFieldListRefs.current[key] = ref; }}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`sql_${sn.id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
+                    aiEnabled={aiEnabled}
+                    mappingId={id && id !== "new" ? parseInt(id) : null}
                   />
                 );
               })}
@@ -1075,6 +1080,8 @@ export default function MappingEditor() {
                   onRemove={(id) => { setPythonNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__python__" + id)); }}
                   debugHighlight={debugActiveStageId === "python"}
                   debugStats={debugStatsMap["python"]}
+                  aiEnabled={aiEnabled}
+                  mappingId={id && id !== "new" ? parseInt(id) : null}
                 />
               ))}
 
@@ -1086,6 +1093,8 @@ export default function MappingEditor() {
                   onRemove={(id) => { setExprNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__expr__" + id)); }}
                   debugHighlight={debugActiveStageId === "expr"}
                   debugStats={debugStatsMap["expr"]}
+                  aiEnabled={aiEnabled}
+                  mappingId={id && id !== "new" ? parseInt(id) : null}
                 />
               ))}
 

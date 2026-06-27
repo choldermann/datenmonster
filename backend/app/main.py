@@ -346,6 +346,8 @@ app.include_router(portal_api.router)
 app.include_router(web_proxy_api.router)
 from app.api import mail as mail_api
 app.include_router(mail_api.router)
+from app.api import ai as ai_api
+app.include_router(ai_api.router)
 
 
 @app.get("/api/health")

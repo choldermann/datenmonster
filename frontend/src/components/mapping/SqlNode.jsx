@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { ChevronDown, ChevronRight, Database, GripVertical, Plus, X, Minimize2, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Database, GripVertical, Plus, Sparkles, X, Minimize2, RefreshCw, Trash2 } from "lucide-react";
 import api from "../../api/client";
 import SqlEditorModal from "./SqlEditorModal";
+import AiStreamModal from "./AiStreamModal";
+import { explainSql, generateSql } from "../../services/aiService";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs }) {
+function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, aiEnabled, mappingId }) {
   const [expanded, setExpanded] = useState(true);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaError, setSchemaError] = useState(null);
   const [sqlModalOpen, setSqlModalOpen] = useState(false);
   const [sqlModalValue, setSqlModalValue] = useState("");
+  const [aiMode, setAiMode] = useState(null); // "explain" | "generate"
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -243,8 +246,20 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
 
           {/* SQL */}
           <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
-              <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim }}>SQL</label>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+              <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, flex: 1 }}>SQL</label>
+              {aiEnabled && (
+                <>
+                  <button onClick={() => setAiMode("explain")} title="✨ SQL erklären" disabled={!node.sql?.trim()}
+                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: node.sql?.trim() ? "pointer" : "not-allowed", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", opacity: node.sql?.trim() ? 1 : 0.4, display: "flex", alignItems: "center", gap: 3 }}>
+                    <Sparkles size={9} /> Erklären
+                  </button>
+                  <button onClick={() => setAiMode("generate")} title="✨ SQL generieren"
+                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", display: "flex", alignItems: "center", gap: 3 }}>
+                    <Sparkles size={9} /> Generieren
+                  </button>
+                </>
+              )}
               <button onClick={(e) => { e.stopPropagation(); setSqlModalValue(node.sql || ""); setSqlModalOpen(true); }}
                 title="SQL-Editor öffnen"
                 style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
@@ -355,6 +370,27 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
         )}
       </div>
     </div>
+
+    {aiMode === "explain" && (
+      <AiStreamModal
+        title="✨ SQL erklären"
+        readOnly
+        autoGenerate
+        noApply
+        onGenerate={(_desc, onToken) => explainSql(node.sql || "", node.connection_id || null, onToken)}
+        onClose={() => setAiMode(null)}
+      />
+    )}
+    {aiMode === "generate" && (
+      <AiStreamModal
+        title="✨ SQL generieren"
+        placeholder='z.B. "Alle Kunden die im letzten Monat keine Bestellung hatten"'
+        onGenerate={(desc, onToken) => generateSql(desc, node.connection_id || null, onToken)}
+        onApply={(sql) => set("sql", sql.trim())}
+        onClose={() => setAiMode(null)}
+        applyLabel="SQL übernehmen"
+      />
+    )}
   );
 }
 // ─── Aggregation Node ──────────────────────────────────────────────────────────

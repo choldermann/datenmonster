@@ -25,6 +25,7 @@ services:
       - ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
       - PLUGIN_MANAGER_URL=http://plugin-manager:9001
       - REDIS_URL=redis://redis:6379
+      - OLLAMA_BASE_URL=http://ollama:11434
     depends_on:
       - redis
     networks:
@@ -53,6 +54,23 @@ services:
       - datenmonster
     restart: unless-stopped
 
+  ollama:
+    image: ollama/ollama
+    container_name: datenmonster-ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - datenmonster
+    restart: unless-stopped
+    # GPU-Passthrough optional – auskommentieren wenn keine NVIDIA-GPU vorhanden:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
   frontend:
     build: ./frontend
     container_name: datenmonster-frontend
@@ -67,6 +85,7 @@ services:
 volumes:
   datenmonster-data:
   plugin-manager-data:
+  ollama-data:
 
 networks:
   datenmonster:

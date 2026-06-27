@@ -102,20 +102,34 @@ def test_email(body: EmailConfig, db: Session = Depends(get_db), user: User = De
     return {"ok": True, "message": f"Test-E-Mail erfolgreich an {to} gesendet"}
 
 
-# ── KI / Claude API ───────────────────────────────────────────────────────────
+# ── KI / Ollama ───────────────────────────────────────────────────────────────
 
 class AiConfig(BaseModel):
-    claude_api_key: str = ""
+    ai_enabled:  bool = False
+    ai_provider: str  = "ollama"
+    ai_base_url: str  = "http://ollama:11434"
+    ai_model:    str  = "qwen2.5-coder:3b"
+    ai_timeout:  int  = 120
+
+AI_KEYS = ["ai_enabled", "ai_provider", "ai_base_url", "ai_model", "ai_timeout"]
 
 @router.get("/ai")
 def get_ai_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_admin(user)
-    key = get_setting(db, "claude_api_key", "")
-    return {"claude_api_key": "••••••••" if key else ""}
+    return {
+        "ai_enabled":  get_setting(db, "ai_enabled",  "false") == "true",
+        "ai_provider": get_setting(db, "ai_provider", "ollama"),
+        "ai_base_url": get_setting(db, "ai_base_url", "http://ollama:11434"),
+        "ai_model":    get_setting(db, "ai_model",    "qwen2.5-coder:3b"),
+        "ai_timeout":  int(get_setting(db, "ai_timeout", "120")),
+    }
 
 @router.post("/ai")
 def save_ai_settings(body: AiConfig, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _require_admin(user)
-    if body.claude_api_key and body.claude_api_key != "••••••••":
-        set_setting(db, "claude_api_key", body.claude_api_key)
+    set_setting(db, "ai_enabled",  "true" if body.ai_enabled else "false")
+    set_setting(db, "ai_provider", body.ai_provider)
+    set_setting(db, "ai_base_url", body.ai_base_url)
+    set_setting(db, "ai_model",    body.ai_model)
+    set_setting(db, "ai_timeout",  str(body.ai_timeout))
     return {"ok": True}

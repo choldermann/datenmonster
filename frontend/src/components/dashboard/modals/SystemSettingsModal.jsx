@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2 } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, WifiOff } from "lucide-react";
 import api from "../../../api/client";
+import { getStatus as getAiStatus } from "../../../services/aiService";
 import { S } from "../constants";
 
 const ACCENT = "#fce499";
@@ -144,60 +145,174 @@ function EmailSettings() {
 }
 
 
+const PRESET_MODELS = [
+  { id: "qwen2.5-coder:1.5b", label: "Qwen 2.5 Coder 1.5B — minimal, schnell (~2 GB RAM)" },
+  { id: "qwen2.5-coder:3b",   label: "Qwen 2.5 Coder 3B — Mittelweg (~4 GB RAM) [Standard]" },
+  { id: "qwen2.5-coder:7b",   label: "Qwen 2.5 Coder 7B — beste Code-Qualität (~8 GB RAM)" },
+  { id: "llama3.2:3b",        label: "Llama 3.2 3B — Erklärungen, gut auf Deutsch (~2 GB RAM)" },
+  { id: "phi4-mini",          label: "Phi-4 Mini — Reasoning, Allrounder (~2.5 GB RAM)" },
+];
+
 function AiSettings() {
-  const [apiKey, setApiKey] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [showKey, setShowKey] = useState(false);
+  const [form, setForm] = useState({
+    ai_enabled:  false,
+    ai_provider: "ollama",
+    ai_base_url: "http://ollama:11434",
+    ai_model:    "qwen2.5-coder:3b",
+    ai_timeout:  120,
+  });
+  const [customModel, setCustomModel] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
+  const [loading, setLoading]   = useState(true);
+  const [saving,  setSaving]    = useState(false);
+  const [saved,   setSaved]     = useState(false);
+  const [testing, setTesting]   = useState(false);
+  const [testResult, setTestResult] = useState(null);
 
   useEffect(() => {
     api.get("/api/settings/ai").then(({ data }) => {
-      if (data?.claude_api_key) setApiKey(data.claude_api_key);
-    }).catch(() => {});
+      if (data) {
+        setForm(f => ({ ...f, ...data }));
+        const isPreset = PRESET_MODELS.some(m => m.id === data.ai_model);
+        if (!isPreset && data.ai_model) {
+          setUseCustom(true);
+          setCustomModel(data.ai_model);
+        }
+      }
+    }).catch(() => {}).finally(() => setLoading(false));
   }, []);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const effectiveModel = useCustom ? customModel : form.ai_model;
 
   const handleSave = async () => {
     setSaving(true); setSaved(false);
     try {
-      await api.post("/api/settings/ai", { claude_api_key: apiKey });
+      await api.post("/api/settings/ai", { ...form, ai_model: effectiveModel });
       setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      setTimeout(() => setSaved(false), 2500);
     } catch (e) {
       alert(e.response?.data?.detail || e.message);
     } finally { setSaving(false); }
   };
 
+  const handleTest = async () => {
+    setTesting(true); setTestResult(null);
+    try {
+      const status = await getAiStatus();
+      if (status.ollama_reachable) {
+        setTestResult({
+          ok: true,
+          msg: status.model_loaded
+            ? `Verbunden ✓ — Modell "${effectiveModel}" geladen`
+            : `Ollama erreichbar, aber Modell "${effectiveModel}" noch nicht geladen. Führe "ollama pull ${effectiveModel}" im Container aus.`,
+        });
+      } else {
+        setTestResult({ ok: false, msg: `Ollama nicht erreichbar: ${status.error || "Keine Antwort"}` });
+      }
+    } catch (e) {
+      setTestResult({ ok: false, msg: e.message });
+    } finally { setTesting(false); }
+  };
+
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+
+  if (loading) return <p style={{ color: S.textDim, fontSize: 12 }}>Lade...</p>;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <p style={{ fontSize: 11, color: S.textDim, margin: 0, lineHeight: 1.6 }}>
-        Optionaler Claude API-Key für KI-gestütztes Smart Mapping. Ohne Key funktioniert Smart Mapping mit Keyword-Matching (kostenlos).
+        Lokale KI-Unterstützung über Ollama — kostenlos, läuft komplett auf deinem Server.
+        KI-Buttons erscheinen in SQL-, Python- und Expressions-Nodes sowie im Mapping-Canvas.
       </p>
-      <div>
-        <label style={lS}>Claude API-Key (optional)</label>
-        <div style={{ position: "relative" }}>
-          <input style={{ ...iS, paddingRight: 36, fontFamily: "monospace" }}
-            type={showKey ? "text" : "password"}
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-            placeholder="sk-ant-..." />
-          <button onClick={() => setShowKey(v => !v)}
-            style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0 }}>
-            {showKey ? <EyeOff size={13} /> : <Eye size={13} />}
-          </button>
+
+      {/* KI aktivieren */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.ai_enabled ? "rgba(252,228,153,0.07)" : S.bgEl, border: `1px solid ${form.ai_enabled ? "rgba(252,228,153,0.25)" : S.border}` }}
+        onClick={() => set("ai_enabled", !form.ai_enabled)}>
+        <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.ai_enabled ? ACCENT : S.border}`, backgroundColor: form.ai_enabled ? ACCENT : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {form.ai_enabled && <Check size={10} color="#111" strokeWidth={3} />}
         </div>
+        <span style={{ fontSize: 11, color: form.ai_enabled ? ACCENT : S.textMain, fontWeight: form.ai_enabled ? 700 : 400 }}>
+          KI-Integration aktivieren
+        </span>
       </div>
-      <div style={{ padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.15)", fontSize: 11, color: S.textDim, lineHeight: 1.6 }}>
-        ✨ Mit API-Key: Freitext-Eingabe wie "Offene Rechnungen der letzten 30 Tage"<br/>
-        🔍 Ohne API-Key: Keyword-Matching + JTL-Presets (kostenlos)
+
+      {form.ai_enabled && (
+        <>
+          {/* Ollama URL */}
+          <div>
+            <label style={lS}>Ollama URL</label>
+            <input style={iS} value={form.ai_base_url} onChange={e => set("ai_base_url", e.target.value)}
+              placeholder="http://ollama:11434" />
+            <span style={{ fontSize: 10, color: S.textDim, marginTop: 3, display: "block" }}>
+              Im Docker-Stack: http://ollama:11434 · Extern: http://localhost:11434
+            </span>
+          </div>
+
+          {/* Modell */}
+          <div>
+            <label style={lS}>Modell</label>
+            {!useCustom ? (
+              <select style={{ ...iS, cursor: "pointer" }}
+                value={form.ai_model}
+                onChange={e => set("ai_model", e.target.value)}>
+                {PRESET_MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.label}</option>
+                ))}
+              </select>
+            ) : (
+              <input style={iS} value={customModel} onChange={e => setCustomModel(e.target.value)}
+                placeholder="z.B. deepseek-coder-v2:lite" />
+            )}
+            <button onClick={() => { setUseCustom(v => !v); setCustomModel(""); }}
+              style={{ marginTop: 4, background: "none", border: "none", color: S.textDim, fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+              {useCustom ? "← Aus der Liste wählen" : "Anderes Modell eingeben →"}
+            </button>
+          </div>
+
+          {/* Timeout */}
+          <div>
+            <label style={lS}>Timeout (Sekunden)</label>
+            <input style={{ ...iS, width: 80 }} type="number" min={10} max={600}
+              value={form.ai_timeout} onChange={e => set("ai_timeout", parseInt(e.target.value) || 120)} />
+            <span style={{ fontSize: 10, color: S.textDim, marginTop: 3, display: "block" }}>
+              Ohne GPU: 60–120s empfohlen
+            </span>
+          </div>
+
+          {/* Verbindungstest */}
+          {testResult && (
+            <div style={{ padding: "8px 12px", borderRadius: 5, backgroundColor: testResult.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${testResult.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
+              <p style={{ fontSize: 11, color: testResult.ok ? "#6ee7b7" : "#e07070", margin: 0, lineHeight: 1.5 }}>{testResult.msg}</p>
+            </div>
+          )}
+
+          <div style={{ padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.05)", border: "1px solid rgba(252,228,153,0.12)", fontSize: 10, color: S.textDim, lineHeight: 1.7 }}>
+            <strong style={{ color: S.textMain, fontSize: 11 }}>Modell laden (einmalig):</strong><br />
+            Öffne ein Terminal und führe aus:<br />
+            <code style={{ color: ACCENT, fontFamily: "monospace" }}>
+              docker exec -it datenmonster-ollama ollama pull {effectiveModel}
+            </code>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        {form.ai_enabled && (
+          <button onClick={handleTest} disabled={testing}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent", color: S.textDim, cursor: "pointer", fontSize: 12 }}>
+            {testing ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />}
+            Verbindung testen
+          </button>
+        )}
+        <button onClick={handleSave} disabled={saving}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+          {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
+          {saved ? "Gespeichert!" : "Speichern"}
+        </button>
       </div>
-      <button onClick={handleSave} disabled={saving}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700, alignSelf: "flex-start" }}>
-        {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
-        {saved ? "Gespeichert!" : "Speichern"}
-      </button>
     </div>
   );
 }

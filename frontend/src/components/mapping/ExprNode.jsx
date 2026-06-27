@@ -1,15 +1,18 @@
-import { useRef } from "react";
-import { FunctionSquare, GripVertical, Plus, X } from "lucide-react";
+import { useRef, useState } from "react";
+import { FunctionSquare, GripVertical, Plus, Sparkles, X } from "lucide-react";
 import { S } from "./constants";
+import AiStreamModal from "./AiStreamModal";
+import { generateExpression } from "../../services/aiService";
 
 export const EXPR_NODE_COLOR = "#e879f9";
 
 const DOT = 10;
 const HINT = "Formel-Syntax: {feldname}, concat({a}, \" \", {b}), if_(Bedingung, dann, sonst), round({preis} * 1.19, 2)";
 
-export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, debugStats }) {
+export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, debugStats, aiEnabled, mappingId }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
+  const [aiFieldIdx, setAiFieldIdx] = useState(null);
   const C = EXPR_NODE_COLOR;
 
   const handleMouseDown = (e) => {
@@ -118,6 +121,12 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
                   borderRadius: 3, color: S.textBright, outline: "none", fontFamily: "monospace",
                 }}
               />
+              {aiEnabled && (
+                <button onClick={() => setAiFieldIdx(i)} title="✨ Ausdruck mit KI generieren"
+                  style={{ background: "none", border: "none", color: "#fce499", cursor: "pointer", padding: 0, flexShrink: 0 }}>
+                  <Sparkles size={10} />
+                </button>
+              )}
               <button
                 onClick={() => removeField(i)}
                 style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0, flexShrink: 0 }}
@@ -181,5 +190,24 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
         )}
       </div>
     </div>
+
+    {aiFieldIdx !== null && (
+      <AiStreamModal
+        title={`✨ Ausdruck generieren — ${outputFields[aiFieldIdx]?.name || "Feld"}`}
+        placeholder='z.B. "Vorname und Nachname mit Leerzeichen verbinden"'
+        onGenerate={(desc, onToken) =>
+          generateExpression(
+            desc,
+            mappingId,
+            node.id,
+            outputFields[aiFieldIdx]?.name || "",
+            onToken,
+          )
+        }
+        onApply={(expr) => updateField(aiFieldIdx, "expr", expr.trim())}
+        onClose={() => setAiFieldIdx(null)}
+        applyLabel="Ausdruck übernehmen"
+      />
+    )}
   );
 }
