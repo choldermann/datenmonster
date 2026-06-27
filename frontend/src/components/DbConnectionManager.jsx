@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle, Database, Loader2, Pencil, Plus, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
 import DatabaseAnalyzer from "./DatabaseAnalyzer";
@@ -470,8 +470,44 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
   const [showImport, setShowImport] = useState(false);
   const [testResults, setTestResults] = useState({});
 
-  const [analyzingConn, setAnalyzingConn] = useState(null);
-  const [aiWizardConn, setAiWizardConn]   = useState(null);
+  const [analyzingConn, setAnalyzingConn]   = useState(null);
+  const [aiWizardConn, setAiWizardConn]     = useState(null);
+  const [rebuildingCache, setRebuildingCache] = useState({});  // conn_id → bool
+
+  const rebuildCache = async (conn) => {
+    const prevCachedAt = conn.schema_cached_at;   // remember old value
+    setRebuildingCache(r => ({ ...r, [conn.id]: true }));
+    try {
+      await api.post(`/api/connections/${conn.id}/rebuild-schema-cache`);
+    } catch { /* background task still runs */ }
+
+    // Poll every 2s until schema_cached_at has changed (max 120s)
+    const deadline = Date.now() + 120_000;
+    const poll = async () => {
+      if (Date.now() > deadline) { setRebuildingCache(r => ({ ...r, [conn.id]: false })); return; }
+      const params = projectId != null ? `?project_id=${projectId}` : "";
+      const { data } = await api.get(`/api/connections/${params}`);
+      const fresh = data.find(c => c.id === conn.id);
+      const changed = fresh?.schema_cached_at && fresh.schema_cached_at !== prevCachedAt;
+      setConnections(data);
+      if (changed) {
+        setRebuildingCache(r => ({ ...r, [conn.id]: false }));
+      } else {
+        setTimeout(poll, 2000);
+      }
+    };
+    setTimeout(poll, 2000);
+  };
+
+  const cacheAge = (isoStr) => {
+    if (!isoStr) return null;
+    const mins = Math.round((Date.now() - new Date(isoStr)) / 60000);
+    if (mins < 1)   return "gerade eben";
+    if (mins < 60)  return `vor ${mins} Min`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24)   return `vor ${hrs} Std`;
+    return `vor ${Math.round(hrs / 24)} Tagen`;
+  };
 
   const load = useCallback(async () => {
     const params = projectId != null ? `?project_id=${projectId}` : "";
@@ -585,6 +621,24 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                   {typeLabel[conn.db_type]}
                 </span>
                 <span className="text-xs" style={{ color: S.textDim }}>{conn.username}</span>
+                <div className="flex items-center gap-1 ml-auto">
+                  {rebuildingCache[conn.id] ? (
+                    <span style={{ fontSize: 9, color: "rgba(252,228,153,0.7)" }}>
+                      Schema wird geladen…
+                    </span>
+                  ) : conn.schema_cached_at ? (
+                    <span style={{ fontSize: 9, color: "rgba(252,228,153,0.5)" }} title={`${conn.schema_table_count} Tabellen gecacht`}>
+                      ✦ {conn.schema_table_count}T · {cacheAge(conn.schema_cached_at)}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 9, color: S.textDim }}>kein Schema-Cache</span>
+                  )}
+                  <button onClick={() => rebuildCache(conn)} disabled={rebuildingCache[conn.id]}
+                    title="Schema-Cache neu aufbauen"
+                    style={{ background: "none", border: "none", color: rebuildingCache[conn.id] ? "rgba(252,228,153,0.6)" : S.textDim, cursor: rebuildingCache[conn.id] ? "wait" : "pointer", padding: "1px 2px", display: "flex" }}>
+                    <RefreshCw size={9} className={rebuildingCache[conn.id] ? "animate-spin" : ""} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

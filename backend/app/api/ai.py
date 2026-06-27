@@ -277,13 +277,20 @@ async def suggest_datasets(
             yield "data: [DONE]\n\n"
             return
 
+        print(f"[AI suggest-datasets] raw={raw[:400]}", flush=True)
         result = []
         for s in suggestions:
-            if isinstance(s, dict) and s.get("name") and s.get("sql"):
+            if not isinstance(s, dict):
+                continue
+            # Accept alternative key names models sometimes use
+            name    = s.get("name") or s.get("dataset_name") or s.get("DatasetName") or s.get("title") or ""
+            sql     = s.get("sql") or s.get("query") or s.get("SQL") or s.get("select") or ""
+            purpose = s.get("purpose") or s.get("description") or s.get("Purpose") or s.get("desc") or ""
+            if name and sql:
                 result.append({
-                    "name":    str(s["name"]).strip(),
-                    "sql":     str(s["sql"]).strip(),
-                    "purpose": str(s.get("purpose", "")).strip(),
+                    "name":    str(name).strip(),
+                    "sql":     str(sql).strip(),
+                    "purpose": str(purpose).strip(),
                 })
 
         yield f"data: {json.dumps({'result': result})}\n\n"

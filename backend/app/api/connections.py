@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import logging
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
+log = logging.getLogger("datenmonster")
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
@@ -59,7 +62,31 @@ def conn_out(c: DbConnection) -> dict:
         "password": "••••••••" if c.password else "",
         "project_id": c.project_id,
         "created_at": c.created_at.isoformat() if c.created_at else None,
+        "schema_cached_at": _utc_iso(getattr(c, "schema_cached_at", None)),
+        "schema_table_count": _schema_table_count(c),
     }
+
+
+def _utc_iso(dt) -> str | None:
+    """Returns ISO string with explicit Z suffix so browsers parse it as UTC."""
+    if not dt:
+        return None
+    from datetime import timezone
+    if not dt.tzinfo:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
+
+
+def _schema_table_count(c: DbConnection) -> int | None:
+    """Returns number of tables in cache, or None if not cached."""
+    import json as _json
+    cache = getattr(c, "schema_cache", None)
+    if not cache:
+        return None
+    try:
+        return len(_json.loads(cache).get("tables", []))
+    except Exception:
+        return None
 
 
 def _require_read_conn(conn_id: int, user, db) -> "DbConnection":
@@ -126,9 +153,33 @@ def test_conn_form(data: ConnectionTest, db: Session = Depends(get_db), user: Us
 
 
 @router.get("/{conn_id}/test")
-def test_conn_by_id(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def test_conn_by_id(conn_id: int, background_tasks: BackgroundTasks = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     conn = _require_read_conn(conn_id, user, db)
-    return test_connection(conn)
+    result = test_connection(conn)
+    if result.get("success") and background_tasks is not None:
+        background_tasks.add_task(_rebuild_cache_bg, conn_id)
+    return result
+
+
+@router.post("/{conn_id}/rebuild-schema-cache")
+def rebuild_schema_cache(conn_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Rebuild the schema cache for a connection (runs in background)."""
+    conn = _require_read_conn(conn_id, user, db)
+    background_tasks.add_task(_rebuild_cache_bg, conn_id)
+    return {"status": "building", "connection_id": conn_id}
+
+
+def _rebuild_cache_bg(conn_id: int):
+    """Background task: build schema cache and save to DB."""
+    from app.core.database import SessionLocal
+    from app.services.schema_cache_service import rebuild_cache
+    db = SessionLocal()
+    try:
+        rebuild_cache(conn_id, db)
+    except Exception as e:
+        log.warning(f"Schema cache build failed for conn {conn_id}: {e}")
+    finally:
+        db.close()
 
 
 @router.get("/{conn_id}/tables")

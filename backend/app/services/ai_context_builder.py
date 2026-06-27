@@ -39,12 +39,52 @@ def _extract_tables_from_sql(sql: str) -> list[str]:
     return list(dict.fromkeys(tables))  # deduplicate, preserve order
 
 
-def _load_schema_from_connection(conn) -> str:
+def _load_schema_from_connection(conn, keywords: list[str] | None = None) -> str:
     """
-    Loads tables, columns, PKs, and FKs from a DB connection via SQLAlchemy
-    inspector. Returns a compact text representation for the LLM prompt.
-    Results are cached per connection_id for 5 minutes.
+    Returns a compact text representation of the DB schema for the LLM prompt.
+    Priority: persistent DB cache → in-memory TTL cache → live query.
+    If keywords are given, only relevant tables are included.
     """
+    from app.services.schema_cache_service import (
+        get_cached_schema, schema_json_to_text,
+        filter_schema_by_keywords, build_schema_json,
+    )
+
+    conn_id = conn.id
+    now = time.time()
+
+    # 1. Try persistent DB cache
+    schema_json = get_cached_schema(conn)
+
+    # 2. Fall back to in-memory cache or live query
+    if schema_json is None:
+        if conn_id in _schema_cache and now - _schema_cache[conn_id]["ts"] < _SCHEMA_TTL:
+            text = _schema_cache[conn_id]["text"]
+            if keywords:
+                # Can't filter text easily, just return as-is
+                return text
+            return text
+        # Live query
+        try:
+            schema_json = build_schema_json(conn)
+        except Exception as e:
+            log.warning(f"AI Context: Schema-Laden fehlgeschlagen für conn {conn_id}: {e}")
+            return f"Schema konnte nicht geladen werden: {e}"
+
+    # 3. Filter by keywords if provided
+    if keywords:
+        schema_json = filter_schema_by_keywords(schema_json, keywords, max_tables=40)
+    else:
+        from app.services.schema_cache_service import filter_schema_by_keywords as _f
+        schema_json = _f(schema_json, [], max_tables=80)
+
+    text = schema_json_to_text(schema_json)
+    _schema_cache[conn_id] = {"ts": now, "text": text}
+    return text
+
+
+def _load_schema_from_connection_legacy(conn) -> str:
+    """Legacy live-query path kept for reference; replaced by cache-aware version above."""
     conn_id = conn.id
     now = time.time()
     if conn_id in _schema_cache and now - _schema_cache[conn_id]["ts"] < _SCHEMA_TTL:
@@ -305,17 +345,17 @@ _ERROR_SYSTEM = (
 )
 
 _DATASET_SUGGEST_SYSTEM = (
-    "Du bist ein Datenbank-Experte und hilfst dabei, passende Datasets für ETL-Aufgaben vorzuschlagen. "
-    "Analysiere das Datenbankschema und die Aufgabenbeschreibung des Benutzers. "
-    "Antworte AUSSCHLIESSLICH mit einem gültigen JSON-Array — kein Markdown, keine Erklärung, "
-    "kein Text vor oder nach dem Array. Format:\n"
-    '[{"name":"DatasetName","sql":"SELECT ...","purpose":"Was dieses Dataset enthält"}]\n'
-    "Regeln:\n"
-    "- Maximal 5 Datasets, jedes mit einer eigenständigen SQL-Abfrage\n"
-    "- Namen: kurz, beschreibend, ohne Leerzeichen (Unterstriche erlaubt)\n"
-    "- SQL: korrekt für den angegebenen DB-Typ, nur Tabellen aus dem Schema verwenden\n"
-    "- Exakte Schema.Tabellen-Namen aus dem Schema übernehmen\n"
-    "- Jedes Dataset soll eine klar abgegrenzte, thematisch zusammenhängende Datenmenge sein"
+    "You are a database expert. Your ONLY output is a valid JSON array. "
+    "No explanations, no markdown, no text before or after the array. "
+    "Output format (strictly):\n"
+    '[{"name":"DatasetName","sql":"SELECT ...","purpose":"short description"}]\n'
+    "Rules:\n"
+    "- Maximum 5 datasets, each with a standalone SQL query\n"
+    "- Names: short, descriptive, no spaces (underscores allowed)\n"
+    "- SQL: correct for the given DB type, use ONLY table names from the schema\n"
+    "- Use exact schema.table names as shown in the schema\n"
+    "- If you add any text outside the JSON array, the response is invalid\n"
+    "IMPORTANT: Start your response immediately with [ and end with ]"
 )
 
 _MAPPING_SUGGEST_SYSTEM = (
@@ -455,13 +495,20 @@ class AIContextBuilder:
 
     def dataset_suggest_context(self, connection_id: int, description: str) -> tuple[str, str]:
         """Context for suggesting datasets from a DB connection schema."""
+        from app.services.schema_cache_service import extract_keywords
         conn = self._get_conn(connection_id)
         if not conn:
-            return _DATASET_SUGGEST_SYSTEM, f"Aufgabe: {description}"
-        schema_text = _load_schema_from_connection(conn)
+            return _DATASET_SUGGEST_SYSTEM, f"Task: {description}\n\nOutput (JSON array only, starting with [):"
+
+        keywords = extract_keywords(description)
+        schema_text = _load_schema_from_connection(conn, keywords=keywords)
+        table_count = schema_text.count("\nTabelle ")
+        log.info(f"[AI dataset-suggest] conn={connection_id} keywords={keywords} tables_in_context={table_count}")
+
         msg = (
-            f"Datenbankschema:\n{schema_text}\n\n"
-            f"Aufgabe des Benutzers: {description}"
+            f"Database schema:\n{schema_text}\n\n"
+            f"Task: {description}\n\n"
+            "Output (JSON array only, starting with [):"
         )
         return _DATASET_SUGGEST_SYSTEM, msg
 

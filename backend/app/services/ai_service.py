@@ -24,17 +24,19 @@ class AIService:
 
     # ── low-level ────────────────────────────────────────────────────────────
 
-    async def _stream(self, messages: list[dict], system: str = "") -> AsyncIterator[str]:
+    async def _stream(self, messages: list[dict], system: str = "", json_mode: bool = False) -> AsyncIterator[str]:
         payload_messages = []
         if system:
             payload_messages.append({"role": "system", "content": system})
         payload_messages.extend(messages)
 
         payload = {
-            "model":  self.model,
+            "model":    self.model,
             "messages": payload_messages,
-            "stream": True,
+            "stream":   True,
         }
+        if json_mode:
+            payload["response_format"] = {"type": "json_object"}
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             async with client.stream(
@@ -57,9 +59,9 @@ class AIService:
                     except Exception:
                         continue
 
-    async def _complete(self, messages: list[dict], system: str = "") -> str:
+    async def _complete(self, messages: list[dict], system: str = "", json_mode: bool = False) -> str:
         result = []
-        async for token in self._stream(messages, system):
+        async for token in self._stream(messages, system, json_mode=json_mode):
             result.append(token)
         return "".join(result)
 
@@ -67,9 +69,9 @@ class AIService:
         """Single-shot completion (non-streaming) — for structured JSON output."""
         return await self._complete([{"role": "user", "content": user_message}], system)
 
-    async def stream_with_context(self, user_message: str, system: str = ""):
+    async def stream_with_context(self, user_message: str, system: str = "", json_mode: bool = False):
         """Generic streaming entry-point used by the Context Builder."""
-        async for token in self._stream([{"role": "user", "content": user_message}], system):
+        async for token in self._stream([{"role": "user", "content": user_message}], system, json_mode=json_mode):
             yield token
 
     # ── status ───────────────────────────────────────────────────────────────
