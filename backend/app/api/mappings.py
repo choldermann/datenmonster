@@ -417,6 +417,10 @@ def get_sql_schema(
     if not sql_text:
         return {"columns": [], "error": "Kein SQL angegeben"}
 
+    # :param_name Platzhalter (Lookup-Modus) durch NULL ersetzen für Schema-Erkennung
+    import re as _re_schema
+    sql_text = _re_schema.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", "NULL", sql_text)
+
     try:
         import sqlalchemy as _sa
         import pandas as _pd

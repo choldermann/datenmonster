@@ -57,6 +57,19 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
       setSchemaLoading(false);
     }
   }, [node, canvasNodes, onUpdate]);
+
+  const detectParams = useCallback(() => {
+    const sql = node.sql || "";
+    const matches = [...sql.matchAll(/:([a-zA-Z_][a-zA-Z0-9_]*)/g)];
+    const unique = [...new Set(matches.map(m => m[1]))];
+    const existing = node.param_mappings || [];
+    const updated = unique.map(p => {
+      const ex = existing.find(e => e.param === p);
+      return ex || { param: p, source_field: p };
+    });
+    onUpdate({ ...node, param_mappings: updated });
+  }, [node, onUpdate]);
+
   const mode = node.mode || "scalar";
 
   if (node.minimized) {
@@ -113,11 +126,12 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
           {/* Modus */}
           <div>
             <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: 3 }}>Modus</label>
-            <div style={{ display: "flex", gap: 4 }}>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
               {[
                 { v: "scalar",    l: "Scalar",    hint: "1 Wert pro Zeile" },
                 { v: "column",    l: "Spalte",    hint: "Alle Zeilen einmalig" },
                 { v: "transform", l: "Transform", hint: "SQL auf Canvas-Daten" },
+                { v: "lookup",    l: "Lookup",    hint: "Felder per SQL anreichern" },
               ].map((m) => (
                 <button key={m.v} onClick={() => set("mode", m.v)} title={m.hint}
                   style={{ flex: 1, padding: "4px 4px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer",
@@ -131,7 +145,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             <p style={{ fontSize: 9, color: S.textDim, marginTop: 3, lineHeight: 1.3 }}>
               {mode === "scalar" ? "SQL pro Zeile · {Feldname} als Parameter"
                : mode === "column" ? "SQL einmalig · Ergebnis per Index"
-               : "SQL auf Canvas-Datasets · Ersetzt gesamten Output"}
+               : mode === "transform" ? "SQL auf Canvas-Datasets · Ersetzt gesamten Output"
+               : "SQL-Lookup · :param als Platzhalter · mehrere Output-Felder"}
             </p>
           </div>
 
@@ -172,6 +187,60 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             </div>
           )}
 
+          {/* Lookup: Sub-Modus + Parameter-Mapping */}
+          {mode === "lookup" && (
+            <>
+              <div>
+                <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: 3 }}>Ausführung</label>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {[
+                    { v: "row_by_row", l: "Zeile-für-Zeile", hint: "SQL pro Datensatz, :param = Feldwert" },
+                    { v: "batch_in",   l: "Batch IN",        hint: "Einmalige IN-Query, alle Werte gesammelt" },
+                  ].map(sm => (
+                    <button key={sm.v} onClick={() => set("lookup_sub_mode", sm.v)} title={sm.hint}
+                      style={{ flex: 1, padding: "4px 4px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer",
+                        backgroundColor: (node.lookup_sub_mode || "row_by_row") === sm.v ? `${SQL_NODE_COLOR}22` : S.bgEl,
+                        border: `1px solid ${(node.lookup_sub_mode || "row_by_row") === sm.v ? SQL_NODE_COLOR : S.border}`,
+                        color: (node.lookup_sub_mode || "row_by_row") === sm.v ? SQL_NODE_COLOR : S.textDim }}>
+                      {sm.l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
+                  <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim }}>Parameter</label>
+                  <button onClick={detectParams} title="Parameter aus SQL erkennen"
+                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
+                    ⟳ Erkennen
+                  </button>
+                </div>
+                {(node.param_mappings || []).length === 0 && (
+                  <p style={{ fontSize: 9, color: S.textDim, fontStyle: "italic" }}>
+                    :param im SQL schreiben → "Erkennen" klicken
+                  </p>
+                )}
+                {(node.param_mappings || []).map((pm, i) => (
+                  <div key={pm.param} style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                    <span style={{ fontSize: 10, fontFamily: "monospace", color: SQL_NODE_COLOR, minWidth: 60, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>:{pm.param}</span>
+                    <span style={{ fontSize: 9, color: S.textDim }}>←</span>
+                    <input
+                      value={pm.source_field || ""}
+                      onChange={e => {
+                        const updated = [...(node.param_mappings || [])];
+                        updated[i] = { ...updated[i], source_field: e.target.value };
+                        set("param_mappings", updated);
+                      }}
+                      onClick={e => e.stopPropagation()}
+                      placeholder="Quellfeld"
+                      style={{ flex: 1, backgroundColor: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, fontFamily: "monospace", padding: "3px 6px", outline: "none" }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
           {/* SQL */}
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
@@ -209,7 +278,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
           )}
 
           {/* Output-Feldname (nur Scalar/Column) */}
-          {mode !== "transform" && (
+          {mode !== "transform" && mode !== "lookup" && (
             <div>
               <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: 3 }}>Output-Feldname</label>
               <input value={node.output_field || ""}
@@ -221,8 +290,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
             </div>
           )}
 
-          {/* Schema erkennen Button (nur Transform) */}
-          {mode === "transform" && (
+          {/* Schema erkennen Button (Transform + Lookup) */}
+          {(mode === "transform" || mode === "lookup") && (
             <div>
               <button onClick={loadSchema} disabled={schemaLoading || !node.sql?.trim()}
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, padding: "5px 0", borderRadius: 4, cursor: "pointer",
@@ -234,7 +303,9 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
               {schemaError && <p style={{ fontSize: 9, color: "#e07070", marginTop: 4 }}>⚠ {schemaError}</p>}
               {(node.output_fields || []).length === 0 && !schemaError && (
                 <p style={{ fontSize: 9, color: S.textDim, marginTop: 4, fontStyle: "italic" }}>
-                  SQL eingeben → Schema erkennen → Felder mappen
+                  {mode === "lookup"
+                    ? "SQL eingeben → Schema erkennen → Output-Felder verbinden"
+                    : "SQL eingeben → Schema erkennen → Felder mappen"}
                 </p>
               )}
             </div>
@@ -244,8 +315,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
 
       {/* Output dots */}
       <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06` }}>
-        {mode === "transform" && (node.output_fields || []).length > 0 ? (
-          // Transform: scrollbare Liste mit einem Dot pro Output-Feld
+        {(mode === "transform" || mode === "lookup") && (node.output_fields || []).length > 0 ? (
+          // Transform / Lookup: scrollbare Liste mit einem Dot pro Output-Feld
           <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>

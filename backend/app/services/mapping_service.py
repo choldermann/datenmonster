@@ -950,6 +950,32 @@ def _resolve_sql_params(sql: str, flat_row: dict):
     return resolved, params
 
 
+def _resolve_sql_lookup_params(sql: str, param_mappings: list, flat_row: dict):
+    """
+    Ersetzt :param_name Platzhalter im SQL für den Lookup-Modus.
+    param_mappings: [{param: "kArtikel", source_field: "kArtikel"}, ...]
+    Feldwert wird aus flat_row über source_field geholt.
+    Gibt (resolved_sql, params_dict) zurück — SQL-Injection-sicher.
+    """
+    import re as _re_lk
+    params = {}
+
+    def replacer(m):
+        param_name = m.group(1)
+        source_field = param_name
+        for pm in (param_mappings or []):
+            if pm.get("param") == param_name:
+                source_field = pm.get("source_field") or param_name
+                break
+        safe = _re_lk.sub(r"[^a-zA-Z0-9_]", "_", param_name)
+        key = f"lkp_{safe}"
+        params[key] = flat_row.get(source_field)
+        return f":{key}"
+
+    resolved = _re_lk.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", replacer, sql)
+    return resolved, params
+
+
 def _build_sql_engine_cache():
     """Gibt einen dict zurück der als Cache für SQLAlchemy-Engines dient."""
     return {}
@@ -2197,6 +2223,63 @@ def execute_mapping(
                 "errors": errors,
             }
 
+    # Lookup-Modus: Batch-IN Nodes vorverarbeiten (einmalige IN-Query vor der Row-Loop)
+    sql_lookup_results: dict = {}  # node_id → {key_value: {col: value}}
+    for _sn in (sql_nodes or []):
+        if _sn.get("mode") != "lookup" or _sn.get("lookup_sub_mode", "row_by_row") != "batch_in":
+            continue
+        _nid = _sn.get("id")
+        _conn_id = _sn.get("connection_id")
+        _sql_text = (_sn.get("sql") or "").strip()
+        _param_maps = _sn.get("param_mappings") or []
+        if not _conn_id or not _sql_text or not _param_maps:
+            sql_lookup_results[_nid] = {}
+            continue
+        _batch_pm = _param_maps[0]
+        _batch_param = _batch_pm.get("param", "")
+        _src_field = _batch_pm.get("source_field") or _batch_param
+        # Unique-Werte aus result_df sammeln
+        _unique_vals = set()
+        if result_df is not None:
+            for _col in result_df.columns:
+                if _col == _src_field or _col.split(".")[-1] == _src_field:
+                    _unique_vals.update(
+                        str(v) for v in result_df[_col].dropna().unique() if v is not None
+                    )
+                    break
+        if not _unique_vals:
+            sql_lookup_results[_nid] = {}
+            continue
+        _ulist = list(_unique_vals)
+        _in_params = {f"__bv_{i}__": v for i, v in enumerate(_ulist)}
+        _in_clause = "(" + ", ".join(f":__bv_{i}__" for i in range(len(_ulist))) + ")"
+        import re as _re_lk2
+        _resolved_sql = _re_lk2.sub(
+            r":" + _re_lk2.escape(_batch_param) + r"\b", _in_clause, _sql_text
+        )
+        try:
+            from sqlalchemy import text as _sa_text_lk
+            _lk_engine = _get_sql_engine(_conn_id)
+            with _lk_engine.connect() as _lk_con:
+                _lk_res = _lk_con.execute(_sa_text_lk(_resolved_sql), _in_params)
+                _lk_rows = _lk_res.fetchall()
+                _lk_cols = list(_lk_res.keys())
+            # Lookup-Dict aufbauen: source_field_value → {col: value}
+            _key_col = _src_field if _src_field in _lk_cols else (
+                _batch_param if _batch_param in _lk_cols else (_lk_cols[0] if _lk_cols else None)
+            )
+            _lk_dict = {}
+            if _key_col:
+                for _lk_r in _lk_rows:
+                    _lk_rd = dict(zip(_lk_cols, _lk_r))
+                    _kv = str(_lk_rd.get(_key_col, ""))
+                    if _kv and _kv not in _lk_dict:
+                        _lk_dict[_kv] = _lk_rd
+            sql_lookup_results[_nid] = _lk_dict
+        except Exception as _lk_e:
+            errors.append(f"SQL-Lookup '{_nid}' (batch_in): {str(_lk_e)[:200]}")
+            sql_lookup_results[_nid] = {}
+
     # Flatten result_df rows to dicts (without prefix for direct lookup)
     # Also build a flat lookup without prefix for transformer source_field matching
     for _, raw_row in result_df.head(preview_rows).iterrows():
@@ -2294,6 +2377,41 @@ def execute_mapping(
                     col_values = sql_column_data.get(out_field, [])
                     row_idx = len(output_rows)  # aktueller Index
                     flat_no_prefix[out_field] = col_values[row_idx] if row_idx < len(col_values) else None
+                elif mode == "lookup":
+                    sub_mode = sn.get("lookup_sub_mode", "row_by_row")
+                    param_maps = sn.get("param_mappings") or []
+                    out_fields_list = sn.get("output_fields") or []
+                    node_id = sn.get("id")
+                    if sub_mode == "batch_in":
+                        # Wert aus vorberechneter Lookup-Tabelle
+                        batch_pm = param_maps[0] if param_maps else {}
+                        src_field = batch_pm.get("source_field") or batch_pm.get("param", "")
+                        key_val = str(flat_no_prefix.get(src_field, ""))
+                        row_result_lk = sql_lookup_results.get(node_id, {}).get(key_val, {})
+                        for of in out_fields_list:
+                            flat_no_prefix[of] = row_result_lk.get(of)
+                    else:
+                        # row_by_row: SQL pro Zeile mit :param Bindung
+                        if not conn_id or not sql_text:
+                            for of in out_fields_list:
+                                flat_no_prefix[of] = None
+                            continue
+                        resolved_sql, sql_params = _resolve_sql_lookup_params(
+                            sql_text, param_maps, flat_no_prefix
+                        )
+                        from sqlalchemy import text as sa_text
+                        engine = _get_sql_engine(conn_id)
+                        with engine.connect() as con:
+                            _lkr = con.execute(sa_text(resolved_sql), sql_params)
+                            _lk_row = _lkr.fetchone()
+                            _lk_cols = list(_lkr.keys())
+                        if _lk_row:
+                            _lk_rd = dict(zip(_lk_cols, _lk_row))
+                            for of in out_fields_list:
+                                flat_no_prefix[of] = _lk_rd.get(of)
+                        else:
+                            for of in out_fields_list:
+                                flat_no_prefix[of] = None
                 else:
                     # Scalar: SQL pro Zeile mit Feldwerten ausführen
                     if not conn_id or not sql_text:
@@ -2307,7 +2425,11 @@ def execute_mapping(
                         row_result = result.fetchone()
                         flat_no_prefix[out_field] = row_result[0] if row_result else None
             except Exception as e:
-                flat_no_prefix[out_field] = f"[SQL-Fehler: {str(e)[:80]}]"
+                if mode == "lookup":
+                    for of in (sn.get("output_fields") or []):
+                        flat_no_prefix[of] = f"[SQL-Fehler: {str(e)[:60]}]"
+                else:
+                    flat_no_prefix[out_field] = f"[SQL-Fehler: {str(e)[:80]}]"
 
         # Apply expr nodes (evaluated per row so connections can pick up outputs)
         for en in (expr_nodes or []):
