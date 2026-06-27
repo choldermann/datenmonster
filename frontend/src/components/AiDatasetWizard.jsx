@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X, Sparkles, Loader2, Check, Plus, ChevronDown, ChevronUp, ArrowLeft, Table2, Eye } from "lucide-react";
 import api from "../api/client";
-import { getTableContext, suggestDatasets } from "../services/aiService";
+import { getTableContext, suggestDatasets, getStatus } from "../services/aiService";
 import { S } from "./dashboard/constants";
 
 const ACCENT = "#fce499";
@@ -275,6 +275,9 @@ function StepSuggestions({ suggestions, selected, setSelected, names, setNames, 
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function AiDatasetWizard({ connection, projectId, onDone, onClose }) {
+  const [activeModel, setActiveModel]  = useState(null);
+  useEffect(() => { getStatus().then(s => setActiveModel(s.model)).catch(() => {}); }, []);
+
   const [step, setStep]               = useState(0);  // 0=desc, 1=tables, 2=suggestions
   const [description, setDescription] = useState("");
 
@@ -384,6 +387,13 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: ACCENT }}>KI-Dataset-Assistent</span>
             <span style={{ fontSize: 11, color: S.textDim, marginLeft: 8 }}>{connection.name}</span>
+            {activeModel && (
+              <span style={{ fontSize: 9, color: S.textDim, marginLeft: 10,
+                padding: "1px 6px", borderRadius: 8, border: `1px solid ${S.border}`,
+                fontFamily: "monospace" }}>
+                {activeModel}
+              </span>
+            )}
           </div>
           {/* Step indicator */}
           <div style={{ display: "flex", gap: 4, marginRight: 8 }}>

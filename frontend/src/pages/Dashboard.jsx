@@ -5,6 +5,7 @@ import { useProject } from "../context/ProjectContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
+import { getStatus as getAiStatus } from "../services/aiService";
 import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
 
 import { S } from "../components/dashboard/constants";
@@ -75,6 +76,8 @@ export default function Dashboard() {
   }, []);
 
     const [tab, setTab] = useState(location.state?.tab || "monitoring");
+  const [aiModel, setAiModel] = useState(null);
+  useEffect(() => { getAiStatus().then(s => { if (s.enabled) setAiModel(s.model); }).catch(() => {}); }, []);
   const [projects, setProjects] = useState([]);
   const [datasets, setDatasets] = useState([]);
   const [mappings, setMappings] = useState([]);
@@ -217,6 +220,7 @@ export default function Dashboard() {
           <div>
             <span className="font-bold font-mono text-sm block" style={{ color: S.accent, letterSpacing: "0.05em" }}>Datenmonster</span>
             <span className="text-xs" style={{ color: S.textDim }}>Holdermann IT</span>
+            {aiModel && <span className="text-xs font-mono" style={{ color: S.textDim, opacity: 0.6 }}>{aiModel}</span>}
           </div>
         </div>
 

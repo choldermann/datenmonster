@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { X, Loader2, Check, Sparkles, Copy } from "lucide-react";
 import { S } from "./constants";
+import { getStatus } from "../../services/aiService";
 
 const ACCENT = "#fce499";
 
@@ -47,9 +48,11 @@ export default function AiStreamModal({
   const [done, setDone]               = useState(false);
   const [error, setError]             = useState(null);
   const [copied, setCopied]           = useState(false);
+  const [activeModel, setActiveModel] = useState(null);
   const resultRef = useRef(null);
 
   useEffect(() => {
+    getStatus().then(s => setActiveModel(s.model)).catch(() => {});
     if (autoGenerate) handleGenerate();
   }, []);
 
@@ -99,7 +102,15 @@ export default function AiStreamModal({
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: `1px solid ${S.border}`, backgroundColor: "rgba(252,228,153,0.04)" }}>
           <Sparkles size={14} style={{ color: ACCENT }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: ACCENT, flex: 1 }}>{title}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: ACCENT }}>{title}</span>
+          {activeModel && (
+            <span style={{ fontSize: 9, color: S.textDim, marginLeft: 6,
+              padding: "1px 6px", borderRadius: 8, border: `1px solid ${S.border}`,
+              fontFamily: "monospace" }}>
+              {activeModel}
+            </span>
+          )}
+          <span style={{ flex: 1 }} />
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 2 }}>
             <X size={13} />
           </button>
