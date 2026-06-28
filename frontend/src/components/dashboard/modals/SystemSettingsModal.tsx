@@ -647,21 +647,69 @@ function guessModelSize(name: string, size: number): string {
 const SIZE_FILTERS = ["Alle", "≤3B", "7B", "≥13B"];
 const TYPE_FILTERS = ["Alle", "Chat", "Coding", "Embedding", "Vision"];
 
+interface CatalogEntry {
+  name: string;
+  description: string;
+  sizeLabel: string;
+  sizeDisplay: string;
+  types: string[];
+}
+
+const CATALOG: CatalogEntry[] = [
+  // Chat – klein
+  { name: "gemma3:1b",        description: "Googles kleinstes Gemma-3-Modell, ideal für schwache Hardware", sizeLabel: "≤3B",  sizeDisplay: "815 MB", types: ["Chat"] },
+  { name: "gemma3:4b",        description: "Ausgewogenes Google-Modell für Alltagsaufgaben",                sizeLabel: "≤3B",  sizeDisplay: "2.5 GB", types: ["Chat"] },
+  { name: "llama3.2:1b",      description: "Metas kleinstes Llama-3.2-Modell",                              sizeLabel: "≤3B",  sizeDisplay: "1.3 GB", types: ["Chat"] },
+  { name: "llama3.2:3b",      description: "Schnelles, kompaktes Meta-Modell",                              sizeLabel: "≤3B",  sizeDisplay: "2.0 GB", types: ["Chat"] },
+  { name: "phi4-mini:3.8b",   description: "Microsofts kompaktes, hochwertiges Sprachmodell",               sizeLabel: "≤3B",  sizeDisplay: "2.5 GB", types: ["Chat"] },
+  { name: "qwen2.5:3b",       description: "Alibabas effizientes Multilingual-Modell",                      sizeLabel: "≤3B",  sizeDisplay: "2.0 GB", types: ["Chat"] },
+  // Chat – mittel
+  { name: "llama3.1:8b",      description: "Metas leistungsstarkes 8B-Modell mit 128k Kontext",             sizeLabel: "7B",   sizeDisplay: "4.7 GB", types: ["Chat"] },
+  { name: "gemma2:9b",        description: "Googles überraschend starkes 9B-Modell",                        sizeLabel: "7B",   sizeDisplay: "5.5 GB", types: ["Chat"] },
+  { name: "mistral:7b",       description: "Schnelles, präzises Modell von Mistral AI",                     sizeLabel: "7B",   sizeDisplay: "4.1 GB", types: ["Chat"] },
+  { name: "qwen2.5:7b",       description: "Alibabas starkes 7B-Modell, gut für Deutsch",                   sizeLabel: "7B",   sizeDisplay: "4.4 GB", types: ["Chat"] },
+  { name: "deepseek-r1:7b",   description: "DeepSeeks Reasoning-Modell mit Chain-of-Thought",               sizeLabel: "7B",   sizeDisplay: "4.7 GB", types: ["Chat"] },
+  // Chat – groß
+  { name: "mistral-nemo:12b", description: "Mistral Nemo – ausgezeichnete Qualität, multilingual",          sizeLabel: "≥13B", sizeDisplay: "7.1 GB", types: ["Chat"] },
+  { name: "phi4:14b",         description: "Microsofts leistungsstärkstes Phi-Modell",                      sizeLabel: "≥13B", sizeDisplay: "9.1 GB", types: ["Chat"] },
+  { name: "qwen2.5:14b",      description: "Alibabas großes Multilingual-Modell",                           sizeLabel: "≥13B", sizeDisplay: "9.0 GB", types: ["Chat"] },
+  { name: "deepseek-r1:14b",  description: "DeepSeeks größeres Reasoning-Modell",                           sizeLabel: "≥13B", sizeDisplay: "9.0 GB", types: ["Chat"] },
+  { name: "gemma2:27b",       description: "Googles stärkstes lokal-lauffähiges Gemma-Modell",              sizeLabel: "≥13B", sizeDisplay: "16 GB",  types: ["Chat"] },
+  // Coding
+  { name: "qwen2.5-coder:1.5b",    description: "Alibabas kleinstes Coding-Modell",                        sizeLabel: "≤3B",  sizeDisplay: "1.0 GB", types: ["Coding"] },
+  { name: "qwen2.5-coder:3b",      description: "Gutes Coding-Modell für schwache Hardware",               sizeLabel: "≤3B",  sizeDisplay: "2.0 GB", types: ["Coding"] },
+  { name: "qwen2.5-coder:7b",      description: "Empfohlen für Code-Generierung und -Analyse",             sizeLabel: "7B",   sizeDisplay: "4.4 GB", types: ["Coding"] },
+  { name: "codellama:7b",          description: "Metas auf Code spezialisiertes Llama-Modell",             sizeLabel: "7B",   sizeDisplay: "3.8 GB", types: ["Coding"] },
+  { name: "deepseek-coder:6.7b",   description: "DeepSeeks bewährtes Coding-Modell",                       sizeLabel: "7B",   sizeDisplay: "3.8 GB", types: ["Coding"] },
+  { name: "deepseek-coder-v2:16b", description: "DeepSeeks MoE-basiertes Coding-Flaggschiff",              sizeLabel: "≥13B", sizeDisplay: "8.9 GB", types: ["Coding"] },
+  // Embedding
+  { name: "nomic-embed-text", description: "Schnelles, hochwertiges Text-Embedding-Modell",                sizeLabel: "≤3B",  sizeDisplay: "274 MB", types: ["Embedding"] },
+  { name: "mxbai-embed-large", description: "Starkes Embedding-Modell von mixedbread.ai",                  sizeLabel: "≤3B",  sizeDisplay: "670 MB", types: ["Embedding"] },
+  { name: "all-minilm",       description: "Sehr kleines, schnelles Embedding-Modell",                      sizeLabel: "≤3B",  sizeDisplay: "46 MB",  types: ["Embedding"] },
+  // Vision
+  { name: "moondream:1.8b",   description: "Kleinstes Vision-Modell für Bildanalyse",                      sizeLabel: "≤3B",  sizeDisplay: "1.1 GB", types: ["Vision"] },
+  { name: "llava:7b",         description: "Bewährtes Vision-Language-Modell",                              sizeLabel: "7B",   sizeDisplay: "4.5 GB", types: ["Vision"] },
+  { name: "minicpm-v:8b",     description: "Effizientes Vision-Modell mit guter OCR-Leistung",             sizeLabel: "7B",   sizeDisplay: "5.5 GB", types: ["Vision"] },
+  { name: "llava:13b",        description: "Stärkeres LLaVA-Modell für komplexe Bildaufgaben",             sizeLabel: "≥13B", sizeDisplay: "8.0 GB", types: ["Vision"] },
+];
+
 function ModelLibrary() {
-  const [models, setModels] = useState<any[]>([]);
+  const [view, setView] = useState<"installed" | "catalog">("installed");
+  const [installedModels, setInstalledModels] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState("Alle");
   const [typeFilter, setTypeFilter] = useState("Alle");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [pulling, setPulling] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await listModels();
-      setModels(data.models ?? []);
+      setInstalledModels(data.models ?? []);
     } catch (e: any) {
       setError(e.message || "Fehler beim Laden");
     } finally {
@@ -671,12 +719,14 @@ function ModelLibrary() {
 
   useEffect(() => { load(); }, []);
 
+  const installedNames = new Set(installedModels.map(m => m.name));
+
   const handleDelete = async (modelName: string) => {
     setDeleting(modelName);
     setConfirmDelete(null);
     try {
       await deleteModel(modelName);
-      setModels(prev => prev.filter(m => m.name !== modelName));
+      setInstalledModels(prev => prev.filter(m => m.name !== modelName));
     } catch (e: any) {
       alert(`Löschen fehlgeschlagen: ${e.message}`);
     } finally {
@@ -684,13 +734,23 @@ function ModelLibrary() {
     }
   };
 
-  const filtered = models.filter(m => {
-    const size = guessModelSize(m.name, m.size);
-    const types = guessModelType(m.name);
-    if (sizeFilter !== "Alle" && size !== sizeFilter) return false;
-    if (typeFilter !== "Alle" && !types.includes(typeFilter)) return false;
-    return true;
-  });
+  const handlePull = async (modelName: string) => {
+    setPulling(modelName);
+    aiDownloadStore.set({ pulling: true, model: modelName, status: "Verbinde...", percent: 0, done: false, error: null });
+    try {
+      await pullModel(modelName, (chunk: any) => {
+        const pct = chunk.total ? Math.round((chunk.completed / chunk.total) * 100) : null;
+        aiDownloadStore.set({ pulling: true, model: modelName, status: chunk.status, percent: pct });
+      });
+      aiDownloadStore.set({ pulling: false, status: "Fertig!", percent: 100, done: true, model: modelName, error: null });
+      await load();
+    } catch (e: any) {
+      aiDownloadStore.set({ pulling: false, error: e.message, model: modelName, status: null, percent: null, done: false });
+    } finally {
+      setPulling(null);
+      setTimeout(() => aiDownloadStore.set({ pulling: false, model: null, status: null, percent: null, done: false, error: null }), 4000);
+    }
+  };
 
   const chipStyle = (active: boolean) => ({
     padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 600,
@@ -699,11 +759,38 @@ function ModelLibrary() {
     color: active ? ACCENT : S.textDim, transition: "all 0.15s",
   });
 
+  const toggleStyle = (active: boolean) => ({
+    padding: "4px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
+    border: `1px solid ${active ? ACCENT : S.border}`,
+    backgroundColor: active ? "rgba(252,228,153,0.1)" : "transparent",
+    color: active ? ACCENT : S.textDim,
+  });
+
+  const filteredInstalled = installedModels.filter(m => {
+    const size = guessModelSize(m.name, m.size);
+    const types = guessModelType(m.name);
+    if (sizeFilter !== "Alle" && size !== sizeFilter) return false;
+    if (typeFilter !== "Alle" && !types.includes(typeFilter)) return false;
+    return true;
+  });
+
+  const filteredCatalog = CATALOG.filter(m => {
+    if (sizeFilter !== "Alle" && m.sizeLabel !== sizeFilter) return false;
+    if (typeFilter !== "Alle" && !m.types.includes(typeFilter)) return false;
+    return true;
+  });
+
   return (
     <div>
-      <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 12px" }}>
-        Lokal installierte Ollama-Modelle. Modelle können in den KI-Einstellungen heruntergeladen werden.
-      </p>
+      {/* View toggle */}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        <button style={toggleStyle(view === "installed")} onClick={() => setView("installed")}>
+          Installiert {!loading && `(${installedModels.length})`}
+        </button>
+        <button style={toggleStyle(view === "catalog")} onClick={() => setView("catalog")}>
+          Katalog ({CATALOG.length})
+        </button>
+      </div>
 
       {/* Filter chips */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
@@ -724,61 +811,111 @@ function ModelLibrary() {
       )}
       {error && <p style={{ color: "#e07070", fontSize: 12 }}>{error}</p>}
 
-      {!loading && !error && filtered.length === 0 && (
-        <p style={{ fontSize: 12, color: S.textDim }}>
-          {models.length === 0 ? "Keine Modelle installiert." : "Kein Modell entspricht dem Filter."}
-        </p>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {filtered.map(m => {
-          const size = guessModelSize(m.name, m.size);
-          const types = guessModelType(m.name);
-          const isDeleting = deleting === m.name;
-          const isConfirming = confirmDelete === m.name;
-          const modified = m.modified_at ? new Date(m.modified_at).toLocaleDateString("de-DE") : null;
-
-          return (
-            <div key={m.name} style={{
-              padding: "10px 12px", borderRadius: 8, border: `1px solid ${S.border}`,
-              backgroundColor: "rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: 5,
-            }}>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: S.textBright, wordBreak: "break-all" }}>{m.name}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                    <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{size}</span>
-                    {types.map(t => (
-                      <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
-                    ))}
-                    {m.size && <span style={{ fontSize: 9, color: S.textDim }}>{formatBytes(m.size)}</span>}
-                    {modified && <span style={{ fontSize: 9, color: S.textDim }}>· {modified}</span>}
+      {/* Installiert */}
+      {view === "installed" && !loading && !error && (
+        <>
+          {filteredInstalled.length === 0 && (
+            <p style={{ fontSize: 12, color: S.textDim }}>
+              {installedModels.length === 0 ? "Keine Modelle installiert." : "Kein Modell entspricht dem Filter."}
+            </p>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {filteredInstalled.map(m => {
+              const size = guessModelSize(m.name, m.size);
+              const types = guessModelType(m.name);
+              const isDeleting = deleting === m.name;
+              const isConfirming = confirmDelete === m.name;
+              const modified = m.modified_at ? new Date(m.modified_at).toLocaleDateString("de-DE") : null;
+              return (
+                <div key={m.name} style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${S.border}`, backgroundColor: "rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: 5 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: S.textBright, wordBreak: "break-all" }}>{m.name}</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{size}</span>
+                        {types.map(t => (
+                          <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
+                        ))}
+                        {m.size && <span style={{ fontSize: 9, color: S.textDim }}>{formatBytes(m.size)}</span>}
+                        {modified && <span style={{ fontSize: 9, color: S.textDim }}>· {modified}</span>}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                      {isConfirming ? (
+                        <>
+                          <button onClick={() => setConfirmDelete(null)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}>Abbruch</button>
+                          <button onClick={() => handleDelete(m.name)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid #e07070", backgroundColor: "rgba(224,112,112,0.15)", color: "#e07070", cursor: "pointer" }}>
+                            {isDeleting ? <Loader2 size={10} /> : "Löschen"}
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setConfirmDelete(m.name)} title="Modell löschen" disabled={isDeleting} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}>
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                  {isConfirming ? (
-                    <>
-                      <button onClick={() => setConfirmDelete(null)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}>Abbruch</button>
-                      <button onClick={() => handleDelete(m.name)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid #e07070", backgroundColor: "rgba(224,112,112,0.15)", color: "#e07070", cursor: "pointer" }}>
-                        {isDeleting ? <Loader2 size={10} /> : "Löschen"}
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => setConfirmDelete(m.name)} title="Modell löschen" disabled={isDeleting} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}>
-                      <Trash2 size={12} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+          {installedModels.length > 0 && (
+            <p style={{ fontSize: 10, color: S.textDim, marginTop: 12 }}>
+              {filteredInstalled.length} von {installedModels.length} Modell{installedModels.length !== 1 ? "en" : ""} angezeigt
+            </p>
+          )}
+        </>
+      )}
 
-      {!loading && models.length > 0 && (
-        <p style={{ fontSize: 10, color: S.textDim, marginTop: 12 }}>
-          {filtered.length} von {models.length} Modell{models.length !== 1 ? "en" : ""} angezeigt
-        </p>
+      {/* Katalog */}
+      {view === "catalog" && (
+        <>
+          <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 10px" }}>
+            Populäre Ollama-Modelle. Klicke "Laden" um ein Modell herunterzuladen.
+          </p>
+          {filteredCatalog.length === 0 && (
+            <p style={{ fontSize: 12, color: S.textDim }}>Kein Modell entspricht dem Filter.</p>
+          )}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {filteredCatalog.map(m => {
+              const isInstalled = installedNames.has(m.name);
+              const isPulling = pulling === m.name;
+              return (
+                <div key={m.name} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${isInstalled ? "rgba(110,231,183,0.2)" : S.border}`, backgroundColor: isInstalled ? "rgba(110,231,183,0.04)" : "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: S.textBright }}>{m.name}</div>
+                    <div style={{ fontSize: 10, color: S.textDim, marginTop: 2 }}>{m.description}</div>
+                    <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{m.sizeLabel}</span>
+                      {m.types.map(t => (
+                        <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
+                      ))}
+                      <span style={{ fontSize: 9, color: S.textDim }}>{m.sizeDisplay}</span>
+                    </div>
+                  </div>
+                  <div style={{ flexShrink: 0 }}>
+                    {isInstalled ? (
+                      <span style={{ fontSize: 10, color: "#6ee7b7", display: "flex", alignItems: "center", gap: 4 }}>
+                        <Check size={11} /> Installiert
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handlePull(m.name)}
+                        disabled={isPulling || pulling !== null}
+                        style={{ fontSize: 10, padding: "4px 10px", borderRadius: 6, border: `1px solid ${ACCENT}`, backgroundColor: "rgba(252,228,153,0.08)", color: ACCENT, cursor: isPulling || pulling !== null ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5, opacity: pulling !== null && !isPulling ? 0.5 : 1 }}
+                      >
+                        {isPulling ? <><Loader2 size={10} className="animate-spin" /> Laden...</> : <><Download size={10} /> Laden</>}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{ fontSize: 10, color: S.textDim, marginTop: 12 }}>
+            {filteredCatalog.length} von {CATALOG.length} Modellen angezeigt · {installedModels.length} installiert
+          </p>
+        </>
       )}
     </div>
   );
