@@ -4,7 +4,7 @@ function getToken() {
   return localStorage.getItem("dm_token") || "";
 }
 
-export async function streamRequest(endpoint, body, onToken) {
+export async function streamRequest(endpoint, body, onToken, onMeta = null) {
   const resp = await fetch(`${BASE}${endpoint}`, {
     method: "POST",
     headers: {
@@ -35,10 +35,11 @@ export async function streamRequest(endpoint, body, onToken) {
       const raw = line.slice(5).trim();
       if (raw === "[DONE]") return full;
       try {
-        const { token } = JSON.parse(raw);
-        if (token) {
-          full += token;
-          onToken(token, full);
+        const msg = JSON.parse(raw);
+        if (msg.meta && onMeta) { onMeta(msg.meta); continue; }
+        if (msg.token) {
+          full += msg.token;
+          onToken(msg.token, full);
         }
       } catch {
         // ignore malformed chunk

@@ -11,7 +11,7 @@ from app.core.database import get_db
 log = logging.getLogger("datenmonster")
 from app.api.auth import get_current_user
 from app.models.user import User
-from app.services.ai_service import build_ai_service, PRESET_MODELS
+from app.services.ai_service import build_ai_service, PRESET_MODELS, MODE_PARAMS, select_auto_model, AIParams
 from app.services.ai_context_builder import AIContextBuilder
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -392,6 +392,7 @@ class ChatRequest(BaseModel):
     message: str
     history: list[ChatMessage] = []
     page_context: dict = {}
+    mode: str = "auto"  # "schnell" | "auto" | "analyse"
 
 @router.post("/chat")
 async def chat(
@@ -399,15 +400,32 @@ async def chat(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Globaler Assistent: multi-turn Chat mit Seitenkontext."""
+    """Globaler Assistent: multi-turn Chat mit Seitenkontext und Modus-Steuerung."""
+    from app.api.settings import get_setting
+    from datetime import datetime
+
     svc = _require_ai(db)
+    base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
+
+    # Modell + Parameter wählen
+    params: AIParams = MODE_PARAMS.get(body.mode, MODE_PARAMS["auto"])
+    model_used = default_model
+    category = "medium"
+
+    if body.mode == "auto":
+        model_used, category = await select_auto_model(body.message, base_url, default_model)
+        if category == "agent":
+            from dataclasses import replace
+            params = replace(params, think=True, max_tokens=2000)
 
     page = body.page_context.get("page", "")
     description = body.page_context.get("description", "")
     current_data = body.page_context.get("currentData", {})
 
+    now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     page_prompt = _PAGE_SYSTEM_PROMPTS.get(page, "")
-    system_parts = [_BASE_SYSTEM]
+    system_parts = [_BASE_SYSTEM, f"Aktuelle Uhrzeit: {now_str}"]
     if page_prompt:
         system_parts.append(page_prompt)
     elif description:
@@ -421,7 +439,15 @@ async def chat(
     messages = [{"role": m.role, "content": m.content} for m in body.history]
     messages.append({"role": "user", "content": body.message})
 
-    return _sse_stream(svc._stream(messages, system))
+    async def generate():
+        # Erstes Event: Metadaten (Modell, Kategorie, Modus)
+        yield f"data: {json.dumps({'meta': {'model': model_used, 'category': category, 'mode': body.mode}})}\n\n"
+        async for token in svc._stream(messages, system, params=params, model=model_used):
+            yield f"data: {json.dumps({'token': token})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    from fastapi.responses import StreamingResponse as _SR
+    return _SR(generate(), media_type="text/event-stream")
 
 
 # ── Node-Generierung ─────────────────────────────────────────────────────────

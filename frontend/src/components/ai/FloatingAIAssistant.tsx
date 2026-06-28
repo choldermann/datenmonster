@@ -77,6 +77,14 @@ function nodePreviewLabel(node: any): string {
   }
 }
 
+type AiMode = "schnell" | "auto" | "analyse";
+
+const AI_MODES: { id: AiMode; icon: string; label: string; title: string }[] = [
+  { id: "schnell", icon: "⚡", label: "Schnell",  title: "Schnell – think: aus, kurze Antworten, kleines Modell" },
+  { id: "auto",    icon: "⚖",  label: "Auto",     title: "Automatisch – Datenmonster wählt Modell und Modus" },
+  { id: "analyse", icon: "🧠", label: "Analyse",  title: "Analyse – think: an, lange Antworten, großes Modell" },
+];
+
 export default function FloatingAIAssistant() {
   const { isOpen, setIsOpen, pageContext, callGenerateNodes } = useAIAssistant();
   const [messages, setMessages] = useState<Message[]>([]);
@@ -84,6 +92,7 @@ export default function FloatingAIAssistant() {
   const [streaming, setStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [aiModel, setAiModel] = useState<string | null>(null);
+  const [aiMode, setAiMode] = useState<AiMode>("auto");
   const [genMode, setGenMode] = useState<GenMode>("idle");
   const [genDescription, setGenDescription] = useState("");
   const [genTokens, setGenTokens] = useState("");
@@ -189,6 +198,7 @@ export default function FloatingAIAssistant() {
       await streamRequest("/chat", {
         message: text,
         history,
+        mode: aiMode,
         page_context: pageContext
           ? {
               page: pageContext.page,
@@ -204,6 +214,8 @@ export default function FloatingAIAssistant() {
           updated[updated.length - 1] = { role: "assistant", content: full, streaming: true };
           return updated;
         });
+      }, (meta: any) => {
+        if (meta?.model) setAiModel(meta.model);
       });
     } catch (e: any) {
       setMessages(prev => {
@@ -390,6 +402,29 @@ export default function FloatingAIAssistant() {
               </div>
             )}
             <div style={{ flex: 1 }} />
+            {/* Mode-Selector */}
+            <div style={{ display: "flex", gap: 2, marginRight: 6 }}>
+              {AI_MODES.map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setAiMode(m.id)}
+                  title={m.title}
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: 5,
+                    border: `1px solid ${aiMode === m.id ? ACCENT : "rgba(255,255,255,0.1)"}`,
+                    backgroundColor: aiMode === m.id ? "rgba(252,228,153,0.12)" : "transparent",
+                    color: aiMode === m.id ? ACCENT : "rgba(255,255,255,0.3)",
+                    cursor: "pointer",
+                    fontSize: 13,
+                    lineHeight: 1,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  {m.icon}
+                </button>
+              ))}
+            </div>
             {messages.length > 0 && (
               <button
                 onClick={clearConversation}
