@@ -688,16 +688,22 @@ const CATALOG: CatalogEntry[] = [
   { name: "llama3.2:3b",      description: "Schnelles, kompaktes Meta-Modell",                              sizeLabel: "≤3B",  sizeDisplay: "2.0 GB", types: ["Chat"] },
   { name: "phi4-mini:3.8b",   description: "Microsofts kompaktes, hochwertiges Sprachmodell",               sizeLabel: "≤3B",  sizeDisplay: "2.5 GB", types: ["Chat"] },
   { name: "qwen2.5:3b",       description: "Alibabas effizientes Multilingual-Modell",                      sizeLabel: "≤3B",  sizeDisplay: "2.0 GB", types: ["Chat"] },
+  { name: "qwen3:0.6b",       description: "Qwen3 – kleinstes Modell, sehr schnell auf CPU",                 sizeLabel: "≤3B",  sizeDisplay: "0.5 GB", types: ["Chat"] },
+  { name: "qwen3:1.7b",       description: "Qwen3 – kompakt, gut für einfache Aufgaben",                    sizeLabel: "≤3B",  sizeDisplay: "1.1 GB", types: ["Chat"] },
+  { name: "qwen3:4b",         description: "Qwen3 – ausgewogene Größe für CPU-Betrieb",                     sizeLabel: "≤3B",  sizeDisplay: "2.6 GB", types: ["Chat"] },
   // Chat – mittel
   { name: "llama3.1:8b",      description: "Metas leistungsstarkes 8B-Modell mit 128k Kontext",             sizeLabel: "7B",   sizeDisplay: "4.7 GB", types: ["Chat"] },
   { name: "gemma2:9b",        description: "Googles überraschend starkes 9B-Modell",                        sizeLabel: "7B",   sizeDisplay: "5.5 GB", types: ["Chat"] },
   { name: "mistral:7b",       description: "Schnelles, präzises Modell von Mistral AI",                     sizeLabel: "7B",   sizeDisplay: "4.1 GB", types: ["Chat"] },
   { name: "qwen2.5:7b",       description: "Alibabas starkes 7B-Modell, gut für Deutsch",                   sizeLabel: "7B",   sizeDisplay: "4.4 GB", types: ["Chat"] },
+  { name: "qwen3:8b",         description: "Qwen3 8B – sehr gutes Reasoning, empfohlen für Deutsch",        sizeLabel: "7B",   sizeDisplay: "5.2 GB", types: ["Chat"] },
   { name: "deepseek-r1:7b",   description: "DeepSeeks Reasoning-Modell mit Chain-of-Thought",               sizeLabel: "7B",   sizeDisplay: "4.7 GB", types: ["Chat"] },
   // Chat – groß
   { name: "mistral-nemo:12b", description: "Mistral Nemo – ausgezeichnete Qualität, multilingual",          sizeLabel: "≥13B", sizeDisplay: "7.1 GB", types: ["Chat"] },
   { name: "phi4:14b",         description: "Microsofts leistungsstärkstes Phi-Modell",                      sizeLabel: "≥13B", sizeDisplay: "9.1 GB", types: ["Chat"] },
   { name: "qwen2.5:14b",      description: "Alibabas großes Multilingual-Modell",                           sizeLabel: "≥13B", sizeDisplay: "9.0 GB", types: ["Chat"] },
+  { name: "qwen3:14b",        description: "Qwen3 14B – starkes Reasoning, besser als Qwen2.5:14b",         sizeLabel: "≥13B", sizeDisplay: "9.3 GB", types: ["Chat"] },
+  { name: "qwen3:32b",        description: "Qwen3 32B – top Open-Source-Qualität für leistungsstarke Server", sizeLabel: "≥13B", sizeDisplay: "20 GB",  types: ["Chat"] },
   { name: "deepseek-r1:14b",  description: "DeepSeeks größeres Reasoning-Modell",                           sizeLabel: "≥13B", sizeDisplay: "9.0 GB", types: ["Chat"] },
   { name: "gemma2:27b",       description: "Googles stärkstes lokal-lauffähiges Gemma-Modell",              sizeLabel: "≥13B", sizeDisplay: "16 GB",  types: ["Chat"] },
   // Coding
