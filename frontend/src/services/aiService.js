@@ -4,19 +4,38 @@ function getToken() {
   return localStorage.getItem("dm_token") || "";
 }
 
+function classifyFetchError(err) {
+  const msg = (err?.message || "").toLowerCase();
+  if (msg.includes("networkerror") || msg.includes("failed to fetch") || msg.includes("network request failed")) {
+    return "Backend nicht erreichbar – läuft der Datenmonster-Server?";
+  }
+  if (msg.includes("timeout") || msg.includes("aborted")) {
+    return "Anfrage abgebrochen – Modell antwortet nicht rechtzeitig";
+  }
+  return `Netzwerkfehler: ${err?.message || "Unbekannter Fehler"}`;
+}
+
 export async function streamRequest(endpoint, body, onToken, onMeta = null) {
-  const resp = await fetch(`${BASE}${endpoint}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${getToken()}`,
-    },
-    body: JSON.stringify(body),
-  });
+  let resp;
+  try {
+    resp = await fetch(`${BASE}${endpoint}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getToken()}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(classifyFetchError(err));
+  }
 
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${resp.status}`);
+    if (resp.status === 502 || resp.status === 503) throw new Error("Ollama nicht erreichbar – läuft der Ollama-Dienst?");
+    if (resp.status === 504) throw new Error("Anfrage ist abgelaufen (Gateway Timeout)");
+    if (resp.status === 401) throw new Error("Nicht authentifiziert – bitte neu anmelden");
+    throw new Error(err.detail || `Backend-Fehler (HTTP ${resp.status})`);
   }
 
   const reader = resp.body.getReader();
@@ -24,27 +43,35 @@ export async function streamRequest(endpoint, body, onToken, onMeta = null) {
   let buffer = "";
   let full = "";
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop();
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      const raw = line.slice(5).trim();
-      if (raw === "[DONE]") return full;
-      try {
-        const msg = JSON.parse(raw);
-        if (msg.meta && onMeta) { onMeta(msg.meta); continue; }
-        if (msg.token) {
-          full += msg.token;
-          onToken(msg.token, full);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        const raw = line.slice(5).trim();
+        if (raw === "[DONE]") return full;
+        try {
+          const msg = JSON.parse(raw);
+          if (msg.error) throw new Error(`Modell-Fehler: ${msg.error}`);
+          if (msg.meta && onMeta) { onMeta(msg.meta); continue; }
+          if (msg.token) {
+            full += msg.token;
+            onToken(msg.token, full);
+          }
+        } catch (e) {
+          if (e.message?.startsWith("Modell-Fehler")) throw e;
+          // ignore malformed chunk
         }
-      } catch {
-        // ignore malformed chunk
       }
     }
+  } catch (err) {
+    if (err.message?.startsWith("Modell-Fehler")) throw err;
+    if (full.length > 0) return full; // partial response is OK
+    throw new Error(classifyFetchError(err));
   }
   return full;
 }

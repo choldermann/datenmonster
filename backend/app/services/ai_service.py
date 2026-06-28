@@ -22,15 +22,58 @@ DEFAULT_TIMEOUT  = 120
 class AIParams:
     think:       bool  = False
     temperature: float = 0.4
+    top_p:       float = 0.95
     max_tokens:  int   = 1000
     num_ctx:     int   = 8192
 
 
 MODE_PARAMS: dict[str, AIParams] = {
-    "schnell": AIParams(think=False, temperature=0.2, max_tokens=300,  num_ctx=2048),
-    "auto":    AIParams(think=False, temperature=0.4, max_tokens=1000, num_ctx=8192),
-    "analyse": AIParams(think=True,  temperature=0.5, max_tokens=4000, num_ctx=16384),
+    "schnell": AIParams(think=False, temperature=0.2, top_p=0.90, max_tokens=300,  num_ctx=2048),
+    "auto":    AIParams(think=False, temperature=0.4, top_p=0.95, max_tokens=1000, num_ctx=8192),
+    "analyse": AIParams(think=True,  temperature=0.5, top_p=0.95, max_tokens=4000, num_ctx=16384),
 }
+
+# Modelle die think-Modus unterstützen (Basis-Name ohne Tag)
+_THINKING_MODELS = {
+    "qwen3", "qwen3.5", "qwen3-moe",
+    "deepseek-r1", "deepseek-r1-distill-qwen", "deepseek-r1-distill-llama",
+    "phi4", "phi4-reasoning",
+}
+
+# Capability-Registry: Basis-Modellname → Fähigkeiten
+MODEL_CAPABILITIES: dict[str, dict] = {
+    "qwen3":          {"supportsThinking": True,  "supportsVision": False, "supportsTools": True},
+    "qwen3.5":        {"supportsThinking": True,  "supportsVision": False, "supportsTools": True},
+    "qwen3-moe":      {"supportsThinking": True,  "supportsVision": False, "supportsTools": True},
+    "qwen2.5":        {"supportsThinking": False, "supportsVision": False, "supportsTools": True},
+    "qwen2.5-coder":  {"supportsThinking": False, "supportsVision": False, "supportsTools": True},
+    "gemma3":         {"supportsThinking": False, "supportsVision": True,  "supportsTools": True},
+    "gemma3n":        {"supportsThinking": False, "supportsVision": True,  "supportsTools": False},
+    "llama3.2":       {"supportsThinking": False, "supportsVision": True,  "supportsTools": True},
+    "llama3.3":       {"supportsThinking": False, "supportsVision": False, "supportsTools": True},
+    "llama4":         {"supportsThinking": False, "supportsVision": True,  "supportsTools": True},
+    "mistral-small":  {"supportsThinking": False, "supportsVision": True,  "supportsTools": True},
+    "phi4":           {"supportsThinking": True,  "supportsVision": False, "supportsTools": True},
+    "phi4-mini":      {"supportsThinking": False, "supportsVision": False, "supportsTools": True},
+    "phi4-reasoning": {"supportsThinking": True,  "supportsVision": False, "supportsTools": False},
+    "deepseek-r1":    {"supportsThinking": True,  "supportsVision": False, "supportsTools": False},
+    "granite3.3":     {"supportsThinking": False, "supportsVision": False, "supportsTools": True},
+}
+
+
+def get_model_caps(model_name: str) -> dict:
+    base = model_name.split(":")[0].lower()
+    if base in MODEL_CAPABILITIES:
+        return MODEL_CAPABILITIES[base]
+    # Prefix-Suche (z.B. "deepseek-r1-distill-qwen" → "deepseek-r1")
+    for key, caps in MODEL_CAPABILITIES.items():
+        if base.startswith(key):
+            return caps
+    return {"supportsThinking": False, "supportsVision": False, "supportsTools": False}
+
+
+def model_supports_think(model_name: str) -> bool:
+    return get_model_caps(model_name).get("supportsThinking", False)
 
 # Preferred model candidates per query category (ordered by preference)
 _AUTO_PREFERENCE: dict[str, list[str]] = {
@@ -115,9 +158,12 @@ class AIService:
             "stream":   True,
         }
         if params is not None:
-            payload["think"] = params.think
+            effective_model = model or self.model
+            if model_supports_think(effective_model):
+                payload["think"] = params.think
             payload["options"] = {
                 "temperature": params.temperature,
+                "top_p":       params.top_p,
                 "num_predict": params.max_tokens,
                 "num_ctx":     params.num_ctx,
             }

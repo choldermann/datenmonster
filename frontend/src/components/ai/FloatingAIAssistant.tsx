@@ -218,11 +218,20 @@ export default function FloatingAIAssistant() {
         if (meta?.model) setAiModel(meta.model);
       });
     } catch (e: any) {
+      const msg = e?.message || "KI nicht verfügbar";
+      const isOllamaError = msg.toLowerCase().includes("ollama");
+      const isNetworkError = msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk");
+      let display = msg;
+      if (isNetworkError && !isOllamaError) {
+        // Backend not reachable — re-check AI status
+        setAiAvailable(false);
+        display = "Backend nicht erreichbar. Bitte Seite neu laden.";
+      }
       setMessages(prev => {
         const updated = [...prev];
         updated[updated.length - 1] = {
           role: "assistant",
-          content: `Fehler: ${e.message || "KI nicht verfügbar"}`,
+          content: `⚠ ${display}`,
           streaming: false,
         };
         return updated;

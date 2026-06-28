@@ -11,7 +11,7 @@ from app.core.database import get_db
 log = logging.getLogger("datenmonster")
 from app.api.auth import get_current_user
 from app.models.user import User
-from app.services.ai_service import build_ai_service, PRESET_MODELS, MODE_PARAMS, select_auto_model, AIParams
+from app.services.ai_service import build_ai_service, PRESET_MODELS, MODE_PARAMS, select_auto_model, AIParams, get_model_caps
 from app.services.ai_context_builder import AIContextBuilder
 
 router = APIRouter(prefix="/api/ai", tags=["ai"])
@@ -409,15 +409,22 @@ async def chat(
     default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
 
     # Modell + Parameter wählen
-    params: AIParams = MODE_PARAMS.get(body.mode, MODE_PARAMS["auto"])
     model_used = default_model
     category = "medium"
 
     if body.mode == "auto":
         model_used, category = await select_auto_model(body.message, base_url, default_model)
-        if category == "agent":
-            from dataclasses import replace
-            params = replace(params, think=True, max_tokens=2000)
+        # Auto-Modus wählt auch Parameter basierend auf Komplexität
+        if category == "simple":
+            params: AIParams = MODE_PARAMS["schnell"]
+        elif category in ("complex", "agent"):
+            params = MODE_PARAMS["analyse"]
+        else:
+            params = MODE_PARAMS["auto"]
+    else:
+        params = MODE_PARAMS.get(body.mode, MODE_PARAMS["auto"])
+
+    caps = get_model_caps(model_used)
 
     page = body.page_context.get("page", "")
     description = body.page_context.get("description", "")
@@ -440,8 +447,8 @@ async def chat(
     messages.append({"role": "user", "content": body.message})
 
     async def generate():
-        # Erstes Event: Metadaten (Modell, Kategorie, Modus)
-        yield f"data: {json.dumps({'meta': {'model': model_used, 'category': category, 'mode': body.mode}})}\n\n"
+        # Erstes Event: Metadaten (Modell, Kategorie, Modus, Capabilities)
+        yield f"data: {json.dumps({'meta': {'model': model_used, 'category': category, 'mode': body.mode, 'caps': caps}})}\n\n"
         async for token in svc._stream(messages, system, params=params, model=model_used):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"
