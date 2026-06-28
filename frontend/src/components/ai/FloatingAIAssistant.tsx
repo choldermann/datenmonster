@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, X, Send, Loader2, ChevronDown, Trash2 } from "lucide-react";
+import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check } from "lucide-react";
 import { useAIAssistant, PageContext } from "../../contexts/AIAssistantContext";
-import { streamRequest } from "../../services/aiService";
+import { streamRequest, generateNodes } from "../../services/aiService";
 
 const ACCENT = "#fce499";
 const BG = "rgba(14, 14, 28, 0.97)";
@@ -48,13 +48,46 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
+type GenMode = "idle" | "input" | "loading" | "preview";
+
+function nodePreviewLabel(node: any): string {
+  switch (node.node_type) {
+    case "transform":
+      return `Transform (${node.transform_type || "?"}) → ${node.output_field || "?"}`;
+    case "constant":
+      return `Konstante (${node.const_type || "?"}) → ${node.output_field || "?"}`;
+    case "agg": {
+      const fs = (node.fields || []).map((f: any) => `${f.func}(${f.input_field}) → ${f.output_field}`).join(", ");
+      return `Aggregation: ${fs || "?"}`;
+    }
+    case "calc":
+      return `Fensterfunktion (${node.calc_type || "?"}) → ${node.output_field || "?"}`;
+    case "lookup":
+      return `Lookup in "${node.lookup_dataset_name || "?"}" → ${(node.output_mappings || []).map((m: any) => m.output_field).join(", ") || "?"}`;
+    case "python":
+      return `Python → ${(node.output_fields || []).join(", ") || "?"}`;
+    case "expr": {
+      const fs = (node.output_fields || []).map((f: any) => `${f.name}: ${f.expr}`).join(", ");
+      return `Ausdruck: ${fs || "?"}`;
+    }
+    case "data_quality":
+      return `Datenqualität: ${(node.rules || []).map((r: any) => `${r.field}(${r.type})`).join(", ") || "?"}`;
+    default:
+      return node.node_type || "Unbekannter Node";
+  }
+}
+
 export default function FloatingAIAssistant() {
-  const { isOpen, setIsOpen, pageContext } = useAIAssistant();
+  const { isOpen, setIsOpen, pageContext, callGenerateNodes } = useAIAssistant();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [aiModel, setAiModel] = useState<string | null>(null);
+  const [genMode, setGenMode] = useState<GenMode>("idle");
+  const [genDescription, setGenDescription] = useState("");
+  const [genTokens, setGenTokens] = useState("");
+  const [genResult, setGenResult] = useState<{ nodes: any[]; explanation: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<boolean>(false);
@@ -207,6 +240,57 @@ export default function FloatingAIAssistant() {
     setMessages([]);
   };
 
+  const resetGenMode = () => {
+    setGenMode("idle");
+    setGenDescription("");
+    setGenTokens("");
+    setGenResult(null);
+  };
+
+  const handleGenerate = async () => {
+    if (!genDescription.trim()) return;
+    setGenMode("loading");
+    setGenTokens("");
+    setGenResult(null);
+
+    const canvasDatasets = (pageContext?.currentData as any)?.canvasDatasets ?? [];
+
+    try {
+      const result = await generateNodes(
+        genDescription,
+        canvasDatasets,
+        (token: string) => setGenTokens(prev => prev + token),
+      );
+      if (result && Array.isArray(result.nodes) && result.nodes.length > 0) {
+        setGenResult(result);
+        setGenMode("preview");
+      } else {
+        throw new Error("Keine Nodes generiert – bitte Beschreibung präzisieren");
+      }
+    } catch (e: any) {
+      setGenMode("input");
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Fehler beim Generieren: ${e.message}`,
+        streaming: false,
+      }]);
+      resetGenMode();
+    }
+  };
+
+  const handleApplyNodes = () => {
+    if (!genResult) return;
+    callGenerateNodes(genResult);
+    const n = genResult.nodes.length;
+    const explanation = genResult.explanation;
+    setMessages([{
+      role: "assistant",
+      content: `✅ ${n} Node${n !== 1 ? "s" : ""} wurden zum Mapping hinzugefügt.\n\n${explanation || ""}`,
+      streaming: false,
+    }]);
+    resetGenMode();
+  };
+
   const pageLabel = pageContext?.title ?? "Datenmonster";
 
   return (
@@ -323,6 +407,159 @@ export default function FloatingAIAssistant() {
             </button>
           </div>
 
+          {/* Generate-Node-Panel (overlay) */}
+          {genMode !== "idle" && (
+            <div style={{
+              position: "absolute",
+              inset: 0,
+              top: 49,
+              bottom: 57,
+              backgroundColor: BG,
+              display: "flex",
+              flexDirection: "column",
+              padding: "14px",
+              gap: 10,
+              zIndex: 10,
+              borderRadius: "0 0 12px 12px",
+              overflowY: "auto",
+            }}>
+              {/* Panel-Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <Wand2 size={14} color={ACCENT} />
+                <span style={{ fontSize: 12, fontWeight: 700, color: ACCENT }}>Nodes generieren</span>
+                <button
+                  onClick={resetGenMode}
+                  style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", padding: 2, display: "flex" }}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+
+              {/* Input-Modus */}
+              {genMode === "input" && (
+                <>
+                  <textarea
+                    value={genDescription}
+                    onChange={e => setGenDescription(e.target.value)}
+                    placeholder={"z.B. \"Summiere den Umsatz pro Kunde, formatiere die Zahl und füge das heutige Datum als Export-Datum hinzu\""}
+                    rows={6}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter" && e.ctrlKey) handleGenerate(); }}
+                    style={{
+                      flex: 1,
+                      resize: "none",
+                      backgroundColor: "rgba(255,255,255,0.05)",
+                      border: `1px solid ${BORDER}`,
+                      borderRadius: 8,
+                      color: "rgba(255,255,255,0.85)",
+                      fontSize: 12,
+                      padding: "10px 12px",
+                      outline: "none",
+                      fontFamily: "inherit",
+                      lineHeight: 1.5,
+                    }}
+                  />
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
+                    Tipp: Nenne Felder und gewünschte Ausgaben. Strg+Enter zum Generieren.
+                  </div>
+                  <button
+                    onClick={handleGenerate}
+                    disabled={!genDescription.trim()}
+                    style={{
+                      padding: "9px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      backgroundColor: genDescription.trim() ? ACCENT : "rgba(255,255,255,0.08)",
+                      color: genDescription.trim() ? "#111" : "rgba(255,255,255,0.2)",
+                      cursor: genDescription.trim() ? "pointer" : "default",
+                      fontSize: 12, fontWeight: 700,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Wand2 size={13} /> Generieren
+                  </button>
+                </>
+              )}
+
+              {/* Lade-Modus */}
+              {genMode === "loading" && (
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Loader2 size={10} className="animate-spin" />
+                    KI denkt nach...
+                  </div>
+                  <pre style={{
+                    fontSize: 10, color: "rgba(255,255,255,0.35)",
+                    whiteSpace: "pre-wrap", wordBreak: "break-all",
+                    fontFamily: "monospace", margin: 0, lineHeight: 1.4,
+                  }}>{genTokens}</pre>
+                </div>
+              )}
+
+              {/* Vorschau-Modus */}
+              {genMode === "preview" && genResult && (
+                <>
+                  {genResult.explanation && (
+                    <div style={{
+                      fontSize: 11, color: "rgba(255,255,255,0.65)",
+                      backgroundColor: "rgba(255,255,255,0.04)",
+                      borderRadius: 8, padding: "8px 10px",
+                      border: `1px solid ${BORDER}`,
+                      lineHeight: 1.55, flexShrink: 0,
+                    }}>
+                      {genResult.explanation}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>
+                    {genResult.nodes.length} Node{genResult.nodes.length !== 1 ? "s" : ""} werden erstellt:
+                  </div>
+                  <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+                    {genResult.nodes.map((node: any, i: number) => (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "flex-start", gap: 8,
+                        padding: "7px 10px", borderRadius: 8,
+                        backgroundColor: "rgba(255,255,255,0.04)",
+                        border: `1px solid ${BORDER}`,
+                        fontSize: 11, color: "rgba(255,255,255,0.7)",
+                      }}>
+                        <span style={{ color: ACCENT, fontWeight: 700, minWidth: 16, fontSize: 10, paddingTop: 1 }}>{i + 1}</span>
+                        <span style={{ lineHeight: 1.45 }}>{nodePreviewLabel(node)}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      onClick={handleApplyNodes}
+                      style={{
+                        flex: 1, padding: "9px 8px",
+                        borderRadius: 8, border: "none",
+                        backgroundColor: ACCENT, color: "#111",
+                        fontSize: 12, fontWeight: 700, cursor: "pointer",
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                      }}
+                    >
+                      <Check size={13} /> Übernehmen
+                    </button>
+                    <button
+                      onClick={() => { setGenMode("input"); setGenResult(null); setGenTokens(""); }}
+                      style={{
+                        flex: 1, padding: "9px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${BORDER}`,
+                        backgroundColor: "transparent",
+                        color: "rgba(255,255,255,0.4)",
+                        fontSize: 12, cursor: "pointer",
+                      }}
+                    >
+                      Verwerfen
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* Messages */}
           <div style={{
             flex: 1,
@@ -346,6 +583,33 @@ export default function FloatingAIAssistant() {
                       Ich bin dein KI-Assistent für {pageLabel}.
                     </p>
                     <SuggestedQuestions pageContext={pageContext} onSelect={q => { setInput(q); inputRef.current?.focus(); }} />
+                    {pageContext?.page === "mapping_editor" && (
+                      <button
+                        onClick={() => setGenMode("input")}
+                        style={{
+                          marginTop: 12,
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: `1px dashed rgba(252,228,153,0.3)`,
+                          backgroundColor: "rgba(252,228,153,0.05)",
+                          color: ACCENT,
+                          cursor: "pointer",
+                          fontSize: 11,
+                          fontWeight: 600,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 7,
+                          transition: "all 0.15s",
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.1)"; e.currentTarget.style.borderColor = "rgba(252,228,153,0.5)"; }}
+                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.05)"; e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; }}
+                      >
+                        <Wand2 size={13} />
+                        Nodes aus Beschreibung generieren
+                      </button>
+                    )}
                   </>
                 )}
               </div>

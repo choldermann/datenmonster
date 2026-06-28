@@ -38,7 +38,7 @@ export default function MappingEditor() {
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
   const canEdit = !activeProject || activeProject.role !== "viewer";
-  const { setPageContext } = useAIAssistant();
+  const { setPageContext, setGenerateNodesCallback } = useAIAssistant();
 
   const [name, setName] = useState("Neues Mapping");
   const [saving, setSaving] = useState(false);
@@ -181,6 +181,117 @@ export default function MappingEditor() {
     setTargetColumnTypes(activeTarget?.target_column_types || {});
   }, [activeTargetId, targets]);
 
+  const insertGeneratedNodes = useCallback((result: { nodes: any[]; explanation: string }) => {
+    const rawNodes = result?.nodes;
+    if (!Array.isArray(rawNodes) || rawNodes.length === 0) return;
+
+    const allYs = [
+      ...canvasNodes.map(n => (n.y || 0) + 250),
+      ...transformNodes.map(n => n.y || 0),
+      ...constantNodes.map(n => n.y || 0),
+      ...aggNodes.map(n => n.y || 0),
+      ...calcNodes.map(n => n.y || 0),
+      ...lookupNodes.map(n => n.y || 0),
+      ...pythonNodes.map(n => n.y || 0),
+      ...exprNodes.map(n => n.y || 0),
+      ...qualityNodes.map(n => n.y || 0),
+    ];
+    const startY = allYs.length > 0 ? Math.max(...allYs) + 80 : 400;
+    const newId = () => Math.random().toString(36).slice(2, 9);
+    const pos = (idx: number) => ({
+      x: 80 + (idx % 4) * 240,
+      y: startY + Math.floor(idx / 4) * 190,
+    });
+
+    const newTransforms: any[] = [];
+    const newConstants: any[] = [];
+    const newAggs: any[] = [];
+    const newCalcs: any[] = [];
+    const newLookups: any[] = [];
+    const newPython: any[] = [];
+    const newExprs: any[] = [];
+    const newQuality: any[] = [];
+
+    rawNodes.forEach((n: any, idx: number) => {
+      const { x, y } = pos(idx);
+      switch (n.node_type) {
+        case "transform":
+          newTransforms.push({
+            id: newId(), x, y,
+            type: n.transform_type || "text_trim",
+            config: defaultConfig(n.transform_type || "text_trim"),
+            inputs: n.input_field ? [{ source_field: n.input_field }] : [],
+            output_field: n.output_field || `transform_${Date.now()}`,
+          });
+          break;
+        case "constant":
+          newConstants.push({
+            id: newId(), x, y,
+            const_type: n.const_type || "static_text",
+            const_value: n.const_value || "",
+            output_field: n.output_field || `konstante_${Date.now()}`,
+          });
+          break;
+        case "agg":
+          newAggs.push({ id: newId(), x, y, fields: n.fields || [] });
+          break;
+        case "calc":
+          newCalcs.push({
+            id: newId(), x, y,
+            calc_type: n.calc_type || "cumsum",
+            input_field: n.input_field || "",
+            output_field: n.output_field || `calc_${Date.now()}`,
+            order_field: n.order_field || "",
+            order_dir: n.order_dir || "asc",
+            group_field: n.group_field || "",
+            window_size: n.window_size || 3,
+          });
+          break;
+        case "lookup": {
+          const dsMatch = allDatasets.find((d: any) => d.name === n.lookup_dataset_name);
+          newLookups.push({
+            id: newId(), x, y,
+            input_field: n.input_field || "",
+            lookup_dataset_id: dsMatch?.id ?? null,
+            lookup_key_col: n.lookup_key_col || "",
+            on_missing: "null",
+            output_mappings: n.output_mappings || [],
+          });
+          break;
+        }
+        case "python":
+          newPython.push({ id: newId(), x, y, script: n.script || "", output_fields: n.output_fields || [] });
+          break;
+        case "expr":
+          newExprs.push({ id: newId(), x, y, label: n.label || "Expression", output_fields: n.output_fields || [] });
+          break;
+        case "data_quality":
+          newQuality.push({ id: newId(), x, y, label: n.label || "Datenqualität", rules: n.rules || [] });
+          break;
+      }
+    });
+
+    if (newTransforms.length) setTransformNodes(prev => [...prev, ...newTransforms]);
+    if (newConstants.length) setConstantNodes(prev => [...prev, ...newConstants]);
+    if (newAggs.length) setAggNodes(prev => [...prev, ...newAggs]);
+    if (newCalcs.length) setCalcNodes(prev => [...prev, ...newCalcs]);
+    if (newLookups.length) setLookupNodes(prev => [...prev, ...newLookups]);
+    if (newPython.length) setPythonNodes(prev => [...prev, ...newPython]);
+    if (newExprs.length) setExprNodes(prev => [...prev, ...newExprs]);
+    if (newQuality.length) setQualityNodes(prev => [...prev, ...newQuality]);
+    setTimeout(triggerLineDraw, 100);
+  }, [canvasNodes, transformNodes, constantNodes, aggNodes, calcNodes, lookupNodes, pythonNodes, exprNodes, qualityNodes, allDatasets, triggerLineDraw]);
+
+  const insertGeneratedNodesRef = useRef<any>(null);
+  useEffect(() => {
+    insertGeneratedNodesRef.current = insertGeneratedNodes;
+  }, [insertGeneratedNodes]);
+
+  useEffect(() => {
+    setGenerateNodesCallback((result: any) => insertGeneratedNodesRef.current?.(result));
+    return () => setGenerateNodesCallback(null);
+  }, [setGenerateNodesCallback]);
+
   useEffect(() => {
     setPageContext({
       page: "mapping_editor",
@@ -189,11 +300,16 @@ export default function MappingEditor() {
       currentData: {
         mappingId: id ?? null,
         mappingName: name,
+        canvasDatasets: canvasNodes.map(n => ({
+          id: n.dataset_id,
+          name: n.dataset_name,
+          columns: (n.dataset_columns || []).slice(0, 40).map((c: any) => (typeof c === "string" ? c : c.name || "")),
+        })),
         ...(activeNodeInfo ? { activeNode: activeNodeInfo } : {}),
       },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id, activeNodeInfo]);
+  }, [setPageContext, name, id, activeNodeInfo, canvasNodes]);
   const setConnections = (updater) => {
     setTargets((prev) => prev.map((t) => t.id === (activeTarget?.id) ? {
       ...t, fields: typeof updater === "function" ? updater(t.fields || []) : updater

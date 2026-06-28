@@ -424,6 +424,102 @@ async def chat(
     return _sse_stream(svc._stream(messages, system))
 
 
+# ── Node-Generierung ─────────────────────────────────────────────────────────
+
+_GENERATE_NODES_SYSTEM = """\
+Du bist ein ETL-Konfigurator für Datenmonster. Erstelle Mapping-Nodes aus einer Beschreibung.
+
+WICHTIG: Antworte NUR mit einem JSON-Objekt. Kein erklärender Text davor oder danach, kein Markdown.
+
+VERFÜGBARE NODE-TYPEN (node_type + Felder):
+
+"transform" – ein Feld umwandeln
+  transform_type: number_format | date_format | text_upper | text_lower | text_trim | text_replace | concat | substr
+  input_field: Quellfeld  |  output_field: Ausgabefeld
+
+"constant" – konstanter Wert
+  const_type: static_text | static_number | today_date | row_number | uuid
+  const_value: Wert (nur bei static_*)  |  output_field: Ausgabefeld
+
+"agg" – Aggregation / GROUP BY
+  fields: [{ func: SUM|AVG|COUNT|MIN|MAX|COUNT_DISTINCT|FIRST|LAST, input_field, output_field }]
+
+"calc" – Fensterfunktion (ohne GROUP BY, über Partition)
+  calc_type: cumsum | rank | row_number | moving_avg | lead | lag
+  input_field  |  output_field  |  order_field  |  group_field (optional)  |  window_size (default 3)
+
+"lookup" – Wert aus anderem Dataset nachschlagen
+  input_field: Schlüsselfeld im Quell-Dataset
+  lookup_dataset_name: Name des Lookup-Datasets
+  lookup_key_col: Schlüsselspalte im Lookup-Dataset
+  output_mappings: [{ lookup_col: Spalte im Lookup-Dataset, output_field: Ausgabefeld }]
+
+"python" – freies Python-Skript pro Zeile
+  script: "row['neu'] = row['alt'] * 2"
+  output_fields: ["neu"]
+
+"expr" – Formel/Ausdruck
+  label: Bezeichnung
+  output_fields: [{ name, expr: "row['a'] + row['b']", type: float|str|int|bool }]
+
+"data_quality" – Datenqualitätsprüfung
+  label: Bezeichnung
+  rules: [{ field, type: not_null|email|regex|min_length|max_length|in_list, pattern (nur bei regex) }]
+
+ANTWORT (genau dieses JSON, nichts anderes):
+{"nodes":[...],"explanation":"Kurze Erklärung auf Deutsch was erstellt wurde"}\
+"""
+
+
+class GenerateNodesRequest(BaseModel):
+    description: str
+    available_datasets: list[dict] = []
+    mapping_id: Optional[int] = None
+
+
+@router.post("/generate-nodes")
+async def generate_nodes(
+    body: GenerateNodesRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Generiert Mapping-Nodes aus einer natürlichsprachlichen Beschreibung (SSE)."""
+    svc = _require_ai(db)
+
+    ds_info = ""
+    if body.available_datasets:
+        ds_info = f"\nVerfügbare Datasets auf dem Canvas:\n{json.dumps(body.available_datasets[:8], ensure_ascii=False)}\n"
+    user_msg = f"{ds_info}\nAufgabe: {body.description}"
+
+    async def generate():
+        import re as _re
+        tokens = []
+        async for token in svc.stream_with_context(user_msg, _GENERATE_NODES_SYSTEM):
+            tokens.append(token)
+            yield f"data: {json.dumps({'token': token})}\n\n"
+
+        raw = "".join(tokens)
+        cleaned = _re.sub(r"^```[a-zA-Z]*\s*", "", raw.strip(), flags=_re.MULTILINE)
+        cleaned = _re.sub(r"```\s*$", "", cleaned, flags=_re.MULTILINE).strip()
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start == -1 or end == -1:
+            yield f"data: {json.dumps({'error': 'KI hat kein gültiges JSON zurückgegeben'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        try:
+            parsed = json.loads(cleaned[start:end + 1])
+            nodes = parsed.get("nodes", [])
+            explanation = parsed.get("explanation", "")
+            print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
+            yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'JSON-Parsing fehlgeschlagen: {str(e)}'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 # ── Mapping-Vorschlag ────────────────────────────────────────────────────────
 
 class SuggestMappingRequest(BaseModel):

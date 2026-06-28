@@ -186,6 +186,42 @@ export async function suggestDatasets(connectionId, description, selectedTables,
 export const suggestMapping = (mappingId, onToken) =>
   streamRequest("/suggest-mapping", { mapping_id: mappingId }, onToken);
 
+export async function generateNodes(description, availableDatasets, onToken) {
+  const resp = await fetch(`${BASE}/generate-nodes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ description, available_datasets: availableDatasets ?? [] }),
+  });
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.detail || `HTTP ${resp.status}`);
+  }
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith("data:")) continue;
+      const raw = line.slice(5).trim();
+      if (raw === "[DONE]") return null;
+      try {
+        const msg = JSON.parse(raw);
+        if (msg.error) throw new Error(msg.error);
+        if (msg.result) return msg.result; // { nodes, explanation }
+        if (msg.token && onToken) onToken(msg.token);
+      } catch (e) {
+        if (e.message && !e.message.startsWith("JSON")) throw e;
+      }
+    }
+  }
+  return null;
+}
+
 export const chatStream = (message, history, pageContext, onToken) =>
   streamRequest("/chat", { message, history: history ?? [], page_context: pageContext ?? {} }, onToken);
 

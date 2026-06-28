@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useRef, ReactNode } from "react";
 
 export interface PageAction {
   label: string;
@@ -19,6 +19,8 @@ interface AIAssistantContextType {
   setPageContext: (ctx: PageContext | null) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
+  setGenerateNodesCallback: (fn: ((result: any) => void) | null) => void;
+  callGenerateNodes: (result: any) => void;
 }
 
 const AIAssistantContext = createContext<AIAssistantContextType>({
@@ -26,18 +28,29 @@ const AIAssistantContext = createContext<AIAssistantContextType>({
   setPageContext: () => {},
   isOpen: false,
   setIsOpen: () => {},
+  setGenerateNodesCallback: () => {},
+  callGenerateNodes: () => {},
 });
 
 export function AIAssistantProvider({ children }: { children: ReactNode }) {
   const [pageContext, _setPageContext] = useState<PageContext | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const generateNodesCallbackRef = useRef<((result: any) => void) | null>(null);
 
   const setPageContext = useCallback((ctx: PageContext | null) => {
     _setPageContext(ctx);
   }, []);
 
+  const setGenerateNodesCallback = useCallback((fn: ((result: any) => void) | null) => {
+    generateNodesCallbackRef.current = fn;
+  }, []);
+
+  const callGenerateNodes = useCallback((result: any) => {
+    generateNodesCallbackRef.current?.(result);
+  }, []);
+
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes }}>
       {children}
     </AIAssistantContext.Provider>
   );
