@@ -273,7 +273,7 @@ function AiSettings() {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const effectiveModel = useCustom ? customModel : form.ai_model;
-  const modelInstalled = installedModels.some(m => m === effectiveModel || m.startsWith(effectiveModel + ":"));
+  const modelInstalled = installedModels.some(m => m.name === effectiveModel || m.name?.startsWith(effectiveModel + ":"));
 
   const handlePull = async () => {
     setPulling(true);
@@ -294,7 +294,7 @@ function AiSettings() {
       });
       setPullProgress({ status: "Fertig!", percent: 100, done: true });
       aiDownloadStore.set({ pulling: false, status: "Fertig!", percent: 100, done: true });
-      setInstalledModels(prev => prev.includes(effectiveModel) ? prev : [...prev, effectiveModel]);
+      setInstalledModels(prev => prev.some(m => m.name === effectiveModel) ? prev : [...prev, { name: effectiveModel }]);
       setTimeout(() => {
         setPullProgress(null);
         aiDownloadStore.set({ pulling: false, model: null, status: null, percent: null, done: false });
@@ -380,7 +380,7 @@ function AiSettings() {
               <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, paddingRight: 2 }}>
                 {PRESET_MODELS.map(m => {
                   const isSelected = form.ai_model === m.id;
-                  const isInstalled = installedModels.some(i => i === m.id || i.startsWith(m.id + ":"));
+                  const isInstalled = installedModels.some(i => i.name === m.id || i.name?.startsWith(m.id + ":"));
                   return (
                     <div key={m.id}
                       onClick={() => { set("ai_model", m.id); setPullProgress(null); }}
