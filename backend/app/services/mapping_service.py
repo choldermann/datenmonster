@@ -322,6 +322,416 @@ def run_mapping_object(
 
 # ─── Mapping-Vorschau / Export-Engine ─────────────────────────────────────────
 
+
+def _apply_transform_nodes(flat: dict, transform_nodes: list, _auto_id_counters: dict) -> dict:
+    """Wendet Transform-Nodes zeilenweise an. _auto_id_counters wird in-place mutiert."""
+    def get_val(field):
+        if field is None:
+            return None
+        v = flat.get(field)
+        if v is not None:
+            return v
+        for k, val in flat.items():
+            if k.endswith("." + field) or k.endswith("_" + field):
+                return val
+        return None
+    for tn in (transform_nodes or []):
+        tn_type = tn.get("type", "number_format")
+        cfg = tn.get("config", {})
+        inputs = tn.get("inputs", [])
+        out_field = tn.get("output_field", f"transform_{tn.get('id','')}")
+        try:
+            if tn_type == "number_format":
+                src = inputs[0]["source_field"] if inputs else None
+                val = get_val(src) if src else ""
+                val = "" if val is None else val
+                try:
+                    num = float(str(val).replace(",", "."))
+                    decimals = int(cfg.get("decimals", 2))
+                    dec_sep = cfg.get("decimal_sep", ",")
+                    thou_sep = cfg.get("thousands_sep", ".")
+                    formatted = f"{num:,.{decimals}f}"
+                    # swap separators: replace . with placeholder, , with dec_sep, placeholder with thou_sep
+                    formatted = formatted.replace(",", "THOU").replace(".", dec_sep).replace("THOU", thou_sep)
+                    flat[out_field] = formatted
+                except (ValueError, TypeError):
+                    flat[out_field] = str(val)
+
+            elif tn_type == "date_format":
+                from datetime import datetime
+                src = inputs[0]["source_field"] if inputs else None
+                val = get_val(src) if src else None
+                val = str(val).strip() if val is not None else ""
+                out_fmt = cfg.get("output_format", "%d.%m.%Y")
+                in_fmt  = cfg.get("input_format", "%Y-%m-%d")
+                if not val:
+                    flat[out_field] = ""
+                else:
+                    dt = None
+                    attempts = [
+                        in_fmt,
+                        "%Y-%m-%d %H:%M:%S.%f",
+                        "%Y-%m-%d %H:%M:%S",
+                        "%Y-%m-%dT%H:%M:%S.%f",
+                        "%Y-%m-%dT%H:%M:%S",
+                        "%Y-%m-%d",
+                        "%d.%m.%Y %H:%M:%S",
+                        "%d.%m.%Y",
+                        "%d/%m/%Y",
+                        "%m/%d/%Y",
+                    ]
+                    for fmt in dict.fromkeys(attempts):
+                        try:
+                            dt = datetime.strptime(val, fmt)
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                    if dt:
+                        flat[out_field] = dt.strftime(out_fmt)
+                    else:
+                        try:
+                            import pandas as pd
+                            flat[out_field] = pd.to_datetime(val).strftime(out_fmt)
+                        except Exception:
+                            flat[out_field] = val
+
+            elif tn_type == "text":
+                src = inputs[0]["source_field"] if inputs else None
+                val = str(get_val(src) or "") if src else ""
+                op = cfg.get("operation", "trim")
+                if op == "trim":    flat[out_field] = val.strip()
+                elif op == "upper": flat[out_field] = val.upper()
+                elif op == "lower": flat[out_field] = val.lower()
+                elif op == "replace": flat[out_field] = val.replace(cfg.get("find", ""), cfg.get("replace", ""))
+                elif op == "prefix": flat[out_field] = cfg.get("affix", "") + val
+                elif op == "suffix": flat[out_field] = val + cfg.get("affix", "")
+                elif op == "substr":
+                    start = int(cfg.get("start", 0))
+                    length = cfg.get("length")
+                    flat[out_field] = val[start:start + int(length)] if length else val[start:]
+                elif op == "left":
+                    n = int(cfg.get("n", 1))
+                    flat[out_field] = val[:n]
+                elif op == "right":
+                    n = int(cfg.get("n", 1))
+                    flat[out_field] = val[-n:] if n else ""
+                elif op == "substr_range":
+                    s = max(1, int(cfg.get("range_start", 1)))
+                    e = max(s, int(cfg.get("range_end", s)))
+                    flat[out_field] = val[s - 1:e]
+                elif op == "split":
+                    delim = cfg.get("delimiter", ";")
+                    idx = max(1, int(cfg.get("part_index", 1)))
+                    parts = val.split(delim)
+                    flat[out_field] = parts[idx - 1] if idx <= len(parts) else ""
+                elif op == "length":
+                    flat[out_field] = len(val)
+                elif op == "reverse":
+                    flat[out_field] = val[::-1]
+                elif op == "regex_extract":
+                    import re as _re
+                    pattern = cfg.get("pattern", "")
+                    group = int(cfg.get("group", 0))
+                    if pattern:
+                        m = _re.search(pattern, val)
+                        flat[out_field] = m.group(group) if m else ""
+                    else:
+                        flat[out_field] = ""
+                elif op == "regex_replace":
+                    import re as _re
+                    pattern = cfg.get("pattern", "")
+                    repl = cfg.get("repl", "")
+                    flat[out_field] = _re.sub(pattern, repl, val) if pattern else val
+                else: flat[out_field] = val
+
+            elif tn_type == "number_calc":
+                src = inputs[0]["source_field"] if inputs else None
+                raw = get_val(src) if src else None
+                op  = cfg.get("operation", "add")
+                if op == "auto_id":
+                    flat[out_field] = _auto_id_counters.get(out_field, cfg.get("start_at", 1) - 1) + 1
+                    _auto_id_counters[out_field] = flat[out_field]
+                else:
+                    try:
+                        num = float(str(raw).replace(",", ".")) if raw is not None else 0.0
+                        val2 = float(cfg.get("value", 0))
+                        if   op == "add":      flat[out_field] = num + val2
+                        elif op == "subtract": flat[out_field] = num - val2
+                        elif op == "multiply": flat[out_field] = num * val2
+                        elif op == "divide":   flat[out_field] = num / val2 if val2 != 0 else None
+                        elif op == "modulo":   flat[out_field] = num % val2 if val2 != 0 else None
+                        elif op == "min":      flat[out_field] = min(num, val2)
+                        elif op == "max":      flat[out_field] = max(num, val2)
+                        else:                  flat[out_field] = num
+                    except (ValueError, TypeError):
+                        flat[out_field] = None
+
+            elif tn_type == "date_calc":
+                from datetime import datetime as _dt, timedelta as _td
+                src = inputs[0]["source_field"] if inputs else None
+                raw = str(get_val(src) or "").strip() if src else ""
+                op  = cfg.get("operation", "day")
+                fmt = cfg.get("input_format", "%Y-%m-%d")
+                def _parse(s):
+                    for f in [fmt, "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y", "%Y-%m-%dT%H:%M:%S"]:
+                        try: return _dt.strptime(s, f)
+                        except: pass
+                    return None
+                if op == "now":
+                    flat[out_field] = _dt.now().strftime(cfg.get("now_format", "%Y-%m-%d %H:%M:%S"))
+                else:
+                    dt = _parse(raw)
+                    if dt is None:
+                        flat[out_field] = None
+                    elif op == "day":      flat[out_field] = dt.day
+                    elif op == "month":    flat[out_field] = dt.month
+                    elif op == "year":     flat[out_field] = dt.year
+                    elif op == "hour":     flat[out_field] = dt.hour
+                    elif op == "minute":   flat[out_field] = dt.minute
+                    elif op == "second":   flat[out_field] = dt.second
+                    elif op == "add_days":
+                        flat[out_field] = (dt + _td(days=int(cfg.get("days", 0)))).strftime(fmt)
+                    elif op == "days_diff":
+                        src2 = inputs[1]["source_field"] if len(inputs) > 1 else None
+                        raw2 = str(get_val(src2) or "").strip() if src2 else ""
+                        dt2  = _parse(raw2)
+                        flat[out_field] = (dt2 - dt).days if dt2 else None
+                    else: flat[out_field] = None
+
+            elif tn_type == "concat":
+                sep = cfg.get("separator", " ")
+                template = cfg.get("template", "")
+                parts = [str(get_val(inp["source_field"]) or "") for inp in inputs]
+                if template:
+                    try:
+                        flat[out_field] = template.format(*parts)
+                    except Exception:
+                        flat[out_field] = sep.join(parts)
+                else:
+                    flat[out_field] = sep.join(parts)
+        except Exception as te:
+            flat[out_field] = f"[Transform-Fehler: {te}]"
+    return flat
+
+
+def _run_window_calc_nodes(
+    output_rows: list, calc_nodes: list, errors: list,
+    _debug_trace, _dbg_err_idx: int,
+) -> tuple:
+    """Wendet fenster-basierte Calc-Nodes auf output_rows an. Gibt (output_rows, _dbg_err_idx) zurück."""
+    if not calc_nodes or not output_rows:
+        return output_rows, _dbg_err_idx
+    import pandas as pd
+    df_calc = pd.DataFrame(output_rows)
+
+    def _num_series(col: str):
+        """
+        Best-effort numeric parsing for preview/export formulas.
+        Handles common locale formats like:
+          - "1,23" (decimal comma)
+          - "1.234,56" (thousands dot, decimal comma)
+          - "1,234.56" (thousands comma, decimal dot)
+        """
+        if not col or col not in df_calc.columns:
+            return 0
+        s = df_calc[col]
+        try:
+            st = s.astype(str)
+        except Exception:
+            st = s
+        st = st.str.replace(" ", "", regex=False).str.strip()
+        has_comma = st.str.contains(",", na=False)
+        st = st.where(~has_comma, st.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
+        st = st.where(has_comma, st.str.replace(",", "", regex=False))
+        return pd.to_numeric(st, errors="coerce")
+
+    for cn in calc_nodes:
+        calc_type = cn.get("calc_type") or "formula"
+        input_field = cn.get("input_field", "")
+        output_field = cn.get("output_field", "")
+        order_field = cn.get("order_field", "")
+        order_dir = cn.get("order_dir", "asc")
+        group_field = cn.get("group_field", "")
+        window_size = int(cn.get("window_size") or 3)
+
+        if not output_field:
+            continue
+        # "formula" is computed row-wise earlier so connections can use it.
+        # Skip here to avoid overwriting the already-derived values with NaNs/None.
+        if calc_type == "formula":
+            continue
+        if calc_type not in ("row_number", "formula") and input_field not in df_calc.columns:
+            errors.append(f"Berechnungs-Node: Feld '{input_field}' nicht gefunden")
+            continue
+
+        try:
+            if order_field and order_field in df_calc.columns:
+                df_calc = df_calc.sort_values(order_field, ascending=(order_dir != "desc"))
+
+            grp = df_calc.groupby(group_field)[input_field] if group_field and group_field in df_calc.columns else (df_calc[input_field] if calc_type != "row_number" else df_calc)
+
+            if calc_type == "cumsum":
+                df_calc[output_field] = grp.cumsum() if group_field else df_calc[input_field].cumsum()
+            elif calc_type == "rolling_avg":
+                df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).mean()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).mean()
+            elif calc_type == "rolling_sum":
+                df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).sum()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).sum()
+            elif calc_type == "rolling_min":
+                df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).min()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).min()
+            elif calc_type == "rolling_max":
+                df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).max()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).max()
+            elif calc_type == "rank":
+                df_calc[output_field] = grp.rank(method="dense") if group_field else df_calc[input_field].rank(method="dense")
+            elif calc_type == "row_number":
+                if group_field and group_field in df_calc.columns:
+                    df_calc[output_field] = df_calc.groupby(group_field).cumcount() + 1
+                else:
+                    df_calc[output_field] = range(1, len(df_calc) + 1)
+            elif calc_type == "pct_change":
+                df_calc[output_field] = grp.pct_change() if group_field else df_calc[input_field].pct_change()
+            elif calc_type == "diff":
+                df_calc[output_field] = grp.diff() if group_field else df_calc[input_field].diff()
+            elif calc_type == "lag":
+                df_calc[output_field] = grp.transform(lambda x: x.shift(window_size)) if group_field else df_calc[input_field].shift(window_size)
+            elif calc_type == "lead":
+                df_calc[output_field] = grp.transform(lambda x: x.shift(-window_size)) if group_field else df_calc[input_field].shift(-window_size)
+            elif calc_type == "pct_of_total":
+                if group_field and group_field in df_calc.columns:
+                    df_calc[output_field] = df_calc[input_field] / df_calc.groupby(group_field)[input_field].transform("sum") * 100
+                else:
+                    _tot = df_calc[input_field].sum()
+                    df_calc[output_field] = df_calc[input_field] / _tot * 100 if _tot else 0
+
+            elif calc_type == "formula":
+                formula_parts = cn.get("formula_parts", [])
+                if formula_parts:
+                    expr_parts = []
+                    for part in formula_parts:
+                        if "op" in part:
+                            expr_parts.append(part["op"])
+                        elif part.get("type") == "number":
+                            expr_parts.append(str(float(part.get("value") or 0)))
+                        else:
+                            field = part.get("value", "")
+                            actual_col = None
+                            if field and field in df_calc.columns:
+                                actual_col = field
+                            elif field:
+                                matches = [c for c in df_calc.columns if c == field or c.endswith("." + field)]
+                                if matches:
+                                    actual_col = matches[0]
+                            if actual_col:
+                                expr_parts.append("_num_series(" + repr(actual_col) + ")")
+                            else:
+                                expr_parts.append("0")
+                    expr = " ".join(expr_parts)
+                    try:
+                        _allowed_names = {"df_calc", "pd", "_num_series"}
+                        try:
+                            _tree = _ast.parse(expr, mode="eval")
+                        except SyntaxError as _se:
+                            raise ValueError(f"Syntaxfehler in Window-Formel: {_se}")
+                        for _node in _ast.walk(_tree):
+                            if isinstance(_node, _ast.Name) and _node.id not in _allowed_names:
+                                raise ValueError(f"Unerlaubter Name in Formel: {_node.id!r}")
+                            if isinstance(_node, _ast.Attribute):
+                                if isinstance(_node.value, _ast.Name) and _node.value.id not in _allowed_names:
+                                    raise ValueError(f"Unerlaubter Attributzugriff in Formel")
+                            if isinstance(_node, (_ast.Import, _ast.ImportFrom, _ast.Call)):
+                                if isinstance(_node, _ast.Call):
+                                    fn = _node.func
+                                    if isinstance(fn, _ast.Name) and fn.id not in _allowed_names:
+                                        raise ValueError(f"Unerlaubter Funktionsaufruf: {fn.id!r}")
+                        df_calc[output_field] = eval(
+                            expr,
+                            {"df_calc": df_calc, "pd": pd, "_num_series": _num_series,
+                             "__builtins__": {}, "__import__": None},
+                        )
+                    except Exception as fe:
+                        errors.append(f"Formel-Fehler: {str(fe)[:100]}")
+                        df_calc[output_field] = None
+
+            df_calc[output_field] = df_calc[output_field].where(df_calc[output_field].notna(), other=None)
+
+        except Exception as e:
+            errors.append(f"Berechnungs-Node '{calc_type}': {str(e)[:100]}")
+
+    output_rows = _rows_to_json(df_calc.to_dict("records"))
+
+    if _debug_trace is not None:
+        _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+        _debug_trace.append({
+            "id": "calc",
+            "label": f"Berechnung ({len(calc_nodes)} Node{'s' if len(calc_nodes)>1 else ''})",
+            "type": "calc",
+            "rows_in": _prev_r,
+            "rows_out": len(output_rows),
+            "errors": len(errors) - _dbg_err_idx,
+            "duration_ms": 0,
+            "sample": output_rows[:5],
+            "icon": "calculator",
+            "meta": {},
+        })
+        _dbg_err_idx = len(errors)
+
+    return output_rows, _dbg_err_idx
+
+
+def _run_final_sort_limit(
+    output_rows: list, target_options: dict, is_preview: bool, errors: list,
+) -> list:
+    """Wendet Sortierung und Zeilenlimit aus target_options an."""
+    if target_options and output_rows:
+        _sort_fields = [sf for sf in (target_options.get("sort_fields") or []) if sf.get("field")]
+        _row_limit = target_options.get("row_limit")
+        if _sort_fields:
+            try:
+                import pandas as _pd2
+                _sort_df = _pd2.DataFrame(output_rows)
+                _valid = [sf for sf in _sort_fields if sf["field"] in _sort_df.columns]
+                if _valid:
+                    _by = [sf["field"] for sf in _valid]
+                    _asc = [sf.get("dir", "asc") == "asc" for sf in _valid]
+                    _temp_cols = {}
+                    _sort_by_temp = []
+                    for _sf in _valid:
+                        _fname = _sf["field"]
+                        _col = _sort_df[_fname]
+                        _temp_name = f"__sort__{_fname}"
+                        _converted = None
+                        try:
+                            _num = _pd2.to_numeric(_col, errors="coerce")
+                            if _num.notna().mean() >= 0.7:
+                                _converted = _num
+                        except Exception:
+                            pass
+                        if _converted is None:
+                            for _fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%d.%m.%Y %H:%M:%S.%f", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y", "%d/%m/%Y"]:
+                                try:
+                                    _conv = _pd2.to_datetime(_col, format=_fmt, errors="coerce")
+                                    if _conv.notna().mean() >= 0.7:
+                                        _converted = _conv
+                                        break
+                                except Exception:
+                                    pass
+                        if _converted is not None:
+                            _sort_df[_temp_name] = _converted
+                            _temp_cols[_fname] = _temp_name
+                            _sort_by_temp.append(_temp_name)
+                        else:
+                            _sort_by_temp.append(_fname)
+                    _sort_df = _sort_df.sort_values(by=_sort_by_temp, ascending=_asc)
+                    _sort_df = _sort_df.drop(columns=list(_temp_cols.values()), errors="ignore")
+                    output_rows = _rows_to_json(_sort_df.to_dict(orient="records"))
+            except Exception as _e:
+                errors.append(f"Sortierung fehlgeschlagen: {_e}")
+        if _row_limit and isinstance(_row_limit, int) and _row_limit > 0:
+            output_rows = output_rows[:_row_limit]
+    if is_preview and len(output_rows) > 50:
+        output_rows = output_rows[:50]
+    return output_rows
+
+
 def execute_mapping(
     canvas_nodes: List[Dict],
     connections: List[Dict],
@@ -521,197 +931,6 @@ def execute_mapping(
 
     # 3. Transform-Nodes anwenden (fügen neue Felder zum flat_row hinzu)
     _auto_id_counters: dict = {}
-
-    def apply_transform_nodes(flat: dict) -> dict:
-        def get_val(field):
-            """Robust field lookup: exact, then prefix-stripped."""
-            if field is None:
-                return None
-            v = flat.get(field)
-            if v is not None:
-                return v
-            for k, val in flat.items():
-                if k.endswith("." + field) or k.endswith("_" + field):
-                    return val
-            return None
-        for tn in (transform_nodes or []):
-            tn_type = tn.get("type", "number_format")
-            cfg = tn.get("config", {})
-            inputs = tn.get("inputs", [])
-            out_field = tn.get("output_field", f"transform_{tn.get('id','')}")
-            try:
-                if tn_type == "number_format":
-                    src = inputs[0]["source_field"] if inputs else None
-                    val = get_val(src) if src else ""
-                    val = "" if val is None else val
-                    try:
-                        num = float(str(val).replace(",", "."))
-                        decimals = int(cfg.get("decimals", 2))
-                        dec_sep = cfg.get("decimal_sep", ",")
-                        thou_sep = cfg.get("thousands_sep", ".")
-                        formatted = f"{num:,.{decimals}f}"
-                        # swap separators: replace . with placeholder, , with dec_sep, placeholder with thou_sep
-                        formatted = formatted.replace(",", "THOU").replace(".", dec_sep).replace("THOU", thou_sep)
-                        flat[out_field] = formatted
-                    except (ValueError, TypeError):
-                        flat[out_field] = str(val)
-
-                elif tn_type == "date_format":
-                    from datetime import datetime
-                    src = inputs[0]["source_field"] if inputs else None
-                    val = get_val(src) if src else None
-                    val = str(val).strip() if val is not None else ""
-                    out_fmt = cfg.get("output_format", "%d.%m.%Y")
-                    in_fmt  = cfg.get("input_format", "%Y-%m-%d")
-                    if not val:
-                        flat[out_field] = ""
-                    else:
-                        dt = None
-                        attempts = [
-                            in_fmt,
-                            "%Y-%m-%d %H:%M:%S.%f",
-                            "%Y-%m-%d %H:%M:%S",
-                            "%Y-%m-%dT%H:%M:%S.%f",
-                            "%Y-%m-%dT%H:%M:%S",
-                            "%Y-%m-%d",
-                            "%d.%m.%Y %H:%M:%S",
-                            "%d.%m.%Y",
-                            "%d/%m/%Y",
-                            "%m/%d/%Y",
-                        ]
-                        for fmt in dict.fromkeys(attempts):
-                            try:
-                                dt = datetime.strptime(val, fmt)
-                                break
-                            except (ValueError, TypeError):
-                                continue
-                        if dt:
-                            flat[out_field] = dt.strftime(out_fmt)
-                        else:
-                            try:
-                                import pandas as pd
-                                flat[out_field] = pd.to_datetime(val).strftime(out_fmt)
-                            except Exception:
-                                flat[out_field] = val
-
-                elif tn_type == "text":
-                    src = inputs[0]["source_field"] if inputs else None
-                    val = str(get_val(src) or "") if src else ""
-                    op = cfg.get("operation", "trim")
-                    if op == "trim":    flat[out_field] = val.strip()
-                    elif op == "upper": flat[out_field] = val.upper()
-                    elif op == "lower": flat[out_field] = val.lower()
-                    elif op == "replace": flat[out_field] = val.replace(cfg.get("find", ""), cfg.get("replace", ""))
-                    elif op == "prefix": flat[out_field] = cfg.get("affix", "") + val
-                    elif op == "suffix": flat[out_field] = val + cfg.get("affix", "")
-                    elif op == "substr":
-                        start = int(cfg.get("start", 0))
-                        length = cfg.get("length")
-                        flat[out_field] = val[start:start + int(length)] if length else val[start:]
-                    elif op == "left":
-                        n = int(cfg.get("n", 1))
-                        flat[out_field] = val[:n]
-                    elif op == "right":
-                        n = int(cfg.get("n", 1))
-                        flat[out_field] = val[-n:] if n else ""
-                    elif op == "substr_range":
-                        s = max(1, int(cfg.get("range_start", 1)))
-                        e = max(s, int(cfg.get("range_end", s)))
-                        flat[out_field] = val[s - 1:e]
-                    elif op == "split":
-                        delim = cfg.get("delimiter", ";")
-                        idx = max(1, int(cfg.get("part_index", 1)))
-                        parts = val.split(delim)
-                        flat[out_field] = parts[idx - 1] if idx <= len(parts) else ""
-                    elif op == "length":
-                        flat[out_field] = len(val)
-                    elif op == "reverse":
-                        flat[out_field] = val[::-1]
-                    elif op == "regex_extract":
-                        import re as _re
-                        pattern = cfg.get("pattern", "")
-                        group = int(cfg.get("group", 0))
-                        if pattern:
-                            m = _re.search(pattern, val)
-                            flat[out_field] = m.group(group) if m else ""
-                        else:
-                            flat[out_field] = ""
-                    elif op == "regex_replace":
-                        import re as _re
-                        pattern = cfg.get("pattern", "")
-                        repl = cfg.get("repl", "")
-                        flat[out_field] = _re.sub(pattern, repl, val) if pattern else val
-                    else: flat[out_field] = val
-
-                elif tn_type == "number_calc":
-                    src = inputs[0]["source_field"] if inputs else None
-                    raw = get_val(src) if src else None
-                    op  = cfg.get("operation", "add")
-                    if op == "auto_id":
-                        # _auto_id_counters persists across rows via closure – use row index
-                        flat[out_field] = _auto_id_counters.get(out_field, cfg.get("start_at", 1) - 1) + 1
-                        _auto_id_counters[out_field] = flat[out_field]
-                    else:
-                        try:
-                            num = float(str(raw).replace(",", ".")) if raw is not None else 0.0
-                            val2 = float(cfg.get("value", 0))
-                            if   op == "add":      flat[out_field] = num + val2
-                            elif op == "subtract": flat[out_field] = num - val2
-                            elif op == "multiply": flat[out_field] = num * val2
-                            elif op == "divide":   flat[out_field] = num / val2 if val2 != 0 else None
-                            elif op == "modulo":   flat[out_field] = num % val2 if val2 != 0 else None
-                            elif op == "min":      flat[out_field] = min(num, val2)
-                            elif op == "max":      flat[out_field] = max(num, val2)
-                            else:                  flat[out_field] = num
-                        except (ValueError, TypeError):
-                            flat[out_field] = None
-
-                elif tn_type == "date_calc":
-                    from datetime import datetime as _dt, timedelta as _td
-                    src = inputs[0]["source_field"] if inputs else None
-                    raw = str(get_val(src) or "").strip() if src else ""
-                    op  = cfg.get("operation", "day")
-                    fmt = cfg.get("input_format", "%Y-%m-%d")
-                    def _parse(s):
-                        for f in [fmt, "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d.%m.%Y", "%Y-%m-%dT%H:%M:%S"]:
-                            try: return _dt.strptime(s, f)
-                            except: pass
-                        return None
-                    if op == "now":
-                        flat[out_field] = _dt.now().strftime(cfg.get("now_format", "%Y-%m-%d %H:%M:%S"))
-                    else:
-                        dt = _parse(raw)
-                        if dt is None:
-                            flat[out_field] = None
-                        elif op == "day":      flat[out_field] = dt.day
-                        elif op == "month":    flat[out_field] = dt.month
-                        elif op == "year":     flat[out_field] = dt.year
-                        elif op == "hour":     flat[out_field] = dt.hour
-                        elif op == "minute":   flat[out_field] = dt.minute
-                        elif op == "second":   flat[out_field] = dt.second
-                        elif op == "add_days":
-                            flat[out_field] = (dt + _td(days=int(cfg.get("days", 0)))).strftime(fmt)
-                        elif op == "days_diff":
-                            src2 = inputs[1]["source_field"] if len(inputs) > 1 else None
-                            raw2 = str(get_val(src2) or "").strip() if src2 else ""
-                            dt2  = _parse(raw2)
-                            flat[out_field] = (dt2 - dt).days if dt2 else None
-                        else: flat[out_field] = None
-
-                elif tn_type == "concat":
-                    sep = cfg.get("separator", " ")
-                    template = cfg.get("template", "")
-                    parts = [str(get_val(inp["source_field"]) or "") for inp in inputs]
-                    if template:
-                        try:
-                            flat[out_field] = template.format(*parts)
-                        except Exception:
-                            flat[out_field] = sep.join(parts)
-                    else:
-                        flat[out_field] = sep.join(parts)
-            except Exception as te:
-                flat[out_field] = f"[Transform-Fehler: {te}]"
-        return flat
 
     total = len(result_df)
 
@@ -1391,7 +1610,7 @@ def execute_mapping(
                 flat_no_prefix[out_field] = "false"
 
         # Apply transform nodes (adds new virtual fields)
-        flat_no_prefix = apply_transform_nodes(flat_no_prefix)
+        flat_no_prefix = _apply_transform_nodes(flat_no_prefix, transform_nodes, _auto_id_counters)
 
         # Apply calc_nodes (formula) as row-level derived fields so they can be mapped via connections.
         # Window-based calc types are handled later on the output table.
@@ -1572,175 +1791,9 @@ def execute_mapping(
         })
         _dbg_err_idx = len(errors)
 
-    if calc_nodes and output_rows:
-        import pandas as pd
-        df_calc = pd.DataFrame(output_rows)
-
-        def _num_series(col: str):
-            """
-            Best-effort numeric parsing for preview/export formulas.
-            Handles common locale formats like:
-              - "1,23" (decimal comma)
-              - "1.234,56" (thousands dot, decimal comma)
-              - "1,234.56" (thousands comma, decimal dot)
-            """
-            if not col or col not in df_calc.columns:
-                return 0
-            s = df_calc[col]
-            # Normalize to string for consistent cleaning
-            try:
-                st = s.astype(str)
-            except Exception:
-                st = s
-            st = st.str.replace("\u00a0", "", regex=False).str.strip()
-            has_comma = st.str.contains(",", na=False)
-            # If comma exists anywhere, assume comma is decimal separator and dots are thousands separators
-            st = st.where(~has_comma, st.str.replace(".", "", regex=False).str.replace(",", ".", regex=False))
-            # Otherwise, treat comma as thousands separator
-            st = st.where(has_comma, st.str.replace(",", "", regex=False))
-            return pd.to_numeric(st, errors="coerce")
-
-        for cn in calc_nodes:
-            calc_type = cn.get("calc_type") or "formula"
-            input_field = cn.get("input_field", "")
-            output_field = cn.get("output_field", "")
-            order_field = cn.get("order_field", "")
-            order_dir = cn.get("order_dir", "asc")
-            group_field = cn.get("group_field", "")
-            window_size = int(cn.get("window_size") or 3)
-
-            if not output_field:
-                continue
-            # "formula" is computed row-wise earlier so connections can use it.
-            # Skip here to avoid overwriting the already-derived values with NaNs/None.
-            if calc_type == "formula":
-                continue
-            if calc_type not in ("row_number", "formula") and input_field not in df_calc.columns:
-                errors.append(f"Berechnungs-Node: Feld '{input_field}' nicht gefunden")
-                continue
-
-            try:
-                # Sortierung
-                if order_field and order_field in df_calc.columns:
-                    df_calc = df_calc.sort_values(order_field, ascending=(order_dir != "desc"))
-
-                # Gruppe
-                grp = df_calc.groupby(group_field)[input_field] if group_field and group_field in df_calc.columns else (df_calc[input_field] if calc_type != "row_number" else df_calc)
-
-                if calc_type == "cumsum":
-                    df_calc[output_field] = grp.cumsum() if group_field else df_calc[input_field].cumsum()
-                elif calc_type == "rolling_avg":
-                    df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).mean()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).mean()
-                elif calc_type == "rolling_sum":
-                    df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).sum()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).sum()
-                elif calc_type == "rolling_min":
-                    df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).min()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).min()
-                elif calc_type == "rolling_max":
-                    df_calc[output_field] = grp.transform(lambda x: x.rolling(window_size, min_periods=1).max()) if group_field else df_calc[input_field].rolling(window_size, min_periods=1).max()
-                elif calc_type == "rank":
-                    df_calc[output_field] = grp.rank(method="dense") if group_field else df_calc[input_field].rank(method="dense")
-                elif calc_type == "row_number":
-                    if group_field and group_field in df_calc.columns:
-                        df_calc[output_field] = df_calc.groupby(group_field).cumcount() + 1
-                    else:
-                        df_calc[output_field] = range(1, len(df_calc) + 1)
-                elif calc_type == "pct_change":
-                    df_calc[output_field] = grp.pct_change() if group_field else df_calc[input_field].pct_change()
-                elif calc_type == "diff":
-                    df_calc[output_field] = grp.diff() if group_field else df_calc[input_field].diff()
-                elif calc_type == "lag":
-                    df_calc[output_field] = grp.transform(lambda x: x.shift(window_size)) if group_field else df_calc[input_field].shift(window_size)
-                elif calc_type == "lead":
-                    df_calc[output_field] = grp.transform(lambda x: x.shift(-window_size)) if group_field else df_calc[input_field].shift(-window_size)
-                elif calc_type == "pct_of_total":
-                    if group_field and group_field in df_calc.columns:
-                        df_calc[output_field] = df_calc[input_field] / df_calc.groupby(group_field)[input_field].transform("sum") * 100
-                    else:
-                        total = df_calc[input_field].sum()
-                        df_calc[output_field] = df_calc[input_field] / total * 100 if total else 0
-
-                elif calc_type == "formula":
-                    formula_parts = cn.get("formula_parts", [])
-                    if formula_parts:
-                        expr_parts = []
-                        for part in formula_parts:
-                            if "op" in part:
-                                expr_parts.append(part["op"])
-                            elif part.get("type") == "number":
-                                expr_parts.append(str(float(part.get("value") or 0)))
-                            else:
-                                field = part.get("value", "")
-                                # Suche zuerst exakt, dann als Suffix in Spalten
-                                actual_col = None
-                                if field and field in df_calc.columns:
-                                    actual_col = field
-                                elif field:
-                                    matches = [c for c in df_calc.columns if c == field or c.endswith("." + field)]
-                                    if matches:
-                                        actual_col = matches[0]
-                                if actual_col:
-                                    expr_parts.append("_num_series(" + repr(actual_col) + ")")
-                                else:
-                                    expr_parts.append("0")
-                        expr = " ".join(expr_parts)
-                        try:
-                            # Window-Formeln mit pandas Series – safe_eval_expr unterstützt keine Series-Operationen.
-                                # Hier ist eval() technisch nötig, aber die Formel wird vom Frontend
-                                # nur aus validierten Feldern + Operatoren zusammengesetzt (keine freien Strings).
-                                # Zusätzliche Absicherung: nur Zahlen, Felder und Operatoren erlaubt.
-                                # Sichere Auswertung von pandas-Series-Ausdrücken
-                                # Nur explizit erlaubte Namen + keine Attributketten
-                                _allowed_names = {"df_calc", "pd", "_num_series"}
-                                try:
-                                    _tree = _ast.parse(expr, mode="eval")
-                                except SyntaxError as _se:
-                                    raise ValueError(f"Syntaxfehler in Window-Formel: {_se}")
-                                for _node in _ast.walk(_tree):
-                                    if isinstance(_node, _ast.Name) and _node.id not in _allowed_names:
-                                        raise ValueError(f"Unerlaubter Name in Formel: {_node.id!r}")
-                                    if isinstance(_node, _ast.Attribute):
-                                        # Erlaube nur: pd.to_numeric, df_calc["col"] etc.
-                                        if isinstance(_node.value, _ast.Name) and _node.value.id not in _allowed_names:
-                                            raise ValueError(f"Unerlaubter Attributzugriff in Formel")
-                                    if isinstance(_node, (_ast.Import, _ast.ImportFrom, _ast.Call)):
-                                        # Funktionsaufrufe nur von erlaubten Objekten
-                                        if isinstance(_node, _ast.Call):
-                                            fn = _node.func
-                                            if isinstance(fn, _ast.Name) and fn.id not in _allowed_names:
-                                                raise ValueError(f"Unerlaubter Funktionsaufruf: {fn.id!r}")
-                                df_calc[output_field] = eval(
-                                    expr,
-                                    {"df_calc": df_calc, "pd": pd, "_num_series": _num_series,
-                                     "__builtins__": {}, "__import__": None, "__builtins__": {}},
-                                )
-                        except Exception as fe:
-                            errors.append(f"Formel-Fehler: {str(fe)[:100]}")
-                            # Ensure column exists so later NaN->None conversion doesn't crash
-                            df_calc[output_field] = None
-
-                # NaN → None
-                df_calc[output_field] = df_calc[output_field].where(df_calc[output_field].notna(), other=None)
-
-            except Exception as e:
-                errors.append(f"Berechnungs-Node '{calc_type}': {str(e)[:100]}")
-
-        output_rows = _rows_to_json(df_calc.to_dict("records"))
-
-        if _debug_trace is not None and calc_nodes:
-            _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
-            _debug_trace.append({
-                "id": "calc",
-                "label": f"Berechnung ({len(calc_nodes)} Node{'s' if len(calc_nodes)>1 else ''})",
-                "type": "calc",
-                "rows_in": _prev_r,
-                "rows_out": len(output_rows),
-                "errors": len(errors) - _dbg_err_idx,
-                "duration_ms": 0,
-                "sample": output_rows[:5],
-                "icon": "calculator",
-                "meta": {},
-            })
-            _dbg_err_idx = len(errors)
+    output_rows, _dbg_err_idx = _run_window_calc_nodes(
+        output_rows, calc_nodes, errors, _debug_trace, _dbg_err_idx
+    )
 
     # ── Python Script Nodes ────────────────────────────────────────────────────
     for pn in (python_nodes or []):
@@ -1813,64 +1866,8 @@ def execute_mapping(
         })
         _dbg_err_idx = len(errors)
 
-    # ── Sortierung + Limit aus target_options ──────────────────────────────────
-    if target_options and output_rows:
-        _sort_fields = [sf for sf in (target_options.get("sort_fields") or []) if sf.get("field")]
-        _row_limit = target_options.get("row_limit")
-        if _sort_fields:
-            try:
-                import pandas as _pd2
-                _sort_df = _pd2.DataFrame(output_rows)
-                _valid = [sf for sf in _sort_fields if sf["field"] in _sort_df.columns]
-                if _valid:
-                    _by = [sf["field"] for sf in _valid]
-                    _asc = [sf.get("dir", "asc") == "asc" for sf in _valid]
-                    # Temporäre Sortierspalten anlegen: Datumsfelder als datetime konvertieren
-                    _temp_cols = {}
-                    _sort_by_temp = []
-                    for _sf in _valid:
-                        _fname = _sf["field"]
-                        _col = _sort_df[_fname]
-                        _temp_name = f"__sort__{_fname}"
-                        _converted = None
+    output_rows = _run_final_sort_limit(output_rows, target_options, is_preview, errors)
 
-                        # 1. Versuche numerisch zu konvertieren
-                        try:
-                            _num = _pd2.to_numeric(_col, errors="coerce")
-                            if _num.notna().mean() >= 0.7:
-                                _converted = _num
-                        except Exception:
-                            pass
-
-                        # 2. Versuche als Datum zu parsen
-                        if _converted is None:
-                            for _fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%d.%m.%Y %H:%M:%S.%f", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y", "%d/%m/%Y"]:
-                                try:
-                                    _conv = _pd2.to_datetime(_col, format=_fmt, errors="coerce")
-                                    if _conv.notna().mean() >= 0.7:
-                                        _converted = _conv
-                                        break
-                                except Exception:
-                                    pass
-
-                        if _converted is not None:
-                            _sort_df[_temp_name] = _converted
-                            _temp_cols[_fname] = _temp_name
-                            _sort_by_temp.append(_temp_name)
-                        else:
-                            _sort_by_temp.append(_fname)
-                    _sort_df = _sort_df.sort_values(by=_sort_by_temp, ascending=_asc)
-                    # Temporäre Spalten wieder entfernen
-                    _sort_df = _sort_df.drop(columns=list(_temp_cols.values()), errors="ignore")
-                    output_rows = _rows_to_json(_sort_df.to_dict(orient="records"))
-            except Exception as _e:
-                errors.append(f"Sortierung fehlgeschlagen: {_e}")
-        if _row_limit and isinstance(_row_limit, int) and _row_limit > 0:
-            output_rows = output_rows[:_row_limit]
-
-    # Preview: nach Sortierung auf display_rows begrenzen
-    if is_preview and len(output_rows) > 50:
-        output_rows = output_rows[:50]
 
     if _debug_trace is not None:
         _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
