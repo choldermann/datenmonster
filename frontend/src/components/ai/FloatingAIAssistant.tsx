@@ -8,6 +8,10 @@ const BG = "rgba(14, 14, 28, 0.97)";
 const BG_CARD = "#1a1a2e";
 const BORDER = "rgba(255,255,255,0.1)";
 
+const MIN_W = 280;
+const MAX_W = 800;
+const MIN_H = 300;
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -15,7 +19,6 @@ interface Message {
 }
 
 function MarkdownText({ text }: { text: string }) {
-  // Minimal inline rendering: code blocks + bold
   const parts = text.split(/(```[\s\S]*?```|`[^`]+`)/g);
   return (
     <>
@@ -55,7 +58,63 @@ export default function FloatingAIAssistant() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<boolean>(false);
 
-  // Check AI availability on mount
+  // Drag & resize state
+  const [pos, setPos] = useState(() => ({
+    x: window.innerWidth - 380 - 16,
+    y: 54,
+  }));
+  const [size, setSize] = useState({ w: 380, h: 520 });
+  const dragRef = useRef<{ startX: number; startY: number; px: number; py: number } | null>(null);
+  const resizeRef = useRef<{ startX: number; startY: number; sw: number; sh: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const onDragStart = useCallback((e: React.MouseEvent) => {
+    // Don't interfere with buttons in the header
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.preventDefault();
+    dragRef.current = { startX: e.clientX, startY: e.clientY, px: pos.x, py: pos.y };
+    setDragging(true);
+
+    const onMove = (ev: MouseEvent) => {
+      if (!dragRef.current) return;
+      setPos(prev => ({
+        x: Math.max(0, Math.min(window.innerWidth - size.w, dragRef.current!.px + ev.clientX - dragRef.current!.startX)),
+        y: Math.max(0, Math.min(window.innerHeight - 60, dragRef.current!.py + ev.clientY - dragRef.current!.startY)),
+      }));
+    };
+    const onUp = () => {
+      dragRef.current = null;
+      setDragging(false);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [pos, size.w]);
+
+  const onResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    resizeRef.current = { startX: e.clientX, startY: e.clientY, sw: size.w, sh: size.h };
+
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const dw = ev.clientX - resizeRef.current.startX;
+      const dh = ev.clientY - resizeRef.current.startY;
+      setSize({
+        w: Math.max(MIN_W, Math.min(MAX_W, resizeRef.current.sw + dw)),
+        h: Math.max(MIN_H, Math.min(window.innerHeight - pos.y - 20, resizeRef.current.sh + dh)),
+      });
+    };
+    const onUp = () => {
+      resizeRef.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [size, pos.y]);
+
   useEffect(() => {
     fetch("/api/ai/status", {
       headers: { Authorization: `Bearer ${localStorage.getItem("dm_token") || ""}` },
@@ -75,7 +134,6 @@ export default function FloatingAIAssistant() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Clear conversation when page changes
   useEffect(() => {
     setMessages([]);
   }, [pageContext?.page]);
@@ -152,7 +210,7 @@ export default function FloatingAIAssistant() {
 
   return (
     <>
-      {/* Trigger button */}
+      {/* Trigger button — bleibt immer fixed oben rechts */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         title="KI-Assistent öffnen"
@@ -194,10 +252,10 @@ export default function FloatingAIAssistant() {
         <div
           style={{
             position: "fixed",
-            top: 54,
-            right: 16,
-            width: 380,
-            maxHeight: "calc(100vh - 80px)",
+            left: pos.x,
+            top: pos.y,
+            width: size.w,
+            height: size.h,
             zIndex: 9996,
             display: "flex",
             flexDirection: "column",
@@ -207,17 +265,22 @@ export default function FloatingAIAssistant() {
             boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(252,228,153,0.08)",
             backdropFilter: "blur(12px)",
             overflow: "hidden",
+            userSelect: dragging ? "none" : "auto",
           }}
         >
-          {/* Header */}
-          <div style={{
-            padding: "12px 14px",
-            borderBottom: `1px solid ${BORDER}`,
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            flexShrink: 0,
-          }}>
+          {/* Header — Drag-Zone */}
+          <div
+            onMouseDown={onDragStart}
+            style={{
+              padding: "12px 14px",
+              borderBottom: `1px solid ${BORDER}`,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexShrink: 0,
+              cursor: "move",
+            }}
+          >
             <Sparkles size={14} color={ACCENT} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT }}>KI Assistent</div>
@@ -250,8 +313,6 @@ export default function FloatingAIAssistant() {
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            minHeight: 200,
-            maxHeight: 460,
           }}>
             {messages.length === 0 && (
               <div style={{ textAlign: "center", padding: "20px 0" }}>
@@ -364,6 +425,32 @@ export default function FloatingAIAssistant() {
             >
               {streaming ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
             </button>
+          </div>
+
+          {/* Resize handle — rechte untere Ecke */}
+          <div
+            onMouseDown={onResizeStart}
+            title="Größe ändern"
+            style={{
+              position: "absolute",
+              right: 0,
+              bottom: 0,
+              width: 18,
+              height: 18,
+              cursor: "nwse-resize",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "flex-end",
+              padding: 3,
+              opacity: 0.35,
+            }}
+          >
+            {/* Drei diagonale Linien als Grip-Icon */}
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="rgba(255,255,255,0.8)">
+              <line x1="2" y1="10" x2="10" y2="2" stroke="rgba(255,255,255,0.8)" strokeWidth="1.2" strokeLinecap="round" />
+              <line x1="5" y1="10" x2="10" y2="5" stroke="rgba(255,255,255,0.8)" strokeWidth="1.2" strokeLinecap="round" />
+              <line x1="8" y1="10" x2="10" y2="8" stroke="rgba(255,255,255,0.8)" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
           </div>
         </div>
       )}
