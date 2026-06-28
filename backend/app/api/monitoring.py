@@ -226,7 +226,7 @@ def get_docker_containers(user: User = Depends(get_current_user)):
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
-        containers = client.containers.list(all=True)
+        containers = client.containers.list(all=True, filters={"network": "datenmonster"})
         result = []
         for c in containers:
             ports = []
