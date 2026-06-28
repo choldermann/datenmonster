@@ -181,6 +181,10 @@ export default function MappingEditor() {
     setTargetColumnTypes(activeTarget?.target_column_types || {});
   }, [activeTargetId, targets]);
 
+  const [lineTick, setLineTick] = useState(0);
+  const allSourceFieldsFlat = canvasNodes.flatMap((n) => n.dataset_columns || []);
+  const triggerLineDraw = useCallback(() => setLineTick((t) => t + 1), []);
+
   const insertGeneratedNodes = useCallback((result: { nodes: any[]; explanation: string }) => {
     const rawNodes = result?.nodes;
     if (!Array.isArray(rawNodes) || rawNodes.length === 0) return;
@@ -327,9 +331,6 @@ export default function MappingEditor() {
   const constantOutputRefs  = useRef({}); // constId → output dot el
   const sqlOutputRefs       = useRef({}); // sqlId → output dot el
   const canvasRef = useRef(null);
-  const [lineTick, setLineTick] = useState(0);
-  const allSourceFieldsFlat = canvasNodes.flatMap((n) => n.dataset_columns || []);
-  const triggerLineDraw = useCallback(() => setLineTick((t) => t + 1), []);
 
   useEffect(() => {
     const p = projectId != null ? `?project_id=${projectId}` : "";
