@@ -18,7 +18,9 @@ const RULE_TYPES = [
   { value: "regex",     label: "Regex" },
 ];
 
-export default function DataQualityNode({ node, onUpdate, onRemove, onPositionChange, debugHighlight, debugStats }) {
+const ACTIVE_BORDER = "#fce499";
+
+export default function DataQualityNode({ node, onUpdate, onRemove, onPositionChange, debugHighlight, debugStats, isActive, onActivate }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const C = DQ_NODE_COLOR;
@@ -58,15 +60,17 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
     rules: rules.map((r, idx) => idx === i ? { ...r, [key]: val } : r),
   });
 
+  const activeBorder = isActive && !debugHighlight;
+
   return (
     <div
       draggable={false}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "data_quality", label: node.label, rules: (node.rules || []).map(r => ({ field: r.field, type: r.type })) }); }}
       style={{
         position: "absolute", left: node.x, top: node.y,
         width: 340, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
-        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
-        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : `1px solid ${C}55`,
+        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
+        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${C}55`,
         backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
       }}
     >

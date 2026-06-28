@@ -86,7 +86,7 @@ function InputDot({ part, index, inputPortRefs, nodeId, onDrop, onUpdate, onMini
   );
 }
 
-function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields, onMiniPortsReady, debugHighlight, debugStats }) {
+function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, inputPortRefs, allSourceFields, onMiniPortsReady, debugHighlight, debugStats, isActive, onActivate }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -143,6 +143,9 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
   // Vorschau
   const formulaPreview = formulaParts.map(p => p.op ? ` ${p.op} ` : (p.value || "?")).join("");
 
+  const ACTIVE_BORDER = "#fce499";
+  const activeBorder = isActive && !debugHighlight;
+
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "3px 6px", outline: "none", flex: 1, minWidth: 0 };
   const lS = { fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 3 };
 
@@ -162,8 +165,8 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
   }
 
   return (
-    <div draggable={false} onClick={e => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${CALC_COLOR}, 0 0 20px ${CALC_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: debugHighlight ? `1.5px solid ${CALC_COLOR}cc` : `1px solid ${CALC_COLOR}55`, backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s" }}>
+    <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "calc", calcType: node.calc_type || "formula", outputField: node.output_field, inputField: node.input_field }); }}
+      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${CALC_COLOR}, 0 0 20px ${CALC_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: debugHighlight ? `1.5px solid ${CALC_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${CALC_COLOR}55`, backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}

@@ -3,7 +3,7 @@ import { GripVertical, Layers, X, Plus, Minimize2 } from "lucide-react";
 import { S, AGG_COLOR, AGG_FUNCTIONS } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, nodeRef, onMiniPortsReady, debugHighlight, debugStats }) {
+function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, nodeRef, onMiniPortsReady, debugHighlight, debugStats, isActive, onActivate }) {
   const internalRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -54,6 +54,9 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
     if (srcField) updateField(i, "input_field", srcField);
   };
 
+  const ACTIVE_BORDER = "#fce499";
+  const activeBorder = isActive && !debugHighlight;
+
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "2px 4px", outline: "none", flex: 1, minWidth: 0 };
   const DOT = 10;
 
@@ -74,8 +77,8 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
 
   return (
     <div ref={ref} draggable={false}
-      onClick={(e) => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 340, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px ${AGG_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid ${AGG_COLOR}cc` : `1px solid ${AGG_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "aggregation", fields: (node.fields || []).map(f => ({ func: f.func, input: f.input_field, output: f.output_field })) }); }}
+      style={{ position: "absolute", left: node.x, top: node.y, width: 340, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px ${AGG_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid ${AGG_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${AGG_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}

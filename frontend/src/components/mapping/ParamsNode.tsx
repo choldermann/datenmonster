@@ -9,7 +9,9 @@ const FIELD_TYPES = [
   { value: "date",   label: "Datum" },
 ];
 
-function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, onMiniPortsReady }) {
+const PARAMS_ACTIVE_BORDER = "#fce499";
+
+function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, onMiniPortsReady, isActive, onActivate }) {
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
 
@@ -58,9 +60,9 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
   return (
     <div draggable={false}
       style={{ position: "absolute", left: node.x, top: node.y, width: 240, zIndex: 10, userSelect: "none",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden",
-        border: `1px solid ${PARAMS_NODE_COLOR}55`, backgroundColor: S.bgCard }}
-      onClick={(e) => e.stopPropagation()}>
+        boxShadow: isActive ? `0 0 0 2px ${PARAMS_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden",
+        border: isActive ? `1px solid ${PARAMS_ACTIVE_BORDER}` : `1px solid ${PARAMS_NODE_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "params", params: (node.fields || []).map(f => ({ name: f.name, type: f.type, label: f.label })) }); }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}

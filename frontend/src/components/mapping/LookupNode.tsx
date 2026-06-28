@@ -5,7 +5,9 @@ import { MinimizedNode } from "./MinimizedNode";
 
 export const LOOKUP_COLOR = "#34d399"; // emerald
 
-function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRef, allDatasets, allSourceFields, onMiniPortsReady}) {
+const LOOKUP_ACTIVE_BORDER = "#fce499";
+
+function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRef, allDatasets, allSourceFields, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -77,8 +79,8 @@ function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, in
   }
 
   return (
-    <div draggable={false} onClick={e => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 300, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: "1px solid " + LOOKUP_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden" }}>
+    <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "lookup", inputField: node.input_field, lookupDatasetId: node.lookup_dataset_id, lookupKeyCol: node.lookup_key_col, outputMappings: (node.output_mappings || []).map(m => m.output_field) }); }}
+      style={{ position: "absolute", left: node.x, top: node.y, width: 300, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${LOOKUP_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${LOOKUP_ACTIVE_BORDER}` : "1px solid " + LOOKUP_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}

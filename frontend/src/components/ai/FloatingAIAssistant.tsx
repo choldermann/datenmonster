@@ -544,6 +544,118 @@ function SuggestedQuestions({ pageContext, onSelect }: { pageContext: PageContex
     return <SuggestedList questions={qs} onSelect={onSelect} />;
   }
 
+  // Dataset-Node aktiv → Datenanalyse-Vorschläge
+  if (activeNode?.type === "dataset") {
+    const qs = [
+      activeNode.name ? `Analysiere das Dataset "${activeNode.name}" für mich` : "Analysiere dieses Dataset für mich",
+      activeNode.columns?.length ? `Welche Felder hat das Dataset? (${(activeNode.columns as string[]).slice(0, 3).join(", ")}...)` : "Welche Felder hat dieses Dataset?",
+      "Welche Transformationen empfiehlst du für dieses Dataset?",
+      "Wie kann ich dieses Dataset mit einem anderen joinen?",
+      "Gibt es potenzielle Datenkualitätsprobleme?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Aggregation-Node aktiv
+  if (activeNode?.type === "aggregation") {
+    const qs = [
+      "Erkläre mir die verfügbaren Aggregationsfunktionen",
+      "Wie berechne ich den Umsatz pro Kunde (GROUP BY)?",
+      "Was ist der Unterschied zwischen SUM, AVG und COUNT?",
+      "Wie kombiniere ich mehrere Aggregationen?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Calc-Node aktiv
+  if (activeNode?.type === "calc") {
+    const calcType = activeNode.calcType || "formula";
+    const qs = [
+      calcType === "formula" ? "Wie schreibe ich eine Formel mit mehreren Feldern?" : `Erkläre mir die Funktion "${calcType}"`,
+      "Wie berechne ich eine kumulierte Summe?",
+      "Wie erstelle ich eine Zeilennummer (row_number)?",
+      "Wie berechne ich den gleitenden Durchschnitt über 7 Zeilen?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Transform-Node aktiv
+  if (activeNode?.type === "transform") {
+    const tType = activeNode.transformType || "number_format";
+    const qs = [
+      `Erkläre mir den Typ "${tType}"`,
+      "Wie formatiere ich eine Zahl mit Komma als Dezimalzeichen?",
+      "Wie konvertiere ich ein Datum von ISO in deutsches Format?",
+      "Wie verkette ich mehrere Felder zu einem Text?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // REST-Node aktiv
+  if (activeNode?.type === "rest") {
+    const qs = [
+      activeNode.url ? `Erkläre mir diesen API-Aufruf: ${(activeNode.url as string).slice(0, 60)}` : "Erkläre mir den REST-Node",
+      "Wie übergebe ich Feldwerte als URL-Parameter?",
+      "Was ist der Unterschied zwischen Einzel- und Batch-Modus?",
+      "Wie verarbeite ich eine JSON-Antwort mit verschachtelten Objekten?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Lookup-Node aktiv
+  if (activeNode?.type === "lookup") {
+    const qs = [
+      "Erkläre mir wie der Lookup-Node funktioniert",
+      "Was passiert wenn kein Treffer gefunden wird?",
+      "Wie wähle ich die richtige Schlüsselspalte?",
+      "Wie verwende ich mehrere Lookup-Ausgabefelder?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Switch-Node aktiv
+  if (activeNode?.type === "switch") {
+    const qs = [
+      "Erkläre mir wie der Switch-Node Verzweigungen auswählt",
+      "Wie setze ich einen Fallback (Immer) ein?",
+      "Wie prüfe ich ob ein Dataset Zeilen hat?",
+      "Wie kombiniere ich mehrere Verzweigungen sinnvoll?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Params-Node aktiv
+  if (activeNode?.type === "params") {
+    const qs = [
+      "Erkläre mir den Params-Node und run_params",
+      "Wie übergebe ich Parameter aus einem Formular?",
+      "Wie verwende ich einen Parameter in einem SQL-Node?",
+      "Welche Feldtypen sind für Parameter verfügbar?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Constant-Node aktiv
+  if (activeNode?.type === "constant") {
+    const qs = [
+      "Erkläre mir die verfügbaren Konstantentypen",
+      "Wie füge ich das heutige Datum als Konstante ein?",
+      "Wie verwende ich eine Konstante als Eingabe für eine Berechnung?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // DataQuality-Node aktiv
+  if (activeNode?.type === "data_quality") {
+    const qs = [
+      "Erkläre mir die verfügbaren Validierungsregeln",
+      "Wie validiere ich eine E-Mail-Adresse?",
+      "Wie schreibe ich einen eigenen Regex für PLZ?",
+      "Wie filtere ich später nach __dq_valid__?",
+    ];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
   const questions: Record<string, string[]> = {
     dashboard: [
       "Was kann ich hier alles machen?",

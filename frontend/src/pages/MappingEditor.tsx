@@ -931,6 +931,8 @@ export default function MappingEditor() {
                   onJoinDrop={handleJoinDrop}
                   onFieldDoubleClick={handleFieldDoubleClick}
                   onFilterClick={handleFilterClick}
+                  isActive={activeNodeId === String(node.dataset_id)}
+                  onActivate={(info) => { setActiveNodeId(String(node.dataset_id)); setActiveNodeInfo(info); }}
                   onCastChange={(dsId, newRules) => {
                     // 1. cast_rules im DatasetNode speichern
                     setCanvasNodes(prev => prev.map(n => n.dataset_id === dsId ? { ...n, cast_rules: newRules } : n));
@@ -975,6 +977,8 @@ export default function MappingEditor() {
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`transform_${id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
                     debugHighlight={debugActiveStageId === "transform"}
                     debugStats={debugStatsMap["transform"]}
+                    isActive={activeNodeId === tn.id}
+                    onActivate={(info) => { setActiveNodeId(tn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -988,6 +992,8 @@ export default function MappingEditor() {
                     onRemove={(id) => { setConstantNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__const__${id}`)); }}
                     outputRef={constantOutputRefs.current[cn.id]}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`const_${id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
+                    isActive={activeNodeId === cn.id}
+                    onActivate={(info) => { setActiveNodeId(cn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1026,6 +1032,8 @@ export default function MappingEditor() {
                     onRemove={(id) => { setAggNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__agg__${id}`)); }}
                     debugHighlight={debugActiveStageId === "agg"}
                     debugStats={debugStatsMap["agg"]}
+                    isActive={activeNodeId === an.id}
+                    onActivate={(info) => { setActiveNodeId(an.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1040,6 +1048,8 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setSwitchNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={updated => { setSwitchNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={id => { setSwitchNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__switch__" + id)); }}
+                    isActive={activeNodeId === sn.id}
+                    onActivate={(info) => { setActiveNodeId(sn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1057,6 +1067,8 @@ export default function MappingEditor() {
                     onRemove={id => { setCalcNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__calc__" + id)); }}
                     debugHighlight={debugActiveStageId === "calc"}
                     debugStats={debugStatsMap["calc"]}
+                    isActive={activeNodeId === cn.id}
+                    onActivate={(info) => { setActiveNodeId(cn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1073,6 +1085,8 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setLookupNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={updated => { setLookupNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={id => { setLookupNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__lookup__" + id)); }}
+                    isActive={activeNodeId === ln.id}
+                    onActivate={(info) => { setActiveNodeId(ln.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1088,6 +1102,8 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setRestNodes((prev) => prev.map((n) => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={(updated) => { setRestNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={(id) => { setRestNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__rest__${id}`)); }}
+                    isActive={activeNodeId === rn.id}
+                    onActivate={(info) => { setActiveNodeId(rn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
@@ -1129,6 +1145,8 @@ export default function MappingEditor() {
                   onRemove={(id) => { setQualityNodes(prev => prev.filter(n => n.id !== id)); }}
                   debugHighlight={debugActiveStageId === "quality"}
                   debugStats={debugStatsMap["quality"]}
+                  isActive={activeNodeId === qn.id}
+                  onActivate={(info) => { setActiveNodeId(qn.id); setActiveNodeInfo(info); }}
                 />
               ))}
 
@@ -1138,6 +1156,8 @@ export default function MappingEditor() {
                   onPositionChange={(id, x, y) => { setParamNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                   onUpdate={(updated) => { setParamNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                   onRemove={(id) => { setParamNodes(prev => prev.filter(n => n.id !== id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__params__" + id)); }}
+                  isActive={activeNodeId === pn.id}
+                  onActivate={(info) => { setActiveNodeId(pn.id); setActiveNodeInfo(info); }}
                 />
               ))}
 

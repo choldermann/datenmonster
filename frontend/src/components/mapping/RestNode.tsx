@@ -5,7 +5,9 @@ import { MinimizedNode } from "./MinimizedNode";
 
 export const REST_NODE_COLOR = "#a78bfa"; // violet
 
-function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, onMiniPortsReady}) {
+const REST_ACTIVE_BORDER = "#fce499";
+
+function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -95,8 +97,8 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
   }
 
   return (
-    <div draggable={false} onClick={(e) => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 330, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: "1px solid " + REST_NODE_COLOR + "55", backgroundColor: S.bgCard }}>
+    <div draggable={false} onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "rest", url: node.url, method: node.method || "GET", mode: node.mode || "single", outputFields: (node.response_mappings || []).map(m => m.output_field) }); }}
+      style={{ position: "absolute", left: node.x, top: node.y, width: 330, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${REST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${REST_ACTIVE_BORDER}` : "1px solid " + REST_NODE_COLOR + "55", backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       <div onMouseDown={handleMouseDown}
         style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: REST_NODE_COLOR + "12", borderBottom: "1px solid " + REST_NODE_COLOR + "33", borderRadius: "6px 6px 0 0" }}>

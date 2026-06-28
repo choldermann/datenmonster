@@ -6,7 +6,9 @@ import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from 
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
 
-function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx, debugStats }) {
+const DATASET_ACTIVE_BORDER = "#fce499";
+
+function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx, debugStats, isActive, onActivate }) {
   const dragState = useRef(null);
   const resizeState = useRef(null);
   const FIELD_H = 28;
@@ -179,7 +181,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
 
   return (
     <>
-    <div ref={nodeBodyRef} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? "0 0 0 2px #38bdf8, 0 0 24px #38bdf855, 0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: debugHighlight ? "1.5px solid #38bdf8aa" : `1px solid ${S.border}`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
+    <div ref={nodeBodyRef} onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "dataset", name: node.dataset_name, datasetId: node.dataset_id, fileType: node.dataset_file_type, columns: (node.dataset_columns || []).slice(0, 30).map(c => c.name || c) }); }} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? "0 0 0 2px #38bdf8, 0 0 24px #38bdf855, 0 8px 32px rgba(0,0,0,0.5)" : isActive ? `0 0 0 2px ${DATASET_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: debugHighlight ? "1.5px solid #38bdf8aa" : isActive ? `1px solid ${DATASET_ACTIVE_BORDER}` : `1px solid ${S.border}`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", cursor: "grab", backgroundColor: S.bgEl, borderBottom: `1px solid ${S.border}` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />

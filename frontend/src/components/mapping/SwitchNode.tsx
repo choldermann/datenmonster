@@ -13,7 +13,9 @@ const SWITCH_CONDITIONS = [
   { v: "always",       l: "Immer (Fallback)" },
 ];
 
-function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, allDatasets, onMiniPortsReady}) {
+const SWITCH_ACTIVE_BORDER = "#fce499";
+
+function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, allDatasets, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
@@ -69,8 +71,8 @@ function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, al
   }
 
   return (
-    <div draggable={false} onClick={e => e.stopPropagation()}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: "1px solid " + SWITCH_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden" }}>
+    <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "switch", outputField: node.output_field, branches: (node.branches || []).map(b => ({ label: b.label, condition: b.condition })) }); }}
+      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${SWITCH_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${SWITCH_ACTIVE_BORDER}` : "1px solid " + SWITCH_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}

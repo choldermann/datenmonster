@@ -3,7 +3,9 @@ import { GripVertical, Plus, Type, X, Minimize2 } from "lucide-react";
 import { S, CONST_TYPES } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, onMiniPortsReady}) {
+const CONST_ACTIVE_BORDER = "#fce499";
+
+function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, onMiniPortsReady, isActive, onActivate }) {
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
   useEffect(() => {
@@ -43,8 +45,8 @@ function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, o
   }
 
   return (
-    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 200, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid rgba(167,139,250,0.4)`, backgroundColor: S.bgCard }}
-      onClick={(e) => e.stopPropagation()}>
+    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 200, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${CONST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: isActive ? `1px solid ${CONST_ACTIVE_BORDER}` : `1px solid rgba(167,139,250,0.4)`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "constant", constType: node.const_type, outputField: node.output_field, value: node.const_value }); }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: "rgba(167,139,250,0.08)", borderBottom: `1px solid rgba(167,139,250,0.2)` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
