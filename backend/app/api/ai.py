@@ -439,7 +439,7 @@ async def chat(
         system_parts.append(description)
     if current_data:
         import json as _j
-        data_str = _j.dumps(current_data, ensure_ascii=False, default=str)[:800]
+        data_str = _j.dumps(current_data, ensure_ascii=False, default=str)[:4000]
         system_parts.append(f"Aktueller Kontext: {data_str}")
     system = "\n\n".join(system_parts)
 

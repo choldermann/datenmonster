@@ -307,7 +307,7 @@ export default function MappingEditor() {
         canvasDatasets: canvasNodes.map(n => ({
           id: n.dataset_id,
           name: n.dataset_name,
-          columns: (n.dataset_columns || []).slice(0, 40).map((c: any) => (typeof c === "string" ? c : c.name || "")),
+          columns: (n.dataset_columns || []).slice(0, 20).map((c: any) => (typeof c === "string" ? c : c.name || "")),
         })),
         ...(activeNodeInfo ? { activeNode: activeNodeInfo } : {}),
       },
