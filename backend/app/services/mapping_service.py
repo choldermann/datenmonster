@@ -1,6 +1,9 @@
 """
-Mapping Execution Service
-Lädt Datasets via Connector-Factory, wendet Joins + Transformer an.
+Mapping Execution Service – Orchestrierung.
+Daten-Utilities → mapping_utils.py
+Formel-Evaluierung → expression_engine.py
+SQL-Helpers → sql_helpers.py
+Ziel-Schreiben → mapping_writer.py
 """
 import re
 import logging
@@ -9,117 +12,25 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 from app.connectors import get_connector
 
-
-def _rows_to_json(rows: list) -> list:
-    """Konvertiert DataFrame-Rows zu JSON-kompatiblen Werten ohne Locale-Effekte."""
-    import math
-    result = []
-    for row in rows:
-        clean = {}
-        for k, v in row.items():
-            if v is None:
-                clean[k] = None
-            elif hasattr(v, 'item'):  # numpy scalar
-                v = v.item()
-                if isinstance(v, float):
-                    clean[k] = None if math.isnan(v) else (int(v) if v == int(v) else v)
-                else:
-                    clean[k] = v
-            elif isinstance(v, float):
-                clean[k] = None if math.isnan(v) else (int(v) if v == int(v) else v)
-            elif hasattr(v, 'isoformat'):  # datetime
-                clean[k] = v.isoformat()
-            else:
-                clean[k] = v
-        result.append(clean)
-    return result
-
-
-# ─── Sicherer Formel-Evaluator ────────────────────────────────────────────────
-# Ersetzt eval() – erlaubt nur arithmetische Ausdrücke und Vergleiche.
-# Kein Attributzugriff, keine Funktionsaufrufe, kein Import möglich.
-
-import ast as _ast
-import ast  # für Window-Formel-Validierung
-import operator as _op
-
-_SAFE_OPS_BIN = {
-    _ast.Add:      _op.add,
-    _ast.Sub:      _op.sub,
-    _ast.Mult:     _op.mul,
-    _ast.Div:      _op.truediv,
-    _ast.FloorDiv: _op.floordiv,
-    _ast.Mod:      _op.mod,
-    _ast.Pow:      _op.pow,
-}
-_SAFE_OPS_UNARY = {_ast.USub: _op.neg, _ast.UAdd: _op.pos, _ast.Not: _op.not_}
-_SAFE_OPS_CMP   = {_ast.Eq: _op.eq, _ast.NotEq: _op.ne,
-                   _ast.Lt: _op.lt, _ast.LtE: _op.le,
-                   _ast.Gt: _op.gt, _ast.GtE: _op.ge}
-
-
-def _eval_node(node, g: dict):
-    if isinstance(node, _ast.Expression):
-        return _eval_node(node.body, g)
-    if isinstance(node, _ast.Constant):
-        if not isinstance(node.value, (int, float, bool, str, type(None))):
-            raise ValueError(f"Unerlaubter Typ: {type(node.value)}")
-        return node.value
-    if isinstance(node, _ast.Name):
-        name = node.id
-        if name in g:
-            return g[name]
-        if name in ("True", "true"):   return True
-        if name in ("False", "false"): return False
-        if name in ("None", "null"):   return None
-        raise ValueError(f"Unbekannte Variable: {name!r}")
-    if isinstance(node, _ast.UnaryOp):
-        fn = _SAFE_OPS_UNARY.get(type(node.op))
-        if fn is None: raise ValueError(f"Unerlaubter Operator: {type(node.op).__name__}")
-        return fn(_eval_node(node.operand, g))
-    if isinstance(node, _ast.BinOp):
-        fn = _SAFE_OPS_BIN.get(type(node.op))
-        if fn is None: raise ValueError(f"Unerlaubter Operator: {type(node.op).__name__}")
-        return fn(_eval_node(node.left, g), _eval_node(node.right, g))
-    if isinstance(node, _ast.BoolOp):
-        vals = [_eval_node(v, g) for v in node.values]
-        if isinstance(node.op, _ast.And):
-            r = vals[0]
-            for v in vals[1:]: r = r and v
-            return r
-        if isinstance(node.op, _ast.Or):
-            r = vals[0]
-            for v in vals[1:]: r = r or v
-            return r
-        raise ValueError("Unbekannter Bool-Op")
-    if isinstance(node, _ast.Compare):
-        left = _eval_node(node.left, g)
-        for op, comp in zip(node.ops, node.comparators):
-            fn = _SAFE_OPS_CMP.get(type(op))
-            if fn is None: raise ValueError(f"Unerlaubter Vergleich: {type(op).__name__}")
-            right = _eval_node(comp, g)
-            if not fn(left, right): return False
-            left = right
-        return True
-    if isinstance(node, _ast.IfExp):
-        return _eval_node(node.body, g) if _eval_node(node.test, g) else _eval_node(node.orelse, g)
-    raise ValueError(f"Unerlaubter Ausdruckstyp: {type(node).__name__} – nur Arithmetik/Vergleiche erlaubt")
-
-
-def safe_eval_expr(expr: str, extra_globals: dict = None) -> object:
-    """
-    Sicherer Ersatz für eval() bei Formeln und Bedingungen.
-    Erlaubt: +, -, *, /, //, %, **, Vergleiche, and/or/not, Konstanten, Variablen.
-    Blockt: Attributzugriff (.x), Funktionsaufrufe, Import, Klassen, Subscript.
-    """
-    try:
-        tree = _ast.parse(expr.strip(), mode="eval")
-    except SyntaxError as e:
-        raise ValueError(f"Syntaxfehler in Formel: {e}")
-    return _eval_node(tree, extra_globals or {})
-
+# ── Sub-module imports (re-exportiert für Rückwärtskompatibilität) ─────────────
+from app.services.mapping_utils import (
+    _rows_to_json, _apply_target_types, _apply_filter,
+    _load_dataset, _apply_join, _to_numeric, _to_numeric_loose,
+    _apply_cast_rules, _agg_calc, TARGET_TYPES,
+)
+from app.services.expression_engine import (
+    safe_eval_expr, _eval_node, _apply_transformer,
+    _exec_python_script, _eval_expression, _validate_date, _DQ_VALIDATORS,
+)
+from app.services.sql_helpers import (
+    _resolve_sql_params, _resolve_sql_lookup_params, _get_sql_engine,
+)
+from app.services.mapping_writer import _is_plugin_target, _write_target
 
 logger = logging.getLogger(__name__)
+
+import ast as _ast
+import ast  # für Window-Formel-Validierung (direkt in execute_mapping genutzt)
 
 
 # ─── MappingContext ────────────────────────────────────────────────────────────
@@ -193,99 +104,6 @@ class MappingContext:
         )
 
 
-# ─── Typ-Casting für Zielfelder ───────────────────────────────────────────────
-
-# Zulässige target_type-Werte pro Connection:
-#   string | integer | decimal | date | datetime | boolean
-# Wird in execute_mapping als letzter Schritt auf den output DataFrame angewendet.
-
-TARGET_TYPES = ("string", "integer", "decimal", "date", "datetime", "boolean")
-
-def _apply_target_types(df: pd.DataFrame, connections: List[Dict]) -> tuple:
-    """
-    Wendet target_type-Casts auf den fertigen Output-DataFrame an.
-    Unterstützt dieselben Optionen wie _apply_cast_rules:
-      - date_format   (für date/datetime)
-      - decimal_sep   (für decimal: "." oder ",")
-      - on_error      (null | skip | error)
-    Gibt (df, errors) zurück.
-    """
-    errors = []
-    skip_mask = pd.Series([False] * len(df), index=df.index)
-
-    for conn in connections:
-        col    = conn.get("target_field")
-        ttype  = conn.get("target_type")
-        if not col or not ttype or ttype not in TARGET_TYPES:
-            continue
-        if col not in df.columns:
-            continue
-
-        on_error   = conn.get("on_error",    "null")   # null | skip | error
-        date_fmt   = conn.get("date_format", "")       # z.B. "%d.%m.%Y"
-        decimal_sep = conn.get("decimal_sep", ".")     # "." oder ","
-
-        try:
-            if ttype == "integer":
-                converted = pd.to_numeric(df[col], errors="coerce").astype("Int64")
-                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error":
-                    if bad.any():
-                        errors.append(f"Zieltyp INT '{col}': {bad.sum()} nicht konvertierbare Werte")
-                        continue  # Spalte nicht mit NaN überschreiben
-                df[col] = converted
-
-            elif ttype == "decimal":
-                s = df[col].astype(str).str.strip()
-                if decimal_sep == ",":
-                    s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
-                else:
-                    s = s.str.replace(",", "", regex=False)
-                converted = pd.to_numeric(s, errors="coerce")
-                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error":
-                    if bad.any():
-                        errors.append(f"Zieltyp DEC '{col}': {bad.sum()} nicht konvertierbare Werte")
-                        continue  # Spalte nicht mit NaN überschreiben
-                df[col] = converted
-
-            elif ttype in ("date", "datetime"):
-                if date_fmt:
-                    converted = pd.to_datetime(df[col], format=date_fmt, errors="coerce")
-                else:
-                    converted = pd.to_datetime(df[col], infer_datetime_format=True, errors="coerce")
-                bad = converted.isna() & df[col].notna() & (df[col].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error":
-                    if bad.any():
-                        errors.append(f"Zieltyp DATE '{col}': {bad.sum()} nicht konvertierbare Werte")
-                        continue  # Spalte nicht mit NaN überschreiben
-                out_fmt = "%Y-%m-%d %H:%M:%S" if ttype == "datetime" else "%Y-%m-%d"
-                df[col] = converted.dt.strftime(out_fmt).where(converted.notna(), other=None)
-
-            elif ttype == "boolean":
-                true_vals = {"true", "1", "yes", "ja", "wahr", "y"}
-                df[col] = df[col].astype(str).str.lower().str.strip().isin(true_vals)
-
-            elif ttype == "string":
-                df[col] = df[col].astype(str).replace("nan", "").replace("None", "")
-
-        except Exception as e:
-            if on_error == "error":
-                errors.append(f"Zieltyp-Cast '{col}' → {ttype}: {str(e)[:100]}")
-            # bei null/skip: Spalte unverändert lassen
-
-    if skip_mask.any():
-        df = df[~skip_mask]
-
-    return df, errors
-
-
 # ─── Zentrale Ausführungsfunktion ─────────────────────────────────────────────
 
 def run_mapping_object(
@@ -308,41 +126,24 @@ def run_mapping_object(
       - Export (CSV, XLSX, JSON, XML, DB)
       - Scheduler
       - Pipeline
-
-    Gibt immer zurück:
-      {
-        columns, rows, total, errors,
-        column_types,          # immer befüllt
-        targets_executed,      # Anzahl ausgeführter Targets
-        targets_results,       # [{ name, type, rows, status, error }]
-      }
-
-    Bei preview_rows <= 500 werden keine Targets geschrieben.
-    Bei preview_rows > 500 (typisch 999999) werden alle Targets ausgeführt,
-    sofern targets vorhanden sind.
     """
     is_preview = preview_rows <= 500
     targets = ctx.targets
 
-    # ── Welche Targets sollen ausgeführt werden? ────────────────────────────
     if target_index is not None:
         active_targets = [targets[target_index]] if 0 <= target_index < len(targets) else []
     else:
         active_targets = targets
 
-    # Für Preview: erstes Target für Vorschau-Felder nutzen
     preview_connections = []
     if active_targets:
         preview_connections = active_targets[0].get("fields") or []
-    # Fallback: alle connections aus allen targets sammeln
     if not preview_connections:
         for t in active_targets:
             preview_connections = t.get("fields") or []
             if preview_connections:
                 break
 
-    # ── Daten berechnen (execute_mapping ist die reine Engine) ─────────────
-    # target_options aus erstem aktiven Target für Sortierung/Limit
     _preview_target_opts = None
     if active_targets:
         _preview_target_opts = (active_targets[0].get("target_options") or {}) if active_targets else None
@@ -354,7 +155,6 @@ def run_mapping_object(
 
     errors = result.get("errors") or []
 
-    # ── target_type-Casts auf Ergebnis anwenden ─────────────────────────────
     if result.get("rows") and result.get("columns"):
         import pandas as _pd
         df_out = _pd.DataFrame(result["rows"], columns=result["columns"])
@@ -362,25 +162,21 @@ def run_mapping_object(
         errors.extend(cast_errors)
         result["rows"] = _rows_to_json(df_out.where(df_out.notna(), other=None).to_dict("records"))
 
-    # ── column_types immer berechnen ────────────────────────────────────────
     column_types = {}
     if result.get("rows") and result.get("columns"):
         import pandas as _pd
         from app.services.file_service import infer_column_types
         df_types = _pd.DataFrame(result["rows"], columns=result["columns"])
-        # cast_rules aus canvas_nodes als forced_types berücksichtigen
         forced = {}
         for node in ctx.canvas_nodes:
             for f, rule in (node.get("cast_rules") or {}).items():
                 forced[f] = rule.get("type", "string")
         column_types = infer_column_types(df_types)
-        # target_type aus connections überschreibt inferred type
         for conn in preview_connections:
             col = conn.get("target_field")
             ttype = conn.get("target_type")
             if col and ttype and ttype in TARGET_TYPES:
                 column_types[col] = {"type": ttype, "raw": column_types.get(col, {}).get("raw", "")}
-        # forced_types aus cast_rules überschreiben alles
         for col, t in forced.items():
             if col in column_types:
                 column_types[col]["type"] = t
@@ -388,13 +184,11 @@ def run_mapping_object(
     result["column_types"] = column_types
     result["errors"] = errors
 
-    # ── Bei Preview: fertig, keine Targets schreiben ────────────────────────
     if is_preview:
         result["targets_executed"] = 0
         result["targets_results"] = []
         return result
 
-    # ── Targets ausführen (Export / Scheduler / Pipeline / Execute) ─────────
     targets_results = []
     total_rows = 0
 
@@ -410,10 +204,7 @@ def run_mapping_object(
             continue
 
         try:
-            # Eigene execute_mapping Ausführung pro Target (eigene Verbindungen)
-            t_result = execute_mapping(
-                **ctx.to_execute_kwargs(t_fields, 999999)
-            )
+            t_result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
             t_errors = t_result.get("errors") or []
 
             if t_errors and not t_result.get("rows"):
@@ -422,13 +213,11 @@ def run_mapping_object(
             import pandas as _pd
             df = _pd.DataFrame(t_result["rows"], columns=t_result["columns"])
 
-            # target_type-Casts anwenden
             df, cast_errors = _apply_target_types(df, t_fields)
             t_errors.extend(cast_errors)
 
             opts = target.get("target_options") or {}
 
-            # Pflichtfeld-Validierung
             required_fields = opts.get("required_fields") or []
             if required_fields:
                 missing_vals = []
@@ -440,7 +229,6 @@ def run_mapping_object(
                 if missing_vals:
                     raise ValueError(f"Pflichtfeld-Fehler: {', '.join(missing_vals)}")
 
-            # Duplikat-Entfernung
             if opts.get("deduplicate_enabled"):
                 dedup_fields = opts.get("deduplicate_fields") or []
                 subset = [f for f in dedup_fields if f in df.columns] or None
@@ -448,7 +236,6 @@ def run_mapping_object(
                 df = df.drop_duplicates(subset=subset, keep="first")
                 logger.info(f"  → {before - len(df)} Duplikate entfernt")
 
-            # ── Sortierung aus target_options ──────────────────────────────
             _sort_fields = [sf for sf in (opts.get("sort_fields") or []) if sf.get("field")]
             _row_limit = opts.get("row_limit")
             if _sort_fields:
@@ -464,14 +251,13 @@ def run_mapping_object(
                         _ascending.append(_sf.get("dir", "asc") == "asc")
                         _col = df[_fname]
                         _temp_name = f"__sort__{_fname}"
-                        # Numerisch?
                         _num = _pd_sort.to_numeric(_col, errors="coerce")
                         if _num.notna().mean() >= 0.7:
                             df[_temp_name] = _num
                         else:
-                            # Datum?
                             _converted = None
-                            for _fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S.%f", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y"]:
+                            for _fmt in ["%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d",
+                                         "%Y-%m-%dT%H:%M:%S.%f", "%d.%m.%Y %H:%M:%S", "%d.%m.%Y"]:
                                 try:
                                     _c = _pd_sort.to_datetime(_col, format=_fmt, errors="coerce")
                                     if _c.notna().mean() >= 0.7:
@@ -493,7 +279,6 @@ def run_mapping_object(
             if _row_limit and isinstance(_row_limit, int) and _row_limit > 0:
                 df = df.head(_row_limit)
 
-            # ── Ziel schreiben ──────────────────────────────────────────────
             _write_target(
                 df=df, target=target, t_type=t_type, opts=opts,
                 db=db, mapping_id=mapping_id, mapping_name=mapping_name,
@@ -519,7 +304,6 @@ def run_mapping_object(
     result["total_rows_written"] = total_rows
     result["errors"] = errors
 
-    # ── Zentrales Log ────────────────────────────────────────────────────────
     if db and mapping_id:
         try:
             from app.services.log_service import write_log
@@ -536,748 +320,7 @@ def run_mapping_object(
     return result
 
 
-_BUILTIN_TARGET_TYPES = {"csv", "xlsx", "json", "xml", "db", "dataset"}
-
-
-def _is_plugin_target(t_type: str) -> bool:
-    """True wenn t_type kein eingebauter Typ ist und in der CapabilityRegistry als Ziel registriert."""
-    if t_type in _BUILTIN_TARGET_TYPES:
-        return False
-    from app.plugins.registry import registry as _registry
-    return _registry.is_plugin_target(t_type)
-
-
-def _write_target(df, target, t_type, opts, db, mapping_id, mapping_name,
-                  project_id, project_name, user_id, triggered_by, scheduled_job_id):
-    """Schreibt einen DataFrame in das angegebene Ziel."""
-    from app.core.database import SessionLocal
-
-    if target.get("save_as_dataset") or t_type == "dataset":
-        from app.models.dataset import Dataset
-        from app.services.file_service import dataframe_to_storage, infer_column_types
-        from datetime import datetime, timezone
-        thread_db = SessionLocal()
-        try:
-            write_mode = opts.get("dataset_write_mode", "replace")
-            ds = None
-            target_name = target.get("name") or "Mapping-Output"
-            # 1. Suche Dataset mit diesem Namen
-            existing_name = thread_db.query(Dataset).filter(Dataset.name == target_name).first()
-            if existing_name:
-                if existing_name.source_mapping_id == mapping_id:
-                    # Gehört diesem Mapping → wiederverwenden
-                    ds = existing_name
-                else:
-                    # Gehört anderem Mapping oder manuell angelegt → Fehler
-                    raise ValueError(f"Ein Dataset mit dem Namen '{target_name}' existiert bereits. Bitte anderen Namen wählen.")
-            elif mapping_id and not existing_name:
-                # Kein Dataset mit diesem Namen → ggf. altes Dataset dieses Mappings vorhanden?
-                # Altes stehen lassen, neues wird weiter unten angelegt
-                pass
-            if ds:
-                col_types = ds.column_types or {}
-
-                if write_mode == "append" and getattr(ds, "file_path", None):
-                    # Autoincrement-Felder befüllen beim Anhängen
-                    import json, os as _os
-                    auto_cols = [col for col, info in col_types.items()
-                                 if info.get("is_primary") and info.get("autoincrement")]
-                    existing = []
-                    try:
-                        if _os.path.exists(ds.file_path):
-                            with open(ds.file_path, "r", encoding="utf-8") as ef:
-                                existing = json.load(ef)
-                    except Exception:
-                        existing = []
-                    new_records = df.to_dict("records")
-                    for auto_col in auto_cols:
-                        all_vals = []
-                        for er in existing:
-                            try:
-                                all_vals.append(int(er.get(auto_col, 0) or 0))
-                            except (ValueError, TypeError):
-                                pass
-                        for nr in new_records:
-                            try:
-                                all_vals.append(int(nr.get(auto_col, 0) or 0))
-                            except (ValueError, TypeError):
-                                pass
-                        next_id = (max(all_vals) + 1) if all_vals else 1
-                        for row in new_records:
-                            val = row.get(auto_col)
-                            if val is None or str(val).strip() == "" or str(val) == "0":
-                                row[auto_col] = str(next_id)
-                                next_id += 1
-                    import pandas as _pd
-                    df = _pd.DataFrame(existing + new_records)
-
-                elif write_mode == "upsert" and getattr(ds, "file_path", None):
-                    # Upsert: Key-Felder aus column_types lesen
-                    import json, os as _os
-                    key_cols = [col for col, info in col_types.items()
-                                if info.get("is_primary") and not info.get("autoincrement")]
-                    if not key_cols:
-                        # Fallback: alle is_primary Felder als Keys
-                        key_cols = [col for col, info in col_types.items()
-                                    if info.get("is_primary")]
-                    existing = []
-                    try:
-                        if _os.path.exists(ds.file_path):
-                            with open(ds.file_path, "r", encoding="utf-8") as ef:
-                                existing = json.load(ef)
-                    except Exception:
-                        existing = []
-
-                    if key_cols:
-                        import pandas as _pd
-                        new_records = df.to_dict("records")
-                        # Index existing by key
-                        existing_by_key = {}
-                        for row in existing:
-                            k = tuple(str(row.get(c, "")) for c in key_cols)
-                            existing_by_key[k] = row
-                        # Apply new records: update or insert
-                        for row in new_records:
-                            k = tuple(str(row.get(c, "")) for c in key_cols)
-                            existing_by_key[k] = row  # überschreibt oder fügt hinzu
-                        df = _pd.DataFrame(list(existing_by_key.values()))
-                    else:
-                        # Keine Keys definiert → wie replace
-                        logger.warning("Upsert ohne Primary Keys – fallback auf replace")
-
-                ds.row_count = len(df)
-                ds.columns = list(df.columns)
-                # column_types: is_primary/autoincrement behalten
-                inferred = infer_column_types(df)
-                merged = dict(col_types)
-                for col, info in inferred.items():
-                    if col not in merged:
-                        merged[col] = info
-                    else:
-                        merged[col] = {**merged[col], "type": info["type"], "raw": info["raw"]}
-                ds.column_types = merged
-                ds.updated_at = datetime.now(timezone.utc)
-                thread_db.commit()
-                dataframe_to_storage(df, ds.id)
-            else:
-                ds = Dataset(
-                    name=target.get("name") or "Mapping-Output",
-                    file_type="csv", row_count=len(df),
-                    columns=list(df.columns),
-                    column_types=infer_column_types(df),
-                    xml_configured=1,
-                    source_mapping_id=mapping_id,
-                    project_id=project_id,
-                )
-                thread_db.add(ds); thread_db.commit(); thread_db.refresh(ds)
-                path = dataframe_to_storage(df, ds.id)
-                ds.file_path = path
-                thread_db.commit()
-        finally:
-            thread_db.close()
-
-    elif t_type == "db":
-        from app.models.dataset import DbConnection
-        from app.services.export_service import export_to_db
-        conn_id = target.get("target_connection_id")
-        table = target.get("target_table")
-        if not conn_id or not table:
-            raise ValueError("Verbindung oder Tabelle fehlt")
-        thread_db = SessionLocal()
-        try:
-            conn_obj = thread_db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-            if not conn_obj:
-                raise ValueError(f"Verbindung #{conn_id} nicht gefunden")
-            export_to_db(df, conn_obj, table,
-                         target.get("target_write_mode", "insert"),
-                         key_columns=opts.get("key_columns", []))
-        finally:
-            thread_db.close()
-
-    elif _is_plugin_target(t_type):
-        from app.plugins.registry import registry as _registry
-        plugin = _registry.get_target(t_type)
-        if not plugin:
-            raise ValueError(f"Plugin-Ziel '{t_type}' nicht in Registry")
-        plugin_config = opts.get("plugin_config") or {}
-        rows = df.to_dict("records")
-        result = plugin.write(rows, plugin_config)
-        errors = result.get("errors") or []
-        if errors and not result.get("written"):
-            raise ValueError(f"Plugin-Schreibfehler: {'; '.join(str(e) for e in errors)}")
-        logger.info(f"  Plugin-Ziel '{t_type}': {result.get('written', len(rows))} Zeilen, "
-                    f"entry_stamp={result.get('entry_stamp', '-')}, mode={result.get('mode', '-')}")
-
-    else:
-        # CSV / XLSX / JSON / XML → Datei speichern
-        from app.services.file_export_service import save_export_file
-        thread_db = SessionLocal()
-        try:
-            save_export_file(
-                df,
-                user_id=user_id,
-                project_id=project_id,
-                project_name=project_name,
-                job_id=scheduled_job_id,
-                mapping_id=mapping_id,
-                mapping_name=mapping_name,
-                target_name=target.get("name") or t_type,
-                target_type=t_type,
-                target_options=opts,
-                db=thread_db,
-                triggered_by=triggered_by,
-            )
-        finally:
-            thread_db.close()
-
-
-# ─── Transformer anwenden ─────────────────────────────────────────────────────
-
-def _apply_transformer(row: dict, conn: dict, dataset_names: dict = None) -> Any:
-    t = conn.get("transformer") or {}
-    ttype = t.get("type", "direct")
-    src = t.get("source_field") or conn.get("source_field")
-    src_ds_id = conn.get("source_dataset_id")
-
-    def _resolve_field(field_name):
-        """
-        Löst ein Quellfeld auf – berücksichtigt source_dataset_id für eindeutige Zuordnung
-        bei mehreren Datasets mit gleichen Feldnamen.
-        """
-        if field_name is None:
-            return None
-        # 1. source_dataset_id bekannt → ZUERST Prefix-Suche mit Dataset-Namen
-        #    Priorität vor kurzem Namen um Mehrdeutigkeiten aufzulösen
-        if src_ds_id is not None and dataset_names:
-            ds_name = dataset_names.get(src_ds_id)
-            if ds_name:
-                full_key = f"{ds_name}.{field_name}"
-                if full_key in row:
-                    return row[full_key]
-                # Auch verschachtelt: "X.DatasetName.Feldname"
-                for k, v in row.items():
-                    if k.endswith(f".{ds_name}.{field_name}"):
-                        return v
-        # 2. Fallback: direkt vorhanden (voller Prefix oder eindeutiger Name)
-        return row.get(field_name)
-
-    if ttype == "direct":
-        return _resolve_field(src)
-
-    elif ttype == "constant":
-        return t.get("constant_value", "")
-
-    elif ttype == "formula":
-        formula = t.get("formula", "")
-        def replace_field(m):
-            field = m.group(1)
-            val = row.get(field, "")
-            try:
-                return str(float(val)) if val not in (None, "") else "0"
-            except (ValueError, TypeError):
-                return f'"{val}"'
-        expr = re.sub(r"\{([^}]+)\}", replace_field, formula)
-        try:
-            return safe_eval_expr(expr)
-        except Exception:
-            return expr
-
-    elif ttype == "date":
-        val = row.get(src)
-        if not val:
-            return val
-        in_fmt = t.get("date_input_format", "YYYY-MM-DD")
-        out_fmt = t.get("date_output_format", "DD.MM.YYYY")
-        # Convert format strings to Python strptime/strftime
-        fmt_map = {
-            "YYYY": "%Y", "MM": "%m", "DD": "%d",
-        }
-        def to_py_fmt(f):
-            for k, v in fmt_map.items():
-                f = f.replace(k, v)
-            return f
-        try:
-            dt = pd.to_datetime(str(val), format=to_py_fmt(in_fmt), errors="coerce")
-            if pd.isna(dt):
-                dt = pd.to_datetime(str(val), errors="coerce")
-            if pd.isna(dt):
-                return val
-            return dt.strftime(to_py_fmt(out_fmt))
-        except Exception:
-            return val
-
-    elif ttype == "condition":
-        condition = t.get("condition", "")
-        def replace_field(m):
-            field = m.group(1)
-            val = row.get(field, "")
-            try:
-                return str(float(val)) if val not in (None, "") else "0"
-            except (ValueError, TypeError):
-                return f'"{val}"'
-        expr = re.sub(r"\{([^}]+)\}", replace_field, condition)
-        try:
-            result = safe_eval_expr(expr)
-            return t.get("condition_true", "") if result else t.get("condition_false", "")
-        except Exception:
-            return t.get("condition_false", "")
-
-    return row.get(src)
-
-
-# ─── Filter anwenden ──────────────────────────────────────────────────────────
-
-def _apply_filter(df: pd.DataFrame, field: str, expr: str) -> pd.DataFrame:
-    """
-    Parst Ausdrücke wie: > 100  |  = "aktiv"  |  != ""  |  LIKE %GmbH%  |  >= 2024-01-01
-                         IS NULL  |  IS NOT NULL
-    """
-    expr = expr.strip()
-    expr_upper = expr.upper()
-    col = df[field]
-
-    # IS NULL / IS NOT NULL
-    if expr_upper == "IS NULL":
-        return df[col.isna()]
-    if expr_upper == "IS NOT NULL":
-        return df[col.notna()]
-
-    # LIKE operator
-    if expr_upper.startswith("LIKE "):
-        pattern = expr[5:].strip().strip('"').strip("'")
-        regex = "".join(
-            ".*" if c == "%" else "." if c == "_" else re.escape(c)
-            for c in pattern
-        )
-        return df[col.astype(str).str.match(f"^{regex}$", case=False, na=False)]
-
-    # Comparison operators: >= <= != = > <
-    for op in (">=", "<=", "!=", "=", ">", "<"):
-        if expr.startswith(op):
-            raw_val = expr[len(op):].strip().strip('"').strip("'")
-
-            # Sonderfall: != "" und = "" — NULL-bewusster Vergleich
-            if raw_val == "":
-                if op == "!=":
-                    # Nicht leer und nicht NULL
-                    return df[col.notna() & (col.astype(str) != "")]
-                else:  # op == "="
-                    # Leer oder NULL
-                    return df[col.isna() | (col.astype(str) == "")]
-
-            # Numerischer Vergleich
-            try:
-                num_val = float(raw_val)
-                col_num = pd.to_numeric(col, errors="coerce")
-                ops = {">=": col_num.__ge__, "<=": col_num.__le__, "!=": col_num.__ne__,
-                       "=": col_num.__eq__, ">": col_num.__gt__, "<": col_num.__lt__}
-                return df[ops[op](num_val)]
-            except ValueError:
-                pass
-
-            # String-Vergleich (NULL-sicher: NaN/None werden nie gleich einem String sein)
-            col_str = col.where(col.notna(), other=None).astype(str)
-            ops_str = {"=": col_str.__eq__, "!=": col_str.__ne__,
-                       ">=": col_str.__ge__, "<=": col_str.__le__,
-                       ">": col_str.__gt__, "<": col_str.__lt__}
-            mask = ops_str[op](raw_val)
-            # NULL-Zeilen immer ausschließen bei Vergleichen (wie SQL)
-            return df[mask & col.notna()]
-
-    return df  # no-op if unrecognized
-
-
-# ─── Datasets laden ───────────────────────────────────────────────────────────
-
-def _load_dataset(dataset_id: int) -> pd.DataFrame:
-    """Lädt ein Dataset über die Connector-Factory."""
-    connector = get_connector(dataset_id)
-    return connector.fetch_full()
-
-
-# ─── Join anwenden ────────────────────────────────────────────────────────────
-
-def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
-                left_field: str, right_field: str,
-                join_type: str, left_name: str, right_name: str) -> pd.DataFrame:
-    # Rename columns to avoid conflicts: dataset_name.field
-    left_renamed = {c: f"{left_name}.{c}" if "." not in c else c for c in left_df.columns}
-    right_renamed = {c: f"{right_name}.{c}" if "." not in c else c for c in right_df.columns}
-    left_df = left_df.rename(columns=left_renamed)
-    right_df = right_df.rename(columns=right_renamed)
-
-    left_key = left_renamed.get(left_field, left_field)
-    right_key = right_renamed.get(right_field, right_field)
-
-    how_map = {
-        "INNER JOIN": "inner",
-        "LEFT JOIN": "left",
-        "RIGHT JOIN": "right",
-        "FULL OUTER JOIN": "outer",
-    }
-    how = how_map.get(join_type, "inner")
-
-    try:
-        merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"))
-    except Exception as e:
-        raise ValueError(f"Join fehlgeschlagen: {e}")
-
-    return merged
-
-
-# ─── Mapping ausführen ────────────────────────────────────────────────────────
-
-def _resolve_sql_params(sql: str, flat_row: dict):
-    """
-    Ersetzt {Feldname} Platzhalter im SQL mit parametrisierten Werten.
-    Gibt (sql_with_placeholders, params_dict) zurück statt direkter String-Interpolation.
-    Das verhindert SQL-Injection: Werte werden nie direkt in den SQL-String eingebaut.
-
-    Beispiel:
-      sql_in  = "SELECT * FROM t WHERE id = {kID}"
-      returns = ("SELECT * FROM t WHERE id = :param_kID", {"param_kID": 42})
-    """
-    import re
-    params = {}
-    counter = [0]
-
-    def replacer(m):
-        field = m.group(1)
-        # Feldname sanieren: nur alphanumerisch + Unterstrich
-        safe_field = re.sub(r"[^a-zA-Z0-9_]", "_", field)
-        counter[0] += 1
-        param_name = f"param_{safe_field}_{counter[0]}"
-        val = flat_row.get(field)
-        params[param_name] = val
-        return f":{param_name}"
-
-    resolved = re.sub(r"\{([^}]+)\}", replacer, sql)
-    return resolved, params
-
-
-def _resolve_sql_lookup_params(sql: str, param_mappings: list, flat_row: dict):
-    """
-    Ersetzt :param_name Platzhalter im SQL für den Lookup-Modus.
-    param_mappings: [{param: "kArtikel", source_field: "kArtikel"}, ...]
-    Feldwert wird aus flat_row über source_field geholt.
-    Gibt (resolved_sql, params_dict) zurück — SQL-Injection-sicher.
-    """
-    import re as _re_lk
-    params = {}
-
-    def replacer(m):
-        param_name = m.group(1)
-        source_field = param_name
-        for pm in (param_mappings or []):
-            if pm.get("param") == param_name:
-                source_field = pm.get("source_field") or param_name
-                break
-        safe = _re_lk.sub(r"[^a-zA-Z0-9_]", "_", param_name)
-        key = f"lkp_{safe}"
-        params[key] = flat_row.get(source_field)
-        return f":{key}"
-
-    resolved = _re_lk.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", replacer, sql)
-    return resolved, params
-
-
-def _build_sql_engine_cache():
-    """Gibt einen dict zurück der als Cache für SQLAlchemy-Engines dient."""
-    return {}
-
-_sql_engine_cache: dict = {}
-
-
-def _get_sql_engine(connection_id: int):
-    """Holt oder erstellt eine SQLAlchemy-Engine für eine DB-Verbindung."""
-    global _sql_engine_cache
-    if connection_id in _sql_engine_cache:
-        return _sql_engine_cache[connection_id]
-    from app.core.database import SessionLocal
-    from app.models.dataset import DbConnection
-    from app.services.db_service import get_engine_str
-    from sqlalchemy import create_engine
-    db = SessionLocal()
-    try:
-        conn_obj = db.query(DbConnection).filter(DbConnection.id == connection_id).first()
-        if not conn_obj:
-            raise ValueError(f"DB-Verbindung #{connection_id} nicht gefunden")
-        engine = create_engine(get_engine_str(conn_obj))
-        _sql_engine_cache[connection_id] = engine
-        return engine
-    finally:
-        db.close()
-
-
-
-def _to_numeric(v):
-    """Versucht einen Wert zu float zu konvertieren."""
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    try:
-        return float(str(v).replace(",", ".").strip())
-    except (ValueError, TypeError):
-        return None
-
-def _to_numeric(v):
-    if v is None: return None
-    if isinstance(v, (int, float)): return float(v)
-    try: return float(str(v).replace(",", ".").strip())
-    except: return None
-
-
-def _to_numeric_loose(v):
-    """Numeric parsing tolerant to common thousands/decimal separators."""
-    if v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    s = str(v).strip().replace("\u00a0", "")
-    if not s:
-        return None
-    # If it contains a comma, assume comma is decimal separator and dots are thousands separators.
-    if "," in s:
-        s = s.replace(".", "").replace(",", ".")
-    else:
-        # Otherwise, treat commas as thousands separators.
-        s = s.replace(",", "")
-    try:
-        return float(s)
-    except Exception:
-        return None
-
-def _agg_calc(func: str, all_rows: list, input_field: str):
-    """Berechnet einen Aggregationswert über alle Zeilen."""
-    import statistics
-    try:
-        all_vals = [row.get(input_field) for row in all_rows]
-        non_null = [v for v in all_vals if v is not None and str(v).strip() != ""]
-        nv = [n for n in (_to_numeric(v) for v in non_null) if n is not None]
-
-        if func == "sum":
-            return round(sum(nv), 10) if nv else 0
-        elif func == "count":
-            return len(non_null)
-        elif func == "count_distinct":
-            return len(set(str(v) for v in non_null))
-        elif func == "avg":
-            return round(sum(nv) / len(nv), 10) if nv else None
-        elif func == "min":
-            if nv: return min(nv)
-            return min(str(v) for v in non_null) if non_null else None
-        elif func == "max":
-            if nv: return max(nv)
-            return max(str(v) for v in non_null) if non_null else None
-        elif func == "stddev":
-            return round(statistics.stdev(nv), 10) if len(nv) >= 2 else 0
-        elif func == "median":
-            return statistics.median(nv) if nv else None
-        elif func == "first":
-            return non_null[0] if non_null else None
-        elif func == "last":
-            return non_null[-1] if non_null else None
-        else:
-            return None
-    except Exception as e:
-        return f"[Agg-Fehler: {e}]"
-
-
-
-def _apply_cast_rules(df, cast_rules: dict) -> tuple:
-    """Wendet Typ-Konvertierungen auf einen DataFrame an. Gibt (df, errors) zurück."""
-    if not cast_rules:
-        return df, []
-    import pandas as pd
-    errors = []
-    skip_mask = pd.Series([False] * len(df), index=df.index)
-
-    for field, rule in cast_rules.items():
-        if field not in df.columns:
-            continue
-        cast_type = rule.get("type", "")
-        on_error = rule.get("on_error", "null")
-        try:
-            if cast_type == "integer":
-                converted = pd.to_numeric(df[field], errors="coerce").astype("Int64")
-                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error" and bad.any():
-                    errors.append(f"Konvertierung INT '{field}': {bad.sum()} nicht konvertierbare Werte")
-                    continue
-                df[field] = converted
-            elif cast_type == "decimal":
-                sep = rule.get("decimal_sep", ".")
-                s = df[field].astype(str).str.strip()
-                if sep == ",":
-                    s = s.str.replace(".", "", regex=False).str.replace(",", ".", regex=False)
-                else:
-                    s = s.str.replace(",", "", regex=False)
-                converted = pd.to_numeric(s, errors="coerce")
-                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error" and bad.any():
-                    errors.append(f"Konvertierung DEC '{field}': {bad.sum()} nicht konvertierbare Werte")
-                    continue
-                df[field] = converted
-            elif cast_type in ("date", "datetime"):
-                fmt = rule.get("date_format", "%d.%m.%Y")
-                converted = pd.to_datetime(df[field], format=fmt, errors="coerce")
-                bad = converted.isna() & df[field].notna() & (df[field].astype(str).str.strip() != "")
-                if on_error == "skip":
-                    skip_mask = skip_mask | bad
-                elif on_error == "error" and bad.any():
-                    errors.append(f"Konvertierung DATE '{field}': {bad.sum()} nicht konvertierbare Werte")
-                    continue
-                if cast_type == "date":
-                    df[field] = converted.dt.strftime("%Y-%m-%d")
-                else:
-                    df[field] = converted.dt.strftime("%Y-%m-%d %H:%M:%S")
-            elif cast_type == "string":
-                df[field] = df[field].astype(str).replace("nan", "").replace("None", "")
-            elif cast_type == "boolean":
-                true_vals = {"true", "1", "yes", "ja", "wahr", "y"}
-                df[field] = df[field].astype(str).str.lower().str.strip().isin(true_vals)
-        except Exception as e:
-            if on_error == "error":
-                errors.append(f"Konvertierung '{field}' → {cast_type}: {str(e)[:100]}")
-            # else: null lassen
-
-    if skip_mask.any():
-        df = df[~skip_mask]
-
-    return df, errors
-
-
-def _exec_python_script(script: str, row: dict, timeout_sec: int = 3) -> tuple:
-    """
-    Führt ein User-Python-Skript sicher aus.
-    Wraps the script in a function so `return row` works.
-    Returns (new_row_dict, None) on success, (None, error_str) on failure.
-    """
-    import threading
-    import math as _math, re as _re, json as _json
-    import decimal as _decimal, statistics as _statistics, string as _string
-    from datetime import datetime as _datetime, date as _date, timedelta as _timedelta
-
-    _allowed_builtins = {
-        "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-        "enumerate": enumerate, "filter": filter, "float": float, "format": format,
-        "getattr": getattr, "hasattr": hasattr, "int": int, "isinstance": isinstance,
-        "iter": iter, "len": len, "list": list, "map": map, "max": max, "min": min,
-        "next": next, "range": range, "repr": repr, "reversed": reversed, "round": round,
-        "set": set, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
-        "type": type, "zip": zip, "None": None, "True": True, "False": False,
-        "print": lambda *a, **kw: None,
-    }
-    _globs = {
-        "__builtins__": _allowed_builtins,
-        "math": _math, "re": _re, "json": _json,
-        "decimal": _decimal, "statistics": _statistics, "string": _string,
-        "datetime": _datetime, "date": _date, "timedelta": _timedelta,
-    }
-
-    _result = {"value": None, "error": None}
-
-    def _run():
-        try:
-            indented = "\n".join("    " + line for line in script.splitlines()) or "    pass"
-            wrapped = f"def __fn__(row):\n{indented}\n__ret__ = __fn__(row)"
-            local_ns = {"row": dict(row)}
-            exec(wrapped, dict(_globs), local_ns)
-            ret = local_ns.get("__ret__")
-            if ret is None:
-                _result["error"] = "Kein Rückgabewert (return row vergessen?)"
-            elif not isinstance(ret, dict):
-                _result["error"] = f"Skript muss ein dict zurückgeben, nicht {type(ret).__name__}"
-            else:
-                _result["value"] = ret
-        except Exception as _e:
-            import traceback as _tb
-            lines = [l for l in _tb.format_exc().strip().splitlines() if l.strip()]
-            _result["error"] = (lines[-1] if lines else str(_e))[:300]
-
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    t.join(timeout_sec)
-    if t.is_alive():
-        return None, f"Timeout nach {timeout_sec}s"
-    return _result["value"], _result["error"]
-
-
-def _eval_expression(expr: str, row: dict):
-    """Wertet einen Formelausdruck aus. {feldname} wird durch row["feldname"] ersetzt."""
-    import re as _re, datetime as _dt, math as _math
-    expr_py = _re.sub(r'\{(\w+)\}', r'__r__["\1"]', expr)
-
-    def _upper(s):   return str(s).upper()  if s is not None else None
-    def _lower(s):   return str(s).lower()  if s is not None else None
-    def _trim(s):    return str(s).strip()  if s is not None else None
-    def _concat(*a): return "".join(str(x) for x in a if x is not None)
-    def _replace(s, old, new): return str(s).replace(str(old), str(new)) if s is not None else None
-    def _substr(s, start, length=None):
-        s2 = str(s) if s is not None else ""
-        return s2[int(start):int(start)+int(length)] if length is not None else s2[int(start):]
-    def _len(s):     return len(str(s)) if s is not None else 0
-    def _coalesce(*a):
-        for x in a:
-            if x is not None and str(x) != "": return x
-        return None
-    def _if_(cond, then, else_=None): return then if cond else else_
-    def _round_(n, d=0): return round(float(n), int(d)) if n is not None else None
-    def _int_(s):    return int(float(str(s))) if s is not None else None
-    def _float_(s):  return float(str(s))      if s is not None else None
-    def _str_(s):    return str(s)             if s is not None else None
-    def _now():      return _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    def _today():    return _dt.date.today().strftime("%Y-%m-%d")
-    def _pad(s, w, ch=" "): return str(s).ljust(int(w), ch[0]) if s is not None else None
-    def _regex_match(s, pat):
-        import re as _r2
-        return bool(_r2.search(pat, str(s))) if s is not None else False
-
-    ns = {
-        "__r__": row, "__builtins__": {},
-        "upper": _upper, "lower": _lower, "trim": _trim,
-        "concat": _concat, "replace": _replace, "substr": _substr,
-        "len": _len, "coalesce": _coalesce, "if_": _if_,
-        "round": _round_, "int": _int_, "float": _float_, "str": _str_,
-        "now": _now, "today": _today, "pad": _pad,
-        "regex_match": _regex_match,
-        "abs": abs, "max": max, "min": min,
-        "sqrt": _math.sqrt, "floor": _math.floor, "ceil": _math.ceil,
-        "True": True, "False": False, "None": None,
-    }
-    return eval(expr_py, ns)  # noqa: S307
-
-
-_DQ_VALIDATORS = {
-    "required":  lambda v, _: v is not None and str(v).strip() != "",
-    "number":    lambda v, _: (lambda s: s.lstrip("-").replace(".", "", 1).isdigit())(str(v).strip()) if v is not None else False,
-    "email":     lambda v, _: bool(__import__("re").fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", str(v).strip())) if v is not None else False,
-    "plz_de":    lambda v, _: bool(__import__("re").fullmatch(r"\d{5}", str(v).strip())) if v is not None else False,
-    "phone":     lambda v, _: bool(__import__("re").fullmatch(r"[\d\s\+\-\(\)\/]{7,20}", str(v).strip())) if v is not None else False,
-    "iban":      lambda v, _: bool(__import__("re").fullmatch(r"[A-Z]{2}\d{2}[A-Z0-9]{11,30}", str(v).replace(" ", "").upper())) if v is not None else False,
-    "ean":       lambda v, _: bool(__import__("re").fullmatch(r"\d{8}|\d{13}", str(v).strip())) if v is not None else False,
-    "vat_id":    lambda v, _: bool(__import__("re").fullmatch(r"[A-Z]{2}[A-Z0-9]{2,12}", str(v).replace(" ", "").upper())) if v is not None else False,
-    "regex":     lambda v, rule: bool(__import__("re").search(rule.get("pattern", ".*"), str(v))) if v is not None else False,
-    "date":      lambda v, _: _validate_date(v),
-    "url":       lambda v, _: bool(__import__("re").match(r"https?://\S+", str(v).strip())) if v is not None else False,
-}
-
-def _validate_date(v):
-    if v is None: return False
-    import datetime as _dt2
-    for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            _dt2.datetime.strptime(str(v).strip(), fmt)
-            return True
-        except ValueError:
-            pass
-    return False
-
+# ─── Mapping-Vorschau / Export-Engine ─────────────────────────────────────────
 
 def execute_mapping(
     canvas_nodes: List[Dict],
@@ -1754,7 +797,7 @@ def execute_mapping(
                     if is_preview:
                         import re as _re2
                         _dialect = ext_engine.dialect.name
-                        _has_limit = bool(_re2.search('TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
+                        _has_limit = bool(_re2.search(r'TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
                         if not _has_limit:
                             if _dialect == 'mssql':
                                 _exec_sql = 'SELECT TOP ' + str(preview_rows) + ' ' + _re2.sub(r'(?i)^\s*SELECT\s+', '', _exec_sql, count=1)
