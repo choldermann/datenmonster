@@ -485,8 +485,49 @@ export default function FloatingAIAssistant() {
   );
 }
 
+function SuggestedList({ questions, onSelect }: { questions: string[]; onSelect: (q: string) => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 4 }}>
+      {questions.map(q => (
+        <button key={q} onClick={() => onSelect(q)}
+          style={{ background: "none", border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "rgba(255,255,255,0.5)", cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}
+          onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; e.currentTarget.style.color = "rgba(252,228,153,0.8)"; }}
+          onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}>
+          {q}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function SuggestedQuestions({ pageContext, onSelect }: { pageContext: PageContext | null; onSelect: (q: string) => void }) {
   const activeNode = (pageContext?.currentData as any)?.activeNode;
+
+  // Python-Node aktiv → spezifische Vorschläge
+  if (activeNode?.type === "python") {
+    const hasScript = !!activeNode.script?.trim();
+    const qs = [
+      hasScript ? "Erkläre mir diesen Python-Code" : null,
+      hasScript ? "Wie kann ich diesen Code verbessern?" : null,
+      "Schreibe Python-Code der Brutto in Netto umrechnet (19% MwSt)",
+      "Wie greife ich auf Felder aus row zu und schreibe neue Felder?",
+      "Wie fange ich Fehler ab ohne die ganze Zeile zu stoppen?",
+    ].filter(Boolean) as string[];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
+
+  // Expression-Node aktiv → spezifische Vorschläge
+  if (activeNode?.type === "expression") {
+    const hasFields = (activeNode.fields || []).some((f: any) => f.expr?.trim());
+    const qs = [
+      hasFields ? "Erkläre mir die aktuellen Ausdrücke" : null,
+      "Wie verbinde ich Vor- und Nachname mit Leerzeichen?",
+      "Wie berechne ich Brutto aus Netto mit 19% MwSt?",
+      "Welche Funktionen sind verfügbar? (concat, if_, round, ...)",
+      "Wie formatiere ich ein Datum in DD.MM.YYYY?",
+    ].filter(Boolean) as string[];
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
+  }
 
   // SQL-Node aktiv → spezifische Vorschläge
   if (activeNode?.type === "sql") {
@@ -500,18 +541,7 @@ function SuggestedQuestions({ pageContext, onSelect }: { pageContext: PageContex
       mode === "column" ? "Generiere SQL für eine einmalige Spaltenabfrage" : null,
       "Welche Modi gibt es im SQL-Node?",
     ].filter(Boolean) as string[];
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 4 }}>
-        {qs.map(q => (
-          <button key={q} onClick={() => onSelect(q)}
-            style={{ background: "none", border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "rgba(255,255,255,0.5)", cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}
-            onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; e.currentTarget.style.color = "rgba(252,228,153,0.8)"; }}
-            onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}>
-            {q}
-          </button>
-        ))}
-      </div>
-    );
+    return <SuggestedList questions={qs} onSelect={onSelect} />;
   }
 
   const questions: Record<string, string[]> = {
@@ -541,30 +571,5 @@ function SuggestedQuestions({ pageContext, onSelect }: { pageContext: PageContex
 
   const page = pageContext?.page ?? "dashboard";
   const qs = questions[page] ?? questions.dashboard;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 4 }}>
-      {qs.map(q => (
-        <button
-          key={q}
-          onClick={() => onSelect(q)}
-          style={{
-            background: "none",
-            border: `1px solid rgba(255,255,255,0.1)`,
-            borderRadius: 8,
-            padding: "6px 10px",
-            fontSize: 11,
-            color: "rgba(255,255,255,0.5)",
-            cursor: "pointer",
-            textAlign: "left",
-            transition: "all 0.15s",
-          }}
-          onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; e.currentTarget.style.color = "rgba(252,228,153,0.8)"; }}
-          onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}
-        >
-          {q}
-        </button>
-      ))}
-    </div>
-  );
+  return <SuggestedList questions={qs} onSelect={onSelect} />;
 }

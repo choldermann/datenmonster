@@ -1,17 +1,15 @@
-import { useRef, useState } from "react";
-import { Code, GripVertical, Plus, Sparkles, X } from "lucide-react";
+import { useRef } from "react";
+import { Code, GripVertical, Plus, X } from "lucide-react";
 import { S } from "./constants";
-import AiStreamModal from "./AiStreamModal";
-import { generatePython } from "../../services/aiService";
 
 export const PYTHON_NODE_COLOR = "#22c55e";
 
 const DOT = 10;
+const ACTIVE_BORDER = "#fce499";
 
-export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, aiEnabled, mappingId }) {
+export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, aiEnabled, mappingId, isActive, onActivate }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
-  const [aiOpen, setAiOpen] = useState(false);
   const C = PYTHON_NODE_COLOR;
 
   const handleMouseDown = (e) => {
@@ -49,17 +47,25 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
     output_fields: outputFields.map((f, idx) => (idx === i ? val : f)),
   });
 
+  const activeBorder = isActive && !debugHighlight;
+  const borderColor = debugHighlight ? `${C}cc` : activeBorder ? ACTIVE_BORDER : `${C}55`;
+  const boxShadow = debugHighlight
+    ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)`
+    : activeBorder
+    ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
+    : "0 8px 32px rgba(0,0,0,0.5)";
+
   return (
-    <>
     <div
       draggable={false}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "python", script: (node.script || "").slice(0, 400), outputFields: node.output_fields || [] }); }}
       style={{
         position: "absolute", left: node.x, top: node.y,
         width: 300, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
-        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
-        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : "1px solid " + C + "55",
-        backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
+        boxShadow, borderRadius: 6,
+        border: `${debugHighlight ? "1.5px" : "1px"} solid ${borderColor}`,
+        backgroundColor: S.bgCard, overflow: "visible",
+        transition: "box-shadow 0.15s, border-color 0.15s",
       }}
     >
       {/* Header */}
@@ -77,12 +83,6 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
           Python Script
         </span>
         <span style={{ fontSize: 9, color: S.textDim, fontFamily: "monospace" }}>#{node.id.slice(0, 6)}</span>
-        {aiEnabled && (
-          <button onClick={() => setAiOpen(true)} title="✨ Python-Code mit KI generieren"
-            style={{ background: "none", border: "none", color: "#fce499", cursor: "pointer", padding: "0 2px", display: "flex", alignItems: "center" }}>
-            <Sparkles size={11} />
-          </button>
-        )}
         <button
           onClick={() => onRemove(node.id)}
           style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0 }}
@@ -164,7 +164,7 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
               >
                 <X size={10} />
               </button>
-              {/* Output dot – außerhalb der Node-Box für Verbindungen */}
+              {/* Output dot */}
               <div
                 ref={(el) => {
                   if (outputRefs?.current) {
@@ -198,17 +198,5 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
         </div>
       </div>
     </div>
-
-    {aiOpen && (
-      <AiStreamModal
-        title="✨ Python-Code generieren"
-        placeholder='z.B. "Netto aus Brutto berechnen, MwSt 19%"'
-        onGenerate={(desc, onToken) => generatePython(desc, mappingId, node.id, node.script || "", onToken)}
-        onApply={(code) => onUpdate({ ...node, script: code })}
-        onClose={() => setAiOpen(false)}
-        applyLabel="Code übernehmen"
-      />
-    )}
-    </>
   );
 }

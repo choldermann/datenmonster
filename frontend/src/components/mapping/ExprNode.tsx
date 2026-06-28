@@ -1,18 +1,16 @@
-import { useRef, useState } from "react";
-import { FunctionSquare, GripVertical, Plus, Sparkles, X } from "lucide-react";
+import { useRef } from "react";
+import { FunctionSquare, GripVertical, Plus, X } from "lucide-react";
 import { S } from "./constants";
-import AiStreamModal from "./AiStreamModal";
-import { generateExpression } from "../../services/aiService";
 
 export const EXPR_NODE_COLOR = "#e879f9";
 
 const DOT = 10;
+const ACTIVE_BORDER = "#fce499";
 const HINT = "Formel-Syntax: {feldname}, concat({a}, \" \", {b}), if_(Bedingung, dann, sonst), round({preis} * 1.19, 2)";
 
-export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, debugStats, aiEnabled, mappingId }) {
+export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, debugStats, aiEnabled, mappingId, isActive, onActivate }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
-  const [aiFieldIdx, setAiFieldIdx] = useState(null);
   const C = EXPR_NODE_COLOR;
 
   const handleMouseDown = (e) => {
@@ -50,17 +48,32 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
     output_fields: outputFields.map((f, idx) => idx === i ? { ...f, [key]: val } : f),
   });
 
+  const activeBorder = isActive && !debugHighlight;
+  const borderColor = debugHighlight ? `${C}cc` : activeBorder ? ACTIVE_BORDER : `${C}55`;
+  const boxShadow = debugHighlight
+    ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)`
+    : activeBorder
+    ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
+    : "0 8px 32px rgba(0,0,0,0.5)";
+
   return (
-    <>
     <div
       draggable={false}
-      onClick={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.stopPropagation();
+        onActivate?.({
+          type: "expression",
+          label: node.label || "Expression",
+          fields: (node.output_fields || []).map(f => ({ name: f.name, expr: (f.expr || "").slice(0, 200) })),
+        });
+      }}
       style={{
         position: "absolute", left: node.x, top: node.y,
         width: 320, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
-        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
-        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : `1px solid ${C}55`,
-        backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
+        boxShadow, borderRadius: 6,
+        border: `${debugHighlight ? "1.5px" : "1px"} solid ${borderColor}`,
+        backgroundColor: S.bgCard, overflow: "visible",
+        transition: "box-shadow 0.15s, border-color 0.15s",
       }}
     >
       {/* Header */}
@@ -122,12 +135,6 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
                   borderRadius: 3, color: S.textBright, outline: "none", fontFamily: "monospace",
                 }}
               />
-              {aiEnabled && (
-                <button onClick={() => setAiFieldIdx(i)} title="✨ Ausdruck mit KI generieren"
-                  style={{ background: "none", border: "none", color: "#fce499", cursor: "pointer", padding: 0, flexShrink: 0 }}>
-                  <Sparkles size={10} />
-                </button>
-              )}
               <button
                 onClick={() => removeField(i)}
                 style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0, flexShrink: 0 }}
@@ -191,25 +198,5 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
         )}
       </div>
     </div>
-
-    {aiFieldIdx !== null && (
-      <AiStreamModal
-        title={`✨ Ausdruck generieren — ${outputFields[aiFieldIdx]?.name || "Feld"}`}
-        placeholder='z.B. "Vorname und Nachname mit Leerzeichen verbinden"'
-        onGenerate={(desc, onToken) =>
-          generateExpression(
-            desc,
-            mappingId,
-            node.id,
-            outputFields[aiFieldIdx]?.name || "",
-            onToken,
-          )
-        }
-        onApply={(expr) => updateField(aiFieldIdx, "expr", expr.trim())}
-        onClose={() => setAiFieldIdx(null)}
-        applyLabel="Ausdruck übernehmen"
-      />
-    )}
-    </>
   );
 }

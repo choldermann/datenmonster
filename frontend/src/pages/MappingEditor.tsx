@@ -1102,6 +1102,8 @@ export default function MappingEditor() {
                   debugStats={debugStatsMap["python"]}
                   aiEnabled={aiEnabled}
                   mappingId={id && id !== "new" ? parseInt(id) : null}
+                  isActive={activeNodeId === pn.id}
+                  onActivate={(info) => { setActiveNodeId(pn.id); setActiveNodeInfo(info); }}
                 />
               ))}
 
@@ -1115,6 +1117,8 @@ export default function MappingEditor() {
                   debugStats={debugStatsMap["expr"]}
                   aiEnabled={aiEnabled}
                   mappingId={id && id !== "new" ? parseInt(id) : null}
+                  isActive={activeNodeId === en.id}
+                  onActivate={(info) => { setActiveNodeId(en.id); setActiveNodeInfo(info); }}
                 />
               ))}
 
