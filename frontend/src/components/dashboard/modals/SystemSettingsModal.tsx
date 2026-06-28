@@ -642,6 +642,19 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
+function guessModelLanguages(name: string): string[] {
+  const n = name.toLowerCase();
+  if (/embed|nomic|mxbai|all-minilm/.test(n)) return [];
+  if (/qwen/.test(n)) return ["EN", "ZH", "DE"];
+  if (/deepseek/.test(n)) return ["EN", "ZH"];
+  if (/mistral-nemo/.test(n)) return ["EN", "FR", "DE", "ES"];
+  if (/mistral/.test(n)) return ["EN", "FR", "DE"];
+  if (/gemma/.test(n)) return ["EN"];
+  if (/llama/.test(n)) return ["EN"];
+  if (/phi/.test(n)) return ["EN"];
+  return ["EN"];
+}
+
 function guessModelType(name: string): string[] {
   const n = name.toLowerCase();
   const tags: string[] = [];
@@ -731,6 +744,7 @@ function ModelLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [sizeFilter, setSizeFilter] = useState("Alle");
   const [typeFilter, setTypeFilter] = useState("Alle");
+  const [search, setSearch] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [pulling, setPulling] = useState<string | null>(null);
@@ -797,17 +811,21 @@ function ModelLibrary() {
     color: active ? ACCENT : S.textDim,
   });
 
+  const searchLower = search.toLowerCase();
+
   const filteredInstalled = installedModels.filter(m => {
     const size = guessModelSize(m.name, m.size);
     const types = guessModelType(m.name);
     if (sizeFilter !== "Alle" && size !== sizeFilter) return false;
     if (typeFilter !== "Alle" && !types.includes(typeFilter)) return false;
+    if (searchLower && !m.name.toLowerCase().includes(searchLower)) return false;
     return true;
   });
 
   const filteredCatalog = CATALOG.filter(m => {
     if (sizeFilter !== "Alle" && m.sizeLabel !== sizeFilter) return false;
     if (typeFilter !== "Alle" && !m.types.includes(typeFilter)) return false;
+    if (searchLower && !m.name.toLowerCase().includes(searchLower)) return false;
     return true;
   });
 
@@ -821,6 +839,26 @@ function ModelLibrary() {
         <button style={toggleStyle(view === "catalog")} onClick={() => setView("catalog")}>
           Katalog ({CATALOG.length})
         </button>
+      </div>
+
+      {/* Suchfeld */}
+      <div style={{ position: "relative", marginBottom: 10 }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Modell suchen… (z.B. gemma, qwen3, coder)"
+          style={{
+            width: "100%", boxSizing: "border-box",
+            padding: "6px 28px 6px 10px", fontSize: 11,
+            backgroundColor: S.bgEl, border: `1px solid ${S.border}`,
+            borderRadius: 6, color: S.textBright, outline: "none",
+          }}
+        />
+        {search && (
+          <button onClick={() => setSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0, display: "flex" }}>
+            <X size={12} />
+          </button>
+        )}
       </div>
 
       {/* Filter chips */}
@@ -854,6 +892,7 @@ function ModelLibrary() {
             {filteredInstalled.map(m => {
               const size = guessModelSize(m.name, m.size);
               const types = guessModelType(m.name);
+              const langs = guessModelLanguages(m.name);
               const isDeleting = deleting === m.name;
               const isConfirming = confirmDelete === m.name;
               const modified = m.modified_at ? new Date(m.modified_at).toLocaleDateString("de-DE") : null;
@@ -866,6 +905,9 @@ function ModelLibrary() {
                         <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{size}</span>
                         {types.map(t => (
                           <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
+                        ))}
+                        {langs.map(l => (
+                          <span key={l} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, backgroundColor: "rgba(99,179,237,0.1)", color: "#63b3ed", border: "1px solid rgba(99,179,237,0.2)" }}>{l}</span>
                         ))}
                         {m.size && <span style={{ fontSize: 9, color: S.textDim }}>{formatBytes(m.size)}</span>}
                         {modified && <span style={{ fontSize: 9, color: S.textDim }}>· {modified}</span>}
@@ -911,6 +953,7 @@ function ModelLibrary() {
             {filteredCatalog.map(m => {
               const isInstalled = installedNames.has(m.name);
               const isPulling = pulling === m.name;
+              const langs = guessModelLanguages(m.name);
               return (
                 <div key={m.name} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${isInstalled ? "rgba(110,231,183,0.2)" : S.border}`, backgroundColor: isInstalled ? "rgba(110,231,183,0.04)" : "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -920,6 +963,9 @@ function ModelLibrary() {
                       <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{m.sizeLabel}</span>
                       {m.types.map(t => (
                         <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
+                      ))}
+                      {langs.map(l => (
+                        <span key={l} style={{ fontSize: 9, padding: "1px 5px", borderRadius: 10, backgroundColor: "rgba(99,179,237,0.1)", color: "#63b3ed", border: "1px solid rgba(99,179,237,0.2)" }}>{l}</span>
                       ))}
                       <span style={{ fontSize: 9, color: S.textDim }}>{m.sizeDisplay}</span>
                     </div>
