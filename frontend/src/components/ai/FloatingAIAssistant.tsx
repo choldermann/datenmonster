@@ -186,36 +186,22 @@ export default function FloatingAIAssistant() {
     setMessages([]);
   }, [pageContext?.page]);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || streaming) return;
-    setInput("");
+  const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
 
-    const userMsg: Message = { role: "user", content: text };
-    const assistantMsg: Message = { role: "assistant", content: "", streaming: true };
-    setMessages(prev => [...prev, userMsg, assistantMsg]);
+  const runStream = useCallback(async (text: string, history: { role: string; content: string }[]) => {
     setStreaming(true);
     setTokenCount(0);
     abortRef.current = false;
     const ctrl = new AbortController();
     abortCtrlRef.current = ctrl;
 
-    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    const pageCtx = pageContext
+      ? { page: pageContext.page, title: pageContext.title, description: pageContext.description, currentData: pageContext.currentData ?? {} }
+      : {};
 
     try {
       await streamRequest("/chat", {
-        message: text,
-        history,
-        mode: aiMode,
-        debug: expertMode,
-        page_context: pageContext
-          ? {
-              page: pageContext.page,
-              title: pageContext.title,
-              description: pageContext.description,
-              currentData: pageContext.currentData ?? {},
-            }
-          : {},
+        message: text, history, mode: aiMode, debug: expertMode, page_context: pageCtx,
       }, (_token: string, full: string) => {
         if (abortRef.current) return;
         setTokenCount(prev => prev + 1);
@@ -231,7 +217,6 @@ export default function FloatingAIAssistant() {
     } catch (e: any) {
       const msg = e?.message || "KI nicht verfügbar";
       if (msg === "__ABORTED__") {
-        // Abbruch durch User — partielle Antwort behalten, markieren
         setMessages(prev => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
@@ -246,17 +231,10 @@ export default function FloatingAIAssistant() {
         const isOllamaError = msg.toLowerCase().includes("ollama");
         const isNetworkError = msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk");
         let display = msg;
-        if (isNetworkError && !isOllamaError) {
-          setAiAvailable(false);
-          display = "Backend nicht erreichbar. Bitte Seite neu laden.";
-        }
+        if (isNetworkError && !isOllamaError) { setAiAvailable(false); display = "Backend nicht erreichbar. Bitte Seite neu laden."; }
         setMessages(prev => {
           const updated = [...prev];
-          updated[updated.length - 1] = {
-            role: "assistant",
-            content: `⚠ ${display}`,
-            streaming: false,
-          };
+          updated[updated.length - 1] = { role: "assistant", content: `⚠ ${display}`, streaming: false };
           return updated;
         });
       }
@@ -264,13 +242,29 @@ export default function FloatingAIAssistant() {
       setStreaming(false);
       setMessages(prev => {
         const updated = [...prev];
-        if (updated.length > 0) {
-          updated[updated.length - 1] = { ...updated[updated.length - 1], streaming: false };
-        }
+        if (updated.length > 0) updated[updated.length - 1] = { ...updated[updated.length - 1], streaming: false };
         return updated;
       });
     }
-  }, [input, streaming, messages, pageContext]);
+  }, [aiMode, expertMode, pageContext]);
+
+  const sendMessage = useCallback(async () => {
+    const text = input.trim();
+    if (!text || streaming) return;
+    setInput("");
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: "", streaming: true }]);
+    await runStream(text, history);
+  }, [input, streaming, messages, runStream]);
+
+  const rerunMessage = useCallback(async (idx: number) => {
+    if (streaming) return;
+    const msg = messages[idx];
+    if (!msg || msg.role !== "user") return;
+    const history = messages.slice(0, idx).map(m => ({ role: m.role, content: m.content }));
+    setMessages([...messages.slice(0, idx + 1), { role: "assistant", content: "", streaming: true }]);
+    await runStream(msg.content, history);
+  }, [streaming, messages, runStream]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -803,10 +797,32 @@ export default function FloatingAIAssistant() {
             )}
 
             {messages.map((msg, i) => (
-              <div key={i} style={{
-                display: "flex",
-                justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-              }}>
+              <div
+                key={i}
+                onMouseEnter={() => setHoveredMsgIdx(i)}
+                onMouseLeave={() => setHoveredMsgIdx(null)}
+                style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", gap: 5, alignItems: "flex-end" }}
+              >
+                {/* Wiederholen-Button (nur bei User-Nachrichten, beim Hover) */}
+                {msg.role === "user" && (
+                  <button
+                    onClick={() => rerunMessage(i)}
+                    title="Frage wiederholen"
+                    disabled={streaming}
+                    style={{
+                      opacity: hoveredMsgIdx === i && !streaming ? 1 : 0,
+                      transition: "opacity 0.15s",
+                      background: "none", border: "none", cursor: streaming ? "default" : "pointer",
+                      color: "rgba(255,255,255,0.35)", padding: "3px 4px", display: "flex", alignItems: "center",
+                      flexShrink: 0, alignSelf: "flex-end", marginBottom: 2,
+                    }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                      <path d="M3 3v5h5"/>
+                    </svg>
+                  </button>
+                )}
                 <div style={{
                   maxWidth: "85%",
                   padding: "8px 11px",
