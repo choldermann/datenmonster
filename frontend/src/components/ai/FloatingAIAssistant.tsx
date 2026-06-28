@@ -54,6 +54,7 @@ export default function FloatingAIAssistant() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [aiModel, setAiModel] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<boolean>(false);
@@ -120,7 +121,7 @@ export default function FloatingAIAssistant() {
       headers: { Authorization: `Bearer ${localStorage.getItem("dm_token") || ""}` },
     })
       .then(r => r.json())
-      .then(d => setAiAvailable(d.enabled && d.ollama_reachable))
+      .then(d => { setAiAvailable(d.enabled && d.ollama_reachable); if (d.model) setAiModel(d.model); })
       .catch(() => setAiAvailable(false));
   }, []);
 
@@ -279,15 +280,32 @@ export default function FloatingAIAssistant() {
               gap: 8,
               flexShrink: 0,
               cursor: "move",
+              position: "relative",
             }}
           >
             <Sparkles size={14} color={ACCENT} />
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: ACCENT }}>KI Assistent</div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {pageLabel}
               </div>
             </div>
+            {/* Modell-Chip zentriert */}
+            {aiModel && (
+              <div style={{
+                position: "absolute", left: "50%", top: "50%",
+                transform: "translate(-50%, -50%)",
+                fontSize: 9, fontFamily: "monospace", fontWeight: 600,
+                color: "rgba(252,228,153,0.55)",
+                backgroundColor: "rgba(252,228,153,0.06)",
+                border: "1px solid rgba(252,228,153,0.12)",
+                borderRadius: 10, padding: "2px 8px",
+                whiteSpace: "nowrap", pointerEvents: "none",
+              }}>
+                {aiModel}
+              </div>
+            )}
+            <div style={{ flex: 1 }} />
             {messages.length > 0 && (
               <button
                 onClick={clearConversation}

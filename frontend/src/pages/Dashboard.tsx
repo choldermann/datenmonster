@@ -230,7 +230,6 @@ export default function Dashboard() {
           <div>
             <span className="font-bold font-mono text-sm block" style={{ color: S.accent, letterSpacing: "0.05em" }}>Datenmonster</span>
             <span className="text-xs" style={{ color: S.textDim }}>Holdermann IT</span>
-            {aiModel && <span className="text-xs font-mono" style={{ color: S.textDim, opacity: 0.6 }}>{aiModel}</span>}
           </div>
         </div>
 
