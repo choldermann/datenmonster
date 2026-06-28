@@ -185,7 +185,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
         ({ data } = await api.post("/api/datasets/access/tables-from-upload", form, {
           timeout: 0,  // kein axios-Timeout
         }));
-        setTmpPath(data.tmp_path);
+        setTmpPath(data.tmp_token);
       }
       setTables(data.tables || []);
       setSelectedTables(data.tables || []);
@@ -205,10 +205,14 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
   const loadPreview = async (table) => {
     if (previewTable === table) { setPreview(null); setPreviewTable(null); return; }
     setPreviewTable(table); setPreview(null);
-    const path = mode === "path" ? serverPath : tmpPath;
-    if (!path) return;
+    const isUpload = mode !== "path";
+    if (isUpload && !tmpPath) return;
+    if (!isUpload && !serverPath) return;
     try {
-      const { data } = await api.post("/api/datasets/access/preview", { path, table });
+      const payload = isUpload
+        ? { tmp_token: tmpPath, table }
+        : { path: serverPath, table };
+      const { data } = await api.post("/api/datasets/access/preview", payload);
       setPreview(data);
     } catch { /* Preview optional */ }
   };
@@ -231,7 +235,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
         form.append("table", table);
         if (projectId) form.append("project_id", projectId);
         if (mode === "path") form.append("server_path", serverPath);
-        else if (tmpPath) form.append("tmp_path", tmpPath);
+        else if (tmpPath) form.append("tmp_token", tmpPath);
         else if (uploadFile) form.append("file", uploadFile);
         await api.post("/api/datasets/access/import", form);
         results.push({ table, name: dsName, ok: true });

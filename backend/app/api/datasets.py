@@ -22,16 +22,32 @@ import pandas as pd
 import threading as _threading
 import os as _os
 
-_tmp_file_registry: dict = {}   # { tmp_path: expires_at (float) }
+_tmp_file_registry: dict = {}   # { token: {"path": str, "expires_at": float} }
 _tmp_registry_lock = _threading.Lock()
 _TMP_TTL_SECONDS = 600          # 10 Minuten
 
 
-def _register_tmp_file(path: str):
-    """Registriert eine tmp-Datei mit Ablaufzeit."""
+def _register_tmp_file(path: str) -> str:
+    """Registriert eine tmp-Datei mit Ablaufzeit. Gibt opaken Token zurück."""
+    import time, uuid
+    token = uuid.uuid4().hex
+    with _tmp_registry_lock:
+        _tmp_file_registry[token] = {"path": path, "expires_at": time.time() + _TMP_TTL_SECONDS}
+    return token
+
+
+def _resolve_tmp_token(token: str) -> str:
+    """Löst einen Token in den echten Dateipfad auf. Wirft 400 bei ungültigem Token."""
     import time
     with _tmp_registry_lock:
-        _tmp_file_registry[path] = time.time() + _TMP_TTL_SECONDS
+        entry = _tmp_file_registry.get(token)
+    if not entry:
+        raise HTTPException(400, "Ungültiger oder abgelaufener Upload-Token")
+    if time.time() > entry["expires_at"]:
+        raise HTTPException(400, "Upload-Token abgelaufen – bitte Datei erneut hochladen")
+    if not _os.path.exists(entry["path"]):
+        raise HTTPException(400, "Temporäre Datei nicht mehr vorhanden")
+    return entry["path"]
 
 
 def _cleanup_tmp_files():
@@ -39,20 +55,21 @@ def _cleanup_tmp_files():
     import time
     now = time.time()
     with _tmp_registry_lock:
-        expired = [p for p, exp in _tmp_file_registry.items() if now > exp]
-        for path in expired:
+        expired = [tok for tok, e in _tmp_file_registry.items() if now > e["expires_at"]]
+        for tok in expired:
             try:
+                path = _tmp_file_registry[tok]["path"]
                 if _os.path.exists(path):
                     _os.unlink(path)
             except Exception:
                 pass
-            del _tmp_file_registry[path]
+            del _tmp_file_registry[tok]
 
 
-def _unregister_tmp_file(path: str):
-    """Entfernt eine tmp-Datei aus der Registry (nach erfolgreichem Import)."""
+def _unregister_tmp_file(token: str):
+    """Entfernt einen Token aus der Registry (nach erfolgreichem Import)."""
     with _tmp_registry_lock:
-        _tmp_file_registry.pop(path, None)
+        _tmp_file_registry.pop(token, None)
 
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
@@ -1020,9 +1037,9 @@ async def get_tables_from_upload(
 
     try:
         tables = list_tables(tmp_path)
-        _register_tmp_file(tmp_path)
+        tmp_token = _register_tmp_file(tmp_path)
         _cleanup_tmp_files()
-        return {"tables": tables, "tmp_path": tmp_path, "filename": file.filename}
+        return {"tables": tables, "tmp_token": tmp_token, "filename": file.filename}
     except Exception as e:
         import os
         if os.path.exists(tmp_path):
@@ -1037,11 +1054,17 @@ async def preview_access_table(
 ):
     """Liest Vorschau (5 Zeilen) einer Access-Tabelle."""
     from app.services.access_service import get_table_preview
-    path = payload.get("path", "").strip()
+    tmp_token = payload.get("tmp_token", "").strip()
     table = payload.get("table", "").strip()
-    if not path or not table:
-        raise HTTPException(400, "path und table sind erforderlich")
-    path = _sanitize_server_path(path)
+    if not table:
+        raise HTTPException(400, "table ist erforderlich")
+    if tmp_token:
+        path = _resolve_tmp_token(tmp_token)
+    else:
+        path = payload.get("path", "").strip()
+        if not path:
+            raise HTTPException(400, "tmp_token oder path ist erforderlich")
+        path = _sanitize_server_path(path)
     try:
         preview = get_table_preview(path, table, limit=5)
         return preview
@@ -1055,7 +1078,7 @@ async def import_access_table(
     name: str = Form(...),
     table: str = Form(...),
     server_path: Optional[str] = Form(None),
-    tmp_path: Optional[str] = Form(None),
+    tmp_token: Optional[str] = Form(None),
     project_id: Optional[int] = Form(None),
     csv_delimiter: Optional[str] = Form(None),
     skip_rows: Optional[int] = Form(None),
@@ -1065,7 +1088,7 @@ async def import_access_table(
     """
     Importiert eine Access-Tabelle als Dataset.
     Entweder via Datei-Upload (file), Serverpfad (server_path) oder
-    bereits hochgeladene Temp-Datei (tmp_path aus tables-from-upload).
+    bereits hochgeladene Temp-Datei (tmp_token aus tables-from-upload).
     """
     from app.services.access_service import read_table, check_mdbtools
     import tempfile, os as _os
@@ -1081,9 +1104,9 @@ async def import_access_table(
     try:
         if server_path:
             mdb_path = _sanitize_server_path(server_path)
-        elif tmp_path and _os.path.exists(tmp_path):
-            mdb_path = tmp_path
-            _unregister_tmp_file(tmp_path)  # nicht mehr ablaufend löschen
+        elif tmp_token:
+            mdb_path = _resolve_tmp_token(tmp_token)
+            _unregister_tmp_file(tmp_token)  # nicht mehr ablaufend löschen
         elif file:
             ext = file.filename.rsplit(".", 1)[-1].lower()
             # Streaming-Write: direkt auf Disk, kein RAM-Limit

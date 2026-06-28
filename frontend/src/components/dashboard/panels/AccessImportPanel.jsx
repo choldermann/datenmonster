@@ -44,7 +44,7 @@ function AccessImportPanel({ projectId, canEdit, onDatasetCreated }) {
         const form = new FormData();
         form.append("file", uploadFile);
         ({ data } = await api.post("/api/datasets/access/tables-from-upload", form));
-        setTmpPath(data.tmp_path);
+        setTmpPath(data.tmp_token);
       }
       setTables(data.tables || []);
       if (data.tables?.length === 1) setSelectedTable(data.tables[0]);
@@ -57,10 +57,14 @@ function AccessImportPanel({ projectId, canEdit, onDatasetCreated }) {
 
   const loadPreview = async (table) => {
     setSelectedTable(table); setPreview(null);
-    const path = mode === "path" ? serverPath : tmpPath;
-    if (!path) return;
+    const isUpload = mode !== "path";
+    if (isUpload && !tmpPath) return;
+    if (!isUpload && !serverPath) return;
     try {
-      const { data } = await api.post("/api/datasets/access/preview", { path, table });
+      const payload = isUpload
+        ? { tmp_token: tmpPath, table }
+        : { path: serverPath, table };
+      const { data } = await api.post("/api/datasets/access/preview", payload);
       setPreview(data);
     } catch { /* Preview optional */ }
   };
@@ -75,7 +79,7 @@ function AccessImportPanel({ projectId, canEdit, onDatasetCreated }) {
       if (mode === "path") {
         form.append("server_path", serverPath);
       } else if (tmpPath) {
-        form.append("tmp_path", tmpPath);
+        form.append("tmp_token", tmpPath);
       } else if (uploadFile) {
         form.append("file", uploadFile);
       }
