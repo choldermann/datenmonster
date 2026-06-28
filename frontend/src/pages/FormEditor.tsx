@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff } from "lucide-react";
 import api from "../api/client";
 import { useProject } from "../context/ProjectContext";
+import { useAIAssistant } from "../contexts/AIAssistantContext";
 import FieldPalette from "../components/forms/FieldPalette";
 import FormCanvas from "../components/forms/FormCanvas";
 import FieldProperties from "../components/forms/FieldProperties";
@@ -27,6 +28,7 @@ export default function FormEditor() {
   const navigate = useNavigate();
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
+  const { setPageContext } = useAIAssistant();
 
   const [form, setForm]           = useState(null);
   const [name, setName]           = useState("Neues Formular");
@@ -54,6 +56,16 @@ export default function FormEditor() {
       });
     }
   }, [id]);
+
+  useEffect(() => {
+    setPageContext({
+      page: "form_editor",
+      title: name || "Formular Editor",
+      description: "Formular-Editor: Eingabefelder, Dropdowns, Datumswähler und Widgets konfigurieren, Mappings mit Parametern auslösen.",
+      currentData: { formId: id ?? null, formName: name },
+    });
+    return () => setPageContext(null);
+  }, [setPageContext, name, id]);
 
   // Derived
   const fields  = schema.fields  || [];

@@ -427,6 +427,31 @@ function AiSettings() {
                     </div>
                   );
                 })}
+                {/* Zusätzlich installierte Modelle, die nicht in PRESET_MODELS sind */}
+                {installedModels
+                  .filter(m => !PRESET_MODELS.some(p => m.name === p.id || m.name?.startsWith(p.id + ":")))
+                  .map(m => {
+                    const isSelected = form.ai_model === m.name;
+                    return (
+                      <div key={m.name}
+                        onClick={() => { set("ai_model", m.name); setPullProgress(null); }}
+                        style={{
+                          padding: "7px 10px", borderRadius: 5, cursor: "pointer",
+                          border: `1px solid ${isSelected ? ACCENT : S.border}`,
+                          backgroundColor: isSelected ? "rgba(252,228,153,0.06)" : S.bgEl,
+                          transition: "border-color 0.15s",
+                        }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: isSelected ? ACCENT : S.textBright, flex: 1 }}>
+                            {m.name}
+                          </span>
+                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "#6ee7b7" }}>
+                            <Check size={10} /> installiert
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
             ) : (
               <input style={iS} value={customModel}

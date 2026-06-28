@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
+import { useAIAssistant } from "../contexts/AIAssistantContext";
 import api from "../api/client";
 
 import { S } from "../components/pipeline/constants";
@@ -33,6 +34,7 @@ export default function PipelineEditor() {
   const navigate = useNavigate();
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
+  const { setPageContext } = useAIAssistant();
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [name, setName] = useState("Neue Pipeline");
@@ -55,6 +57,16 @@ export default function PipelineEditor() {
   const pendingConn = useRef(null); // { from_node, from_port }
 
   const triggerLineDraw = useCallback(() => setLineTick(t => t + 1), []);
+
+  useEffect(() => {
+    setPageContext({
+      page: "pipeline_editor",
+      title: name || "Pipeline Editor",
+      description: "Visueller Pipeline-Editor: Trigger, Mappings, FTP, E-Mail, REST und Bedingungen sequenziell verbinden und ausführen.",
+      currentData: { pipelineId: id ?? null, pipelineName: name },
+    });
+    return () => setPageContext(null);
+  }, [setPageContext, name, id]);
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   useEffect(() => {
