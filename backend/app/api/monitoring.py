@@ -236,10 +236,11 @@ def get_docker_containers(user: User = Depends(get_current_user)):
                         ports.append(f"{b['HostPort']}→{container_port}")
                 else:
                     ports.append(container_port)
+            image_name = c.attrs.get("Config", {}).get("Image") or c.attrs.get("Image", "")[:12]
             result.append({
                 "id": c.short_id,
                 "name": c.name,
-                "image": c.image.tags[0] if c.image.tags else c.image.short_id,
+                "image": image_name,
                 "status": c.status,
                 "ports": ports,
                 "created": c.attrs.get("Created", "")[:19].replace("T", " "),
