@@ -97,9 +97,11 @@ export default function FloatingAIAssistant() {
   const [genDescription, setGenDescription] = useState("");
   const [genTokens, setGenTokens] = useState("");
   const [genResult, setGenResult] = useState<{ nodes: any[]; explanation: string } | null>(null);
+  const [tokenCount, setTokenCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<boolean>(false);
+  const abortCtrlRef = useRef<AbortController | null>(null);
 
   // Drag & resize state
   const [pos, setPos] = useState(() => ({
@@ -190,7 +192,10 @@ export default function FloatingAIAssistant() {
     const assistantMsg: Message = { role: "assistant", content: "", streaming: true };
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setStreaming(true);
+    setTokenCount(0);
     abortRef.current = false;
+    const ctrl = new AbortController();
+    abortCtrlRef.current = ctrl;
 
     const history = messages.map(m => ({ role: m.role, content: m.content }));
 
@@ -209,6 +214,7 @@ export default function FloatingAIAssistant() {
           : {},
       }, (_token: string, full: string) => {
         if (abortRef.current) return;
+        setTokenCount(prev => prev + 1);
         setMessages(prev => {
           const updated = [...prev];
           updated[updated.length - 1] = { role: "assistant", content: full, streaming: true };
@@ -216,26 +222,39 @@ export default function FloatingAIAssistant() {
         });
       }, (meta: any) => {
         if (meta?.model) setAiModel(meta.model);
-      });
+      }, ctrl.signal);
     } catch (e: any) {
       const msg = e?.message || "KI nicht verfügbar";
-      const isOllamaError = msg.toLowerCase().includes("ollama");
-      const isNetworkError = msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk");
-      let display = msg;
-      if (isNetworkError && !isOllamaError) {
-        // Backend not reachable — re-check AI status
-        setAiAvailable(false);
-        display = "Backend nicht erreichbar. Bitte Seite neu laden.";
+      if (msg === "__ABORTED__") {
+        // Abbruch durch User — partielle Antwort behalten, markieren
+        setMessages(prev => {
+          const updated = [...prev];
+          const last = updated[updated.length - 1];
+          updated[updated.length - 1] = {
+            ...last,
+            content: (last.content || "") + (last.content ? "\n\n*[abgebrochen]*" : "*[abgebrochen]*"),
+            streaming: false,
+          };
+          return updated;
+        });
+      } else {
+        const isOllamaError = msg.toLowerCase().includes("ollama");
+        const isNetworkError = msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk");
+        let display = msg;
+        if (isNetworkError && !isOllamaError) {
+          setAiAvailable(false);
+          display = "Backend nicht erreichbar. Bitte Seite neu laden.";
+        }
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: `⚠ ${display}`,
+            streaming: false,
+          };
+          return updated;
+        });
       }
-      setMessages(prev => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          role: "assistant",
-          content: `⚠ ${display}`,
-          streaming: false,
-        };
-        return updated;
-      });
     } finally {
       setStreaming(false);
       setMessages(prev => {
@@ -257,8 +276,17 @@ export default function FloatingAIAssistant() {
 
   const clearConversation = () => {
     abortRef.current = true;
+    abortCtrlRef.current?.abort();
+    abortCtrlRef.current = null;
     setStreaming(false);
+    setTokenCount(0);
     setMessages([]);
+  };
+
+  const abortStreaming = () => {
+    abortRef.current = true;
+    abortCtrlRef.current?.abort();
+    abortCtrlRef.current = null;
   };
 
   const resetGenMode = () => {
@@ -693,10 +721,41 @@ export default function FloatingAIAssistant() {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Token-Zähler + Abbrechen (nur während Streaming) */}
+          {streaming && (
+            <div style={{
+              padding: "6px 14px",
+              borderTop: `1px solid ${BORDER}`,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexShrink: 0,
+              backgroundColor: "rgba(252,228,153,0.04)",
+            }}>
+              <Loader2 size={11} className="animate-spin" color={ACCENT} />
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", flex: 1 }}>
+                {tokenCount > 0 ? `${tokenCount} Token generiert` : "Denkt nach…"}
+              </span>
+              <button
+                onClick={abortStreaming}
+                title="Generierung abbrechen"
+                style={{
+                  display: "flex", alignItems: "center", gap: 4,
+                  padding: "3px 9px", borderRadius: 6,
+                  border: "1px solid rgba(224,112,112,0.4)",
+                  backgroundColor: "rgba(224,112,112,0.08)",
+                  color: "#e07070", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                }}
+              >
+                <X size={10} /> Abbrechen
+              </button>
+            </div>
+          )}
+
           {/* Input */}
           <div style={{
             padding: "10px 12px",
-            borderTop: `1px solid ${BORDER}`,
+            borderTop: streaming ? "none" : `1px solid ${BORDER}`,
             display: "flex",
             gap: 8,
             alignItems: "flex-end",

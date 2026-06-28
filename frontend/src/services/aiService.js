@@ -15,7 +15,7 @@ function classifyFetchError(err) {
   return `Netzwerkfehler: ${err?.message || "Unbekannter Fehler"}`;
 }
 
-export async function streamRequest(endpoint, body, onToken, onMeta = null) {
+export async function streamRequest(endpoint, body, onToken, onMeta = null, signal = null) {
   let resp;
   try {
     resp = await fetch(`${BASE}${endpoint}`, {
@@ -25,8 +25,10 @@ export async function streamRequest(endpoint, body, onToken, onMeta = null) {
         Authorization: `Bearer ${getToken()}`,
       },
       body: JSON.stringify(body),
+      signal,
     });
   } catch (err) {
+    if (err?.name === "AbortError") throw new Error("__ABORTED__");
     throw new Error(classifyFetchError(err));
   }
 
@@ -69,6 +71,7 @@ export async function streamRequest(endpoint, body, onToken, onMeta = null) {
       }
     }
   } catch (err) {
+    if (err?.name === "AbortError" || err?.message === "__ABORTED__") throw new Error("__ABORTED__");
     if (err.message?.startsWith("Modell-Fehler")) throw err;
     if (full.length > 0) return full; // partial response is OK
     throw new Error(classifyFetchError(err));
