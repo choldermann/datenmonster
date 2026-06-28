@@ -78,10 +78,11 @@ export default function FloatingAIAssistant() {
 
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      setPos(prev => ({
-        x: Math.max(0, Math.min(window.innerWidth - size.w, dragRef.current!.px + ev.clientX - dragRef.current!.startX)),
-        y: Math.max(0, Math.min(window.innerHeight - 60, dragRef.current!.py + ev.clientY - dragRef.current!.startY)),
-      }));
+      const { px, py, startX, startY } = dragRef.current;
+      setPos({
+        x: Math.max(0, Math.min(window.innerWidth - size.w, px + ev.clientX - startX)),
+        y: Math.max(0, Math.min(window.innerHeight - 60, py + ev.clientY - startY)),
+      });
     };
     const onUp = () => {
       dragRef.current = null;
@@ -100,11 +101,10 @@ export default function FloatingAIAssistant() {
 
     const onMove = (ev: MouseEvent) => {
       if (!resizeRef.current) return;
-      const dw = ev.clientX - resizeRef.current.startX;
-      const dh = ev.clientY - resizeRef.current.startY;
+      const { startX, startY, sw, sh } = resizeRef.current;
       setSize({
-        w: Math.max(MIN_W, Math.min(MAX_W, resizeRef.current.sw + dw)),
-        h: Math.max(MIN_H, Math.min(window.innerHeight - pos.y - 20, resizeRef.current.sh + dh)),
+        w: Math.max(MIN_W, Math.min(MAX_W, sw + ev.clientX - startX)),
+        h: Math.max(MIN_H, Math.min(window.innerHeight - pos.y - 20, sh + ev.clientY - startY)),
       });
     };
     const onUp = () => {
