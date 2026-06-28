@@ -393,6 +393,7 @@ class ChatRequest(BaseModel):
     history: list[ChatMessage] = []
     page_context: dict = {}
     mode: str = "auto"  # "schnell" | "auto" | "analyse"
+    debug: bool = False
 
 @router.post("/chat")
 async def chat(
@@ -447,8 +448,22 @@ async def chat(
     messages.append({"role": "user", "content": body.message})
 
     async def generate():
-        # Erstes Event: Metadaten (Modell, Kategorie, Modus, Capabilities)
-        yield f"data: {json.dumps({'meta': {'model': model_used, 'category': category, 'mode': body.mode, 'caps': caps}})}\n\n"
+        meta: dict = {
+            "model":    model_used,
+            "category": category,
+            "mode":     body.mode,
+            "caps":     caps,
+            "params": {
+                "think":       params.think and caps.get("supportsThinking", False),
+                "temperature": params.temperature,
+                "top_p":       params.top_p,
+                "max_tokens":  params.max_tokens,
+                "num_ctx":     params.num_ctx,
+            },
+        }
+        if body.debug:
+            meta["system_prompt"] = system
+        yield f"data: {json.dumps({'meta': meta})}\n\n"
         async for token in svc._stream(messages, system, params=params, model=model_used):
             yield f"data: {json.dumps({'token': token})}\n\n"
         yield "data: [DONE]\n\n"

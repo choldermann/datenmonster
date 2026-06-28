@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check } from "lucide-react";
+import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check, Settings, ChevronRight } from "lucide-react";
 import { useAIAssistant, PageContext } from "../../contexts/AIAssistantContext";
 import { streamRequest, generateNodes } from "../../services/aiService";
 
@@ -98,6 +98,9 @@ export default function FloatingAIAssistant() {
   const [genTokens, setGenTokens] = useState("");
   const [genResult, setGenResult] = useState<{ nodes: any[]; explanation: string } | null>(null);
   const [tokenCount, setTokenCount] = useState(0);
+  const [expertMode, setExpertMode] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [expertSection, setExpertSection] = useState<"params" | "prompt" | "context" | null>("params");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<boolean>(false);
@@ -204,6 +207,7 @@ export default function FloatingAIAssistant() {
         message: text,
         history,
         mode: aiMode,
+        debug: expertMode,
         page_context: pageContext
           ? {
               page: pageContext.page,
@@ -222,6 +226,7 @@ export default function FloatingAIAssistant() {
         });
       }, (meta: any) => {
         if (meta?.model) setAiModel(meta.model);
+        if (meta) setDebugInfo((prev: any) => ({ ...prev, ...meta, context: pageContext?.currentData }));
       }, ctrl.signal);
     } catch (e: any) {
       const msg = e?.message || "KI nicht verfügbar";
@@ -462,6 +467,18 @@ export default function FloatingAIAssistant() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setExpertMode(v => !v)}
+              title="Expertenmodus: zeigt System-Prompt, Parameter und Kontext"
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: 4,
+                display: "flex", alignItems: "center",
+                color: expertMode ? ACCENT : "rgba(255,255,255,0.3)",
+                filter: expertMode ? "drop-shadow(0 0 4px rgba(252,228,153,0.4))" : "none",
+              }}
+            >
+              <Settings size={12} />
+            </button>
             {messages.length > 0 && (
               <button
                 onClick={clearConversation}
@@ -478,6 +495,104 @@ export default function FloatingAIAssistant() {
               <X size={13} />
             </button>
           </div>
+
+          {/* Expert-Panel */}
+          {expertMode && (
+            <div style={{
+              borderBottom: `1px solid ${BORDER}`,
+              backgroundColor: "rgba(0,0,0,0.25)",
+              flexShrink: 0,
+              maxHeight: 260,
+              overflowY: "auto",
+            }}>
+              {/* Tabs */}
+              <div style={{ display: "flex", borderBottom: `1px solid ${BORDER}` }}>
+                {([["params", "Parameter"], ["prompt", "System-Prompt"], ["context", "Kontext"]] as const).map(([id, label]) => (
+                  <button key={id} onClick={() => setExpertSection(expertSection === id ? null : id)}
+                    style={{
+                      flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+                      backgroundColor: expertSection === id ? "rgba(252,228,153,0.08)" : "transparent",
+                      color: expertSection === id ? ACCENT : "rgba(255,255,255,0.3)",
+                      fontSize: 10, fontWeight: 600,
+                      borderBottom: expertSection === id ? `1px solid ${ACCENT}` : "1px solid transparent",
+                      marginBottom: -1,
+                    }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Parameter-Tab */}
+              {expertSection === "params" && (
+                <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                    {[
+                      ["Modus", AI_MODES.find(m => m.id === aiMode)?.icon + " " + aiMode],
+                      ["Modell", debugInfo?.model ?? aiModel ?? "—"],
+                      ["Kategorie", debugInfo?.category ?? "—"],
+                    ].map(([k, v]) => (
+                      <div key={k} style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", textTransform: "uppercase" }}>{k}</span>
+                        <span style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.75)", backgroundColor: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 4 }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {debugInfo?.params && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                      {Object.entries(debugInfo.params).map(([k, v]) => (
+                        <div key={k} style={{ display: "flex", gap: 3, alignItems: "center" }}>
+                          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>{k}</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: String(v) === "true" ? "#6ee7b7" : String(v) === "false" ? "#e07070" : ACCENT, backgroundColor: "rgba(255,255,255,0.04)", padding: "1px 5px", borderRadius: 4 }}>{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!debugInfo?.params && (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>
+                      Parameter erscheinen nach der ersten Anfrage
+                    </div>
+                  )}
+                  {debugInfo?.caps && (
+                    <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                      {Object.entries(debugInfo.caps).map(([k, v]) => (
+                        <span key={k} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, border: `1px solid ${v ? "rgba(110,231,183,0.3)" : "rgba(255,255,255,0.1)"}`, color: v ? "#6ee7b7" : "rgba(255,255,255,0.25)" }}>
+                          {k.replace("supports", "")} {v ? "✓" : "✗"}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* System-Prompt-Tab */}
+              {expertSection === "prompt" && (
+                <div style={{ padding: "10px 12px" }}>
+                  {debugInfo?.system_prompt ? (
+                    <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5 }}>
+                      {debugInfo.system_prompt}
+                    </pre>
+                  ) : (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>
+                      System-Prompt erscheint nach der ersten Anfrage im Expertenmodus
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Kontext-Tab */}
+              {expertSection === "context" && (
+                <div style={{ padding: "10px 12px" }}>
+                  {debugInfo?.context || pageContext?.currentData ? (
+                    <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5 }}>
+                      {JSON.stringify(debugInfo?.context ?? pageContext?.currentData, null, 2)}
+                    </pre>
+                  ) : (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>Kein Seitenkontext verfügbar</div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Generate-Node-Panel (overlay) */}
           {genMode !== "idle" && (
