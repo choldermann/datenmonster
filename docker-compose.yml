@@ -10,6 +10,7 @@ services:
     volumes:
       - ./backend:/app
       - datenmonster-data:/app/uploads
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       # ┌─────────────────────────────────────────────────────────────────┐
       # │  SICHERHEITSHINWEIS – vor dem ersten Start:                     │

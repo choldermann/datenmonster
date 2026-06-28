@@ -220,6 +220,84 @@ def get_monitoring(db: Session = Depends(get_db), user: User = Depends(get_curre
         "system_logs": system_logs,
     }
 
+@router.get("/docker")
+def get_docker_containers(user: User = Depends(get_current_user)):
+    """Listet alle Docker-Container mit Status, Image und Ports."""
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        containers = client.containers.list(all=True)
+        result = []
+        for c in containers:
+            ports = []
+            for container_port, host_bindings in (c.ports or {}).items():
+                if host_bindings:
+                    for b in host_bindings:
+                        ports.append(f"{b['HostPort']}→{container_port}")
+                else:
+                    ports.append(container_port)
+            result.append({
+                "id": c.short_id,
+                "name": c.name,
+                "image": c.image.tags[0] if c.image.tags else c.image.short_id,
+                "status": c.status,
+                "ports": ports,
+                "created": c.attrs.get("Created", "")[:19].replace("T", " "),
+            })
+        result.sort(key=lambda x: x["name"])
+        return {"containers": result}
+    except Exception as e:
+        return {"containers": [], "error": str(e)}
+
+
+@router.post("/docker/{container_id}/start")
+def docker_start(container_id: str, user: User = Depends(get_current_user)):
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        c = client.containers.get(container_id)
+        c.start()
+        return {"ok": True, "status": client.containers.get(container_id).status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/docker/{container_id}/stop")
+def docker_stop(container_id: str, user: User = Depends(get_current_user)):
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        c = client.containers.get(container_id)
+        c.stop(timeout=10)
+        return {"ok": True, "status": client.containers.get(container_id).status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.post("/docker/{container_id}/restart")
+def docker_restart(container_id: str, user: User = Depends(get_current_user)):
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        c = client.containers.get(container_id)
+        c.restart(timeout=10)
+        return {"ok": True, "status": client.containers.get(container_id).status}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/docker/{container_id}/logs")
+def docker_logs(container_id: str, lines: int = 100, user: User = Depends(get_current_user)):
+    try:
+        import docker as docker_sdk
+        client = docker_sdk.from_env()
+        c = client.containers.get(container_id)
+        log_bytes = c.logs(tail=lines, timestamps=True)
+        return {"logs": log_bytes.decode("utf-8", errors="replace")}
+    except Exception as e:
+        return {"logs": "", "error": str(e)}
+
+
 @router.delete("/logs/{log_id}")
 def delete_log(log_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Einzelnen Log-Eintrag löschen."""

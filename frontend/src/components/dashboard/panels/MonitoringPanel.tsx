@@ -96,6 +96,71 @@ function CloseIcon() {
   );
 }
 
+function RefreshIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+    </svg>
+  );
+}
+
+const DOCKER_STATUS_COLOR = {
+  running:    { text: "#6ee7b7", bg: "rgba(110,231,183,0.12)", border: "rgba(110,231,183,0.3)",  label: "running" },
+  exited:     { text: "#e07070", bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.3)",  label: "exited" },
+  paused:     { text: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)",   label: "paused" },
+  restarting: { text: "#38bdf8", bg: "rgba(56,189,248,0.12)",  border: "rgba(56,189,248,0.3)",   label: "restarting" },
+  created:    { text: "#a78bfa", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.3)",  label: "created" },
+};
+function dockerStatusColor(status: string) {
+  return DOCKER_STATUS_COLOR[status] || { text: "var(--text-dim)", bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.12)", label: status };
+}
+
+function DockerLogModal({ container, logs, onClose, onRefresh, loading }) {
+  const [copied, setCopied] = useState(false);
+  if (!container) return null;
+
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(logs); }
+    catch { const ta = document.createElement("textarea"); ta.value = logs; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 12, width: "100%", maxWidth: 900, maxHeight: "85vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 20, ...(() => { const c = dockerStatusColor(container.status); return { background: c.bg, color: c.text, border: `1px solid ${c.border}` }; })(), textTransform: "uppercase" }}>{container.status}</span>
+            <p style={{ fontSize: 14, fontWeight: 600, margin: 0, color: "var(--text-bright)", fontFamily: "var(--font-mono, monospace)" }}>{container.name}</p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={onRefresh} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: loading ? "wait" : "pointer", background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-main)" }}>
+              <RefreshIcon /> {loading ? "Lädt…" : "Aktualisieren"}
+            </button>
+            <button onClick={handleCopy} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: "pointer", background: copied ? "rgba(110,231,183,0.15)" : "var(--bg-elevated)", border: `1px solid ${copied ? "rgba(110,231,183,0.4)" : "var(--border)"}`, color: copied ? "#6ee7b7" : "var(--text-main)", transition: "all 0.2s" }}>
+              {copied ? <CheckIcon /> : <CopyIcon />} {copied ? "Kopiert!" : "Kopieren"}
+            </button>
+            <button onClick={onClose} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--border)", color: "var(--text-dim)" }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--text-bright)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--text-dim)"}
+            ><CloseIcon /></button>
+          </div>
+        </div>
+        <div style={{ overflow: "auto", padding: "12px 16px", flexGrow: 1 }}>
+          {loading ? (
+            <p style={{ color: "var(--text-dim)", fontSize: 13, textAlign: "center", paddingTop: "2rem" }}>Logs werden geladen…</p>
+          ) : logs ? (
+            <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.6, color: "var(--text-main)", fontFamily: "var(--font-mono, monospace)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{logs}</pre>
+          ) : (
+            <p style={{ color: "var(--text-dim)", fontSize: 13, textAlign: "center", paddingTop: "2rem" }}>Keine Log-Ausgabe</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LogDetailModal({ log, onClose }) {
   const [copied, setCopied] = useState(false);
   if (!log) return null;
@@ -507,6 +572,11 @@ export default function MonitoringPanel() {
   const [activeTab, setActiveTab] = useState("overview"); // "overview" | "system"
   const [toggling, setToggling] = useState(null);
   const [deleting, setDeleting] = useState(null);
+  const [dockerContainers, setDockerContainers] = useState<any[]>([]);
+  const [dockerLoading, setDockerLoading] = useState(false);
+  const [dockerError, setDockerError] = useState<string | null>(null);
+  const [dockerActioning, setDockerActioning] = useState<string | null>(null);
+  const [dockerLogModal, setDockerLogModal] = useState<{ container: any; logs: string; loading: boolean } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -558,6 +628,53 @@ export default function MonitoringPanel() {
       setToggling(null);
     }
   }, [load]);
+
+  const loadDocker = useCallback(async () => {
+    setDockerLoading(true);
+    setDockerError(null);
+    try {
+      const { data } = await api.get("/api/monitoring/docker");
+      if (data.error) setDockerError(data.error);
+      setDockerContainers(data.containers || []);
+    } catch (e) {
+      setDockerError("Docker-Daten konnten nicht geladen werden");
+    } finally {
+      setDockerLoading(false);
+    }
+  }, []);
+
+  const dockerAction = useCallback(async (containerId: string, action: "start" | "stop" | "restart") => {
+    setDockerActioning(containerId + "_" + action);
+    try {
+      await api.post(`/api/monitoring/docker/${containerId}/${action}`);
+      await loadDocker();
+    } catch (e) {
+      console.error(`Docker ${action} fehlgeschlagen`, e);
+    } finally {
+      setDockerActioning(null);
+    }
+  }, [loadDocker]);
+
+  const openDockerLogs = useCallback(async (container: any) => {
+    setDockerLogModal({ container, logs: "", loading: true });
+    try {
+      const { data } = await api.get(`/api/monitoring/docker/${container.id}/logs`, { params: { lines: 200 } });
+      setDockerLogModal({ container, logs: data.logs || "", loading: false });
+    } catch (e) {
+      setDockerLogModal(prev => prev ? { ...prev, logs: "Fehler beim Laden der Logs", loading: false } : null);
+    }
+  }, []);
+
+  const refreshDockerLogs = useCallback(async () => {
+    if (!dockerLogModal) return;
+    setDockerLogModal(prev => prev ? { ...prev, loading: true } : null);
+    try {
+      const { data } = await api.get(`/api/monitoring/docker/${dockerLogModal.container.id}/logs`, { params: { lines: 200 } });
+      setDockerLogModal(prev => prev ? { ...prev, logs: data.logs || "", loading: false } : null);
+    } catch (e) {
+      setDockerLogModal(prev => prev ? { ...prev, logs: "Fehler beim Laden der Logs", loading: false } : null);
+    }
+  }, [dockerLogModal]);
 
   if (loading) return (
     <div style={{ padding: "3rem", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
@@ -624,7 +741,7 @@ export default function MonitoringPanel() {
           { id: "overview", label: "Übersicht" },
           { id: "system",   label: "System" },
         ].map(t => (
-          <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === "system") loadSystem(); }}
+          <button key={t.id} onClick={() => { setActiveTab(t.id); if (t.id === "system") { loadSystem(); loadDocker(); } }}
             style={{
               fontSize: 12, fontWeight: 600, padding: "8px 16px", cursor: "pointer",
               background: "none", border: "none", borderBottom: activeTab === t.id ? "2px solid var(--accent)" : "2px solid transparent",
@@ -747,6 +864,100 @@ export default function MonitoringPanel() {
               )}
             </>
           )}
+
+          {/* Docker Container */}
+          {dockerLogModal && (
+            <DockerLogModal
+              container={dockerLogModal.container}
+              logs={dockerLogModal.logs}
+              loading={dockerLogModal.loading}
+              onClose={() => setDockerLogModal(null)}
+              onRefresh={refreshDockerLogs}
+            />
+          )}
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-bright)", margin: 0 }}>Docker Container</p>
+              <button onClick={loadDocker} disabled={dockerLoading} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: dockerLoading ? "wait" : "pointer", background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-main)", opacity: dockerLoading ? 0.6 : 1 }}>
+                <RefreshIcon /> {dockerLoading ? "Lädt…" : "Aktualisieren"}
+              </button>
+            </div>
+
+            {dockerError && (
+              <div style={{ padding: "12px 16px", background: "rgba(224,112,112,0.08)", borderBottom: "1px solid var(--border)", fontSize: 12, color: "#e07070" }}>
+                {dockerError}
+              </div>
+            )}
+
+            {dockerContainers.length === 0 && !dockerLoading && !dockerError ? (
+              <div style={{ padding: "2rem", textAlign: "center", color: "var(--text-dim)", fontSize: 13 }}>
+                Keine Container gefunden
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-elevated)" }}>
+                      {["Status", "Name", "Image", "Ports", "Aktionen"].map((h, i) => (
+                        <th key={i} style={{ padding: "7px 14px", textAlign: "left", fontSize: 10, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dockerContainers.map(c => {
+                      const sc = dockerStatusColor(c.status);
+                      const isRunning = c.status === "running";
+                      const actionKey = dockerActioning?.startsWith(c.id) ? dockerActioning.split("_")[1] : null;
+                      return (
+                        <tr key={c.id} style={{ borderTop: "1px solid var(--border)" }}
+                          onMouseEnter={e => e.currentTarget.style.background = "var(--bg-elevated)"}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                        >
+                          <td style={{ padding: "9px 14px", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: sc.bg, color: sc.text, border: `1px solid ${sc.border}` }}>{sc.label}</span>
+                          </td>
+                          <td style={{ padding: "9px 14px", color: "var(--text-bright)", fontFamily: "var(--font-mono, monospace)", fontSize: 12, whiteSpace: "nowrap" }}>{c.name}</td>
+                          <td style={{ padding: "9px 14px", color: "var(--text-dim)", fontSize: 11, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.image}>{c.image}</td>
+                          <td style={{ padding: "9px 14px", color: "var(--text-dim)", fontSize: 11, whiteSpace: "nowrap" }}>
+                            {c.ports.length > 0 ? c.ports.join(", ") : <span style={{ opacity: 0.4 }}>—</span>}
+                          </td>
+                          <td style={{ padding: "9px 14px", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "flex", gap: 5 }}>
+                              {!isRunning && (
+                                <button onClick={() => dockerAction(c.id, "start")} disabled={!!dockerActioning}
+                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)", color: "#6ee7b7", opacity: actionKey === "start" ? 0.6 : 1 }}>
+                                  {actionKey === "start" ? "…" : "Start"}
+                                </button>
+                              )}
+                              {isRunning && (
+                                <button onClick={() => dockerAction(c.id, "stop")} disabled={!!dockerActioning}
+                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", opacity: actionKey === "stop" ? 0.6 : 1 }}>
+                                  {actionKey === "stop" ? "…" : "Stopp"}
+                                </button>
+                              )}
+                              {isRunning && (
+                                <button onClick={() => dockerAction(c.id, "restart")} disabled={!!dockerActioning}
+                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "rgba(56,189,248,0.1)", border: "1px solid rgba(56,189,248,0.3)", color: "#38bdf8", opacity: actionKey === "restart" ? 0.6 : 1 }}>
+                                  {actionKey === "restart" ? "…" : "Neustart"}
+                                </button>
+                              )}
+                              <button onClick={() => openDockerLogs(c)}
+                                style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: "pointer", background: "rgba(255,255,255,0.05)", border: "1px solid var(--border)", color: "var(--text-dim)" }}
+                                onMouseEnter={e => { e.currentTarget.style.color = "var(--text-bright)"; e.currentTarget.style.borderColor = "var(--text-dim)"; }}
+                                onMouseLeave={e => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.borderColor = "var(--border)"; }}
+                              >
+                                Logs
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
