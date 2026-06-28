@@ -3,11 +3,13 @@ import { ChevronDown, ChevronRight, Database, GripVertical, Plus, Sparkles, X, M
 import api from "../../api/client";
 import SqlEditorModal from "./SqlEditorModal";
 import AiStreamModal from "./AiStreamModal";
-import { explainSql, generateSql } from "../../services/aiService";
+import { explainSql } from "../../services/aiService";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, aiEnabled, mappingId }) {
+const ACTIVE_BORDER = "#fce499";
+
+function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, aiEnabled, mappingId, isActive, onActivate }) {
   const [expanded, setExpanded] = useState(true);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaError, setSchemaError] = useState(null);
@@ -99,8 +101,8 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
 
   return (
     <>
-    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 260, zIndex: 10, userSelect: "none", boxShadow: "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${SQL_NODE_COLOR}55`, backgroundColor: S.bgCard }}
-      onClick={(e) => e.stopPropagation()}>
+    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 260, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${isActive ? ACTIVE_BORDER : SQL_NODE_COLOR + "55"}`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+      onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "sql", mode: node.mode || "scalar", sql: (node.sql || "").slice(0, 400), connectionId: node.connection_id, outputField: node.output_field }); }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}
@@ -256,17 +258,11 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
               <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, flex: 1 }}>SQL</label>
-              {aiEnabled && (
-                <>
-                  <button onClick={() => setAiMode("explain")} title="✨ SQL erklären" disabled={!node.sql?.trim()}
-                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: node.sql?.trim() ? "pointer" : "not-allowed", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", opacity: node.sql?.trim() ? 1 : 0.4, display: "flex", alignItems: "center", gap: 3 }}>
-                    <Sparkles size={9} /> Erklären
-                  </button>
-                  <button onClick={() => setAiMode("generate")} title="✨ SQL generieren"
-                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", display: "flex", alignItems: "center", gap: 3 }}>
-                    <Sparkles size={9} /> Generieren
-                  </button>
-                </>
+              {aiEnabled && node.sql?.trim() && (
+                <button onClick={() => setAiMode("explain")} title="✨ SQL erklären"
+                  style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", display: "flex", alignItems: "center", gap: 3 }}>
+                  <Sparkles size={9} /> Erklären
+                </button>
               )}
               <button onClick={(e) => { e.stopPropagation(); setSqlModalValue(node.sql || ""); setSqlModalOpen(true); }}
                 title="SQL-Editor öffnen"
@@ -384,20 +380,6 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
         noApply
         onGenerate={(_desc, onToken) => explainSql(node.sql || "", node.connection_id || null, mappingId, onToken)}
         onClose={() => setAiMode(null)}
-      />
-    )}
-    {aiMode === "generate" && (
-      <AiStreamModal
-        title="✨ SQL generieren"
-        placeholder='z.B. "Alle Kunden die im letzten Monat keine Bestellung hatten"'
-        onGenerate={(desc, onToken) => generateSql(desc, node.connection_id || null, mappingId, onToken)}
-        onApply={(sql) => {
-          onUpdate({ ...node, sql: sql.trim(), output_fields: [] });
-          setPendingSchemaDetect(true);
-        }}
-        onClose={() => setAiMode(null)}
-        applyLabel="SQL übernehmen"
-        warning={!mappingId ? "Mapping noch nicht gespeichert – die KI kennt keine Canvas-Datasets und wählt Tabellen nur anhand des Prompts. Bitte Mapping zuerst speichern für bessere Ergebnisse." : null}
       />
     )}
     </>

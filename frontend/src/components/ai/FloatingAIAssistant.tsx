@@ -486,6 +486,34 @@ export default function FloatingAIAssistant() {
 }
 
 function SuggestedQuestions({ pageContext, onSelect }: { pageContext: PageContext | null; onSelect: (q: string) => void }) {
+  const activeNode = (pageContext?.currentData as any)?.activeNode;
+
+  // SQL-Node aktiv → spezifische Vorschläge
+  if (activeNode?.type === "sql") {
+    const mode = activeNode.mode || "scalar";
+    const hasSql = !!activeNode.sql?.trim();
+    const qs = [
+      hasSql ? "Erkläre mir das aktuelle SQL" : null,
+      mode === "scalar" ? "Generiere SQL für einen Scalar-Lookup mit {Feldname}" : null,
+      mode === "transform" ? "Generiere ein Transform-SQL das zwei Canvas-Datasets joined" : null,
+      mode === "lookup" ? "Generiere ein Lookup-SQL mit :param als Parameter" : null,
+      mode === "column" ? "Generiere SQL für eine einmalige Spaltenabfrage" : null,
+      "Welche Modi gibt es im SQL-Node?",
+    ].filter(Boolean) as string[];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 4 }}>
+        {qs.map(q => (
+          <button key={q} onClick={() => onSelect(q)}
+            style={{ background: "none", border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "rgba(255,255,255,0.5)", cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; e.currentTarget.style.color = "rgba(252,228,153,0.8)"; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}>
+            {q}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   const questions: Record<string, string[]> = {
     dashboard: [
       "Was kann ich hier alles machen?",

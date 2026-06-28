@@ -97,6 +97,8 @@ export default function MappingEditor() {
   const [debugSelectedRowIdx, setDebugSelectedRowIdx] = useState(null);
   const [aiEnabled, setAiEnabled] = useState(false);
   const [aiSuggestOpen, setAiSuggestOpen] = useState(false);
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [activeNodeInfo, setActiveNodeInfo] = useState<any>(null);
 
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
@@ -184,10 +186,14 @@ export default function MappingEditor() {
       page: "mapping_editor",
       title: name || "Mapping Editor",
       description: "Visueller ETL-Mapping-Editor: Datasets verbinden, transformieren, filtern, sortieren und in Zieldatenbanken schreiben.",
-      currentData: { mappingId: id ?? null, mappingName: name },
+      currentData: {
+        mappingId: id ?? null,
+        mappingName: name,
+        ...(activeNodeInfo ? { activeNode: activeNodeInfo } : {}),
+      },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id]);
+  }, [setPageContext, name, id, activeNodeInfo]);
   const setConnections = (updater) => {
     setTargets((prev) => prev.map((t) => t.id === (activeTarget?.id) ? {
       ...t, fields: typeof updater === "function" ? updater(t.fields || []) : updater
@@ -620,7 +626,7 @@ export default function MappingEditor() {
     setTimeout(() => setExecuteStatus(null), 2000);
   };
 
-  const cancelAll = () => { setPendingSource(null); setPendingJoin(null); setDragJoin(null); setEditingConnection(null); setContextMenu(null); };
+  const cancelAll = () => { setPendingSource(null); setPendingJoin(null); setDragJoin(null); setEditingConnection(null); setContextMenu(null); setActiveNodeId(null); setActiveNodeInfo(null); };
 
   const handleShowSchema = async () => {
     setShowSchema(true);
@@ -1000,6 +1006,8 @@ export default function MappingEditor() {
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`sql_${sn.id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
                     aiEnabled={aiEnabled}
                     mappingId={id && id !== "new" ? parseInt(id) : null}
+                    isActive={activeNodeId === sn.id}
+                    onActivate={(info) => { setActiveNodeId(sn.id); setActiveNodeInfo(info); }}
                   />
                 );
               })}
