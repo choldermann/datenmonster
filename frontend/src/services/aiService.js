@@ -185,3 +185,16 @@ export async function suggestDatasets(connectionId, description, selectedTables,
 
 export const suggestMapping = (mappingId, onToken) =>
   streamRequest("/suggest-mapping", { mapping_id: mappingId }, onToken);
+
+export const chatStream = (message, history, pageContext, onToken) =>
+  streamRequest("/chat", { message, history: history ?? [], page_context: pageContext ?? {} }, onToken);
+
+export async function deleteModel(model) {
+  const resp = await fetch(`${BASE}/models/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+    body: JSON.stringify({ model }),
+  });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}

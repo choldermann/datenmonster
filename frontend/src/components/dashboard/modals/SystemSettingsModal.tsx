@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download } from "lucide-react";
 import api from "../../../api/client";
-import { testConnection as testAiConnection, listModels, pullModel } from "../../../services/aiService";
+import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
 import { aiDownloadStore } from "../../../store/aiDownloadStore";
 import { S } from "../constants";
 
@@ -10,6 +10,7 @@ const ACCENT = "#fce499";
 const TABS = [
   { id: "email", label: "E-Mail", icon: "📧" },
   { id: "ai", label: "KI", icon: "✨" },
+  { id: "models", label: "Modelle", icon: "🧠" },
   { id: "users", label: "Benutzer", icon: "👤" },
   { id: "appearance", label: "Optik", icon: "🎨", disabled: true },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
@@ -610,6 +611,179 @@ function UserManagement() {
   );
 }
 
+function formatBytes(bytes: number) {
+  if (!bytes) return "?";
+  if (bytes < 1e9) return `${(bytes / 1e6).toFixed(0)} MB`;
+  return `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
+function guessModelType(name: string): string[] {
+  const n = name.toLowerCase();
+  const tags: string[] = [];
+  if (/code|coder|starcoder|deepseek-coder|qwen.*coder|codellama/.test(n)) tags.push("Coding");
+  if (/embed|nomic|mxbai|all-minilm/.test(n)) tags.push("Embedding");
+  if (/vision|llava|moondream|minicpm-v/.test(n)) tags.push("Vision");
+  if (!tags.length) tags.push("Chat");
+  return tags;
+}
+
+function guessModelSize(name: string, size: number): string {
+  const n = name.toLowerCase();
+  const m = n.match(/(\d+\.?\d*)b/);
+  if (m) {
+    const b = parseFloat(m[1]);
+    if (b <= 3) return "≤3B";
+    if (b <= 8) return "7B";
+    return "≥13B";
+  }
+  if (size) {
+    if (size < 2.5e9) return "≤3B";
+    if (size < 10e9) return "7B";
+    return "≥13B";
+  }
+  return "?";
+}
+
+const SIZE_FILTERS = ["Alle", "≤3B", "7B", "≥13B"];
+const TYPE_FILTERS = ["Alle", "Chat", "Coding", "Embedding", "Vision"];
+
+function ModelLibrary() {
+  const [models, setModels] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sizeFilter, setSizeFilter] = useState("Alle");
+  const [typeFilter, setTypeFilter] = useState("Alle");
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await listModels();
+      setModels(data.models ?? []);
+    } catch (e: any) {
+      setError(e.message || "Fehler beim Laden");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleDelete = async (modelName: string) => {
+    setDeleting(modelName);
+    setConfirmDelete(null);
+    try {
+      await deleteModel(modelName);
+      setModels(prev => prev.filter(m => m.name !== modelName));
+    } catch (e: any) {
+      alert(`Löschen fehlgeschlagen: ${e.message}`);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  const filtered = models.filter(m => {
+    const size = guessModelSize(m.name, m.size);
+    const types = guessModelType(m.name);
+    if (sizeFilter !== "Alle" && size !== sizeFilter) return false;
+    if (typeFilter !== "Alle" && !types.includes(typeFilter)) return false;
+    return true;
+  });
+
+  const chipStyle = (active: boolean) => ({
+    padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 600,
+    cursor: "pointer", border: `1px solid ${active ? ACCENT : "rgba(255,255,255,0.12)"}`,
+    backgroundColor: active ? "rgba(252,228,153,0.12)" : "transparent",
+    color: active ? ACCENT : S.textDim, transition: "all 0.15s",
+  });
+
+  return (
+    <div>
+      <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 12px" }}>
+        Lokal installierte Ollama-Modelle. Modelle können in den KI-Einstellungen heruntergeladen werden.
+      </p>
+
+      {/* Filter chips */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+        <span style={{ fontSize: 10, color: S.textDim, alignSelf: "center", marginRight: 4 }}>Größe:</span>
+        {SIZE_FILTERS.map(f => (
+          <button key={f} style={chipStyle(sizeFilter === f)} onClick={() => setSizeFilter(f)}>{f}</button>
+        ))}
+        <span style={{ fontSize: 10, color: S.textDim, alignSelf: "center", marginLeft: 6, marginRight: 4 }}>Typ:</span>
+        {TYPE_FILTERS.map(f => (
+          <button key={f} style={chipStyle(typeFilter === f)} onClick={() => setTypeFilter(f)}>{f}</button>
+        ))}
+      </div>
+
+      {loading && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: S.textDim, fontSize: 12 }}>
+          <Loader2 size={14} className="animate-spin" /> Modelle werden geladen...
+        </div>
+      )}
+      {error && <p style={{ color: "#e07070", fontSize: 12 }}>{error}</p>}
+
+      {!loading && !error && filtered.length === 0 && (
+        <p style={{ fontSize: 12, color: S.textDim }}>
+          {models.length === 0 ? "Keine Modelle installiert." : "Kein Modell entspricht dem Filter."}
+        </p>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map(m => {
+          const size = guessModelSize(m.name, m.size);
+          const types = guessModelType(m.name);
+          const isDeleting = deleting === m.name;
+          const isConfirming = confirmDelete === m.name;
+          const modified = m.modified_at ? new Date(m.modified_at).toLocaleDateString("de-DE") : null;
+
+          return (
+            <div key={m.name} style={{
+              padding: "10px 12px", borderRadius: 8, border: `1px solid ${S.border}`,
+              backgroundColor: "rgba(255,255,255,0.03)", display: "flex", flexDirection: "column", gap: 5,
+            }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: S.textBright, wordBreak: "break-all" }}>{m.name}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
+                    <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{size}</span>
+                    {types.map(t => (
+                      <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
+                    ))}
+                    {m.size && <span style={{ fontSize: 9, color: S.textDim }}>{formatBytes(m.size)}</span>}
+                    {modified && <span style={{ fontSize: 9, color: S.textDim }}>· {modified}</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                  {isConfirming ? (
+                    <>
+                      <button onClick={() => setConfirmDelete(null)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}>Abbruch</button>
+                      <button onClick={() => handleDelete(m.name)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid #e07070", backgroundColor: "rgba(224,112,112,0.15)", color: "#e07070", cursor: "pointer" }}>
+                        {isDeleting ? <Loader2 size={10} /> : "Löschen"}
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setConfirmDelete(m.name)} title="Modell löschen" disabled={isDeleting} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.2)", cursor: "pointer", padding: 4, display: "flex", alignItems: "center" }}>
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {!loading && models.length > 0 && (
+        <p style={{ fontSize: 10, color: S.textDim, marginTop: 12 }}>
+          {filtered.length} von {models.length} Modell{models.length !== 1 ? "en" : ""} angezeigt
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function SystemSettingsModal({ onClose }) {
   const [activeTab, setActiveTab] = useState("email");
 
@@ -640,6 +814,7 @@ export default function SystemSettingsModal({ onClose }) {
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
           {activeTab === "email" && <EmailSettings />}
           {activeTab === "ai" && <AiSettings />}
+          {activeTab === "models" && <ModelLibrary />}
           {activeTab === "users" && <UserManagement />}
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useProject } from "../context/ProjectContext";
+import { useAIAssistant } from "../contexts/AIAssistantContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
@@ -69,6 +70,15 @@ export default function Dashboard() {
   const { activeProject, setActiveProject } = useProject();
   const navigate = useNavigate();
   const location = useLocation();
+  const { setPageContext } = useAIAssistant();
+  useEffect(() => {
+    setPageContext({
+      page: "dashboard",
+      title: "Dashboard",
+      description: "Übersicht über Projekte, Mappings, Datasets, Pipelines, Reports, Formulare und Scheduler.",
+    });
+    return () => setPageContext(null);
+  }, [setPageContext]);
   // Bestätigungs-Modal State
   const [confirmModal, setConfirmModal] = useState(null);
   const showConfirm = useCallback((title, message, onConfirm, opts = {}) => {

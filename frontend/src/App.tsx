@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider } from "./context/ProjectContext";
+import { AIAssistantProvider } from "./contexts/AIAssistantContext";
 import { aiDownloadStore } from "./store/aiDownloadStore";
+import FloatingAIAssistant from "./components/ai/FloatingAIAssistant";
 import Login from "./pages/Login";
 import ErrorBoundary from "./components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
@@ -77,6 +79,7 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <ProjectProvider>
+          <AIAssistantProvider>
           <BrowserRouter>
             <Routes>
               {/* Public */}
@@ -100,7 +103,9 @@ export default function App() {
               <Route path="*" element={<DefaultRedirect />} />
             </Routes>
             <AiDownloadBanner />
+            <FloatingAIAssistant />
           </BrowserRouter>
+          </AIAssistantProvider>
         </ProjectProvider>
       </AuthProvider>
     </ErrorBoundary>

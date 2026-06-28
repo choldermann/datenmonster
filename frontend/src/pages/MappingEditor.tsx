@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
+import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, FunctionSquare, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, ShieldCheck, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
 import api from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
@@ -37,6 +38,7 @@ export default function MappingEditor() {
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
   const canEdit = !activeProject || activeProject.role !== "viewer";
+  const { setPageContext } = useAIAssistant();
 
   const [name, setName] = useState("Neues Mapping");
   const [saving, setSaving] = useState(false);
@@ -176,6 +178,16 @@ export default function MappingEditor() {
   useEffect(() => {
     setTargetColumnTypes(activeTarget?.target_column_types || {});
   }, [activeTargetId, targets]);
+
+  useEffect(() => {
+    setPageContext({
+      page: "mapping_editor",
+      title: name || "Mapping Editor",
+      description: "Visueller ETL-Mapping-Editor: Datasets verbinden, transformieren, filtern, sortieren und in Zieldatenbanken schreiben.",
+      currentData: { mappingId: id ?? null, mappingName: name },
+    });
+    return () => setPageContext(null);
+  }, [setPageContext, name, id]);
   const setConnections = (updater) => {
     setTargets((prev) => prev.map((t) => t.id === (activeTarget?.id) ? {
       ...t, fields: typeof updater === "function" ? updater(t.fields || []) : updater

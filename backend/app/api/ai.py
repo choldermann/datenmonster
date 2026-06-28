@@ -36,7 +36,7 @@ def _sse_stream(async_gen):
 
 @router.get("/models")
 async def list_models(user: User = Depends(get_current_user)):
-    """Return list of locally installed Ollama models."""
+    """Return list of locally installed Ollama models with details."""
     from app.api.settings import get_setting
     from app.core.database import SessionLocal
     db = SessionLocal()
@@ -48,9 +48,32 @@ async def list_models(user: User = Depends(get_current_user)):
         async with __import__("httpx").AsyncClient(timeout=10) as c:
             r = await c.get(f"{base_url}/api/tags")
             data = r.json()
-            return {"models": [m["name"] for m in data.get("models", [])]}
+            return {"models": data.get("models", [])}
     except Exception as e:
         return {"models": [], "error": str(e)}
+
+
+class DeleteModelRequest(BaseModel):
+    model: str
+
+@router.post("/models/delete")
+async def delete_model(body: DeleteModelRequest, user: User = Depends(get_current_user)):
+    """Delete a locally installed Ollama model."""
+    from app.api.settings import get_setting
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    finally:
+        db.close()
+    try:
+        async with __import__("httpx").AsyncClient(timeout=30) as c:
+            r = await c.delete(f"{base_url}/api/delete", json={"name": body.model})
+            if r.status_code in (200, 204):
+                return {"ok": True}
+            return {"ok": False, "error": r.text[:200]}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 class PullModelRequest(BaseModel):
@@ -313,6 +336,92 @@ async def suggest_datasets(
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Globaler Assistent ────────────────────────────────────────────────────────
+
+_PAGE_SYSTEM_PROMPTS = {
+    "dashboard": (
+        "Du bist der KI-Assistent für das Datenmonster Dashboard. "
+        "Das Dashboard zeigt alle Projekte und deren Inhalte: Datasets (Datenquellen), "
+        "Mappings (ETL-Transformationen), Pipelines (Ablaufsteuerung), Reports, Formulare "
+        "und Scheduler (zeitgesteuerte Ausführung). "
+        "Du hilfst Benutzern dabei, die Plattform effektiv zu nutzen."
+    ),
+    "mapping_editor": (
+        "Du bist der KI-Assistent für den Mapping-Editor von Datenmonster. "
+        "Der Mapping-Editor ermöglicht die visuelle Konfiguration von ETL-Prozessen. "
+        "Datasets werden auf einem Canvas platziert und Felder über Verbindungen auf Zielfelder gemappt. "
+        "Verfügbare Node-Typen: Transform-Nodes (Text, Datum, Zahl, Verkettung), "
+        "Aggregations-Nodes, SQL-Nodes (Scalar/Spalte/Lookup/Transform), Calc-Nodes (Fensterfunktionen), "
+        "REST-API-Nodes, Python-Nodes, Expression-Nodes, Datenqualitäts-Nodes, "
+        "Konstanten-Nodes, Param-Nodes und Switch-Nodes. "
+        "Du hilfst beim Erstellen von Transformationen, SQL-Abfragen und Python-Skripten."
+    ),
+    "pipeline_editor": (
+        "Du bist der KI-Assistent für den Pipeline-Editor von Datenmonster. "
+        "Pipelines steuern die Ausführungsreihenfolge von Mappings und können "
+        "Bedingungen prüfen, E-Mails versenden, FTP-Aktionen ausführen, "
+        "Mappings parametrisiert aufrufen und Verzweigungen enthalten."
+    ),
+    "report_editor": (
+        "Du bist der KI-Assistent für den Report-Editor von Datenmonster. "
+        "Reports visualisieren Daten aus Datasets als Diagramme (Balken, Linie, Kreis), "
+        "Tabellen und KPI-Kacheln."
+    ),
+    "form_editor": (
+        "Du bist der KI-Assistent für den Formular-Editor von Datenmonster. "
+        "Formulare können Eingabefelder, Dropdowns, Datumswähler und Widgets enthalten, "
+        "Mappings mit Parametern ausführen und Daten aus Datasets anzeigen."
+    ),
+}
+
+_BASE_SYSTEM = (
+    "Du bist der KI-Assistent von Datenmonster, einer ETL-Plattform für lokale Datenverarbeitung. "
+    "Antworte auf Deutsch, präzise und hilfreich. "
+    "Halte Antworten kompakt – keine unnötigen Aufzählungen. "
+    "Wenn du Code-Beispiele gibst, nutze Markdown-Codeblöcke."
+)
+
+
+class ChatMessage(BaseModel):
+    role: str  # "user" | "assistant"
+    content: str
+
+class ChatRequest(BaseModel):
+    message: str
+    history: list[ChatMessage] = []
+    page_context: dict = {}
+
+@router.post("/chat")
+async def chat(
+    body: ChatRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Globaler Assistent: multi-turn Chat mit Seitenkontext."""
+    svc = _require_ai(db)
+
+    page = body.page_context.get("page", "")
+    description = body.page_context.get("description", "")
+    current_data = body.page_context.get("currentData", {})
+
+    page_prompt = _PAGE_SYSTEM_PROMPTS.get(page, "")
+    system_parts = [_BASE_SYSTEM]
+    if page_prompt:
+        system_parts.append(page_prompt)
+    elif description:
+        system_parts.append(description)
+    if current_data:
+        import json as _j
+        data_str = _j.dumps(current_data, ensure_ascii=False, default=str)[:800]
+        system_parts.append(f"Aktueller Kontext: {data_str}")
+    system = "\n\n".join(system_parts)
+
+    messages = [{"role": m.role, "content": m.content} for m in body.history]
+    messages.append({"role": "user", "content": body.message})
+
+    return _sse_stream(svc._stream(messages, system))
 
 
 # ── Mapping-Vorschlag ────────────────────────────────────────────────────────
