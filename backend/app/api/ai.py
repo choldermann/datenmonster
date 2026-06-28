@@ -433,16 +433,19 @@ async def chat(
 
     now_str = datetime.now().strftime("%d.%m.%Y %H:%M")
     page_prompt = _PAGE_SYSTEM_PROMPTS.get(page, "")
-    system_parts = [_BASE_SYSTEM, f"Aktuelle Uhrzeit: {now_str}"]
+    system_sections: list[dict] = [
+        {"label": "Basis", "content": _BASE_SYSTEM},
+        {"label": "Uhrzeit", "content": f"Aktuelle Uhrzeit: {now_str}"},
+    ]
     if page_prompt:
-        system_parts.append(page_prompt)
+        system_sections.append({"label": f"Seite: {page}", "content": page_prompt})
     elif description:
-        system_parts.append(description)
+        system_sections.append({"label": "Seite", "content": description})
     if current_data:
         import json as _j
         data_str = _j.dumps(current_data, ensure_ascii=False, default=str)[:4000]
-        system_parts.append(f"Aktueller Kontext: {data_str}")
-    system = "\n\n".join(system_parts)
+        system_sections.append({"label": "Kontext", "content": data_str})
+    system = "\n\n".join(s["content"] for s in system_sections)
 
     messages = [{"role": m.role, "content": m.content} for m in body.history]
     messages.append({"role": "user", "content": body.message})
@@ -463,6 +466,7 @@ async def chat(
         }
         if body.debug:
             meta["system_prompt"] = system
+            meta["system_sections"] = system_sections
         yield f"data: {json.dumps({'meta': meta})}\n\n"
         async for token in svc._stream(messages, system, params=params, model=model_used):
             yield f"data: {json.dumps({'token': token})}\n\n"

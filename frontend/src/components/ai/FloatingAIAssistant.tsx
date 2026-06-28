@@ -560,8 +560,19 @@ export default function FloatingAIAssistant() {
 
               {/* System-Prompt-Tab */}
               {expertSection === "prompt" && (
-                <div style={{ padding: "10px 12px" }}>
-                  {debugInfo?.system_prompt ? (
+                <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
+                  {debugInfo?.system_sections ? (
+                    (debugInfo.system_sections as any[]).map((sec: any, i: number) => (
+                      <div key={i}>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: ACCENT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>
+                          {sec.label}
+                        </div>
+                        <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5, backgroundColor: "rgba(255,255,255,0.03)", padding: "6px 8px", borderRadius: 5, borderLeft: `2px solid rgba(252,228,153,0.2)` }}>
+                          {sec.content}
+                        </pre>
+                      </div>
+                    ))
+                  ) : debugInfo?.system_prompt ? (
                     <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5 }}>
                       {debugInfo.system_prompt}
                     </pre>

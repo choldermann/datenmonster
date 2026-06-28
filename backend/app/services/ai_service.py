@@ -107,9 +107,12 @@ def classify_query(message: str) -> str:
         return "agent" if "agent" in msg else "complex"
     if any(w in msg for w in ["python", "skript", "script", "funktion", "def ", "import ", "klasse"]):
         return "medium"
-    if any(w in msg for w in ["sql", "select ", "join ", "where ", "query", "abfrage", "tabelle"]):
-        return "simple" if len(message) < 100 else "medium"
-    if len(message.strip()) < 80:
+    # Kontext-Fragen brauchen immer medium – 0.9b halluziniert bei Mapping/Dataset-Fragen
+    if any(w in msg for w in ["felder", "spalten", "columns", "tabelle", "dataset", "mapping", "join",
+                               "sql", "select ", "where ", "query", "abfrage", "wieviele", "wie viele",
+                               "welche", "zeige", "erkläre", "analysiere"]):
+        return "medium"
+    if len(message.strip()) < 60:
         return "simple"
     return "medium"
 
