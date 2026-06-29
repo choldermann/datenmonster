@@ -117,19 +117,29 @@ def classify_query(message: str) -> str:
     return "medium"
 
 
+def _model_size_b(name: str) -> float:
+    """Parse parameter count in billions from model name, e.g. 'qwen3.5:1.5b' → 1.5. Unknown → inf."""
+    import re
+    m = re.search(r"[:\-_](\d+(?:\.\d+)?)[bB]", name)
+    return float(m.group(1)) if m else float("inf")
+
+
 async def select_auto_model(message: str, base_url: str, default_model: str) -> tuple[str, str]:
-    """Returns (model_name, category)."""
+    """Returns (model_name, category). Never picks a larger model than default_model."""
     category = classify_query(message)
     candidates = _AUTO_PREFERENCE.get(category, _AUTO_PREFERENCE["medium"])
     installed = await get_installed_models(base_url)
     installed_set = set(installed)
+    max_size = _model_size_b(default_model)  # ceiling: don't escalate beyond user's choice
     for candidate in candidates:
+        if _model_size_b(candidate) > max_size:
+            continue  # skip models larger than configured default
         if candidate in installed_set:
             return candidate, category
-        # Accept any installed variant of the same base model
+        # Accept any installed variant of the same base model within size limit
         base = candidate.split(":")[0]
         for inst in installed:
-            if inst.startswith(base + ":"):
+            if inst.startswith(base + ":") and _model_size_b(inst) <= max_size:
                 return inst, category
     return default_model, category
 
