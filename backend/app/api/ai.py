@@ -363,7 +363,10 @@ _PAGE_SYSTEM_PROMPTS = {
         "WICHTIG: Du siehst nur Spaltennamen, keine semantischen Beschreibungen. "
         "Erfinde KEINE Bedeutungen oder Beschreibungen aus Feldnamen (z.B. 'enthält Rechnungsdaten'). "
         "Falls Tabellenbeziehungen im Kontext vorhanden sind, nutze diese für JOIN-Empfehlungen. "
-        "Falls keine Beziehungen bekannt sind, sag das ehrlich statt zu raten."
+        "Falls keine Beziehungen bekannt sind, sag das ehrlich statt zu raten. "
+        "Falls der Kontext ein 'lastRunError' enthält, analysiere diesen Fehler: "
+        "erkläre die Ursache verständlich, zeige die kritische Stelle im Stack-Trace, "
+        "und gib konkrete Lösungsschritte. Halte die Antwort strukturiert (Ursache / Lösung)."
     ),
     "pipeline_editor": (
         "Du bist der KI-Assistent für den Pipeline-Editor von Datenmonster. "
@@ -456,19 +459,24 @@ async def chat(
         import json as _j
         if isinstance(current_data, dict):
             active_node = current_data.get("activeNode")
+            last_run_error = current_data.get("lastRunError")
             table_rels = current_data.get("tableRelationships", [])
             schema_ctx = current_data.get("schemaContext", "")
             # connectionIds ist frontend-intern, nicht für die KI bestimmt
-            _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds"}
+            _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds", "lastRunError"}
             rest_data = {k: v for k, v in current_data.items() if k not in _strip}
         else:
             active_node = None
+            last_run_error = None
             table_rels = []
             schema_ctx = ""
             rest_data = current_data
         if active_node:
             node_str = _j.dumps(active_node, ensure_ascii=False, default=str)
             system_sections.append({"label": "Aktives Element", "content": f"Der Benutzer hat dieses Element im Canvas angeklickt:\n{node_str}"})
+        if last_run_error:
+            err_msg = last_run_error.get("message", str(last_run_error))
+            system_sections.append({"label": "Letzter Mapping-Fehler", "content": f"Beim letzten Mapping-Run ist folgender Fehler aufgetreten:\n{err_msg}"})
         if schema_ctx:
             system_sections.append({"label": "Schema-Wissensdatenbank", "content": f"Verfügbares Datenbankschema (alle verbundenen Tabellen + Beziehungen):\n{schema_ctx}"})
         if table_rels:

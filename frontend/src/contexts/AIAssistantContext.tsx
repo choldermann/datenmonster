@@ -23,6 +23,9 @@ interface AIAssistantContextType {
   callGenerateNodes: (result: any) => void;
   setSuggestTablesCallback: (fn: ((result: any) => void) | null) => void;
   callSuggestTables: (result: any) => void;
+  pendingMessage: string | null;
+  setPendingMessage: (msg: string | null) => void;
+  triggerExplainError: (errorText: string, extraContext?: Record<string, any>) => void;
 }
 
 const AIAssistantContext = createContext<AIAssistantContextType>({
@@ -34,11 +37,15 @@ const AIAssistantContext = createContext<AIAssistantContextType>({
   callGenerateNodes: () => {},
   setSuggestTablesCallback: () => {},
   callSuggestTables: () => {},
+  pendingMessage: null,
+  setPendingMessage: () => {},
+  triggerExplainError: () => {},
 });
 
 export function AIAssistantProvider({ children }: { children: ReactNode }) {
   const [pageContext, _setPageContext] = useState<PageContext | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const generateNodesCallbackRef = useRef<((result: any) => void) | null>(null);
   const suggestTablesCallbackRef = useRef<((result: any) => void) | null>(null);
 
@@ -62,8 +69,17 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
     suggestTablesCallbackRef.current?.(result);
   }, []);
 
+  const triggerExplainError = useCallback((errorText: string, extraContext?: Record<string, any>) => {
+    _setPageContext(prev => prev ? {
+      ...prev,
+      currentData: { ...(prev.currentData ?? {}), lastRunError: { message: errorText, ...extraContext } },
+    } : prev);
+    setPendingMessage(`Analysiere diesen Mapping-Fehler und erkläre was schiefgelaufen ist und wie man es behebt:\n\n${errorText}`);
+    setIsOpen(true);
+  }, []);
+
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError }}>
       {children}
     </AIAssistantContext.Provider>
   );

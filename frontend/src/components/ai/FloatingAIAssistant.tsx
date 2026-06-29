@@ -107,7 +107,7 @@ const AI_MODES: { id: AiMode; icon: string; label: string; title: string }[] = [
 type SugMode = "idle" | "input" | "loading" | "preview";
 
 export default function FloatingAIAssistant() {
-  const { isOpen, setIsOpen, pageContext, callGenerateNodes, callSuggestTables } = useAIAssistant();
+  const { isOpen, setIsOpen, pageContext, callGenerateNodes, callSuggestTables, pendingMessage, setPendingMessage } = useAIAssistant();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -359,6 +359,16 @@ export default function FloatingAIAssistant() {
     setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: "", streaming: true }]);
     await runStream(text, history);
   }, [input, streaming, messages, runStream]);
+
+  // Automatisch abschicken wenn triggerExplainError aufgerufen wurde
+  useEffect(() => {
+    if (!pendingMessage || streaming) return;
+    const text = pendingMessage;
+    setPendingMessage(null);
+    const history = messages.map(m => ({ role: m.role, content: m.content }));
+    setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: "", streaming: true }]);
+    runStream(text, history);
+  }, [pendingMessage, streaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rerunMessage = useCallback(async (idx: number) => {
     if (streaming) return;

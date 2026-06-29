@@ -38,7 +38,7 @@ export default function MappingEditor() {
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
   const canEdit = !activeProject || activeProject.role !== "viewer";
-  const { setPageContext, setGenerateNodesCallback, setSuggestTablesCallback } = useAIAssistant();
+  const { setPageContext, setGenerateNodesCallback, setSuggestTablesCallback, triggerExplainError } = useAIAssistant();
 
   const [name, setName] = useState("Neues Mapping");
   const [saving, setSaving] = useState(false);
@@ -723,6 +723,7 @@ export default function MappingEditor() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState(null);
   const [executeStatus, setExecuteStatus] = useState(null); // { done, total, errors }
+  const [runErrorBanner, setRunErrorBanner] = useState<{ errors: string[]; detail?: string } | null>(null);
   const abortRef = useRef(false);
 
   // Global spinning cursor + ESC to abort while executing
@@ -797,15 +798,20 @@ export default function MappingEditor() {
           }
         }
       } catch (e) {
-        if (!abortRef.current) errors.push(`"${target.name}": ${e.response?.data?.detail || e.message}`);
+        if (!abortRef.current) {
+          const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
+          errors.push({ label: `"${target.name}"`, detail });
+        }
       } finally {
         done++;
-        setExecuteStatus({ done, total, errors: [...errors] });
+        setExecuteStatus({ done, total, errors: errors.map(e => `${e.label}: ${e.detail}`) });
       }
     }));
 
     setIsExecuting(false);
-    if (errors.length) alert("Fehler:\n" + errors.join("\n"));
+    if (errors.length) {
+      setRunErrorBanner({ errors: errors.map(e => e.label), detail: errors.map(e => `${e.label}:\n${e.detail}`).join("\n\n") });
+    }
     setTimeout(() => setExecuteStatus(null), 2000);
   };
 
@@ -859,8 +865,14 @@ export default function MappingEditor() {
       };
       const { data } = await api.post("/api/mappings/debug-run", payload);
       setDebugTrace(data);
+      // Fehler aus Debug-Trace in Banner zeigen
+      const traceErrors = (data?.result?.errors || []);
+      if (traceErrors.length) {
+        setRunErrorBanner({ errors: ["Debug-Run"], detail: traceErrors.join("\n") });
+      }
     } catch (e) {
-      alert("Debug-Fehler: " + (e.response?.data?.detail || e.message));
+      const detail = e.response?.data?.detail || e.message;
+      setRunErrorBanner({ errors: ["Debug-Run"], detail });
     } finally {
       setDebugLoading(false);
     }
@@ -881,6 +893,37 @@ export default function MappingEditor() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", backgroundColor: S.bgMain }}>
+
+      {/* Fehler-Banner mit KI-Erklären Button */}
+      {runErrorBanner && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          backgroundColor: S.bgCard, border: "1px solid rgba(248,113,113,0.4)",
+          borderRadius: 10, padding: "14px 18px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          display: "flex", alignItems: "flex-start", gap: 12, maxWidth: 460,
+        }}>
+          <span style={{ fontSize: 18, flexShrink: 0 }}>✗</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "#f87171", margin: 0 }}>
+              Fehler beim Ausführen
+            </p>
+            <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 8px", wordBreak: "break-word" }}>
+              {runErrorBanner.errors.join(", ")}
+            </p>
+            <button
+              onClick={() => { triggerExplainError(runErrorBanner.detail || runErrorBanner.errors.join("\n")); setRunErrorBanner(null); }}
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, padding: "5px 10px",
+                borderRadius: 5, cursor: "pointer", backgroundColor: "rgba(167,139,250,0.15)",
+                border: "1px solid rgba(167,139,250,0.4)", color: "#a78bfa" }}>
+              <Sparkles size={11} /> KI: Fehler erklären
+            </button>
+          </div>
+          <button onClick={() => setRunErrorBanner(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, fontSize: 16, flexShrink: 0 }}>
+            ×
+          </button>
+        </div>
+      )}
 
       {/* Export-Erfolg Banner */}
       {exportSuccess && (
