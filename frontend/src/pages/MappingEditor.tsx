@@ -567,6 +567,7 @@ export default function MappingEditor() {
           const { data } = await api.post(`/api/connections/${conn.id}/import`, {
             sql, dataset_name: table_name, project_id: projectId,
           });
+          console.log("[DB-Browser Import] response:", data.id, data.name, "columns:", data.columns?.length, data.columns?.slice(0,3));
           const newNode = {
             dataset_id: data.id, dataset_name: data.name,
             dataset_columns: data.columns || [], dataset_column_types: data.column_types || {},
