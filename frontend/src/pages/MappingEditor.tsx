@@ -456,6 +456,21 @@ export default function MappingEditor() {
         const loadedTargets = data.targets || [];
         setTargets(loadedTargets);
         if (loadedTargets.length > 0) setActiveTargetId(loadedTargets[0].id);
+
+        // Reparatur: Canvas-Nodes mit 0 Spalten → Spalten vom Dataset-API nachladen
+        const emptyNodes = (data.canvas_nodes || []).filter((n: any) => !(n.dataset_columns?.length > 0) && n.dataset_id);
+        emptyNodes.forEach(async (n: any) => {
+          try {
+            const { data: ds } = await api.get(`/api/datasets/${n.dataset_id}`);
+            if (ds?.columns?.length > 0) {
+              setCanvasNodes(prev => prev.map(cn =>
+                cn.dataset_id === n.dataset_id
+                  ? { ...cn, dataset_columns: ds.columns, dataset_column_types: ds.column_types || {} }
+                  : cn
+              ));
+            }
+          } catch { /* ignorieren */ }
+        });
       });
     }
   }, [id]);
