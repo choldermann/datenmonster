@@ -22,6 +22,7 @@ class Mapping(Base):
     switch_nodes = Column(JSON, default=list)   # [{id, x, y, fields}]
     sort_nodes   = Column(JSON, default=list)   # [{id, x, y, sort_fields: [{field, dir}]}]
     python_nodes  = Column(JSON, default=list)   # [{id, x, y, script, output_fields: [str]}]
+    ai_nodes      = Column(JSON, default=list)   # [{id, x, y, prompt_template, output_fields: [{name,type}], model, batch_size}]
     expr_nodes    = Column(JSON, default=list)   # [{id, x, y, output_fields: [{name, expr}]}]
     quality_nodes = Column(JSON, default=list)   # [{id, x, y, label, rules: [{field, type, ...}]}]
     param_nodes   = Column(JSON, default=list)   # [{id, x, y, label, fields: [{name, type, label, default}]}]

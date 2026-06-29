@@ -27,6 +27,7 @@ class MappingCreate(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    ai_nodes:        Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
     param_nodes:     Optional[List[Any]] = []
@@ -54,6 +55,7 @@ class PreviewRequest(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    ai_nodes:        Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
     param_nodes:     Optional[List[Any]] = []
@@ -75,6 +77,7 @@ class ExecuteRequest(BaseModel):
     calc_nodes:      Optional[List[Any]] = []
     switch_nodes:    Optional[List[Any]] = []
     python_nodes:    Optional[List[Any]] = []
+    ai_nodes:        Optional[List[Any]] = []
     expr_nodes:      Optional[List[Any]] = []
     quality_nodes:   Optional[List[Any]] = []
     param_nodes:     Optional[List[Any]] = []
@@ -151,6 +154,7 @@ def _build_context_from_request(data) -> "MappingContext":
         calc_nodes      = getattr(data, "calc_nodes",      None) or [],
         switch_nodes    = getattr(data, "switch_nodes",    None) or [],
         python_nodes    = getattr(data, "python_nodes",    None) or [],
+        ai_nodes        = getattr(data, "ai_nodes",        None) or [],
         expr_nodes      = getattr(data, "expr_nodes",      None) or [],
         quality_nodes   = getattr(data, "quality_nodes",   None) or [],
         param_nodes     = getattr(data, "param_nodes",     None) or [],
@@ -185,6 +189,7 @@ def mapping_out(m: Mapping, db: Session) -> dict:
         "calc_nodes":     getattr(m, "calc_nodes",    None) or [],
         "switch_nodes":   getattr(m, "switch_nodes",    None) or [],
         "python_nodes":   getattr(m, "python_nodes",   None) or [],
+        "ai_nodes":       getattr(m, "ai_nodes",       None) or [],
         "expr_nodes":     getattr(m, "expr_nodes",     None) or [],
         "quality_nodes":  getattr(m, "quality_nodes",  None) or [],
         "param_nodes":    getattr(m, "param_nodes",    None) or [],
@@ -260,6 +265,7 @@ def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
         rest_nodes=data.rest_nodes or [], lookup_nodes=data.lookup_nodes or [],
         calc_nodes=data.calc_nodes or [], switch_nodes=data.switch_nodes or [],
         python_nodes=data.python_nodes or [],
+        ai_nodes=data.ai_nodes or [],
         expr_nodes=data.expr_nodes or [], quality_nodes=data.quality_nodes or [],
         targets=data.targets,             project_id=data.project_id,
     )
@@ -298,6 +304,7 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     m.calc_nodes      = data.calc_nodes    or []
     m.switch_nodes    = data.switch_nodes   or []
     m.python_nodes    = data.python_nodes   or []
+    m.ai_nodes        = data.ai_nodes       or []
     m.expr_nodes      = data.expr_nodes     or []
     m.quality_nodes   = data.quality_nodes  or []
     m.param_nodes     = data.param_nodes    or []
@@ -375,6 +382,12 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
         for t in (ctx.targets or []):
             connections.extend(t.get("fields") or [])
 
+        from app.api.settings import get_setting
+        _ai_cfg = {
+            "base_url": get_setting(db, "ai_base_url", "http://ollama:11434"),
+            "model":    get_setting(db, "ai_model",    "qwen2.5-coder:3b"),
+            "timeout":  float(get_setting(db, "ai_timeout", "120")),
+        }
         result = execute_mapping(
             canvas_nodes=ctx.canvas_nodes,
             connections=connections,
@@ -388,10 +401,12 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
             calc_nodes=ctx.calc_nodes,
             switch_nodes=ctx.switch_nodes,
             python_nodes=ctx.python_nodes,
+            ai_nodes=ctx.ai_nodes,
             expr_nodes=ctx.expr_nodes,
             quality_nodes=ctx.quality_nodes,
             preview_rows=100,
             _debug_trace=_trace,
+            _ai_config=_ai_cfg,
         )
 
         total_ms = int((_t.perf_counter() - _t0) * 1000)
@@ -536,6 +551,12 @@ def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db)
         for t in ctx.targets:
             t["save_as_dataset"] = True
 
+    from app.api.settings import get_setting
+    _ai_cfg = {
+        "base_url": get_setting(db, "ai_base_url", "http://ollama:11434"),
+        "model":    get_setting(db, "ai_model",    "qwen2.5-coder:3b"),
+        "timeout":  float(get_setting(db, "ai_timeout", "120")),
+    }
     try:
         result = run_mapping_object(
             ctx,
@@ -546,6 +567,7 @@ def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db)
             project_id=data.project_id,
             project_name=data.project_name,
             triggered_by="execute",
+            _ai_config=_ai_cfg,
         )
     except Exception as e:
         try:

@@ -22,6 +22,7 @@ import LookupNode, { LOOKUP_COLOR } from "../components/mapping/LookupNode";
 import CalcNode, { CALC_COLOR } from "../components/mapping/CalcNode";
 import SwitchNode, { SWITCH_COLOR } from "../components/mapping/SwitchNode";
 import PythonNode, { PYTHON_NODE_COLOR } from "../components/mapping/PythonNode";
+import AiTransformNode, { AI_NODE_COLOR } from "../components/mapping/AiTransformNode";
 import ExprNode, { EXPR_NODE_COLOR } from "../components/mapping/ExprNode";
 import DataQualityNode, { DQ_NODE_COLOR } from "../components/mapping/DataQualityNode";
 import ParamsNode, { PARAMS_NODE_COLOR } from "../components/mapping/ParamsNode";
@@ -76,6 +77,8 @@ export default function MappingEditor() {
   const switchOutputRefs = useRef({});
   const [pythonNodes, setPythonNodes] = useState([]);
   const pythonOutputRefs = useRef({});
+  const [aiNodes, setAiNodes] = useState([]);
+  const aiOutputRefs = useRef({});
   const [exprNodes, setExprNodes] = useState([]);
   const exprOutputRefs = useRef({});
   const [qualityNodes, setQualityNodes] = useState([]);
@@ -244,6 +247,7 @@ export default function MappingEditor() {
       ...calcNodes.map(n => n.y || 0),
       ...lookupNodes.map(n => n.y || 0),
       ...pythonNodes.map(n => n.y || 0),
+      ...aiNodes.map(n => n.y || 0),
       ...exprNodes.map(n => n.y || 0),
       ...qualityNodes.map(n => n.y || 0),
     ];
@@ -419,6 +423,7 @@ export default function MappingEditor() {
         setCalcNodes(data.calc_nodes || []);
         setSwitchNodes(data.switch_nodes || []);
         setPythonNodes(data.python_nodes || []);
+        setAiNodes(data.ai_nodes || []);
         setExprNodes(data.expr_nodes || []);
         setQualityNodes(data.quality_nodes || []);
         setParamNodes(data.param_nodes || []);
@@ -429,7 +434,7 @@ export default function MappingEditor() {
     }
   }, [id]);
 
-  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, exprNodes, qualityNodes, paramNodes]);
+  useEffect(() => { const t = setTimeout(triggerLineDraw, 100); return () => clearTimeout(t); }, [canvasNodes, targets, activeTargetId, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, paramNodes]);
 
   // Mouse move for join drag preview
   useEffect(() => {
@@ -472,6 +477,7 @@ export default function MappingEditor() {
         { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" },
       ]}]);
       else if (nodeType === "python") setPythonNodes((prev) => [...prev, { id, x: dropX, y: dropY, script: "", output_fields: [] }]);
+      else if (nodeType === "ai") setAiNodes((prev) => [...prev, { id, x: dropX, y: dropY, prompt_template: "", output_fields: [], model: null, batch_size: 10 }]);
       else if (nodeType === "expr") setExprNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Expression", output_fields: [] }]);
       else if (nodeType === "quality") setQualityNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Datenqualität", rules: [] }]);
       else if (nodeType === "params") setParamNodes((prev) => [...prev, { id, x: dropX, y: dropY, label: "Formular-Parameter", fields: [] }]);
@@ -708,7 +714,7 @@ export default function MappingEditor() {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, param_nodes: paramNodes, targets, project_id: projectId };
+      const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, param_nodes: paramNodes, targets, project_id: projectId };
       if (id && id !== "new") {
         await api.put(`/api/mappings/${id}`, payload);
       } else {
@@ -757,6 +763,7 @@ export default function MappingEditor() {
       calc_nodes:      calcNodes,
       switch_nodes:    switchNodes,
       python_nodes:    pythonNodes,
+      ai_nodes:        aiNodes,
       expr_nodes:      exprNodes,
       quality_nodes:   qualityNodes,
       param_nodes:     paramNodes,
@@ -834,7 +841,7 @@ export default function MappingEditor() {
           transform_nodes: transformNodes, constant_nodes: constantNodes,
           sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
           lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
-          python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
+          python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
           targets: targets.length ? targets : undefined,
           fields: activeTarget?.fields || connections,
           preview_rows: 50,
@@ -859,7 +866,7 @@ export default function MappingEditor() {
         transform_nodes: transformNodes, constant_nodes: constantNodes,
         sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
         lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
-        python_nodes: pythonNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
+        python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
         targets: targets.length ? targets : undefined,
         fields: !targets.length ? connections : undefined,
       };
@@ -1076,6 +1083,7 @@ export default function MappingEditor() {
                 items: [
                   { type: "switch",  Icon: GitBranch,      color: SWITCH_COLOR,      title: "Switch Node",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setSwitchNodes(prev => [...prev, { id, x: 600, y: 80+prev.length*60, output_field: "", branches: [{ id: "b1", condition: "has_rows", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Wenn Daten vorhanden" }, { id: "b2", condition: "always", dataset_id: null, source_dataset_id: null, threshold: 0, label: "Sonst (Fallback)" }] }]); } },
                   { type: "python",  Icon: Terminal,        color: PYTHON_NODE_COLOR,  title: "Python Script", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setPythonNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, script: "", output_fields: [] }]); } },
+                  { type: "ai",      Icon: Sparkles,        color: AI_NODE_COLOR,      title: "KI-Transform",  onAdd: () => { const id = Math.random().toString(36).slice(2,9); setAiNodes(prev => [...prev, { id, x: 640, y: 80+prev.length*60, prompt_template: "", output_fields: [], model: null, batch_size: 10 }]); } },
                   { type: "expr",    Icon: FunctionSquare,  color: EXPR_NODE_COLOR,    title: "Expression",    onAdd: () => { const id = Math.random().toString(36).slice(2,9); setExprNodes(prev => [...prev, { id, x: 680, y: 80+prev.length*60, label: "Expression", output_fields: [] }]); } },
                   { type: "quality", Icon: ShieldCheck,     color: DQ_NODE_COLOR,      title: "Datenqualität", onAdd: () => { const id = Math.random().toString(36).slice(2,9); setQualityNodes(prev => [...prev, { id, x: 720, y: 80+prev.length*60, label: "Datenqualität", rules: [] }]); } },
                   { type: "params",  Icon: Database,         color: PARAMS_NODE_COLOR,  title: "Params Node",   onAdd: () => { const id = Math.random().toString(36).slice(2,9); setParamNodes(prev => [...prev, { id, x: 760, y: 80+prev.length*60, label: "Formular-Parameter", fields: [] }]); } },
@@ -1149,7 +1157,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} paramOutputRefs={paramOutputRefs} paramNodes={paramNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} aiOutputRefs={aiOutputRefs} aiNodes={aiNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} paramOutputRefs={paramOutputRefs} paramNodes={paramNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -1387,6 +1395,25 @@ export default function MappingEditor() {
                 />
               ))}
 
+              {aiNodes.map((an) => (
+                <AiTransformNode key={an.id} node={an}
+                  outputRefs={aiOutputRefs}
+                  availableFields={canvasNodes.flatMap(n =>
+                    (n.dataset_columns || []).map(col => ({
+                      name: col,
+                      type: n.dataset_column_types?.[col]?.type || "string",
+                      dataset: n.dataset_name,
+                    }))
+                  )}
+                  onPositionChange={(id, x, y) => { setAiNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
+                  onUpdate={(updated) => { setAiNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
+                  onRemove={() => { setAiNodes(prev => prev.filter(n => n.id !== an.id)); setConnections(prev => prev.filter(c => c.source_dataset_id !== "__ai__" + an.id)); }}
+                  debugHighlight={debugActiveStageId === "ai"}
+                  isActive={activeNodeId === an.id}
+                  onActivate={() => { setActiveNodeId(an.id); setActiveNodeInfo(null); }}
+                />
+              ))}
+
             </div>
 
             <CanvasMinimap
@@ -1401,6 +1428,7 @@ export default function MappingEditor() {
               calcNodes={calcNodes}
               switchNodes={switchNodes}
               pythonNodes={pythonNodes}
+              aiNodes={aiNodes}
               exprNodes={exprNodes}
               qualityNodes={qualityNodes}
               paramNodes={paramNodes}
@@ -1422,6 +1450,7 @@ export default function MappingEditor() {
             calcNodes={calcNodes}
             switchNodes={switchNodes}
             pythonNodes={pythonNodes}
+            aiNodes={aiNodes}
             exprNodes={exprNodes}
             qualityNodes={qualityNodes}
             paramNodes={paramNodes}

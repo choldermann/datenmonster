@@ -52,6 +52,7 @@ class MappingContext:
     switch_nodes:    List[Dict] = field(default_factory=list)
     sort_nodes:      List[Dict] = field(default_factory=list)
     python_nodes:    List[Dict] = field(default_factory=list)
+    ai_nodes:        List[Dict] = field(default_factory=list)
     expr_nodes:      List[Dict] = field(default_factory=list)
     quality_nodes:   List[Dict] = field(default_factory=list)
     param_nodes:     List[Dict] = field(default_factory=list)
@@ -96,6 +97,7 @@ class MappingContext:
             switch_nodes    = self.switch_nodes,
             sort_nodes      = self.sort_nodes,
             python_nodes    = self.python_nodes,
+            ai_nodes        = self.ai_nodes,
             expr_nodes      = self.expr_nodes,
             quality_nodes   = self.quality_nodes,
             param_nodes     = self.param_nodes,
@@ -118,6 +120,7 @@ def run_mapping_object(
     user_id: int = 1,
     triggered_by: str = "manual",
     scheduled_job_id: Optional[int] = None,
+    _ai_config: Dict = None,
 ) -> Dict[str, Any]:
     """
     EINHEITLICHER Einstiegspunkt für ALLE Ausführungspfade:
@@ -151,6 +154,7 @@ def run_mapping_object(
     result = execute_mapping(
         **ctx.to_execute_kwargs(preview_connections, preview_rows),
         target_options=_preview_target_opts,
+        _ai_config=_ai_config,
     )
 
     errors = result.get("errors") or []
@@ -732,6 +736,98 @@ def _run_final_sort_limit(
     return output_rows
 
 
+def _exec_ai_transform(
+    rows: list,
+    prompt_template: str,
+    output_fields: list,
+    batch_size: int,
+    ai_config: dict,
+    model_override: str = None,
+) -> tuple[list, list]:
+    """Wendet ein KI-Prompt-Template auf alle Rows an (Batches von batch_size)."""
+    import httpx, json as _json, re as _re
+
+    base_url = ai_config.get("base_url", "http://ollama:11434")
+    model    = model_override or ai_config.get("model", "qwen2.5-coder:3b")
+    timeout  = float(ai_config.get("timeout", 120))
+
+    # JSON-Schema aus output_fields ableiten
+    schema_props = {f["name"]: {"type": _json_type(f.get("type", "string"))} for f in output_fields}
+    json_schema  = {"type": "object", "properties": schema_props, "required": list(schema_props)}
+    field_names  = [f["name"] for f in output_fields]
+
+    errors:   list = []
+    new_rows: list = []
+
+    for i in range(0, len(rows), batch_size):
+        batch = rows[i : i + batch_size]
+        # Prompt für alle Rows im Batch aufbauen
+        if len(batch) == 1:
+            # Einzelner Prompt – einfachstes Format
+            row = batch[0]
+            prompt = _fill_template(prompt_template, row)
+            result_schema = json_schema
+            messages = [{"role": "user", "content": prompt}]
+        else:
+            # Batch: Prompt + JSON-Array-Output
+            row_lines = "\n".join(
+                f"{idx+1}. {_fill_template(prompt_template, row)}"
+                for idx, row in enumerate(batch)
+            )
+            array_schema = {"type": "array", "items": json_schema}
+            messages = [{"role": "user", "content": (
+                f"{row_lines}\n\n"
+                f"Gib ein JSON-Array mit genau {len(batch)} Einträgen zurück, "
+                f"je eines pro Zeile. Jeder Eintrag muss die Felder enthalten: "
+                f"{', '.join(field_names)}"
+            )}]
+            result_schema = array_schema
+
+        try:
+            resp = httpx.post(
+                f"{base_url}/api/chat",
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "format": result_schema,
+                    "options": {"temperature": 0, "num_predict": 512},
+                },
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            content = resp.json().get("message", {}).get("content", "")
+            parsed  = _json.loads(content)
+        except Exception as e:
+            errors.append(str(e)[:200])
+            # Fehler-Fallback: Rows unverändert durchleiten mit leeren AI-Feldern
+            for row in batch:
+                new_rows.append({**row, **{f: None for f in field_names}})
+            continue
+
+        # Ergebnis auf Rows mappen
+        results = parsed if isinstance(parsed, list) else [parsed]
+        for idx, row in enumerate(batch):
+            ai_out = results[idx] if idx < len(results) else {}
+            new_rows.append({**row, **{f: ai_out.get(f) for f in field_names}})
+
+    return new_rows, errors
+
+
+def _fill_template(template: str, row: dict) -> str:
+    """Ersetzt {{feldname}} Platzhalter im Prompt-Template."""
+    import re as _re
+    def replacer(m):
+        key = m.group(1).strip()
+        return str(row.get(key, ""))
+    return _re.sub(r"\{\{([^}]+)\}\}", replacer, template)
+
+
+def _json_type(t: str) -> str:
+    return {"string": "string", "integer": "integer", "float": "number",
+            "boolean": "boolean", "number": "number"}.get(t, "string")
+
+
 def execute_mapping(
     canvas_nodes: List[Dict],
     connections: List[Dict],
@@ -746,6 +842,7 @@ def execute_mapping(
     switch_nodes: List[Dict] = None,
     sort_nodes: List[Dict] = None,
     python_nodes: List[Dict] = None,
+    ai_nodes: List[Dict] = None,
     expr_nodes: List[Dict] = None,
     quality_nodes: List[Dict] = None,
     param_nodes: List[Dict] = None,
@@ -753,6 +850,7 @@ def execute_mapping(
     target_options: Dict = None,
     preview_rows: int = 50,
     _debug_trace: list = None,
+    _ai_config: Dict = None,
 ) -> Dict[str, Any]:
     """
     Führt das Mapping aus und gibt Vorschau-Daten zurück.
@@ -1829,6 +1927,38 @@ def execute_mapping(
             "meta": {},
         })
         _dbg_err_idx = len(errors)
+
+    # ── AI Transform Nodes ─────────────────────────────────────────────────────
+    for an in (ai_nodes or []):
+        prompt_tmpl = (an.get("prompt_template") or "").strip()
+        out_fields  = an.get("output_fields") or []
+        if not prompt_tmpl or not out_fields:
+            continue
+        batch_size = int(an.get("batch_size") or 10)
+        _t0 = __import__('time').perf_counter()
+        new_rows, ai_errors = _exec_ai_transform(
+            output_rows, prompt_tmpl, out_fields, batch_size,
+            _ai_config or {}, an.get("model"),
+        )
+        output_rows = new_rows
+        if ai_errors:
+            errors.append(f"AI-Node '{an.get('id','?')}': {ai_errors[0]}" +
+                          (f" (+ {len(ai_errors)-1} weitere)" if len(ai_errors) > 1 else ""))
+        if _debug_trace is not None:
+            _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+            _debug_trace.append({
+                "id": f"ai_{an.get('id','?')}",
+                "label": f"KI-Transform ({len(out_fields)} Ausgabefelder)",
+                "type": "ai",
+                "rows_in": _prev_r,
+                "rows_out": len(output_rows),
+                "errors": len(ai_errors),
+                "duration_ms": int((__import__('time').perf_counter() - _t0) * 1000),
+                "sample": output_rows[:5],
+                "icon": "sparkles",
+                "meta": {"output_fields": [f["name"] for f in out_fields]},
+            })
+            _dbg_err_idx = len(errors)
 
     # Expression nodes and quality nodes are processed per-row in Phase 1
     # (inside the result_df.iterrows() loop above) so connections can resolve their output fields.

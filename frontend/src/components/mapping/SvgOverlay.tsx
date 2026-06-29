@@ -6,8 +6,9 @@ import { CALC_COLOR } from "./CalcNode";
 import { SWITCH_COLOR } from "./SwitchNode";
 import { PYTHON_NODE_COLOR } from "./PythonNode";
 import { PARAMS_NODE_COLOR } from "./constants";
+import { AI_NODE_COLOR } from "./AiTransformNode";
 
-function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, exprOutputRefs, exprNodes, paramOutputRefs, paramNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
+function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, exprOutputRefs, exprNodes, paramOutputRefs, paramNodes, aiOutputRefs, aiNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
   const canvasEl = canvasRef.current;
   if (!canvasEl) return null;
 
@@ -150,6 +151,20 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
       const fieldIdx = (pythonNode.output_fields || []).findIndex(f => f === sourceField);
       const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
       const outEl = pythonOutputRefs.current[dotKey]?.current || pythonOutputRefs.current[dotKey];
+      if (!isInDOM(outEl)) return null;
+      const r = toSvg(outEl.getBoundingClientRect());
+      return { x: r.right, y: r.top + r.height / 2, clamped: false };
+    }
+
+    // AI Transform node output dot
+    if (String(datasetId).startsWith("__ai__")) {
+      const nodeId = String(datasetId).replace("__ai__", "");
+      if (!aiOutputRefs?.current) return null;
+      const aiNode = aiNodes?.find(n => n.id === nodeId);
+      if (!aiNode) return null;
+      const fieldIdx = (aiNode.output_fields || []).findIndex(f => f.name === sourceField);
+      const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+      const outEl = aiOutputRefs.current[dotKey]?.current || aiOutputRefs.current[dotKey];
       if (!isInDOM(outEl)) return null;
       const r = toSvg(outEl.getBoundingClientRect());
       return { x: r.right, y: r.top + r.height / 2, clamped: false };
@@ -465,7 +480,8 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const isPython = String(conn.source_dataset_id).startsWith("__python__");
         const isExpr   = String(conn.source_dataset_id).startsWith("__expr__");
         const isParams = String(conn.source_dataset_id).startsWith("__params__");
-        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython || isExpr || isParams;
+        const isAiNode = String(conn.source_dataset_id).startsWith("__ai__");
+        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython || isExpr || isParams || isAiNode;
         const srcKey = `${conn.source_dataset_id}__${conn.source_field}`;
         const srcEl = isSpecialNode ? null : fieldRefs.current[srcKey];
         const tgtEl = targetRefs.current[conn.target_field];
@@ -587,6 +603,17 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           if (!isInDOM(outEl)) return null;
           const r = toSvg(outEl.getBoundingClientRect());
           sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
+        } else if (isAiNode) {
+          const nodeId = String(conn.source_dataset_id).replace("__ai__", "");
+          if (!aiOutputRefs?.current) return null;
+          const aiNode = aiNodes?.find(n => n.id === nodeId);
+          if (!aiNode) return null;
+          const fieldIdx = (aiNode.output_fields || []).findIndex(f => f.name === conn.source_field);
+          const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
+          const outEl = aiOutputRefs.current[dotKey]?.current || aiOutputRefs.current[dotKey];
+          if (!isInDOM(outEl)) return null;
+          const r = toSvg(outEl.getBoundingClientRect());
+          sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
         } else if (miniNode) {
           // srcEl ist Output-Port-Dot → toSvg gibt korrekte scroll-bereinigte Koordinate
           if (srcEl) {
@@ -605,7 +632,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const x2 = tp.x, y2 = tp.y;
         const cx = Math.min(120, Math.abs(x2 - x1) * 0.5);
         const ti = TRANSFORMER_TYPES.find((t) => t.value === (conn.transformer?.type || "direct"));
-        const color = isParams ? PARAMS_NODE_COLOR : isPython ? PYTHON_NODE_COLOR : isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "#6ee7b7");
+        const color = isAiNode ? AI_NODE_COLOR : isParams ? PARAMS_NODE_COLOR : isPython ? PYTHON_NODE_COLOR : isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "#6ee7b7");
         const isClamped = sp.clamped || tp.clamped;
 
         // target_type Badge
@@ -619,7 +646,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
 
         // Typ-Kompatibilitätswarnung: nur für reguläre Dataset-Connections ohne expliziten Cast
         let typeWarn = false;
-        if (!isSwitch && !isCalc && !isLookup && !isRest && !isAgg && !isSql && !isConst && !isTransform && !isPython && !isParams && !ttype && conn.source_field && conn.target_field) {
+        if (!isSwitch && !isCalc && !isLookup && !isRest && !isAgg && !isSql && !isConst && !isTransform && !isPython && !isParams && !isAiNode && !ttype && conn.source_field && conn.target_field) {
           const srcNode = canvasNodes?.find(n => n.dataset_id == conn.source_dataset_id);
           const srcType = srcNode?.dataset_column_types?.[conn.source_field]?.type;
           const tgtType = targetColumnTypes?.[conn.target_field]?.type;

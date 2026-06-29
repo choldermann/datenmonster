@@ -1051,3 +1051,68 @@ async def suggest_mapping(
         f"Zielfelder: {_json.dumps(target_fields)}"
     )
     return _sse_stream(svc.stream_with_context(msg, system))
+
+
+# ── KI-Transform-Node Preview ─────────────────────────────────────────────────
+
+class TransformPreviewRequest(BaseModel):
+    prompt_template: str
+    output_fields: list
+    model: Optional[str] = None
+
+
+@router.post("/transform-preview")
+async def transform_preview(
+    body: TransformPreviewRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Call Ollama once with the prompt template filled with dummy values."""
+    svc = _require_ai(db)
+    model = body.model or svc.model
+
+    # Build a dummy row from output field names to demonstrate template filling
+    dummy_row = {f["name"]: f"<{f['name']}>" for f in body.output_fields}
+
+    # Build JSON schema for structured output
+    properties = {}
+    for f in body.output_fields:
+        t = f.get("type", "string")
+        json_t = {"string": "string", "integer": "integer", "float": "number", "boolean": "boolean"}.get(t, "string")
+        properties[f["name"]] = {"type": json_t}
+    json_schema = {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties.keys()),
+    }
+
+    # Fill template with placeholder values
+    prompt = body.prompt_template
+    # Provide example values for each field mentioned in the template
+    all_fields = {f["name"]: f"Beispielwert für {f['name']}" for f in body.output_fields}
+    import re
+    for field, val in all_fields.items():
+        prompt = prompt.replace(f"{{{{{field}}}}}", str(val))
+
+    messages = [{"role": "user", "content": prompt + "\n\nAntworte ausschließlich als JSON."}]
+
+    try:
+        resp = httpx.post(
+            f"{svc.base_url}/api/chat",
+            json={
+                "model": model,
+                "messages": messages,
+                "stream": False,
+                "format": {"type": "json_schema", "json_schema": {"name": "result", "strict": True, "schema": json_schema}},
+                "options": {"temperature": 0.2},
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        content = resp.json().get("message", {}).get("content", "{}")
+        result = json.loads(content)
+        return {"result": result}
+    except httpx.ReadTimeout:
+        raise HTTPException(504, "Ollama Timeout – Modell antwortet nicht")
+    except Exception as e:
+        raise HTTPException(500, f"KI-Fehler: {e}")
