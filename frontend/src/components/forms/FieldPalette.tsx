@@ -1,11 +1,18 @@
-import { FIELD_GROUPS } from "./fieldTypes";
+import { FIELD_GROUPS, newField } from "./fieldTypes";
+import AiFieldSuggest from "./AiFieldSuggest";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
   textDim: "var(--text-dim)", textMain: "var(--text-main)",
 };
 
-export default function FieldPalette() {
+interface Props {
+  existingFields?: { name?: string; type: string }[];
+  onAddFields?: (fields: ReturnType<typeof newField>[]) => void;
+  maxRow?: number;
+}
+
+export default function FieldPalette({ existingFields = [], onAddFields, maxRow = 0 }: Props) {
   return (
     <div style={{ width: 180, flexShrink: 0, borderRight: `1px solid ${S.border}`,
       backgroundColor: S.bgCard, display: "flex", flexDirection: "column",
@@ -53,6 +60,14 @@ export default function FieldPalette() {
           ))}
         </div>
       ))}
+
+      {onAddFields && (
+        <AiFieldSuggest
+          existingFields={existingFields}
+          onAddFields={onAddFields}
+          maxRow={maxRow}
+        />
+      )}
     </div>
   );
 }

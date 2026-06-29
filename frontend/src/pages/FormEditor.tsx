@@ -255,7 +255,18 @@ export default function FormEditor() {
       {/* ── Main Area ── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Left: Palette (nur im fields-Tab) */}
-        {activeTab === "fields" && <FieldPalette />}
+        {activeTab === "fields" && (
+          <FieldPalette
+            existingFields={fields}
+            onAddFields={(newFields) => {
+              setFields(prev => {
+                const maxRow = prev.length > 0 ? Math.max(...prev.map(f => f.row ?? 0)) : -1;
+                return [...prev, ...newFields.map((f, i) => ({ ...f, row: maxRow + 1 + i }))];
+              });
+            }}
+            maxRow={fields.length > 0 ? Math.max(...fields.map(f => f.row ?? 0)) : 0}
+          />
+        )}
 
         {/* Center: Canvas oder Actions */}
         {activeTab === "fields" && (

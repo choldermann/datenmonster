@@ -932,6 +932,115 @@ async def suggest_tables(
     return _SR2(generate(), media_type="text/event-stream")
 
 
+# ── Formularfeld-Vorschlag ───────────────────────────────────────────────────
+
+_SUGGEST_FIELDS_SYSTEM = """\
+Du bist ein Formular-Designer für Datenmonster.
+Deine Aufgabe: Schlage passende Formularfelder für eine Eingabemaske vor.
+
+VERFÜGBARE FELDTYPEN:
+- text        – einzeiliges Textfeld
+- textarea    – mehrzeiliger Text
+- number      – Zahl
+- date        – Datum
+- time        – Uhrzeit
+- file        – Dateiauswahl
+- checkbox    – Ja/Nein-Checkbox
+- switch      – Toggle-Schalter
+- dropdown    – Dropdown (Optionen notwendig)
+- multiselect – Mehrfachauswahl (Optionen notwendig)
+- radio       – Radio-Buttons (Optionen notwendig)
+- heading     – Überschrift (kein Eingabefeld, nur Layout)
+- label       – Hinweistext (kein Eingabefeld, nur Layout)
+
+REGELN:
+- Antworte NUR mit einem JSON-Array. Kein Text davor oder danach, kein Markdown.
+- name: snake_case, kurz, eindeutig
+- required: true nur bei wirklich wichtigen Feldern
+- options: nur bei dropdown/multiselect/radio, als [{"value":"...","label":"..."}]
+- Gruppiere logisch: headings vor inhaltlichen Blöcken
+- Maximal 12 Felder
+- Felder die bereits existieren NICHT nochmals vorschlagen
+
+BEISPIEL:
+[
+  {"type":"heading","label":"Kundendaten","name":"","required":false},
+  {"type":"text","label":"Kundennummer","name":"kundennummer","required":true,"placeholder":"z.B. K-1234"},
+  {"type":"dropdown","label":"Status","name":"status","required":true,"options":[{"value":"offen","label":"Offen"},{"value":"erledigt","label":"Erledigt"}]}
+]
+"""
+
+
+class SuggestFieldsRequest(BaseModel):
+    description: str
+    existing_field_names: list[str] = []
+
+
+@router.post("/suggest-fields")
+async def suggest_fields(
+    body: SuggestFieldsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Schlägt Formularfelder aus einer Beschreibung vor (SSE)."""
+    svc = _require_ai(db)
+
+    existing = ""
+    if body.existing_field_names:
+        existing = f"\nBereits vorhandene Felder (nicht nochmals vorschlagen): {', '.join(body.existing_field_names)}"
+
+    user_msg = f"Formular-Beschreibung: {body.description}{existing}"
+
+    async def generate():
+        import re as _re
+        tokens = []
+        async for token in svc.stream_with_context(user_msg, _SUGGEST_FIELDS_SYSTEM):
+            tokens.append(token)
+            yield f"data: {json.dumps({'token': token})}\n\n"
+
+        raw = "".join(tokens)
+        cleaned = _re.sub(r"^```[a-zA-Z]*\s*", "", raw.strip(), flags=_re.MULTILINE)
+        cleaned = _re.sub(r"```\s*$", "", cleaned, flags=_re.MULTILINE).strip()
+
+        start = cleaned.find("[")
+        end   = cleaned.rfind("]")
+        if start == -1 or end == -1:
+            yield f"data: {json.dumps({'error': 'KI hat kein gültiges JSON zurückgegeben'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        try:
+            fields = json.loads(cleaned[start:end + 1])
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'JSON-Parsing fehlgeschlagen: {str(e)}'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        valid = []
+        allowed_types = {"text","textarea","number","date","time","file","checkbox","switch",
+                         "dropdown","multiselect","radio","heading","label","divider","button"}
+        for f in fields:
+            if not isinstance(f, dict):
+                continue
+            t = f.get("type", "")
+            if t not in allowed_types:
+                continue
+            valid.append({
+                "type":        t,
+                "label":       str(f.get("label", t)).strip(),
+                "name":        str(f.get("name", "")).strip(),
+                "required":    bool(f.get("required", False)),
+                "placeholder": str(f.get("placeholder", "")).strip(),
+                "options":     f.get("options", []) if isinstance(f.get("options"), list) else [],
+            })
+
+        print(f"[AI suggest-fields] {len(valid)} fields for: {body.description[:60]}", flush=True)
+        yield f"data: {json.dumps({'result': valid})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 # ── Node-Generierung ─────────────────────────────────────────────────────────
 
 _GENERATE_NODES_SYSTEM = """\
