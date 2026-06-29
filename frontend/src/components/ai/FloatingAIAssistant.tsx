@@ -111,6 +111,7 @@ export default function FloatingAIAssistant() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [aiModel, setAiModel] = useState<string | null>(null);
   const [aiMode, setAiMode] = useState<AiMode>("auto");
@@ -212,6 +213,13 @@ export default function FloatingAIAssistant() {
   useEffect(() => { fetchAiStatus(); }, []);
 
   useEffect(() => { if (isOpen) fetchAiStatus(); }, [isOpen]);
+
+  useEffect(() => {
+    if (!streaming) { setElapsed(0); return; }
+    setElapsed(0);
+    const t = setInterval(() => setElapsed(s => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [streaming]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {
@@ -1184,6 +1192,9 @@ export default function FloatingAIAssistant() {
               <Loader2 size={11} className="animate-spin" color={ACCENT} />
               <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", flex: 1 }}>
                 {tokenCount > 0 ? `${tokenCount} Token generiert` : "Denkt nach…"}
+              </span>
+              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", fontVariantNumeric: "tabular-nums" }}>
+                {elapsed}s
               </span>
               <button
                 onClick={abortStreaming}
