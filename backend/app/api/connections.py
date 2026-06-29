@@ -322,7 +322,7 @@ def import_query(conn_id: int, req: ImportRequest, db: Session = Depends(get_db)
         db.commit()
         db.refresh(ds)
         dataframe_to_storage(df, ds.id)
-        return {"id": ds.id, "name": ds.name}
+        return {"id": ds.id, "name": ds.name, "columns": ds.columns or [], "column_types": ds.column_types or {}}
     except Exception as e:
         raise HTTPException(400, str(e)[:500])
 

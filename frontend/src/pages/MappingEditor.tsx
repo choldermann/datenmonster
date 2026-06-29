@@ -528,7 +528,7 @@ export default function MappingEditor() {
           });
           const newNode = {
             dataset_id: data.id, dataset_name: data.name,
-            dataset_columns: data.columns || [], dataset_column_types: {},
+            dataset_columns: data.columns || [], dataset_column_types: data.column_types || {},
             dataset_file_type: `db_${conn.db_type || "mssql"}`,
             dataset_row_count: 0, x: dropX, y: dropY,
           };
