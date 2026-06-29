@@ -104,6 +104,32 @@ export default function MappingEditor() {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [activeNodeInfo, setActiveNodeInfo] = useState<any>(null);
 
+  // DB-Tabellen-Browser
+  const [leftTab, setLeftTab] = useState<"datasets" | "db_tables">("datasets");
+  const [dbTableSearch, setDbTableSearch] = useState("");
+  const [expandedConns, setExpandedConns] = useState<Set<number>>(new Set());
+  const [connTables, setConnTables] = useState<Record<number, string[] | null>>({});
+  const [importingTable, setImportingTable] = useState<string | null>(null);
+
+  const loadConnTables = useCallback(async (connId: number) => {
+    setConnTables(prev => ({ ...prev, [connId]: null }));
+    try {
+      const { data } = await api.get(`/api/connections/${connId}/tables-only`);
+      setConnTables(prev => ({ ...prev, [connId]: data.tables || [] }));
+    } catch {
+      setConnTables(prev => ({ ...prev, [connId]: [] }));
+    }
+  }, []);
+
+  const toggleConn = useCallback((connId: number) => {
+    setExpandedConns(prev => {
+      const next = new Set(prev);
+      if (next.has(connId)) { next.delete(connId); }
+      else { next.add(connId); loadConnTables(connId); }
+      return next;
+    });
+  }, [loadConnTables]);
+
   const handleSmartMappingApply = async ({ tables, joins: suggestedJoins }) => {
     // 1. Fehlende Datasets importieren
     const newNodes = [];
@@ -485,6 +511,42 @@ export default function MappingEditor() {
       return;
     }
 
+    const dbTableJson = e.dataTransfer.getData("db_table");
+    if (dbTableJson) {
+      (async () => {
+        const { connection_id, table_name } = JSON.parse(dbTableJson);
+        const conn = dbConnections.find((c: any) => c.id === connection_id);
+        if (!conn) return;
+        setImportingTable(table_name);
+        try {
+          const parts = table_name.split(".");
+          const sql = parts.length > 1
+            ? `SELECT * FROM [${parts[0]}].[${parts[1]}]`
+            : `SELECT * FROM [${table_name}]`;
+          const { data } = await api.post(`/api/connections/${conn.id}/import`, {
+            sql, dataset_name: table_name, project_id: projectId,
+          });
+          const newNode = {
+            dataset_id: data.id, dataset_name: data.name,
+            dataset_columns: data.columns || [], dataset_column_types: {},
+            dataset_file_type: `db_${conn.db_type || "mssql"}`,
+            dataset_row_count: 0, x: dropX, y: dropY,
+          };
+          setCanvasNodes(prev => [...prev, newNode]);
+          setAllDatasets(prev => prev.some((d: any) => d.id === data.id) ? prev : [...prev, data]);
+          _applyAutoJoins(newNode, canvasNodes);
+          api.post(`/api/datasets/${data.id}/detect-schema`).then(({ data: sd }) => {
+            if (sd?.column_types) setCanvasNodes(prev => prev.map(n => n.dataset_id === data.id ? { ...n, dataset_column_types: sd.column_types } : n));
+          }).catch(() => {});
+        } catch (err) {
+          console.error("DB-Tabellen-Import fehlgeschlagen:", table_name, err);
+        } finally {
+          setImportingTable(null);
+        }
+      })();
+      return;
+    }
+
     const dsId = parseInt(e.dataTransfer.getData("dataset_id"));
     if (!dsId) return;
     if (canvasNodes.find((n) => n.dataset_id === dsId)) return;
@@ -501,7 +563,7 @@ export default function MappingEditor() {
         }).catch(() => {});
       }
     }
-  }, [allDatasets, canvasNodes]);
+  }, [allDatasets, canvasNodes, dbConnections, projectId]);
 
   const _applyAutoJoins = (newNode, existingNodes) => {
     const newTypes = newNode.dataset_column_types || {};
@@ -1037,32 +1099,113 @@ export default function MappingEditor() {
       {/* Main */}
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
 
-        {/* LEFT: Dataset Explorer */}
+        {/* LEFT: Dataset Explorer + DB-Tabellen-Browser */}
         <div style={{ width: 220, flexShrink: 0, display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRight: `1px solid ${S.border}` }}>
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
-            <p style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: S.accent }}>Datasets</p>
-            <p style={{ fontSize: 11, color: S.textDim, marginTop: 2 }}>Auf Canvas ziehen</p>
+          {/* Tab-Switcher */}
+          <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+            {(["datasets", "db_tables"] as const).map(tab => (
+              <button key={tab} onClick={() => setLeftTab(tab)}
+                style={{ flex: 1, padding: "8px 4px", background: "none", border: "none", borderBottom: leftTab === tab ? `2px solid ${S.accent}` : "2px solid transparent", cursor: "pointer", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: leftTab === tab ? S.accent : S.textDim, transition: "color 0.15s" }}>
+                {tab === "datasets" ? "Datasets" : "DB-Tabellen"}
+              </button>
+            ))}
           </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "6px 0", scrollbarWidth: "thin" }}>
-            {allDatasets.filter((ds) => ds.xml_configured !== 0).map((ds) => {
-              const onCanvas = canvasNodes.some((n) => n.dataset_id === ds.id);
-              return (
-                <div key={ds.id} draggable={!onCanvas}
-                  onDragStart={(e) => e.dataTransfer.setData("dataset_id", ds.id)}
-                  onDoubleClick={() => !onCanvas && setPreviewDataset(ds)}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: onCanvas ? "default" : "grab", opacity: onCanvas ? 0.4 : 1, borderRadius: 4, margin: "0 6px" }}
-                  onMouseEnter={(e) => { if (!onCanvas) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                  onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}>
-                  <FileText size={12} style={{ color: typeColor[ds.file_type] || S.textDim, flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 500, color: onCanvas ? S.textDim : S.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ds.name}</p>
-                    <p style={{ fontSize: 10, color: S.textDim }}>{ds.columns?.length || 0} Felder</p>
+
+          {/* Datasets Tab */}
+          {leftTab === "datasets" && (
+            <div style={{ flex: 1, overflowY: "auto", padding: "6px 0", scrollbarWidth: "thin" }}>
+              {allDatasets.filter((ds) => ds.xml_configured !== 0).map((ds) => {
+                const onCanvas = canvasNodes.some((n) => n.dataset_id === ds.id);
+                return (
+                  <div key={ds.id} draggable={!onCanvas}
+                    onDragStart={(e) => e.dataTransfer.setData("dataset_id", ds.id)}
+                    onDoubleClick={() => !onCanvas && setPreviewDataset(ds)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", cursor: onCanvas ? "default" : "grab", opacity: onCanvas ? 0.4 : 1, borderRadius: 4, margin: "0 6px" }}
+                    onMouseEnter={(e) => { if (!onCanvas) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}>
+                    <FileText size={12} style={{ color: typeColor[ds.file_type] || S.textDim, flexShrink: 0 }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 12, fontWeight: 500, color: onCanvas ? S.textDim : S.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ds.name}</p>
+                      <p style={{ fontSize: 10, color: S.textDim }}>{ds.columns?.length || 0} Felder</p>
+                    </div>
+                    {onCanvas && <span style={{ fontSize: 10, color: S.accent }}>✓</span>}
                   </div>
-                  {onCanvas && <span style={{ fontSize: 10, color: S.accent }}>✓</span>}
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* DB-Tabellen Tab */}
+          {leftTab === "db_tables" && (
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ padding: "6px 10px", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+                <input
+                  value={dbTableSearch}
+                  onChange={e => setDbTableSearch(e.target.value)}
+                  placeholder="Tabelle suchen…"
+                  style={{ width: "100%", backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "4px 8px", outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+              <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "thin" }}>
+                {dbConnections.length === 0 && (
+                  <div style={{ fontSize: 11, color: S.textDim, padding: "12px 14px", fontStyle: "italic" }}>Keine DB-Verbindungen</div>
+                )}
+                {dbConnections.map((conn: any) => {
+                  const isExpanded = expandedConns.has(conn.id);
+                  const tables = connTables[conn.id];
+                  const filteredTables = (tables || []).filter(t =>
+                    !dbTableSearch || t.toLowerCase().includes(dbTableSearch.toLowerCase())
+                  );
+                  return (
+                    <div key={conn.id}>
+                      <button onClick={() => toggleConn(conn.id)}
+                        style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", padding: "7px 10px", background: "none", border: "none", borderBottom: `1px solid ${S.border}`, cursor: "pointer", textAlign: "left" }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                        <Database size={11} color="#60a5fa" style={{ flexShrink: 0 }} />
+                        <span style={{ fontSize: 11, fontWeight: 600, color: S.textBright, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conn.name}</span>
+                        <span style={{ fontSize: 9, color: S.textDim, marginRight: 2 }}>{conn.db_type}</span>
+                        {isExpanded ? <ChevronDown size={10} color={S.textDim} /> : <ChevronRight size={10} color={S.textDim} />}
+                      </button>
+                      {isExpanded && (
+                        <div style={{ borderBottom: `1px solid ${S.border}` }}>
+                          {tables === null && (
+                            <div style={{ padding: "6px 20px", fontSize: 11, color: S.textDim, display: "flex", alignItems: "center", gap: 6 }}>
+                              <Loader2 size={10} className="animate-spin" /> Lade…
+                            </div>
+                          )}
+                          {tables !== null && filteredTables.length === 0 && (
+                            <div style={{ padding: "6px 20px", fontSize: 11, color: S.textDim, fontStyle: "italic" }}>Keine Tabellen</div>
+                          )}
+                          {filteredTables.map(tableName => {
+                            const shortName = tableName.split(".").pop() || tableName;
+                            const onCanvas = canvasNodes.some(n => n.dataset_name === shortName || n.dataset_name === tableName);
+                            const isImporting = importingTable === tableName;
+                            return (
+                              <div key={tableName}
+                                draggable={!onCanvas && !isImporting}
+                                onDragStart={e => e.dataTransfer.setData("db_table", JSON.stringify({ connection_id: conn.id, table_name: tableName, conn_db_type: conn.db_type }))}
+                                style={{ display: "flex", alignItems: "center", gap: 7, padding: "4px 10px 4px 24px", cursor: onCanvas || isImporting ? "default" : "grab", opacity: onCanvas ? 0.45 : 1 }}
+                                onMouseEnter={e => { if (!onCanvas) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
+                                onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
+                                {isImporting
+                                  ? <Loader2 size={10} className="animate-spin" color={S.textDim} style={{ flexShrink: 0 }} />
+                                  : <FileText size={10} style={{ color: "#60a5fa", flexShrink: 0 }} />}
+                                <span style={{ fontSize: 11, color: onCanvas ? S.textDim : S.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                                  {tableName}
+                                </span>
+                                {onCanvas && <span style={{ fontSize: 9, color: S.accent }}>✓</span>}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {/* Node Palette Accordion */}
           <div style={{ borderTop: `1px solid ${S.border}`, flexShrink: 0, overflowY: "auto", scrollbarWidth: "thin" }}>
             {[
