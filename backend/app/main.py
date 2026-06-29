@@ -15,6 +15,7 @@ from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
 from app.models.form import Form
+from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
@@ -350,6 +351,8 @@ from app.api import mail as mail_api
 app.include_router(mail_api.router)
 from app.api import ai as ai_api
 app.include_router(ai_api.router)
+from app.api import schema_catalog as schema_catalog_api
+app.include_router(schema_catalog_api.router)
 
 
 @app.get("/api/health")

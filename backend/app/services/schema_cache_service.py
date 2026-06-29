@@ -374,6 +374,27 @@ def rebuild_cache(conn_id: int, db) -> dict:
     conn.schema_cached_at = datetime.now(timezone.utc)
     db.commit()
     log.info(f"Schema cache rebuilt for connection {conn_id} ({len(schema['tables'])} tables)")
+
+    # Katalog-Einträge für neue Tabellen anlegen
+    try:
+        from app.models.schema_catalog import SchemaTableMeta
+        existing = {
+            m.table_full_name
+            for m in db.query(SchemaTableMeta.table_full_name)
+                       .filter_by(connection_id=conn_id).all()
+        }
+        new_entries = [
+            SchemaTableMeta(connection_id=conn_id, table_full_name=t["full_name"])
+            for t in schema.get("tables", [])
+            if t.get("full_name") and t["full_name"] not in existing
+        ]
+        if new_entries:
+            db.add_all(new_entries)
+            db.commit()
+            log.info(f"Schema catalog: {len(new_entries)} neue Tabellen-Einträge angelegt")
+    except Exception as e:
+        log.warning(f"Katalog-Sync fehlgeschlagen: {e}")
+
     return schema
 
 

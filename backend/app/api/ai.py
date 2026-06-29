@@ -1,4 +1,5 @@
 import logging
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -356,7 +357,13 @@ _PAGE_SYSTEM_PROMPTS = {
         "Aggregations-Nodes, SQL-Nodes (Scalar/Spalte/Lookup/Transform), Calc-Nodes (Fensterfunktionen), "
         "REST-API-Nodes, Python-Nodes, Expression-Nodes, Datenqualitäts-Nodes, "
         "Konstanten-Nodes, Param-Nodes und Switch-Nodes. "
-        "Du hilfst beim Erstellen von Transformationen, SQL-Abfragen und Python-Skripten."
+        "Du hilfst beim Erstellen von Transformationen, SQL-Abfragen und Python-Skripten. "
+        "Falls der Kontext ein 'Aktives Element' enthält, hat der Benutzer genau dieses Element im Canvas angeklickt – "
+        "beziehe dich in deiner Antwort gezielt darauf. "
+        "WICHTIG: Du siehst nur Spaltennamen, keine semantischen Beschreibungen. "
+        "Erfinde KEINE Bedeutungen oder Beschreibungen aus Feldnamen (z.B. 'enthält Rechnungsdaten'). "
+        "Falls Tabellenbeziehungen im Kontext vorhanden sind, nutze diese für JOIN-Empfehlungen. "
+        "Falls keine Beziehungen bekannt sind, sag das ehrlich statt zu raten."
     ),
     "pipeline_editor": (
         "Du bist der KI-Assistent für den Pipeline-Editor von Datenmonster. "
@@ -408,6 +415,10 @@ async def chat(
     svc = _require_ai(db)
     base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
     default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
+    # Längerer Timeout wenn Schema-Kontext vorhanden (großer Prompt)
+    _cd = body.page_context.get("currentData", {})
+    if isinstance(_cd, dict) and _cd.get("schemaContext"):
+        svc.timeout = 300
 
     # Modell + Parameter wählen
     model_used = default_model
@@ -443,8 +454,39 @@ async def chat(
         system_sections.append({"label": "Seite", "content": description})
     if current_data:
         import json as _j
-        data_str = _j.dumps(current_data, ensure_ascii=False, default=str)[:4000]
-        system_sections.append({"label": "Kontext", "content": data_str})
+        if isinstance(current_data, dict):
+            active_node = current_data.get("activeNode")
+            table_rels = current_data.get("tableRelationships", [])
+            schema_ctx = current_data.get("schemaContext", "")
+            # connectionIds ist frontend-intern, nicht für die KI bestimmt
+            _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds"}
+            rest_data = {k: v for k, v in current_data.items() if k not in _strip}
+        else:
+            active_node = None
+            table_rels = []
+            schema_ctx = ""
+            rest_data = current_data
+        if active_node:
+            node_str = _j.dumps(active_node, ensure_ascii=False, default=str)
+            system_sections.append({"label": "Aktives Element", "content": f"Der Benutzer hat dieses Element im Canvas angeklickt:\n{node_str}"})
+        if schema_ctx:
+            system_sections.append({"label": "Schema-Wissensdatenbank", "content": f"Verfügbares Datenbankschema (alle verbundenen Tabellen + Beziehungen):\n{schema_ctx}"})
+        if table_rels:
+            rel_lines = [
+                f"  {r['from_table']}.{r['from_col']} = {r['to_table']}.{r['to_col']}"
+                for r in table_rels
+            ]
+            content = (
+                "Diese JOIN-Bedingungen verbinden die Canvas-Tabellen miteinander "
+                "(ermittelt aus Primär-/Fremdschlüsseln des Datenbankschemas):\n"
+                + "\n".join(rel_lines)
+                + "\n\nNutze diese Informationen wenn der Benutzer nach Verknüpfungen, JOINs oder "
+                  "Beziehungen zwischen den Tabellen fragt. Nenne alle aufgelisteten Beziehungen vollständig."
+            )
+            system_sections.append({"label": "JOIN-Beziehungen", "content": content})
+        if rest_data:
+            data_str = _j.dumps(rest_data, ensure_ascii=False, default=str)[:4000]
+            system_sections.append({"label": "Kontext", "content": data_str})
     system = "\n\n".join(s["content"] for s in system_sections)
 
     messages = [{"role": m.role, "content": m.content} for m in body.history]
@@ -468,12 +510,418 @@ async def chat(
             meta["system_prompt"] = system
             meta["system_sections"] = system_sections
         yield f"data: {json.dumps({'meta': meta})}\n\n"
-        async for token in svc._stream(messages, system, params=params, model=model_used):
-            yield f"data: {json.dumps({'token': token})}\n\n"
+        try:
+            async for token in svc._stream(messages, system, params=params, model=model_used):
+                yield f"data: {json.dumps({'token': token})}\n\n"
+        except httpx.ReadTimeout:
+            yield f"data: {json.dumps({'error': 'Ollama Timeout – Modell antwortet nicht rechtzeitig (Anfrage zu groß oder Modell überlastet)'})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Modell-Fehler: {e}'})}\n\n"
         yield "data: [DONE]\n\n"
 
     from fastapi.responses import StreamingResponse as _SR
     return _SR(generate(), media_type="text/event-stream")
+
+
+# ── Mapping-Kontext (FK-Beziehungen für Canvas-Datasets) ─────────────────────
+
+class MappingContextRequest(BaseModel):
+    dataset_ids: list[int]
+
+@router.post("/mapping-context")
+def get_mapping_context(
+    body: MappingContextRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Gibt FK-Beziehungen zwischen Canvas-Datasets zurück (aus Schema-Cache)."""
+    if not body.dataset_ids:
+        return {"relationships": []}
+
+    from app.models.dataset import Dataset, DbConnection
+
+    datasets = db.query(Dataset).filter(Dataset.id.in_(body.dataset_ids)).all()
+
+    # Gruppieren nach Connection
+    conn_to_ds: dict[int, list] = {}
+    for ds in datasets:
+        if ds.source_connection_id:
+            conn_to_ds.setdefault(ds.source_connection_id, []).append(ds)
+
+    relationships = []
+    for conn_id, ds_list in conn_to_ds.items():
+        conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+        if not conn or not conn.schema_cache:
+            continue
+        try:
+            schema = json.loads(conn.schema_cache)
+        except Exception:
+            continue
+
+        ds_names = {ds.name for ds in ds_list}
+        canvas_tables = {full_name: tbl for full_name, tbl in
+                         {t["full_name"]: t for t in schema.get("tables", [])}.items()
+                         if full_name in ds_names}
+
+        # PK-Index über alle Canvas-Tabellen: col_name → (full_name, col_name)
+        pk_index: dict[str, str] = {}
+        for full_name, tbl in canvas_tables.items():
+            for col in tbl.get("columns", []):
+                if col.get("pk"):
+                    pk_index[col["name"]] = full_name
+
+        seen = set()
+
+        def add_rel(from_t, from_c, to_t, to_c):
+            key = (from_t, from_c, to_t, to_c)
+            if key not in seen:
+                seen.add(key)
+                relationships.append({"from_table": from_t, "from_col": from_c, "to_table": to_t, "to_col": to_c})
+
+        for full_name, tbl in canvas_tables.items():
+            for col in tbl.get("columns", []):
+                col_name = col["name"]
+
+                # 1. Explizite DB-FK
+                fk_str = col.get("fk")
+                if fk_str:
+                    parts = fk_str.split(".")
+                    if len(parts) >= 3:
+                        ref_col, ref_full = parts[-1], ".".join(parts[:-1])
+                    elif len(parts) == 2:
+                        ref_col, ref_full = parts[1], parts[0]
+                    else:
+                        ref_col = ref_full = None
+                    if ref_full and ref_full in ds_names:
+                        add_rel(full_name, col_name, ref_full, ref_col)
+                    continue  # keine implizite Prüfung wenn explizite FK vorhanden
+
+                # 2. Implizite FK: Spaltenname ist PK einer anderen Canvas-Tabelle
+                if col.get("pk"):
+                    continue  # PKs selbst nicht als FK
+                if col_name in pk_index:
+                    ref_full = pk_index[col_name]
+                    if ref_full != full_name:
+                        add_rel(full_name, col_name, ref_full, col_name)
+
+    return {"relationships": relationships}
+
+
+# ── Schema-Suche (Wissensdatenbank für KI-Chat) ───────────────────────────────
+
+class SchemaSearchRequest(BaseModel):
+    connection_ids: list[int]
+    canvas_table_names: list[str] = []
+
+@router.post("/schema-search")
+def schema_search(
+    body: SchemaSearchRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Schema-Wissensdatenbank: Canvas-Tabellen + implizite FK-Nachbarn (Tiefe 1)."""
+    if not body.connection_ids:
+        return {"schema_text": "", "table_count": 0}
+
+    from app.models.dataset import DbConnection
+
+    parts = []
+    total = 0
+    for conn_id in body.connection_ids:
+        conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+        if not conn or not conn.schema_cache:
+            continue
+        try:
+            schema = json.loads(conn.schema_cache)
+        except Exception:
+            continue
+
+        all_tables = schema.get("tables", [])
+        tables_by_key = {t["full_name"]: t for t in all_tables}
+
+        # 1. Canvas-Tabellen direkt holen
+        canvas_names = set(body.canvas_table_names)
+        # Auch Short-Name-Match (z.B. "tArtikel" trifft "dbo.tArtikel")
+        short_names = {n.split(".")[-1] for n in canvas_names}
+        canvas_tables = {
+            t["full_name"]: t for t in all_tables
+            if t["full_name"] in canvas_names or t["name"] in short_names
+        }
+
+        # 2. PK-Index der Canvas-Tabellen aufbauen
+        canvas_pk_names: set[str] = set()
+        canvas_col_names: set[str] = set()
+        for tbl in canvas_tables.values():
+            for col in tbl.get("columns", []):
+                canvas_col_names.add(col["name"])
+                if col.get("pk"):
+                    canvas_pk_names.add(col["name"])
+
+        # 3. Implizite FK-Expansion (Tiefe 1, beide Richtungen):
+        #    a) Tabellen die Canvas-PKs als Spalte haben (referenzieren Canvas-Tabellen)
+        #    b) Tabellen deren PK in den Canvas-Spalten vorkommt (werden von Canvas referenziert)
+        neighbor_tables: dict[str, dict] = {}
+        for tbl in all_tables:
+            full_name = tbl["full_name"]
+            if full_name in canvas_tables:
+                continue
+            tbl_cols = tbl.get("columns", [])
+            tbl_col_names = {c["name"] for c in tbl_cols}
+            tbl_pk_names  = {c["name"] for c in tbl_cols if c.get("pk")}
+
+            # a) Hat eine Spalte die einem Canvas-PK entspricht
+            if canvas_pk_names & tbl_col_names:
+                neighbor_tables[full_name] = tbl
+            # b) Hat einen PK der in Canvas-Spalten vorkommt
+            elif tbl_pk_names & canvas_col_names:
+                neighbor_tables[full_name] = tbl
+
+        # Katalog-Beschreibungen + Wichtig-Flag laden
+        from app.models.schema_catalog import SchemaTableMeta, SchemaRelationMeta
+        table_metas: dict[str, SchemaTableMeta] = {
+            m.table_full_name: m
+            for m in db.query(SchemaTableMeta).filter_by(connection_id=conn_id).all()
+        }
+        manual_rels = db.query(SchemaRelationMeta).filter_by(connection_id=conn_id).all()
+
+        # Wichtige Tabellen (⭐) immer einschließen – auch wenn nicht auf Canvas
+        important_tables: dict[str, dict] = {
+            name: tables_by_key[name]
+            for name, m in table_metas.items()
+            if m.is_important and name in tables_by_key
+            and name not in canvas_tables and name not in neighbor_tables
+        }
+
+        # Detaillierte Liste: Canvas + Nachbarn + Wichtige (max 60)
+        selected_list = (
+            list(canvas_tables.values()) +
+            list(neighbor_tables.values()) +
+            list(important_tables.values())
+        )[:60]
+        selected_names = {t["full_name"] for t in selected_list}
+
+        db_type  = schema.get("db_type", "")
+        database = schema.get("database", "")
+        canvas_pk_index = {c["name"]: tbl["full_name"]
+                           for tbl in canvas_tables.values()
+                           for c in tbl.get("columns", []) if c.get("pk")}
+
+        def _meta_desc(tbl_name: str, include_category: bool = True) -> str:
+            meta = table_metas.get(tbl_name)
+            if not meta:
+                return ""
+            p = []
+            if meta.business_name: p.append(meta.business_name)
+            if meta.description:   p.append(meta.description)
+            if include_category and meta.category: p.append(f"[{meta.category}]")
+            return (" — " + ", ".join(p)) if p else ""
+
+        def _render_table(tbl: dict, tag: str) -> str:
+            is_canvas = tbl["full_name"] in canvas_tables
+            cols = tbl.get("columns", [])
+            col_parts = []
+            for col in cols:
+                name = col["name"]
+                if col.get("pk"):
+                    col_parts.append(f"{name}(PK)")
+                elif col.get("fk"):
+                    col_parts.append(f"{name}(FK→{col['fk']})")
+                elif name in canvas_pk_index and not is_canvas:
+                    col_parts.append(f"{name}(→{canvas_pk_index[name].split('.')[-1]})")
+                else:
+                    col_parts.append(name)
+            if not is_canvas:
+                key_cols = [c for c in col_parts if "(" in c]
+                rest     = [c for c in col_parts if "(" not in c]
+                col_parts = key_cols + rest[:max(0, 15 - len(key_cols))]
+            desc = _meta_desc(tbl["full_name"])
+            return f"{tbl['full_name']}{tag}{desc}: {', '.join(col_parts)}"
+
+        lines = [f"DB: {database} ({db_type})", "", "## Canvas-Tabellen"]
+        canvas_count = len(canvas_tables)
+        neighbor_written = False
+        important_written = False
+        for idx, tbl in enumerate(selected_list):
+            name = tbl["full_name"]
+            if name in canvas_tables:
+                tag = " [Canvas]"
+                if idx == canvas_count - 1 and neighbor_tables:
+                    lines.append(_render_table(tbl, tag))
+                    lines.append(""); lines.append("## Verwandte Tabellen")
+                    neighbor_written = True
+                    continue
+            elif name in important_tables:
+                if not important_written:
+                    lines.append(""); lines.append("## Wichtige Tabellen (⭐)")
+                    important_written = True
+                tag = " [⭐]"
+            else:
+                tag = ""
+            lines.append(_render_table(tbl, tag))
+
+        # Manuelle FK-Relationen
+        if manual_rels:
+            lines.append(""); lines.append("## Manuelle FK-Beziehungen")
+            for r in manual_rels:
+                rd = f" ({r.description})" if r.description else ""
+                lines.append(f"  {r.from_table}.{r.from_col} → {r.to_table}.{r.to_col}{rd}")
+
+        # Katalog-Übersicht: alle Tabellen mit Beschreibung (kompakt, 1 Zeile)
+        catalog_lines = []
+        by_category: dict[str, list[str]] = {}
+        for name, meta in sorted(table_metas.items()):
+            if not meta.description:
+                continue
+            if name in selected_names:
+                continue  # bereits detailliert oben
+            cat = meta.category or "Sonstige"
+            label = f"{meta.business_name} — " if meta.business_name else ""
+            by_category.setdefault(cat, []).append(f"  {name}: {label}{meta.description}")
+
+        if by_category:
+            lines.append(""); lines.append("## Katalog-Übersicht (weitere Tabellen)")
+            for cat, entries in sorted(by_category.items()):
+                lines.append(f"[{cat}]")
+                lines.extend(entries)
+
+        text = "\n".join(lines)
+        parts.append(text)
+        total += len(selected_list)
+
+    return {"schema_text": "\n\n".join(parts), "table_count": total}
+
+
+# ── Tabellen-Vorschlag (KI analysiert Schema und schlägt Canvas-Tabellen vor) ─
+
+_SUGGEST_TABLES_SYSTEM = """\
+Du bist ein Datenbankexperte für Datenmonster (ETL-Plattform).
+Der Benutzer hat eine Datenbank verbunden und möchte ein Mapping erstellen.
+
+AUFGABE: Analysiere das bereitgestellte Datenbankschema und schlage sinnvolle Tabellen vor,
+die der Benutzer zum Canvas hinzufügen sollte, um sein Ziel zu erreichen.
+
+WICHTIG: Antworte NUR mit einem JSON-Objekt. Kein Text davor oder danach, kein Markdown.
+
+FORMAT:
+{
+  "tables": [
+    {"name": "tabellenname", "schema": "schemaname", "reason": "Kurze Begründung warum diese Tabelle sinnvoll ist"}
+  ],
+  "joins": [
+    {"from_table": "schema.tabelle1", "from_col": "spalte1", "to_table": "schema.tabelle2", "to_col": "spalte2"}
+  ],
+  "explanation": "Kurze Gesamterklärung in 1-2 Sätzen"
+}
+
+Schlage nur Tabellen vor die noch NICHT auf dem Canvas sind.
+Nutze ausschließlich Tabellen und Spalten die im Schema vorhanden sind.
+"""
+
+class SuggestTablesRequest(BaseModel):
+    connection_ids: list[int]
+    canvas_tables: list[str] = []
+    description: str = ""
+
+@router.post("/suggest-tables")
+async def suggest_tables(
+    body: SuggestTablesRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """KI analysiert DB-Schema und schlägt passende Canvas-Tabellen vor (SSE)."""
+    from app.api.settings import get_setting
+    from app.models.dataset import Dataset, DbConnection
+    from app.services.schema_cache_service import filter_schema_by_keywords, schema_json_to_text
+
+    svc = _require_ai(db)
+    base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
+    model_used, _ = await select_auto_model("komplex schema analyse", base_url, default_model)
+    params = MODE_PARAMS["analyse"]
+    caps = get_model_caps(model_used)
+
+    # Schema für alle Connections aufbauen
+    schema_parts = []
+    conn_datasets: dict[int, list] = {}
+    for conn_id in body.connection_ids:
+        conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+        if not conn or not conn.schema_cache:
+            continue
+        try:
+            schema = json.loads(conn.schema_cache)
+        except Exception:
+            continue
+        keywords = [n.split(".")[-1] for n in body.canvas_tables] + body.canvas_tables
+        filtered = filter_schema_by_keywords(schema, keywords, max_tables=50)
+        conn_datasets[conn_id] = db.query(Dataset).filter(Dataset.source_connection_id == conn_id).all()
+        schema_parts.append(schema_json_to_text(filtered, max_tables=50))
+
+    schema_text = "\n\n".join(schema_parts) or "Kein Schema verfügbar."
+    canvas_list = "\n".join(f"  - {t}" for t in body.canvas_tables) or "  (leer)"
+    goal_line = f"\nZiel des Benutzers: {body.description}" if body.description.strip() else ""
+
+    system = (
+        _SUGGEST_TABLES_SYSTEM
+        + f"\n\nDATENBANKSCHEMA:\n{schema_text}"
+        + f"\n\nBEREITS AUF DEM CANVAS:\n{canvas_list}"
+        + goal_line
+    )
+    messages = [{"role": "user", "content": "Schlage passende Tabellen für das Mapping vor."}]
+
+    raw_chunks = []
+
+    async def generate():
+        async for token in svc._stream(messages, system, params=params, model=model_used):
+            raw_chunks.append(token)
+            yield f"data: {json.dumps({'token': token})}\n\n"
+
+        raw = "".join(raw_chunks)
+        # Markdown-Cleanup
+        raw = raw.strip()
+        if raw.startswith("```"):
+            raw = raw.split("\n", 1)[-1]
+        if raw.endswith("```"):
+            raw = raw.rsplit("```", 1)[0]
+        raw = raw.strip()
+
+        try:
+            result = json.loads(raw)
+        except Exception:
+            yield f"data: {json.dumps({'error': 'JSON-Parsing fehlgeschlagen'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # Tabellen anreichern: already_exists + dataset_id + connection_id
+        enriched_tables = []
+        for t in result.get("tables", []):
+            full_name = f"{t.get('schema', 'dbo')}.{t['name']}"
+            found_ds = None
+            found_conn_id = None
+            for cid, ds_list in conn_datasets.items():
+                for ds in ds_list:
+                    if ds.name in (full_name, t["name"]):
+                        found_ds = ds
+                        found_conn_id = cid
+                        break
+                if found_ds:
+                    break
+            if not found_conn_id and body.connection_ids:
+                found_conn_id = body.connection_ids[0]
+            enriched_tables.append({
+                **t,
+                "full_name": full_name,
+                "key": full_name,
+                "connection_id": found_conn_id,
+                "already_exists": found_ds is not None,
+                "dataset_id": found_ds.id if found_ds else None,
+            })
+
+        enriched = {**result, "tables": enriched_tables}
+        yield f"data: {json.dumps({'result': enriched})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    from fastapi.responses import StreamingResponse as _SR2
+    return _SR2(generate(), media_type="text/event-stream")
 
 
 # ── Node-Generierung ─────────────────────────────────────────────────────────

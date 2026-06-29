@@ -21,6 +21,8 @@ interface AIAssistantContextType {
   setIsOpen: (open: boolean) => void;
   setGenerateNodesCallback: (fn: ((result: any) => void) | null) => void;
   callGenerateNodes: (result: any) => void;
+  setSuggestTablesCallback: (fn: ((result: any) => void) | null) => void;
+  callSuggestTables: (result: any) => void;
 }
 
 const AIAssistantContext = createContext<AIAssistantContextType>({
@@ -30,12 +32,15 @@ const AIAssistantContext = createContext<AIAssistantContextType>({
   setIsOpen: () => {},
   setGenerateNodesCallback: () => {},
   callGenerateNodes: () => {},
+  setSuggestTablesCallback: () => {},
+  callSuggestTables: () => {},
 });
 
 export function AIAssistantProvider({ children }: { children: ReactNode }) {
   const [pageContext, _setPageContext] = useState<PageContext | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const generateNodesCallbackRef = useRef<((result: any) => void) | null>(null);
+  const suggestTablesCallbackRef = useRef<((result: any) => void) | null>(null);
 
   const setPageContext = useCallback((ctx: PageContext | null) => {
     _setPageContext(ctx);
@@ -49,8 +54,16 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
     generateNodesCallbackRef.current?.(result);
   }, []);
 
+  const setSuggestTablesCallback = useCallback((fn: ((result: any) => void) | null) => {
+    suggestTablesCallbackRef.current = fn;
+  }, []);
+
+  const callSuggestTables = useCallback((result: any) => {
+    suggestTablesCallbackRef.current?.(result);
+  }, []);
+
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables }}>
       {children}
     </AIAssistantContext.Provider>
   );

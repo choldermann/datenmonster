@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check, Settings, ChevronRight } from "lucide-react";
+import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check, Settings, ChevronRight, Database } from "lucide-react";
 import { useAIAssistant, PageContext } from "../../contexts/AIAssistantContext";
-import { streamRequest, generateNodes } from "../../services/aiService";
+import { streamRequest, generateNodes, searchSchema, suggestTables } from "../../services/aiService";
 
 const ACCENT = "#fce499";
 const BG = "rgba(14, 14, 28, 0.97)";
@@ -77,6 +77,25 @@ function nodePreviewLabel(node: any): string {
   }
 }
 
+function getActiveNodeLabel(node: any): string {
+  if (!node) return "";
+  switch (node.type) {
+    case "dataset":     return `📊 ${node.name || "Dataset"}`;
+    case "python":      return "🐍 Python-Node";
+    case "sql":         return `🗄 SQL (${node.mode || "?"})`;
+    case "lookup":      return `🔍 Lookup → ${node.lookupDatasetId || "?"}`;
+    case "calc":        return `📐 ${node.calcType || "Calc"}`;
+    case "aggregation": return "∑ Aggregation";
+    case "switch":      return `⑂ Switch → ${node.outputField || "?"}`;
+    case "constant":    return `# Konstante`;
+    case "data_quality":return "✓ Datenqualität";
+    case "params":      return "⚙ Parameter-Node";
+    case "rest":        return `🌐 REST ${node.method || "GET"}`;
+    case "expr":        return "fx Ausdruck";
+    default:            return node.type || "Node";
+  }
+}
+
 type AiMode = "schnell" | "auto" | "analyse";
 
 const AI_MODES: { id: AiMode; icon: string; label: string; title: string }[] = [
@@ -85,8 +104,10 @@ const AI_MODES: { id: AiMode; icon: string; label: string; title: string }[] = [
   { id: "analyse", icon: "🧠", label: "Analyse",  title: "Analyse – think: an, lange Antworten, großes Modell" },
 ];
 
+type SugMode = "idle" | "input" | "loading" | "preview";
+
 export default function FloatingAIAssistant() {
-  const { isOpen, setIsOpen, pageContext, callGenerateNodes } = useAIAssistant();
+  const { isOpen, setIsOpen, pageContext, callGenerateNodes, callSuggestTables } = useAIAssistant();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -99,6 +120,15 @@ export default function FloatingAIAssistant() {
   const [genResult, setGenResult] = useState<{ nodes: any[]; explanation: string } | null>(null);
   const [tokenCount, setTokenCount] = useState(0);
   const [expertMode, setExpertMode] = useState(false);
+  // Schema-Wissensdatenbank
+  const [schemaEnabled, setSchemaEnabled] = useState(false);
+  const [schemaContext, setSchemaContext] = useState<string | null>(null);
+  const [schemaLoading, setSchemaLoading] = useState(false);
+  // Tabellen-Vorschlag
+  const [sugMode, setSugMode] = useState<SugMode>("idle");
+  const [sugDescription, setSugDescription] = useState("");
+  const [sugTokens, setSugTokens] = useState("");
+  const [sugResult, setSugResult] = useState<{ tables: any[]; joins: any[]; explanation: string } | null>(null);
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [expertSection, setExpertSection] = useState<"params" | "prompt" | "context" | null>("params");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -188,6 +218,73 @@ export default function FloatingAIAssistant() {
 
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
 
+  const connectionIds: number[] = (pageContext?.currentData as any)?.connectionIds ?? [];
+  const canvasTableNames: string[] = ((pageContext?.currentData as any)?.canvasDatasets ?? []).map((d: any) => d.name);
+  const isMappingEditor = pageContext?.page === "mapping_editor";
+  const hasConnections = connectionIds.length > 0;
+
+  const toggleSchema = useCallback(async () => {
+    if (schemaEnabled) {
+      setSchemaEnabled(false);
+      setSchemaContext(null);
+      return;
+    }
+    if (!connectionIds.length) return;
+    setSchemaEnabled(true);
+    setSchemaLoading(true);
+    try {
+      const { schema_text } = await searchSchema(connectionIds, canvasTableNames);
+      setSchemaContext(schema_text || null);
+    } catch {
+      setSchemaContext(null);
+    } finally {
+      setSchemaLoading(false);
+    }
+  }, [schemaEnabled, connectionIds, canvasTableNames]);
+
+  const resetSugMode = () => {
+    setSugMode("idle");
+    setSugDescription("");
+    setSugTokens("");
+    setSugResult(null);
+  };
+
+  const handleSuggest = async () => {
+    if (!connectionIds.length) return;
+    setSugMode("loading");
+    setSugTokens("");
+    setSugResult(null);
+    try {
+      const result = await suggestTables(
+        connectionIds,
+        canvasTableNames,
+        sugDescription,
+        (token: string) => setSugTokens(prev => prev + token),
+      );
+      if (result && Array.isArray(result.tables) && result.tables.length > 0) {
+        setSugResult(result);
+        setSugMode("preview");
+      } else {
+        throw new Error("Keine Tabellen-Vorschläge generiert");
+      }
+    } catch (e: any) {
+      setSugMode("idle");
+      setMessages(prev => [...prev, { role: "assistant", content: `Fehler: ${e.message}`, streaming: false }]);
+    }
+  };
+
+  const handleApplyTables = () => {
+    if (!sugResult) return;
+    callSuggestTables(sugResult);
+    const n = sugResult.tables.length;
+    setMessages([{
+      role: "assistant",
+      content: `✅ ${n} Tabelle${n !== 1 ? "n" : ""} wurden zum Canvas hinzugefügt.\n\n${sugResult.explanation || ""}`,
+      streaming: false,
+    }]);
+    resetSugMode();
+  };
+
   const runStream = useCallback(async (text: string, history: { role: string; content: string }[]) => {
     setStreaming(true);
     setTokenCount(0);
@@ -195,8 +292,14 @@ export default function FloatingAIAssistant() {
     const ctrl = new AbortController();
     abortCtrlRef.current = ctrl;
 
+    // connectionIds ist rein frontend-intern (für Schema-Fetch), nie an die KI senden
+    const { connectionIds: _ci, ...baseData } = (pageContext?.currentData ?? {}) as any;
+    const enrichedData = schemaContext
+      ? { ...baseData, schemaContext }
+      : baseData;
+
     const pageCtx = pageContext
-      ? { page: pageContext.page, title: pageContext.title, description: pageContext.description, currentData: pageContext.currentData ?? {} }
+      ? { page: pageContext.page, title: pageContext.title, description: pageContext.description, currentData: enrichedData }
       : {};
 
     try {
@@ -212,7 +315,7 @@ export default function FloatingAIAssistant() {
         });
       }, (meta: any) => {
         if (meta?.model) setAiModel(meta.model);
-        if (meta) setDebugInfo((prev: any) => ({ ...prev, ...meta, context: pageContext?.currentData }));
+        if (meta) setDebugInfo((prev: any) => ({ ...prev, ...meta, context: enrichedData }));
       }, ctrl.signal);
     } catch (e: any) {
       const msg = e?.message || "KI nicht verfügbar";
@@ -228,10 +331,10 @@ export default function FloatingAIAssistant() {
           return updated;
         });
       } else {
-        const isOllamaError = msg.toLowerCase().includes("ollama");
-        const isNetworkError = msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk");
+        const isOllamaError = msg.toLowerCase().includes("ollama") || msg.toLowerCase().includes("timeout");
+        const isNetworkError = (msg.toLowerCase().includes("nicht erreichbar") || msg.toLowerCase().includes("netzwerk")) && !isOllamaError;
         let display = msg;
-        if (isNetworkError && !isOllamaError) { setAiAvailable(false); display = "Backend nicht erreichbar. Bitte Seite neu laden."; }
+        if (isNetworkError) { setAiAvailable(false); display = "Backend nicht erreichbar. Bitte Seite neu laden."; }
         setMessages(prev => {
           const updated = [...prev];
           updated[updated.length - 1] = { role: "assistant", content: `⚠ ${display}`, streaming: false };
@@ -246,7 +349,7 @@ export default function FloatingAIAssistant() {
         return updated;
       });
     }
-  }, [aiMode, expertMode, pageContext]);
+  }, [aiMode, expertMode, pageContext, schemaContext]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -461,6 +564,21 @@ export default function FloatingAIAssistant() {
                 </button>
               ))}
             </div>
+            {isMappingEditor && hasConnections && (
+              <button
+                onClick={toggleSchema}
+                title={schemaEnabled ? "Schema-Wissensdatenbank aktiv – klicken zum Deaktivieren" : "Schema-Wissensdatenbank aktivieren (lädt DB-Schema für bessere JOIN-Antworten)"}
+                style={{
+                  background: "none", border: "none", cursor: schemaLoading ? "default" : "pointer", padding: 4,
+                  display: "flex", alignItems: "center",
+                  color: schemaEnabled ? "#6ee7b7" : "rgba(255,255,255,0.3)",
+                  filter: schemaEnabled ? "drop-shadow(0 0 4px rgba(110,231,183,0.4))" : "none",
+                  opacity: schemaLoading ? 0.5 : 1,
+                }}
+              >
+                {schemaLoading ? <Loader2 size={12} className="animate-spin" /> : <Database size={12} />}
+              </button>
+            )}
             <button
               onClick={() => setExpertMode(v => !v)}
               title="Expertenmodus: zeigt System-Prompt, Parameter und Kontext"
@@ -595,6 +713,151 @@ export default function FloatingAIAssistant() {
                     <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>Kein Seitenkontext verfügbar</div>
                   )}
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Aktives Element Badge */}
+          {pageContext?.currentData?.activeNode && (
+            <div style={{
+              padding: "4px 14px",
+              borderBottom: `1px solid ${BORDER}`,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flexShrink: 0,
+              backgroundColor: "rgba(252,228,153,0.04)",
+            }}>
+              <span style={{ fontSize: 9, color: "rgba(252,228,153,0.4)", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>Ausgewählt</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(252,228,153,0.8)", backgroundColor: "rgba(252,228,153,0.08)", border: "1px solid rgba(252,228,153,0.18)", borderRadius: 6, padding: "1px 7px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {getActiveNodeLabel((pageContext.currentData as any).activeNode)}
+              </span>
+            </div>
+          )}
+
+          {/* Schema-Status Badge */}
+          {schemaEnabled && (
+            <div style={{
+              padding: "3px 14px",
+              borderBottom: `1px solid ${BORDER}`,
+              display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
+              backgroundColor: "rgba(110,231,183,0.04)",
+            }}>
+              <Database size={9} color="rgba(110,231,183,0.5)" />
+              <span style={{ fontSize: 9, color: "rgba(110,231,183,0.6)", letterSpacing: 0.3 }}>
+                Schema-Wissensdatenbank aktiv
+              </span>
+            </div>
+          )}
+
+          {/* Suggest-Tables-Panel (overlay) */}
+          {sugMode !== "idle" && (
+            <div style={{
+              position: "absolute", inset: 0, top: 49, bottom: 57,
+              backgroundColor: BG, display: "flex", flexDirection: "column",
+              padding: "14px", gap: 10, zIndex: 10,
+              borderRadius: "0 0 12px 12px", overflowY: "auto",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                <Database size={14} color="#6ee7b7" />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#6ee7b7" }}>Tabellen vorschlagen</span>
+                <button onClick={resetSugMode} style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", padding: 2, display: "flex" }}>
+                  <X size={12} />
+                </button>
+              </div>
+
+              {sugMode === "input" && (
+                <>
+                  <textarea
+                    value={sugDescription}
+                    onChange={e => setSugDescription(e.target.value)}
+                    placeholder={"Optional: Beschreibe was du mappen möchtest, z.B. \"Rechnungen mit Artikeln und Kundenadressen\""}
+                    rows={4}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter" && e.ctrlKey) handleSuggest(); }}
+                    style={{
+                      flex: 1, resize: "none",
+                      backgroundColor: "rgba(255,255,255,0.05)",
+                      border: `1px solid ${BORDER}`, borderRadius: 8,
+                      color: "rgba(255,255,255,0.85)", fontSize: 12,
+                      padding: "10px 12px", outline: "none", fontFamily: "inherit", lineHeight: 1.5,
+                    }}
+                  />
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)" }}>
+                    Die KI analysiert das Schema und schlägt passende Tabellen + JOINs vor. Strg+Enter zum Starten.
+                  </div>
+                  <button
+                    onClick={handleSuggest}
+                    style={{
+                      padding: "9px 14px", borderRadius: 8, border: "none",
+                      backgroundColor: "#6ee7b7", color: "#111",
+                      fontSize: 12, fontWeight: 700, cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0,
+                    }}
+                  >
+                    <Database size={13} /> Analysieren
+                  </button>
+                </>
+              )}
+
+              {sugMode === "loading" && (
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Loader2 size={10} className="animate-spin" />
+                    KI analysiert Schema...
+                  </div>
+                  <pre style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", whiteSpace: "pre-wrap", wordBreak: "break-all", fontFamily: "monospace", margin: 0, lineHeight: 1.4 }}>
+                    {sugTokens}
+                  </pre>
+                </div>
+              )}
+
+              {sugMode === "preview" && sugResult && (
+                <>
+                  {sugResult.explanation && (
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.65)", backgroundColor: "rgba(255,255,255,0.04)", borderRadius: 8, padding: "8px 10px", border: `1px solid ${BORDER}`, lineHeight: 1.55, flexShrink: 0 }}>
+                      {sugResult.explanation}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>
+                    {sugResult.tables.length} Tabelle{sugResult.tables.length !== 1 ? "n" : ""} vorgeschlagen:
+                  </div>
+                  <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
+                    {sugResult.tables.map((t: any, i: number) => (
+                      <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 10px", borderRadius: 8, backgroundColor: "rgba(110,231,183,0.04)", border: `1px solid rgba(110,231,183,0.15)`, fontSize: 11 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ color: "#6ee7b7", fontWeight: 700, fontFamily: "monospace", fontSize: 10 }}>{t.full_name || `${t.schema}.${t.name}`}</span>
+                          {t.already_exists && <span style={{ fontSize: 9, color: "rgba(110,231,183,0.5)", border: "1px solid rgba(110,231,183,0.2)", borderRadius: 4, padding: "0 4px" }}>vorhanden</span>}
+                        </div>
+                        {t.reason && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, lineHeight: 1.4 }}>{t.reason}</div>}
+                      </div>
+                    ))}
+                    {sugResult.joins.length > 0 && (
+                      <div style={{ marginTop: 4 }}>
+                        <div style={{ fontSize: 10, fontWeight: 600, color: "rgba(255,255,255,0.3)", marginBottom: 4 }}>JOIN-Verbindungen:</div>
+                        {sugResult.joins.map((j: any, i: number) => (
+                          <div key={i} style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.4)", padding: "2px 0" }}>
+                            {j.from_table}.{j.from_col} → {j.to_table}.{j.to_col}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      onClick={handleApplyTables}
+                      style={{ flex: 1, padding: "9px 8px", borderRadius: 8, border: "none", backgroundColor: "#6ee7b7", color: "#111", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                    >
+                      <Check size={13} /> Übernehmen
+                    </button>
+                    <button
+                      onClick={resetSugMode}
+                      style={{ flex: 1, padding: "9px 8px", borderRadius: 8, border: `1px solid ${BORDER}`, backgroundColor: "transparent", color: "rgba(255,255,255,0.4)", fontSize: 12, cursor: "pointer" }}
+                    >
+                      Verwerfen
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -775,6 +1038,29 @@ export default function FloatingAIAssistant() {
                       Ich bin dein KI-Assistent für {pageLabel}.
                     </p>
                     <SuggestedQuestions pageContext={pageContext} onSelect={q => { setInput(q); inputRef.current?.focus(); }} />
+                    {isMappingEditor && hasConnections && schemaEnabled && (
+                      <button
+                        onClick={() => setSugMode("input")}
+                        style={{
+                          marginTop: 8,
+                          width: "100%",
+                          padding: "10px 12px",
+                          borderRadius: 10,
+                          border: `1px dashed rgba(110,231,183,0.3)`,
+                          backgroundColor: "rgba(110,231,183,0.05)",
+                          color: "#6ee7b7",
+                          cursor: "pointer",
+                          fontSize: 11, fontWeight: 600,
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                          transition: "all 0.15s",
+                        }}
+                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.1)"; e.currentTarget.style.borderColor = "rgba(110,231,183,0.5)"; }}
+                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.05)"; e.currentTarget.style.borderColor = "rgba(110,231,183,0.3)"; }}
+                      >
+                        <Database size={13} />
+                        Tabellen für Canvas vorschlagen
+                      </button>
+                    )}
                     {pageContext?.page === "mapping_editor" && (
                       <button
                         onClick={() => setGenMode("input")}

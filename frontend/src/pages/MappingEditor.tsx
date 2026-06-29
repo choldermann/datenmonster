@@ -38,7 +38,7 @@ export default function MappingEditor() {
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
   const canEdit = !activeProject || activeProject.role !== "viewer";
-  const { setPageContext, setGenerateNodesCallback } = useAIAssistant();
+  const { setPageContext, setGenerateNodesCallback, setSuggestTablesCallback } = useAIAssistant();
 
   const [name, setName] = useState("Neues Mapping");
   const [saving, setSaving] = useState(false);
@@ -49,6 +49,7 @@ export default function MappingEditor() {
   const [pluginTargetTypes, setPluginTargetTypes] = useState([]);
   const [previewDataset, setPreviewDataset] = useState(null);
   const [canvasNodes, setCanvasNodes] = useState([]);
+  const [tableRelationships, setTableRelationships] = useState<{from_table: string; from_col: string; to_table: string; to_col: string}[]>([]);
   const [targets, setTargets] = useState([]); // multi-target array
   const [activeTargetId, setActiveTargetId] = useState(null); // which target is selected
   const [showNewTarget, setShowNewTarget] = useState(false); // new target wizard
@@ -163,6 +164,52 @@ export default function MappingEditor() {
 
     setTimeout(triggerLineDraw, 300);
   };
+  const insertSuggestedTablesRef = useRef<((result: any) => Promise<void>) | null>(null);
+  const insertSuggestedTables = useCallback(async ({ tables, joins: suggestedJoins }: any) => {
+    const newNodes: any[] = [];
+    const allNodes = [...canvasNodes];
+    for (const t of tables) {
+      if (t.already_exists && t.dataset_id) {
+        const ds = allDatasets.find((d: any) => d.id === t.dataset_id);
+        if (ds && !allNodes.find((n: any) => n.dataset_id === ds.id) && !newNodes.find((n: any) => n.dataset_id === ds.id)) {
+          newNodes.push({ dataset_id: ds.id, dataset_name: ds.name, dataset_columns: ds.columns || [], dataset_column_types: ds.column_types || {}, dataset_file_type: ds.file_type, dataset_row_count: ds.row_count || 0, x: 80 + newNodes.length * 280, y: 100 });
+        }
+      } else {
+        const conn = dbConnections.find((c: any) => c.id === t.connection_id) || dbConnections[0];
+        if (conn) {
+          try {
+            const sql = t.schema && t.schema.toLowerCase() !== "dbo"
+              ? `SELECT * FROM [${t.schema}].[${t.name}]`
+              : `SELECT * FROM [${t.name}]`;
+            const { data } = await api.post(`/api/connections/${conn.id}/import`, { sql, dataset_name: t.full_name || t.name, project_id: projectId });
+            newNodes.push({ dataset_id: data.id, dataset_name: data.name, dataset_columns: data.columns || [], dataset_column_types: {}, dataset_file_type: conn.db_type ? `db_${conn.db_type}` : "db_mssql", dataset_row_count: 0, x: 80 + newNodes.length * 280, y: 100 });
+          } catch (e) { console.error("Import fehlgeschlagen:", t.name, e); }
+        }
+      }
+    }
+    if (newNodes.length > 0) setCanvasNodes(prev => [...prev, ...newNodes]);
+    const allAfter = [...allNodes, ...newNodes];
+    if (suggestedJoins?.length > 0) {
+      const newJoins = suggestedJoins.map((j: any) => {
+        const findNode = (fullName: string) => allAfter.find((n: any) => n.dataset_name === fullName || n.dataset_name === fullName.split(".").pop());
+        const left = findNode(j.from_table);
+        const right = findNode(j.to_table);
+        if (!left || !right) return null;
+        return { left_dataset_id: left.dataset_id, left_field: j.from_col, right_dataset_id: right.dataset_id, right_field: j.to_col, join_type: "INNER JOIN" };
+      }).filter(Boolean);
+      if (newJoins.length > 0) setJoins(prev => [...prev, ...newJoins]);
+    }
+    setTimeout(triggerLineDraw, 300);
+  // triggerLineDraw bewusst nicht im Dep-Array (stabile leere Deps, sonst TDZ weil später deklariert)
+  }, [canvasNodes, allDatasets, dbConnections, projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  insertSuggestedTablesRef.current = insertSuggestedTables;
+
+  useEffect(() => {
+    setSuggestTablesCallback((result: any) => insertSuggestedTablesRef.current?.(result));
+    return () => setSuggestTablesCallback(null);
+  }, [setSuggestTablesCallback]);
+
   const [filterEditor, setFilterEditor] = useState(null);
   const [openGroups, setOpenGroups] = useState({ transform: true, query: true, calc: true, logic: true });
   const toggleGroup = (id) => setOpenGroups(prev => ({ ...prev, [id]: !prev[id] }));
@@ -297,6 +344,19 @@ export default function MappingEditor() {
   }, [setGenerateNodesCallback]);
 
   useEffect(() => {
+    const dbDatasetIds = canvasNodes
+      .filter((n: any) => n.dataset_id && n.dataset_file_type && n.dataset_file_type.startsWith("db_"))
+      .map((n: any) => n.dataset_id);
+    if (dbDatasetIds.length < 2) {
+      setTableRelationships([]);
+      return;
+    }
+    api.post("/api/ai/mapping-context", { dataset_ids: dbDatasetIds })
+      .then(({ data }) => setTableRelationships(data.relationships || []))
+      .catch(() => setTableRelationships([]));
+  }, [canvasNodes]);
+
+  useEffect(() => {
     setPageContext({
       page: "mapping_editor",
       title: name || "Mapping Editor",
@@ -309,11 +369,17 @@ export default function MappingEditor() {
           name: n.dataset_name,
           columns: (n.dataset_columns || []).slice(0, 20).map((c: any) => (typeof c === "string" ? c : c.name || "")),
         })),
+        connectionIds: [...new Set(
+          canvasNodes
+            .map((n: any) => allDatasets.find((d: any) => d.id === n.dataset_id)?.source_connection_id)
+            .filter(Boolean)
+        )],
+        ...(tableRelationships.length > 0 ? { tableRelationships } : {}),
         ...(activeNodeInfo ? { activeNode: activeNodeInfo } : {}),
       },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id, activeNodeInfo, canvasNodes]);
+  }, [setPageContext, name, id, activeNodeInfo, canvasNodes, tableRelationships]);
   const setConnections = (updater) => {
     setTargets((prev) => prev.map((t) => t.id === (activeTarget?.id) ? {
       ...t, fields: typeof updater === "function" ? updater(t.fields || []) : updater

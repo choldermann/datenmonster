@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
+import { BookOpen, CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
 import DatabaseAnalyzer from "./DatabaseAnalyzer";
 import AiDatasetWizard from "./AiDatasetWizard";
+import SchemaCatalog from "./SchemaCatalog";
 
 const DEFAULT_PORTS = { mssql: 1433, mysql: 3306, postgresql: 5432 };
 const ACCESS_COLOR = "#fce499";
@@ -476,6 +477,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
 
   const [analyzingConn, setAnalyzingConn]   = useState(null);
   const [aiWizardConn, setAiWizardConn]     = useState(null);
+  const [catalogConn, setCatalogConn]       = useState(null);
   const [rebuildingCache, setRebuildingCache] = useState({});  // conn_id → bool
 
   const rebuildCache = async (conn) => {
@@ -564,6 +566,24 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
           onClose={() => setAiWizardConn(null)} />
       )}
 
+      {catalogConn && (
+        <div style={{ position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", paddingTop: 60 }}>
+          <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10, width: "min(860px, 95vw)", maxHeight: "80vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: `1px solid ${S.border}` }}>
+              <span style={{ fontWeight: 700, color: S.textBright, fontSize: 13 }}>
+                Schema-Katalog — {catalogConn.name}
+              </span>
+              <button onClick={() => setCatalogConn(null)} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}>
+                <X size={14} />
+              </button>
+            </div>
+            <div style={{ overflowY: "auto", padding: 16, flex: 1 }}>
+              <SchemaCatalog connectionId={catalogConn.id} />
+            </div>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex items-center justify-center h-24" style={{ color: S.textDim }}>
           <Loader2 className="animate-spin mr-2" size={16} />
@@ -589,6 +609,13 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                     title="Schema analysieren">
                     <Search size={10} />
                   </button>
+                  {conn.schema_cached_at && (
+                    <button onClick={() => setCatalogConn(conn)} className="text-xs px-2 py-0.5 rounded"
+                      style={{ backgroundColor: S.bgEl, color: "#34d399", border: `1px solid rgba(52,211,153,0.3)` }}
+                      title="Schema-Katalog">
+                      <BookOpen size={10} />
+                    </button>
+                  )}
                   <button onClick={() => setAiWizardConn(conn)} className="text-xs px-2 py-0.5 rounded"
                     style={{ backgroundColor: S.bgEl, color: "#fce499", border: `1px solid rgba(252,228,153,0.3)` }}
                     title="KI-Dataset-Assistent">
