@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff } from "lucide-react";
 import api from "../api/client";
@@ -28,7 +28,7 @@ export default function FormEditor() {
   const navigate = useNavigate();
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
-  const { setPageContext } = useAIAssistant();
+  const { setPageContext, setPageContextActions } = useAIAssistant();
 
   const [form, setForm]           = useState(null);
   const [name, setName]           = useState("Neues Formular");
@@ -106,6 +106,15 @@ export default function FormEditor() {
       setTimeout(() => setSavedToast(false), 2000);
     } finally { setSaving(false); }
   };
+
+  // Schnellaktionen für KI-Panel
+  const _formActionsRef = useRef({ save });
+  _formActionsRef.current = { save };
+  useEffect(() => {
+    setPageContextActions({
+      save: { label: "Speichern", description: "Formular speichern", handler: () => _formActionsRef.current.save() },
+    });
+  }, [setPageContextActions]);
 
   const togglePublish = async () => {
     const next = !published;

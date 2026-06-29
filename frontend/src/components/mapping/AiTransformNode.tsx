@@ -27,12 +27,14 @@ interface AiNode {
 export default function AiTransformNode({
   node, onUpdate, onRemove, onPositionChange, outputRefs,
   availableFields = [],
+  maxInputRows,
   debugHighlight, isActive, onActivate,
 }: {
   node: AiNode; onUpdate: (n: AiNode) => void; onRemove: () => void;
   onPositionChange: (id: string, x: number, y: number) => void;
   outputRefs: any;
   availableFields?: AvailableField[];
+  maxInputRows?: number;
   debugHighlight?: boolean; isActive?: boolean; onActivate?: () => void;
 }) {
   const dragging   = useRef(false);
@@ -354,9 +356,15 @@ export default function AiTransformNode({
             </div>
           )}
 
-          <div style={{ marginTop: 6, fontSize: 9, color: "#fbbf24", opacity: 0.7 }}>
-            ⚠ KI-Transforms erhöhen die Ausführungszeit (1 LLM-Aufruf pro {node.batch_size || 10} Zeilen)
-          </div>
+          {maxInputRows && maxInputRows > 100 ? (
+            <div style={{ marginTop: 6, fontSize: 9, color: "#f87171", backgroundColor: "rgba(248,113,113,0.08)", borderRadius: 4, padding: "4px 6px", border: "1px solid rgba(248,113,113,0.2)" }}>
+              ⚠ {maxInputRows} Eingabe-Zeilen — ca. {Math.ceil(maxInputRows / (node.batch_size || 10))} LLM-Aufrufe. Das kann mehrere Minuten dauern.
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 9, color: "#fbbf24", opacity: 0.7 }}>
+              ⚠ KI-Transforms erhöhen die Ausführungszeit (1 LLM-Aufruf pro {node.batch_size || 10} Zeilen)
+            </div>
+          )}
         </div>
       )}
     </div>

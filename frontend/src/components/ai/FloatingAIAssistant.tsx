@@ -779,6 +779,37 @@ export default function FloatingAIAssistant() {
             </div>
           )}
 
+          {/* Schnellaktionen */}
+          {pageContext?.actions && Object.keys(pageContext.actions).length > 0 && (
+            <div style={{
+              padding: "5px 10px",
+              borderBottom: `1px solid ${BORDER}`,
+              display: "flex", alignItems: "center", gap: 5, flexShrink: 0, flexWrap: "wrap",
+            }}>
+              <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", letterSpacing: 0.4, marginRight: 2 }}>
+                Aktionen
+              </span>
+              {Object.entries(pageContext.actions).map(([key, action]) => (
+                <button
+                  key={key}
+                  onClick={action.handler}
+                  title={action.description}
+                  style={{
+                    fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    backgroundColor: "rgba(255,255,255,0.05)",
+                    color: "rgba(255,255,255,0.6)",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.1)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.9)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = "rgba(255,255,255,0.05)"; (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.6)"; }}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Suggest-Tables-Panel (overlay) */}
           {sugMode !== "idle" && (
             <div style={{

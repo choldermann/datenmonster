@@ -34,7 +34,7 @@ export default function PipelineEditor() {
   const navigate = useNavigate();
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
-  const { setPageContext } = useAIAssistant();
+  const { setPageContext, setPageContextActions } = useAIAssistant();
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [name, setName] = useState("Neue Pipeline");
@@ -219,6 +219,16 @@ export default function PipelineEditor() {
       alert(e.response?.data?.detail || e.message);
     } finally { setExecuting(false); }
   };
+
+  // Schnellaktionen für KI-Panel
+  const _pipelineActionsRef = useRef({ save: handleSave, execute: handleExecute });
+  _pipelineActionsRef.current = { save: handleSave, execute: handleExecute };
+  useEffect(() => {
+    setPageContextActions({
+      save:    { label: "Speichern",   description: "Pipeline speichern",    handler: () => _pipelineActionsRef.current.save() },
+      execute: { label: "Ausführen",   description: "Pipeline jetzt starten", handler: () => _pipelineActionsRef.current.execute() },
+    });
+  }, [setPageContextActions]);
 
   // ── Node rendern ───────────────────────────────────────────────────────────
   const renderNode = (node) => {

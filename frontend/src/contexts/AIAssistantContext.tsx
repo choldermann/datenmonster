@@ -17,6 +17,7 @@ export interface PageContext {
 interface AIAssistantContextType {
   pageContext: PageContext | null;
   setPageContext: (ctx: PageContext | null) => void;
+  setPageContextActions: (actions: Record<string, PageAction>) => void;
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   setGenerateNodesCallback: (fn: ((result: any) => void) | null) => void;
@@ -31,6 +32,7 @@ interface AIAssistantContextType {
 const AIAssistantContext = createContext<AIAssistantContextType>({
   pageContext: null,
   setPageContext: () => {},
+  setPageContextActions: () => {},
   isOpen: false,
   setIsOpen: () => {},
   setGenerateNodesCallback: () => {},
@@ -51,6 +53,10 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
 
   const setPageContext = useCallback((ctx: PageContext | null) => {
     _setPageContext(ctx);
+  }, []);
+
+  const setPageContextActions = useCallback((actions: Record<string, PageAction>) => {
+    _setPageContext(prev => prev ? { ...prev, actions } : prev);
   }, []);
 
   const setGenerateNodesCallback = useCallback((fn: ((result: any) => void) | null) => {
@@ -79,7 +85,7 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, setPageContextActions, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError }}>
       {children}
     </AIAssistantContext.Provider>
   );

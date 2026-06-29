@@ -39,7 +39,7 @@ export default function MappingEditor() {
   const { activeProject } = useProject();
   const projectId = activeProject?.id ?? null;
   const canEdit = !activeProject || activeProject.role !== "viewer";
-  const { setPageContext, setGenerateNodesCallback, setSuggestTablesCallback, triggerExplainError } = useAIAssistant();
+  const { setPageContext, setPageContextActions, setGenerateNodesCallback, setSuggestTablesCallback, triggerExplainError } = useAIAssistant();
 
   const [name, setName] = useState("Neues Mapping");
   const [saving, setSaving] = useState(false);
@@ -885,6 +885,16 @@ export default function MappingEditor() {
     }
   };
 
+  // Schnellaktionen für KI-Panel (ref-Muster damit immer aktuelle Funktion aufgerufen wird)
+  const _actionHandlersRef = useRef({ save: handleSave, debug: handleDebugRun });
+  _actionHandlersRef.current = { save: handleSave, debug: handleDebugRun };
+  useEffect(() => {
+    setPageContextActions({
+      save:  { label: "Speichern",   description: "Mapping speichern", handler: () => _actionHandlersRef.current.save() },
+      debug: { label: "Debug-Run",   description: "Mapping im Debug-Modus ausführen", handler: () => _actionHandlersRef.current.debug() },
+    });
+  }, [setPageContextActions]);
+
   // Sample-Daten + Stats pro Stage für Feld-Tooltips und Node Statistics
   const debugSamplesMap = {};
   const debugStatsMap = {};
@@ -1398,6 +1408,7 @@ export default function MappingEditor() {
               {aiNodes.map((an) => (
                 <AiTransformNode key={an.id} node={an}
                   outputRefs={aiOutputRefs}
+                  maxInputRows={Math.max(0, ...canvasNodes.map(n => n.dataset_row_count || 0))}
                   availableFields={canvasNodes.flatMap(n =>
                     (n.dataset_columns || []).map(col => ({
                       name: col,
