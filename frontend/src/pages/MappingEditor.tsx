@@ -517,6 +517,32 @@ export default function MappingEditor() {
         const { connection_id, table_name } = JSON.parse(dbTableJson);
         const conn = dbConnections.find((c: any) => c.id === connection_id);
         if (!conn) return;
+
+        // Bereits auf Canvas? → Spalten nachladen falls 0
+        const shortName = table_name.split(".").pop() || table_name;
+        const existingNode = canvasNodes.find(n =>
+          n.dataset_name === shortName || n.dataset_name === table_name
+        );
+        if (existingNode && (existingNode.dataset_columns || []).length > 0) return;
+
+        if (existingNode) {
+          // Node vorhanden aber 0 Spalten → Dataset neu importieren und Node updaten
+          setImportingTable(table_name);
+          try {
+            const { data: ds } = await api.get(`/api/datasets/${existingNode.dataset_id}`);
+            if (ds?.columns?.length > 0) {
+              setCanvasNodes(prev => prev.map(n =>
+                n.dataset_id === existingNode.dataset_id
+                  ? { ...n, dataset_columns: ds.columns, dataset_column_types: ds.column_types || {} }
+                  : n
+              ));
+              return;
+            }
+          } catch { /* fallthrough to reimport */ }
+          setImportingTable(null);
+          return;
+        }
+
         setImportingTable(table_name);
         try {
           const parts = table_name.split(".");
@@ -1179,7 +1205,9 @@ export default function MappingEditor() {
                           )}
                           {filteredTables.map(tableName => {
                             const shortName = tableName.split(".").pop() || tableName;
-                            const onCanvas = canvasNodes.some(n => n.dataset_name === shortName || n.dataset_name === tableName);
+                            const existingNode = canvasNodes.find(n => n.dataset_name === shortName || n.dataset_name === tableName);
+                            const onCanvas = !!existingNode && (existingNode.dataset_columns || []).length > 0;
+                            const needsRefresh = !!existingNode && (existingNode.dataset_columns || []).length === 0;
                             const isImporting = importingTable === tableName;
                             return (
                               <div key={tableName}
@@ -1190,11 +1218,12 @@ export default function MappingEditor() {
                                 onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}>
                                 {isImporting
                                   ? <Loader2 size={10} className="animate-spin" color={S.textDim} style={{ flexShrink: 0 }} />
-                                  : <FileText size={10} style={{ color: "#60a5fa", flexShrink: 0 }} />}
+                                  : <FileText size={10} style={{ color: needsRefresh ? "#f59e0b" : "#60a5fa", flexShrink: 0 }} />}
                                 <span style={{ fontSize: 11, color: onCanvas ? S.textDim : S.textBright, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                                   {tableName}
                                 </span>
                                 {onCanvas && <span style={{ fontSize: 9, color: S.accent }}>✓</span>}
+                                {needsRefresh && <span style={{ fontSize: 9, color: "#f59e0b" }} title="0 Felder – auf Canvas ziehen zum Nachladen">⟳</span>}
                               </div>
                             );
                           })}
