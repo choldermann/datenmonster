@@ -11,7 +11,7 @@ const OPERATORS = [
 ];
 
 export default function ConditionNode({ node, onRemove, onPositionChange, onUpdate,
-  inputPortRef, inputPortDrop, outputPortRefs, runResult }) {
+  inputPortRef, inputPortDrop, outputPortRefs, runResult, isActive, onActivate }) {
 
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
@@ -32,7 +32,7 @@ export default function ConditionNode({ node, onRemove, onPositionChange, onUpda
       onRemove={onRemove} onPositionChange={onPositionChange} width={240}
       inputPorts={[{ id: "in", label: "Eingang", portRef: inputPortRef, onDrop: inputPortDrop }]}
       outputPorts={outputPorts}
-      runResult={runResult}>
+      runResult={runResult} isActive={isActive} onActivate={onActivate}>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <label style={lS}>Zeilen aus Vorgänger-Node</label>

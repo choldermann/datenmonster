@@ -37,7 +37,7 @@ function ChipBtn({ label, active, onClick }) {
   );
 }
 
-export default function TriggerNode({ node, onRemove, onPositionChange, onUpdate, outputPortRef, runResult }) {
+export default function TriggerNode({ node, onRemove, onPositionChange, onUpdate, outputPortRef, runResult, isActive, onActivate }) {
   const config = node.config || {};
   const set = (k, v) => {
     const newConfig = { ...config, [k]: v };
@@ -76,7 +76,7 @@ export default function TriggerNode({ node, onRemove, onPositionChange, onUpdate
   return (
     <BaseNode node={node} color={color} icon="⏰" label="Trigger"
       onRemove={onRemove} onPositionChange={onPositionChange} width={260}
-      runResult={runResult}
+      runResult={runResult} isActive={isActive} onActivate={onActivate}
       outputPorts={[{
         id: "out", label: "Starte Pipeline", portRef: outputPortRef,
         onDragStart: e => {

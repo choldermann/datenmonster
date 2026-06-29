@@ -2,7 +2,7 @@ import { S, NODE_COLORS } from "../constants";
 import BaseNode from "./BaseNode";
 
 // ─── FTP Upload Node ──────────────────────────────────────────────────────────
-export function FtpUploadNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, ftpSources, runResult }) {
+export function FtpUploadNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, ftpSources, runResult, isActive, onActivate }) {
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
 
@@ -14,7 +14,7 @@ export function FtpUploadNode({ node, onRemove, onPositionChange, onUpdate, inpu
     <BaseNode node={node} color={color} icon="📤" label="FTP Upload"
       onRemove={onRemove} onPositionChange={onPositionChange}
       inputPorts={[{ id: "in", label: "Datei", portRef: inputPortRef, onDrop: inputPortDrop }]}
-     runResult={runResult}>
+      runResult={runResult} isActive={isActive} onActivate={onActivate}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div>
           <label style={lS}>FTP-Ziel</label>
@@ -37,7 +37,7 @@ export function FtpUploadNode({ node, onRemove, onPositionChange, onUpdate, inpu
 }
 
 // ─── E-Mail Node ──────────────────────────────────────────────────────────────
-export function EmailNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, runResult }) {
+export function EmailNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, runResult, isActive, onActivate }) {
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
 
@@ -49,7 +49,7 @@ export function EmailNode({ node, onRemove, onPositionChange, onUpdate, inputPor
     <BaseNode node={node} color={color} icon="📧" label="E-Mail"
       onRemove={onRemove} onPositionChange={onPositionChange}
       inputPorts={[{ id: "in", label: "Auslöser", portRef: inputPortRef, onDrop: inputPortDrop }]}
-     runResult={runResult}>
+      runResult={runResult} isActive={isActive} onActivate={onActivate}>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <div>
           <label style={lS}>Empfänger *</label>

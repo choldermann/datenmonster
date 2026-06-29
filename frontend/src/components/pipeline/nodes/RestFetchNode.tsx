@@ -4,7 +4,7 @@ import BaseNode from "./BaseNode";
 export default function RestFetchNode({
   node, onRemove, onPositionChange, onUpdate,
   inputPortRef, inputPortDrop, outputPortRef,
-  restSources, runResult,
+  restSources, runResult, isActive, onActivate,
 }) {
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
@@ -25,7 +25,7 @@ export default function RestFetchNode({
   return (
     <BaseNode
       node={node} color={color} icon="🌐" label="REST Fetch"
-      runResult={runResult}
+      runResult={runResult} isActive={isActive} onActivate={onActivate}
       onRemove={onRemove} onPositionChange={onPositionChange}
       inputPorts={[{ id: "in", label: "Trigger", portRef: inputPortRef, onDrop: inputPortDrop }]}
       outputPorts={[{

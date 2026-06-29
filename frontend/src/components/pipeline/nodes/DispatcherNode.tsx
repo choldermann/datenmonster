@@ -31,7 +31,7 @@ function getSourceType(nodeId, allNodes, connections) {
 }
 
 export default function DispatcherNode({ node, onRemove, onPositionChange, onUpdate,
-  inputPortRef, inputPortDrop, outputPortRefs, xmlDatasets, allNodes, connections, runResult }) {
+  inputPortRef, inputPortDrop, outputPortRefs, xmlDatasets, allNodes, connections, runResult, isActive, onActivate }) {
 
   const config = node.config || {};
   const conds  = config.conditions || [];
@@ -63,7 +63,7 @@ export default function DispatcherNode({ node, onRemove, onPositionChange, onUpd
       onRemove={onRemove} onPositionChange={onPositionChange} width={270}
       inputPorts={[{ id: "in", label: "Eingang", portRef: inputPortRef, onDrop: inputPortDrop }]}
       outputPorts={outputPorts}
-      runResult={runResult}>
+      runResult={runResult} isActive={isActive} onActivate={onActivate}>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
 

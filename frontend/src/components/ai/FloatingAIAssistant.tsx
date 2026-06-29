@@ -9,7 +9,7 @@ const BG_CARD = "#1a1a2e";
 const BORDER = "rgba(255,255,255,0.1)";
 
 const MIN_W = 280;
-const MAX_W = 800;
+const MAX_W = 1200;
 const MIN_H = 300;
 
 interface Message {
@@ -137,11 +137,18 @@ export default function FloatingAIAssistant() {
   const abortCtrlRef = useRef<AbortController | null>(null);
 
   // Drag & resize state
-  const [pos, setPos] = useState(() => ({
-    x: window.innerWidth - 380 - 16,
-    y: 54,
+  const [pos, setPos] = useState(() => {
+    const w = Math.min(680, window.innerWidth - 32);
+    const h = Math.min(700, window.innerHeight - 80);
+    return {
+      x: Math.round((window.innerWidth - w) / 2),
+      y: Math.round((window.innerHeight - h) / 2),
+    };
+  });
+  const [size, setSize] = useState(() => ({
+    w: Math.min(680, window.innerWidth - 32),
+    h: Math.min(700, window.innerHeight - 80),
   }));
-  const [size, setSize] = useState({ w: 380, h: 520 });
   const dragRef = useRef<{ startX: number; startY: number; px: number; py: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; sw: number; sh: number } | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -193,14 +200,18 @@ export default function FloatingAIAssistant() {
     window.addEventListener("mouseup", onUp);
   }, [size, pos.y]);
 
-  useEffect(() => {
+  const fetchAiStatus = () => {
     fetch("/api/ai/status", {
       headers: { Authorization: `Bearer ${localStorage.getItem("dm_token") || ""}` },
     })
       .then(r => r.json())
       .then(d => { setAiAvailable(d.enabled && d.ollama_reachable); if (d.model) setAiModel(d.model); })
       .catch(() => setAiAvailable(false));
-  }, []);
+  };
+
+  useEffect(() => { fetchAiStatus(); }, []);
+
+  useEffect(() => { if (isOpen) fetchAiStatus(); }, [isOpen]);
 
   useEffect(() => {
     if (isOpen && inputRef.current) {

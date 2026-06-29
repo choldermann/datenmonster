@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { S, NODE_COLORS } from "../constants";
 import BaseNode from "./BaseNode";
 
-export default function FtpNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, outputPortRef, ftpSources, runResult }) {
+export default function FtpNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, outputPortRef, ftpSources, runResult, isActive, onActivate }) {
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
 
@@ -13,7 +13,7 @@ export default function FtpNode({ node, onRemove, onPositionChange, onUpdate, in
 
   return (
     <BaseNode node={node} color={NODE_COLORS.ftp} icon="📥" label="FTP Input"
-      runResult={runResult}
+      runResult={runResult} isActive={isActive} onActivate={onActivate}
       onRemove={onRemove} onPositionChange={onPositionChange}
       inputPorts={[{ id: "in", label: "Trigger", portRef: inputPortRef, onDrop: inputPortDrop }]}
       outputPorts={[{ id: "out", label: "Dateien",

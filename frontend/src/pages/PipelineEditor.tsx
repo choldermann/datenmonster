@@ -51,6 +51,8 @@ export default function PipelineEditor() {
   const [xmlDatasets, setXmlDatasets] = useState([]);
   const [restSources, setRestSources] = useState([]);
 
+  const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+
   // Refs
   const canvasRef = useRef(null);
   const nodeRefs = useRef({}); // nodeId_portId_side → DOM element ref
@@ -59,14 +61,31 @@ export default function PipelineEditor() {
   const triggerLineDraw = useCallback(() => setLineTick(t => t + 1), []);
 
   useEffect(() => {
+    const activeNode = activeNodeId ? nodes.find(n => n.id === activeNodeId) : null;
+    const NODE_LABELS: Record<string, string> = {
+      trigger: "Zeitplan-Trigger", ftp: "FTP-Import", mapping: "Mapping-Ausführung",
+      dispatcher: "Verzweigung", condition: "Bedingung", ftp_upload: "FTP-Upload",
+      email: "E-Mail-Versand", rest_fetch: "REST-Abruf",
+    };
     setPageContext({
       page: "pipeline_editor",
       title: name || "Pipeline Editor",
       description: "Visueller Pipeline-Editor: Trigger, Mappings, FTP, E-Mail, REST und Bedingungen sequenziell verbinden und ausführen.",
-      currentData: { pipelineId: id ?? null, pipelineName: name },
+      currentData: {
+        pipelineId: id ?? null,
+        pipelineName: name,
+        nodeCount: nodes.length,
+        ...(activeNode ? {
+          activeNode: {
+            type: activeNode.type,
+            label: NODE_LABELS[activeNode.type] || activeNode.type,
+            config: activeNode.config || {},
+          },
+        } : {}),
+      },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id]);
+  }, [setPageContext, name, id, activeNodeId, nodes]);
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -204,7 +223,8 @@ export default function PipelineEditor() {
   // ── Node rendern ───────────────────────────────────────────────────────────
   const renderNode = (node) => {
     const nodeResult = runResults?.[node.id];
-    const common = { key: node.id, node, onRemove: removeNode, onPositionChange: positionChange, onUpdate: updateNode, runResult: nodeResult };
+    const active = { isActive: activeNodeId === node.id, onActivate: () => setActiveNodeId(node.id) };
+    const common = { key: node.id, node, onRemove: removeNode, onPositionChange: positionChange, onUpdate: updateNode, runResult: nodeResult, ...active };
     const nInRef  = (portId = "in")  => inRef(node.id, portId);
     const nOutRef = (portId = "out") => outRef(node.id, portId);
     const onDrop  = (portId = "in")  => (e) => handlePortDrop(e, node.id, portId);
@@ -287,6 +307,7 @@ export default function PipelineEditor() {
           ref={canvasRef}
           onDragOver={e => e.preventDefault()}
           onDrop={handleCanvasDrop}
+          onClick={() => setActiveNodeId(null)}
           style={{ flex: 1, position: "relative", overflow: "auto", backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px)", backgroundSize: "24px 24px" }}
         >
           {/* Nodes */}

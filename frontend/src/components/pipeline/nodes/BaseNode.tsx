@@ -104,6 +104,8 @@ export default function BaseNode({
   children,
   width = 240,
   runResult,
+  isActive = false,
+  onActivate,
 }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
@@ -184,13 +186,15 @@ export default function BaseNode({
   return (
     <div
       draggable={false}
-      onClick={e => e.stopPropagation()}
+      onClick={e => { e.stopPropagation(); onActivate?.(); }}
       style={{
         position: "absolute", left: node.x, top: node.y, width,
-        zIndex: 10, userSelect: "none",
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+        zIndex: isActive ? 20 : 10, userSelect: "none",
+        boxShadow: isActive
+          ? `0 0 0 2px #fce499, 0 8px 32px rgba(0,0,0,0.5)`
+          : "0 8px 32px rgba(0,0,0,0.5)",
         borderRadius: 8, overflow: "visible",
-        border: `1px solid ${nodeColor}55`,
+        border: isActive ? `1px solid #fce499` : `1px solid ${nodeColor}55`,
         backgroundColor: S.bgCard,
       }}
     >

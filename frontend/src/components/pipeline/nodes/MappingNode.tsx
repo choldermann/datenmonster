@@ -1,7 +1,7 @@
 import { S, NODE_COLORS } from "../constants";
 import BaseNode from "./BaseNode";
 
-export default function MappingNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, outputPortRef, mappings, runResult }) {
+export default function MappingNode({ node, onRemove, onPositionChange, onUpdate, inputPortRef, inputPortDrop, outputPortRef, mappings, runResult, isActive, onActivate }) {
   const config = node.config || {};
   const set = (k, v) => onUpdate({ ...node, config: { ...config, [k]: v } });
 
@@ -13,7 +13,7 @@ export default function MappingNode({ node, onRemove, onPositionChange, onUpdate
 
   return (
     <BaseNode node={node} color={color} icon="⚙️" label="Mapping"
-      runResult={runResult}
+      runResult={runResult} isActive={isActive} onActivate={onActivate}
       onRemove={onRemove} onPositionChange={onPositionChange}
       inputPorts={[{ id: "in", label: "Eingang", portRef: inputPortRef, onDrop: inputPortDrop }]}
       outputPorts={[{
