@@ -937,53 +937,63 @@ def execute_mapping(
 
     # 2. Joins anwenden (verkette alle Datasets)
     if joins:
-        # Baue Join-Kette
+        # Baue Join-Kette — mehrere Durchläufe damit Reihenfolge egal ist
         result_df = None
         joined_ids = set()
+        pending_joins = list(joins)
 
-        for join in joins:
-            l_id = join["left_dataset_id"]
-            r_id = join["right_dataset_id"]
-            l_field = join["left_field"]
-            r_field = join["right_field"]
-            join_type = join.get("join_type", "INNER JOIN")
+        for _pass in range(len(pending_joins) + 1):
+            if not pending_joins:
+                break
+            still_pending = []
+            for join in pending_joins:
+                l_id = join["left_dataset_id"]
+                r_id = join["right_dataset_id"]
+                l_field = join["left_field"]
+                r_field = join["right_field"]
+                join_type = join.get("join_type", "INNER JOIN")
 
-            l_df = dfs.get(l_id)
-            r_df = dfs.get(r_id)
-            if l_df is None or r_df is None:
-                errors.append(f"Join-Dataset nicht gefunden")
-                continue
+                l_df = dfs.get(l_id)
+                r_df = dfs.get(r_id)
+                if l_df is None or r_df is None:
+                    errors.append(f"Join-Dataset nicht gefunden")
+                    continue
 
-            l_name = names.get(l_id, str(l_id))
-            r_name = names.get(r_id, str(r_id))
+                l_name = names.get(l_id, str(l_id))
+                r_name = names.get(r_id, str(r_id))
 
-            if result_df is None:
-                try:
-                    result_df = _apply_join(l_df, r_df, l_field, r_field, join_type, l_name, r_name)
-                    joined_ids.add(l_id)
-                    joined_ids.add(r_id)
-                except Exception as e:
-                    errors.append(str(e))
-                    result_df = l_df.copy()
-            else:
-                # Weiterer Join auf bestehendes Ergebnis
-                try:
-                    # Herausfinden welche Seite bereits im result_df ist
-                    l_in_result = l_id in joined_ids
-                    r_in_result = r_id in joined_ids
+                l_in_result = l_id in joined_ids
+                r_in_result = r_id in joined_ids
 
-                    if r_in_result and not l_in_result:
-                        # Rechte Seite ist bereits im result_df → tauschen
-                        right_key = f"{r_name}.{r_field}" if r_in_result else r_field
-                        result_df = _apply_join(result_df, l_df, right_key, l_field, join_type, "", l_name)
+                # Wenn weder links noch rechts im Ergebnis ist und result_df bereits existiert,
+                # auf späteren Durchlauf verschieben (Abhängigkeit noch nicht aufgelöst)
+                if result_df is not None and not l_in_result and not r_in_result:
+                    still_pending.append(join)
+                    continue
+
+                if result_df is None:
+                    try:
+                        result_df = _apply_join(l_df, r_df, l_field, r_field, join_type, l_name, r_name)
                         joined_ids.add(l_id)
-                    else:
-                        # Linke Seite ist bereits im result_df (Normalfall)
-                        left_key = f"{l_name}.{l_field}" if l_in_result else l_field
-                        result_df = _apply_join(result_df, r_df, left_key, r_field, join_type, "", r_name)
                         joined_ids.add(r_id)
-                except Exception as e:
-                    errors.append(str(e))
+                    except Exception as e:
+                        errors.append(str(e))
+                        result_df = l_df.copy()
+                else:
+                    try:
+                        if r_in_result and not l_in_result:
+                            # Rechte Seite ist bereits im result_df → tauschen
+                            right_key = f"{r_name}.{r_field}"
+                            result_df = _apply_join(result_df, l_df, right_key, l_field, join_type, "", l_name)
+                            joined_ids.add(l_id)
+                        else:
+                            # Linke Seite ist bereits im result_df (Normalfall)
+                            left_key = f"{l_name}.{l_field}" if l_in_result else l_field
+                            result_df = _apply_join(result_df, r_df, left_key, r_field, join_type, "", r_name)
+                            joined_ids.add(r_id)
+                    except Exception as e:
+                        errors.append(str(e))
+            pending_joins = still_pending
 
         # Nicht-gejointen Datasets einfach nebeneinander (cross join, falls nur 1 Dataset)
         for ds_id, df in dfs.items():
