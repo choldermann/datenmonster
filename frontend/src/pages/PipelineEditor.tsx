@@ -71,6 +71,35 @@ export default function PipelineEditor() {
       email: "E-Mail-Versand", rest_fetch: "REST-Abruf",
       business_insights: "Business Insights",
     };
+
+    // Alle Nodes auf dem Canvas — relevante Config-Felder je Typ
+    const nodeById: Record<string, any> = Object.fromEntries(nodes.map(n => [n.id, n]));
+    const canvasNodes = nodes.map(n => {
+      const cfg = n.config || {};
+      const summary: Record<string, any> = { id: n.id, type: n.type, label: NODE_LABELS[n.type] || n.type };
+      if (n.type === "trigger")    { summary.mode = cfg.mode; summary.time = cfg.time; }
+      if (n.type === "ftp")        { summary.ftp_source_id = cfg.ftp_source_id; summary.after_import = cfg.after_import; }
+      if (n.type === "rest_fetch") { summary.rest_source_id = cfg.rest_source_id; }
+      if (n.type === "mapping")    { summary.mapping_id = cfg.mapping_id; summary.on_error = cfg.on_error; }
+      if (n.type === "dispatcher") { summary.condition_mode = cfg.condition_mode; summary.conditions_count = (cfg.conditions || []).length; }
+      if (n.type === "condition")  { summary.field = cfg.field; summary.operator = cfg.operator; summary.value = cfg.value; }
+      if (n.type === "ftp_upload") { summary.ftp_source_id = cfg.ftp_source_id; summary.remote_dir = cfg.remote_dir; }
+      if (n.type === "email")      { summary.send_on = cfg.send_on; summary.subject = cfg.subject; }
+      if (n.type === "business_insights") { summary.output_name = cfg.output_name; summary.modules = Object.keys(cfg.modules || {}).filter(k => cfg.modules[k]); }
+      return summary;
+    });
+
+    // Verbindungsfluss als lesbare Paare
+    const connectionFlow = connections.map(c => ({
+      from: NODE_LABELS[nodeById[c.from_node]?.type] || c.from_node,
+      from_id: c.from_node,
+      to: NODE_LABELS[nodeById[c.to_node]?.type] || c.to_node,
+      to_id: c.to_node,
+      port: c.from_port !== "out" ? c.from_port : undefined,
+    }));
+
+    const availableNodeTypes = Object.entries(NODE_LABELS).map(([type, label]) => ({ type, label }));
+
     setPageContext({
       page: "pipeline_editor",
       title: name || "Pipeline Editor",
@@ -78,7 +107,9 @@ export default function PipelineEditor() {
       currentData: {
         pipelineId: id ?? null,
         pipelineName: name,
-        nodeCount: nodes.length,
+        canvasNodes,
+        connectionFlow,
+        availableNodeTypes,
         ...(activeNode ? {
           activeNode: {
             type: activeNode.type,
@@ -89,7 +120,7 @@ export default function PipelineEditor() {
       },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id, activeNodeId, nodes]);
+  }, [setPageContext, name, id, activeNodeId, nodes, connections]);
 
   // ── Laden ──────────────────────────────────────────────────────────────────
   useEffect(() => {

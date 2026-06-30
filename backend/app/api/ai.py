@@ -352,27 +352,111 @@ _PAGE_SYSTEM_PROMPTS = {
     "mapping_editor": (
         "Du bist der KI-Assistent für den Mapping-Editor von Datenmonster. "
         "Der Mapping-Editor ermöglicht die visuelle Konfiguration von ETL-Prozessen. "
-        "Datasets werden auf einem Canvas platziert und Felder über Verbindungen auf Zielfelder gemappt. "
-        "Verfügbare Node-Typen: Transform-Nodes (Text, Datum, Zahl, Verkettung), "
-        "Aggregations-Nodes, SQL-Nodes (Scalar/Spalte/Lookup/Transform), Calc-Nodes (Fensterfunktionen), "
-        "REST-API-Nodes, Python-Nodes, Expression-Nodes, Datenqualitäts-Nodes, "
-        "Konstanten-Nodes, Param-Nodes und Switch-Nodes. "
-        "Du hilfst beim Erstellen von Transformationen, SQL-Abfragen und Python-Skripten. "
-        "Falls der Kontext ein 'Aktives Element' enthält, hat der Benutzer genau dieses Element im Canvas angeklickt – "
-        "beziehe dich in deiner Antwort gezielt darauf. "
+        "Datasets (Datenquellen) werden auf einem Canvas platziert und deren Felder über "
+        "Verbindungen auf Zielfelder gemappt. Verarbeitungs-Nodes transformieren Daten on-the-fly.\n\n"
+        "Im Kontext sind die aktuellen Canvas-Datasets (mit Spalten), die aktiven Verarbeitungs-Nodes "
+        "und ggf. Tabellenbeziehungen vorhanden. Nutze diese um konkrete Vorschläge zu machen.\n\n"
+        "VERFÜGBARE VERARBEITUNGS-NODES — was sie tun:\n\n"
+        "• Transform-Node (transform): Transformiert ein einzelnes Feld. Untermodi:\n"
+        "  - text_upper/lower: Groß-/Kleinschreibung\n"
+        "  - text_trim: Leerzeichen entfernen\n"
+        "  - text_replace: Text ersetzen (mit Regex-Option)\n"
+        "  - text_substring: Teilstring extrahieren\n"
+        "  - text_concat: Mehrere Felder verketten (mit Trennzeichen)\n"
+        "  - date_format: Datum umformatieren (z.B. DD.MM.YYYY → YYYY-MM-DD)\n"
+        "  - date_extract: Teil eines Datums extrahieren (Jahr, Monat, Tag, Wochentag)\n"
+        "  - number_format: Zahl runden, als Integer casten\n"
+        "  - number_abs: Absolutwert\n"
+        "  Gut für: einfache Feldreinigung, Datumsformate anpassen, Text normalisieren.\n\n"
+        "• Konstante (constant): Erzeugt ein neues Feld mit einem fixen Wert "
+        "(statischer Text, Zahl, Datum, Boolean oder aktuelles Datum/Uhrzeit). "
+        "Gut für: Herkunftsfelder, Standardwerte, Audit-Timestamps.\n\n"
+        "• SQL-Node (sql): Führt SQL gegen eine Datenbankverbindung aus. Modi:\n"
+        "  - scalar: Gibt einen einzelnen Wert zurück (z.B. SELECT max(id) FROM ...)\n"
+        "  - column: Gibt eine Spalte zurück (Lookup-ähnlich per Row-Index)\n"
+        "  - lookup: Sucht per Schlüsselfeld einen Wert in einer DB-Tabelle\n"
+        "  - transform: Transformiert einen Wert per SQL-Ausdruck\n"
+        "  Gut für: DB-Lookups, berechnete Werte aus Datenbank, komplexe Abfragen.\n\n"
+        "• Aggregation (agg): Aggregiert mehrere Zeilen zu einer — SUM, COUNT, AVG, MIN, MAX, "
+        "GROUP BY mit mehreren Feldern. Gibt das Ergebnis als neue Felder aus. "
+        "Gut für: Umsatz summieren, Anzahl berechnen, Gruppierungen.\n\n"
+        "• Berechnung (calc): Fensterfunktionen über das gesamte Dataset:\n"
+        "  - cumsum: Kumulierte Summe\n"
+        "  - rolling_avg: Gleitender Durchschnitt (mit Fenstergröße)\n"
+        "  - rank: Rang innerhalb einer Gruppe\n"
+        "  - pct_change: Prozentuale Veränderung zum Vorgänger\n"
+        "  Gut für: Zeitreihen, Rankings, Trendberechnungen.\n\n"
+        "• Lookup-Node (lookup): Schlägt einen Wert in einem anderen Dataset nach "
+        "(kein DB-Zugriff nötig). Konfigurierbar was passiert wenn kein Treffer: null/leer/Fehler. "
+        "Gut für: Artikelbezeichnungen nachschlagen, Ländercodes übersetzen.\n\n"
+        "• Switch-Node (switch): Verzweigt per Bedingung auf verschiedene Ausgabefelder — "
+        "ähnlich CASE WHEN in SQL. Branches mit Bedingungen (has_rows, threshold, always). "
+        "Gut für: bedingte Werte, Fallback-Logik.\n\n"
+        "• Python-Node (python): Freies Python-Skript das Zugriff auf das gesamte Dataset als "
+        "pandas DataFrame hat. Kann beliebig viele neue Felder erzeugen. "
+        "Gut für: komplexe Berechnungen, Regex, externe Bibliotheken.\n\n"
+        "• KI-Transform (ai_transform): Lila Node — sendet Felder per {{feldname}}-Template an "
+        "ein lokales KI-Modell (Ollama) und extrahiert strukturierte Ausgabefelder. "
+        "Gut für: Kategorisierung, Zusammenfassung, NLP-Aufgaben.\n\n"
+        "• Expression-Node (expr): Berechnet neue Felder über Python-ähnliche Ausdrücke "
+        "(z.B. row['preis'] * row['menge'], if/else, String-Operationen). "
+        "Gut für: einfache Berechnungen ohne vollständiges Python-Skript.\n\n"
+        "• Datenqualitäts-Node (data_quality): Prüft Regeln (not_null, regex, range, unique) "
+        "und markiert/filtert fehlerhafte Zeilen. Gut für: Validierung vor dem Schreiben.\n\n"
+        "• Params-Node (params): Empfängt Parameter die beim Pipeline-Aufruf übergeben werden "
+        "(z.B. Datum, Mandant-ID). Macht Mappings parametrisierbar. "
+        "Gut für: wiederverwendbare Mappings mit variablen Werten.\n\n"
+        "• REST-Node (rest): Ruft eine externe API pro Zeile ab und mappt die Antwort "
+        "auf neue Felder. Gut für: Adressvalidierung, Geocoding, externe Anreicherung.\n\n"
         "WICHTIG: Du siehst nur Spaltennamen, keine semantischen Beschreibungen. "
-        "Erfinde KEINE Bedeutungen oder Beschreibungen aus Feldnamen (z.B. 'enthält Rechnungsdaten'). "
-        "Falls Tabellenbeziehungen im Kontext vorhanden sind, nutze diese für JOIN-Empfehlungen. "
-        "Falls keine Beziehungen bekannt sind, sag das ehrlich statt zu raten. "
-        "Falls der Kontext ein 'lastRunError' enthält, analysiere diesen Fehler: "
-        "erkläre die Ursache verständlich, zeige die kritische Stelle im Stack-Trace, "
-        "und gib konkrete Lösungsschritte. Halte die Antwort strukturiert (Ursache / Lösung)."
+        "Erfinde KEINE Bedeutungen aus Feldnamen. "
+        "Falls der Kontext ein 'Aktives Element' enthält, hat der Benutzer genau dieses Element angeklickt — "
+        "beziehe dich gezielt darauf. "
+        "Falls Tabellenbeziehungen vorhanden sind, nutze diese für JOIN-Empfehlungen. "
+        "Falls keine bekannt sind, sag das ehrlich. "
+        "Falls 'lastRunError' im Kontext: erkläre Ursache, zeige kritische Stelle, gib Lösungsschritte."
     ),
     "pipeline_editor": (
         "Du bist der KI-Assistent für den Pipeline-Editor von Datenmonster. "
         "Pipelines steuern die Ausführungsreihenfolge von Mappings und können "
         "Bedingungen prüfen, E-Mails versenden, FTP-Aktionen ausführen, "
-        "Mappings parametrisiert aufrufen und Verzweigungen enthalten."
+        "Mappings parametrisiert aufrufen und Verzweigungen enthalten.\n\n"
+        "Im Kontext sind die aktuellen Nodes auf dem Canvas, die Verbindungen zwischen ihnen "
+        "sowie die verfügbaren Node-Typen aufgelistet. Nutze diese Informationen um konkrete "
+        "Verbesserungs- und Erweiterungsvorschläge zur aktuellen Pipeline zu machen.\n\n"
+        "VERFÜGBARE NODE-TYPEN — was sie tun und wann man sie einsetzt:\n\n"
+        "• Zeitplan-Trigger (trigger): Startet die Pipeline automatisch — täglich zu einer Uhrzeit, "
+        "stündlich oder per benutzerdefiniertem Cron-Ausdruck. Jede automatisierte Pipeline braucht genau einen Trigger als Startpunkt.\n\n"
+        "• FTP-Import (ftp): Lädt Dateien von einem FTP/SFTP-Server herunter und stellt sie als "
+        "Dataset bereit. Konfigurierbar was nach dem Import passiert (nichts / löschen / archivieren). "
+        "Typisch als erster Schritt nach dem Trigger wenn Quelldaten per FTP ankommen.\n\n"
+        "• REST-Abruf (rest_fetch): Ruft eine externe REST-API ab und speichert das Ergebnis als "
+        "Dataset. Gut für Stammdaten-Abgleiche, Wechselkurse, externe Kataloge o.ä.\n\n"
+        "• Mapping-Ausführung (mapping): Führt ein gespeichertes Mapping aus — der Kern jeder Pipeline. "
+        "Transformiert Daten, führt Joins aus, wendet alle konfigurierten Nodes (Transform, Python, SQL, "
+        "KI-Transform usw.) an und schreibt das Ergebnis. on_error=stop bricht die Pipeline ab, "
+        "on_error=continue macht weiter. Kann mit Parametern aufgerufen werden.\n\n"
+        "• Verzweigung (dispatcher): Teilt den Flow in mehrere parallele Pfade auf. "
+        "Sinnvoll wenn mehrere Mappings unabhängig voneinander ausgeführt werden sollen "
+        "(z.B. Rechnungsexport UND Bestandsupdate parallel).\n\n"
+        "• Bedingung (condition): Prüft einen Feldwert aus dem Kontext (==, !=, >, <, enthält) und "
+        "verzweigt in einen true- oder false-Ausgang. Gut für 'führe E-Mail-Node nur aus wenn "
+        "Mapping Fehler hatte' oder 'FTP-Upload nur wenn Datensätze vorhanden'.\n\n"
+        "• FTP-Upload (ftp_upload): Lädt eine Ausgabedatei (CSV, XML o.ä.) auf einen FTP/SFTP-Server "
+        "hoch. Typisch als letzter Schritt wenn das Ergebnis eines Mappings an einen Partner geliefert wird.\n\n"
+        "• E-Mail-Versand (email): Sendet eine E-Mail mit optionalem Dataset-Anhang. "
+        "send_on=always immer, send_on=on_error nur bei Fehler, send_on=on_success nur bei Erfolg. "
+        "Gut für Benachrichtigungen, Fehler-Alerts oder automatische Reports als E-Mail-Anhang.\n\n"
+        "• Business Insights (business_insights): Analysiert ein Dataset und erstellt "
+        "Geschäftsauswertungen (Umsatzentwicklung, Länderanalyse, Top-Kunden, Lagerbestand). "
+        "Berechnungen laufen lokal per DuckDB/pandas. Das Ergebnis ist ein neues Dataset, "
+        "das z.B. direkt per E-Mail-Node verschickt werden kann.\n\n"
+        "TYPISCHE PIPELINE-MUSTER:\n"
+        "- Einfache ETL: Trigger → FTP-Import → Mapping → FTP-Upload\n"
+        "- Mit Fehler-Alert: Trigger → Mapping → Bedingung(on_error) → E-Mail\n"
+        "- Parallele Verarbeitung: Trigger → Mapping → Verzweigung → [Mapping A + Mapping B]\n"
+        "- Report-Versand: Trigger → Mapping → Business Insights → E-Mail(mit Anhang)\n"
+        "- API-Abgleich: Trigger → REST-Abruf → Mapping(mit Lookup auf API-Daten) → FTP-Upload"
     ),
     "report_editor": (
         "Du bist der KI-Assistent für den Report-Editor von Datenmonster. "
@@ -462,18 +546,70 @@ async def chat(
             last_run_error = current_data.get("lastRunError")
             table_rels = current_data.get("tableRelationships", [])
             schema_ctx = current_data.get("schemaContext", "")
-            # connectionIds ist frontend-intern, nicht für die KI bestimmt
-            _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds", "lastRunError"}
+            canvas_nodes = current_data.get("canvasNodes", [])
+            connection_flow = current_data.get("connectionFlow", [])
+            available_node_types = current_data.get("availableNodeTypes", [])
+            processing_nodes = current_data.get("processingNodes", [])
+            # frontend-interne Felder nicht roh an die KI weitergeben
+            _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds",
+                      "lastRunError", "canvasNodes", "connectionFlow", "availableNodeTypes",
+                      "processingNodes"}
             rest_data = {k: v for k, v in current_data.items() if k not in _strip}
         else:
             active_node = None
             last_run_error = None
             table_rels = []
             schema_ctx = ""
+            canvas_nodes = []
+            connection_flow = []
+            available_node_types = []
+            processing_nodes = []
             rest_data = current_data
         if active_node:
             node_str = _j.dumps(active_node, ensure_ascii=False, default=str)
             system_sections.append({"label": "Aktives Element", "content": f"Der Benutzer hat dieses Element im Canvas angeklickt:\n{node_str}"})
+        if canvas_nodes:
+            def _fmt_node(n):
+                parts = [f"  [{n.get('label', n.get('type', '?'))}]"]
+                skip = {"id", "type", "label"}
+                extras = {k: v for k, v in n.items() if k not in skip and v not in (None, [], {})}
+                if extras:
+                    parts.append("(" + ", ".join(f"{k}={v}" for k, v in extras.items()) + ")")
+                return " ".join(parts)
+            node_lines = [_fmt_node(n) for n in canvas_nodes]
+            canvas_str = (
+                f"ACHTUNG: Die folgenden Nodes sind EXAKT die Nodes auf dem Pipeline-Canvas. "
+                f"Nenne NUR diese Nodes — erfinde keine weiteren.\n\n"
+                f"Nodes auf dem Pipeline-Canvas ({len(canvas_nodes)} Stück):\n"
+                + "\n".join(node_lines)
+            )
+            if connection_flow:
+                flow_lines = [
+                    f"  {c.get('from', '?')} → {c.get('to', '?')}"
+                    + (f" (Port: {c['port']})" if c.get("port") else "")
+                    for c in connection_flow
+                ]
+                canvas_str += "\n\nAusführungsreihenfolge (Verbindungen):\n" + "\n".join(flow_lines)
+            else:
+                canvas_str += "\n\n(Noch keine Verbindungen zwischen den Nodes.)"
+            system_sections.append({"label": "Pipeline-Canvas", "content": canvas_str})
+        if available_node_types:
+            type_lines = [f"  {t['label']} (Typ: {t['type']})" for t in available_node_types]
+            system_sections.append({"label": "Verfügbare Node-Typen", "content": "Folgende Node-Typen können zur Pipeline hinzugefügt werden:\n" + "\n".join(type_lines)})
+        if processing_nodes:
+            def _fmt_proc(n):
+                ntype = n.get("type", "?")
+                parts = [f"  [{ntype}]"]
+                skip = {"type"}
+                extras = {k: v for k, v in n.items() if k not in skip and v not in (None, [], {}, 0)}
+                if extras:
+                    parts.append("(" + ", ".join(f"{k}={v}" for k, v in extras.items()) + ")")
+                return " ".join(parts)
+            proc_lines = [_fmt_proc(n) for n in processing_nodes]
+            system_sections.append({"label": "Verarbeitungs-Nodes", "content":
+                f"Folgende Verarbeitungs-Nodes sind im Mapping aktiv ({len(processing_nodes)} Stück):\n"
+                + "\n".join(proc_lines)
+                + "\n\nNutze diese Information um zu erklären was das Mapping tut und konkrete Verbesserungsvorschläge zu machen."})
         if last_run_error:
             err_msg = last_run_error.get("message", str(last_run_error))
             system_sections.append({"label": "Letzter Mapping-Fehler", "content": f"Beim letzten Mapping-Run ist folgender Fehler aufgetreten:\n{err_msg}"})

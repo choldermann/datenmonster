@@ -387,6 +387,23 @@ export default function MappingEditor() {
   }, [canvasNodes]);
 
   useEffect(() => {
+    // Zusammenfassung aller Verarbeitungs-Nodes auf dem Canvas
+    const processingNodes = [
+      ...transformNodes.map(n => ({ type: "transform", subtype: n.type, output: n.output_field })),
+      ...constantNodes.map(n => ({ type: "constant", const_type: n.const_type, output: n.output_field })),
+      ...sqlNodes.map(n => ({ type: "sql", mode: n.mode, output: n.output_field })),
+      ...aggNodes.map(n => ({ type: "aggregation", fields_count: (n.fields || []).length })),
+      ...calcNodes.map(n => ({ type: "calc", calc_type: n.calc_type, input: n.input_field, output: n.output_field })),
+      ...lookupNodes.map(n => ({ type: "lookup", input: n.input_field, on_missing: n.on_missing })),
+      ...switchNodes.map(n => ({ type: "switch", output: n.output_field, branches: (n.branches || []).length })),
+      ...pythonNodes.map(n => ({ type: "python", output_fields: (n.output_fields || []).map((f: any) => f.name || f) })),
+      ...aiNodes.map(n => ({ type: "ai_transform", output_fields: (n.output_fields || []).map((f: any) => f.name || f) })),
+      ...exprNodes.map(n => ({ type: "expression", label: n.label, output_fields: (n.output_fields || []).length })),
+      ...qualityNodes.map(n => ({ type: "data_quality", label: n.label, rules: (n.rules || []).length })),
+      ...paramNodes.map(n => ({ type: "params", label: n.label, fields: (n.fields || []).length })),
+      ...restNodes.map(n => ({ type: "rest", method: n.method, output_mappings: (n.response_mappings || []).length })),
+    ];
+
     setPageContext({
       page: "mapping_editor",
       title: name || "Mapping Editor",
@@ -399,6 +416,7 @@ export default function MappingEditor() {
           name: n.dataset_name,
           columns: (n.dataset_columns || []).slice(0, 20).map((c: any) => (typeof c === "string" ? c : c.name || "")),
         })),
+        processingNodes,
         connectionIds: [...new Set(
           canvasNodes
             .map((n: any) => allDatasets.find((d: any) => d.id === n.dataset_id)?.source_connection_id)
@@ -409,7 +427,9 @@ export default function MappingEditor() {
       },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id, activeNodeInfo, canvasNodes, tableRelationships]);
+  }, [setPageContext, name, id, activeNodeInfo, canvasNodes, tableRelationships,
+      transformNodes, constantNodes, sqlNodes, aggNodes, calcNodes, lookupNodes,
+      switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, paramNodes, restNodes]);
   const setConnections = (updater) => {
     setTargets((prev) => prev.map((t) => t.id === (activeTarget?.id) ? {
       ...t, fields: typeof updater === "function" ? updater(t.fields || []) : updater
