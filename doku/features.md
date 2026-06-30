@@ -1,6 +1,6 @@
 # Datenmonster – Feature-Übersicht
 
-Stand: 2026-06-29 | Holdermann IT ETL-Plattform
+Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 
 ---
 
@@ -104,6 +104,9 @@ Stand: 2026-06-29 | Holdermann IT ETL-Plattform
 ### Globaler KI-Assistent
 - Floating Panel auf jeder Seite (Drag & Resize) (2026-06-29)
 - **Page-Context**: Assistent kennt aktiven Kontext (Mapping-Canvas, Pipeline, Form Editor)
+- **Canvas Awareness**: KI kennt exakt welche Nodes auf dem Canvas sind (Pipeline + Mapping + Form Editor) (2026-07-01)
+- **Node-Wissen**: KI kennt die Funktion aller Node-Typen und gibt konkrete Verbesserungsvorschläge (2026-07-01)
+- **Parameter-Workflow-Wissen**: KI erklärt wie Parameter (Variablen) aus Formularen in Mappings genutzt werden (2026-07-01)
 - **Active-Node-Kontext**: aktuell ausgewählter Node wird automatisch als Kontext übergeben
 - **Schnellaktionen-Buttons** je nach Kontext (z. B. "SQL erklären", "Fehler erklären") (2026-06-29)
 - **Schema-Wissensdatenbank** (🗄): KI nutzt beschriebene Tabellen/Spalten aus dem Datenkatalog (2026-06-29)
@@ -199,14 +202,51 @@ Stand: 2026-06-29 | Holdermann IT ETL-Plattform
 - Projektspalte im System-Log (2026-04-15)
 - **PageContext.actions**: Pipeline-Kontext mit Schnellaktionen im KI-Assistenten (2026-06-29)
 
+### Pipeline Nodes
+| Node | Funktion | Seit |
+|---|---|---|
+| **Trigger** | Zeitplan (Cron), manueller Start | v1.0 |
+| **FTP-Import** | Dateien von FTP/SFTP holen | v1.0 |
+| **REST Fetch** | REST API abrufen, Ergebnis als Dataset | v1.0 |
+| **Mapping** | Mapping ausführen (alle konfigurierten Ziele) | v1.0 |
+| **Verzweigung** | Bedingungen & Routing | v1.0 |
+| **Bedingung** | Wenn/Dann Verzweigung | v1.0 |
+| **FTP Upload** | Datei auf FTP/SFTP hochladen | v1.0 |
+| **E-Mail** | E-Mail mit optionalem Anhang senden | v1.0 |
+| **Business Insights** | Umsatz, Trends & Anomalien analysieren (DuckDB/pandas, kein LLM für Berechnungen) | 2026-06-29 |
+
 ---
 
-## Export
+## Export & Mapping-Ziele
 
-- Mapping-Ergebnis als CSV, Excel, Parquet herunterladen
+- Mapping-Ergebnis als CSV, Excel, JSON herunterladen
 - Export wird unter **Exporte** gespeichert (kein direkter Browser-Download)
 - XML-Ziel: Template-basierter XML-Export (INSTAT, eigene Formate)
-- DB-Schreiben als Ziel (INSERT/UPSERT in Datenbanktabellen)
+- **DB-Schreiben als Ziel** (2026-07-01):
+  - Verbindung + Tabelle (inkl. Schema-Prefix wie `Amazon.vFBABestand`) + Schreibmodus
+  - Modi: Insert, Truncate+Insert, Update, Upsert
+  - Schlüsselspalten für Update/Upsert
+  - **Safety-Check-Wizard**: Verbindung, Schreibrechte, Tabelle/View-Erkennung, Key-Spalten-Validierung
+  - Bestätigungs-Checkbox bevor Daten geschrieben werden
+  - Feldauswahl aus Tabellenschema (FieldPicker)
+
+---
+
+## Dashboard & UI
+
+- Tab-Navigation: Projekte → DB-Connectors → Datasets → FTP/SFTP → REST API → Templates → Mappings → Pipelines → Formulare → Exporte → Monitoring → Plugins (2026-07-01)
+- Visuelle Trennlinien nach Projekte, Templates, Exporte (2026-07-01)
+- Standard-Tab: Projekte (2026-07-01)
+- **Light/Dark/System Theme** – Umschalter in Einstellungen → Optik, kein Flash beim Laden (2026-07-01)
+
+---
+
+## Onboarding
+
+- **Getting-Started-Widget** 🚀 in der Sidebar — öffnet/schließt sich jederzeit (2026-06-29)
+- 4 Schritte mit Live-Check: Verbindung, Dataset, Mapping, Pipeline
+- Auto-öffnet sich beim ersten Login
+- Empty States für Datasets- und Mappings-Tab
 
 ---
 
@@ -279,7 +319,6 @@ Stand: 2026-06-29 | Holdermann IT ETL-Plattform
 - `install.ps1` für Windows
 - Update-Button im Frontend lädt neue Version von datenmonster.com (2026-04-21)
 - CI/CD via GitHub Actions: ZIP-Build, Deploy auf Hetzner per SCP
-- Versions-Datei (`VERSION`) im Root und `backend/`
 
 ---
 
