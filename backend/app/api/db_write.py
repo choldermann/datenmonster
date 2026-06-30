@@ -105,7 +105,7 @@ def check_write(
     try:
         with engine.begin() as c:
             tmp = f"__dm_write_test_{conn.id}__"
-            db_type = (conn.type or "").lower()
+            db_type = (conn.db_type or "").lower()
             if "mssql" in db_type:
                 c.execute(text(f"CREATE TABLE #{tmp} (id INT)"))
                 c.execute(text(f"DROP TABLE #{tmp}"))
@@ -123,21 +123,46 @@ def check_write(
                         "status": "error", "message": f"Kein Schreibrecht: {str(e)[:150]}"})
         can_proceed = False
 
-    # 3) Tabelle vorhanden?
+    # 3) Tabelle/View vorhanden? (Schema-qualifizierte Namen wie "dbo.Tabelle" werden unterstützt)
     table_exists = False
     try:
         insp = inspect(engine)
-        table_exists = body.table_name in insp.get_table_names()
+        raw_name = body.table_name
+        # Schema-Präfix trennen (z.B. "Amazon.vFBABestand" → schema="Amazon", table="vFBABestand")
+        if "." in raw_name:
+            schema_part, table_part = raw_name.split(".", 1)
+        else:
+            schema_part, table_part = None, raw_name
+
+        try:
+            all_tables = insp.get_table_names(schema=schema_part)
+        except Exception:
+            all_tables = []
+        try:
+            all_views = insp.get_view_names(schema=schema_part)
+        except Exception:
+            all_views = []
+
+        is_view = table_part in all_views
+        table_exists = table_part in all_tables or is_view
+
         if table_exists:
-            pk_cols = set(insp.get_pk_constraint(body.table_name).get("constrained_columns", []))
-            for col in insp.get_columns(body.table_name):
-                table_columns.append({
-                    "name": col["name"],
-                    "type": str(col["type"]),
-                    "nullable": col.get("nullable", True),
-                    "is_pk": col["name"] in pk_cols,
-                })
-            checks.append({"id": "table", "label": f"Tabelle '{body.table_name}' vorhanden",
+            try:
+                pk_cols = set(insp.get_pk_constraint(table_part, schema=schema_part).get("constrained_columns", []))
+            except Exception:
+                pk_cols = set()
+            try:
+                for col in insp.get_columns(table_part, schema=schema_part):
+                    table_columns.append({
+                        "name": col["name"],
+                        "type": str(col["type"]),
+                        "nullable": col.get("nullable", True),
+                        "is_pk": col["name"] in pk_cols,
+                    })
+            except Exception:
+                pass
+            obj_type = "View" if is_view else "Tabelle"
+            checks.append({"id": "table", "label": f"{obj_type} '{body.table_name}' vorhanden",
                             "status": "ok", "message": f"{len(table_columns)} Spalten gefunden"})
         else:
             checks.append({"id": "table", "label": f"Tabelle '{body.table_name}' vorhanden",
