@@ -7,7 +7,8 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
 import MonitoringPanel from "../components/dashboard/panels/MonitoringPanel";
@@ -110,6 +111,9 @@ export default function Dashboard() {
   const canEdit = !activeProject || activeProject.role !== "viewer";
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(
+    () => localStorage.getItem("dm_onboarding_dismissed") !== "true"
+  );
   const [updateInfo, setUpdateInfo] = useState(null); // { remote_version, changelog, released }
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -269,6 +273,13 @@ export default function Dashboard() {
                 <span style={{ position: "absolute", top: 1, right: 1, width: 6, height: 6, borderRadius: "50%", backgroundColor: "#ef4444" }} />
               </button>
             )}
+            <button onClick={() => setShowOnboarding(v => !v)} title="Erste Schritte"
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 4,
+                color: showOnboarding ? S.accent : S.textDim }}
+              onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = showOnboarding ? S.accent : S.textDim; e.currentTarget.style.backgroundColor = "transparent"; }}>
+              <Rocket size={14} />
+            </button>
             <button onClick={() => setShowSettings(true)} title="Systemeinstellungen"
               style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4, borderRadius: 4 }}
               onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"; }}
@@ -295,6 +306,14 @@ export default function Dashboard() {
 
       {showChangePassword && <ChangePasswordModal onClose={() => setShowChangePassword(false)} />}
       {showSettings && <SystemSettingsModal onClose={() => setShowSettings(false)} />}
+      <OnboardingWidget
+        open={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false);
+          localStorage.setItem("dm_onboarding_dismissed", "true");
+        }}
+        autoClose
+      />
 
       {/* Update Modal */}
       {showUpdateModal && updateInfo && (
@@ -425,6 +444,30 @@ export default function Dashboard() {
                 <Loader2 className="animate-spin mr-2" size={18} /> Lade...
               </div>
             ) : (
+              <>
+              {datasets.length === 0 && !datasetSearch && (
+                <div style={{ textAlign: "center", padding: "48px 24px", border: `1px dashed ${S.border}`, borderRadius: 8, marginBottom: 20 }}>
+                  <p style={{ fontSize: 32, marginBottom: 12 }}>🗄️</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: S.textBright, marginBottom: 6 }}>Noch keine Datasets vorhanden</p>
+                  <p style={{ fontSize: 11, color: S.textDim, marginBottom: 16, maxWidth: 380, margin: "0 auto 16px" }}>
+                    Importiere Daten aus einer Datei (CSV, Excel), einer Datenbankabfrage oder einem Plugin wie dem Mail-Connector.
+                  </p>
+                  {canEdit && (
+                    <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                      <button onClick={() => setShowWizard(true)}
+                        style={{ padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                          backgroundColor: "rgba(252,228,153,0.15)", border: `1px solid rgba(252,228,153,0.4)`, color: S.accent }}>
+                        Datei importieren
+                      </button>
+                      <button onClick={() => setTab("connections")}
+                        style={{ padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                          backgroundColor: "transparent", border: `1px solid ${S.border}`, color: S.textMain }}>
+                        DB-Verbindung anlegen
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {canEdit && <NewTile label="Neues Dataset" sub="Datei oder SQL-Abfrage" icon={Plus}
                   onClick={() => setShowWizard(true)} />}
@@ -439,6 +482,7 @@ export default function Dashboard() {
                     onRequery={loadDatasets} />
                 ))}
               </div>
+              </>
             )}
           </div>
         )}
@@ -482,6 +526,24 @@ export default function Dashboard() {
                 <button onClick={() => loadMappings(mappingSearch)} className="btn-ghost text-xs"><RefreshCw size={12} /></button>
               </div>
             </div>
+            {mappings.length === 0 && !mappingSearch && (
+              <div style={{ textAlign: "center", padding: "48px 24px", border: `1px dashed ${S.border}`, borderRadius: 8, marginBottom: 20 }}>
+                <p style={{ fontSize: 32, marginBottom: 12 }}>⚙️</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: S.textBright, marginBottom: 6 }}>Noch kein Mapping vorhanden</p>
+                <p style={{ fontSize: 11, color: S.textDim, marginBottom: 16, maxWidth: 340, margin: "0 auto 16px" }}>
+                  Ein Mapping verbindet Quell-Felder mit Ziel-Feldern, transformiert Daten und führt Tabellen per JOIN zusammen.
+                </p>
+                {canEdit && (
+                  <button
+                    onClick={() => navigate(`/mappings/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)}
+                    style={{ padding: "8px 18px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                      backgroundColor: "rgba(252,228,153,0.15)", border: `1px solid rgba(252,228,153,0.4)`,
+                      color: S.accent }}>
+                    Erstes Mapping erstellen
+                  </button>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {canEdit && <NewTile label="Neues Mapping" sub="Felder verbinden und transformieren" icon={GitBranch}
                 onClick={() => navigate(`/mappings/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)} />}

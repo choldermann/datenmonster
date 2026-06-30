@@ -19,7 +19,8 @@ export const NODE_COLORS = {
   email:       "#f472b6", // pink - Benachrichtigung
   condition:   "#fbbf24", // amber - IF/ELSE
   webhook:     "#818cf8", // indigo - HTTP
-  rest_fetch:  "#34d399", // teal - REST API
+  rest_fetch:        "#34d399", // teal - REST API
+  business_insights: "#c084fc", // violet - Business Insights
 };
 
 export const NODE_TYPES = [
@@ -30,7 +31,8 @@ export const NODE_TYPES = [
   { type: "mapping",    label: "Mapping",       icon: "⚙️", color: NODE_COLORS.mapping,     desc: "Mapping ausführen" },
   { type: "condition",  label: "Bedingung",     icon: "❓", color: NODE_COLORS.condition,   desc: "Wenn/Dann Verzweigung" },
   { type: "ftp_upload", label: "FTP Upload",    icon: "📤", color: NODE_COLORS.ftp_upload,  desc: "Datei hochladen" },
-  { type: "email",      label: "E-Mail",        icon: "📧", color: NODE_COLORS.email,       desc: "E-Mail senden" },
+  { type: "email",             label: "E-Mail",           icon: "📧", color: NODE_COLORS.email,             desc: "E-Mail senden" },
+  { type: "business_insights", label: "Business Insights", icon: "💡", color: NODE_COLORS.business_insights, desc: "Umsatz, Trends & Anomalien analysieren" },
 ];
 
 export const PORT_SIZE = 10;

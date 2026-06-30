@@ -1,6 +1,6 @@
 # Datenmonster – Feature-Übersicht
 
-Stand: 2026-06-26 | Holdermann IT ETL-Plattform
+Stand: 2026-06-29 | Holdermann IT ETL-Plattform
 
 ---
 
@@ -34,6 +34,7 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 | **Python-Node** | grün | Freies Python-Skript mit DataFrame-Zugriff, eigene Output-Felder | 2026-06-26 |
 | **Expression-Node** | lila | Formelausdrücke: upper/lower/concat/if_/round/today/regex_match u.v.m. | 2026-06-26 |
 | **Datenqualität-Node** | cyan | Validierungsregeln: required, email, PLZ, IBAN, EAN, Regex u.v.m. | 2026-06-26 |
+| **AI-Transform-Node** | violett-lila | LLM-Transformation pro Zeile: Prompt-Template mit `{{feldname}}`, Structured Output (Ollama), Batch-Größe, Vorschau | 2026-06-29 |
 
 ### Transform-Node Operationen (2026-06-26)
 - **Zahlen:** Runden, Tausendertrennzeichen, Min/Max-Clamp, Betrag, Vorzeichen
@@ -47,6 +48,7 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 - **Nodes per Drag & Drop platzieren** aus der Palette (2026-06-26)
 - **Dataset-Node resizable** – Breite und Höhe anpassbar (2026-06-26)
 - **Verbindungslinien löschbar** per Klick (2026-04-12)
+- **DB-Tabellen-Browser** – linkes Panel Tab "Datasets" | "DB-Tabellen": DB-Verbindungen expandierbar, Tabellen per Drag auf Canvas, erzeugt Dataset automatisch per Import-API (2026-06-29)
 
 ### JOIN-System
 - INNER JOIN, LEFT JOIN, RIGHT JOIN, FULL OUTER JOIN
@@ -56,11 +58,14 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 - PK/FK-Schema automatisch aus DB erkennen per Knopf (2026-06-26)
 - SQL Filter-Pushdown für DB-Quellen (~25× schneller bei gefilterten Datasets) (2026-06-26)
 - DuckDB als JOIN-Engine (löst Type-Mismatch-Probleme bei Cross-DB JOINs) (2026-04-20)
+- **Multi-Pass-Join-Engine** – Join-Reihenfolge-unabhängig: mehrere Durchläufe bis alle Abhängigkeiten aufgelöst (2026-06-29)
 
-### Smart Mapping
+### Smart Mapping / KI-Node-Generator
 - KI-gestützte Tabellenerkennung per Texteingabe
 - Schlägt Datasets und JOINs vor (FK-Traversal bis Tiefe 1, max. 10 Tabellen)
 - Fehlende Datasets werden automatisch importiert
+- **KI-Node-Generator**: Mapping-Nodes aus natürlichsprachlicher Beschreibung generieren und direkt auf Canvas übernehmen (2026-06-29)
+- **Mapping-Fehler-Assistent**: KI erklärt Laufzeitfehler automatisch im Debug-Modus (2026-06-29)
 
 ### Filter & Typ-Konvertierung
 - Zeilenfilter pro Dataset-Feld (LIKE, =, >, <, BETWEEN, IS NULL, Regex)
@@ -85,6 +90,65 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 - **Step-Through**: Prev/Next-Pfeile und Breadcrumb-Dots navigieren Stage für Stage
 - **"Zeile X verfolgen"**-Badge im Panel-Header mit Clear-Button
 - **Node Statistics**: Nach Debug-Run zeigt jeder Node-Typ (Dataset, Transform, Agg, Calc, Python, Expression, DQ) Zeilenanzahl und Fehleranzahl als kleinen Badge
+
+---
+
+## KI-Assistent & KI-Integration
+
+### Architektur
+- Ollama Docker Container als LLM-Backend (OpenAI-kompatible API)
+- `ai_service.py`, `ai_context_builder.py`, `schema_cache_service.py` im Backend
+- Austauschbar: Ollama → Groq / OpenAI / LM Studio per `base_url`-Wechsel
+- **Sicherheits-Invariante:** Die KI verändert niemals automatisch etwas — Vorschlag anzeigen → Benutzer bestätigt → dann Aktion
+
+### Globaler KI-Assistent
+- Floating Panel auf jeder Seite (Drag & Resize) (2026-06-29)
+- **Page-Context**: Assistent kennt aktiven Kontext (Mapping-Canvas, Pipeline, Form Editor)
+- **Active-Node-Kontext**: aktuell ausgewählter Node wird automatisch als Kontext übergeben
+- **Schnellaktionen-Buttons** je nach Kontext (z. B. "SQL erklären", "Fehler erklären") (2026-06-29)
+- **Schema-Wissensdatenbank** (🗄): KI nutzt beschriebene Tabellen/Spalten aus dem Datenkatalog (2026-06-29)
+- **KI-Modi** wählbar:
+  - ⚡ Schnell – kleinstes verfügbares Modell
+  - ⚖ Auto – modellgrößenabhängig (überschreitet nie konfigurierte Größe)
+  - 🧠 Analyse – größtes verfügbares Modell
+- **Expertenmodus (⚙)**: System-Prompt sichtbar + bearbeitbar (2026-06-29)
+- **Token-Zähler** und **Abbrechen-Funktion** während Streaming (2026-06-29)
+- **Sekunden-Timer** (Elapsed Time) während des Streamings (2026-06-29)
+- **Frage-Wiederholen** (↩): letzte Anfrage erneut senden (2026-06-29)
+- Antwort per SSE gestreamt, Markdown-Rendering
+
+### Modell-Katalog & -Verwaltung
+- Modell-Bibliothek mit Sprach-Badges und Suchfeld (2026-06-29)
+- Modell-Katalog umfassend: llama4, mistral-small, gemma3n, deepseek-r1, Qwen3.5, qwen2.5-coder, phi4-mini u.v.m. (2026-06-29)
+- Model-Capability-Registry: top_p, Auto-Modus Parameter, Modellgröße-Limits (2026-06-29)
+- Pull-Modell direkt aus dem Frontend (SSE-Stream mit Fortschritt)
+- Aktives Modell in der Sidebar und AiStreamModal sichtbar
+
+### KI-Funktionen im Mapping Editor
+| Ort | Funktion | Seit |
+|---|---|---|
+| SQL-Node | SQL erklären + generieren | 2026-06-29 |
+| Python-Node | Python-Code generieren + Fehler erklären | 2026-06-29 |
+| Expression-Node | Ausdruck vorschlagen | 2026-06-29 |
+| AI-Transform-Node | LLM-Transformation pro Zeile mit Structured Output | 2026-06-29 |
+| KI-Node-Generator | Nodes aus Beschreibung generieren | 2026-06-29 |
+| Mapping-Fehler-Assistent | KI erklärt Laufzeitfehler im Debug-Panel | 2026-06-29 |
+
+### KI-Dataset-Assistent (AiDatasetWizard)
+- 3-Schritt-Flow: Beschreibung → Tabellenauswahl → SQL-Generierung
+- Preview-Modal pro Tabelle (Spalten, Typen, PK/FK)
+- SQL-Vorschlagskarten, alle deaktiviert per Default
+- FK-Traversal bis Tiefe 1, max. 10 Tabellen
+
+### Schema-Wissensdatenbank / Datenkatalog
+- Tabellen, Spalten und Relationen beschreiben (freitext)
+- KI schlägt Beschreibungen vor
+- Export / Import (JSON)
+- Wird als Kontext in alle KI-Anfragen eingebettet
+
+### Form Builder KI
+- **KI-Feldvorschlag** (AiFieldSuggest): Felder automatisch aus Beschreibung vorschlagen (2026-06-29)
+- Vorschläge immer deaktiviert – Benutzer wählt aktiv aus
 
 ---
 
@@ -133,6 +197,7 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 - Letzter-Lauf-Status (Erfolg, Warnung, Fehler) im Dashboard
 - Verbindungslinien löschbar (2026-04-12)
 - Projektspalte im System-Log (2026-04-15)
+- **PageContext.actions**: Pipeline-Kontext mit Schnellaktionen im KI-Assistenten (2026-06-29)
 
 ---
 
@@ -178,6 +243,7 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 
 - Dashboard mit Übersicht aller Projekte, aktiver Pipelines, Fehler heute, Läufe heute
 - System-Tab: CPU, RAM, Speicher, SQLite-Größe, Uptime (2026-04-09)
+- **Docker-Container-Übersicht** im System-Tab: Status, Image, Ports aller Container im Datenmonster-Netzwerk (2026-06-29)
 - System-Log: alle Pipeline-Ereignisse mit Projekt-Spalte, filterbar nach Status/Projekt
 - Fehler & Warnungen Widget auf dem Dashboard
 
@@ -224,6 +290,7 @@ Stand: 2026-06-26 | Holdermann IT ETL-Plattform
 | Backend | FastAPI (Python), SQLite, DuckDB, pandas, Fernet |
 | Frontend | React, Vite, react-router, Lucide Icons |
 | Daten-Engine | pandas + DuckDB (für JOINs) |
+| KI / LLM | Ollama (OpenAI-kompatibel), SSE-Streaming |
 | Queue/Events | Redis (Pub/Sub) |
 | Auth | JWT (python-jose), bcrypt |
 | Deployment | Docker, Docker Compose, Nginx |

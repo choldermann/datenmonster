@@ -16,6 +16,7 @@ import ConditionNode from "../components/pipeline/nodes/ConditionNode";
 import MappingNode from "../components/pipeline/nodes/MappingNode";
 import { FtpUploadNode, EmailNode } from "../components/pipeline/nodes/OutputNodes";
 import RestFetchNode from "../components/pipeline/nodes/RestFetchNode";
+import BusinessInsightsNode from "../components/pipeline/nodes/BusinessInsightsNode";
 
 function genId() { return Math.random().toString(36).slice(2, 9); }
 
@@ -26,7 +27,8 @@ const DEFAULT_NODE_CONFIGS = {
   dispatcher: { condition_mode: "AND", conditions: [] },
   mapping:    { on_error: "stop" },
   ftp_upload: { remote_dir: "/" },
-  email:      { send_on: "always" },
+  email:             { send_on: "always" },
+  business_insights: { semantic: {}, comparison: { mode: "mom" }, modules: { umsatzentwicklung: true, laenderanalyse: true, top_kunden: true, lagerbestand: false }, output_name: "Insights-Ergebnis" },
 };
 
 export default function PipelineEditor() {
@@ -50,6 +52,7 @@ export default function PipelineEditor() {
   const [mappings, setMappings] = useState([]);
   const [xmlDatasets, setXmlDatasets] = useState([]);
   const [restSources, setRestSources] = useState([]);
+  const [allDatasets, setAllDatasets] = useState([]);
 
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 
@@ -66,6 +69,7 @@ export default function PipelineEditor() {
       trigger: "Zeitplan-Trigger", ftp: "FTP-Import", mapping: "Mapping-Ausführung",
       dispatcher: "Verzweigung", condition: "Bedingung", ftp_upload: "FTP-Upload",
       email: "E-Mail-Versand", rest_fetch: "REST-Abruf",
+      business_insights: "Business Insights",
     };
     setPageContext({
       page: "pipeline_editor",
@@ -98,7 +102,9 @@ export default function PipelineEditor() {
     ]).then(([ftpRes, mapRes, dsRes, restRes]) => {
       setFtpSources(ftpRes.data || []);
       setMappings(Array.isArray(mapRes.data) ? mapRes.data : []);
-      setXmlDatasets((Array.isArray(dsRes.data) ? dsRes.data : []).filter(d => d.file_type === "xml" && d.xml_configured === 1));
+      const dsArr = Array.isArray(dsRes.data) ? dsRes.data : [];
+      setXmlDatasets(dsArr.filter(d => d.file_type === "xml" && d.xml_configured === 1));
+      setAllDatasets(dsArr);
       setRestSources(Array.isArray(restRes.data) ? restRes.data : []);
     });
 
@@ -290,6 +296,13 @@ export default function PipelineEditor() {
         return <EmailNode {...common}
           inputPortRef={nInRef()}
           inputPortDrop={onDrop()} />;
+
+      case "business_insights":
+        return <BusinessInsightsNode {...common}
+          datasets={allDatasets}
+          inputPortRef={nInRef()}
+          inputPortDrop={onDrop()}
+          outputPortRef={nOutRef()} />;
 
       default:
         return null;

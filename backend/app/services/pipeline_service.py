@@ -275,6 +275,66 @@ def run_pipeline(pipeline, db) -> dict:
                             rows_processed=rows,
                             details={"rest_source": src.name})
 
+                elif ntype == "business_insights":
+                    dataset_id  = config.get("dataset_id")
+                    semantic    = config.get("semantic", {})
+                    comparison  = config.get("comparison", {"mode": "mom"})
+                    modules     = config.get("modules")
+                    out_name    = config.get("output_name", "Insights-Ergebnis")
+
+                    import pandas as pd
+                    from app.services.insight_engine import compute_insights
+                    from app.services.file_service import _load_parquet, dataframe_to_storage
+                    from app.models.dataset import Dataset
+
+                    # DataFrame aus vorheriger Node ODER konfiguriertem Dataset
+                    prev_data = _get_prev_data(nid, connections, results)
+                    df = prev_data.get("df")
+                    if df is None or df.empty:
+                        if dataset_id:
+                            try:
+                                df = _load_parquet(dataset_id)
+                            except Exception as e:
+                                results[nid] = {"status": "error", "message": f"Dataset {dataset_id} nicht ladbar: {e}"}
+                                log(db, "error", "pipeline_service", "node_business_insights",
+                                    f"Dataset {dataset_id} nicht ladbar: {e}",
+                                    entity_id=pipeline.id, entity_name=pipeline.name,
+                                    project_id=getattr(pipeline, "project_id", None))
+                                continue
+                        else:
+                            results[nid] = {"status": "error", "message": "Kein Dataset und kein Vorgänger-DataFrame verfügbar"}
+                            continue
+
+                    if not semantic:
+                        results[nid] = {"status": "error", "message": "Kein Semantic-Mapping konfiguriert"}
+                        continue
+
+                    findings_df = compute_insights(df, semantic, comparison, modules)
+                    rows = len(findings_df)
+
+                    # Findings als neues Dataset speichern
+                    out_ds = Dataset(
+                        name=out_name,
+                        file_type="insights_output",
+                        project_id=getattr(pipeline, "project_id", None),
+                        columns=findings_df.columns.tolist(),
+                        column_types={},
+                        row_count=rows,
+                    )
+                    db.add(out_ds)
+                    db.commit()
+                    db.refresh(out_ds)
+                    dataframe_to_storage(findings_df, out_ds.id)
+
+                    results[nid] = {"status": "ok", "rows": rows, "df": findings_df,
+                                    "dataset_id": out_ds.id, "dataset_name": out_name}
+                    log(db, "success", "pipeline_service", "node_business_insights",
+                        f"Business Insights: {rows} Findings → Dataset '{out_name}' (ID {out_ds.id})",
+                        entity_id=pipeline.id, entity_name=pipeline.name,
+                        project_id=getattr(pipeline, "project_id", None),
+                        rows_processed=rows,
+                        details={"output_dataset_id": out_ds.id, "modules": modules})
+
                 elif ntype == "ftp_upload":
                     ftp_source_id = config.get("ftp_source_id")
                     remote_dir = config.get("remote_dir", "/")
