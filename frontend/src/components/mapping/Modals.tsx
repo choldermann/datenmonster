@@ -164,6 +164,15 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
   const [sortFields, setSortFields] = useState(target?.target_options?.sort_fields || []);
   const [rowLimit, setRowLimit] = useState(target?.target_options?.row_limit || "");
 
+  // DB Key-Columns
+  const [keyColumns, setKeyColumns] = useState((target?.target_options?.key_columns || []).join(", "));
+
+  // Safety-Check State
+  const [showSafetyCheck, setShowSafetyCheck] = useState(false);
+  const [safetyData, setSafetyData] = useState<any>(null);
+  const [safetyLoading, setSafetyLoading] = useState(false);
+  const [safetyConfirmed, setSafetyConfirmed] = useState(false);
+
   // Plugin-Target State
   const [pluginConfig, setPluginConfig] = useState(target?.target_options?.plugin_config || {});
   const [pluginFields, setPluginFields] = useState(null); // null = noch nicht geladen
@@ -247,17 +256,40 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
         deduplicate_fields: deduplicateFields,
         sort_fields: sortFields.filter(sf => sf.field),
         row_limit: rowLimit ? parseInt(rowLimit) : null,
+        key_columns: (writeMode === "update" || writeMode === "upsert")
+          ? keyColumns.split(",").map(s => s.trim()).filter(Boolean)
+          : [],
       },
       save_as_dataset: saveAsDataset,
       fields,
     };
   };
 
+  const _proceedToFieldPicker = () => {
+    setPendingSave(buildTargetObj());
+    setShowFieldPicker(true);
+  };
+
   const handleSubmit = () => {
-    // Bei DB-Typ: erst FieldPicker öffnen
     if (targetType === "db" && connId && table) {
-      setPendingSave(buildTargetObj());
-      setShowFieldPicker(true);
+      // Safety-Check vor dem FieldPicker
+      setShowSafetyCheck(true);
+      setSafetyData(null);
+      setSafetyLoading(true);
+      setSafetyConfirmed(false);
+      const modeMap: Record<string, string> = { insert: "append", truncate_insert: "replace", update: "upsert", upsert: "upsert" };
+      const kc = (writeMode === "update" || writeMode === "upsert")
+        ? keyColumns.split(",").map(s => s.trim()).filter(Boolean)
+        : [];
+      api.post("/api/db-write/check", {
+        connection_id: parseInt(connId),
+        table_name: table,
+        write_mode: modeMap[writeMode] || "append",
+        key_columns: kc,
+      })
+        .then(({ data }) => setSafetyData(data))
+        .catch((e) => setSafetyData({ checks: [{ id: "err", label: "Prüfung fehlgeschlagen", status: "error", message: e.response?.data?.detail || e.message }], can_proceed: false }))
+        .finally(() => setSafetyLoading(false));
       return;
     }
     onSave(buildTargetObj());
@@ -367,14 +399,21 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 <div>
                   <label style={lS}>Schreibmodus</label>
                   <select style={iS} value={writeMode} onChange={(e) => setWriteMode(e.target.value)}>
-                    {[{ v: "insert", l: "Insert (anhängen)" }, { v: "truncate_insert", l: "Truncate + Insert" }, { v: "update", l: "Update" }, { v: "upsert", l: "Upsert" }].map((m) => (
+                    {[{ v: "insert", l: "Insert – neue Zeilen anhängen" }, { v: "truncate_insert", l: "Truncate + Insert – alles neu schreiben" }, { v: "update", l: "Update – bestehende Zeilen aktualisieren" }, { v: "upsert", l: "Upsert – neu oder aktualisieren" }].map((m) => (
                       <option key={m.v} value={m.v}>{m.l}</option>
                     ))}
                   </select>
                 </div>
+                {(writeMode === "update" || writeMode === "upsert") && (
+                  <div>
+                    <label style={lS}>Schlüsselspalten (kommagetrennt)</label>
+                    <input style={{ ...iS, fontFamily: "monospace" }} value={keyColumns} onChange={(e) => setKeyColumns(e.target.value)} placeholder="z.B. ID, Artikelnummer" />
+                    <p style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>Spalten, die zur Identifikation bestehender Zeilen genutzt werden.</p>
+                  </div>
+                )}
                 {connId && table && (
                   <p style={{ fontSize: 10, color: S.textDim, fontStyle: "italic" }}>
-                    💡 Nach dem Speichern kannst du die Zielfelder aus der Tabelle auswählen.
+                    💡 Nach dem Speichern kannst du die Zielfelder aus der Tabelle auswählen. Eine Sicherheitsprüfung wird zuerst durchgeführt.
                   </p>
                 )}
               </>
@@ -570,6 +609,64 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
           </div>
         </div>
       </div>
+
+      {/* Safety-Check Modal – tritt über das TargetConfigModal */}
+      {showSafetyCheck && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 70, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.75)" }}>
+          <div style={{ width: 480, backgroundColor: S.bgCard, borderRadius: 8, border: `1px solid ${S.border}`, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${S.border}` }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>Sicherheitsprüfung · DB Schreiben</span>
+              <button onClick={() => setShowSafetyCheck(false)} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><X size={14} /></button>
+            </div>
+            <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 8 }}>
+              <p style={{ fontSize: 11, color: S.textDim, marginBottom: 4 }}>
+                Ziel: <span style={{ fontFamily: "monospace", color: S.textBright }}>{table}</span> · Modus: <span style={{ color: S.textBright }}>{writeMode}</span>
+              </p>
+              {safetyLoading && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px", color: S.textDim, fontSize: 12 }}>
+                  <Loader2 size={14} className="animate-spin" /> Prüfungen laufen…
+                </div>
+              )}
+              {safetyData && safetyData.checks.map((c: any) => {
+                const color = c.status === "ok" ? "#6ee7b7" : c.status === "warn" ? "#fbbf24" : "#e07070";
+                const icon = c.status === "ok" ? "✓" : c.status === "warn" ? "⚠" : "✗";
+                return (
+                  <div key={c.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: color + "10", border: `1px solid ${color}33` }}>
+                    <span style={{ color, fontWeight: 700, fontSize: 13, flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
+                    <div>
+                      <p style={{ fontSize: 12, fontWeight: 600, color }}>{c.label}</p>
+                      <p style={{ fontSize: 11, color: S.textDim, marginTop: 1 }}>{c.message}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              {safetyData?.can_proceed && (
+                <div
+                  onClick={() => setSafetyConfirmed(v => !v)}
+                  style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 6, border: `1px solid ${safetyConfirmed ? "#f97316" : S.border}`, backgroundColor: safetyConfirmed ? "rgba(249,115,22,0.07)" : S.bgMain, cursor: "pointer", userSelect: "none" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${safetyConfirmed ? "#f97316" : S.textDim}`, backgroundColor: safetyConfirmed ? "#f97316" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {safetyConfirmed && <Check size={10} color="#111" strokeWidth={3} />}
+                  </div>
+                  <p style={{ fontSize: 11, color: safetyConfirmed ? "#f97316" : S.textMain, lineHeight: 1.5 }}>
+                    Ich bin mir bewusst, dass Daten in die Datenbank geschrieben werden. Bei Modus „Truncate + Insert" oder „Replace" werden vorhandene Daten unwiderruflich gelöscht.
+                  </p>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "12px 18px", borderTop: `1px solid ${S.border}`, display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button onClick={() => setShowSafetyCheck(false)} className="btn-ghost text-xs">Zurück</button>
+              {safetyData?.can_proceed && (
+                <button
+                  disabled={!safetyConfirmed}
+                  onClick={() => { setShowSafetyCheck(false); _proceedToFieldPicker(); }}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, fontSize: 12, fontWeight: 700, cursor: safetyConfirmed ? "pointer" : "not-allowed", backgroundColor: safetyConfirmed ? "#f97316" : S.bgEl, border: `1px solid ${safetyConfirmed ? "#f97316" : S.border}`, color: safetyConfirmed ? "#fff" : S.textDim, opacity: safetyConfirmed ? 1 : 0.5 }}>
+                  <Check size={12} /> Bestätigen &amp; Felder wählen
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* FieldPicker tritt über das TargetConfigModal */}
       {showFieldPicker && pendingSave && (

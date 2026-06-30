@@ -363,6 +363,7 @@ def run_pipeline(pipeline, db) -> dict:
                                 rows_processed=row_count,
                                 details={"ftp_source": src.name, "remote_dir": remote_dir, "filename": filename})
 
+
             except Exception as e:
                 tb = traceback.format_exc()
                 logger.error(f"  ✗ Node [{ntype}] {nid}: {e}\n{tb}")
@@ -394,3 +395,4 @@ def _get_prev_data(node_id, connections, results):
         if c["to_node"] == node_id:
             return results.get(c["from_node"], {})
     return {}
+
