@@ -58,14 +58,40 @@ export default function FormEditor() {
   }, [id]);
 
   useEffect(() => {
+    const fields  = schema.fields  || [];
+    const actions = schema.actions || [];
+    const widgets = schema.widgets || [];
+
+    const fieldSummary = fields.map(f => ({
+      type: f.type, label: f.label, name: f.name,
+      ...(f.required ? { required: true } : {}),
+      ...(f.options?.length ? { options_count: f.options.length } : {}),
+      ...(f.action_id ? { triggers_action: f.action_id } : {}),
+    }));
+    const actionSummary = actions.map(a => ({
+      id: a.id, type: a.type, label: a.label,
+      ...(a.mapping_id ? { mapping_id: a.mapping_id } : {}),
+    }));
+    const widgetSummary = widgets.map(w => ({
+      type: w.type, label: w.label,
+      ...(w.dataset_id ? { dataset_id: w.dataset_id } : {}),
+      ...(w.action_id ? { triggered_by_action: w.action_id } : {}),
+    }));
+
     setPageContext({
       page: "form_editor",
       title: name || "Formular Editor",
       description: "Formular-Editor: Eingabefelder, Dropdowns, Datumswähler und Widgets konfigurieren, Mappings mit Parametern auslösen.",
-      currentData: { formId: id ?? null, formName: name },
+      currentData: {
+        formId: id ?? null,
+        formName: name,
+        fields: fieldSummary,
+        actions: actionSummary,
+        widgets: widgetSummary,
+      },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id]);
+  }, [setPageContext, name, id, schema]);
 
   // Derived
   const fields  = schema.fields  || [];

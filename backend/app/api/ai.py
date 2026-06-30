@@ -465,8 +465,48 @@ _PAGE_SYSTEM_PROMPTS = {
     ),
     "form_editor": (
         "Du bist der KI-Assistent für den Formular-Editor von Datenmonster. "
-        "Formulare können Eingabefelder, Dropdowns, Datumswähler und Widgets enthalten, "
-        "Mappings mit Parametern ausführen und Daten aus Datasets anzeigen."
+        "Formulare bestehen aus drei Bereichen: Eingabefelder (die der Benutzer ausfüllt), "
+        "Aktionen (Buttons die ein Mapping auslösen) und Widgets (Ergebnis-Anzeige nach Mapping-Ausführung). "
+        "Im Kontext sind die aktuellen Felder, Aktionen und Widgets aufgelistet. "
+        "Beziehe dich darauf um konkrete Verbesserungsvorschläge zu machen.\n\n"
+        "VERFÜGBARE FELD-TYPEN:\n\n"
+        "Eingabe:\n"
+        "• text — Einzeiliges Textfeld. Gut für Namen, Suchtexte, kurze Freitexte.\n"
+        "• textarea — Mehrzeiliger Text. Gut für Bemerkungen, Beschreibungen.\n"
+        "• number — Zahlenfeld. Gut für Mengen, Preise, IDs.\n"
+        "• date — Datumswähler. Gut für Von/Bis-Filter, Abrechnungszeiträume.\n"
+        "• time — Uhrzeitfeld.\n"
+        "• file — Dateiauswahl. Gut für CSV/XML-Upload als Mapping-Input.\n\n"
+        "Auswahl:\n"
+        "• checkbox — Einzelne Ja/Nein-Option.\n"
+        "• switch — Toggle-Schalter, optisch ansprechende Alternative zur Checkbox.\n"
+        "• dropdown — Auswahl aus einer Liste (Einzelauswahl). Optionen können statisch oder "
+        "aus einem Dataset geladen werden.\n"
+        "• multiselect — Mehrfachauswahl aus einer Liste.\n"
+        "• radio — Radio-Buttons für kleine Auswahllisten (2-5 Optionen).\n\n"
+        "Aktionen:\n"
+        "• button — Löst eine konfigurierte Aktion aus (z.B. run_mapping). "
+        "Buttons sind mit einer Aktion verknüpft — ohne Aktion passiert nichts.\n\n"
+        "Layout:\n"
+        "• heading — Abschnittsüberschrift zur Strukturierung.\n"
+        "• label — Statischer Infotext.\n"
+        "• divider — Trennlinie.\n"
+        "• container — Gruppenrahmen für zusammengehörige Felder.\n\n"
+        "AKTIONEN:\n"
+        "• run_mapping — Führt ein gespeichertes Mapping aus. Die Eingabefeldwerte werden als "
+        "Parameter übergeben (der Params-Node im Mapping empfängt sie). "
+        "Das Ergebnis-Dataset wird an die verknüpften Widgets weitergegeben.\n\n"
+        "WIDGETS (Ergebnisanzeige nach Mapping-Ausführung):\n"
+        "• table — Zeigt das Mapping-Ergebnis als scrollbare Tabelle mit optionalem CSV-Download.\n"
+        "• kpi — Zeigt einen einzelnen Kennwert groß an (Summe, Durchschnitt, Anzahl etc.).\n"
+        "• bar — Balkendiagramm für Kategorienvergleiche.\n"
+        "• line — Liniendiagramm für Zeitreihen und Trends.\n"
+        "• pie — Kreisdiagramm für Anteile.\n\n"
+        "TYPISCHER AUFBAU EINES FORMULARS:\n"
+        "1. Eingabefelder (date/dropdown/number) → 2. Button (löst run_mapping aus) → "
+        "3. Widget (zeigt Ergebnis). "
+        "Ein Formular kann mehrere Aktionen und Widgets haben — z.B. eine Tabelle + eine KPI-Kachel "
+        "die beide vom selben Button-Klick befüllt werden."
     ),
 }
 
@@ -550,10 +590,13 @@ async def chat(
             connection_flow = current_data.get("connectionFlow", [])
             available_node_types = current_data.get("availableNodeTypes", [])
             processing_nodes = current_data.get("processingNodes", [])
+            form_fields  = current_data.get("fields",   [])
+            form_actions = current_data.get("actions",  [])
+            form_widgets = current_data.get("widgets",  [])
             # frontend-interne Felder nicht roh an die KI weitergeben
             _strip = {"activeNode", "tableRelationships", "schemaContext", "connectionIds",
                       "lastRunError", "canvasNodes", "connectionFlow", "availableNodeTypes",
-                      "processingNodes"}
+                      "processingNodes", "fields", "actions", "widgets"}
             rest_data = {k: v for k, v in current_data.items() if k not in _strip}
         else:
             active_node = None
@@ -564,6 +607,9 @@ async def chat(
             connection_flow = []
             available_node_types = []
             processing_nodes = []
+            form_fields  = []
+            form_actions = []
+            form_widgets = []
             rest_data = current_data
         if active_node:
             node_str = _j.dumps(active_node, ensure_ascii=False, default=str)
@@ -610,6 +656,29 @@ async def chat(
                 f"Folgende Verarbeitungs-Nodes sind im Mapping aktiv ({len(processing_nodes)} Stück):\n"
                 + "\n".join(proc_lines)
                 + "\n\nNutze diese Information um zu erklären was das Mapping tut und konkrete Verbesserungsvorschläge zu machen."})
+        if form_fields or form_actions or form_widgets:
+            parts = []
+            if form_fields:
+                def _fmt_field(f):
+                    extras = {k: v for k, v in f.items() if k not in {"type", "label"} and v not in (None, False, [], {})}
+                    s = f"  [{f.get('type','?')}] {f.get('label','')}"
+                    if extras:
+                        s += " (" + ", ".join(f"{k}={v}" for k, v in extras.items()) + ")"
+                    return s
+                parts.append(f"Felder ({len(form_fields)}):\n" + "\n".join(_fmt_field(f) for f in form_fields))
+            if form_actions:
+                action_lines = [f"  [{a.get('type','?')}] {a.get('label','')} (id={a.get('id','?')}"
+                                + (f", mapping_id={a['mapping_id']}" if a.get('mapping_id') else "") + ")"
+                                for a in form_actions]
+                parts.append(f"Aktionen ({len(form_actions)}):\n" + "\n".join(action_lines))
+            if form_widgets:
+                widget_lines = [f"  [{w.get('type','?')}] {w.get('label','')}"
+                                + (f" (triggered_by={w['triggered_by_action']})" if w.get('triggered_by_action') else "")
+                                for w in form_widgets]
+                parts.append(f"Widgets ({len(form_widgets)}):\n" + "\n".join(widget_lines))
+            system_sections.append({"label": "Formular-Inhalt", "content":
+                "ACHTUNG: Nur diese Elemente sind im Formular vorhanden — erfinde keine weiteren.\n\n"
+                + "\n\n".join(parts)})
         if last_run_error:
             err_msg = last_run_error.get("message", str(last_run_error))
             system_sections.append({"label": "Letzter Mapping-Fehler", "content": f"Beim letzten Mapping-Run ist folgender Fehler aufgetreten:\n{err_msg}"})
