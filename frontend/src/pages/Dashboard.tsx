@@ -86,7 +86,7 @@ export default function Dashboard() {
     setConfirmModal({ title, message, onConfirm, ...opts });
   }, []);
 
-    const [tab, setTab] = useState(location.state?.tab || "monitoring");
+    const [tab, setTab] = useState(location.state?.tab || "projects");
   const [aiModel, setAiModel] = useState(null);
   useEffect(() => { getAiStatus().then(s => { if (s.enabled) setAiModel(s.model); }).catch(() => {}); }, []);
   const [projects, setProjects] = useState([]);
