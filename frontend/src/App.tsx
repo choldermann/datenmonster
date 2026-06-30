@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useState, useEffect } from "react";
+import "./hooks/useTheme"; // Theme beim Start sofort anwenden
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider } from "./context/ProjectContext";
 import { AIAssistantProvider } from "./contexts/AIAssistantContext";

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor } from "lucide-react";
+import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import api from "../../../api/client";
 import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
 import { aiDownloadStore } from "../../../store/aiDownloadStore";
@@ -12,7 +13,7 @@ const TABS = [
   { id: "ai", label: "KI", icon: "✨" },
   { id: "models", label: "Modelle", icon: "🧠" },
   { id: "users", label: "Benutzer", icon: "👤" },
-  { id: "appearance", label: "Optik", icon: "🎨", disabled: true },
+  { id: "appearance", label: "Optik", icon: "🎨" },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
   { id: "license", label: "Lizenz", icon: "🔑", disabled: true },
 ];
@@ -1022,6 +1023,46 @@ function ModelLibrary() {
   );
 }
 
+function AppearanceSettings() {
+  const { mode, setMode } = useTheme();
+
+  const options: { value: ThemeMode; label: string; desc: string; Icon: any }[] = [
+    { value: "dark",   label: "Dunkel",  desc: "Dunkles Theme (Standard)",          Icon: Moon    },
+    { value: "light",  label: "Hell",    desc: "Helles Theme",                       Icon: Sun     },
+    { value: "system", label: "System",  desc: "Folgt den Systemeinstellungen",      Icon: Monitor },
+  ];
+
+  return (
+    <div style={{ maxWidth: 420 }}>
+      <p className="section-title" style={{ marginBottom: 16 }}>Farbschema</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {options.map(({ value, label, desc, Icon }) => {
+          const active = mode === value;
+          return (
+            <button key={value} onClick={() => setMode(value)}
+              style={{
+                display: "flex", alignItems: "center", gap: 14,
+                padding: "12px 16px", borderRadius: 8, cursor: "pointer",
+                border: `1px solid ${active ? ACCENT : "var(--border)"}`,
+                background: active ? "var(--accent-dim)" : "var(--bg-elevated)",
+                textAlign: "left", width: "100%",
+              }}>
+              <Icon size={18} style={{ color: active ? ACCENT : "var(--text-dim)", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: active ? ACCENT : "var(--text-bright)" }}>
+                  {label}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{desc}</div>
+              </div>
+              {active && <Check size={14} style={{ marginLeft: "auto", color: ACCENT }} />}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function SystemSettingsModal({ onClose }) {
   const [activeTab, setActiveTab] = useState("email");
 
@@ -1050,10 +1091,11 @@ export default function SystemSettingsModal({ onClose }) {
 
         {/* Content */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 18px" }}>
-          {activeTab === "email" && <EmailSettings />}
-          {activeTab === "ai" && <AiSettings />}
-          {activeTab === "models" && <ModelLibrary />}
-          {activeTab === "users" && <UserManagement />}
+          {activeTab === "email"      && <EmailSettings />}
+          {activeTab === "ai"         && <AiSettings />}
+          {activeTab === "models"     && <ModelLibrary />}
+          {activeTab === "users"      && <UserManagement />}
+          {activeTab === "appearance" && <AppearanceSettings />}
         </div>
       </div>
     </div>
