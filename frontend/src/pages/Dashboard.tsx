@@ -207,18 +207,18 @@ export default function Dashboard() {
   };
 
   const NAV = [
-    { id: "monitoring", label: "Monitoring", icon: Activity, badge: 0 },
-    { id: "projects", label: "Projekte", icon: FolderKanban, badge: projects.length },
-    { id: "datasets", label: "Datasets", icon: LayoutGrid, badge: datasets.length },
-    { id: "connections", label: "DB-Connectors", icon: Database, badge: 0 },
-    { id: "mappings",   label: "Mappings",   icon: GitBranch, badge: mappings.length },
-    { id: "pipelines",  label: "Pipelines",  icon: GitBranch, badge: 0 },
-    { id: "templates",  label: "Templates",  icon: Package,   badge: 0 },
-    { id: "forms",      label: "Formulare",  icon: FileText,  badge: formsCount },
-    { id: "ftp", label: "FTP / SFTP", icon: Server, badge: 0 },
-    { id: "rest", label: "REST API", icon: Wifi, badge: 0 },
-    { id: "exports", label: "Exporte", icon: HardDrive, badge: 0 },
-    { id: "plugins", label: "Plugins", icon: Puzzle, badge: 0 },
+    { id: "projects",    label: "Projekte",      icon: FolderKanban, badge: projects.length, dividerAfter: true },
+    { id: "connections", label: "DB-Connectors", icon: Database,     badge: 0 },
+    { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasets.length },
+    { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: 0 },
+    { id: "rest",        label: "REST API",        icon: Wifi,        badge: 0 },
+    { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappings.length },
+    { id: "templates",   label: "Templates",       icon: Package,     badge: 0, dividerAfter: true },
+    { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: 0 },
+    { id: "forms",       label: "Formulare",       icon: FileText,    badge: formsCount },
+    { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: 0, dividerAfter: true },
+    { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
+    { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: 0 },
   ];
 
   const tColor = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
@@ -238,23 +238,26 @@ export default function Dashboard() {
         </div>
 
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
-          {NAV.map(({ id, label, icon: Icon, badge }) => {
+          {NAV.map(({ id, label, icon: Icon, badge, dividerAfter }) => {
             const active = tab === id;
             return (
-              <button key={id} onClick={() => setTab(id)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-left"
-                style={active ? { backgroundColor: S.accent, color: "#111" } : { color: S.textDim }}
-                onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
-                <Icon size={15} />
-                <span className="flex-1">{label}</span>
-                {badge > 0 && (
-                  <span className="text-xs font-mono px-1.5 py-0.5 rounded"
-                    style={{ backgroundColor: active ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.06)", color: active ? "#111" : S.textDim }}>
-                    {badge}
-                  </span>
-                )}
-              </button>
+              <div key={id}>
+                <button onClick={() => setTab(id)}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-left"
+                  style={active ? { backgroundColor: S.accent, color: "#111" } : { color: S.textDim }}
+                  onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
+                  onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
+                  <Icon size={15} />
+                  <span className="flex-1">{label}</span>
+                  {badge > 0 && (
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded"
+                      style={{ backgroundColor: active ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.06)", color: active ? "#111" : S.textDim }}>
+                      {badge}
+                    </span>
+                  )}
+                </button>
+                {dividerAfter && <div style={{ height: 1, backgroundColor: S.border, margin: "6px 4px" }} />}
+              </div>
             );
           })}
         </nav>
