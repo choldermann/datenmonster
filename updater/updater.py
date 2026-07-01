@@ -1,8 +1,6 @@
 import subprocess, os, logging, json, threading, re, time
 import requests
-
-def _strip_ansi(text: str) -> str:
-    return re.sub(r'\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\r', '', text)
+import docker as docker_sdk
 
 from flask import Flask, jsonify
 
@@ -191,6 +189,56 @@ def changelog():
         return jsonify([])
 
 
+def _fmt_bytes(b: int) -> str:
+    if b >= 1_000_000_000:
+        return f"{b / 1_000_000_000:.1f} GB"
+    if b >= 1_000_000:
+        return f"{b / 1_000_000:.0f} MB"
+    return f"{b / 1_000:.0f} KB"
+
+
+def _pull_with_progress(images: list) -> str:
+    """Pulled Images via Docker SDK mit Layer-Fortschritt. Gibt '' zurück bei Erfolg, sonst Fehlermeldung."""
+    try:
+        client = docker_sdk.DockerClient(base_url="unix:///var/run/docker.sock")
+    except Exception as e:
+        return f"Docker-Socket nicht erreichbar: {e}"
+
+    total = len(images)
+    for idx, image in enumerate(images):
+        short = image.split("/")[-1].replace(":latest", "")
+        _log(f"Pull {idx+1}/{total}: {image}")
+        layers: dict = {}  # layer_id → {current, total}
+        try:
+            for event in client.api.pull(image, stream=True, decode=True):
+                detail = event.get("progressDetail") or {}
+                layer_id = event.get("id", "")
+                cur = detail.get("current", 0)
+                tot = detail.get("total", 0)
+                if layer_id and tot:
+                    layers[layer_id] = {"current": cur, "total": tot}
+
+                all_total   = sum(l["total"]   for l in layers.values())
+                all_current = sum(l["current"] for l in layers.values())
+
+                if all_total:
+                    pct = int(all_current / all_total * 100)
+                    msg = (
+                        f"Image {idx+1}/{total}: {short} — "
+                        f"{_fmt_bytes(all_current)} / {_fmt_bytes(all_total)} ({pct} %)"
+                    )
+                else:
+                    msg = f"Image {idx+1}/{total}: {short} — {event.get('status', '')}"
+
+                _update_status.update(step="pull", msg=msg)
+                _write_status()
+
+        except Exception as e:
+            return f"Fehler beim Pull von {image}: {e}"
+
+    return ""
+
+
 def _run_update():
     global _update_status
     services        = ["backend", "frontend", "plugin-manager"]
@@ -218,59 +266,15 @@ def _run_update():
             return
 
         s("pull", "Lade neue Images von GitHub…")
-        pull_rc   = [None]
-        pull_out  = [""]
-        pull_proc = [None]
-
-        def _do_pull():
-            try:
-                cmd = _dc("pull", "backend", "frontend", "plugin-manager", "updater")
-                _log(f"Popen: {' '.join(cmd)}")
-                pull_proc[0] = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                )
-                stdout, _ = pull_proc[0].communicate()
-                pull_proc[0].wait()
-                pull_rc[0]  = pull_proc[0].returncode
-                pull_out[0] = stdout.decode("utf-8", errors="replace").strip()
-                _log(f"Pull fertig — RC={pull_rc[0]}")
-            except Exception as exc:
-                pull_rc[0]  = -1
-                pull_out[0] = str(exc)
-                _log(f"Exception in _do_pull: {exc}")
-
-        pull_thread = threading.Thread(target=_do_pull, daemon=True)
-        pull_thread.start()
-        t0 = time.time()
-        MAX_PULL_SECS = 600
-        last_log_secs = 0
-
-        while pull_thread.is_alive():
-            elapsed = int(time.time() - t0)
-            if elapsed > MAX_PULL_SECS:
-                _log(f"Pull-Timeout nach {MAX_PULL_SECS}s")
-                if pull_proc[0]:
-                    pull_proc[0].kill()
-                pull_rc[0]  = -1
-                pull_out[0] = f"Pull-Timeout nach {MAX_PULL_SECS}s"
-                break
-            if elapsed - last_log_secs >= 15:
-                _log(f"Pull läuft… {elapsed}s")
-                last_log_secs = elapsed
-            mins, secs = divmod(elapsed, 60)
-            zeit = f"{mins}:{secs:02d} min" if mins else f"{secs}s"
-            _update_status.update(step="pull", msg=f"Lade Images… {zeit} vergangen")
-            _write_status()
-            pull_thread.join(timeout=2)
-
-        if pull_rc[0] is None:
-            pull_rc[0] = -1
-            pull_out[0] = "Thread endete ohne Ergebnis"
-
-        if pull_rc[0] != 0:
-            _update_status.update(step="error", msg="Pull fehlgeschlagen",
-                                  detail=pull_out[0][-2000:], error=True)
+        pull_images = [
+            f"{REGISTRY}/{OWNER}/datenmonster-backend:latest",
+            f"{REGISTRY}/{OWNER}/datenmonster-frontend:latest",
+            f"{REGISTRY}/{OWNER}/datenmonster-plugin-manager:latest",
+            f"{REGISTRY}/{OWNER}/datenmonster-updater:latest",
+        ]
+        pull_error = _pull_with_progress(pull_images)
+        if pull_error:
+            _update_status.update(step="error", msg="Pull fehlgeschlagen", detail=pull_error, error=True)
             _write_status()
             return
         s("pull_ok", "Images geladen")
