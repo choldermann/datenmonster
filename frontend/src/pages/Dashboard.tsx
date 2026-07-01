@@ -115,14 +115,19 @@ export default function Dashboard() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem("dm_onboarding_dismissed") !== "true"
   );
-  const [updateInfo, setUpdateInfo] = useState(null); // { remote_version, changelog, released }
+  const [updateInfo, setUpdateInfo] = useState(null); // { latest, latest_date, behind, ... }
+  const [updateChangelog, setUpdateChangelog] = useState<{hash:string,message:string,date:string}[]>([]);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [updateLog, setUpdateLog] = useState("");
+  const [updateError, setUpdateError] = useState("");
 
   useEffect(() => {
-    // Update-Check beim Start (nur einmal)
     api.get("/api/update/check").then(({ data }) => {
-      if (data.update_available) setUpdateInfo(data);
+      if (!data.up_to_date && !data.error) {
+        setUpdateInfo(data);
+        api.get("/api/update/changelog").then(({ data: cl }) => setUpdateChangelog(Array.isArray(cl) ? cl : [])).catch(() => {});
+      }
     }).catch(() => {});
   }, []);
 
@@ -270,7 +275,7 @@ export default function Dashboard() {
               Angemeldet als <span style={{ color: S.textMain }}>{user?.username}</span>
             </p>
             {updateInfo && (
-              <button onClick={() => setShowUpdateModal(true)} title={`Update verfügbar: v${updateInfo.remote_version}`}
+              <button onClick={() => setShowUpdateModal(true)} title={`Update verfügbar: ${updateInfo.latest}`}
                 style={{ position: "relative", background: "none", border: "none", color: "#fbbf24", cursor: "pointer", padding: 4, borderRadius: 4, marginRight: 4 }}
                 onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(251,191,36,0.1)"; }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
@@ -322,7 +327,7 @@ export default function Dashboard() {
 
       {/* Update Modal */}
       {showUpdateModal && updateInfo && (
-        <div onClick={() => setShowUpdateModal(false)} style={{
+        <div onClick={() => !updating && setShowUpdateModal(false)} style={{
           position: "fixed", inset: 0, zIndex: 9999, backgroundColor: "rgba(0,0,0,0.7)",
           display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem"
         }}>
@@ -336,53 +341,109 @@ export default function Dashboard() {
               <Bell size={16} style={{ color: "#fbbf24" }} />
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: S.textBright, margin: 0 }}>
-                  Update verfügbar 🎉
+                  Update verfügbar
                 </p>
                 <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
-                  Version {updateInfo.remote_version} · {updateInfo.released}
+                  {updateInfo.behind > 0 ? `${updateInfo.behind} Commit(s) hinter aktuellem Stand` : "Neue Version verfügbar"} · {updateInfo.latest_date || ""}
                 </p>
               </div>
-              <button onClick={() => setShowUpdateModal(false)} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}>
-                <X size={16} />
-              </button>
+              {!updating && (
+                <button onClick={() => setShowUpdateModal(false)} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}>
+                  <X size={16} />
+                </button>
+              )}
             </div>
 
-            {/* Changelog */}
+            {/* Changelog oder Update-Fortschritt */}
             <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
-              <p style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 10px" }}>
-                Was ist neu
-              </p>
-              <div style={{ fontSize: 13, color: S.textMain, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-                {updateInfo.changelog}
-              </div>
+              {updating ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <Loader2 size={16} className="animate-spin" style={{ color: "#6ee7b7", flexShrink: 0 }} />
+                    <p style={{ fontSize: 13, color: S.textMain, margin: 0 }}>{updateLog || "Update läuft..."}</p>
+                  </div>
+                  {updateError && (
+                    <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                      <p style={{ fontSize: 12, color: "#f87171", margin: 0, whiteSpace: "pre-wrap" }}>{updateError}</p>
+                    </div>
+                  )}
+                  <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>Bitte nicht schließen. Der Browser lädt automatisch neu wenn das Update abgeschlossen ist.</p>
+                </div>
+              ) : (
+                <>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 10px" }}>
+                    Neue Commits
+                  </p>
+                  {updateChangelog.length > 0 ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                      {updateChangelog.map(c => (
+                        <div key={c.hash} style={{ display: "flex", gap: 10, fontSize: 12, color: S.textMain }}>
+                          <span style={{ color: S.textDim, fontFamily: "monospace", flexShrink: 0 }}>{c.hash}</span>
+                          <span style={{ flex: 1 }}>{c.message}</span>
+                          <span style={{ color: S.textDim, flexShrink: 0 }}>{c.date}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 13, color: S.textDim, margin: 0 }}>
+                      Neuester Commit: {updateInfo.latest_message || updateInfo.latest}
+                    </p>
+                  )}
+                </>
+              )}
             </div>
 
             {/* Footer */}
             <div style={{ padding: "14px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
-              {updating && <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>Update läuft... bitte warten</p>}
-              <button onClick={() => setShowUpdateModal(false)} style={{
-                fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer",
-                background: "transparent", border: "1px solid var(--border)", color: S.textDim
-              }}>Später</button>
-              <button onClick={async () => {
-                setUpdating(true);
-                try {
-                  await api.post("/api/update/install");
-                  alert("Update erfolgreich! Die Seite wird neu geladen.");
-                  window.location.reload();
-                } catch (e) {
-                  alert("Update fehlgeschlagen: " + (e.response?.data?.detail || e.message));
-                } finally { setUpdating(false); }
-              }} disabled={updating} style={{
-                fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6,
-                cursor: updating ? "wait" : "pointer",
-                background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-                color: "#6ee7b7", opacity: updating ? 0.7 : 1,
-                display: "flex", alignItems: "center", gap: 6
-              }}>
-                {updating ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
-                {updating ? "Installiere..." : `Jetzt auf v${updateInfo.remote_version} updaten`}
-              </button>
+              {!updating && (
+                <button onClick={() => setShowUpdateModal(false)} style={{
+                  fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer",
+                  background: "transparent", border: "1px solid var(--border)", color: S.textDim
+                }}>Später</button>
+              )}
+              {!updateError && (
+                <button onClick={async () => {
+                  setUpdating(true);
+                  setUpdateLog("Update wird gestartet...");
+                  setUpdateError("");
+                  try {
+                    await api.post("/api/update/install");
+                    const poll = setInterval(async () => {
+                      try {
+                        const { data: st } = await api.get("/api/update/status");
+                        if (st.msg) setUpdateLog(st.msg);
+                        if (st.done) {
+                          clearInterval(poll);
+                          setUpdateLog("Update abgeschlossen! Seite wird neu geladen...");
+                          setTimeout(() => window.location.reload(), 2500);
+                        } else if (st.error) {
+                          clearInterval(poll);
+                          setUpdateError((st.msg || "") + (st.detail ? "\n\n" + st.detail : ""));
+                          setUpdating(false);
+                        }
+                      } catch {}
+                    }, 2000);
+                  } catch (e) {
+                    setUpdateError("Fehler: " + (e.response?.data?.detail || e.message));
+                    setUpdating(false);
+                  }
+                }} disabled={updating} style={{
+                  fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6,
+                  cursor: updating ? "wait" : "pointer",
+                  background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
+                  color: "#6ee7b7", opacity: updating ? 0.7 : 1,
+                  display: "flex", alignItems: "center", gap: 6
+                }}>
+                  <Download size={13} />
+                  {updating ? "Installiere..." : `Jetzt updaten`}
+                </button>
+              )}
+              {updateError && (
+                <button onClick={() => { setUpdating(false); setUpdateError(""); setUpdateLog(""); }} style={{
+                  fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer",
+                  background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171"
+                }}>Schließen</button>
+              )}
             </div>
           </div>
         </div>
