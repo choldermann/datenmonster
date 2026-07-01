@@ -94,6 +94,13 @@ export default function Dashboard() {
   const [datasets, setDatasets] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [formsCount, setFormsCount] = useState(0);
+  const [connectionsCount, setConnectionsCount] = useState(0);
+  const [ftpCount, setFtpCount] = useState(0);
+  const [restCount, setRestCount] = useState(0);
+  const [templatesCount, setTemplatesCount] = useState(0);
+  const [pipelinesCount, setPipelinesCount] = useState(0);
+  const [exportsCount, setExportsCount] = useState(0);
+  const [pluginsCount, setPluginsCount] = useState(0);
   const [datasetSearch, setDatasetSearch] = useState("");
   const [mappingSearch, setMappingSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -164,6 +171,18 @@ export default function Dashboard() {
     } catch {}
   }, [projectId]);
 
+  useEffect(() => {
+    Promise.allSettled([
+      api.get("/api/connections/").then(r => setConnectionsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/ftp-sources/").then(r => setFtpCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/rest-sources/").then(r => setRestCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/templates/").then(r => setTemplatesCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/pipelines/").then(r => setPipelinesCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/exports/").then(r => setExportsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/plugins/").then(r => setPluginsCount(Array.isArray(r.data) ? r.data.length : 0)),
+    ]);
+  }, []);
+
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { if (tab === "datasets" || tab === "ftp" || tab === "rest") loadDatasets(); }, [tab, loadDatasets]);
 
@@ -214,17 +233,17 @@ export default function Dashboard() {
 
   const NAV = [
     { id: "projects",    label: "Projekte",      icon: FolderKanban, badge: projects.length, dividerAfter: true },
-    { id: "connections", label: "DB-Connectors", icon: Database,     badge: 0 },
+    { id: "connections", label: "DB-Connectors", icon: Database,     badge: connectionsCount },
     { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasets.length },
-    { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: 0 },
-    { id: "rest",        label: "REST API",        icon: Wifi,        badge: 0 },
-    { id: "templates",   label: "Templates",       icon: Package,     badge: 0, dividerAfter: true },
+    { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: ftpCount },
+    { id: "rest",        label: "REST API",        icon: Wifi,        badge: restCount },
+    { id: "templates",   label: "Templates",       icon: Package,     badge: templatesCount, dividerAfter: true },
     { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappings.length },
-    { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: 0 },
+    { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: pipelinesCount },
     { id: "forms",       label: "Formulare",       icon: FileText,    badge: formsCount },
-    { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: 0, dividerAfter: true },
+    { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: exportsCount, dividerAfter: true },
     { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
-    { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: 0, dividerAfter: true },
+    { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: pluginsCount, dividerAfter: true },
     { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
   ];
 
