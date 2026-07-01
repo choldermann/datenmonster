@@ -94,6 +94,8 @@ export default function Dashboard() {
   const [datasets, setDatasets] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [formsCount, setFormsCount] = useState(0);
+  const [datasetsCount, setDatasetsCount] = useState(0);
+  const [mappingsCount, setMappingsCount] = useState(0);
   const [connectionsCount, setConnectionsCount] = useState(0);
   const [ftpCount, setFtpCount] = useState(0);
   const [restCount, setRestCount] = useState(0);
@@ -173,6 +175,8 @@ export default function Dashboard() {
 
   useEffect(() => {
     Promise.allSettled([
+      api.get("/api/datasets/").then(r => setDatasetsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get("/api/mappings/").then(r => setMappingsCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/connections/").then(r => setConnectionsCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/ftp-sources/").then(r => setFtpCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/rest-sources/").then(r => setRestCount(Array.isArray(r.data) ? r.data.length : 0)),
@@ -234,11 +238,11 @@ export default function Dashboard() {
   const NAV = [
     { id: "projects",    label: "Projekte",      icon: FolderKanban, badge: projects.length, dividerAfter: true },
     { id: "connections", label: "DB-Connectors", icon: Database,     badge: connectionsCount },
-    { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasets.length },
+    { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasetsCount },
     { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: ftpCount },
     { id: "rest",        label: "REST API",        icon: Wifi,        badge: restCount },
     { id: "templates",   label: "Templates",       icon: Package,     badge: templatesCount, dividerAfter: true },
-    { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappings.length },
+    { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappingsCount },
     { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: pipelinesCount },
     { id: "forms",       label: "Formulare",       icon: FileText,    badge: formsCount },
     { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: exportsCount, dividerAfter: true },
