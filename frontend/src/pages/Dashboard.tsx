@@ -31,6 +31,7 @@ import { SchedulerPanel } from "../components/dashboard/panels/SchedulerPanel";
 import DispatcherPanel from "../components/dashboard/panels/DispatcherPanel";
 import PluginsPanel from "../components/dashboard/panels/PluginsPanel";
 import AIMemoryPanel from "../components/dashboard/panels/AIMemoryPanel";
+import LicensePanel from "../components/dashboard/panels/LicensePanel";
 import NewDatasetWizard from "../components/NewDatasetWizard";
 
 
@@ -249,6 +250,7 @@ export default function Dashboard() {
     { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
     { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: pluginsCount, dividerAfter: true },
     { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
+    { id: "license",     label: "Lizenz",           icon: KeyRound,    badge: 0 },
   ];
 
   const tColor = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
@@ -709,6 +711,10 @@ export default function Dashboard() {
 
         {tab === "ai_memory" && (
           <AIMemoryPanel />
+        )}
+
+        {tab === "license" && (
+          <LicensePanel />
         )}
 
       </main>

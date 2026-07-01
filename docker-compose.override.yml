@@ -3,18 +3,22 @@
 services:
   backend:
     build: ./backend
+    pull_policy: never
     volumes:
       - ./backend:/app
       - datenmonster-data:/app/uploads
 
   frontend:
     build: ./frontend
+    pull_policy: never
     depends_on:
       backend:
         condition: service_started
 
   plugin-manager:
     build: ./plugin-manager
+    pull_policy: never
 
   updater:
     build: ./updater
+    pull_policy: never

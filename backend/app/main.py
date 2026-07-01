@@ -405,6 +405,8 @@ from app.api import schema_catalog as schema_catalog_api
 app.include_router(schema_catalog_api.router)
 from app.api import insights as insights_api
 app.include_router(insights_api.router)
+from app.api import license as license_api
+app.include_router(license_api.router)
 
 
 @app.get("/api/health")
