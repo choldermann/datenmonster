@@ -215,7 +215,9 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
             {suggesting ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
             {suggesting
               ? suggestProgress ? `${suggestProgress.done}/${suggestProgress.total}` : "…"
-              : `KI: ${undescribed} beschreiben`}
+              : undescribed > 100
+                ? `KI: 100 beschreiben (${undescribed - 100} weitere)`
+                : `KI: ${undescribed} beschreiben`}
           </button>
         </div>
       </div>

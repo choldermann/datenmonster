@@ -44,6 +44,7 @@ class RelationIn(BaseModel):
 
 class AiSuggestRequest(BaseModel):
     table_full_names: list[str] = []   # leer = alle Tabellen ohne Beschreibung
+    limit: int = 100                   # max. Tabellen pro Durchlauf
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -433,7 +434,7 @@ async def ai_suggest(
                                SchemaTableMeta.description.isnot(None),
                                SchemaTableMeta.description != "").all()
         }
-        targets = [t for name, t in all_tables.items() if name not in described]
+        targets = [t for name, t in all_tables.items() if name not in described][:body.limit]
 
     if not targets:
         async def empty():
