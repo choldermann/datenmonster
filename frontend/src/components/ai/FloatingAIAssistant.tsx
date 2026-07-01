@@ -144,7 +144,7 @@ export default function FloatingAIAssistant() {
     const h = Math.min(700, window.innerHeight - 80);
     return {
       x: Math.round((window.innerWidth - w) / 2),
-      y: Math.round((window.innerHeight - h) / 2),
+      y: Math.max(20, window.innerHeight - h - 70),
     };
   });
   const [size, setSize] = useState(() => ({
@@ -480,14 +480,14 @@ export default function FloatingAIAssistant() {
 
   return (
     <>
-      {/* Trigger button — bleibt immer fixed oben rechts */}
+      {/* Trigger button — bleibt immer fixed unten rechts */}
       <button
         onClick={() => setIsOpen(!isOpen)}
         title="KI-Assistent öffnen"
         style={{
           position: "fixed",
-          top: 12,
-          right: 16,
+          bottom: 20,
+          right: 20,
           zIndex: 9997,
           display: "flex",
           alignItems: "center",
