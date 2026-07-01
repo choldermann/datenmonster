@@ -1,0 +1,20 @@
+# Lokale Entwicklung — wird von Docker Compose automatisch gemergt.
+# Überschreibt GHCR-Images durch lokale Builds und aktiviert Hot-Reload.
+services:
+  backend:
+    build: ./backend
+    volumes:
+      - ./backend:/app
+      - datenmonster-data:/app/uploads
+
+  frontend:
+    build: ./frontend
+    depends_on:
+      backend:
+        condition: service_started
+
+  plugin-manager:
+    build: ./plugin-manager
+
+  updater:
+    build: ./updater

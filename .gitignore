@@ -66,8 +66,6 @@ yarn-error.log*
 
 # ─── Docker ───────────────────────────────────────────────────────────────────
 # Docker Volumes werden nicht eingecheckt
-# docker-compose.override.yml kann lokale Anpassungen enthalten
-docker-compose.override.yml
 
 # ─── IDEs & Editoren ──────────────────────────────────────────────────────────
 .vscode/

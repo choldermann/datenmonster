@@ -2,36 +2,33 @@ version: "3.9"
 
 services:
   backend:
-    build: ./backend
+    image: ghcr.io/choldermann/datenmonster-backend:latest
+    pull_policy: always
     container_name: datenmonster-backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000  # kein --reload
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     volumes:
-      - ./backend:/app
       - datenmonster-data:/app/uploads
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      # ┌─────────────────────────────────────────────────────────────────┐
-      # │  SICHERHEITSHINWEIS – vor dem ersten Start:                     │
-      # │  cp .env.example .env                                           │
-      # │  echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env             │
-      # │  Die .env-Datei niemals ins Repository committen!               │
-      # └─────────────────────────────────────────────────────────────────┘
       - SECRET_KEY=${SECRET_KEY}
-      # ADMIN_PASSWORD: ohne Wert wird ein Zufallspasswort generiert und
-      # einmalig in den Container-Logs angezeigt. Danach in .env setzen.
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - DATABASE_URL=sqlite:///./uploads/datenmonster.db
-      - ALLOWED_ORIGINS=http://localhost:5174,http://localhost:3000
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5174}
       - PLUGIN_MANAGER_URL=http://plugin-manager:9001
       - REDIS_URL=redis://redis:6379
       - OLLAMA_BASE_URL=http://ollama:11434
+      - UPDATER_URL=http://updater:9000
     depends_on:
       - redis
     networks:
       - datenmonster
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -41,10 +38,9 @@ services:
     restart: unless-stopped
 
   plugin-manager:
-    build: ./plugin-manager
+    image: ghcr.io/choldermann/datenmonster-plugin-manager:latest
+    pull_policy: always
     container_name: datenmonster-plugin-manager
-    ports:
-      - "9001:9001"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - plugin-manager-data:/data
@@ -73,12 +69,32 @@ services:
     #           capabilities: [gpu]
 
   frontend:
-    build: ./frontend
+    image: ghcr.io/choldermann/datenmonster-frontend:latest
+    pull_policy: always
     container_name: datenmonster-frontend
     ports:
-      - "5174:80"
+      - "${FRONTEND_PORT:-5174}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
+    networks:
+      - datenmonster
+    restart: unless-stopped
+
+  updater:
+    image: ghcr.io/choldermann/datenmonster-updater:latest
+    build: ./updater
+    container_name: datenmonster-updater
+    expose:
+      - "9000"
+    environment:
+      - COMPOSE_FILE=/project/docker-compose.yml
+      - COMPOSE_PROJECT_NAME=datenmonster
+      - GITHUB_REPO=choldermann/datenmonster
+      - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/project
     networks:
       - datenmonster
     restart: unless-stopped

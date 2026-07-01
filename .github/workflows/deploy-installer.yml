@@ -1,8 +1,8 @@
-name: Deploy Installer Package
+name: Deploy install.sh
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   deploy:
@@ -10,21 +10,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: ZIP erstellen (ohne .git und node_modules)
-        run: |
-          zip -r datenmonster.zip . \
-            --exclude "*.git*" \
-            --exclude "*/node_modules/*" \
-            --exclude "*/__pycache__/*" \
-            --exclude "*.pyc" \
-            --exclude "*/uploads/*" \
-            --exclude "*/data/*" \
-            --exclude "*/.env*" \
-            --exclude "*/dist/*" \
-            --exclude "backend/debug_*.py" \
-            --exclude "backend/fix_*.py" \
-            --exclude "*.bak"
 
       - name: Zielverzeichnis sicherstellen
         uses: appleboy/ssh-action@v1.0.3
@@ -34,12 +19,12 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script: mkdir -p /var/www/install
 
-      - name: Auf Server hochladen
+      - name: install.sh auf Server hochladen
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
-          source: "datenmonster.zip,install.sh"
+          source: "install.sh"
           target: "/var/www/install/"
           strip_components: 0
