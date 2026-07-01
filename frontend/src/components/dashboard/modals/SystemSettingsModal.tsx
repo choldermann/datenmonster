@@ -15,7 +15,6 @@ const TABS = [
   { id: "users", label: "Benutzer", icon: "👤" },
   { id: "appearance", label: "Optik", icon: "🎨" },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
-  { id: "license", label: "Lizenz", icon: "🔑", disabled: true },
 ];
 
 function EmailSettings() {
