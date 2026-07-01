@@ -441,6 +441,10 @@ async def ai_suggest(
         return StreamingResponse(empty(), media_type="text/event-stream")
 
     svc = build_ai_service(db)
+    if not svc:
+        async def _no_ai():
+            yield f"data: {json.dumps({'error': 'KI nicht aktiviert. Bitte unter Einstellungen → KI aktivieren und ein Modell auswählen.'})}\n\n"
+        return StreamingResponse(_no_ai(), media_type="text/event-stream")
     svc.timeout = 300
 
     async def generate():
@@ -472,6 +476,7 @@ async def ai_suggest(
             async for token in svc._stream(
                 [{"role": "user", "content": prompt}],
                 system="Du bist ein Datenbankexperte. Antworte NUR mit dem JSON-Array, ohne Erklärungen.",
+                json_mode=True,
             ):
                 result_text += token
 

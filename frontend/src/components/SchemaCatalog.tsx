@@ -104,6 +104,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
         for (const line of lines) {
           if (!line.startsWith("data:")) continue;
           const msg = JSON.parse(line.slice(5).trim());
+          if (msg.error) { alert("KI-Fehler: " + msg.error); setSuggestProgress(null); break; }
           if (msg.progress !== undefined) setSuggestProgress({ done: msg.progress, total: msg.total });
           if (msg.done) { await load(); setSuggestProgress(null); }
         }
