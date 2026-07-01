@@ -7,7 +7,7 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -30,6 +30,7 @@ import FormsPanel from "../components/dashboard/panels/FormsPanel";
 import { SchedulerPanel } from "../components/dashboard/panels/SchedulerPanel";
 import DispatcherPanel from "../components/dashboard/panels/DispatcherPanel";
 import PluginsPanel from "../components/dashboard/panels/PluginsPanel";
+import AIMemoryPanel from "../components/dashboard/panels/AIMemoryPanel";
 import NewDatasetWizard from "../components/NewDatasetWizard";
 
 
@@ -218,7 +219,8 @@ export default function Dashboard() {
     { id: "forms",       label: "Formulare",       icon: FileText,    badge: formsCount },
     { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: 0, dividerAfter: true },
     { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
-    { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: 0 },
+    { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: 0, dividerAfter: true },
+    { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
   ];
 
   const tColor = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
@@ -620,7 +622,11 @@ export default function Dashboard() {
         {tab === "plugins" && (
           <PluginsPanel />
         )}
-        
+
+        {tab === "ai_memory" && (
+          <AIMemoryPanel />
+        )}
+
       </main>
 
       {/* ── Overlays ── */}

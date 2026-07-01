@@ -598,6 +598,34 @@ async def chat(
 
     caps = get_model_caps(model_used)
 
+    # Memory-Kontext aufbauen
+    project_id = body.page_context.get("project_id") or body.page_context.get("currentData", {}).get("project_id")
+    memory_context = ""
+    try:
+        from app.services.ai_memory_service import build_memory_context
+        from app.models.dataset import DbConnection
+
+        _category_hint = None
+        _page = body.page_context.get("page", "")
+        if _page == "mapping_editor":
+            _category_hint = "sql"
+
+        # Verbindungsnamen für Datasource-Wissen ermitteln
+        _conn_ids = (body.page_context.get("currentData") or {}).get("connectionIds", [])
+        _ds_names: list[str] = []
+        if _conn_ids:
+            _conns = db.query(DbConnection).filter(DbConnection.id.in_(_conn_ids)).all()
+            _ds_names = [c.name for c in _conns if c.name]
+
+        memory_context = build_memory_context(
+            db,
+            project_id=project_id,
+            datasource_ids=_ds_names or None,
+            category_hint=_category_hint,
+        )
+    except Exception as _me:
+        log.warning(f"[AI Memory] Kontext-Build fehlgeschlagen: {_me}")
+
     page = body.page_context.get("page", "")
     description = body.page_context.get("description", "")
     current_data = body.page_context.get("currentData", {})
@@ -608,6 +636,8 @@ async def chat(
         {"label": "Basis", "content": _BASE_SYSTEM},
         {"label": "Uhrzeit", "content": f"Aktuelle Uhrzeit: {now_str}"},
     ]
+    if memory_context:
+        system_sections.append({"label": "AI Memory", "content": memory_context})
     if page_prompt:
         system_sections.append({"label": f"Seite: {page}", "content": page_prompt})
     elif description:
@@ -738,6 +768,36 @@ async def chat(
     messages = [{"role": m.role, "content": m.content} for m in body.history]
     messages.append({"role": "user", "content": body.message})
 
+    # Prompt Cache: nur bei einfachen Single-Turn-Anfragen (kein History), Schnell/Auto-Modus
+    _cache_key_str: str | None = None
+    _enable_cache  = not body.history and body.mode in ("schnell", "auto")
+    if _enable_cache:
+        import hashlib as _hl, json as _jc
+        _raw = _jc.dumps({
+            "msg":     body.message,
+            "system":  system[:800],
+            "model":   model_used,
+            "project": str(project_id or ""),
+        }, ensure_ascii=False, sort_keys=True)
+        _cache_key_str = _hl.sha256(_raw.encode()).hexdigest()[:32]
+        try:
+            from app.services.ai_memory_service import cache_lookup_by_key
+            _cached = cache_lookup_by_key(db, _cache_key_str)
+            if _cached:
+                async def _cached_gen():
+                    meta: dict = {
+                        "model": model_used, "category": category, "mode": body.mode,
+                        "caps": caps, "cached": True,
+                        "params": {"think": False, "temperature": 0, "top_p": 0, "max_tokens": 0, "num_ctx": 0},
+                    }
+                    yield f"data: {json.dumps({'meta': meta})}\n\n"
+                    yield f"data: {json.dumps({'token': _cached})}\n\n"
+                    yield "data: [DONE]\n\n"
+                from fastapi.responses import StreamingResponse as _SR0
+                return _SR0(_cached_gen(), media_type="text/event-stream")
+        except Exception as _ce:
+            log.warning(f"[AI Cache] Lookup fehlgeschlagen: {_ce}")
+
     async def generate():
         meta: dict = {
             "model":    model_used,
@@ -756,9 +816,23 @@ async def chat(
             meta["system_prompt"] = system
             meta["system_sections"] = system_sections
         yield f"data: {json.dumps({'meta': meta})}\n\n"
+        _tokens: list[str] = []
         try:
             async for token in svc._stream(messages, system, params=params, model=model_used):
+                _tokens.append(token)
                 yield f"data: {json.dumps({'token': token})}\n\n"
+            # Cache speichern wenn aktiviert
+            if _cache_key_str and _tokens:
+                try:
+                    from app.services.ai_memory_service import cache_store_by_key
+                    from app.core.database import SessionLocal as _SL
+                    _cdb = _SL()
+                    try:
+                        cache_store_by_key(_cdb, _cache_key_str, body.message, "".join(_tokens), model_used, project_id)
+                    finally:
+                        _cdb.close()
+                except Exception as _se:
+                    log.warning(f"[AI Cache] Store fehlgeschlagen: {_se}")
         except httpx.ReadTimeout:
             yield f"data: {json.dumps({'error': 'Ollama Timeout – Modell antwortet nicht rechtzeitig (Anfrage zu groß oder Modell überlastet)'})}\n\n"
         except Exception as e:

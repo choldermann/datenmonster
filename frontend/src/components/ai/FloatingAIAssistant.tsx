@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check, Settings, ChevronRight, Database } from "lucide-react";
+import { Sparkles, X, Send, Loader2, ChevronDown, Trash2, Wand2, Check, Settings, ChevronRight, Database, BookmarkPlus, PenLine } from "lucide-react";
 import { useAIAssistant, PageContext } from "../../contexts/AIAssistantContext";
 import { streamRequest, generateNodes, searchSchema, suggestTables } from "../../services/aiService";
+import { createSolution, createCorrection } from "../../api/aiMemory";
 
 const ACCENT = "#fce499";
 const BG = "rgba(14, 14, 28, 0.97)";
@@ -236,6 +237,10 @@ export default function FloatingAIAssistant() {
   }, [pageContext?.page]);
 
   const [hoveredMsgIdx, setHoveredMsgIdx] = useState<number | null>(null);
+  const [savingIdx, setSavingIdx] = useState<number | null>(null);
+  const [savedIdx, setSavedIdx] = useState<number | null>(null);
+  const [correctionIdx, setCorrectionIdx] = useState<number | null>(null);
+  const [correctionText, setCorrectionText] = useState("");
 
   const connectionIds: number[] = (pageContext?.currentData as any)?.connectionIds ?? [];
   const canvasTableNames: string[] = ((pageContext?.currentData as any)?.canvasDatasets ?? []).map((d: any) => d.name);
@@ -1154,8 +1159,8 @@ export default function FloatingAIAssistant() {
             )}
 
             {messages.map((msg, i) => (
+              <div key={i}>
               <div
-                key={i}
                 onMouseEnter={() => setHoveredMsgIdx(i)}
                 onMouseLeave={() => setHoveredMsgIdx(null)}
                 style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start", gap: 5, alignItems: "flex-end" }}
@@ -1204,6 +1209,107 @@ export default function FloatingAIAssistant() {
                     <span style={{ display: "inline-block", width: 6, height: 12, backgroundColor: ACCENT, marginLeft: 2, animation: "aiCursor 0.8s ease-in-out infinite", verticalAlign: "middle" }} />
                   )}
                 </div>
+                {/* Aktions-Buttons für fertige assistant-Nachrichten */}
+                {msg.role === "assistant" && !msg.streaming && msg.content && (
+                  <>
+                    <button
+                      onClick={async () => {
+                        if (savingIdx === i) return;
+                        setSavingIdx(i);
+                        try {
+                          const prevUser = messages.slice(0, i).reverse().find(m => m.role === "user");
+                          const projectId = (pageContext?.currentData as any)?.project_id ?? null;
+                          const page = pageContext?.page ?? "";
+                          const cat = page === "mapping_editor" ? "sql" : "other";
+                          await createSolution({
+                            title: (prevUser?.content ?? msg.content).slice(0, 80),
+                            prompt: prevUser?.content ?? null,
+                            response: msg.content,
+                            category: cat,
+                            project_id: projectId,
+                          });
+                          setSavedIdx(i);
+                          setTimeout(() => setSavedIdx(null), 2000);
+                        } catch (_e) {}
+                        setSavingIdx(null);
+                      }}
+                      title="Als Lösung speichern"
+                      style={{
+                        opacity: hoveredMsgIdx === i ? 1 : 0,
+                        transition: "opacity 0.15s",
+                        background: "none", border: "none", cursor: "pointer",
+                        color: savedIdx === i ? "#22c55e" : "rgba(255,255,255,0.35)",
+                        padding: "3px 4px", display: "flex", alignItems: "center",
+                        flexShrink: 0, alignSelf: "flex-end", marginBottom: 2,
+                      }}
+                    >
+                      {savedIdx === i ? <Check size={13} /> : savingIdx === i ? <Loader2 size={13} className="animate-spin" /> : <BookmarkPlus size={13} />}
+                    </button>
+                    <button
+                      onClick={() => { setCorrectionIdx(correctionIdx === i ? null : i); setCorrectionText(""); }}
+                      title="Korrektur melden"
+                      style={{
+                        opacity: hoveredMsgIdx === i ? 1 : 0,
+                        transition: "opacity 0.15s",
+                        background: correctionIdx === i ? "rgba(239,68,68,0.15)" : "none",
+                        border: "none", cursor: "pointer",
+                        color: correctionIdx === i ? "#ef4444" : "rgba(255,255,255,0.35)",
+                        padding: "3px 4px", display: "flex", alignItems: "center",
+                        flexShrink: 0, alignSelf: "flex-end", marginBottom: 2, borderRadius: 4,
+                      }}
+                    >
+                      <PenLine size={13} />
+                    </button>
+                  </>
+                )}
+              </div>
+              {/* Korrektur-Eingabe */}
+              {correctionIdx === i && msg.role === "assistant" && (
+                <div style={{ maxWidth: "85%", marginLeft: 0, marginTop: 4 }}>
+                  <div style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8, padding: 10 }}>
+                    <p style={{ fontSize: 11, color: "#ef4444", margin: "0 0 6px", fontWeight: 600 }}>Wie sollte die Antwort besser aussehen?</p>
+                    <textarea
+                      value={correctionText}
+                      onChange={e => setCorrectionText(e.target.value)}
+                      rows={3}
+                      autoFocus
+                      placeholder="Die korrigierte Antwort eingeben..."
+                      style={{ width: "100%", background: "rgba(255,255,255,0.06)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6,
+                        padding: "6px 8px", color: "rgba(255,255,255,0.85)", fontSize: 12, resize: "vertical", outline: "none", boxSizing: "border-box" }}
+                    />
+                    <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 6 }}>
+                      <button onClick={() => setCorrectionIdx(null)}
+                        style={{ padding: "4px 10px", borderRadius: 5, border: "1px solid rgba(255,255,255,0.1)", background: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 11 }}>
+                        Abbrechen
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (!correctionText.trim()) return;
+                          try {
+                            const projectId = (pageContext?.currentData as any)?.project_id ?? null;
+                            const page = pageContext?.page ?? "";
+                            const cat = page === "mapping_editor" ? "sql" : "other";
+                            const prevUser = messages.slice(0, i).reverse().find(m => m.role === "user");
+                            await createCorrection({
+                              ai_response: msg.content,
+                              user_correction: correctionText.trim(),
+                              original_prompt: prevUser?.content ?? null,
+                              category: cat,
+                              project_id: projectId,
+                            });
+                          } catch (_e) {}
+                          setCorrectionIdx(null);
+                          setCorrectionText("");
+                        }}
+                        disabled={!correctionText.trim()}
+                        style={{ padding: "4px 12px", borderRadius: 5, border: "none", background: "#ef4444", color: "#fff",
+                          cursor: correctionText.trim() ? "pointer" : "default", fontSize: 11, fontWeight: 600, opacity: correctionText.trim() ? 1 : 0.5 }}>
+                        Speichern
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               </div>
             ))}
             <div ref={messagesEndRef} />

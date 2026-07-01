@@ -16,6 +16,7 @@ from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
 from app.models.form import Form
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
+from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, reports as reports_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
@@ -198,6 +199,51 @@ async def lifespan(app: FastAPI):
                 error TEXT,
                 UNIQUE(account_hash, uid)
             )""",
+            """CREATE TABLE IF NOT EXISTS ai_memory_knowledge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scope TEXT NOT NULL DEFAULT 'global',
+                scope_id TEXT,
+                category TEXT DEFAULT 'rule',
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                enabled INTEGER DEFAULT 1,
+                use_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS ai_memory_solutions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                category TEXT DEFAULT 'other',
+                title TEXT NOT NULL,
+                prompt TEXT,
+                response TEXT NOT NULL,
+                use_count INTEGER DEFAULT 1,
+                rating INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_used_at DATETIME
+            )""",
+            """CREATE TABLE IF NOT EXISTS ai_memory_corrections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER,
+                original_prompt TEXT,
+                ai_response TEXT NOT NULL,
+                user_correction TEXT NOT NULL,
+                category TEXT DEFAULT 'other',
+                applied_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )""",
+            """CREATE TABLE IF NOT EXISTS ai_prompt_cache (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cache_key TEXT UNIQUE NOT NULL,
+                prompt TEXT NOT NULL,
+                response TEXT NOT NULL,
+                model TEXT,
+                project_id INTEGER,
+                hit_count INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                last_hit_at DATETIME
+            )""",
         ]:
             try:
                 conn.execute(text(stmt))
@@ -353,6 +399,8 @@ from app.api import mail as mail_api
 app.include_router(mail_api.router)
 from app.api import ai as ai_api
 app.include_router(ai_api.router)
+from app.api import ai_memory as ai_memory_api
+app.include_router(ai_memory_api.router)
 from app.api import schema_catalog as schema_catalog_api
 app.include_router(schema_catalog_api.router)
 from app.api import insights as insights_api
