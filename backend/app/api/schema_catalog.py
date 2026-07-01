@@ -433,7 +433,7 @@ async def ai_suggest(
                                SchemaTableMeta.description.isnot(None),
                                SchemaTableMeta.description != "").all()
         }
-        targets = [t for name, t in all_tables.items() if name not in described][:100]
+        targets = [t for name, t in all_tables.items() if name not in described]
 
     if not targets:
         async def empty():
