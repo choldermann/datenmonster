@@ -450,67 +450,82 @@ async def ai_suggest(
     async def generate():
         total = len(targets)
         done  = 0
-        # Batch: je 10 Tabellen pro KI-Anfrage
-        batch_size = 10
-        for i in range(0, total, batch_size):
-            batch = targets[i : i + batch_size]
-            table_lines = []
-            for tbl in batch:
-                cols = ", ".join(c["name"] for c in tbl.get("columns", [])[:20])
-                table_lines.append(f'- {tbl["full_name"]}: {cols}')
+        # Kleine Batches für kleine Modelle
+        batch_size = 5
+        try:
+            for i in range(0, total, batch_size):
+                batch = targets[i : i + batch_size]
+                table_lines = []
+                for tbl in batch:
+                    cols = ", ".join(c["name"] for c in tbl.get("columns", [])[:15])
+                    table_lines.append(f'- {tbl["full_name"]}: {cols}')
 
-            prompt = (
-                f"Du analysierst Datenbanktabellen aus {schema.get('database', 'einer Datenbank')} "
-                f"({schema.get('db_type', 'SQL')}).\n\n"
-                "Gib für jede Tabelle in EXAKT diesem JSON-Format zurück:\n"
-                '[{"table":"name","business_name":"Anzeigename","description":"1 Satz was diese Tabelle enthält","category":"Stammdaten|Bewegungsdaten|Konfiguration|Lookup|System|Sonstige"}]\n\n'
-                "Regeln:\n"
-                "- business_name: kurzer, verständlicher Name ohne Präfix (z.B. 'Artikel' für 'tArtikel')\n"
-                "- description: genau 1 Satz, fachlich, auf Deutsch\n"
-                "- Schließe aus den Spaltennamen auf den Inhalt\n"
-                "- Erfinde KEINE Bedeutungen – wenn unklar, schreibe 'Unbekannt'\n\n"
-                "Tabellen:\n" + "\n".join(table_lines) + "\n\nJSON:"
-            )
-
-            result_text = ""
-            async for token in svc._stream(
-                [{"role": "user", "content": prompt}],
-                system="Du bist ein Datenbankexperte. Antworte NUR mit dem JSON-Array, ohne Erklärungen.",
-                json_mode=True,
-            ):
-                result_text += token
-
-            # JSON parsen
-            try:
-                # JSON aus evtl. umgebenden Markdown-Fences extrahieren
-                clean = result_text.strip()
-                if "```" in clean:
-                    clean = clean.split("```")[1]
-                    if clean.startswith("json"):
-                        clean = clean[4:]
-                suggestions = json.loads(clean)
-                if not isinstance(suggestions, list):
-                    suggestions = []
-            except Exception:
-                suggestions = []
-
-            # Direkt in DB schreiben
-            saved = []
-            for s in suggestions:
-                name = s.get("table", "")
-                if not name:
-                    continue
-                _upsert_table_meta(
-                    db, conn_id, name,
-                    business_name=s.get("business_name") or None,
-                    description=s.get("description") or None,
-                    category=s.get("category") or None,
+                prompt = (
+                    "Analysiere diese Datenbanktabellen und gib ein JSON-Array zurück.\n"
+                    "Format: [{\"table\":\"tabellenname\",\"business_name\":\"Kurzname\","
+                    "\"description\":\"Ein Satz auf Deutsch\","
+                    "\"category\":\"Stammdaten\"}]\n\n"
+                    "Kategorien: Stammdaten, Bewegungsdaten, Konfiguration, Lookup, System, Sonstige\n\n"
+                    "Tabellen:\n" + "\n".join(table_lines)
                 )
-                saved.append(name)
-            done += len(saved)
 
-            yield f"data: {json.dumps({'progress': done, 'total': total, 'saved': saved})}\n\n"
+                result_text = ""
+                async for token in svc._stream(
+                    [{"role": "user", "content": prompt}],
+                    system="Antworte nur mit einem JSON-Array. Kein Text davor oder danach.",
+                    json_mode=True,
+                ):
+                    result_text += token
 
-        yield f"data: {json.dumps({'done': True, 'count': done})}\n\n"
+                # JSON parsen — mehrere Formate versuchen
+                suggestions = []
+                try:
+                    clean = result_text.strip()
+                    # Markdown-Fences entfernen
+                    if "```" in clean:
+                        parts = clean.split("```")
+                        for part in parts:
+                            part = part.strip()
+                            if part.startswith("json"):
+                                part = part[4:].strip()
+                            if part.startswith("["):
+                                clean = part
+                                break
+                    # Array direkt parsen
+                    if clean.startswith("["):
+                        parsed = json.loads(clean)
+                        if isinstance(parsed, list):
+                            suggestions = parsed
+                    # Manchmal gibt das Modell {"tables": [...]} zurück
+                    elif clean.startswith("{"):
+                        parsed = json.loads(clean)
+                        for key in ("tables", "data", "result", "items"):
+                            if isinstance(parsed.get(key), list):
+                                suggestions = parsed[key]
+                                break
+                except Exception as parse_err:
+                    yield f"data: {json.dumps({'warning': f'JSON-Parsing fehlgeschlagen: {str(parse_err)[:100]}', 'raw': result_text[:200]})}\n\n"
+
+                # In DB schreiben
+                saved = []
+                for s in suggestions:
+                    name = s.get("table", "")
+                    if not name:
+                        continue
+                    _upsert_table_meta(
+                        db, conn_id, name,
+                        business_name=s.get("business_name") or None,
+                        description=s.get("description") or None,
+                        category=s.get("category") or None,
+                    )
+                    saved.append(name)
+                done += len(saved)
+
+                yield f"data: {json.dumps({'progress': done, 'total': total, 'saved': saved})}\n\n"
+
+            yield f"data: {json.dumps({'done': True, 'count': done})}\n\n"
+
+        except Exception as exc:
+            yield f"data: {json.dumps({'error': str(exc)[:300]})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
