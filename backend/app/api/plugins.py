@@ -6,6 +6,7 @@ import requests
 from app.core.database import get_db
 from app.core.config import PLUGIN_MANAGER_URL
 from app.api.auth import get_current_user
+from app.api.license import require_feature
 from app.models.user import User
 from app.plugins.registry import registry
 
@@ -159,6 +160,123 @@ def stop_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
 def tier2_plugin_status(plugin_id: str, user: User = Depends(get_current_user)):
     """Container-Status eines Tier-2 Plugins abfragen."""
     return _pm_get(f"/plugins/{plugin_id}/status")
+
+
+# ── Plugin-Store (lizenzgeprüfte Auslieferung über monstersuite) ──────────────
+
+def _catalog_plugins(catalog) -> list:
+    """Normalisiert die Katalog-Antwort (Liste ODER {plugins:[...]}) auf eine Liste."""
+    if isinstance(catalog, dict):
+        return catalog.get("plugins") or []
+    return catalog or []
+
+
+@router.get("/store")
+def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft).
+    Markiert je Plugin, ob es lokal bereits installiert ist.
+    """
+    import httpx
+    from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER, _resolve_license
+
+    lic = _resolve_license(db)
+    licensed = "plugin_tier2" in (lic.get("active_features") or [])
+    key, _ = get_license_credentials(db)
+    if not key:
+        return {"licensed": licensed, "plugins": [], "error": "no_license"}
+
+    try:
+        with httpx.Client(timeout=15) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/plugins/catalog", json=license_auth_body(db))
+            r.raise_for_status()
+            catalog = r.json()
+    except Exception as e:
+        return {"licensed": licensed, "plugins": [], "error": f"catalog_unreachable: {e}"}
+
+    plugins = _catalog_plugins(catalog)
+    try:
+        installed_ids = {p.get("id") for p in _pm_get("/plugins")}
+    except Exception:
+        installed_ids = set()
+    for p in plugins:
+        p["installed"] = p.get("id") in installed_ids
+    return {"licensed": licensed, "plugins": plugins}
+
+
+@router.post("/tier2/{plugin_id}/install", status_code=201)
+def install_tier2_plugin(plugin_id: str, db: Session = Depends(get_db),
+                         _feat=Depends(require_feature("plugin_tier2")),
+                         user: User = Depends(get_current_user)):
+    """
+    Installiert ein Tier-2 Plugin lizenzgeprüft von monstersuite:
+    Katalog/Manifest holen → Image-Tarball streamen → Plugin-Manager `docker load`
+    → Plugin registrieren. Gated mit Feature `plugin_tier2`.
+    """
+    import os, tempfile
+    import httpx
+    from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER
+
+    key, _ = get_license_credentials(db)
+    if not key:
+        raise HTTPException(402, "Keine Lizenz aktiviert — Tier-2 Plugins erfordern eine gültige Lizenz.")
+    auth = license_auth_body(db)
+
+    # 1. Katalog → Manifest des gewünschten Plugins
+    try:
+        with httpx.Client(timeout=15) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/plugins/catalog", json=auth)
+            r.raise_for_status()
+            catalog = r.json()
+    except Exception as e:
+        raise HTTPException(502, f"Plugin-Katalog nicht erreichbar: {e}")
+    manifest = next((p for p in _catalog_plugins(catalog) if p.get("id") == plugin_id), None)
+    if not manifest:
+        raise HTTPException(404, f"Plugin '{plugin_id}' nicht im Lizenz-Katalog verfügbar")
+
+    # 2. Image-Tarball streamen → Temp-Datei (kein Buffern im RAM)
+    tmp = tempfile.NamedTemporaryFile(prefix=f"dm-plugin-{plugin_id}-", suffix=".tar.gz", delete=False)
+    try:
+        try:
+            with httpx.Client(timeout=None) as c:
+                with c.stream("POST", f"{LICENSE_SERVER}/api/v1/plugins/download",
+                              json={**auth, "plugin_id": plugin_id}) as resp:
+                    if resp.status_code >= 400:
+                        detail = resp.read().decode(errors="replace")[:300]
+                        raise HTTPException(resp.status_code,
+                                            f"Download abgelehnt ({resp.status_code}): {detail}")
+                    for chunk in resp.iter_bytes():
+                        tmp.write(chunk)
+            tmp.flush(); tmp.close()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(502, f"Image-Download von monstersuite fehlgeschlagen: {e}")
+
+        # 3. Tarball an Plugin-Manager streamen → docker load
+        try:
+            with open(tmp.name, "rb") as fh:
+                r = requests.post(_pm(f"/plugins/{plugin_id}/load-image"), data=fh,
+                                  headers={"Content-Type": "application/octet-stream"}, timeout=600)
+            r.raise_for_status()
+            load_result = r.json()
+        except requests.HTTPError as e:
+            raise HTTPException(502, f"docker load im Plugin-Manager fehlgeschlagen: {e.response.text[:300]}")
+        except Exception as e:
+            raise HTTPException(502, f"Plugin-Manager nicht erreichbar (load-image): {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+    # 4. Registrieren (Manifest → Plugin-Manager + Backend-Registry)
+    reg_body = {k: manifest.get(k) for k in Tier2RegisterBody.model_fields if manifest.get(k) is not None}
+    reg_body["id"] = plugin_id
+    _pm_post("/plugins", reg_body)
+    from app.plugins.tier2_proxy import Tier2Plugin
+    registry.register(Tier2Plugin(manifest, PLUGIN_MANAGER_URL))
+    return {"ok": True, "plugin_id": plugin_id, "loaded": load_result}
 
 
 # ── Wildcard-Routen ZULETZT ───────────────────────────────────────────────────

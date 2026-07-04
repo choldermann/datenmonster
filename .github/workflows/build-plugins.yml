@@ -1,0 +1,59 @@
+name: Build Tier-2 Plugin Images
+
+# Baut Tier-2-Plugin-Images und paketiert sie als `docker save`-Tarball.
+# Auslieferung an Kundeninstanzen erfolgt lizenzgeprüft über monstersuite
+# (Variante 2) — der Upload des Tarballs in den monstersuite-Storage ist ein
+# separater, monstersuite-seitiger Schritt (siehe docs/monstersuite-plugin-api.md).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tier2-plugins/**'
+    tags: ['plugin-v*']
+  workflow_dispatch:
+
+jobs:
+  build-plugin:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - id: estatistik-core
+            context: ./tier2-plugins/estatistik-core
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Manifest-Metadaten lesen
+        id: manifest
+        run: |
+          IMAGE=$(jq -r '.docker_image' "${{ matrix.context }}/manifest.json")
+          VERSION=$(jq -r '.version' "${{ matrix.context }}/manifest.json")
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tarball=${{ matrix.id }}-${VERSION}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Image bauen
+        run: docker build -t "${{ steps.manifest.outputs.image }}" "${{ matrix.context }}"
+
+      - name: docker save + gzip
+        run: |
+          docker save "${{ steps.manifest.outputs.image }}" \
+            | gzip > "${{ steps.manifest.outputs.tarball }}"
+          ls -lh "${{ steps.manifest.outputs.tarball }}"
+
+      - name: Tarball als Artefakt hochladen
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.id }}-${{ steps.manifest.outputs.version }}
+          path: ${{ steps.manifest.outputs.tarball }}
+          retention-days: 30
+
+      # Bei Tag `plugin-v*`: zusätzlich an ein GitHub-Release anhängen,
+      # von wo monstersuite das Tarball in seinen Storage übernehmen kann.
+      - name: An Release anhängen (nur bei Tag)
+        if: startsWith(github.ref, 'refs/tags/plugin-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.manifest.outputs.tarball }}

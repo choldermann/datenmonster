@@ -131,6 +131,24 @@ def _set(db: Session, key: str, value: str):
     else:
         db.add(SystemSetting(key=key, value=value))
 
+def get_license_credentials(db: Session) -> tuple[str, str]:
+    """Gespeicherten Lizenzschlüssel + E-Mail zurückgeben (für andere Module wie Plugin-Store)."""
+    return _get(db, "license_key"), _get(db, "license_email")
+
+
+def license_auth_body(db: Session) -> dict:
+    """Standard-Auth-Body für monstersuite-Aufrufe (Lizenz-als-Credential)."""
+    key, email = get_license_credentials(db)
+    return {
+        "license_key": key,
+        "email":       email,
+        "machine_id":  _machine_id(),
+        "hostname":    socket.gethostname(),
+        "product":     PRODUCT_SLUG,
+        "version":     VERSION,
+    }
+
+
 def _load_cache(db: Session) -> Optional[dict]:
     raw = _get(db, "license_cache_json")
     if not raw:

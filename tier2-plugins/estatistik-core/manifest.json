@@ -1,7 +1,7 @@
 {
   "id": "estatistik-core",
   "name": "eSTATISTIK.core / Intrastat",
-  "docker_image": "dm-plugin-estatistik:latest",
+  "docker_image": "dm-plugin-estatistik:0.1.0",
   "version": "0.1.0",
   "description": "Intrastat-Meldungen via eSTATISTIK.core. Erzeugt DatML/XML, validiert via CORE.inspector und sendet via CORE.connect.",
   "author": "Holdermann IT",

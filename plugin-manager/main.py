@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 
@@ -238,6 +239,42 @@ def stop_plugin(plugin_id: str):
 @app.get("/plugins/{plugin_id}/status")
 def plugin_status(plugin_id: str):
     return {"plugin_id": plugin_id, "status": _container_status(plugin_id)}
+
+
+@app.post("/plugins/{plugin_id}/load-image")
+async def load_image(plugin_id: str, request: Request):
+    """
+    Lädt ein per `docker save` erzeugtes (ggf. gzip-komprimiertes) Image-Tarball
+    aus dem gestreamten Request-Body via `docker load` in den lokalen Daemon.
+    Damit ist das Image lokal präsent, ohne aus einer Registry gepullt zu werden
+    (Variante 2: lizenzgeprüfte Auslieferung über monstersuite, das Backend reicht
+    das Tarball hierher weiter). Gibt die geladenen Image-Tags zurück.
+    """
+    # Body gestreamt in Temp-Datei schreiben (kein Buffern des ganzen Images im RAM)
+    tmp = tempfile.NamedTemporaryFile(prefix=f"dm-plugin-{plugin_id}-", suffix=".tar", delete=False)
+    try:
+        size = 0
+        async for chunk in request.stream():
+            tmp.write(chunk)
+            size += len(chunk)
+        tmp.flush()
+        tmp.close()
+        if size == 0:
+            raise HTTPException(400, "Leeres Image-Tarball empfangen")
+        with open(tmp.name, "rb") as fh:
+            images = _dc().images.load(fh.read())
+        tags = [t for img in images for t in (img.tags or [])]
+        logger.info(f"Image für '{plugin_id}' geladen ({size} Bytes): tags={tags}")
+        return {"ok": True, "loaded_tags": tags, "bytes": size}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, f"docker load fehlgeschlagen: {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
 
 
 # ── Proxy ─────────────────────────────────────────────────────────────────────

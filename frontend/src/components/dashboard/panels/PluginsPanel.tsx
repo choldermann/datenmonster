@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Puzzle, CheckCircle, AlertCircle, Loader2, RefreshCw, Zap, Database, ArrowRightLeft,
-  ChevronDown, ChevronUp, Container, Play, Square, Trash2, Plus, X } from "lucide-react";
+  ChevronDown, ChevronUp, Container, Play, Square, Trash2, Plus, X, Download, Lock, ShoppingBag } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
 
@@ -501,6 +501,119 @@ function RegisterTier2Modal({ onClose, onSaved }) {
   );
 }
 
+// ── Plugin-Store (lizenzgeprüfte Auslieferung über monstersuite) ─────────────
+function PluginStoreSection({ onInstalled }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [installing, setInstalling] = useState({});
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/api/plugins/store");
+      setData(data);
+    } catch (e) {
+      setData({ licensed: false, plugins: [], error: e.response?.data?.detail || e.message });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleInstall = async (id) => {
+    setInstalling(s => ({ ...s, [id]: true }));
+    try {
+      await api.post(`/api/plugins/tier2/${id}/install`);
+      await load();
+      onInstalled?.();
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message);
+    } finally {
+      setInstalling(s => ({ ...s, [id]: false }));
+    }
+  };
+
+  const plugins = data?.plugins || [];
+  const notLicensed = data && !data.licensed;
+
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ShoppingBag size={14} style={{ color: "#6ee7b7" }} />
+          <p style={{ fontSize: 11, fontWeight: 600, color: S.textDim, textTransform: "uppercase",
+            letterSpacing: "0.06em", margin: 0 }}>Verfügbare Plugins (Store)</p>
+        </div>
+        <button onClick={load} style={{ display: "flex", alignItems: "center", gap: 5,
+          fontSize: 11, padding: "5px 10px", borderRadius: 5, cursor: "pointer",
+          background: "none", border: `1px solid ${S.border}`, color: S.textDim }}>
+          <RefreshCw size={11} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: S.textDim, padding: "16px 0", fontSize: 12 }}>
+          <Loader2 size={14} className="animate-spin" /> Lade Katalog...
+        </div>
+      ) : notLicensed ? (
+        <div style={{ padding: "16px", borderRadius: 8, backgroundColor: S.bgEl,
+          border: `1px solid ${S.border}`, fontSize: 12, color: S.textDim, display: "flex", alignItems: "center", gap: 10 }}>
+          <Lock size={16} style={{ color: "#fbbf24", flexShrink: 0 }} />
+          <span>
+            {data?.error === "no_license"
+              ? "Keine Lizenz aktiviert. Aktiviere eine Lizenz unter Lizenz, um erweiterte Plugins zu installieren."
+              : "Erweiterte (Tier-2) Plugins erfordern eine Lizenz mit dem Feature Erweiterte Plugins. Upgrade unter monstersuite.de."}
+          </span>
+        </div>
+      ) : data?.error ? (
+        <div style={{ padding: "16px", borderRadius: 8, backgroundColor: S.bgEl,
+          border: `1px solid ${S.border}`, fontSize: 12, color: S.textDim }}>
+          Katalog nicht erreichbar ({String(data.error).slice(0, 120)}).
+        </div>
+      ) : plugins.length === 0 ? (
+        <div style={{ padding: "16px", borderRadius: 8, backgroundColor: S.bgEl,
+          border: `1px solid ${S.border}`, textAlign: "center", color: S.textDim, fontSize: 12 }}>
+          Keine installierbaren Plugins für deine Lizenz verfügbar.
+        </div>
+      ) : (
+        plugins.map(p => (
+          <div key={p.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
+            borderRadius: 8, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, marginBottom: 8 }}>
+            <Container size={16} style={{ color: "#c4b5fd", flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{p.name}</span>
+                {p.version && <span style={{ fontSize: 10, color: S.textDim, fontFamily: "monospace" }}>v{p.version}</span>}
+              </div>
+              {p.description && (
+                <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0", overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.description}</p>
+              )}
+            </div>
+            {p.installed ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600,
+                color: "#6ee7b7", flexShrink: 0 }}>
+                <CheckCircle size={13} /> Installiert
+              </span>
+            ) : (
+              <button onClick={() => handleInstall(p.id)} disabled={installing[p.id]}
+                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, fontWeight: 600,
+                  padding: "6px 14px", borderRadius: 5, cursor: installing[p.id] ? "wait" : "pointer",
+                  backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",
+                  color: "#6ee7b7", flexShrink: 0 }}>
+                {installing[p.id]
+                  ? <><Loader2 size={12} className="animate-spin" /> Installiere…</>
+                  : <><Download size={12} /> Installieren</>}
+              </button>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function Tier2Section({ onRefresh }) {
   const [plugins, setPlugins] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -644,6 +757,7 @@ export default function PluginsPanel() {
   const [plugins, setPlugins] = useState([]);
   const [capabilities, setCapabilities] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [tier2Reload, setTier2Reload] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -722,8 +836,11 @@ export default function PluginsPanel() {
         </>
       )}
 
+      {/* Plugin-Store (lizenzgeprüfte Auslieferung) */}
+      <PluginStoreSection onInstalled={() => { load(); setTier2Reload(n => n + 1); }} />
+
       {/* Tier-2 Plugin Manager */}
-      <Tier2Section onRefresh={load} />
+      <Tier2Section key={tier2Reload} onRefresh={load} />
     </div>
   );
 }
