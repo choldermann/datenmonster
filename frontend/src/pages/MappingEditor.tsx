@@ -670,6 +670,11 @@ export default function MappingEditor() {
     triggerLineDraw();
   }, [triggerLineDraw]);
 
+  const handleSqlNodeResize = useCallback((id, width, height) => {
+    setSqlNodes((prev) => prev.map((n) => n.id !== id ? n : { ...n, width, height }));
+    triggerLineDraw();
+  }, [triggerLineDraw]);
+
   const removeNode = useCallback((dsId) => {
     setCanvasNodes((prev) => prev.filter((n) => n.dataset_id !== dsId));
     setTargets((prev) => prev.map((t) => ({ ...t, fields: (t.fields || []).filter((c) => c.source_dataset_id !== dsId) })));
@@ -1459,8 +1464,10 @@ export default function MappingEditor() {
                     onPositionChange={(id, x, y) => { setSqlNodes((prev) => prev.map((n) => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                     onUpdate={(updated) => { setSqlNodes((prev) => prev.map((n) => n.id === updated.id ? updated : n)); setTimeout(triggerLineDraw, 30); }}
                     onRemove={(id) => { setSqlNodes((prev) => prev.filter((n) => n.id !== id)); setConnections((prev) => prev.filter((c) => c.source_dataset_id !== `__sql__${id}`)); }}
+                    onResize={handleSqlNodeResize}
                     outputRef={sqlOutputRefs.current[sn.id]}
                     onRegisterFieldListRef={(key, ref) => { nodeFieldListRefs.current[key] = ref; }}
+                    onFieldListScroll={triggerLineDraw}
                     onMiniPortsReady={(id, l, r) => { miniPortRefs.current[`sql_${sn.id}`] = { left: l, right: r }; if (l || r) setTimeout(triggerLineDraw, 0); }}
                     aiEnabled={aiEnabled}
                     mappingId={id && id !== "new" ? parseInt(id) : null}

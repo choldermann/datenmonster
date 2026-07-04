@@ -9,7 +9,7 @@ import { MinimizedNode } from "./MinimizedNode";
 
 const ACTIVE_BORDER = "#fce499";
 
-function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConnections, onMiniPortsReady, canvasNodes, outputRefs, aiEnabled, mappingId, isActive, onActivate }) {
+function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputRef, dbConnections, onMiniPortsReady, onRegisterFieldListRef, onFieldListScroll, canvasNodes, outputRefs, aiEnabled, mappingId, isActive, onActivate }) {
   const [expanded, setExpanded] = useState(true);
   const [schemaLoading, setSchemaLoading] = useState(false);
   const [schemaError, setSchemaError] = useState(null);
@@ -17,15 +17,48 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
   const [sqlModalValue, setSqlModalValue] = useState("");
   const [aiMode, setAiMode] = useState(null); // "explain" | "generate"
   const [pendingSchemaDetect, setPendingSchemaDetect] = useState(false);
+  const [nodeWidth, setNodeWidth] = useState(node.width || 260);
+  const [nodeHeight, setNodeHeight] = useState(node.height || 160);
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
+  const resizeState = useRef(null);
+  const fieldListRef = useRef(null);
   useEffect(() => {
     if (node.minimized) {
       if (outputRef) outputRef.current = miniRightRef.current;
       if (onMiniPortsReady) onMiniPortsReady(node.id, miniLeftRef.current, miniRightRef.current);
     }
   }, [node.minimized, onMiniPortsReady]);
+
+  // Register the output-field scroll container so SvgOverlay can clamp lines when scrolled
+  useEffect(() => {
+    if (onRegisterFieldListRef) onRegisterFieldListRef(`__sql__${node.id}`, fieldListRef);
+  }, [node.id, onRegisterFieldListRef]);
+
+  const handleResizeMouseDown = useCallback((e) => {
+    e.preventDefault(); e.stopPropagation();
+    resizeState.current = { startX: e.clientX, startY: e.clientY, startW: nodeWidth, startH: nodeHeight };
+    const onMove = (ev) => {
+      if (!resizeState.current) return;
+      const newW = Math.max(200, resizeState.current.startW + ev.clientX - resizeState.current.startX);
+      const newH = Math.max(60, resizeState.current.startH + ev.clientY - resizeState.current.startY);
+      setNodeWidth(newW);
+      setNodeHeight(newH);
+    };
+    const onUp = (ev) => {
+      if (resizeState.current) {
+        const newW = Math.max(200, resizeState.current.startW + ev.clientX - resizeState.current.startX);
+        const newH = Math.max(60, resizeState.current.startH + ev.clientY - resizeState.current.startY);
+        if (onResize) onResize(node.id, newW, newH);
+      }
+      resizeState.current = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [nodeWidth, nodeHeight, node.id, onResize]);
 
   useEffect(() => {
     if (pendingSchemaDetect && node.sql?.trim()) {
@@ -101,7 +134,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
 
   return (
     <>
-    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 260, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${isActive ? ACTIVE_BORDER : SQL_NODE_COLOR + "55"}`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: `1px solid ${isActive ? ACTIVE_BORDER : SQL_NODE_COLOR + "55"}`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "sql", mode: node.mode || "scalar", sql: (node.sql || "").slice(0, 400), connectionId: node.connection_id, outputField: node.output_field }); }}>
 
       {/* Header */}
@@ -332,9 +365,9 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
       )}
 
       {/* Output dots — output_fields (multi) hat immer Vorrang vor output_field (single) */}
-      <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06` }}>
+      <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06`, position: "relative" }}>
         {(node.output_fields || []).length > 0 ? (
-          <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
+          <div ref={fieldListRef} onScroll={onFieldListScroll} style={{ maxHeight: nodeHeight, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
               <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>
                 <span style={{ fontSize: 10, fontFamily: "monospace", color: SQL_NODE_COLOR, opacity: 0.9 }}>{field}</span>
@@ -369,6 +402,16 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, outputRef, dbConn
               title="Auf Zielfeld ziehen" />
           </div>
         )}
+        {/* Resize handle */}
+        <div
+          onMouseDown={handleResizeMouseDown}
+          title="Größe ändern"
+          style={{ position: "absolute", right: 3, bottom: 3, width: 10, height: 10, cursor: "nwse-resize", opacity: 0.4,
+            backgroundImage: "linear-gradient(135deg, transparent 30%, #888 30%, #888 40%, transparent 40%, transparent 60%, #888 60%, #888 70%, transparent 70%)",
+          }}
+          onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
+          onMouseLeave={(e) => e.currentTarget.style.opacity = "0.4"}
+        />
       </div>
     </div>
 
