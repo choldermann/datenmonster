@@ -148,8 +148,12 @@ def unregister_plugin(plugin_id: str):
 
 # ── Container-Lifecycle ───────────────────────────────────────────────────────
 
-@app.post("/plugins/{plugin_id}/start")
-def start_plugin(plugin_id: str):
+def _ensure_container_started(plugin_id: str) -> str:
+    """
+    Startet den Plugin-Container falls er nicht läuft. Idempotent.
+    Gibt "already_running" oder "starting" zurück.
+    Wird sowohl vom /start-Endpunkt als auch vom Proxy (On-Demand) genutzt.
+    """
     reg = load_reg()
     if plugin_id not in reg:
         raise HTTPException(404, "Plugin nicht gefunden")
@@ -159,8 +163,9 @@ def start_plugin(plugin_id: str):
     try:
         c = dc.containers.get(cname(plugin_id))
         if c.status == "running":
-            return {"ok": True, "status": "already_running"}
-        c.remove()
+            return "already_running"
+        # Gestoppter/abgestürzter Container → entfernen und neu starten
+        c.remove(force=True)
     except docker.errors.NotFound:
         pass
 
@@ -170,20 +175,49 @@ def start_plugin(plugin_id: str):
     except Exception as e:
         logger.warning(f"Pull fehlgeschlagen, versuche lokales Image: {e}")
 
+    dc.containers.run(
+        p["docker_image"],
+        name=cname(plugin_id),
+        network=PLUGIN_NETWORK,
+        detach=True,
+        # Überlebt Host-Neustart und Abstürze, damit Plugin-Writes nicht ins Leere laufen
+        restart_policy={"Name": "unless-stopped"},
+        labels={"dm.plugin": "tier2", "dm.plugin.id": plugin_id},
+        environment={
+            "PLUGIN_ID": plugin_id,
+            "PLUGIN_MANAGER_URL": PLUGIN_MANAGER_SELF_URL,
+        },
+    )
+    logger.info(f"Tier-2 Plugin gestartet: {cname(plugin_id)}")
+    return "starting"
+
+
+async def _wait_until_ready(plugin_id: str, timeout: float = 40.0):
+    """Pollt den /health-Endpunkt des Plugin-Containers bis er antwortet oder Timeout."""
+    import asyncio
+    url = f"{_container_url(plugin_id)}/health"
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    last_err = None
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        while loop.time() < deadline:
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    return True
+            except Exception as e:
+                last_err = e
+            await asyncio.sleep(1.0)
+    raise HTTPException(503, f"Plugin-Container '{plugin_id}' nicht bereit nach {int(timeout)}s: {last_err}")
+
+
+@app.post("/plugins/{plugin_id}/start")
+def start_plugin(plugin_id: str):
     try:
-        dc.containers.run(
-            p["docker_image"],
-            name=cname(plugin_id),
-            network=PLUGIN_NETWORK,
-            detach=True,
-            labels={"dm.plugin": "tier2", "dm.plugin.id": plugin_id},
-            environment={
-                "PLUGIN_ID": plugin_id,
-                "PLUGIN_MANAGER_URL": PLUGIN_MANAGER_SELF_URL,
-            },
-        )
-        logger.info(f"Tier-2 Plugin gestartet: {cname(plugin_id)}")
-        return {"ok": True, "status": "starting"}
+        status = _ensure_container_started(plugin_id)
+        return {"ok": True, "status": status}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(500, f"Container-Start fehlgeschlagen: {e}")
 
@@ -216,9 +250,11 @@ async def _proxy(plugin_id: str, endpoint: str, body: dict) -> dict:
     reg = load_reg()
     if plugin_id not in reg:
         raise HTTPException(404, "Plugin nicht gefunden")
-    status = _container_status(plugin_id)
-    if status != "running":
-        raise HTTPException(503, f"Plugin-Container nicht aktiv (Status: {status}). Bitte zuerst starten.")
+    # On-Demand-Start: Container bei Bedarf hochfahren statt sofort 503 zu werfen
+    if _container_status(plugin_id) != "running":
+        logger.info(f"Plugin '{plugin_id}' nicht aktiv – starte on-demand für '{endpoint}'")
+        _ensure_container_started(plugin_id)
+        await _wait_until_ready(plugin_id)
     url = f"{_container_url(plugin_id)}/{endpoint}"
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -264,9 +300,11 @@ async def proxy_generic(plugin_id: str, path: str, request: Request):
     reg = load_reg()
     if plugin_id not in reg:
         raise HTTPException(404, "Plugin nicht gefunden")
-    status = _container_status(plugin_id)
-    if status != "running":
-        raise HTTPException(503, f"Plugin-Container nicht aktiv (Status: {status})")
+    # On-Demand-Start wie im typisierten Proxy
+    if _container_status(plugin_id) != "running":
+        logger.info(f"Plugin '{plugin_id}' nicht aktiv – starte on-demand für '{path}'")
+        _ensure_container_started(plugin_id)
+        await _wait_until_ready(plugin_id)
     url = f"{_container_url(plugin_id)}/{path}"
     body_bytes = await request.body()
     headers = {"Content-Type": request.headers.get("content-type", "application/json")}
