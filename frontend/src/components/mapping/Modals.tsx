@@ -327,11 +327,12 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
   return (
     <>
       <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.7)" }} onClick={onClose}>
-        <div style={{ width: 440, backgroundColor: S.bgCard, borderRadius: 8, border: `1px solid ${S.border}`, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ width: 440, maxHeight: "90vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 8, border: `1px solid ${S.border}`, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }} onClick={(e) => e.stopPropagation()}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${S.border}` }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>{isNew ? "Neues Ziel" : "Ziel bearbeiten"}</span>
             <button onClick={onClose} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>✕</button>
           </div>
+          <div style={{ overflowY: "auto", flex: 1, minHeight: 0, scrollbarWidth: "thin" }}>
           <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
             {/* Name */}
             <div>
@@ -600,6 +601,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
               </div>
             </div>
           )}
+          </div>
 
           <div style={{ padding: "12px 18px", borderTop: `1px solid ${S.border}`, display: "flex", justifyContent: "flex-end", gap: 8 }}>
             <button onClick={onClose} className="btn-ghost text-xs">Abbrechen</button>
