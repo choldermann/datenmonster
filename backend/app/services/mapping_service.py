@@ -23,7 +23,7 @@ from app.services.expression_engine import (
     _exec_python_script, _eval_expression, _validate_date, _DQ_VALIDATORS,
 )
 from app.services.sql_helpers import (
-    _resolve_sql_params, _resolve_sql_lookup_params, _get_sql_engine,
+    _resolve_sql_params, _resolve_sql_lookup_params, _resolve_sql_run_params, _get_sql_engine,
 )
 from app.services.mapping_writer import _is_plugin_target, _write_target
 
@@ -1130,10 +1130,15 @@ def execute_mapping(
                                 _exec_sql = 'SELECT TOP ' + str(preview_rows) + ' ' + _re2.sub(r'(?i)^\s*SELECT\s+', '', _exec_sql, count=1)
                             else:
                                 _exec_sql = _exec_sql + ' LIMIT ' + str(preview_rows)
-                    result_df = _pd_t.read_sql(_exec_sql, ext_engine)
+                    _exec_sql, _bound_params = _resolve_sql_run_params(_exec_sql, run_params)
+                    if _bound_params:
+                        result_df = _pd_t.read_sql(_sa.text(_exec_sql), ext_engine, params=_bound_params)
+                    else:
+                        result_df = _pd_t.read_sql(_exec_sql, ext_engine)
                 else:
+                    _tf_sql, _bound_params = _resolve_sql_run_params(sql_text, run_params)
                     with tmp_engine.connect() as con:
-                        result_df = _pd_t.read_sql(_sa.text(sql_text), con)
+                        result_df = _pd_t.read_sql(_sa.text(_tf_sql), con, params=_bound_params or None)
 
                 # 6. Output-Felder aus SQL-Node übernehmen
                 sql_output_fields = sn.get("output_fields") or list(result_df.columns)

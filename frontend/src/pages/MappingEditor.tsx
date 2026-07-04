@@ -903,7 +903,7 @@ export default function MappingEditor() {
     await Promise.all(targets.map(async (target) => {
       if (abortRef.current) return;
       try {
-        const isFileExport = !target.save_as_dataset && target.target_type !== "db";
+        const isFileExport = !target.save_as_dataset && ["csv", "xlsx", "json", "xml"].includes(target.target_type);
 
         if (isFileExport) {
           // Export unter Exporte speichern (kein direkter Browser-Download mehr)

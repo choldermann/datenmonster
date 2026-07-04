@@ -16,6 +16,11 @@ const FIELD_TYPE_INPUT = {
   date:     (f, val, set) => <input type="date" value={val} onChange={e => set(e.target.value)} style={inputStyle} />,
   textarea: (f, val, set) => <textarea value={val} onChange={e => set(e.target.value)} rows={3} placeholder={f.label} style={{ ...inputStyle, resize: "vertical" }} />,
   checkbox: (f, val, set) => <input type="checkbox" checked={!!val} onChange={e => set(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />,
+  dropdown: (f, val, set) => (
+    <select value={val} onChange={e => set(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
+      {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  ),
 };
 
 const inputStyle = {
@@ -99,7 +104,7 @@ export default function FormRunner() {
   );
 
   const schema = form?.schema || {};
-  const fields = schema.fields || [];
+  const fields = (schema.fields || []).filter(f => f.type !== "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
 

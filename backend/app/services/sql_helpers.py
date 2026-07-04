@@ -54,6 +54,41 @@ def _resolve_sql_lookup_params(sql: str, param_mappings: list, flat_row: dict):
     return resolved, params
 
 
+def _resolve_sql_run_params(sql: str, run_params: dict):
+    """
+    Löst :name Platzhalter im SQL-Text des Transform-Modus über run_params auf
+    (z.B. aus einem Formular). Gibt (sql, params_dict) zurück, params_dict wird
+    read_sql()/text() als gebundene Parameter übergeben – SQL-Injection-sicher,
+    da nie String-Interpolation in den SQL-Text erfolgt.
+
+    Fallback für :year/:month falls nicht in run_params enthalten: letzter voller
+    Kalendermonat (bisheriges automatisches Verhalten bleibt so für Pipeline-Läufe
+    ohne Formular erhalten).
+    """
+    import re as _re
+    run_params = run_params or {}
+    referenced = set(_re.findall(r":([a-zA-Z_][a-zA-Z0-9_]*)", sql))
+    if not referenced:
+        return sql, {}
+
+    default_year = default_month = None
+    if ("year" in referenced or "month" in referenced) and not ("year" in run_params and "month" in run_params):
+        import datetime
+        prev_month_last_day = datetime.date.today().replace(day=1) - datetime.timedelta(days=1)
+        default_year, default_month = prev_month_last_day.year, prev_month_last_day.month
+
+    params = {}
+    for name in referenced:
+        if name in run_params:
+            val = run_params[name]
+            params[name] = int(val) if name in ("year", "month") else val
+        elif name == "year":
+            params[name] = default_year
+        elif name == "month":
+            params[name] = default_month
+    return sql, params
+
+
 def _get_sql_engine(connection_id: int):
     """Holt oder erstellt eine SQLAlchemy-Engine für eine DB-Verbindung."""
     global _sql_engine_cache
