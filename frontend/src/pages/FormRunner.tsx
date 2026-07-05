@@ -83,11 +83,14 @@ export default function FormRunner() {
     setParams(prev => ({ ...prev, [name]: value }));
   }, []);
 
-  const runForm = async () => {
+  const runForm = async (actionIds = null) => {
     setRunning(true);
     setError(null);
     try {
-      const { data } = await api.post(`/api/forms/${id}/run`, { params });
+      const { data } = await api.post(`/api/forms/${id}/run`, {
+        params,
+        action_ids: (actionIds && actionIds.length) ? actionIds : null,
+      });
       setResults(data.results || {});
     } catch (e) {
       setError(e.response?.data?.detail || e.message);
@@ -105,8 +108,14 @@ export default function FormRunner() {
 
   const schema = form?.schema || {};
   const fields = (schema.fields || []).filter(f => f.type !== "button");
+  const buttonFields = (schema.fields || []).filter(f => f.type === "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
+
+  // Ein Button kann mehrere Actions auslösen (action_ids); Fallback: einzelne action_id; sonst alle.
+  const btnActionIds = (bf) =>
+    (bf.action_ids && bf.action_ids.length) ? bf.action_ids
+      : (bf.action_id ? [bf.action_id] : null);
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -157,20 +166,20 @@ export default function FormRunner() {
               })}
             </div>
 
-            <div style={{ marginTop: 20, display: "flex", gap: 10 }}>
-              {actions.length > 0 ? (
-                actions.map(a => (
-                  <button key={a.id} onClick={runForm} disabled={running}
+            <div style={{ marginTop: 20, display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {buttonFields.length > 0 ? (
+                buttonFields.map(bf => (
+                  <button key={bf.id} onClick={() => runForm(btnActionIds(bf))} disabled={running}
                     style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
                       borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
                       border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
                       cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
                     {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                    {a.label || "Ausführen"}
+                    {bf.label || "Ausführen"}
                   </button>
                 ))
               ) : (
-                <button onClick={runForm} disabled={running}
+                <button onClick={() => runForm(null)} disabled={running}
                   style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
                     borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
                     border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
@@ -187,7 +196,7 @@ export default function FormRunner() {
             <p style={{ color: S.textDim, fontSize: 12, marginBottom: 16 }}>
               Dieses Formular hat noch keine Eingabefelder.
             </p>
-            <button onClick={runForm} disabled={running}
+            <button onClick={() => runForm(null)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 20px",
                 borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
                 border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",

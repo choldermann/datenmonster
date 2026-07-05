@@ -100,10 +100,10 @@ export default function FormPreview({ schema, formId, onClose }) {
 
   const setParam = useCallback((name, v) => setParams(p => ({ ...p, [name]: v })), []);
 
-  const runAction = async (actionId) => {
+  const runAction = async (actionIds) => {
     setRunning(true); setError(null);
     try {
-      const ids = actionId ? [actionId] : null;
+      const ids = (actionIds && actionIds.length) ? actionIds : null;
       const { data } = await api.post(`/api/forms/${formId}/run`, { params, action_ids: ids });
       setResults(data.results || {});
     } catch (e) {
@@ -146,10 +146,12 @@ export default function FormPreview({ schema, formId, onClose }) {
             <div key={ri} style={{ display: "flex", flexWrap: "wrap", margin: "0 -6px 12px" }}>
               {rowFields.map(f => {
                 if (f.type === "button") {
-                  const action = actions.find(a => a.id === f.action_id);
+                  const ids = (f.action_ids && f.action_ids.length)
+                    ? f.action_ids
+                    : (f.action_id ? [f.action_id] : null);
                   return (
                     <div key={f.id} style={{ flex: `0 0 ${(f.colSpan / 12) * 100}%`, padding: "0 6px" }}>
-                      <button onClick={() => runAction(f.action_id || null)} disabled={running}
+                      <button onClick={() => runAction(ids)} disabled={running}
                         style={{ display: "inline-flex", alignItems: "center", gap: 7,
                           padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 600,
                           backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",

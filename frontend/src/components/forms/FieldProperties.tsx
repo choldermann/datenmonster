@@ -176,23 +176,45 @@ export default function FieldProperties({ field, onChange, actions }) {
         </Section>
       )}
 
-      {/* Button → Action verknüpfen */}
-      {field.type === "button" && (
-        <Section title="Aktion">
-          <Label>Verknüpfte Aktion</Label>
-          <select value={field.action_id || ""}
-            onChange={e => set({ action_id: e.target.value })}
-            style={{ ...inp }}>
-            <option value="">— keine —</option>
-            {(actions || []).map(a => (
-              <option key={a.id} value={a.id}>{a.label || a.id}</option>
-            ))}
-          </select>
-          <p style={{ fontSize: 9, color: S.textDim, marginTop: 5, lineHeight: 1.4 }}>
-            Aktionen im Tab "Aktionen" konfigurieren
-          </p>
-        </Section>
-      )}
+      {/* Button → Actions verknüpfen (mehrere möglich) */}
+      {field.type === "button" && (() => {
+        const selIds = (field.action_ids && field.action_ids.length)
+          ? field.action_ids
+          : (field.action_id ? [field.action_id] : []);
+        return (
+          <Section title="Aktionen">
+            <Label>Verknüpfte Aktionen</Label>
+            {(actions || []).length === 0 ? (
+              <p style={{ fontSize: 10, color: S.textDim }}>
+                Noch keine Aktionen — im Tab "Aktionen" anlegen.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {(actions || []).map(a => {
+                  const checked = selIds.includes(a.id);
+                  return (
+                    <label key={a.id} style={{ display: "flex", alignItems: "center", gap: 6,
+                      fontSize: 11, color: S.textMain, cursor: "pointer" }}>
+                      <input type="checkbox" checked={checked}
+                        onChange={e => {
+                          const next = e.target.checked
+                            ? [...selIds, a.id]
+                            : selIds.filter(x => x !== a.id);
+                          set({ action_ids: next, action_id: "" });
+                        }}
+                        style={{ width: 13, height: 13 }} />
+                      {a.label || a.id}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            <p style={{ fontSize: 9, color: S.textDim, marginTop: 6, lineHeight: 1.4 }}>
+              Mehrere Aktionen möglich — ein Klick führt alle aus. Ohne Auswahl laufen alle Aktionen.
+            </p>
+          </Section>
+        );
+      })()}
 
       {/* Layout: Breite */}
       <Section title="Layout">
