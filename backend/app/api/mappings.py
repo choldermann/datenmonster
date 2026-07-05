@@ -526,7 +526,7 @@ def get_sql_schema(
                 for f in fields_str.split(","):
                     f = f.strip()
                     # AS alias
-                    alias_m = re.search(r"AS\s+(\w+)\s*$", f, re.IGNORECASE)
+                    alias_m = re.search(r"\bAS\s+(\w+)\s*$", f, re.IGNORECASE)
                     if alias_m:
                         cols.append(alias_m.group(1))
                     elif f != "*":
