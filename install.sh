@@ -191,6 +191,11 @@ BACKEND_PORT=${BACKEND_PORT}
 # ─── Sicherheit ───────────────────────────────────────────────────────────────
 SECRET_KEY=${SECRET_KEY}
 
+# ─── Lizenz ───────────────────────────────────────────────────────────────────
+# Stabile, pro Host eindeutige machine_id für die Lizenzbindung. Aus dem echten
+# Hostnamen abgeleitet (ändert sich – anders als die Container-ID – nicht bei Updates).
+LICENSE_HOSTNAME=datenmonster-$(hostname 2>/dev/null || echo "host")
+
 # ─── Admin-Account ────────────────────────────────────────────────────────────
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=${ADMIN_PASSWORD}

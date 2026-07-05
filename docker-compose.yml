@@ -5,6 +5,9 @@ services:
     image: ghcr.io/choldermann/datenmonster-backend:latest
     pull_policy: always
     container_name: datenmonster-backend
+    # Fester Hostname → stabile machine_id für die Lizenzbindung (sonst Container-ID-Hash,
+    # der sich bei jedem Update/Recreate ändert und die Aktivierung bricht).
+    hostname: ${LICENSE_HOSTNAME:-datenmonster}
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
