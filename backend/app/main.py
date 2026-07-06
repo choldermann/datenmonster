@@ -69,6 +69,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE forms ADD COLUMN slug TEXT",
             "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",
+            "ALTER TABLE templates ADD COLUMN installations JSON DEFAULT '[]'",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,

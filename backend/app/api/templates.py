@@ -2,6 +2,7 @@ import traceback
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional, List, Any
 from pydantic import BaseModel
 import json
@@ -616,6 +617,21 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         db.add(fo); db.commit(); db.refresh(fo)
         created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
 
+    # ── Installation protokollieren (erzeugte Objekt-IDs) ────────────────────
+    # Damit delete_template gezielt per ID löschen kann statt fehleranfällig nach
+    # Namen (Namensabgleich konnte gleichnamige Originale mitlöschen).
+    inst_record = {
+        "project_id": body.project_id,
+        "at": datetime.now(timezone.utc).isoformat(),
+        "objects": {
+            typ: [o["id"] for o in created.get(typ, []) if isinstance(o, dict) and "id" in o]
+            for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms", "reports")
+        },
+    }
+    t.installations = (t.installations or []) + [inst_record]
+    flag_modified(t, "installations")
+    db.commit()
+
     try:
         from app.services.db_logger import log as _dblog
         _dblog(db, "success", "templates", "template_installed",
@@ -858,53 +874,36 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
     from app.models.pipeline import Pipeline
     from app.models.form import Form
     from app.models.report import Report
+    from app.models.rest_source import RestSource
 
     t = db.query(Template).filter(Template.template_id == template_id).first()
     if not t:
         raise HTTPException(404, 'Nicht gefunden')
 
-    content = t.content if isinstance(t.content, dict) else json.loads(t.content or '{}')
-    deleted = {'datasets': 0, 'mappings': 0, 'pipelines': 0, 'forms': 0, 'reports': 0}
-
-    for ds_def in content.get('datasets', []):
-        ds = db.query(Dataset).filter(Dataset.name == ds_def.get('name')).first()
-        if ds:
-            db.delete(ds)
-            deleted['datasets'] += 1
-
-    for m_def in content.get('mappings', []):
-        m = db.query(Mapping).filter(Mapping.name == m_def.get('name')).first()
-        if m:
-            db.delete(m)
-            deleted['mappings'] += 1
-
-    pipeline_def = content.get('pipeline') or {}
-    if pipeline_def.get('name'):
-        p = db.query(Pipeline).filter(Pipeline.name == pipeline_def['name']).first()
-        if p:
-            db.delete(p)
-            deleted['pipelines'] += 1
-
-    for p_def in content.get('pipelines', []):
-        p = db.query(Pipeline).filter(Pipeline.name == p_def.get('name')).first()
-        if p:
-            db.delete(p)
-            deleted['pipelines'] += 1
-
-    for f_def in content.get('forms', []):
-        fo = db.query(Form).filter(Form.name == f_def.get('name')).first()
-        if fo:
-            db.delete(fo)
-            deleted['forms'] += 1
-
-    for r_def in content.get('reports', []):
-        r = db.query(Report).filter(Report.name == r_def.get('name')).first()
-        if r:
-            db.delete(r)
-            deleted['reports'] += 1
+    # Gezielt nur die beim Install erzeugten Objekte per ID löschen (siehe
+    # install_template → t.installations). KEIN Namensabgleich mehr: der konnte
+    # gleichnamige Original-Objekte löschen, die nicht aus dem Template stammen.
+    type_model = {
+        "datasets": Dataset, "rest_sources": RestSource, "mappings": Mapping,
+        "pipelines": Pipeline, "forms": Form, "reports": Report,
+    }
+    deleted = {k: 0 for k in type_model}
+    installs = t.installations or []
+    for rec in installs:
+        for typ, ids in (rec.get("objects") or {}).items():
+            model = type_model.get(typ)
+            if not model:
+                continue
+            for oid in ids or []:
+                obj = db.query(model).filter(model.id == oid).first()
+                if obj:
+                    db.delete(obj)
+                    deleted[typ] += 1
 
     db.delete(t)
     db.commit()
-    return {'ok': True, 'deleted': deleted}
+    # tracked=False ⇒ Template wurde vor Einführung des Install-Trackings installiert;
+    # die erzeugten Objekte bleiben bestehen und müssen ggf. manuell gelöscht werden.
+    return {'ok': True, 'deleted': deleted, 'tracked': bool(installs)}
 
 
