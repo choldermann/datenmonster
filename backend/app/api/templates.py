@@ -769,19 +769,33 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 "targets": _rewrite_conn_export(_rewrite_ids_export(targets_raw, ds_real_to_tpl), referenced_conn_ids),
             })
 
+    def _rewrite_pipeline_nodes(nodes):
+        """Mapping-Node-mapping_id (Integer) → {{mapping_X}}-Platzhalter, sofern das
+        Mapping mitexportiert wird. Die Install-Seite löst {{mapping_X}} wieder auf."""
+        out = copy.deepcopy(nodes or [])
+        for node in out:
+            if node.get("type") == "mapping":
+                cfg = node.get("config") or {}
+                mid = cfg.get("mapping_id")
+                if isinstance(mid, int) and mid in mapping_real_to_tpl:
+                    cfg["mapping_id"] = "{{%s}}" % mapping_real_to_tpl[mid]
+                    node["config"] = cfg
+        return out
+
     for p_id in (body.pipeline_ids or []):
         p = db.query(Pipeline).filter(Pipeline.id == p_id).first()
         if p:
+            nodes = _rewrite_pipeline_nodes(p.nodes)
             content["pipelines"].append({
                 "id": f"pipeline_{p_id}",
                 "name": p.name,
-                "nodes": p.nodes or [],
+                "nodes": nodes,
                 "connections": p.connections or [],
             })
             if not content.get("pipeline"):
                 content["pipeline"] = {
                     "name": p.name,
-                    "nodes": p.nodes or [],
+                    "nodes": nodes,
                     "connections": p.connections or [],
                 }
 

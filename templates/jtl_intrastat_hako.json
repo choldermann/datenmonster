@@ -1,0 +1,900 @@
+{
+  "template_id": "custom_jtl_intrastat_hako__estatistik___destati_1783313844",
+  "template_name": "JTL Intrastat HaKo (eSTATISTIK + Destatis)",
+  "description": "Vollständiges Intrastat-Setup: Mappings Ausfuhr/Einfuhr (eSTATISTIK.core + Destatis-CSV), Formular Intrastat Zeitraum, monatliche Pipelines. DB-Verbindung beim Installieren wählen.",
+  "category": "jtl",
+  "version": "1.0",
+  "author": "christof",
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "mapping_21",
+      "name": "Intrastat Ausfuhr (eSTATISTIK.core)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 111,
+          "y": 28,
+          "connection_id": "{{connection_10}}",
+          "sql": "SELECT\n    ROW_NUMBER() OVER (ORDER BY A.cTaric, RE.cVersandlandISO, RELI.cISO, REPO.cEinheit) AS position_number,\n    A.cTaric AS commodity_code,\n    RE.cVersandlandISO AS country_of_origin,\n    RELI.cISO AS partner_country,\n    '11' AS transaction_nature,\n    '3' AS mode_of_transport,\n    CAST(ROUND(SUM(REPO.fAnzahl * A.fGewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS statistical_value,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS invoiced_amount,\n    REPO.cEinheit AS quantity_unit\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND RE.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\nGROUP BY A.cTaric, RE.cVersandlandISO, RELI.cISO, REPO.cEinheit\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "position_number",
+            "commodity_code",
+            "country_of_origin",
+            "partner_country",
+            "transaction_nature",
+            "mode_of_transport",
+            "net_mass",
+            "statistical_value",
+            "invoiced_amount",
+            "quantity_unit"
+          ],
+          "width": 350,
+          "height": 244
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "eSTATISTIK.core Intrastat",
+          "target_type": "estatistik_intrastat",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "insert",
+          "target_options": {
+            "plugin_config": {
+              "mode": "test",
+              "core_user": "",
+              "core_password": "",
+              "sender_id": "",
+              "reporter_id": "",
+              "direction": "V",
+              "period": "",
+              "customs_number": "",
+              "company_id": ""
+            }
+          },
+          "fields": [
+            {
+              "source_field": "position_number",
+              "target_field": "position_number",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "position_number"
+              }
+            },
+            {
+              "source_field": "commodity_code",
+              "target_field": "commodity_code",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "commodity_code"
+              }
+            },
+            {
+              "source_field": "country_of_origin",
+              "target_field": "country_of_origin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "country_of_origin"
+              }
+            },
+            {
+              "source_field": "partner_country",
+              "target_field": "partner_country",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "partner_country"
+              }
+            },
+            {
+              "source_field": "transaction_nature",
+              "target_field": "transaction_nature",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "transaction_nature"
+              }
+            },
+            {
+              "source_field": "mode_of_transport",
+              "target_field": "mode_of_transport",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "mode_of_transport"
+              }
+            },
+            {
+              "source_field": "net_mass",
+              "target_field": "net_mass",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "net_mass"
+              }
+            },
+            {
+              "source_field": "statistical_value",
+              "target_field": "statistical_value",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "statistical_value"
+              }
+            },
+            {
+              "source_field": "invoiced_amount",
+              "target_field": "invoiced_amount",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "invoiced_amount"
+              }
+            },
+            {
+              "source_field": "quantity_unit",
+              "target_field": "quantity_unit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "quantity_unit"
+              }
+            }
+          ]
+        },
+        {
+          "id": "t2",
+          "name": "Destatis CSV (Ausfuhr)",
+          "target_type": "destatis_csv",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "insert",
+          "target_options": {
+            "destatis_config": {
+              "direction": "V",
+              "bundesland": "05"
+            }
+          },
+          "fields": [
+            {
+              "source_field": "position_number",
+              "target_field": "position_number",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "position_number"
+              }
+            },
+            {
+              "source_field": "commodity_code",
+              "target_field": "commodity_code",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "commodity_code"
+              }
+            },
+            {
+              "source_field": "country_of_origin",
+              "target_field": "country_of_origin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "country_of_origin"
+              }
+            },
+            {
+              "source_field": "partner_country",
+              "target_field": "partner_country",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "partner_country"
+              }
+            },
+            {
+              "source_field": "transaction_nature",
+              "target_field": "transaction_nature",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "transaction_nature"
+              }
+            },
+            {
+              "source_field": "mode_of_transport",
+              "target_field": "mode_of_transport",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "mode_of_transport"
+              }
+            },
+            {
+              "source_field": "net_mass",
+              "target_field": "net_mass",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "net_mass"
+              }
+            },
+            {
+              "source_field": "statistical_value",
+              "target_field": "statistical_value",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "statistical_value"
+              }
+            },
+            {
+              "source_field": "invoiced_amount",
+              "target_field": "invoiced_amount",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "invoiced_amount"
+              }
+            },
+            {
+              "source_field": "quantity_unit",
+              "target_field": "quantity_unit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "quantity_unit"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_22",
+      "name": "Intrastat Einfuhr (eSTATISTIK.core)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 111,
+          "y": 28,
+          "connection_id": "{{connection_10}}",
+          "sql": "SELECT\n    ROW_NUMBER() OVER (ORDER BY A.cTaric, E.cLandISO) AS position_number,\n    A.cTaric AS commodity_code,\n    E.cLandISO AS country_of_origin,\n    E.cLandISO AS versendungsland,\n    'DE' AS partner_country,\n    '11' AS transaction_nature,\n    '3' AS mode_of_transport,\n    CAST(ROUND(SUM(EP.fMenge * A.fGewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS statistical_value,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS invoiced_amount,\n    '' AS quantity_unit\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND E.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND E.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\nGROUP BY A.cTaric, E.cLandISO\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "position_number",
+            "commodity_code",
+            "country_of_origin",
+            "versendungsland",
+            "partner_country",
+            "transaction_nature",
+            "mode_of_transport",
+            "net_mass",
+            "statistical_value",
+            "invoiced_amount",
+            "quantity_unit"
+          ],
+          "width": 350,
+          "height": 244
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "eSTATISTIK.core Intrastat (Einfuhr)",
+          "target_type": "estatistik_intrastat",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "insert",
+          "target_options": {
+            "plugin_config": {
+              "mode": "test",
+              "core_user": "",
+              "core_password": "",
+              "sender_id": "",
+              "reporter_id": "",
+              "direction": "E",
+              "period": "",
+              "customs_number": "",
+              "company_id": ""
+            }
+          },
+          "fields": [
+            {
+              "source_field": "position_number",
+              "target_field": "position_number",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "position_number"
+              }
+            },
+            {
+              "source_field": "commodity_code",
+              "target_field": "commodity_code",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "commodity_code"
+              }
+            },
+            {
+              "source_field": "country_of_origin",
+              "target_field": "country_of_origin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "country_of_origin"
+              }
+            },
+            {
+              "source_field": "partner_country",
+              "target_field": "partner_country",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "partner_country"
+              }
+            },
+            {
+              "source_field": "transaction_nature",
+              "target_field": "transaction_nature",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "transaction_nature"
+              }
+            },
+            {
+              "source_field": "mode_of_transport",
+              "target_field": "mode_of_transport",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "mode_of_transport"
+              }
+            },
+            {
+              "source_field": "net_mass",
+              "target_field": "net_mass",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "net_mass"
+              }
+            },
+            {
+              "source_field": "statistical_value",
+              "target_field": "statistical_value",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "statistical_value"
+              }
+            },
+            {
+              "source_field": "invoiced_amount",
+              "target_field": "invoiced_amount",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "invoiced_amount"
+              }
+            },
+            {
+              "source_field": "quantity_unit",
+              "target_field": "quantity_unit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "quantity_unit"
+              }
+            }
+          ]
+        },
+        {
+          "id": "t2",
+          "name": "Destatis CSV (Einfuhr)",
+          "target_type": "destatis_csv",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "insert",
+          "target_options": {
+            "destatis_config": {
+              "direction": "E",
+              "bundesland": "05"
+            }
+          },
+          "fields": [
+            {
+              "source_field": "position_number",
+              "target_field": "position_number",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "position_number"
+              }
+            },
+            {
+              "source_field": "commodity_code",
+              "target_field": "commodity_code",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "commodity_code"
+              }
+            },
+            {
+              "source_field": "country_of_origin",
+              "target_field": "country_of_origin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "country_of_origin"
+              }
+            },
+            {
+              "source_field": "versendungsland",
+              "target_field": "partner_country",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "versendungsland"
+              }
+            },
+            {
+              "source_field": "transaction_nature",
+              "target_field": "transaction_nature",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "transaction_nature"
+              }
+            },
+            {
+              "source_field": "mode_of_transport",
+              "target_field": "mode_of_transport",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "mode_of_transport"
+              }
+            },
+            {
+              "source_field": "net_mass",
+              "target_field": "net_mass",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "net_mass"
+              }
+            },
+            {
+              "source_field": "statistical_value",
+              "target_field": "statistical_value",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "statistical_value"
+              }
+            },
+            {
+              "source_field": "invoiced_amount",
+              "target_field": "invoiced_amount",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "invoiced_amount"
+              }
+            },
+            {
+              "source_field": "quantity_unit",
+              "target_field": "quantity_unit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "quantity_unit"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [
+    {
+      "id": "pipeline_37",
+      "name": "Intrastat Ausfuhr – monatlich",
+      "nodes": [
+        {
+          "id": "trg_intrastat",
+          "type": "trigger",
+          "x": 120,
+          "y": 140,
+          "config": {
+            "trigger_mode": "schedule",
+            "mode": "monthly",
+            "time": "06:00",
+            "intervalMin": 0,
+            "monthDays": [
+              10
+            ],
+            "cron": "0 6 10 * *"
+          }
+        },
+        {
+          "id": "map_intrastat",
+          "type": "mapping",
+          "x": 440,
+          "y": 140,
+          "config": {
+            "mapping_id": "{{mapping_21}}",
+            "on_error": "stop"
+          }
+        },
+        {
+          "id": "eml_intrastat",
+          "type": "email",
+          "x": 760,
+          "y": 140,
+          "config": {
+            "to": "christof@holdermann.me",
+            "subject": "Intrastat-Ausfuhr: monatlicher Lauf abgeschlossen",
+            "body": "Die monatliche Intrastat-Ausfuhr-Pipeline wurde ausgefuehrt.\nGemeldet wurde automatisch der jeweils letzte volle Kalendermonat.\n\nDetails zum Lauf (Zeilen, evtl. Fehler) siehe Monitoring in Datenmonster.",
+            "send_on": "always"
+          }
+        }
+      ],
+      "connections": [
+        {
+          "from_node": "trg_intrastat",
+          "from_port": "out",
+          "to_node": "map_intrastat",
+          "to_port": "in"
+        },
+        {
+          "from_node": "map_intrastat",
+          "from_port": "out",
+          "to_node": "eml_intrastat",
+          "to_port": "in"
+        }
+      ]
+    },
+    {
+      "id": "pipeline_38",
+      "name": "Intrastat Einfuhr – monatlich",
+      "nodes": [
+        {
+          "id": "trg_intrastat_ein",
+          "type": "trigger",
+          "x": 120,
+          "y": 140,
+          "config": {
+            "trigger_mode": "schedule",
+            "mode": "monthly",
+            "time": "06:15",
+            "intervalMin": 0,
+            "monthDays": [
+              10
+            ],
+            "cron": "15 6 10 * *"
+          }
+        },
+        {
+          "id": "map_intrastat_ein",
+          "type": "mapping",
+          "x": 440,
+          "y": 140,
+          "config": {
+            "mapping_id": "{{mapping_22}}",
+            "on_error": "stop"
+          }
+        },
+        {
+          "id": "eml_intrastat_ein",
+          "type": "email",
+          "x": 760,
+          "y": 140,
+          "config": {
+            "to": "christof@holdermann.me",
+            "subject": "Intrastat-Einfuhr: monatlicher Lauf abgeschlossen",
+            "body": "Die monatliche Intrastat-Einfuhr-Pipeline wurde ausgefuehrt.\nGemeldet wurde automatisch der jeweils letzte volle Kalendermonat.\n\nDetails zum Lauf (Zeilen, evtl. Fehler) siehe Monitoring in Datenmonster.",
+            "send_on": "always"
+          }
+        }
+      ],
+      "connections": [
+        {
+          "from_node": "trg_intrastat_ein",
+          "from_port": "out",
+          "to_node": "map_intrastat_ein",
+          "to_port": "in"
+        },
+        {
+          "from_node": "map_intrastat_ein",
+          "from_port": "out",
+          "to_node": "eml_intrastat_ein",
+          "to_port": "in"
+        }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "id": "form_1",
+      "name": "Intrastat Zeitraum",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_year",
+            "type": "number",
+            "row": 0,
+            "colSpan": 3,
+            "label": "Jahr",
+            "name": "year",
+            "required": true,
+            "placeholder": "",
+            "default": "2026",
+            "options": [],
+            "action_id": "",
+            "content": ""
+          },
+          {
+            "id": "f_month",
+            "type": "dropdown",
+            "row": 0,
+            "colSpan": 3,
+            "label": "Monat",
+            "name": "month",
+            "required": true,
+            "placeholder": "",
+            "default": "1",
+            "options": [
+              {
+                "value": "1",
+                "label": "Januar"
+              },
+              {
+                "value": "2",
+                "label": "Februar"
+              },
+              {
+                "value": "3",
+                "label": "März"
+              },
+              {
+                "value": "4",
+                "label": "April"
+              },
+              {
+                "value": "5",
+                "label": "Mai"
+              },
+              {
+                "value": "6",
+                "label": "Juni"
+              },
+              {
+                "value": "7",
+                "label": "Juli"
+              },
+              {
+                "value": "8",
+                "label": "August"
+              },
+              {
+                "value": "9",
+                "label": "September"
+              },
+              {
+                "value": "10",
+                "label": "Oktober"
+              },
+              {
+                "value": "11",
+                "label": "November"
+              },
+              {
+                "value": "12",
+                "label": "Dezember"
+              }
+            ],
+            "action_id": "",
+            "content": ""
+          },
+          {
+            "id": "f_btn",
+            "type": "button",
+            "row": 1,
+            "colSpan": 3,
+            "label": "Anzeigen",
+            "name": "",
+            "required": false,
+            "placeholder": "",
+            "default": "",
+            "options": [],
+            "action_ids": [
+              "a_intrastat21",
+              "a_intrastat_ein"
+            ],
+            "action_id": "",
+            "content": ""
+          }
+        ],
+        "layout": [],
+        "actions": [
+          {
+            "id": "a_intrastat21",
+            "type": "run_mapping",
+            "mapping_id": "mapping_21",
+            "label": "Auswerten Ausfuhr"
+          },
+          {
+            "id": "a_intrastat_ein",
+            "type": "run_mapping",
+            "mapping_id": "mapping_22",
+            "label": "Auswerten Einfuhr"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_intrastat_table",
+            "type": "table",
+            "label": "Ergebnis Ausfuhr",
+            "action_id": "a_intrastat21",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_intrastat_ein_table",
+            "type": "table",
+            "label": "Ergebnis Einfuhr",
+            "action_id": "a_intrastat_ein",
+            "config": {
+              "width": 12
+            }
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ],
+  "reports": [],
+  "config_required": [
+    {
+      "key": "connection_10",
+      "label": "DB-Verbindung „HaKo Server Lokal“",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "hinweise": [
+    "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert."
+  ],
+  "pipeline": {
+    "name": "Intrastat Ausfuhr – monatlich",
+    "nodes": [
+      {
+        "id": "trg_intrastat",
+        "type": "trigger",
+        "x": 120,
+        "y": 140,
+        "config": {
+          "trigger_mode": "schedule",
+          "mode": "monthly",
+          "time": "06:00",
+          "intervalMin": 0,
+          "monthDays": [
+            10
+          ],
+          "cron": "0 6 10 * *"
+        }
+      },
+      {
+        "id": "map_intrastat",
+        "type": "mapping",
+        "x": 440,
+        "y": 140,
+        "config": {
+          "mapping_id": "{{mapping_21}}",
+          "on_error": "stop"
+        }
+      },
+      {
+        "id": "eml_intrastat",
+        "type": "email",
+        "x": 760,
+        "y": 140,
+        "config": {
+          "to": "christof@holdermann.me",
+          "subject": "Intrastat-Ausfuhr: monatlicher Lauf abgeschlossen",
+          "body": "Die monatliche Intrastat-Ausfuhr-Pipeline wurde ausgefuehrt.\nGemeldet wurde automatisch der jeweils letzte volle Kalendermonat.\n\nDetails zum Lauf (Zeilen, evtl. Fehler) siehe Monitoring in Datenmonster.",
+          "send_on": "always"
+        }
+      }
+    ],
+    "connections": [
+      {
+        "from_node": "trg_intrastat",
+        "from_port": "out",
+        "to_node": "map_intrastat",
+        "to_port": "in"
+      },
+      {
+        "from_node": "map_intrastat",
+        "from_port": "out",
+        "to_node": "eml_intrastat",
+        "to_port": "in"
+      }
+    ]
+  }
+}
