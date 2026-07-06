@@ -164,6 +164,9 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
   const [sortFields, setSortFields] = useState(target?.target_options?.sort_fields || []);
   const [rowLimit, setRowLimit] = useState(target?.target_options?.row_limit || "");
 
+  // Destatis-CSV Meldungskopf
+  const [destatisConfig, setDestatisConfig] = useState(target?.target_options?.destatis_config || { direction: "E", bundesland: "" });
+
   // DB Key-Columns
   const [keyColumns, setKeyColumns] = useState((target?.target_options?.key_columns || []).join(", "));
 
@@ -250,6 +253,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
       target_options: {
         ...opts,
         ...(isPluginTarget ? { plugin_config: pluginConfig } : {}),
+        ...(targetType === "destatis_csv" ? { destatis_config: destatisConfig } : {}),
         dataset_write_mode: datasetWriteMode,
         required_fields: requiredFields,
         deduplicate_enabled: deduplicateEnabled,
@@ -367,6 +371,25 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 <select style={iS} value={opts.delimiter || ";"} onChange={(e) => setOpts({ ...opts, delimiter: e.target.value })}>
                   {[";", ",", "|", "\t"].map((d) => <option key={d} value={d}>{d === "\t" ? "Tab" : d}</option>)}
                 </select>
+              </div>
+            )}
+            {/* Destatis-CSV Meldungskopf */}
+            {targetType === "destatis_csv" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={lS}>Richtung</label>
+                  <select style={iS} value={destatisConfig.direction || "E"} onChange={(e) => setDestatisConfig({ ...destatisConfig, direction: e.target.value })}>
+                    <option value="E">Eingang (Einfuhr)</option>
+                    <option value="V">Versendung (Ausfuhr)</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={lS}>Bundesland Meldepflichtiger</label>
+                  <input style={iS} value={destatisConfig.bundesland || ""} onChange={(e) => setDestatisConfig({ ...destatisConfig, bundesland: e.target.value })} placeholder="z.B. 05 (NRW)" maxLength={2} />
+                </div>
+                <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
+                  16-Spalten-CSV (IDEV-Upload), CRLF/CP1252, ohne Kopfzeile. Kennnummer und Zeitraum werden nicht in die Datei geschrieben – die trägst du im IDEV-Webformular ein. Das Bundesland pro Zeile (Spalte 7) muss aus dem Mapping kommen (Feld <code>bundesland</code>).
+                </div>
               </div>
             )}
             {/* DB options */}

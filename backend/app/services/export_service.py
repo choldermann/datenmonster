@@ -20,6 +20,77 @@ def export_csv(df: pd.DataFrame, delimiter: str = ";", encoding: str = "utf-8-si
     return buf.getvalue().encode(encoding)
 
 
+# ─── Destatis Intrastat CSV (IDEV-Upload) ───────────────────────────────────────
+
+def export_destatis_csv(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """
+    Erzeugt die Destatis-Intrastat-CSV (IDEV-Upload-Format, "Meldung.csv"):
+    16 Felder, ';'-getrennt, CRLF-Zeilenende, CP1252, KEINE Kopfzeile.
+
+    Kennnummer und Zeitraum stehen bewusst nicht in der Datei – die werden im
+    IDEV-Webformular eingetragen (analog zum ASC-Format, wo sie enthalten sind).
+
+    Erwartete Spalten im df: commodity_code, country_of_origin, partner_country,
+    transaction_nature, mode_of_transport, net_mass, statistical_value und optional
+    'bundesland' (Ursprungs-/Bestimmungsbundesland pro Zeile → Feld 7).
+
+    config: {
+        "direction": "E" | "V",   # Feld 1 (Eingang / Versendung)
+        "bundesland": "05",        # Feld 2, Bundesland des Meldepflichtigen (konstant)
+    }
+    """
+    cfg = config or {}
+    direction = str(cfg.get("direction") or "")
+    bl_firma = str(cfg.get("bundesland") or "")
+    # Feld 7 (Ursprungs-/Bestimmungsbundesland): fester Code aus der Config; leer →
+    # fällt auf das Bundesland des Meldepflichtigen (Feld 2) zurück. Eine ggf. pro
+    # Zeile im df vorhandene Spalte 'bundesland' hat weiterhin Vorrang.
+    bl_line = str(cfg.get("bundesland_line") or "")
+
+    def _s(v) -> str:
+        if v is None:
+            return ""
+        try:
+            if pd.isna(v):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(v).strip()
+
+    def _num(v) -> str:
+        s = _s(v)
+        if s == "":
+            return ""
+        try:
+            return str(int(round(float(s))))
+        except (TypeError, ValueError):
+            return s
+
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf, delimiter=";", lineterminator="\r\n",
+                        quoting=csv.QUOTE_MINIMAL)
+    for _, row in df.iterrows():
+        writer.writerow([
+            direction,                          # 1  Richtung (E/V)
+            bl_firma,                           # 2  Bundesland Meldepflichtiger
+            _s(row.get("transaction_nature")),  # 3  Art des Geschäfts
+            _s(row.get("mode_of_transport")),   # 4  Verkehrszweig
+            _s(row.get("country_of_origin")),   # 5  Ursprungsland
+            "",                                 # 6  (reserviert)
+            _s(row.get("bundesland")) or bl_line or bl_firma,  # 7  Ursprungs-/Bestimmungsbundesland
+            "",                                 # 8  (reserviert)
+            _s(row.get("partner_country")),     # 9  Herkunfts-/Bestimmungsland
+            _s(row.get("commodity_code")),      # 10 Warennummer (KN8)
+            "",                                 # 11 Besondere Maßeinheit
+            _num(row.get("net_mass")),          # 12 Eigenmasse (kg)
+            "",                                 # 13 (reserviert)
+            _num(row.get("statistical_value")), # 14 Statistischer Wert
+            "",                                 # 15 Rechnungsbetrag
+            "",                                 # 16 (reserviert)
+        ])
+    return buf.getvalue().encode("cp1252", errors="replace")
+
+
 # ─── XLSX ─────────────────────────────────────────────────────────────────────
 
 def export_xlsx(df: pd.DataFrame) -> bytes:

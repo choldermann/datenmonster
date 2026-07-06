@@ -6,7 +6,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-_BUILTIN_TARGET_TYPES = {"csv", "xlsx", "json", "xml", "db", "dataset"}
+_BUILTIN_TARGET_TYPES = {"csv", "xlsx", "json", "xml", "db", "dataset", "destatis_csv"}
 
 
 def _is_plugin_target(t_type: str) -> bool:

@@ -42,6 +42,7 @@ export const typeColor = {
 
 export const TARGET_TYPE_COLORS = {
   csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fce499", xml: "#fcd34d", db: "#f97316",
+  destatis_csv: "#5eead4",
   estatistik_intrastat: "#c4b5fd",
 };
 export const PLUGIN_TARGET_DEFAULT_COLOR = "#a78bfa";
@@ -51,6 +52,7 @@ export const TARGET_TYPES = [
   { value: "xlsx", label: "Excel" },
   { value: "json", label: "JSON" },
   { value: "xml",  label: "XML" },
+  { value: "destatis_csv", label: "Destatis CSV" },
   { value: "db",   label: "Datenbank" },
 ];
 
