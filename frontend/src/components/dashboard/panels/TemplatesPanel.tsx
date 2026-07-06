@@ -13,8 +13,18 @@ function TemplateCard({ template, projectId, onInstalled }) {
   const [installed, setInstalled] = useState(false);
   const [error, setError] = useState("");
   const [config, setConfig] = useState({});
+  const [dbConnections, setDbConnections] = useState([]);
 
   const hasConfig = template.config_required?.length > 0;
+  const needsConnection = template.config_required?.some(c => c.type === "connection");
+
+  useEffect(() => {
+    if (expanded && needsConnection && dbConnections.length === 0) {
+      api.get("/api/connections/", { params: projectId ? { project_id: projectId } : {} })
+        .then(r => setDbConnections(Array.isArray(r.data) ? r.data : []))
+        .catch(() => {});
+    }
+  }, [expanded, needsConnection]);
 
   const handleInstall = async () => {
     setInstalling(true);
@@ -90,7 +100,16 @@ function TemplateCard({ template, projectId, onInstalled }) {
                 {template.config_required.map(cfg => (
                   <div key={cfg.key}>
                     <label style={{ fontSize: 10, color: S.textDim, display: "block", marginBottom: 3 }}>{cfg.label}</label>
-                    {cfg.type === "db_connector" ? (
+                    {cfg.type === "connection" ? (
+                      <select style={iS}
+                        value={config[cfg.key] || ""}
+                        onChange={e => setConfig(prev => ({ ...prev, [cfg.key]: e.target.value }))}>
+                        <option value="">– Verbindung wählen –</option>
+                        {dbConnections.map(c => (
+                          <option key={c.id} value={c.id}>{c.name} ({c.db_type})</option>
+                        ))}
+                      </select>
+                    ) : cfg.type === "db_connector" ? (
                       <p style={{ fontSize: 10, color: S.textDim, fontStyle: "italic" }}>
                         → Wird aus dem Mapping-Editor DB-Connector übernommen
                       </p>

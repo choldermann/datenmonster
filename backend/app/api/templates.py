@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional, List, Any
 from pydantic import BaseModel
 import json
+import re
 from datetime import datetime, timezone
 from app.core.database import get_db
 from app.api.auth import get_current_user
@@ -77,6 +78,60 @@ def _apply_config_deep(obj, config: dict):
 # Felder die Dataset-Integer-IDs enthalten (für ID-Umschreibung beim Export/Import)
 _DS_ID_KEYS = {"dataset_id", "left_dataset_id", "right_dataset_id",
                "lookup_dataset_id", "source_dataset_id"}
+
+# Felder die DB-Verbindungs-Integer-IDs enthalten. Verbindungen (mit Zugangsdaten)
+# werden NICHT ins Template exportiert – stattdessen wird die ID durch einen
+# {{connection_X}}-Platzhalter ersetzt, den der Installer mit einer vorhandenen
+# Verbindung füllt (config_required-Eintrag vom Typ "connection").
+_CONN_ID_KEYS = {"connection_id", "target_connection_id", "source_connection_id"}
+_CONN_PLACEHOLDER_RE = re.compile(r"^\{\{(connection_\w+)\}\}$")
+
+
+def _rewrite_conn_export(obj, referenced: set):
+    """Ersetzt Integer-Verbindungs-IDs durch {{connection_X}}-Platzhalter und
+    sammelt die referenzierten IDs in `referenced`."""
+    if isinstance(obj, dict):
+        result = {}
+        for k, v in obj.items():
+            if k in _CONN_ID_KEYS and isinstance(v, int) and not isinstance(v, bool):
+                referenced.add(v)
+                result[k] = "{{connection_%d}}" % v
+            else:
+                result[k] = _rewrite_conn_export(v, referenced)
+        return result
+    if isinstance(obj, list):
+        return [_rewrite_conn_export(i, referenced) for i in obj]
+    return obj
+
+
+def _resolve_conn_value(v, config: dict):
+    """Löst einen einzelnen {{connection_X}}-Platzhalter über die Install-Config auf
+    (→ Integer-Verbindungs-ID). Nicht aufgelöst → None. Kein Platzhalter → unverändert."""
+    if isinstance(v, str):
+        m = _CONN_PLACEHOLDER_RE.match(v.strip())
+        if m:
+            val = config.get(m.group(1))
+            if val in (None, ""):
+                return None
+            try:
+                return int(val)
+            except (TypeError, ValueError):
+                return val
+    return v
+
+
+def _resolve_conn_ids_install(obj, config: dict):
+    """Ersetzt {{connection_X}}-Platzhalter in Verbindungs-Feldern rekursiv durch
+    die vom Nutzer gewählte Verbindungs-ID."""
+    if isinstance(obj, dict):
+        return {
+            k: (_resolve_conn_value(v, config) if k in _CONN_ID_KEYS
+                else _resolve_conn_ids_install(v, config))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [_resolve_conn_ids_install(i, config) for i in obj]
+    return obj
 
 
 def _rewrite_ids_export(obj, int_to_str: dict):
@@ -156,6 +211,9 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             sql = _apply_config(ds_def.get("sql", ""), config)
             ds_kwargs["source_sql"] = sql
             ds_kwargs["query_config"] = ds_def.get("query_config")
+            # {{connection_X}}-Platzhalter → gewählte Verbindung
+            ds_kwargs["source_connection_id"] = _resolve_conn_value(
+                ds_def.get("source_connection_id"), config)
 
         elif file_type == "rest_api":
             # REST API Dataset – echte RestSource anlegen + Dataset verknüpfen
@@ -317,6 +375,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                           "x": 200, "y": 100}]
         else:
             sql_nodes = []
+        # {{connection_X}}-Platzhalter in SQL-Nodes → gewählte Verbindung
+        sql_nodes = _resolve_conn_ids_install(sql_nodes, config)
 
         # ── Constant Nodes ───────────────────────────────────────────────────
         constant_nodes = []
@@ -356,9 +416,12 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
 
         # ── Targets ──────────────────────────────────────────────────────────
         if m_def.get("targets"):
-            # Vollständig exportiertes Template: Dataset-IDs + Platzhalter ersetzen
+            # Vollständig exportiertes Template: Verbindungs- + Dataset-IDs + Platzhalter ersetzen.
+            # Verbindungs-Auflösung zuerst (liefert Integer), damit _apply_config_deep die
+            # {{connection_X}}-Platzhalter nicht als Text-Platzhalter zerlegt.
+            targets = _resolve_conn_ids_install(m_def["targets"], config)
             targets = _rewrite_ids_install(
-                _apply_config_deep(m_def["targets"], config), ds_id_map
+                _apply_config_deep(targets, config), ds_id_map
             )
         else:
             # Einfaches manuelles Template: einzelnes Ziel konstruieren
@@ -525,6 +588,34 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         db.add(r); db.commit(); db.refresh(r)
         created.setdefault("reports", []).append({"id": r.id, "name": r.name})
 
+    # ── Formulare anlegen ─────────────────────────────────────────────────
+    # Template-String-IDs in Actions/Widgets → echte Integer-IDs zurückschreiben.
+    # slug/published werden nicht übernommen (Portal-Veröffentlichung ist bewusst
+    # ein manueller Schritt nach dem Import; slug hat zudem einen Unique-Constraint).
+    from app.models.form import Form
+    import copy as _copy
+    for f_def in content.get("forms", []):
+        schema = _copy.deepcopy(f_def.get("schema", {}) or {})
+        for a in schema.get("actions", []) or []:
+            mid = a.get("mapping_id")
+            if isinstance(mid, str) and mid in mapping_id_map:
+                a["mapping_id"] = mapping_id_map[mid]
+        for w in schema.get("widgets", []) or []:
+            did = w.get("dataset_id")
+            if isinstance(did, str) and did in ds_id_map:
+                w["dataset_id"] = ds_id_map[did]
+        schema = _apply_config_deep(schema, config)
+        fo = Form(
+            name=_apply_config(f_def.get("name", "Formular"), config),
+            project_id=body.project_id,
+            schema=schema,
+            portal_config=f_def.get("portal_config", {}) or {},
+            published=False,
+            slug=None,
+        )
+        db.add(fo); db.commit(); db.refresh(fo)
+        created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
+
     try:
         from app.services.db_logger import log as _dblog
         _dblog(db, "success", "templates", "template_installed",
@@ -581,16 +672,20 @@ class CreateTemplateBody(BaseModel):
     dataset_ids: Optional[List[int]] = []
     mapping_ids: Optional[List[int]] = []
     pipeline_ids: Optional[List[int]] = []
+    form_ids: Optional[List[int]] = []
+    report_ids: Optional[List[int]] = []
 
 
 @router.post("/create")
 def create_template_from_project(body: CreateTemplateBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Erstellt ein Template aus bestehenden Projekt-Inhalten."""
     from app.models.template import Template
-    from app.models.dataset import Dataset
+    from app.models.dataset import Dataset, DbConnection
     from app.models.mapping import Mapping
     from app.models.pipeline import Pipeline
-    import re
+    from app.models.form import Form
+    from app.models.report import Report
+    import copy
 
     content = {
         "template_id": "custom_" + re.sub(r"[^a-z0-9]", "_", body.name.lower())[:40] + "_" + str(int(__import__("time").time())),
@@ -602,12 +697,16 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
         "datasets": [],
         "mappings": [],
         "pipelines": [],
+        "forms": [],
+        "reports": [],
         "config_required": [],
         "hinweise": [],
     }
 
-    # Mapping von echten Dataset-IDs auf Template-String-IDs für ID-Umschreibung
+    # Mapping von echten IDs auf Template-String-IDs für ID-Umschreibung
     ds_real_to_tpl = {ds_id: f"ds_{ds_id}" for ds_id in (body.dataset_ids or [])}
+    mapping_real_to_tpl = {m_id: f"mapping_{m_id}" for m_id in (body.mapping_ids or [])}
+    referenced_conn_ids = set()  # referenzierte DB-Verbindungen → config_required
 
     for ds_id in (body.dataset_ids or []):
         ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
@@ -623,6 +722,9 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 ds_entry["rest_config"] = ds.query_config
             elif ds.file_type == "db_query" and ds.source_sql:
                 ds_entry["sql"] = ds.source_sql
+                if ds.source_connection_id:
+                    referenced_conn_ids.add(ds.source_connection_id)
+                    ds_entry["source_connection_id"] = "{{connection_%d}}" % ds.source_connection_id
             content["datasets"].append(ds_entry)
 
     for m_id in (body.mapping_ids or []):
@@ -637,7 +739,8 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 # canvas_nodes und joins enthalten Integer-IDs → auf Template-IDs umschreiben
                 "canvas_nodes": _rewrite_ids_export(m.canvas_nodes or [], ds_real_to_tpl),
                 "joins":        _rewrite_ids_export(m.joins or [], ds_real_to_tpl),
-                "sql_nodes":       m.sql_nodes or [],
+                # sql_nodes tragen connection_id → durch {{connection_X}}-Platzhalter ersetzen
+                "sql_nodes":       _rewrite_conn_export(m.sql_nodes or [], referenced_conn_ids),
                 "agg_nodes":       m.agg_nodes or [],
                 "transform_nodes": m.transform_nodes or [],
                 "constant_nodes":  m.constant_nodes or [],
@@ -646,8 +749,8 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 "calc_nodes":      getattr(m, "calc_nodes",   None) or [],
                 "switch_nodes":    _rewrite_ids_export(getattr(m, "switch_nodes", None) or [], ds_real_to_tpl),
                 "sort_nodes":      getattr(m, "sort_nodes",   None) or [],
-                # targets enthalten ebenfalls Dataset-IDs in source_dataset_id → umschreiben
-                "targets": _rewrite_ids_export(targets_raw, ds_real_to_tpl),
+                # targets enthalten Dataset-IDs (source_dataset_id) und ggf. target_connection_id → umschreiben
+                "targets": _rewrite_conn_export(_rewrite_ids_export(targets_raw, ds_real_to_tpl), referenced_conn_ids),
             })
 
     for p_id in (body.pipeline_ids or []):
@@ -665,6 +768,71 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                     "nodes": p.nodes or [],
                     "connections": p.connections or [],
                 }
+
+    # ── Formulare exportieren ─────────────────────────────────────────────────
+    # Formular-Actions referenzieren Mappings (mapping_id), Widgets ggf. Datasets
+    # (dataset_id) → auf Template-String-IDs umschreiben. slug/published und
+    # portal_config.allowed_users sind instanzspezifisch und werden weggelassen.
+    for form_id in (body.form_ids or []):
+        fo = db.query(Form).filter(Form.id == form_id).first()
+        if not fo:
+            continue
+        schema = fo.schema if isinstance(fo.schema, dict) else json.loads(fo.schema or "{}")
+        schema = copy.deepcopy(schema or {})
+        for a in schema.get("actions", []) or []:
+            mid = a.get("mapping_id")
+            if isinstance(mid, int) and mid in mapping_real_to_tpl:
+                a["mapping_id"] = mapping_real_to_tpl[mid]
+        for w in schema.get("widgets", []) or []:
+            did = w.get("dataset_id")
+            if isinstance(did, int) and did in ds_real_to_tpl:
+                w["dataset_id"] = ds_real_to_tpl[did]
+        portal_config = dict(fo.portal_config or {})
+        portal_config.pop("allowed_users", None)  # instanzspezifische User-IDs nicht exportieren
+        content["forms"].append({
+            "id": f"form_{form_id}",
+            "name": fo.name,
+            "schema": schema,
+            "portal_config": portal_config,
+        })
+
+    # ── Reports exportieren ───────────────────────────────────────────────────
+    # Widget-dataset_id → {{ds_X}}-Platzhalter (Konvention des Install-Pfads).
+    for report_id in (body.report_ids or []):
+        r = db.query(Report).filter(Report.id == report_id).first()
+        if not r:
+            continue
+        widgets = copy.deepcopy(r.widgets or [])
+        for w in widgets:
+            cfg = w.get("config", {}) if isinstance(w, dict) else {}
+            did = cfg.get("dataset_id")
+            if isinstance(did, int) and did in ds_real_to_tpl:
+                cfg["dataset_id"] = "{{" + ds_real_to_tpl[did] + "}}"
+        content["reports"].append({
+            "id": f"report_{report_id}",
+            "name": r.name,
+            "widgets": widgets,
+        })
+
+    # ── Referenzierte DB-Verbindungen als config_required (Typ "connection") ──
+    # Zugangsdaten werden bewusst NICHT exportiert; der Installer wählt eine
+    # vorhandene Verbindung, deren ID die {{connection_X}}-Platzhalter auflöst.
+    if referenced_conn_ids:
+        conn_names = {
+            c.id: c.name
+            for c in db.query(DbConnection).filter(DbConnection.id.in_(referenced_conn_ids)).all()
+        }
+        for cid in sorted(referenced_conn_ids):
+            content["config_required"].append({
+                "key": f"connection_{cid}",
+                "label": f"DB-Verbindung „{conn_names.get(cid, cid)}“",
+                "type": "connection",
+                "default": "",
+            })
+        content["hinweise"].append(
+            "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die "
+            "passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert."
+        )
 
     tid = content["template_id"]
     t = Template(
@@ -688,13 +856,15 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
     from app.models.dataset import Dataset
     from app.models.mapping import Mapping
     from app.models.pipeline import Pipeline
+    from app.models.form import Form
+    from app.models.report import Report
 
     t = db.query(Template).filter(Template.template_id == template_id).first()
     if not t:
         raise HTTPException(404, 'Nicht gefunden')
 
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or '{}')
-    deleted = {'datasets': 0, 'mappings': 0, 'pipelines': 0}
+    deleted = {'datasets': 0, 'mappings': 0, 'pipelines': 0, 'forms': 0, 'reports': 0}
 
     for ds_def in content.get('datasets', []):
         ds = db.query(Dataset).filter(Dataset.name == ds_def.get('name')).first()
@@ -720,6 +890,18 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
         if p:
             db.delete(p)
             deleted['pipelines'] += 1
+
+    for f_def in content.get('forms', []):
+        fo = db.query(Form).filter(Form.name == f_def.get('name')).first()
+        if fo:
+            db.delete(fo)
+            deleted['forms'] += 1
+
+    for r_def in content.get('reports', []):
+        r = db.query(Report).filter(Report.name == r_def.get('name')).first()
+        if r:
+            db.delete(r)
+            deleted['reports'] += 1
 
     db.delete(t)
     db.commit()
