@@ -22,6 +22,8 @@ data/
 uploads/
 backend/uploads/
 backend/data/
+exports/
+backend/exports/
 *.json.bak
 dataset_*.json
 dataset_*.parquet
