@@ -73,6 +73,7 @@ export default function FormEditor() {
     const actionSummary = actions.map(a => ({
       id: a.id, type: a.type, label: a.label,
       ...(a.mapping_id ? { mapping_id: a.mapping_id } : {}),
+      ...(a.pipeline_id ? { pipeline_id: a.pipeline_id } : {}),
     }));
     const widgetSummary = widgets.map(w => ({
       type: w.type, label: w.label,

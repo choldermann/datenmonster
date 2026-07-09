@@ -15,15 +15,17 @@ const inp = {
 
 export default function ActionsEditor({ actions, onChange, projectId }) {
   const [mappings, setMappings] = useState([]);
+  const [pipelines, setPipelines] = useState([]);
 
   useEffect(() => {
     const p = projectId ? `?project_id=${projectId}` : "";
     api.get(`/api/mappings/${p}`).then(({ data }) => setMappings(Array.isArray(data) ? data : [])).catch(() => {});
+    api.get(`/api/pipelines/${p}`).then(({ data }) => setPipelines(Array.isArray(data) ? data : [])).catch(() => {});
   }, [projectId]);
 
   const addAction = () => {
     const id = `a_${Math.random().toString(36).slice(2, 7)}`;
-    onChange([...actions, { id, type: "run_mapping", mapping_id: null, label: "Auswerten" }]);
+    onChange([...actions, { id, type: "run_mapping", mapping_id: null, pipeline_id: null, label: "Auswerten" }]);
   };
 
   const updateAction = (idx, patch) => {
@@ -41,7 +43,7 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
           <div>
             <h2 style={{ fontSize: 14, fontWeight: 700, color: S.textBright, margin: 0 }}>Aktionen</h2>
             <p style={{ fontSize: 11, color: S.textDim, marginTop: 4 }}>
-              Aktionen werden ausgeführt wenn ein Button gedrückt wird. Eine Aktion startet ein Mapping.
+              Aktionen werden ausgeführt wenn ein Button gedrückt wird. Eine Aktion startet ein Mapping oder eine Pipeline.
             </p>
           </div>
           <button onClick={addAction}
@@ -69,26 +71,55 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
                   borderRadius: 8, padding: "14px 16px" }}>
                 <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                   {/* Label */}
-                  <div style={{ flex: "0 0 160px" }}>
+                  <div style={{ flex: "0 0 150px" }}>
                     <label style={{ display: "block", fontSize: 9, fontWeight: 700,
                       textTransform: "uppercase", letterSpacing: "0.1em",
                       color: S.textDim, marginBottom: 4 }}>Button-Label</label>
                     <input value={action.label || ""} onChange={e => updateAction(idx, { label: e.target.value })}
                       placeholder="Auswerten" style={{ ...inp, width: "100%", boxSizing: "border-box" }} />
                   </div>
-                  {/* Mapping */}
-                  <div style={{ flex: 1 }}>
+                  {/* Typ */}
+                  <div style={{ flex: "0 0 130px" }}>
                     <label style={{ display: "block", fontSize: 9, fontWeight: 700,
                       textTransform: "uppercase", letterSpacing: "0.1em",
-                      color: S.textDim, marginBottom: 4 }}>Mapping ausführen</label>
-                    <select value={action.mapping_id || ""} onChange={e => updateAction(idx, { mapping_id: e.target.value ? parseInt(e.target.value) : null })}
+                      color: S.textDim, marginBottom: 4 }}>Aktionstyp</label>
+                    <select value={action.type || "run_mapping"}
+                      onChange={e => updateAction(idx, e.target.value === "run_pipeline"
+                        ? { type: "run_pipeline", mapping_id: null }
+                        : { type: "run_mapping", pipeline_id: null })}
                       style={{ ...inp, width: "100%", boxSizing: "border-box", cursor: "pointer" }}>
-                      <option value="">— Mapping auswählen —</option>
-                      {mappings.map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
+                      <option value="run_mapping">Mapping</option>
+                      <option value="run_pipeline">Pipeline</option>
                     </select>
                   </div>
+                  {/* Ziel: Mapping oder Pipeline */}
+                  {action.type === "run_pipeline" ? (
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: "block", fontSize: 9, fontWeight: 700,
+                        textTransform: "uppercase", letterSpacing: "0.1em",
+                        color: S.textDim, marginBottom: 4 }}>Pipeline starten</label>
+                      <select value={action.pipeline_id || ""} onChange={e => updateAction(idx, { pipeline_id: e.target.value ? parseInt(e.target.value) : null })}
+                        style={{ ...inp, width: "100%", boxSizing: "border-box", cursor: "pointer" }}>
+                        <option value="">— Pipeline auswählen —</option>
+                        {pipelines.map(p => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div style={{ flex: 1 }}>
+                      <label style={{ display: "block", fontSize: 9, fontWeight: 700,
+                        textTransform: "uppercase", letterSpacing: "0.1em",
+                        color: S.textDim, marginBottom: 4 }}>Mapping ausführen</label>
+                      <select value={action.mapping_id || ""} onChange={e => updateAction(idx, { mapping_id: e.target.value ? parseInt(e.target.value) : null })}
+                        style={{ ...inp, width: "100%", boxSizing: "border-box", cursor: "pointer" }}>
+                        <option value="">— Mapping auswählen —</option>
+                        {mappings.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   {/* Delete */}
                   <button onClick={() => removeAction(idx)}
                     style={{ marginTop: 20, color: S.textDim, background: "none", border: "none",
@@ -101,8 +132,10 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
 
                 <div style={{ marginTop: 8, padding: "6px 8px", backgroundColor: S.bgMain,
                   borderRadius: 4, fontSize: 9, color: S.textDim, fontFamily: "monospace" }}>
-                  id: {action.id} · type: run_mapping
-                  {action.mapping_id && ` · mapping_id: ${action.mapping_id}`}
+                  id: {action.id} · type: {action.type || "run_mapping"}
+                  {action.type === "run_pipeline"
+                    ? (action.pipeline_id && ` · pipeline_id: ${action.pipeline_id}`)
+                    : (action.mapping_id && ` · mapping_id: ${action.mapping_id}`)}
                 </div>
               </div>
             ))}
@@ -114,7 +147,7 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
           <p style={{ fontSize: 10, fontWeight: 700, color: S.textDim, margin: "0 0 6px",
             textTransform: "uppercase", letterSpacing: "0.08em" }}>Zukünftige Aktionstypen</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {["Pipeline starten", "E-Mail senden", "REST-Aufruf", "PDF erzeugen", "Plugin ausführen"].map(t => (
+            {["E-Mail senden", "REST-Aufruf", "PDF erzeugen", "Plugin ausführen"].map(t => (
               <span key={t} style={{ fontSize: 9, padding: "2px 8px", borderRadius: 10,
                 border: `1px dashed ${S.border}`, color: S.textDim, opacity: 0.5 }}>
                 {t}

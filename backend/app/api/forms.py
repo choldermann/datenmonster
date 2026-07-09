@@ -297,6 +297,37 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
             except Exception as e:
                 results[action_id] = {"columns": [], "rows": [], "total": 0,
                                       "error": str(e)[:300]}
+
+        elif action_type == "run_pipeline":
+            pipeline_id = action.get("pipeline_id")
+            if not pipeline_id:
+                results[action_id] = {"kind": "pipeline", "error": "pipeline_id fehlt"}
+                continue
+            from app.models.pipeline import Pipeline
+            p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+            if not p:
+                results[action_id] = {"kind": "pipeline",
+                                      "error": f"Pipeline {pipeline_id} nicht gefunden"}
+                continue
+            try:
+                from app.services.pipeline_service import run_pipeline as _run_pipeline
+                pres = _run_pipeline(p, db)
+                p.last_run_at = datetime.now(timezone.utc)
+                p.last_run_status = "success" if not pres.get("errors") else "warning"
+                db.commit()
+                perrors = pres.get("errors") or []
+                results[action_id] = {
+                    "kind":           "pipeline",
+                    "pipeline_name":  p.name,
+                    "nodes_executed": pres.get("nodes_executed", 0),
+                    "errors":         perrors,
+                    "error":          perrors[0] if perrors else None,
+                    "columns": [], "rows": [], "total": 0,
+                }
+            except Exception as e:
+                results[action_id] = {"kind": "pipeline", "columns": [], "rows": [],
+                                      "total": 0, "error": str(e)[:300]}
+
         else:
             results[action_id] = {"error": f"Unbekannter Action-Typ: {action_type}"}
 

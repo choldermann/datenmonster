@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
-import FormFields, { validateRequired } from "../components/forms/FormFields";
+import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -201,11 +201,13 @@ export default function FormRunner() {
                       <span style={{ fontSize: 12, fontWeight: 600, color: S.textBright }}>
                         {action.label || action.id}
                       </span>
-                      {result.total !== undefined && (
+                      {result.kind !== "pipeline" && result.total !== undefined && (
                         <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                       )}
                     </div>
-                    {result.error ? (
+                    {result.kind === "pipeline" ? (
+                      <PipelineResult result={result} />
+                    ) : result.error ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14,
                         color: "#e07070", fontSize: 11 }}>
                         <AlertCircle size={13} /> {result.error}

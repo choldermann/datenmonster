@@ -4,7 +4,7 @@ import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut } from "lucide-
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
-import FormFields, { validateRequired } from "../components/forms/FormFields";
+import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -274,12 +274,16 @@ export default function PortalRunner() {
                   {action.label || "Ergebnis"}
                 </span>
               </div>
-              <ResultTable
-                result={result}
-                formName={form?.name || "export"}
-                actionLabel={action.label || action.id}
-                allowDownload={allowDownload}
-              />
+              {result.kind === "pipeline" ? (
+                <PipelineResult result={result} />
+              ) : (
+                <ResultTable
+                  result={result}
+                  formName={form?.name || "export"}
+                  actionLabel={action.label || action.id}
+                  allowDownload={allowDownload}
+                />
+              )}
             </div>
           );
         })}

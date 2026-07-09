@@ -1,4 +1,4 @@
-import { Play, Loader2, ChevronDown } from "lucide-react";
+import { Play, Loader2, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -29,6 +29,21 @@ export function validateRequired(fields, params) {
     if (empty) missing.push(f.name);
   }
   return missing;
+}
+
+/** Ergebnisanzeige für eine Pipeline-Aktion (Status statt Datentabelle). */
+export function PipelineResult({ result }) {
+  const err = result?.error;
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px",
+      fontSize: 13, color: err ? "#e07070" : "#6ee7b7" }}>
+      {err ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
+      {err
+        ? <span>Pipeline fehlgeschlagen: {err}</span>
+        : <span>Pipeline{result.pipeline_name ? ` »${result.pipeline_name}«` : ""} ausgeführt
+            {typeof result.nodes_executed === "number" ? ` — ${result.nodes_executed} Schritte` : ""}</span>}
+    </div>
+  );
 }
 
 function groupByRow(fields) {

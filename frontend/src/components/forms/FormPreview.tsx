@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Play, Loader2, AlertCircle, X } from "lucide-react";
 import api from "../../api/client";
 import WidgetRenderer from "./WidgetRenderer";
-import FormFields, { validateRequired } from "./FormFields";
+import FormFields, { validateRequired, PipelineResult } from "./FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -118,11 +118,13 @@ export default function FormPreview({ schema, formId, onClose }) {
                   <span style={{ fontSize: 11, fontWeight: 600, color: S.textBright }}>
                     {action.label || "Ergebnis"}
                   </span>
-                  {result.total !== undefined && (
+                  {result.kind !== "pipeline" && result.total !== undefined && (
                     <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                   )}
                 </div>
-                {result.error ? (
+                {result.kind === "pipeline" ? (
+                  <PipelineResult result={result} />
+                ) : result.error ? (
                   <div style={{ padding: 12, color: "#e07070", fontSize: 11 }}>{result.error}</div>
                 ) : (
                   <div style={{ overflowX: "auto", maxHeight: 300 }}>
