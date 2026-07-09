@@ -14,7 +14,7 @@ from app.models.scheduled_job import ScheduledJob, JobRun
 from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
-from app.models.form import Form
+from app.models.form import Form, FormSubmission
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 from app import auth

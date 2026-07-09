@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff, Inbox } from "lucide-react";
 import api from "../api/client";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
@@ -10,6 +10,7 @@ import FieldProperties from "../components/forms/FieldProperties";
 import ActionsEditor from "../components/forms/ActionsEditor";
 import WidgetsEditor from "../components/forms/WidgetsEditor";
 import FormPreview from "../components/forms/FormPreview";
+import FormSubmissions from "../components/forms/FormSubmissions";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -42,6 +43,7 @@ export default function FormEditor() {
   const [activeTab, setActiveTab] = useState("fields");
   const [selectedFieldId, setSelectedFieldId]   = useState(null);
   const [showPreview, setShowPreview] = useState(false);
+  const [showSubmissions, setShowSubmissions] = useState(false);
 
   // Load
   useEffect(() => {
@@ -194,6 +196,16 @@ export default function FormEditor() {
             </button>
           )}
 
+          {/* Einträge */}
+          {id && id !== "new" && (
+            <button onClick={() => setShowSubmissions(true)} title="Protokollierte Einträge"
+              style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px",
+                borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent",
+                color: S.textDim, cursor: "pointer", fontSize: 11 }}>
+              <Inbox size={11} /> Einträge
+            </button>
+          )}
+
           {/* Publish Toggle */}
           {id && id !== "new" && (
             <>
@@ -343,6 +355,14 @@ export default function FormEditor() {
           schema={schema}
           formId={id}
           onClose={() => setShowPreview(false)}
+        />
+      )}
+
+      {/* ── Submissions Modal ── */}
+      {showSubmissions && id && id !== "new" && (
+        <FormSubmissions
+          formId={id}
+          onClose={() => setShowSubmissions(false)}
         />
       )}
     </div>

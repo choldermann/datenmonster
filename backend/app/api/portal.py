@@ -113,7 +113,7 @@ def run_portal_form(slug: str, data: FormRunRequest,
     if not pc.get("allow_manual_run", True) and data.action_ids:
         raise HTTPException(403, "Manueller Start nicht erlaubt")
 
-    result = _execute_form(f, data, db)
+    result = _execute_form(f, data, db, user_id=user.id)
 
     # Download-Recht prüfen: wenn nicht erlaubt, Zeilen auf 100 begrenzen
     if not pc.get("allow_download", False):

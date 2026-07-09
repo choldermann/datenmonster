@@ -1,122 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, ChevronDown } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
+import FormFields, { validateRequired } from "../components/forms/FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
   border: "var(--border)", textMain: "var(--text-main)", textBright: "var(--text-bright)",
   textDim: "var(--text-dim)", accent: "var(--accent)",
 };
-
-const inp = {
-  width: "100%", backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border)",
-  borderRadius: 6, color: "var(--text-main)", fontSize: 14, padding: "9px 12px",
-  outline: "none", boxSizing: "border-box",
-};
-
-// ── Field renderer ────────────────────────────────────────────────────────────
-
-function FieldInput({ field, value, onChange, onButtonClick, running }) {
-  switch (field.type) {
-    case "number":
-      return <input type="number" value={value ?? ""} onChange={e => onChange(e.target.value)} style={inp} placeholder={field.placeholder} />;
-    case "date":
-      return <input type="date" value={value ?? ""} onChange={e => onChange(e.target.value)} style={inp} />;
-    case "time":
-      return <input type="time" value={value ?? ""} onChange={e => onChange(e.target.value)} style={inp} />;
-    case "textarea":
-      return <textarea value={value ?? ""} onChange={e => onChange(e.target.value)} rows={3}
-        placeholder={field.placeholder || field.label} style={{ ...inp, resize: "vertical" }} />;
-    case "checkbox":
-    case "switch":
-      return (
-        <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", padding: "9px 0" }}>
-          <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)}
-            style={{ width: 17, height: 17, cursor: "pointer" }} />
-          <span style={{ fontSize: 14, color: S.textMain }}>{field.label}</span>
-        </label>
-      );
-    case "dropdown":
-      return (
-        <div style={{ position: "relative" }}>
-          <select value={value ?? ""} onChange={e => onChange(e.target.value)}
-            style={{ ...inp, cursor: "pointer", appearance: "none", paddingRight: 32 }}>
-            <option value="">— bitte auswählen —</option>
-            {(field.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-          <ChevronDown size={14} style={{ position: "absolute", right: 10, top: "50%",
-            transform: "translateY(-50%)", pointerEvents: "none", color: S.textDim }} />
-        </div>
-      );
-    case "multiselect":
-      return (
-        <select multiple value={Array.isArray(value) ? value : []}
-          onChange={e => onChange([...e.target.selectedOptions].map(o => o.value))}
-          style={{ ...inp, height: 96, cursor: "pointer" }}>
-          {(field.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-      );
-    case "radio":
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "4px 0" }}>
-          {(field.options || []).map(o => (
-            <label key={o.value} style={{ display: "flex", alignItems: "center", gap: 9,
-              cursor: "pointer", fontSize: 14 }}>
-              <input type="radio" name={field.id} value={o.value} checked={value === o.value}
-                onChange={() => onChange(o.value)} style={{ width: 15, height: 15 }} />
-              {o.label}
-            </label>
-          ))}
-        </div>
-      );
-    case "file":
-      return <input type="file" style={{ ...inp, padding: "7px" }} />;
-    case "heading":
-      return <h2 style={{ fontSize: 22, fontWeight: 700, color: S.textBright, margin: "8px 0 4px" }}>
-        {field.content || field.label}
-      </h2>;
-    case "label":
-      return <p style={{ fontSize: 14, color: S.textDim, margin: "2px 0", lineHeight: 1.7 }}>
-        {field.content || field.label}
-      </p>;
-    case "divider":
-      return <hr style={{ border: "none", borderTop: `1px solid ${S.border}`, margin: "8px 0" }} />;
-    case "button":
-      return (
-        <button onClick={() => onButtonClick(field.action_id)} disabled={running}
-          style={{ display: "inline-flex", alignItems: "center", gap: 8,
-            padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-            backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",
-            color: "#6ee7b7", cursor: running ? "wait" : "pointer", marginTop: 4 }}>
-          {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-          {field.label || "Ausführen"}
-        </button>
-      );
-    default:
-      return <input type="text" value={value ?? ""} onChange={e => onChange(e.target.value)}
-        placeholder={field.placeholder || field.label} style={inp} />;
-  }
-}
-
-// ── Layout helpers ────────────────────────────────────────────────────────────
-
-const LAYOUT_TYPES = new Set(["heading", "label", "divider"]);
-const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label", "divider"]);
-
-function groupByRow(fields) {
-  const rowMap = {};
-  for (const f of fields) {
-    const r = f.row ?? 0;
-    if (!rowMap[r]) rowMap[r] = [];
-    rowMap[r].push(f);
-  }
-  return Object.entries(rowMap)
-    .sort(([a], [b]) => Number(a) - Number(b))
-    .map(([, items]) => items);
-}
 
 // ── Result table ──────────────────────────────────────────────────────────────
 
@@ -202,6 +96,7 @@ export default function PortalRunner() {
   const [results, setResults] = useState(null);
   const [loadErr, setLoadErr] = useState(null);
   const [runErr, setRunErr]   = useState(null);
+  const [missing, setMissing] = useState([]);
 
   useEffect(() => {
     api.get(`/api/portal/forms/${slug}`)
@@ -220,10 +115,17 @@ export default function PortalRunner() {
     setParams(prev => ({ ...prev, [name]: value }));
   }, []);
 
-  const runAction = async (actionId) => {
+  const runAction = async (actionIds) => {
+    const miss = validateRequired(form?.fields || [], params);
+    if (miss.length) {
+      setMissing(miss);
+      setRunErr("Bitte fülle die markierten Pflichtfelder aus.");
+      return;
+    }
+    setMissing([]);
     setRunning(true); setRunErr(null);
     try {
-      const body = { params, action_ids: actionId ? [actionId] : null };
+      const body = { params, action_ids: (actionIds && actionIds.length) ? actionIds : null };
       const { data } = await api.post(`/api/portal/forms/${slug}/run`, body);
       setResults(data.results || {});
     } catch (e) {
@@ -246,7 +148,6 @@ export default function PortalRunner() {
   const widgets = form?.widgets || [];
   const hasButtonField = fields.some(f => f.type === "button");
   const allowDownload  = form?.allow_download || false;
-  const rows = groupByRow(fields);
   // Actions ohne Widget → als Rohtabelle zeigen
   const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
   const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id));
@@ -303,40 +204,20 @@ export default function PortalRunner() {
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
             borderRadius: 14, padding: "28px 32px", marginBottom: 32 }}>
 
-            {rows.map((rowFields, ri) => (
-              <div key={ri} style={{ display: "flex", flexWrap: "wrap", margin: "0 -10px 16px" }}>
-                {rowFields.map(f => {
-                  const isLayout = LAYOUT_TYPES.has(f.type);
-                  const width = `${((f.colSpan || 12) / 12) * 100}%`;
-                  return (
-                    <div key={f.id || f.name} style={{ flex: `0 0 ${width}`, maxWidth: width,
-                      padding: "0 10px", boxSizing: "border-box" }}>
-                      {!LABEL_SKIP.has(f.type) && f.label && (
-                        <label style={{ display: "block", fontSize: 12, fontWeight: 600,
-                          color: S.textDim, marginBottom: 6, textTransform: "uppercase",
-                          letterSpacing: "0.05em" }}>
-                          {f.label}
-                          {f.required && <span style={{ color: "#f87171", marginLeft: 3 }}>*</span>}
-                        </label>
-                      )}
-                      <FieldInput
-                        field={f}
-                        value={params[f.name]}
-                        onChange={v => setParam(f.name, v)}
-                        onButtonClick={runAction}
-                        running={running}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
+            <FormFields
+              fields={fields}
+              params={params}
+              setParam={setParam}
+              onRunAction={runAction}
+              running={running}
+              errors={missing}
+            />
 
             {/* Fallback-Buttons wenn kein Button-Feld im Schema */}
             {!hasButtonField && actions.length > 0 && (
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
                 {actions.map(a => (
-                  <button key={a.id} onClick={() => runAction(a.id)} disabled={running}
+                  <button key={a.id} onClick={() => runAction([a.id])} disabled={running}
                     style={{ display: "inline-flex", alignItems: "center", gap: 8,
                       padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
                       backgroundColor: "rgba(110,231,183,0.12)",

@@ -3,30 +3,12 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
+import FormFields, { validateRequired } from "../components/forms/FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
   border: "var(--border)", textMain: "var(--text-main)", textBright: "var(--text-bright)",
   textDim: "var(--text-dim)", accent: "var(--accent)",
-};
-
-const FIELD_TYPE_INPUT = {
-  text:     (f, val, set) => <input value={val} onChange={e => set(e.target.value)} placeholder={f.label} style={inputStyle} />,
-  number:   (f, val, set) => <input type="number" value={val} onChange={e => set(e.target.value)} placeholder={f.label} style={inputStyle} />,
-  date:     (f, val, set) => <input type="date" value={val} onChange={e => set(e.target.value)} style={inputStyle} />,
-  textarea: (f, val, set) => <textarea value={val} onChange={e => set(e.target.value)} rows={3} placeholder={f.label} style={{ ...inputStyle, resize: "vertical" }} />,
-  checkbox: (f, val, set) => <input type="checkbox" checked={!!val} onChange={e => set(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />,
-  dropdown: (f, val, set) => (
-    <select value={val} onChange={e => set(e.target.value)} style={{ ...inputStyle, cursor: "pointer" }}>
-      {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  ),
-};
-
-const inputStyle = {
-  width: "100%", backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border)",
-  borderRadius: 5, color: "var(--text-main)", fontSize: 12, padding: "6px 10px", outline: "none",
-  boxSizing: "border-box",
 };
 
 function ResultTable({ columns, rows }) {
@@ -66,6 +48,7 @@ export default function FormRunner() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  const [missing, setMissing] = useState([]);
 
   useEffect(() => {
     api.get(`/api/forms/${id}`).then(({ data }) => {
@@ -84,6 +67,13 @@ export default function FormRunner() {
   }, []);
 
   const runForm = async (actionIds = null) => {
+    const miss = validateRequired(form?.schema?.fields || [], params);
+    if (miss.length) {
+      setMissing(miss);
+      setError("Bitte fülle die markierten Pflichtfelder aus.");
+      return;
+    }
+    setMissing([]);
     setRunning(true);
     setError(null);
     try {
@@ -107,15 +97,10 @@ export default function FormRunner() {
   );
 
   const schema = form?.schema || {};
-  const fields = (schema.fields || []).filter(f => f.type !== "button");
-  const buttonFields = (schema.fields || []).filter(f => f.type === "button");
+  const fields = schema.fields || [];
+  const hasButtonField = fields.some(f => f.type === "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
-
-  // Ein Button kann mehrere Actions auslösen (action_ids); Fallback: einzelne action_id; sonst alle.
-  const btnActionIds = (bf) =>
-    (bf.action_ids && bf.action_ids.length) ? bf.action_ids
-      : (bf.action_id ? [bf.action_id] : null);
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -151,34 +136,19 @@ export default function FormRunner() {
         {fields.length > 0 ? (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
             padding: "20px 24px", marginBottom: 24 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 16 }}>
-              {fields.map(f => {
-                const renderInput = FIELD_TYPE_INPUT[f.type] || FIELD_TYPE_INPUT.text;
-                return (
-                  <div key={f.name}>
-                    <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: S.textDim,
-                      marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      {f.label || f.name}
-                    </label>
-                    {renderInput(f, params[f.name] ?? "", (v) => setParam(f.name, v))}
-                  </div>
-                );
-              })}
-            </div>
+            <FormFields
+              fields={fields}
+              params={params}
+              setParam={setParam}
+              onRunAction={runForm}
+              running={running}
+              compact
+              errors={missing}
+            />
 
-            <div style={{ marginTop: 20, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              {buttonFields.length > 0 ? (
-                buttonFields.map(bf => (
-                  <button key={bf.id} onClick={() => runForm(btnActionIds(bf))} disabled={running}
-                    style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
-                      borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
-                      border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
-                      cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
-                    {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                    {bf.label || "Ausführen"}
-                  </button>
-                ))
-              ) : (
+            {/* Fallback-Button wenn kein Button-Feld im Schema */}
+            {!hasButtonField && (
+              <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button onClick={() => runForm(null)} disabled={running}
                   style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
                     borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
@@ -187,8 +157,8 @@ export default function FormRunner() {
                   {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                   Ausführen
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         ) : (
           // Kein Schema → trotzdem Run-Button für verknüpfte Mappings
