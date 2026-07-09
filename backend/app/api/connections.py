@@ -10,7 +10,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.dataset import DbConnection, Dataset
 from app.services.db_service import test_connection, get_tables, query_preview, query_full, query_full_with_types
-from app.services.file_service import dataframe_to_storage, infer_column_types
+from app.services.file_service import dataframe_to_storage, infer_column_types, classify_db_type
 from app.api.projects import require_editor
 from app.core.security import encrypt_credential, decrypt_credential
 
@@ -257,18 +257,9 @@ def list_columns(conn_id: int, table: str, db: Session = Depends(get_db), user: 
         except Exception:
             pk_cols = set()
 
-        # Typ-Mapping: SQLAlchemy-Typen → einfache Labels
+        # Typ-Mapping: gemeinsamer Klassifizierer (identisch zur Quellseite)
         def _simple_type(col_type) -> str:
-            t = str(col_type).upper()
-            if any(x in t for x in ("INT", "SERIAL", "BIGINT", "SMALLINT", "TINYINT")):
-                return "integer"
-            if any(x in t for x in ("FLOAT", "DOUBLE", "REAL", "NUMERIC", "DECIMAL", "MONEY")):
-                return "decimal"
-            if any(x in t for x in ("DATE", "TIME", "TIMESTAMP")):
-                return "date"
-            if any(x in t for x in ("BOOL", "BIT")):
-                return "boolean"
-            return "string"
+            return classify_db_type(col_type) or "string"
 
         result = []
         for c in cols:
@@ -405,16 +396,7 @@ def analyze_schema(
                         "db_denydatareader", "db_denydatawriter"}
 
         def _simple_type(col_type) -> str:
-            t = str(col_type).upper()
-            if any(x in t for x in ("INT", "SERIAL", "BIGINT", "SMALLINT", "TINYINT")):
-                return "integer"
-            if any(x in t for x in ("FLOAT", "DOUBLE", "REAL", "NUMERIC", "DECIMAL", "MONEY")):
-                return "decimal"
-            if any(x in t for x in ("DATE", "TIME", "TIMESTAMP")):
-                return "date"
-            if any(x in t for x in ("BOOL", "BIT")):
-                return "boolean"
-            return "string"
+            return classify_db_type(col_type) or "string"
 
         # ── Alle Tabellen ermitteln ───────────────────────────────────────────
         all_table_names = []

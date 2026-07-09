@@ -1791,7 +1791,8 @@ export default function MappingEditor() {
                   // Typ-Kompatibilitätsprüfung
                   const _isSpecialSrc = typeof conn.source_dataset_id === "string";
                   const _srcNode = !_isSpecialSrc ? canvasNodes.find(n => n.dataset_id == conn.source_dataset_id) : null;
-                  const _srcType = _srcNode?.dataset_column_types?.[conn.source_field]?.type;
+                  const _srcType = _srcNode?.dataset_column_types?.[srcField]?.type
+                    ?? _srcNode?.dataset_column_types?.[conn.source_field]?.type;
                   const _tgtType = targetColumnTypes[conn.target_field]?.type;
                   const _typeIncompat = !conn.target_type && _srcType && _tgtType && _srcType !== _tgtType && !(_srcType === "integer" && _tgtType === "decimal");
                   const isSchemaField = !!targetColumnTypes[conn.target_field];
@@ -1835,12 +1836,15 @@ export default function MappingEditor() {
                           </span>
                           {/* Typ-Badge Slot – feste Breite */}
                           {(() => {
-                            const ct = targetColumnTypes[conn.target_field];
-                            const TC = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
-                            const TL = { integer:"INT", decimal:"DEC", date:"DAT", boolean:"BOL", string:"STR" };
-                            if (!ct) return <span style={{ width: 28, flexShrink: 0 }} />;
-                            const c = TC[ct.type] || "#6a6a6a";
-                            return <span style={{ width: 28, flexShrink: 0, fontSize: 8, fontWeight: 700, color: c, backgroundColor: c + "18", borderRadius: 2, padding: "1px 3px", marginRight: 4, textAlign: "center" }}>{TL[ct.type] || ct.type?.slice(0,3).toUpperCase()}</span>;
+                            const TC = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", datetime:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
+                            const TL = { integer:"INT", decimal:"DEC", date:"DAT", datetime:"DT", boolean:"BOL", string:"STR" };
+                            // Effektiver Typ: expliziter Cast > Ziel-DB-Schema > durchgereichter Quelltyp
+                            const effType = conn.target_type || targetColumnTypes[conn.target_field]?.type || _srcType;
+                            // Aus der Quelle abgeleitet (kein festes Ziel-Schema) → gedämpft darstellen
+                            const isDerived = !conn.target_type && !targetColumnTypes[conn.target_field] && !!_srcType;
+                            if (!effType) return <span style={{ width: 28, flexShrink: 0 }} />;
+                            const c = TC[effType] || "#6a6a6a";
+                            return <span title={isDerived ? "Typ aus der Quellspalte abgeleitet" : undefined} style={{ width: 28, flexShrink: 0, fontSize: 8, fontWeight: 700, color: c, backgroundColor: c + "18", borderRadius: 2, padding: "1px 3px", marginRight: 4, textAlign: "center", opacity: isDerived ? 0.6 : 1 }}>{TL[effType] || effType?.slice(0,3).toUpperCase()}</span>;
                           })()}
                           {isRenamingThis ? (
                             <input

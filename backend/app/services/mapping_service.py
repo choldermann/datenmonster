@@ -176,6 +176,27 @@ def run_mapping_object(
             for f, rule in (node.get("cast_rules") or {}).items():
                 forced[f] = rule.get("type", "string")
         column_types = infer_column_types(df_types)
+        # Quell-Typen für Direkt-Durchreichungen übernehmen: eine unverändert
+        # durchgereichte Spalte behält den Typ ihrer Quellspalte (aus dem DB-Schema),
+        # statt im Output neu aus den Daten geraten zu werden → Quelle == Ziel.
+        src_types = {}
+        for node in ctx.canvas_nodes:
+            ds_id = node.get("dataset_id")
+            for f, info in (node.get("dataset_column_types") or node.get("column_types") or {}).items():
+                if isinstance(info, dict) and info.get("type"):
+                    src_types[(ds_id, f)] = info["type"]
+        if src_types:
+            for conn in preview_connections:
+                tf = conn.get("target_field")
+                if not tf or tf not in column_types or conn.get("target_type"):
+                    continue
+                tr = conn.get("transformer") or {}
+                if tr.get("type") not in (None, "", "direct"):
+                    continue
+                sfield = tr.get("source_field") or conn.get("source_field")
+                st = src_types.get((conn.get("source_dataset_id"), sfield))
+                if st:
+                    column_types[tf] = {"type": st, "raw": column_types[tf].get("raw", "")}
         for conn in preview_connections:
             col = conn.get("target_field")
             ttype = conn.get("target_type")

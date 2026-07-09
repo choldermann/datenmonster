@@ -243,11 +243,48 @@ def _looks_like_date(sample: "pd.Series") -> bool:
     return False
 
 
+def classify_db_type(raw) -> Optional[str]:
+    """
+    Gemeinsamer Klassifizierer für rohe DB-/Cursor-Typen → einfaches Label.
+    Versteht SQL-Typnamen ('INTEGER', 'NVARCHAR(50)', 'NUMERIC(18,2)') UND
+    Python-Cursor-Typnamen ('int', 'str', 'Decimal', 'datetime', 'bool').
+    Rückgabe: 'integer' | 'decimal' | 'date' | 'boolean' | 'string' – oder
+    None bei generischen/unbekannten Typen (z.B. pandas 'object'), wo aus den
+    Daten geraten werden muss.
+
+    EIN Klassifizierer für Quelle UND Ziel: verhindert, dass dieselbe Spalte auf
+    Quellseite anders (z.B. integer) als auf Zielseite (z.B. string) klassifiziert
+    wird. Substring-Matching statt exaktem Vergleich, damit 'INTEGER', 'int',
+    'int identity(1,1)', 'BIGINT' usw. gleich behandelt werden.
+    """
+    if not raw:
+        return None
+    t = str(raw).upper()
+    if t in ("OBJECT", "UNKNOWN", "NONETYPE", "NULL", ""):
+        return None
+    if any(x in t for x in ("INT", "SERIAL")):
+        return "integer"
+    if any(x in t for x in ("FLOAT", "DOUBLE", "REAL", "NUMERIC", "DECIMAL", "MONEY", "NUMBER")):
+        return "decimal"
+    if any(x in t for x in ("DATE", "TIME", "TIMESTAMP")):
+        return "date"
+    if any(x in t for x in ("BOOL", "BIT")):
+        return "boolean"
+    if any(x in t for x in ("CHAR", "TEXT", "STR", "CLOB", "UUID", "JSON", "XML", "ENUM")):
+        return "string"
+    return None
+
+
 def infer_column_types(df: pd.DataFrame, db_raw_types: dict = None) -> dict:
     """
     Leitet einfache Typinfos aus einem DataFrame ab.
     Gibt {col: {type: 'string'|'integer'|'decimal'|'date'|'bool', raw: '<dtype>'}} zurück.
     db_raw_types: optionales {col: 'varchar(255)'} aus DB-Inspektion.
+
+    Ist ein verlässlicher DB-Rohtyp bekannt, klassifiziert ihn `classify_db_type`
+    (derselbe Klassifizierer wie auf der Zielseite) → konsistente Typen auf beiden
+    Seiten des Mappings. Nur ohne DB-Typ (CSV/REST/Excel) wird aus pandas-dtype +
+    Dateninhalt geraten.
 
     Datumserkennung ist bewusst konservativ um Fehlklassifikationen zu vermeiden:
     leere Spalten, kurze Strings und Monatsnamen werden NICHT als Datum erkannt.
@@ -255,17 +292,31 @@ def infer_column_types(df: pd.DataFrame, db_raw_types: dict = None) -> dict:
     result = {}
     for col in df.columns:
         dtype = df[col].dtype
-        raw = (db_raw_types or {}).get(col, str(dtype))
+        db_raw = (db_raw_types or {}).get(col)
+        raw = db_raw if db_raw else str(dtype)
 
-        # DB-Typ direkt nutzen wenn vorhanden
-        raw_lower = raw.lower() if raw else ""
-        if raw_lower in ("datetime", "datetime2", "smalldatetime", "date", "timestamp", "time"):
-            simple = "date"
-        elif raw_lower in ("bit", "boolean", "bool"):
-            simple = "bool"
-        elif raw_lower in ("int", "bigint", "smallint", "tinyint"):
-            simple = "integer"
-        elif pd.api.types.is_bool_dtype(dtype):
+        # 1) Verlässlicher DB-Rohtyp bekannt → gemeinsamer Klassifizierer (Quelle == Ziel).
+        #    DB-Typ hat Vorrang vor Daten-Raten: eine INT-Spalte bleibt integer, auch
+        #    wenn die Stichprobe leer ist oder wie eine Zeichenkette aussieht.
+        cls = classify_db_type(db_raw) if db_raw else None
+        if cls in ("date", "integer"):
+            result[col] = {"type": cls, "raw": raw}
+            continue
+        if cls == "boolean":
+            result[col] = {"type": "bool", "raw": raw}
+            continue
+        if cls == "string":
+            result[col] = {"type": "string", "raw": raw}
+            continue
+        if cls == "decimal":
+            # NUMERIC/DECIMAL(x,0) mit lauter Ganzzahlen → integer, sonst decimal
+            _num = pd.to_numeric(df[col].dropna(), errors="coerce").dropna()
+            _is_int = len(_num) > 0 and (_num == _num.astype("int64")).all()
+            result[col] = {"type": "integer" if _is_int else "decimal", "raw": raw}
+            continue
+
+        # 2) Kein/generischer DB-Typ → aus pandas-dtype + Dateninhalt ableiten.
+        if pd.api.types.is_bool_dtype(dtype):
             simple = "bool"
         elif pd.api.types.is_integer_dtype(dtype):
             simple = "integer"
