@@ -598,7 +598,7 @@ export default function MappingEditor() {
           setAllDatasets(prev => prev.some((d: any) => d.id === data.id) ? prev : [...prev, data]);
           _applyAutoJoins(newNode, canvasNodes);
           api.post(`/api/datasets/${data.id}/detect-schema`).then(({ data: sd }) => {
-            if (sd?.column_types) setCanvasNodes(prev => prev.map(n => n.dataset_id === data.id ? { ...n, dataset_column_types: sd.column_types } : n));
+            _enrichNodeSchemaAndAutoJoin(data.id, sd?.column_types);
           }).catch(() => {});
         } catch (err) {
           console.error("DB-Tabellen-Import fehlgeschlagen:", table_name, err);
@@ -620,8 +620,8 @@ export default function MappingEditor() {
     if (ds.file_type?.startsWith("db_")) {
       const hasSchema = Object.values(ds.column_types || {}).some(t => t?.is_primary != null);
       if (!hasSchema) {
-        api.post(`/api/datasets/${ds.id}/detect-schema`).then(({ data }) => {
-          if (data?.column_types) setCanvasNodes(prev => prev.map(n => n.dataset_id === ds.id ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...data.column_types } } : n));
+        api.post(`/api/datasets/${ds.id}/detect-schema`).then(({ data: sd }) => {
+          _enrichNodeSchemaAndAutoJoin(ds.id, sd?.column_types);
         }).catch(() => {});
       }
     }
@@ -653,6 +653,21 @@ export default function MappingEditor() {
       setAutoJoinNotice(notice);
       setTimeout(() => setAutoJoinNotice(null), 5000);
       return [...prev, ...fresh];
+    });
+  };
+
+  // Schema (PK/FK) eines Nodes nachtragen und Auto-Join erneut versuchen.
+  // Nötig, weil frisch importierte DB-Tabellen beim Drop noch keine is_primary/
+  // is_fk-Flags haben – die kommen erst asynchron über detect-schema. Ohne den
+  // erneuten Versuch würde die automatische Verknüpfung dann nie gezeichnet.
+  const _enrichNodeSchemaAndAutoJoin = (dsId, colTypes) => {
+    if (!colTypes) return;
+    setCanvasNodes(prev => {
+      const updated = prev.map(n => n.dataset_id === dsId
+        ? { ...n, dataset_column_types: { ...n.dataset_column_types, ...colTypes } } : n);
+      const self = updated.find(n => n.dataset_id === dsId);
+      if (self) setTimeout(() => _applyAutoJoins(self, updated.filter(n => n.dataset_id !== dsId)), 0);
+      return updated;
     });
   };
 
