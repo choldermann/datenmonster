@@ -568,26 +568,9 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         db.refresh(p)
         created["pipelines"].append({"id": p.id, "name": p.name})
 
-    # ── Reports anlegen ──────────────────────────────────────────────────
-    from app.models.report import Report
-    for r_def in content.get("reports", []):
-        import copy
-        widgets_resolved = []
-        for w in r_def.get("widgets", []):
-            w_copy = copy.deepcopy(w)
-            cfg = w_copy.get("config", {})
-            if isinstance(cfg.get("dataset_id"), str) and cfg["dataset_id"].startswith("{{"):
-                key = cfg["dataset_id"].strip("{}")
-                if key in ds_id_map:
-                    cfg["dataset_id"] = ds_id_map[key]
-            widgets_resolved.append(w_copy)
-        r = Report(
-            name=_apply_config(r_def.get("name", "Report"), config),
-            project_id=body.project_id,
-            widgets=widgets_resolved,
-        )
-        db.add(r); db.commit(); db.refresh(r)
-        created.setdefault("reports", []).append({"id": r.id, "name": r.name})
+    # Reports werden nicht mehr installiert – Dashboards leben jetzt als Formulare
+    # (Form-Widgets binden an Actions/Mappings). Ein "reports"-Schlüssel in alten
+    # Template-JSONs wird bewusst ignoriert.
 
     # ── Formulare anlegen ─────────────────────────────────────────────────
     # Template-String-IDs in Actions/Widgets → echte Integer-IDs zurückschreiben.

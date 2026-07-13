@@ -11,7 +11,6 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import Dashboard from "./pages/Dashboard";
 import MappingEditor from "./pages/MappingEditor";
 import PipelineEditor from "./pages/PipelineEditor";
-import ReportEditor from "./pages/ReportEditor";
 import FormEditor from "./pages/FormEditor";
 import FormRunner from "./pages/FormRunner";
 import PortalHome from "./pages/PortalHome";
@@ -91,7 +90,6 @@ export default function App() {
               <Route path="/mappings/new"  element={<EditorRoute><MappingEditor /></EditorRoute>} />
               <Route path="/mappings/:id"  element={<EditorRoute><MappingEditor /></EditorRoute>} />
               <Route path="/pipelines/:id" element={<EditorRoute><PipelineEditor /></EditorRoute>} />
-              <Route path="/reports/:id"   element={<EditorRoute><ReportEditor /></EditorRoute>} />
               <Route path="/forms/new"     element={<EditorRoute><FormEditor /></EditorRoute>} />
               <Route path="/forms/:id"     element={<EditorRoute><FormEditor /></EditorRoute>} />
               <Route path="/forms/:id/run" element={<EditorRoute><FormRunner /></EditorRoute>} />

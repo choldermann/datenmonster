@@ -37,6 +37,12 @@ class FormRunRequest(BaseModel):
     preview_rows: Optional[int] = 500
 
 
+class DrilldownRequest(BaseModel):
+    mapping_id: int
+    params:     Optional[dict] = {}
+    max_rows:   Optional[int] = 200
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def form_out(f: Form) -> dict:
@@ -112,6 +118,54 @@ def create_form(data: FormCreate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(f)
     return form_out(f)
+
+
+@router.post("/drilldown")
+def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """
+    Mapping-basierter Drilldown (Stufe B): führt ein gespeichertes Mapping mit
+    Laufzeit-Parametern (run_params) aus und gibt die Detailzeilen zurück – ohne
+    ins Ziel zu schreiben. Nutzt denselben Preview-Lauf wie die run_mapping-Action
+    (execute_mapping berechnet nur, _write_target wird nicht aufgerufen).
+    """
+    from app.api.projects import can_read_project
+    from app.services.mapping_service import MappingContext, execute_mapping
+
+    m = db.query(Mapping).filter(Mapping.id == body.mapping_id).first()
+    if not m:
+        raise HTTPException(404, "Mapping nicht gefunden")
+    if not can_read_project(m.project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Mapping")
+
+    ctx = MappingContext.from_orm(m)
+    ctx.run_params = body.params or {}
+    if not ctx.targets:
+        return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
+
+    # preview_rows <= 500 hält die Engine im Lese-/Vorschaumodus (kein Ziel-Write)
+    rows_cap = min(max(body.max_rows or 200, 1), 500)
+    t_fields = ctx.targets[0].get("fields") or []
+    try:
+        result = execute_mapping(**ctx.to_execute_kwargs(t_fields, rows_cap))
+    except Exception as e:
+        import traceback as _tb
+        try:
+            from app.services.db_logger import log as _dblog
+            _dblog(db, "error", "forms", "drilldown_error",
+                f"Drilldown-Fehler (Mapping {body.mapping_id}): {str(e)[:300]}",
+                details={"exception_type": type(e).__name__,
+                         "exception_message": str(e),
+                         "traceback": _tb.format_exc()})
+        except Exception:
+            pass
+        raise HTTPException(500, f"Drilldown-Fehler: {str(e)[:200]}")
+
+    return {
+        "columns": result.get("columns", []),
+        "rows":    result.get("rows", []),
+        "total":   result.get("total", 0),
+    }
 
 
 @router.get("/{form_id}")
