@@ -1,0 +1,352 @@
+{
+  "template_id": "jtl_umsatz_nach_artikel",
+  "template_name": "JTL – Umsatz nach Artikel",
+  "description": "Dashboard-Formular: Top-Artikel, verkaufte Menge und Umsatzanteile aus der JTL-Wawi.",
+  "category": "jtl-reporting",
+  "version": "2.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Beim Installieren die JTL-Datenbankverbindung (MS SQL) auswählen – Zugangsdaten werden nicht mitgeliefert.",
+    "Formular öffnen und die Auswerten-Buttons klicken, damit die Widgets Daten laden.",
+    "Aggregation passiert im SQL (GROUP BY) – die Widgets zeigen fertige Summen.",
+    "SQL nutzt Rechnung.vRechnung + Rechnung.tRechnungPosition."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    },
+    {
+      "key": "monate",
+      "label": "Zeitraum rückwirkend in Monaten",
+      "type": "text",
+      "default": "24"
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "mapping_kpi",
+      "name": "Artikel-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Gesamtumsatz,\n    CAST(SUM(REPO.fAnzahl) AS DECIMAL(18,2)) AS VerkaufteMenge\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Gesamtumsatz",
+            "VerkaufteMenge"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Artikel-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Gesamtumsatz",
+              "target_field": "Gesamtumsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gesamtumsatz"
+              }
+            },
+            {
+              "source_field": "VerkaufteMenge",
+              "target_field": "VerkaufteMenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerkaufteMenge"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_top_artikel",
+      "name": "Top 15 Artikel nach Umsatz",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    REPO.cArtNr AS Artikelnummer,\n    MAX(REPO.cName) AS Artikelname,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY REPO.cArtNr\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Artikelname",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Top 15 Artikel nach Umsatz",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_tabelle",
+      "name": "Artikelliste (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 100\n    REPO.cArtNr AS Artikelnummer,\n    MAX(REPO.cName) AS Artikelname,\n    CAST(SUM(REPO.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY REPO.cArtNr\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Artikelname",
+            "Menge",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Artikelliste (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Umsatz nach Artikel",
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "actions": [
+          {
+            "id": "act_kpi",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kpi",
+            "pipeline_id": null,
+            "label": "Kennzahlen"
+          },
+          {
+            "id": "act_top",
+            "type": "run_mapping",
+            "mapping_id": "mapping_top_artikel",
+            "pipeline_id": null,
+            "label": "Top-Artikel"
+          },
+          {
+            "id": "act_tabelle",
+            "type": "run_mapping",
+            "mapping_id": "mapping_tabelle",
+            "pipeline_id": null,
+            "label": "Artikelliste"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_kpi_umsatz",
+            "type": "kpi",
+            "label": "Gesamtumsatz netto",
+            "action_id": "act_kpi",
+            "config": {
+              "width": 6,
+              "column": "Gesamtumsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_menge",
+            "type": "kpi",
+            "label": "Verkaufte Menge",
+            "action_id": "act_kpi",
+            "config": {
+              "width": 6,
+              "column": "VerkaufteMenge",
+              "aggregation": "first",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_bar",
+            "type": "bar",
+            "label": "Top 15 Artikel nach Umsatz",
+            "action_id": "act_top",
+            "config": {
+              "width": 8,
+              "x_column": "Artikelname",
+              "y_columns": [
+                "Umsatz"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_pie",
+            "type": "pie",
+            "label": "Umsatzanteil Top-Artikel",
+            "action_id": "act_top",
+            "config": {
+              "width": 4,
+              "label_column": "Artikelname",
+              "value_column": "Umsatz",
+              "donut": true
+            }
+          },
+          {
+            "id": "w_tabelle",
+            "type": "table",
+            "label": "Positionsdetails",
+            "action_id": "act_tabelle",
+            "config": {
+              "width": 12
+            }
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ]
+}
