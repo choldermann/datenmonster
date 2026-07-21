@@ -567,6 +567,174 @@
           ]
         }
       ]
+    },
+    {
+      "id": "mapping_23",
+      "name": "Intrastat Datenqualität",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 111,
+          "y": 28,
+          "connection_id": "{{connection_10}}",
+          "sql": "SELECT DISTINCT\n    'Ausfuhr' AS richtung,\n    A.cArtNr AS artikelnr,\n    A.cTaric AS warennummer,\n    A.fGewicht AS gewicht,\n    CASE WHEN A.cTaric IS NULL OR LTRIM(RTRIM(A.cTaric)) = '' THEN 'Warennummer fehlt' ELSE 'Gewicht fehlt/0' END AS problem\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND RE.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (A.cTaric IS NULL OR LTRIM(RTRIM(A.cTaric)) = '' OR A.fGewicht IS NULL OR A.fGewicht = 0)\nUNION\nSELECT DISTINCT\n    'Einfuhr', A.cArtNr, A.cTaric, A.fGewicht,\n    CASE WHEN A.cTaric IS NULL OR LTRIM(RTRIM(A.cTaric)) = '' THEN 'Warennummer fehlt' ELSE 'Gewicht fehlt/0' END\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND E.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND E.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (A.cTaric IS NULL OR LTRIM(RTRIM(A.cTaric)) = '' OR A.fGewicht IS NULL OR A.fGewicht = 0)\nORDER BY richtung, artikelnr\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "richtung",
+            "artikelnr",
+            "warennummer",
+            "gewicht",
+            "problem"
+          ],
+          "width": 350,
+          "height": 244
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Datenqualität",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            { "source_field": "richtung",    "target_field": "richtung",    "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "richtung" } },
+            { "source_field": "artikelnr",   "target_field": "artikelnr",   "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "artikelnr" } },
+            { "source_field": "warennummer", "target_field": "warennummer", "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "warennummer" } },
+            { "source_field": "gewicht",     "target_field": "gewicht",     "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "gewicht" } },
+            { "source_field": "problem",     "target_field": "problem",     "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "problem" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_24",
+      "name": "Detail Ausgangsrechnungen (Ausfuhr)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 111,
+          "y": 28,
+          "connection_id": "{{connection_10}}",
+          "sql": "SELECT\n    RE.cRechnungsNr AS rechnungsnr,\n    CAST(RE.dErstellt AS date) AS datum,\n    RELI.cISO AS bestimmungsland,\n    A.cArtNr AS artikelnr,\n    A.cTaric AS warennummer,\n    CAST(REPO.fAnzahl AS DECIMAL(18,2)) AS menge,\n    CAST(ROUND(REPO.fAnzahl * A.fGewicht, 2) AS DECIMAL(18,2)) AS gewicht_kg,\n    CAST(ROUND(REPO.fAnzahl * REPO.fVkNetto, 2) AS DECIMAL(18,2)) AS wert_netto\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND RE.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\nORDER BY RE.cRechnungsNr, A.cArtNr\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "rechnungsnr",
+            "datum",
+            "bestimmungsland",
+            "artikelnr",
+            "warennummer",
+            "menge",
+            "gewicht_kg",
+            "wert_netto"
+          ],
+          "width": 350,
+          "height": 244
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Ausgangsrechnungen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            { "source_field": "rechnungsnr",     "target_field": "rechnungsnr",     "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "rechnungsnr" } },
+            { "source_field": "datum",           "target_field": "datum",           "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "datum" } },
+            { "source_field": "bestimmungsland", "target_field": "bestimmungsland", "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "bestimmungsland" } },
+            { "source_field": "artikelnr",       "target_field": "artikelnr",       "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "artikelnr" } },
+            { "source_field": "warennummer",     "target_field": "warennummer",     "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "warennummer" } },
+            { "source_field": "menge",           "target_field": "menge",           "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "menge" } },
+            { "source_field": "gewicht_kg",      "target_field": "gewicht_kg",      "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "gewicht_kg" } },
+            { "source_field": "wert_netto",      "target_field": "wert_netto",      "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "wert_netto" } }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_25",
+      "name": "Detail Eingangsrechnungen (Einfuhr)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 111,
+          "y": 28,
+          "connection_id": "{{connection_10}}",
+          "sql": "SELECT\n    E.cEingangsrechnungNr AS rechnungsnr,\n    CAST(E.dErstellt AS date) AS datum,\n    E.cLandISO AS versendungsland,\n    A.cArtNr AS artikelnr,\n    A.cTaric AS warennummer,\n    CAST(EP.fMenge AS DECIMAL(18,2)) AS menge,\n    CAST(ROUND(EP.fMenge * A.fGewicht, 2) AS DECIMAL(18,2)) AS gewicht_kg,\n    CAST(ROUND(EP.fMenge * EP.fEKNetto, 2) AS DECIMAL(18,2)) AS wert_netto\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND E.dErstellt >= DATEFROMPARTS(:year, :month, 1)\n  AND E.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\nORDER BY E.cEingangsrechnungNr, A.cArtNr\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "rechnungsnr",
+            "datum",
+            "versendungsland",
+            "artikelnr",
+            "warennummer",
+            "menge",
+            "gewicht_kg",
+            "wert_netto"
+          ],
+          "width": 350,
+          "height": 244
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Eingangsrechnungen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            { "source_field": "rechnungsnr",     "target_field": "rechnungsnr",     "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "rechnungsnr" } },
+            { "source_field": "datum",           "target_field": "datum",           "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "datum" } },
+            { "source_field": "versendungsland", "target_field": "versendungsland", "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "versendungsland" } },
+            { "source_field": "artikelnr",       "target_field": "artikelnr",       "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "artikelnr" } },
+            { "source_field": "warennummer",     "target_field": "warennummer",     "target_type": "string", "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "warennummer" } },
+            { "source_field": "menge",           "target_field": "menge",           "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "menge" } },
+            { "source_field": "gewicht_kg",      "target_field": "gewicht_kg",      "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "gewicht_kg" } },
+            { "source_field": "wert_netto",      "target_field": "wert_netto",      "target_type": "float",  "source_dataset_id": "__sql__sql1", "transformer": { "type": "direct", "source_field": "wert_netto" } }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [
@@ -783,7 +951,10 @@
             "options": [],
             "action_ids": [
               "a_intrastat21",
-              "a_intrastat_ein"
+              "a_intrastat_ein",
+              "a_dq",
+              "a_detail_aus",
+              "a_detail_ein"
             ],
             "action_id": "",
             "content": ""
@@ -802,26 +973,103 @@
             "type": "run_mapping",
             "mapping_id": "mapping_22",
             "label": "Auswerten Einfuhr"
+          },
+          {
+            "id": "a_dq",
+            "type": "run_mapping",
+            "mapping_id": "mapping_23",
+            "label": "Datenqualität prüfen"
+          },
+          {
+            "id": "a_detail_aus",
+            "type": "run_mapping",
+            "mapping_id": "mapping_24",
+            "label": "Detail Ausgangsrechnungen"
+          },
+          {
+            "id": "a_detail_ein",
+            "type": "run_mapping",
+            "mapping_id": "mapping_25",
+            "label": "Detail Eingangsrechnungen"
           }
         ],
         "widgets": [
           {
+            "id": "w_kpi_aus_pos",
+            "type": "kpi",
+            "label": "Positionen Ausfuhr",
+            "action_id": "a_intrastat21",
+            "config": { "width": 4, "column": "position_number", "aggregation": "count", "decimals": 0 }
+          },
+          {
+            "id": "w_kpi_aus_wert",
+            "type": "kpi",
+            "label": "Statist. Wert Ausfuhr",
+            "action_id": "a_intrastat21",
+            "config": { "width": 4, "column": "statistical_value", "aggregation": "sum", "prefix": "€ ", "decimals": 0 }
+          },
+          {
+            "id": "w_kpi_aus_gew",
+            "type": "kpi",
+            "label": "Eigenmasse Ausfuhr",
+            "action_id": "a_intrastat21",
+            "config": { "width": 4, "column": "net_mass", "aggregation": "sum", "suffix": " kg", "decimals": 0 }
+          },
+          {
             "id": "w_intrastat_table",
             "type": "table",
-            "label": "Ergebnis Ausfuhr",
+            "label": "Ergebnis Ausfuhr (Meldezeilen)",
             "action_id": "a_intrastat21",
-            "config": {
-              "width": 12
-            }
+            "config": { "width": 12 }
+          },
+          {
+            "id": "w_kpi_ein_pos",
+            "type": "kpi",
+            "label": "Positionen Einfuhr",
+            "action_id": "a_intrastat_ein",
+            "config": { "width": 4, "column": "position_number", "aggregation": "count", "decimals": 0 }
+          },
+          {
+            "id": "w_kpi_ein_wert",
+            "type": "kpi",
+            "label": "Statist. Wert Einfuhr",
+            "action_id": "a_intrastat_ein",
+            "config": { "width": 4, "column": "statistical_value", "aggregation": "sum", "prefix": "€ ", "decimals": 0 }
+          },
+          {
+            "id": "w_kpi_ein_gew",
+            "type": "kpi",
+            "label": "Eigenmasse Einfuhr",
+            "action_id": "a_intrastat_ein",
+            "config": { "width": 4, "column": "net_mass", "aggregation": "sum", "suffix": " kg", "decimals": 0 }
           },
           {
             "id": "w_intrastat_ein_table",
             "type": "table",
-            "label": "Ergebnis Einfuhr",
+            "label": "Ergebnis Einfuhr (Meldezeilen)",
             "action_id": "a_intrastat_ein",
-            "config": {
-              "width": 12
-            }
+            "config": { "width": 12 }
+          },
+          {
+            "id": "w_dq_table",
+            "type": "table",
+            "label": "Datenqualität – Artikel ohne Warennummer/Gewicht",
+            "action_id": "a_dq",
+            "config": { "width": 12 }
+          },
+          {
+            "id": "w_detail_aus_table",
+            "type": "table",
+            "label": "Detail Ausgangsrechnungen (hinter den Ausfuhr-Zeilen)",
+            "action_id": "a_detail_aus",
+            "config": { "width": 12 }
+          },
+          {
+            "id": "w_detail_ein_table",
+            "type": "table",
+            "label": "Detail Eingangsrechnungen (hinter den Einfuhr-Zeilen)",
+            "action_id": "a_detail_ein",
+            "config": { "width": 12 }
           }
         ]
       },
@@ -838,7 +1086,10 @@
     }
   ],
   "hinweise": [
-    "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert."
+    "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert.",
+    "Formular öffnen, Jahr/Monat wählen und 'Anzeigen' klicken: KPIs (Positionen, statist. Wert, Eigenmasse), Meldezeilen, Datenqualität und die zugrunde liegenden Rechnungen laden zusammen.",
+    "Datenqualität listet Artikel aus dem Zeitraum ohne Warennummer (cTaric) oder ohne Gewicht (fGewicht) – diese verfälschen sonst die Meldung.",
+    "Die Detail-Tabellen nutzen die Rechnungsnummer-Felder RE.cRechnungsNr (Ausfuhr) bzw. E.cEingangsrechnungNr (Einfuhr). Falls dein JTL-Schema hier abweicht, in mapping_24/mapping_25 anpassen."
   ],
   "pipeline": {
     "name": "Intrastat Ausfuhr – monatlich",
