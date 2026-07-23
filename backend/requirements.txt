@@ -21,7 +21,6 @@ pyodbc==5.2.0
 xhtml2pdf==0.2.16
 reportlab==4.2.5
 cryptography==43.0.3
-duckdb>=1.0.0
 psutil>=5.9.0
 croniter>=1.3.0
 matplotlib>=3.9.0

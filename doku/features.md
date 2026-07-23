@@ -57,7 +57,7 @@ Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 - PK/FK-Kennzeichnung in Dataset-Nodes (Schlüsselsymbol / FK-Badge) (2026-06-26)
 - PK/FK-Schema automatisch aus DB erkennen per Knopf (2026-06-26)
 - SQL Filter-Pushdown für DB-Quellen (~25× schneller bei gefilterten Datasets) (2026-06-26)
-- DuckDB als JOIN-Engine (löst Type-Mismatch-Probleme bei Cross-DB JOINs) (2026-04-20)
+- JOIN-Engine: **pandas (`pd.merge`)**. Join-Keys werden vor dem Merge typ-angeglichen, sodass Cross-DB-JOINs mit unterschiedlichen Typen matchen (z.B. INT aus MSSQL ↔ String aus CSV, Float aus Excel ↔ INT, CHAR-Padding aus JTL) (2026-07-23). Historie: 2026-04-20 gab es kurzzeitig eine DuckDB-basierte Variante, die beim Modul-Refactor am 2026-06-28 verloren ging; DuckDB wurde am 2026-07-23 entfernt und der Type-Mismatch stattdessen direkt in pandas gelöst.
 - **Multi-Pass-Join-Engine** – Join-Reihenfolge-unabhängig: mehrere Durchläufe bis alle Abhängigkeiten aufgelöst (2026-06-29)
 
 ### Smart Mapping / KI-Node-Generator
@@ -213,7 +213,7 @@ Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 | **Bedingung** | Wenn/Dann Verzweigung | v1.0 |
 | **FTP Upload** | Datei auf FTP/SFTP hochladen | v1.0 |
 | **E-Mail** | E-Mail mit optionalem Anhang senden | v1.0 |
-| **Business Insights** | Umsatz, Trends & Anomalien analysieren (DuckDB/pandas, kein LLM für Berechnungen) | 2026-06-29 |
+| **Business Insights** | Umsatz, Trends & Anomalien analysieren (pandas, kein LLM für Berechnungen) | 2026-06-29 |
 
 ---
 
@@ -326,9 +326,9 @@ Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 
 | Schicht | Technologie |
 |---|---|
-| Backend | FastAPI (Python), SQLite, DuckDB, pandas, Fernet |
+| Backend | FastAPI (Python), SQLite, pandas, Fernet |
 | Frontend | React, Vite, react-router, Lucide Icons |
-| Daten-Engine | pandas + DuckDB (für JOINs) |
+| Daten-Engine | pandas (JOINs via `pd.merge`) |
 | KI / LLM | Ollama (OpenAI-kompatibel), SSE-Streaming |
 | Queue/Events | Redis (Pub/Sub) |
 | Auth | JWT (python-jose), bcrypt |

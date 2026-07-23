@@ -1,5 +1,5 @@
 """
-insight_engine – Business-Insights-Berechnungslogik (kein LLM, reines pandas/DuckDB).
+insight_engine – Business-Insights-Berechnungslogik (kein LLM, reines pandas).
 """
 import logging
 from datetime import date, timedelta

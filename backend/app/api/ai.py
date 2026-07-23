@@ -449,7 +449,7 @@ _PAGE_SYSTEM_PROMPTS = {
         "Gut für Benachrichtigungen, Fehler-Alerts oder automatische Reports als E-Mail-Anhang.\n\n"
         "• Business Insights (business_insights): Analysiert ein Dataset und erstellt "
         "Geschäftsauswertungen (Umsatzentwicklung, Länderanalyse, Top-Kunden, Lagerbestand). "
-        "Berechnungen laufen lokal per DuckDB/pandas. Das Ergebnis ist ein neues Dataset, "
+        "Berechnungen laufen lokal per pandas. Das Ergebnis ist ein neues Dataset, "
         "das z.B. direkt per E-Mail-Node verschickt werden kann.\n\n"
         "TYPISCHE PIPELINE-MUSTER:\n"
         "- Einfache ETL: Trigger → FTP-Import → Mapping → FTP-Upload\n"
