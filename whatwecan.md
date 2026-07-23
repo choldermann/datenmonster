@@ -11,7 +11,7 @@
 
 ### Dateiformate
 - CSV, Excel (.xlsx / .xls), XML, JSON, ODS
-- Parquet (für Hochleistungs-JOINs via DuckDB)
+- Parquet
 - Statische Datasets (manuell gepflegte Tabellen im Browser)
 
 ### Sonstige Quellen
@@ -208,7 +208,7 @@ Visueller Flow-Editor mit Nodes per Drag & Drop.
 | Backend | FastAPI + SQLAlchemy + SQLite |
 | Frontend | React + Tailwind CSS |
 | KI | Ollama (lokal), qwen2.5-coder:3b empfohlen |
-| JOINs | DuckDB (in-process) |
+| JOINs | pandas (in-process) |
 | Scheduling | APScheduler |
 | Container | Docker Compose |
 | Proxy | nginx mit SSE-Support |

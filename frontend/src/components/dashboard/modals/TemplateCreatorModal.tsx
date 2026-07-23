@@ -51,13 +51,11 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
   const [mappings, setMappings] = useState([]);
   const [pipelines, setPipelines] = useState([]);
   const [forms, setForms] = useState([]);
-  const [reports, setReports] = useState([]);
 
   const [selectedDatasets, setSelectedDatasets] = useState(new Set());
   const [selectedMappings, setSelectedMappings] = useState(new Set());
   const [selectedPipelines, setSelectedPipelines] = useState(new Set());
   const [selectedForms, setSelectedForms] = useState(new Set());
-  const [selectedReports, setSelectedReports] = useState(new Set());
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -70,13 +68,11 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
       api.get(`/api/mappings/${p}`),
       api.get(`/api/pipelines/${p}`),
       api.get(`/api/forms/`, params),
-      api.get(`/api/reports/`, params),
-    ]).then(([ds, ms, ps, fs, rs]) => {
+    ]).then(([ds, ms, ps, fs]) => {
       setDatasets(ds.data || []);
       setMappings(ms.data || []);
       setPipelines(ps.data || []);
       setForms(fs.data || []);
-      setReports(rs.data || []);
     }).finally(() => setLoading(false));
   }, [projectId]);
 
@@ -110,7 +106,6 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
         mapping_ids: [...selectedMappings],
         pipeline_ids: [...selectedPipelines],
         form_ids: [...selectedForms],
-        report_ids: [...selectedReports],
       };
       await api.post("/api/templates/create", payload);
       onSaved();
@@ -121,7 +116,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
     }
   };
 
-  const totalSelected = selectedDatasets.size + selectedMappings.size + selectedPipelines.size + selectedForms.size + selectedReports.size;
+  const totalSelected = selectedDatasets.size + selectedMappings.size + selectedPipelines.size + selectedForms.size;
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "5px 8px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
@@ -253,27 +248,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
                 </div>
               )}
 
-              {/* Reports */}
-              {reports.length > 0 && (
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px" }}>
-                    <span style={{ fontSize: 13 }}>📊</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>Reports</span>
-                    <button onClick={() => toggleAll(reports, setSelectedReports)}
-                      style={{ fontSize: 9, color: ACCENT, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                      {reports.every(r => selectedReports.has(r.id)) ? "Alle ab" : "Alle an"}
-                    </button>
-                  </div>
-                  {reports.map(r => (
-                    <TreeItem key={r.id} icon="📈" label={r.name}
-                      sublabel={`${r.widgets?.length || 0} Widgets`}
-                      checked={selectedReports.has(r.id)}
-                      onChange={() => toggle(selectedReports, setSelectedReports, r.id)} />
-                  ))}
-                </div>
-              )}
-
-              {!loading && datasets.length === 0 && mappings.length === 0 && pipelines.length === 0 && forms.length === 0 && reports.length === 0 && (
+              {!loading && datasets.length === 0 && mappings.length === 0 && pipelines.length === 0 && forms.length === 0 && (
                 <p style={{ fontSize: 11, color: S.textDim, padding: "12px 10px", fontStyle: "italic" }}>
                   Keine Inhalte im Projekt gefunden.
                 </p>
@@ -288,7 +263,6 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
               {selectedMappings.size > 0 && ` · ${selectedMappings.size} Mapping${selectedMappings.size !== 1 ? "s" : ""}`}
               {selectedPipelines.size > 0 && ` · ${selectedPipelines.size} Pipeline${selectedPipelines.size !== 1 ? "s" : ""}`}
               {selectedForms.size > 0 && ` · ${selectedForms.size} Formular${selectedForms.size !== 1 ? "e" : ""}`}
-              {selectedReports.size > 0 && ` · ${selectedReports.size} Report${selectedReports.size !== 1 ? "s" : ""}`}
             </div>
           )}
         </div>

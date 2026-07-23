@@ -1,0 +1,447 @@
+{
+  "template_id": "jtl_umsatz_nach_kunde",
+  "template_name": "JTL – Umsatz nach Kunde",
+  "description": "Dashboard-Formular: Top-Kunden, Ø Bestellwert und Umsatz nach Land aus der JTL-Wawi.",
+  "category": "jtl-reporting",
+  "version": "2.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Beim Installieren die JTL-Datenbankverbindung (MS SQL) auswählen – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert.",
+    "Das Formular öffnen und die Auswerten-Buttons klicken, damit die Kacheln/Diagramme Daten laden.",
+    "Aggregation passiert im SQL (GROUP BY) – die Widgets zeigen fertige Summen, nicht einzelne Positionszeilen.",
+    "SQL nutzt Rechnung.vRechnung + Rechnung.tRechnungPosition. Bei abweichender JTL-Version ggf. Spalten-/View-Namen in den Mappings anpassen."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    },
+    {
+      "key": "monate",
+      "label": "Zeitraum rückwirkend in Monaten",
+      "type": "text",
+      "default": "24"
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "mapping_kpi",
+      "name": "Umsatz-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Gesamtumsatz,\n    COUNT(DISTINCT RE.cRechnungsNr) AS AnzahlRechnungen,\n    CAST(CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) / NULLIF(COUNT(DISTINCT RE.cRechnungsNr), 0) AS DECIMAL(18,2)) AS DurchschnittBestellwert\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Gesamtumsatz",
+            "AnzahlRechnungen",
+            "DurchschnittBestellwert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Umsatz-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Gesamtumsatz",
+              "target_field": "Gesamtumsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gesamtumsatz"
+              }
+            },
+            {
+              "source_field": "AnzahlRechnungen",
+              "target_field": "AnzahlRechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlRechnungen"
+              }
+            },
+            {
+              "source_field": "DurchschnittBestellwert",
+              "target_field": "DurchschnittBestellwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DurchschnittBestellwert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_top_kunden",
+      "name": "Top 15 Kunden nach Umsatz",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    ISNULL(NULLIF(LTRIM(RTRIM(RE.cFirma)), ''), LTRIM(RTRIM(ISNULL(RE.cVorname, '') + ' ' + ISNULL(RE.cName, '')))) AS Kunde,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY RE.cFirma, RE.cVorname, RE.cName\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Top 15 Kunden nach Umsatz",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_land",
+      "name": "Umsatz nach Land",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    RE.cLandISO AS Land,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY RE.cLandISO\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Land",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Umsatz nach Land",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_tabelle",
+      "name": "Kundenliste (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 100\n    ISNULL(NULLIF(LTRIM(RTRIM(RE.cFirma)), ''), LTRIM(RTRIM(ISNULL(RE.cVorname, '') + ' ' + ISNULL(RE.cName, '')))) AS Kunde,\n    RE.cOrt AS Ort,\n    RE.cLandISO AS Land,\n    COUNT(DISTINCT RE.cRechnungsNr) AS Rechnungen,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY RE.cFirma, RE.cVorname, RE.cName, RE.cOrt, RE.cLandISO\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Ort",
+            "Land",
+            "Rechnungen",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Kundenliste (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "JTL Umsatz nach Kunde",
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "actions": [
+          {
+            "id": "act_kpi",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kpi",
+            "pipeline_id": null,
+            "label": "Kennzahlen"
+          },
+          {
+            "id": "act_top",
+            "type": "run_mapping",
+            "mapping_id": "mapping_top_kunden",
+            "pipeline_id": null,
+            "label": "Top-Kunden"
+          },
+          {
+            "id": "act_land",
+            "type": "run_mapping",
+            "mapping_id": "mapping_land",
+            "pipeline_id": null,
+            "label": "Nach Land"
+          },
+          {
+            "id": "act_tabelle",
+            "type": "run_mapping",
+            "mapping_id": "mapping_tabelle",
+            "pipeline_id": null,
+            "label": "Kundenliste"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_kpi_umsatz",
+            "type": "kpi",
+            "label": "Gesamtumsatz",
+            "action_id": "act_kpi",
+            "config": {
+              "width": 4,
+              "column": "Gesamtumsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_anzahl",
+            "type": "kpi",
+            "label": "Rechnungen",
+            "action_id": "act_kpi",
+            "config": {
+              "width": 4,
+              "column": "AnzahlRechnungen",
+              "aggregation": "first",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_kpi_schnitt",
+            "type": "kpi",
+            "label": "Ø Bestellwert",
+            "action_id": "act_kpi",
+            "config": {
+              "width": 4,
+              "column": "DurchschnittBestellwert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_bar_kunden",
+            "type": "bar",
+            "label": "Top 15 Kunden nach Umsatz",
+            "action_id": "act_top",
+            "config": {
+              "width": 8,
+              "x_column": "Kunde",
+              "y_columns": [
+                "Umsatz"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_pie_land",
+            "type": "pie",
+            "label": "Umsatz nach Land",
+            "action_id": "act_land",
+            "config": {
+              "width": 4,
+              "label_column": "Land",
+              "value_column": "Umsatz",
+              "donut": true
+            }
+          },
+          {
+            "id": "w_tabelle",
+            "type": "table",
+            "label": "Kundenliste",
+            "action_id": "act_tabelle",
+            "config": {
+              "width": 12
+            }
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ]
+}

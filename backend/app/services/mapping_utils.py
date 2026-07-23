@@ -178,6 +178,46 @@ def _load_dataset(dataset_id: int) -> pd.DataFrame:
     return connector.fetch_full()
 
 
+def _join_key_to_str(s: pd.Series) -> pd.Series:
+    """Normalisiert eine Join-Key-Spalte zu getrimmten Strings.
+
+    Löst CHAR-Padding (JTL füllt CHAR-Felder mit Leerzeichen: 'ABC  ' == 'ABC')
+    und die Float→String-Falle (5.0 soll auf '5' matchen, nicht auf '5.0').
+    NaN bleibt NaN, damit Leerwerte nicht fälschlich verjoint werden.
+    """
+    if pd.api.types.is_float_dtype(s):
+        def _fmt(x):
+            if pd.isna(x):
+                return None
+            f = float(x)
+            return str(int(f)) if f.is_integer() else str(f)
+        return s.map(_fmt)
+    return s.map(lambda x: None if pd.isna(x) else str(x).strip())
+
+
+def _prep_join_keys(left_s: pd.Series, right_s: pd.Series):
+    """Gleicht die Datentypen zweier Join-Keys an, damit Cross-DB-JOINs matchen.
+
+    Beispiel: linke Seite INT aus MSSQL, rechte Seite String aus CSV → ohne
+    Angleichung findet pd.merge nichts (stille Fehl-Joins). Strategie:
+      1. Sind beide Seiten überwiegend numerisch parsebar → numerisch vergleichen
+         (deckt int/float/String-Zahl gemischt ab).
+      2. Sonst → als getrimmte Strings vergleichen (CHAR-Padding etc.).
+    """
+    left_num = pd.to_numeric(left_s, errors="coerce")
+    right_num = pd.to_numeric(right_s, errors="coerce")
+
+    def _numeric_rate(orig: pd.Series, conv: pd.Series) -> float:
+        nonempty = orig.notna()
+        if nonempty.sum() == 0:
+            return 1.0
+        return float(conv[nonempty].notna().mean())
+
+    if _numeric_rate(left_s, left_num) >= 0.95 and _numeric_rate(right_s, right_num) >= 0.95:
+        return left_num, right_num
+    return _join_key_to_str(left_s), _join_key_to_str(right_s)
+
+
 def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
                 left_field: str, right_field: str,
                 join_type: str, left_name: str, right_name: str) -> pd.DataFrame:
@@ -197,8 +237,18 @@ def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
     }
     how = how_map.get(join_type, "inner")
 
+    # Join-Keys typ-angleichen (Cross-DB-Type-Mismatch), Merge über temporäre
+    # Hilfsspalten – die Original-Keyspalten bleiben unverändert im Ergebnis.
+    _LK, _RK = "__dm_jk_left__", "__dm_jk_right__"
     try:
-        merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"))
+        if left_key in left_df.columns and right_key in right_df.columns:
+            lk, rk = _prep_join_keys(left_df[left_key], right_df[right_key])
+            left_df = left_df.assign(**{_LK: lk})
+            right_df = right_df.assign(**{_RK: rk})
+            merged = pd.merge(left_df, right_df, left_on=_LK, right_on=_RK, how=how, suffixes=("", "_r"))
+            merged = merged.drop(columns=[_LK, _RK], errors="ignore")
+        else:
+            merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"))
     except Exception as e:
         raise ValueError(f"Join fehlgeschlagen: {e}")
 

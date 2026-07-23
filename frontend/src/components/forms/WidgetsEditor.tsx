@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Plus, Trash2, ChevronDown, ChevronRight, Table2, Hash,
          BarChart2, TrendingUp, PieChart } from "lucide-react";
+import DrilldownConfig from "./DrilldownConfig";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -207,6 +208,16 @@ function WidgetConfig({ widget, actions, onUpdate }) {
             </label>
           </LabelRow>
         </>
+      )}
+
+      {["bar", "line", "pie"].includes(widget.type) && (
+        <LabelRow label="Drilldown">
+          <DrilldownConfig
+            value={cfg.drilldown}
+            dimensionField={widget.type === "pie" ? cfg.label_column : cfg.x_column}
+            onChange={(dd) => set({ drilldown: dd })}
+          />
+        </LabelRow>
       )}
     </div>
   );

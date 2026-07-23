@@ -1,0 +1,93 @@
+<mxfile host="app.diagrams.net" modified="2026-07-23T00:00:00.000Z" agent="Claude Code" version="24.0.0" type="device">
+  <diagram id="datenmonster-db" name="Datenbank-Architektur">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1169" pageHeight="826" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- ===== Legende / Titel ===== -->
+        <mxCell id="title" value="Datenmonster – Datenbank-Architektur" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=20;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="500" height="30" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Interne DB (blau)  |  Externe Kunden-DBs (orange)  |  Weitere Quellen (grau)  |  Dienste (grün)" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=11;fontColor=#666666;" vertex="1" parent="1">
+          <mxGeometry x="40" y="50" width="700" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Datenmonster Backend (zentral) ===== -->
+        <mxCell id="backend" value="Datenmonster Backend&#10;(FastAPI · SQLAlchemy · pandas)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;fontStyle=1;verticalAlign=top;spacing=8;" vertex="1" parent="1">
+          <mxGeometry x="420" y="330" width="320" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="be-conn" value="ConnectorFactory → SqlConnector / FileConnector / REST / Plugin" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="430" y="370" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="be-join" value="Join-/Transform-Engine: pandas (pd.merge)" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="430" y="392" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="be-write" value="db_write-Node: schreibt in externe DBs" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="430" y="414" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="be-cache" value="Schema-Cache-Service (spiegelt ext. Struktur → SQLite)" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="430" y="436" width="300" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="be-crypt" value="Credential-Verschlüsselung (Fernet aus SECRET_KEY)" style="text;html=1;align=left;verticalAlign=middle;fontSize=10;fillColor=none;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="430" y="458" width="300" height="20" as="geometry" />
+        </mxCell>
+
+        <!-- ===== SQLite interne DB ===== -->
+        <mxCell id="sqlite" value="SQLite&#10;datenmonster.db&#10;(interne Anwendungs-DB)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;verticalAlign=top;spacingTop=6;" vertex="1" parent="1">
+          <mxGeometry x="500" y="600" width="160" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="sqlite-tables" value="users · projects · datasets · db_connections* · mappings · pipelines · forms · templates · schema_*_meta · scheduled_jobs · ai_memory_* · logs · settings&#10;(* Zugangsdaten verschlüsselt)" style="text;html=1;align=left;verticalAlign=top;fontSize=9;fillColor=#f5f9ff;strokeColor=#6c8ebf;spacing=6;rounded=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="740" width="440" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- edge backend <-> sqlite -->
+        <mxCell id="e-be-sqlite" value="ORM (SQLAlchemy)&#10;+ Lock-Retry" style="endArrow=classic;startArrow=classic;html=1;fontSize=10;strokeColor=#6c8ebf;strokeWidth=2;" edge="1" parent="1" source="backend" target="sqlite">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Externe Kunden-DBs ===== -->
+        <mxCell id="ext-box" value="Externe Kunden-Datenbanken (pro Verbindung konfiguriert)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#d79b00;dashed=1;fontSize=11;fontStyle=2;verticalAlign=top;spacingTop=6;fontColor=#d79b00;" vertex="1" parent="1">
+          <mxGeometry x="860" y="300" width="270" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="pg" value="PostgreSQL&#10;psycopg2" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="890" y="340" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mysql" value="MySQL /&#10;MariaDB&#10;pymysql" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="1010" y="340" width="90" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="mssql" value="MSSQL / SQL Server&#10;pyodbc (JTL typ.)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="950" y="440" width="90" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- edge backend <-> external -->
+        <mxCell id="e-be-ext" value="lesen (Quelle) &#10;+ schreiben (db_write)" style="endArrow=classic;startArrow=classic;html=1;fontSize=10;strokeColor=#d79b00;strokeWidth=2;exitX=1;exitY=0.4;exitDx=0;exitDy=0;" edge="1" parent="1" source="backend" target="ext-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Andere Quellen ===== -->
+        <mxCell id="sources" value="Weitere Quellen&#10;CSV · XLSX · XML · JSON · ODS · REST-API · Plugins (JTL u.a.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=10;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="40" y="360" width="180" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="e-src-be" value="einlesen" style="endArrow=classic;html=1;fontSize=10;strokeColor=#999999;strokeWidth=2;" edge="1" parent="1" source="sources" target="backend">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Redis ===== -->
+        <mxCell id="redis" value="Redis&#10;Pub/Sub-EventBus&#10;(keine Datenablage)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="470" y="140" width="150" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="plugmgr" value="Plugin-Manager&#10;(Tier-2-Plugins)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="700" y="150" width="140" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="e-be-redis" value="Events" style="endArrow=classic;startArrow=classic;html=1;fontSize=10;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="backend" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e-plug-redis" value="" style="endArrow=classic;startArrow=classic;html=1;strokeColor=#82b366;strokeWidth=2;" edge="1" parent="1" source="plugmgr" target="redis">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

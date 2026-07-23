@@ -1,0 +1,972 @@
+{
+  "template_id": "jtl_uebersicht_dashboard",
+  "template_name": "JTL – Übersichts-Dashboard",
+  "description": "Dashboard-Formular: Umsatz, Einkauf, Bestand, ABC-Analyse und Ladenhüter der JTL-Wawi auf einen Blick.",
+  "category": "jtl-reporting",
+  "version": "2.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Beim Installieren die JTL-Datenbankverbindung (MS SQL) auswählen – Zugangsdaten werden nicht mitgeliefert.",
+    "Formular öffnen und die Auswerten-Buttons klicken, damit die Widgets Daten laden.",
+    "Aggregation passiert im SQL (GROUP BY) – die Widgets zeigen fertige Summen.",
+    "Lager = Snapshot (aktueller Bestand), kein Bewegungs-Log.",
+    "Prüfe bei abweichender JTL-Version die geflaggten Schema-Stellen: dbo.tlagerbestand.fLagerbestand, dbo.tArtikel.fEKNetto, dbo.tArtikelBeschreibung (kSprache/kPlattform), tEingangsrechnung.kLieferant."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    },
+    {
+      "key": "monate",
+      "label": "Zeitraum rückwirkend in Monaten",
+      "type": "text",
+      "default": "24"
+    },
+    {
+      "key": "ladenhueter_tage",
+      "label": "Ladenhüter: Tage ohne Verkauf",
+      "type": "text",
+      "default": "180"
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "mapping_kpi_umsatz",
+      "name": "KPI Umsatz",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "KPI Umsatz",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_kpi_einkauf",
+      "name": "KPI Einkaufsvolumen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT CAST(SUM(EP.fMenge * EP.fEKNetto) AS DECIMAL(18,2)) AS Einkauf\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nLEFT JOIN dbo.tLieferant L ON L.kLieferant = E.kLieferant\nLEFT JOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nWHERE E.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Einkauf"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "KPI Einkaufsvolumen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Einkauf",
+              "target_field": "Einkauf",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkauf"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_kpi_bestand",
+      "name": "KPI Bestandswert",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT CAST(SUM(LB.fLagerbestand * A.fEKNetto) AS DECIMAL(18,2)) AS Bestandswert\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestandswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "KPI Bestandswert",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestandswert",
+              "target_field": "Bestandswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestandswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_umsatz_monat",
+      "name": "Umsatz nach Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY CONVERT(char(7), RE.dErstellt, 120)\nORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Umsatz nach Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_top_artikel",
+      "name": "Top 15 Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    MAX(REPO.cName) AS Artikelname,\n    CAST(SUM(REPO.fAnzahl * REPO.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nWHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n  AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY REPO.cArtNr\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelname",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Top 15 Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_einkauf_lieferant",
+      "name": "Einkauf nach Lieferant",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    ISNULL(L.cFirma, '(ohne Lieferant)') AS Lieferant,\n    CAST(SUM(EP.fMenge * EP.fEKNetto) AS DECIMAL(18,2)) AS Einkaufswert\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nLEFT JOIN dbo.tLieferant L ON L.kLieferant = E.kLieferant\nLEFT JOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nWHERE E.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\nGROUP BY ISNULL(L.cFirma, '(ohne Lieferant)')\nORDER BY Einkaufswert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Einkaufswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf nach Lieferant",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_abc_verteilung",
+      "name": "ABC-Verteilung",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH au AS (\n    SELECT REPO.cArtNr AS Artikelnummer, SUM(REPO.fAnzahl * REPO.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\n    WHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n      AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\n    GROUP BY REPO.cArtNr\n),\nranked AS (\n    SELECT Umsatz, SUM(Umsatz) OVER () AS Gesamt,\n           SUM(Umsatz) OVER (ORDER BY Umsatz DESC ROWS UNBOUNDED PRECEDING) AS Kumuliert\n    FROM au\n)\nSELECT CASE WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.80 THEN 'A' WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.95 THEN 'B' ELSE 'C' END AS ABC_Klasse, CAST(SUM(Umsatz) AS DECIMAL(18,2)) AS Umsatz\nFROM ranked\nGROUP BY CASE WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.80 THEN 'A' WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.95 THEN 'B' ELSE 'C' END\nORDER BY ABC_Klasse",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ABC_Klasse",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "ABC-Verteilung",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ABC_Klasse",
+              "target_field": "ABC_Klasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ABC_Klasse"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_abc_detail",
+      "name": "ABC-Analyse (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH artikel_umsatz AS (\n    SELECT REPO.cArtNr AS Artikelnummer, MAX(REPO.cName) AS Artikelname,\n           SUM(REPO.fAnzahl * REPO.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\n    WHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n      AND RE.dErstellt >= DATEADD(MONTH, -{{monate}}, CAST(GETDATE() AS date))\n    GROUP BY REPO.cArtNr\n),\nranked AS (\n    SELECT Artikelnummer, Artikelname, Umsatz,\n           SUM(Umsatz) OVER () AS Gesamt,\n           SUM(Umsatz) OVER (ORDER BY Umsatz DESC ROWS UNBOUNDED PRECEDING) AS Kumuliert\n    FROM artikel_umsatz\n)\nSELECT TOP 100 Artikelnummer, Artikelname,\n       CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n       CAST(100.0 * Kumuliert / NULLIF(Gesamt, 0) AS DECIMAL(5,1)) AS Kumuliert_Prozent,\n       CASE WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.80 THEN 'A' WHEN Kumuliert / NULLIF(Gesamt, 0) <= 0.95 THEN 'B' ELSE 'C' END AS ABC_Klasse\nFROM ranked\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Artikelname",
+            "Umsatz",
+            "Kumuliert_Prozent",
+            "ABC_Klasse"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "ABC-Analyse (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Kumuliert_Prozent",
+              "target_field": "Kumuliert_Prozent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kumuliert_Prozent"
+              }
+            },
+            {
+              "source_field": "ABC_Klasse",
+              "target_field": "ABC_Klasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ABC_Klasse"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_bestand",
+      "name": "Aktuelle Bestände",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 100\n    A.cArtNr AS Artikelnummer,\n    ISNULL(AB.cName, '') AS Artikelname,\n    LB.fLagerbestand AS Bestand,\n    A.fEKNetto AS EK_netto,\n    CAST(LB.fLagerbestand * A.fEKNetto AS DECIMAL(18,2)) AS Bestandswert\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1\nORDER BY Bestandswert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Artikelname",
+            "Bestand",
+            "EK_netto",
+            "Bestandswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Aktuelle Bestände",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK_netto",
+              "target_field": "EK_netto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK_netto"
+              }
+            },
+            {
+              "source_field": "Bestandswert",
+              "target_field": "Bestandswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestandswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_ladenhueter",
+      "name": "Ladenhüter",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH letzter_verkauf AS (\n    SELECT REPO.cArtNr AS Artikelnummer, MAX(RE.dErstellt) AS Letzter_Verkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\n    WHERE REPO.cArtNr IS NOT NULL AND REPO.cArtNr <> ''\n    GROUP BY REPO.cArtNr\n)\nSELECT TOP 100\n    A.cArtNr AS Artikelnummer,\n    ISNULL(AB.cName, '') AS Artikelname,\n    LB.fLagerbestand AS Bestand,\n    CAST(LB.fLagerbestand * A.fEKNetto AS DECIMAL(18,2)) AS Bestandswert,\n    LV.Letzter_Verkauf AS Letzter_Verkauf,\n    DATEDIFF(DAY, LV.Letzter_Verkauf, GETDATE()) AS Tage_ohne_Verkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1\nLEFT JOIN letzter_verkauf LV ON LV.Artikelnummer = A.cArtNr\nWHERE LB.fLagerbestand > 0\n  AND (LV.Letzter_Verkauf IS NULL OR LV.Letzter_Verkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Bestandswert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Artikelname",
+            "Bestand",
+            "Bestandswert",
+            "Letzter_Verkauf",
+            "Tage_ohne_Verkauf"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Ladenhüter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Artikelname",
+              "target_field": "Artikelname",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelname"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Bestandswert",
+              "target_field": "Bestandswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestandswert"
+              }
+            },
+            {
+              "source_field": "Letzter_Verkauf",
+              "target_field": "Letzter_Verkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letzter_Verkauf"
+              }
+            },
+            {
+              "source_field": "Tage_ohne_Verkauf",
+              "target_field": "Tage_ohne_Verkauf",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tage_ohne_Verkauf"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Übersichts-Dashboard",
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "actions": [
+          {
+            "id": "act_kpi_umsatz",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kpi_umsatz",
+            "pipeline_id": null,
+            "label": "Umsatz"
+          },
+          {
+            "id": "act_kpi_einkauf",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kpi_einkauf",
+            "pipeline_id": null,
+            "label": "Einkauf"
+          },
+          {
+            "id": "act_kpi_bestand",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kpi_bestand",
+            "pipeline_id": null,
+            "label": "Bestandswert"
+          },
+          {
+            "id": "act_umsatz_monat",
+            "type": "run_mapping",
+            "mapping_id": "mapping_umsatz_monat",
+            "pipeline_id": null,
+            "label": "Umsatzverlauf"
+          },
+          {
+            "id": "act_top_artikel",
+            "type": "run_mapping",
+            "mapping_id": "mapping_top_artikel",
+            "pipeline_id": null,
+            "label": "Top-Artikel"
+          },
+          {
+            "id": "act_einkauf_lief",
+            "type": "run_mapping",
+            "mapping_id": "mapping_einkauf_lieferant",
+            "pipeline_id": null,
+            "label": "Einkauf/Lieferant"
+          },
+          {
+            "id": "act_abc_vert",
+            "type": "run_mapping",
+            "mapping_id": "mapping_abc_verteilung",
+            "pipeline_id": null,
+            "label": "ABC-Verteilung"
+          },
+          {
+            "id": "act_abc_detail",
+            "type": "run_mapping",
+            "mapping_id": "mapping_abc_detail",
+            "pipeline_id": null,
+            "label": "ABC-Analyse"
+          },
+          {
+            "id": "act_bestand",
+            "type": "run_mapping",
+            "mapping_id": "mapping_bestand",
+            "pipeline_id": null,
+            "label": "Bestände"
+          },
+          {
+            "id": "act_ladenhueter",
+            "type": "run_mapping",
+            "mapping_id": "mapping_ladenhueter",
+            "pipeline_id": null,
+            "label": "Ladenhüter"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_kpi_umsatz",
+            "type": "kpi",
+            "label": "Umsatz (netto)",
+            "action_id": "act_kpi_umsatz",
+            "config": {
+              "width": 3,
+              "column": "Umsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_einkauf",
+            "type": "kpi",
+            "label": "Einkaufsvolumen (netto)",
+            "action_id": "act_kpi_einkauf",
+            "config": {
+              "width": 3,
+              "column": "Einkauf",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_bestand",
+            "type": "kpi",
+            "label": "Bestandswert (EK)",
+            "action_id": "act_kpi_bestand",
+            "config": {
+              "width": 3,
+              "column": "Bestandswert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_ladenhueter",
+            "type": "kpi",
+            "label": "Ladenhüter",
+            "action_id": "act_ladenhueter",
+            "config": {
+              "width": 3,
+              "column": "Artikelnummer",
+              "aggregation": "count",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_line_umsatz",
+            "type": "line",
+            "label": "Umsatzentwicklung nach Monat",
+            "action_id": "act_umsatz_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Umsatz"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_bar_artikel",
+            "type": "bar",
+            "label": "Top Artikel nach Umsatz",
+            "action_id": "act_top_artikel",
+            "config": {
+              "width": 6,
+              "x_column": "Artikelname",
+              "y_columns": [
+                "Umsatz"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_bar_lieferant",
+            "type": "bar",
+            "label": "Einkaufsvolumen nach Lieferant",
+            "action_id": "act_einkauf_lief",
+            "config": {
+              "width": 6,
+              "x_column": "Lieferant",
+              "y_columns": [
+                "Einkaufswert"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_pie_abc",
+            "type": "pie",
+            "label": "ABC-Verteilung (Umsatzanteil)",
+            "action_id": "act_abc_vert",
+            "config": {
+              "width": 4,
+              "label_column": "ABC_Klasse",
+              "value_column": "Umsatz",
+              "donut": true
+            }
+          },
+          {
+            "id": "w_table_bestand",
+            "type": "table",
+            "label": "Aktuelle Bestände",
+            "action_id": "act_bestand",
+            "config": {
+              "width": 8
+            }
+          },
+          {
+            "id": "w_table_ladenhueter",
+            "type": "table",
+            "label": "Ladenhüter (Bestand ohne Verkauf)",
+            "action_id": "act_ladenhueter",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_table_abc",
+            "type": "table",
+            "label": "ABC-Analyse",
+            "action_id": "act_abc_detail",
+            "config": {
+              "width": 6
+            }
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ]
+}

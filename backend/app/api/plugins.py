@@ -171,11 +171,12 @@ def _catalog_plugins(catalog) -> list:
     return catalog or []
 
 
-@router.get("/store")
-def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+def _fetch_store(db) -> dict:
     """
-    Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft).
-    Markiert je Plugin, ob es lokal bereits installiert ist.
+    Holt den Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft)
+    und markiert je Plugin, ob es lokal bereits installiert ist.
+    Returns {"licensed": bool, "plugins": [...], "error": str | None}.
+    Wirft nie – bei fehlender Lizenz / unerreichbarem Katalog kommt "error" zurück.
     """
     import httpx
     from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER, _resolve_license
@@ -202,6 +203,112 @@ def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current
     for p in plugins:
         p["installed"] = p.get("id") in installed_ids
     return {"licensed": licensed, "plugins": plugins}
+
+
+@router.get("/store")
+def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft)."""
+    return _fetch_store(db)
+
+
+@router.get("/catalog")
+def plugin_catalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    Vereinter Plugin-Katalog fürs UI: führt geladene Plugins (in-process + Container),
+    Container-Status und installierbare Store-Plugins zu EINER normalisierten Liste
+    zusammen. Der Nutzer muss nicht mehr zwischen Tier-1/Tier-2 unterscheiden.
+
+    Jeder Eintrag hat: kind (builtin|container), state (active|running|stopped|available),
+    action (none|start|install) und needs_license. Degradiert graceful: fehlender
+    Plugin-Manager oder Store führt nie zu 5xx, die übrigen Einträge bleiben erhalten.
+    """
+    from app.models.plugin import Plugin
+
+    db_map = {p.plugin_id: p for p in db.query(Plugin).all()}
+    src_map = {s["plugin_id"]: s for s in registry.list_source_types()}
+    tgt_map = {t["plugin_id"]: t for t in registry.list_target_types()}
+
+    # Container-Status der Tier-2 Plugins (per id) – PM optional
+    pm_status = {}
+    try:
+        for p in _pm_get("/plugins"):
+            pm_status[p.get("id")] = (p.get("status") or "").lower()
+    except Exception:
+        pm_status = {}
+
+    catalog = []
+    seen = set()
+
+    # 1. Geladene Plugins (in-process + registrierte Container)
+    for m in registry.list_plugins():
+        pid = m["id"]
+        seen.add(pid)
+        db_p = db_map.get(pid)
+        tier = m.get("tier") or (db_p.tier if db_p else 1)
+        kind = "container" if tier == 2 else "builtin"
+        src = src_map.get(pid, {})
+        tgt = tgt_map.get(pid, {})
+
+        if kind == "container":
+            cstatus = pm_status.get(pid, "")
+            if cstatus in ("running", "up", "healthy", "starting"):
+                state, action = "running", "none"
+            else:
+                state, action = "stopped", "start"
+        else:
+            state, action = "active", "none"
+
+        catalog.append({
+            "id": pid,
+            "name": m.get("name"),
+            "version": m.get("version", ""),
+            "description": m.get("description", ""),
+            "author": m.get("author", ""),
+            "license": m.get("license", "free"),
+            "capabilities": m.get("capabilities", []),
+            "config_schema": m.get("config_schema", []),
+            "source_type_id": src.get("id", m.get("source_type_id", "")),
+            "source_type_label": src.get("label", m.get("source_type_label", "")),
+            "source_type_icon": src.get("icon", "database"),
+            "target_type_id": tgt.get("id", m.get("target_type_id", "")),
+            "target_type_label": tgt.get("label", m.get("target_type_label", "")),
+            "kind": kind,
+            "state": state,
+            "action": action,
+            "installed": True,
+            "needs_license": False,
+        })
+
+    # 2. Store: installierbare, noch nicht geladene Plugins
+    store = _fetch_store(db)
+    licensed = store.get("licensed", False)
+    for p in store.get("plugins", []):
+        pid = p.get("id")
+        if not pid or pid in seen or p.get("installed"):
+            continue
+        seen.add(pid)
+        catalog.append({
+            "id": pid,
+            "name": p.get("name"),
+            "version": p.get("version", ""),
+            "description": p.get("description", ""),
+            "author": p.get("author", ""),
+            "license": p.get("license", "professional"),
+            "capabilities": p.get("capabilities", []),
+            "config_schema": p.get("config_schema", []),
+            "source_type_id": p.get("source_type_id", ""),
+            "source_type_label": p.get("source_type_label", ""),
+            "source_type_icon": p.get("source_type_icon", "container"),
+            "target_type_id": p.get("target_type_id", ""),
+            "target_type_label": p.get("target_type_label", ""),
+            "kind": "container",
+            "state": "available",
+            "action": "install",
+            "installed": False,
+            "needs_license": not licensed,
+        })
+
+    return catalog
 
 
 @router.post("/tier2/{plugin_id}/install", status_code=201)
