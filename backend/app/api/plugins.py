@@ -205,6 +205,24 @@ def _fetch_store(db) -> dict:
     return {"licensed": licensed, "plugins": plugins}
 
 
+def _fetch_public_catalog() -> list:
+    """
+    Öffentlicher Discovery-Katalog aller für Datenmonster angebotenen Plugins
+    (GET {monstersuite}/api/shop/plugins, OHNE Lizenz). So sieht auch eine Instanz
+    ohne (passende) Lizenz, welche Plugins es gibt. Wirft nie – [] bei Fehler.
+    """
+    import httpx
+    from app.api.license import LICENSE_SERVER
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.get(f"{LICENSE_SERVER}/api/shop/plugins")
+            r.raise_for_status()
+            data = r.json()
+        return data if isinstance(data, list) else (data.get("plugins") or [])
+    except Exception:
+        return []
+
+
 @router.get("/store")
 def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft)."""
@@ -279,33 +297,43 @@ def plugin_catalog(db: Session = Depends(get_db), user: User = Depends(get_curre
             "needs_license": False,
         })
 
-    # 2. Store: installierbare, noch nicht geladene Plugins
-    store = _fetch_store(db)
-    licensed = store.get("licensed", False)
-    for p in store.get("plugins", []):
+    # 2. Discovery: ALLE von monstersuite angebotenen Plugins (öffentlicher Katalog).
+    #    Der lizenzgeprüfte Store bestimmt nur, welche jetzt installierbar (entitled) sind.
+    entitled = {}
+    for p in _fetch_store(db).get("plugins", []):
+        if p.get("id"):
+            entitled[p["id"]] = p  # volles Manifest + installed-Flag
+
+    for p in _fetch_public_catalog():
         pid = p.get("id")
-        if not pid or pid in seen or p.get("installed"):
+        if not pid or pid in seen:
             continue
+        ent = entitled.get(pid)
+        if ent and ent.get("installed"):
+            continue  # bereits installiert → schon als geladen/aktiv abgedeckt
         seen.add(pid)
+        m = ent or {}  # reicheres Manifest, falls berechtigt (config_schema etc.)
         catalog.append({
             "id": pid,
-            "name": p.get("name"),
-            "version": p.get("version", ""),
-            "description": p.get("description", ""),
-            "author": p.get("author", ""),
-            "license": p.get("license", "professional"),
-            "capabilities": p.get("capabilities", []),
-            "config_schema": p.get("config_schema", []),
-            "source_type_id": p.get("source_type_id", ""),
-            "source_type_label": p.get("source_type_label", ""),
-            "source_type_icon": p.get("source_type_icon", "container"),
-            "target_type_id": p.get("target_type_id", ""),
-            "target_type_label": p.get("target_type_label", ""),
+            "name": p.get("name") or m.get("name") or pid,
+            "version": p.get("version") or m.get("version", ""),
+            "description": p.get("description") or m.get("description", ""),
+            "author": p.get("author") or m.get("author", ""),
+            "license": m.get("license", "professional"),
+            "capabilities": p.get("capabilities") or m.get("capabilities", []),
+            "config_schema": m.get("config_schema", []),
+            "source_type_id": m.get("source_type_id", ""),
+            "source_type_label": p.get("source_type_label") or m.get("source_type_label", ""),
+            "source_type_icon": m.get("source_type_icon", "container"),
+            "target_type_id": m.get("target_type_id", ""),
+            "target_type_label": p.get("target_type_label") or m.get("target_type_label", ""),
             "kind": "container",
             "state": "available",
             "action": "install",
             "installed": False,
-            "needs_license": not licensed,
+            "needs_license": pid not in entitled,
+            "required_feature_name": p.get("required_feature_name", ""),
+            "included_plans": p.get("included_plans", []),
         })
 
     return catalog
