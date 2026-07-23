@@ -379,6 +379,13 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
               von {entry.author} · {entry.license}
             </p>
           )}
+          {entry.needs_license && ((entry.included_plans || []).length > 0 || entry.required_feature_name) && (
+            <p style={{ fontSize: 10, color: "#fbbf24", margin: "4px 0 0", opacity: 0.9 }}>
+              {(entry.included_plans || []).length > 0
+                ? <>Enthalten in {(entry.included_plans || []).join(", ")}</>
+                : <>Erfordert {entry.required_feature_name}</>}
+            </p>
+          )}
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
@@ -391,20 +398,29 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
             </button>
           )}
 
-          {/* Eine Primär-Aktion: Aktivieren (= install oder start) */}
+          {/* Primär-Aktion: berechtigt → Aktivieren; sonst → Lizenz ansehen (monstersuite) */}
           {entry.action !== "none" && (
-            <button onClick={() => onActivate(entry)} disabled={busy || entry.needs_license}
-              title={entry.needs_license ? "Diese Erweiterung erfordert eine Lizenz" : ""}
-              style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 5,
-                cursor: (busy || entry.needs_license) ? "not-allowed" : "pointer",
-                backgroundColor: entry.needs_license ? "transparent" : "rgba(110,231,183,0.12)",
-                border: `1px solid ${entry.needs_license ? S.border : "rgba(110,231,183,0.4)"}`,
-                color: entry.needs_license ? S.textDim : "#6ee7b7",
-                display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.6 : 1 }}>
-              {busy ? <Loader2 size={11} className="animate-spin" />
-                : entry.action === "install" ? <Download size={11} /> : <Play size={11} />}
-              Aktivieren
-            </button>
+            entry.needs_license ? (
+              <a href="https://monstersuite.de" target="_blank" rel="noopener noreferrer"
+                title="Diese Erweiterung erfordert eine passende Lizenz"
+                style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 5,
+                  textDecoration: "none", backgroundColor: "transparent",
+                  border: `1px solid ${S.border}`, color: "#fbbf24",
+                  display: "flex", alignItems: "center", gap: 5 }}>
+                <Lock size={11} /> Lizenz ansehen
+              </a>
+            ) : (
+              <button onClick={() => onActivate(entry)} disabled={busy}
+                style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 5,
+                  cursor: busy ? "not-allowed" : "pointer",
+                  backgroundColor: "rgba(110,231,183,0.12)",
+                  border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                  display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.6 : 1 }}>
+                {busy ? <Loader2 size={11} className="animate-spin" />
+                  : entry.action === "install" ? <Download size={11} /> : <Play size={11} />}
+                Aktivieren
+              </button>
+            )
           )}
 
           {/* Laufenden Container stoppen */}
