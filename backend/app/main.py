@@ -24,6 +24,7 @@ from app.api import update as update_api
 from app.api import plugins as plugins_api
 from app.api import events as events_api
 from app.api import db_write as db_write_api
+from app.api import eingangsrechnung as eingangsrechnung_api
 
 
 @asynccontextmanager
@@ -389,6 +390,7 @@ app.include_router(update_api.router)
 app.include_router(plugins_api.router)
 app.include_router(events_api.router)
 app.include_router(db_write_api.router)
+app.include_router(eingangsrechnung_api.router)
 from app.api import forms as forms_api
 from app.api import portal as portal_api
 from app.api import web_proxy as web_proxy_api
