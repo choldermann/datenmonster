@@ -121,6 +121,7 @@ def run_mapping_object(
     triggered_by: str = "manual",
     scheduled_job_id: Optional[int] = None,
     _ai_config: Dict = None,
+    _debug_trace: list = None,
 ) -> Dict[str, Any]:
     """
     EINHEITLICHER Einstiegspunkt für ALLE Ausführungspfade:
@@ -155,6 +156,7 @@ def run_mapping_object(
         **ctx.to_execute_kwargs(preview_connections, preview_rows),
         target_options=_preview_target_opts,
         _ai_config=_ai_config,
+        _debug_trace=_debug_trace,
     )
 
     errors = result.get("errors") or []

@@ -8,6 +8,7 @@ import api from "../api/client";
 import { S } from "../components/pipeline/constants";
 import PipelineHeader from "../components/pipeline/PipelineHeader";
 import PipelineToolbar from "../components/pipeline/PipelineToolbar";
+import PipelineRunPanel from "../components/pipeline/PipelineRunPanel";
 import PipelineSvgOverlay from "../components/pipeline/SvgOverlay";
 import TriggerNode from "../components/pipeline/nodes/TriggerNode";
 import FtpNode from "../components/pipeline/nodes/FtpNode";
@@ -239,6 +240,23 @@ export default function PipelineEditor() {
 
   // ── Ausführen ──────────────────────────────────────────────────────────────
   const [runResults, setRunResults] = useState(null); // { nodeId: { status, message, rows } }
+  const [debugData, setDebugData] = useState(null);    // { results, order, errors } vom debug-run
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [dryRun, setDryRun] = useState(true);          // Default: sicherer Dry-Run
+
+  const handleDebugRun = async () => {
+    if (!id || id === "new") { alert("Erst speichern!"); return; }
+    if (!dryRun && !window.confirm("Echtlauf: Die Pipeline wird WIRKLICH ausgeführt (Schreiben, E-Mail, FTP). Fortfahren?")) return;
+    setDebugLoading(true);
+    setDebugData(null);
+    try {
+      const { data } = await api.post(`/api/pipelines/${id}/debug-run?dry_run=${dryRun}`);
+      setDebugData(data);
+      setRunResults(data.results || {});  // Node-Badges gleich mitfüllen
+    } catch (e) {
+      alert(e.response?.data?.detail?.message || e.response?.data?.detail || e.message);
+    } finally { setDebugLoading(false); }
+  };
 
   const handleExecute = async () => {
     if (!id || id === "new") { alert("Erst speichern!"); return; }
@@ -350,6 +368,8 @@ export default function PipelineEditor() {
         onSave={handleSave} onExecute={handleExecute}
         saving={saving} executing={executing}
         nodeCount={nodes.length} connCount={connections.length}
+        onDebugRun={handleDebugRun} debugLoading={debugLoading}
+        dryRun={dryRun} onToggleDryRun={() => setDryRun(v => !v)}
       />
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -423,6 +443,10 @@ export default function PipelineEditor() {
           </div>
         </div>
       , document.body)}
+
+      {debugData && (
+        <PipelineRunPanel data={debugData} nodes={nodes} onClose={() => setDebugData(null)} />
+      )}
     </div>
   );
 }

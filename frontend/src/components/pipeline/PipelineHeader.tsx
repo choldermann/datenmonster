@@ -1,7 +1,7 @@
-import { ArrowLeft, Save, Play, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Play, Loader2, Bug } from "lucide-react";
 import { S } from "./constants";
 
-export default function PipelineHeader({ name, onNameChange, onBack, onSave, onExecute, saving, executing, nodeCount, connCount }) {
+export default function PipelineHeader({ name, onNameChange, onBack, onSave, onExecute, saving, executing, nodeCount, connCount, onDebugRun, debugLoading, dryRun, onToggleDryRun }) {
   return (
     <div style={{
       height: 52, flexShrink: 0,
@@ -35,6 +35,21 @@ export default function PipelineHeader({ name, onNameChange, onBack, onSave, onE
         {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
         Speichern
       </button>
+
+      {onDebugRun && (
+        <>
+          <button onClick={onToggleDryRun} title="Umschalten: Dry-Run (sicher) / Echtlauf (echte Seiteneffekte)"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 5, border: `1px solid ${dryRun ? "rgba(56,189,248,0.4)" : "rgba(224,112,112,0.5)"}`, background: dryRun ? "rgba(56,189,248,0.12)" : "rgba(224,112,112,0.12)", color: dryRun ? "#38bdf8" : "#e07070", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            {dryRun ? "Dry-Run" : "Echtlauf"}
+          </button>
+          <button onClick={onDebugRun} disabled={debugLoading}
+            title="Debug-Run: Pipeline mit Node-Trace (Dauer, Zeilen, Mapping-Drill-in)"
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textBright, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            {debugLoading ? <Loader2 size={13} className="animate-spin" /> : <Bug size={13} />}
+            Debug-Run
+          </button>
+        </>
+      )}
 
       <button onClick={onExecute} disabled={executing}
         style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 5, border: "none", backgroundColor: "var(--accent)", color: "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>

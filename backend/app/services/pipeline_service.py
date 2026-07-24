@@ -8,8 +8,23 @@ from datetime import datetime, timezone
 logger = logging.getLogger(__name__)
 
 
-def run_pipeline(pipeline, db) -> dict:
-    """Führt alle Nodes der Pipeline in topologischer Reihenfolge aus."""
+def _enrich_debug_step(result: dict, node: dict, ntype: str, node_start) -> None:
+    """Ergänzt ein Node-Ergebnis um einheitliche Trace-Felder (Typ, Label, Dauer)."""
+    result.setdefault("type", ntype)
+    lbl = node.get("label") or (node.get("config") or {}).get("label") or ntype
+    result.setdefault("label", lbl)
+    result["duration_ms"] = int((datetime.now(timezone.utc) - node_start).total_seconds() * 1000)
+
+
+def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> dict:
+    """
+    Führt alle Nodes der Pipeline in topologischer Reihenfolge aus.
+
+    debug=True:   reiche Trace-Erfassung (Dauer, Sample, Mapping-Sub-Trace, order).
+    dry_run=True: Nodes mit echten Seiteneffekten (Mapping-Write, E-Mail, FTP,
+                  REST/Insights-Persistenz) werden simuliert statt ausgeführt;
+                  Mappings laufen im Preview ohne Schreiben.
+    """
     from app.services.db_logger import log_pipeline_start, log_pipeline_end, log_node_error, log
 
     nodes = {n["id"]: n for n in (pipeline.nodes or [])}
@@ -57,6 +72,15 @@ def run_pipeline(pipeline, db) -> dict:
             config = node.get("config", {})
             node_start = datetime.now(timezone.utc)
             logger.info(f"  → Node [{ntype}] {nid}")
+
+            # Dry-Run: Nodes mit echten Seiteneffekten simulieren statt ausführen.
+            # (Mapping wird NICHT hier abgekürzt – es läuft weiter unten im Preview ohne Schreiben.)
+            if dry_run and ntype in ("email", "ftp", "ftp_upload", "rest_fetch", "business_insights"):
+                results[nid] = {"status": "ok", "dry_run": True,
+                                "message": f"{ntype}: im Dry-Run simuliert (nicht ausgeführt)"}
+                if debug:
+                    _enrich_debug_step(results[nid], node, ntype, node_start)
+                continue
 
             try:
                 if ntype == "trigger":
@@ -127,20 +151,33 @@ def run_pipeline(pipeline, db) -> dict:
                                     project_id=getattr(pipeline, "project_id", None),
                                     details={"mapping_id": mapping_id, "mapping_name": mapping.name})
                             else:
+                                _sub_trace = [] if debug else None
                                 result = run_mapping_object(
-                                    ctx, preview_rows=999999, db=db,
+                                    ctx, preview_rows=(100 if dry_run else 999999), db=db,
                                     mapping_id=mapping_id, mapping_name=mapping.name,
-                                    project_id=mapping.project_id, triggered_by="pipeline",
+                                    project_id=mapping.project_id,
+                                    triggered_by="pipeline-debug" if dry_run else "pipeline",
+                                    _debug_trace=_sub_trace,
                                 )
-                                rows = result.get("total_rows_written", 0)
-                                t_errors = [t["error"] for t in result.get("targets_results", [])
-                                            if t.get("status") == "error" and t.get("error")]
+                                if dry_run:
+                                    # Preview schreibt nicht: Zeilen aus 'total', Fehler aus 'errors'
+                                    rows = result.get("total", len(result.get("rows", [])))
+                                    t_errors = result.get("errors", [])
+                                else:
+                                    rows = result.get("total_rows_written", 0)
+                                    t_errors = [t["error"] for t in result.get("targets_results", [])
+                                                if t.get("status") == "error" and t.get("error")]
                                 status = "ok" if not t_errors else "warning"
                                 results[nid] = {"status": status, "rows": rows, "errors": t_errors}
+                                if _sub_trace is not None:
+                                    results[nid]["sub_trace"] = _sub_trace
+                                if dry_run:
+                                    results[nid]["dry_run"] = True
                                 duration_ms = int((datetime.now(timezone.utc) - node_start).total_seconds() * 1000)
+                                _verb = "im Preview (Dry-Run, nicht geschrieben)" if dry_run else "geschrieben"
                                 log(db, "success" if not t_errors else "warning",
                                     "pipeline_service", "node_mapping",
-                                    f"Mapping '{mapping.name}': {rows} Zeilen geschrieben" +
+                                    f"Mapping '{mapping.name}': {rows} Zeilen {_verb}" +
                                     (f" ({len(t_errors)} Fehler)" if t_errors else ""),
                                     entity_id=pipeline.id, entity_name=pipeline.name,
                                     project_id=getattr(pipeline, "project_id", None),
@@ -374,11 +411,24 @@ def run_pipeline(pipeline, db) -> dict:
                 if config.get("on_error") == "stop":
                     break
 
+            if debug and nid in results:
+                _enrich_debug_step(results[nid], node, ntype, node_start)
+
         # Pipeline-Ende loggen
-        clean_results = {nid: {k: v for k, v in r.items() if k != "df"}
-                         for nid, r in results.items()}
+        # df wird vor der Rückgabe entfernt; im Debug-Modus stattdessen ein Sample + rows_out mitgeben
+        from app.services.mapping_service import _rows_to_json
+        clean_results = {}
+        for nid, r in results.items():
+            cr = {k: v for k, v in r.items() if k != "df"}
+            if debug and r.get("df") is not None and hasattr(r["df"], "head"):
+                try:
+                    cr.setdefault("rows_out", len(r["df"]))
+                    cr["sample"] = _rows_to_json(r["df"].head(5).to_dict("records"))
+                except Exception:
+                    pass
+            clean_results[nid] = cr
         final_result = {"results": clean_results, "errors": errors,
-                        "nodes_executed": len(results)}
+                        "nodes_executed": len(results), "order": order}
         log_pipeline_end(db, pipeline, final_result, start_time)
         return final_result
 

@@ -193,6 +193,26 @@ def run_pipeline(pipeline_id: int, db: Session = Depends(get_db),
         })
 
 
+@router.post("/{pipeline_id}/debug-run")
+def debug_run_pipeline(pipeline_id: int, dry_run: bool = True,
+                       db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """
+    Debug-Lauf mit reichem Node-Trace (Dauer, Sample, Mapping-Sub-Trace, Reihenfolge).
+    dry_run=True (Default): Seiteneffekt-Nodes (E-Mail/FTP/REST/Insights) werden
+    simuliert, Mappings laufen im Preview OHNE Schreiben. Aktualisiert bewusst
+    NICHT last_run_status (kein echter Lauf).
+    """
+    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+    if not p:
+        raise HTTPException(404, "Nicht gefunden")
+    from app.services.pipeline_service import run_pipeline as _run
+    try:
+        return _run(p, db, debug=True, dry_run=dry_run)
+    except Exception as e:
+        raise HTTPException(500, detail={"message": str(e)[:300], "type": type(e).__name__})
+
+
 @router.post("/{pipeline_id}/toggle")
 def toggle_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
