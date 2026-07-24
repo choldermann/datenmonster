@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown, ChevronRight, Table2, Hash,
-         BarChart2, TrendingUp, PieChart } from "lucide-react";
+         BarChart2, TrendingUp, PieChart, Receipt } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
+import api from "../../api/client";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -26,6 +27,8 @@ const WIDGET_TYPES = [
     desc: "Zeitreihen und Trends als Linie" },
   { type: "pie",   label: "Kreisdiagramm",  Icon: PieChart,  color: "#f87171",
     desc: "Anteile als Kuchen- oder Donut-Diagramm" },
+  { type: "eingangsrechnung", label: "Eingangsrechnungs-Freigabe", Icon: Receipt, color: "#f0abfc",
+    desc: "E-Rechnung (ZUGFeRD/XRechnung) hochladen, prüfen und nach JTL verbuchen" },
 ];
 
 function LabelRow({ label, children }) {
@@ -84,6 +87,14 @@ function WidgetConfig({ widget, actions, onUpdate }) {
   const set = (patch) => onUpdate({ ...widget, config: { ...cfg, ...patch } });
   const setTop = (patch) => onUpdate({ ...widget, ...patch });
 
+  const [connections, setConnections] = useState([]);
+  useEffect(() => {
+    if (widget.type !== "eingangsrechnung") return;
+    api.get("/api/connections/")
+      .then(r => setConnections((r.data || []).filter(c => c.db_type === "mssql")))
+      .catch(() => {});
+  }, [widget.type]);
+
   const COL_WIDTHS = [
     { v: 4,  l: "4 (⅓)" }, { v: 6, l: "6 (½)" }, { v: 8, l: "8 (⅔)" }, { v: 12, l: "12 (voll)" },
   ];
@@ -123,6 +134,16 @@ function WidgetConfig({ widget, actions, onUpdate }) {
       </LabelRow>
 
       {/* Typ-spezifische Config */}
+      {widget.type === "eingangsrechnung" && (
+        <LabelRow label="JTL-Verbindung (Ziel-WaWi)">
+          <select value={cfg.connection_id || ""} onChange={e => set({ connection_id: e.target.value })}
+            style={{ ...inp, cursor: "pointer" }}>
+            <option value="">— Verbindung wählen —</option>
+            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </LabelRow>
+      )}
+
       {widget.type === "kpi" && (
         <>
           <LabelRow label="Spalte">

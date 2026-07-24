@@ -1,0 +1,344 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Upload, Loader2, CheckCircle2, AlertTriangle, XCircle, Search, FileText,
+} from "lucide-react";
+import api from "../../../api/client";
+
+const S = {
+  bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
+  textMain: "var(--text-main)", textBright: "var(--text-bright)", textDim: "var(--text-dim)",
+  accent: "var(--accent)",
+};
+
+const STATUS = {
+  matched:         { label: "Zugeordnet",       color: "#34d399" },
+  no_order:        { label: "Ohne Bestellung",  color: "#60a5fa" },
+  platzhalter:     { label: "Platzhalter",      color: "#a78bfa" },
+  ambiguous:       { label: "Mehrdeutig",       color: "#fbbf24" },
+  unknown_article: { label: "Artikel unbekannt", color: "#f97316" },
+  unklar:          { label: "Unklar",           color: "#f87171" },
+};
+
+function Badge({ status }) {
+  const m = STATUS[status] || { label: status, color: S.textDim };
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, color: m.color,
+      background: m.color + "22", border: `1px solid ${m.color}55`,
+      borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{m.label}</span>
+  );
+}
+
+/** Artikelsuche fürs manuelle Zuordnen. */
+function ArtikelSuche({ connectionId, onPick }) {
+  const [q, setQ] = useState("");
+  const [res, setRes] = useState([]);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (q.trim().length < 2) { setRes([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get("/api/eingangsrechnung/artikel-suche",
+          { params: { connection_id: connectionId, q } });
+        setRes(data.results || []); setOpen(true);
+      } catch { /* still */ }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [q, connectionId]);
+  return (
+    <div style={{ position: "relative", minWidth: 220 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, background: S.bgEl,
+        border: `1px solid ${S.border}`, borderRadius: 6, padding: "3px 7px" }}>
+        <Search size={12} color={S.textDim} />
+        <input value={q} onChange={e => setQ(e.target.value)} placeholder="Artikel suchen…"
+          style={{ background: "transparent", border: "none", outline: "none",
+            color: S.textMain, fontSize: 11, width: "100%" }} />
+      </div>
+      {open && res.length > 0 && (
+        <div style={{ position: "absolute", zIndex: 20, top: "100%", left: 0, right: 0,
+          background: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 6, marginTop: 3,
+          maxHeight: 200, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+          {res.map(a => (
+            <button key={a.kArtikel} onClick={() => { onPick(a); setOpen(false); setQ(""); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 9px",
+                background: "transparent", border: "none", borderBottom: `1px solid ${S.border}`,
+                color: S.textMain, fontSize: 11, cursor: "pointer" }}
+              onMouseEnter={e => e.currentTarget.style.background = S.bgEl}
+              onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+              <b>{a.cArtNr}</b> {a.cName ? <span style={{ color: S.textDim }}>· {a.cName}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function EingangsrechnungWidget({ widget }) {
+  const connId = widget?.config?.connection_id ? Number(widget.config.connection_id) : null;
+  const [kopf, setKopf] = useState(null);
+  const [plan, setPlan] = useState(null);
+  const [overrides, setOverrides] = useState({});
+  const [merken, setMerken] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const [written, setWritten] = useState(null);
+  const [error, setError] = useState(null);
+  const fileRef = useRef(null);
+
+  const num = (v) => (v == null ? 0 : Number(v));
+
+  async function upload(file) {
+    if (!file) return;
+    setLoading(true); setError(null); setWritten(null); setOverrides({});
+    try {
+      const fd = new FormData();
+      fd.append("connection_id", String(connId));
+      fd.append("file", file);
+      const { data } = await api.post("/api/eingangsrechnung/plan", fd);
+      setKopf(data.kopf); setPlan(data.plan);
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message);
+    } finally { setLoading(false); }
+  }
+
+  const replan = useCallback(async (ov) => {
+    if (!kopf) return;
+    setLoading(true);
+    try {
+      const { data } = await api.post("/api/eingangsrechnung/replan",
+        { connection_id: connId, kopf, overrides: ov });
+      setPlan(data);
+    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    finally { setLoading(false); }
+  }, [kopf, connId]);
+
+  function setOverride(zeile, patch) {
+    const cur = overrides[zeile] || {};
+    const next = { ...overrides, [zeile]: { ...cur, ...patch } };
+    setOverrides(next); replan(next);
+  }
+
+  async function freigeben() {
+    setWriting(true); setError(null);
+    try {
+      // Lern-Zuordnungen sammeln: manuell gesetzte Artikel mit Lieferanten-ArtNr
+      const learn = [];
+      if (merken && plan?.lieferant?.kLieferant) {
+        Object.entries(overrides).forEach(([z, ov]) => {
+          const pos = kopf.positionen[Number(z)];
+          if (ov.kArtikel && pos?.cLieferantenArtNr) {
+            learn.push({ kLieferant: plan.lieferant.kLieferant,
+              cLiefArtNr: pos.cLieferantenArtNr, kArtikel: ov.kArtikel });
+          }
+        });
+      }
+      const { data } = await api.post("/api/eingangsrechnung/write",
+        { connection_id: connId, kopf, overrides, learn });
+      if (data.ok) setWritten(data);
+      else { setPlan(data); setError("Freigabe nicht möglich – bitte offene Punkte prüfen."); }
+    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    finally { setWriting(false); }
+  }
+
+  if (!connId) return (
+    <div style={{ padding: 16, color: "#e0a070", fontSize: 12 }}>
+      <AlertTriangle size={13} style={{ verticalAlign: -2 }} /> Bitte im Formular-Editor
+      eine JTL-Verbindung für dieses Widget wählen.
+    </div>
+  );
+
+  // Erfolgsansicht
+  if (written) return (
+    <div style={{ padding: 20, textAlign: "center" }}>
+      <CheckCircle2 size={34} color="#34d399" />
+      <div style={{ fontSize: 15, fontWeight: 700, color: S.textBright, marginTop: 8 }}>
+        Eingangsrechnung verbucht</div>
+      <div style={{ fontSize: 12, color: S.textDim, marginTop: 4 }}>
+        kEingangsrechnung {written.kEingangsrechnung} · Nr. {written.kopf_werte?.cEigeneRechnungsnummer}</div>
+      {written.learned?.filter(l => l.created).length > 0 && (
+        <div style={{ fontSize: 11, color: S.textDim, marginTop: 6 }}>
+          {written.learned.filter(l => l.created).length} neue Artikel-Zuordnung(en) gemerkt</div>
+      )}
+      <button onClick={() => { setWritten(null); setKopf(null); setPlan(null); }}
+        style={{ marginTop: 14, padding: "7px 16px", background: S.accent, color: "#0b1120",
+          border: "none", borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        Nächste Rechnung</button>
+    </div>
+  );
+
+  // Upload-Ansicht
+  if (!plan) return (
+    <div style={{ padding: 20 }}>
+      <div onClick={() => fileRef.current?.click()}
+        style={{ border: `2px dashed ${S.border}`, borderRadius: 10, padding: "30px 20px",
+          textAlign: "center", cursor: "pointer", color: S.textDim }}>
+        {loading ? <Loader2 size={26} className="animate-spin" /> : <Upload size={26} />}
+        <div style={{ marginTop: 8, fontSize: 13, color: S.textMain }}>
+          E-Rechnung hochladen (ZUGFeRD-PDF oder XRechnung-XML)</div>
+        <div style={{ fontSize: 11, marginTop: 3 }}>Klicken oder Datei hierher ziehen</div>
+      </div>
+      <input ref={fileRef} type="file" accept=".pdf,.xml" style={{ display: "none" }}
+        onChange={e => upload(e.target.files?.[0])} />
+      {error && <div style={{ marginTop: 10, color: "#e07070", fontSize: 12 }}>{error}</div>}
+    </div>
+  );
+
+  const td = { padding: "6px 8px", fontSize: 11, color: S.textMain, borderBottom: `1px solid ${S.border}`, verticalAlign: "top" };
+  const summen = plan.summen || {};
+
+  // Review-Ansicht
+  return (
+    <div style={{ padding: 14 }}>
+      {/* Kopf */}
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 8,
+        background: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 8, padding: "10px 12px" }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>
+            <FileText size={13} style={{ verticalAlign: -2 }} /> {plan.lieferant?.cFirma || kopf.lieferantName || "—"}</div>
+          <div style={{ fontSize: 11, color: S.textDim, marginTop: 2 }}>
+            Rechnung {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
+            {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}</div>
+        </div>
+        {summen.rechnung_brutto != null && (
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: S.textBright }}>
+              {num(summen.rechnung_brutto).toFixed(2)} €</div>
+            <div style={{ fontSize: 10, color: plan.reconciliation_ok ? "#34d399" : "#f87171" }}>
+              {plan.reconciliation_ok ? "✓ Summe stimmt" : `✗ Δ ${num(summen.differenz).toFixed(2)}`}</div>
+          </div>
+        )}
+      </div>
+
+      {/* Positionen */}
+      <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+        <thead>
+          <tr style={{ background: S.bgEl }}>
+            {["Artikel / Bezeichnung", "Menge", "EK", "Status", "Zuordnung"].map(h => (
+              <th key={h} style={{ padding: "6px 8px", fontSize: 10, textAlign: "left",
+                color: S.textDim, fontWeight: 600, borderBottom: `1px solid ${S.border}` }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {kopf.positionen.map((src, i) => {
+            const p = plan.positionen.find(x => x._zeile === i);
+            const ov = overrides[i] || {};
+            if (!p) {   // als Zusatzkosten umklassifiziert
+              return (
+                <tr key={i} style={{ opacity: 0.7 }}>
+                  <td style={td}>{src.cName}</td>
+                  <td style={td}>{num(src.fMenge)}</td>
+                  <td style={td}>{num(src.fEKNetto).toFixed(2)}</td>
+                  <td style={td}><Badge status="no_order" /></td>
+                  <td style={td}>
+                    → Zusatzkosten ·{" "}
+                    <button onClick={() => setOverride(i, { als_zusatzkosten: false })}
+                      style={{ background: "none", border: "none", color: S.accent, cursor: "pointer", fontSize: 11 }}>
+                      rückgängig</button>
+                  </td>
+                </tr>
+              );
+            }
+            const needsFix = ["unknown_article", "ambiguous", "unklar"].includes(p.status);
+            return (
+              <tr key={i}>
+                <td style={td}>
+                  <div style={{ color: S.textBright }}>{p.cName}</div>
+                  <div style={{ color: S.textDim, fontSize: 10 }}>
+                    {p.cArtNr ? `ArtNr ${p.cArtNr}` : "keine ArtNr"}
+                    {p.cLieferantenArtNr ? ` · Lief ${p.cLieferantenArtNr}` : ""}
+                    {p.kArtikel ? ` · kArtikel ${p.kArtikel}` : ""}</div>
+                </td>
+                <td style={td}>{num(p.fMenge)}</td>
+                <td style={td}>{num(p.fEKNetto).toFixed(2)}</td>
+                <td style={td}><Badge status={p.status} /></td>
+                <td style={{ ...td, minWidth: 240 }}>
+                  {needsFix && (
+                    <ArtikelSuche connectionId={connId}
+                      onPick={a => setOverride(i, { kArtikel: a.kArtikel })} />
+                  )}
+                  {(p._kandidaten?.length > 1) && (
+                    <select value={ov.kLieferantenBestellungPos || p.kLieferantenBestellungPos || ""}
+                      onChange={e => {
+                        const k = p._kandidaten.find(c => String(c.kPos) === e.target.value);
+                        if (k) setOverride(i, { kLieferantenbestellung: k.kBest, kLieferantenBestellungPos: k.kPos });
+                      }}
+                      style={{ marginTop: 4, width: "100%", background: S.bgEl, color: S.textMain,
+                        border: `1px solid ${S.border}`, borderRadius: 6, fontSize: 11, padding: "3px 6px" }}>
+                      {p._kandidaten.map(c => (
+                        <option key={c.kPos} value={c.kPos}>
+                          {c.bestellnr} · EK {num(c.ek).toFixed(2)} · offen {num(c.offen)} (Score {Math.round(c.score)})
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {p.kLieferantenbestellung && !needsFix && (p._kandidaten?.length || 0) <= 1 && (
+                    <span style={{ color: S.textDim, fontSize: 10 }}>Bestellung ✓</span>
+                  )}
+                  <div style={{ marginTop: 4 }}>
+                    <button onClick={() => setOverride(i, { als_zusatzkosten: true })}
+                      style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer",
+                        fontSize: 10, textDecoration: "underline" }}>
+                      als Zusatzkosten</button>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Zusatzkosten */}
+      {plan.zusatzkosten?.length > 0 && (
+        <div style={{ marginTop: 10, fontSize: 11, color: S.textDim }}>
+          <b style={{ color: S.textMain }}>Zusatzkosten:</b>{" "}
+          {plan.zusatzkosten.map((z, k) => (
+            <span key={k}>{k > 0 ? " · " : ""}{z.ist_zuschlag ? "+" : "−"}{z.cName} {num(z.betrag).toFixed(2)}</span>
+          ))}
+          <span style={{ color: "#e0a070" }}> (Buchung als Zusatzkosten folgt – aktuell nur informativ)</span>
+        </div>
+      )}
+
+      {/* Warnungen */}
+      {plan.warnings?.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          {plan.warnings.map((w, k) => (
+            <div key={k} style={{ fontSize: 11, color: "#e0a070", display: "flex", gap: 6 }}>
+              <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} /> {w}</div>
+          ))}
+        </div>
+      )}
+      {plan.errors?.length > 0 && (
+        <div style={{ marginTop: 8 }}>
+          {plan.errors.map((w, k) => (
+            <div key={k} style={{ fontSize: 11, color: "#e07070", display: "flex", gap: 6 }}>
+              <XCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} /> {w}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Aktionen */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginTop: 14, gap: 10, flexWrap: "wrap" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: S.textMain, cursor: "pointer" }}>
+          <input type="checkbox" checked={merken} onChange={e => setMerken(e.target.checked)}
+            style={{ width: 13, height: 13 }} />
+          Manuelle Artikel-Zuordnungen für die Zukunft merken
+        </label>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => { setKopf(null); setPlan(null); setOverrides({}); }}
+            style={{ padding: "8px 14px", background: "transparent", color: S.textDim,
+              border: `1px solid ${S.border}`, borderRadius: 7, fontSize: 12, cursor: "pointer" }}>
+            Abbrechen</button>
+          <button onClick={freigeben} disabled={!plan.ok || writing || loading}
+            style={{ padding: "8px 18px", background: plan.ok ? "#34d399" : S.bgEl,
+              color: plan.ok ? "#0b1120" : S.textDim, border: "none", borderRadius: 7,
+              fontSize: 12, fontWeight: 700, cursor: plan.ok ? "pointer" : "not-allowed",
+              display: "flex", alignItems: "center", gap: 6 }}>
+            {writing ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
+            Freigeben & verbuchen</button>
+        </div>
+      </div>
+    </div>
+  );
+}
