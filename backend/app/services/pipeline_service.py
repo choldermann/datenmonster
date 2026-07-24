@@ -78,8 +78,7 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
             if dry_run and ntype in ("email", "ftp", "ftp_upload", "rest_fetch", "business_insights"):
                 results[nid] = {"status": "ok", "dry_run": True,
                                 "message": f"{ntype}: im Dry-Run simuliert (nicht ausgeführt)"}
-                if debug:
-                    _enrich_debug_step(results[nid], node, ntype, node_start)
+                _enrich_debug_step(results[nid], node, ntype, node_start)
                 continue
 
             try:
@@ -411,7 +410,7 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                 if config.get("on_error") == "stop":
                     break
 
-            if debug and nid in results:
+            if nid in results:
                 _enrich_debug_step(results[nid], node, ntype, node_start)
 
         # Pipeline-Ende loggen
@@ -427,8 +426,22 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                 except Exception:
                     pass
             clean_results[nid] = cr
+
+        # Kompakte Node-Zusammenfassung (ohne Sample/Sub-Trace) für die Lauf-Historie
+        node_summary = [{
+            "id": nid,
+            "type": results[nid].get("type"),
+            "label": results[nid].get("label"),
+            "status": results[nid].get("status"),
+            "rows": results[nid].get("rows"),
+            "duration_ms": results[nid].get("duration_ms"),
+            "message": results[nid].get("message"),
+            "dry_run": results[nid].get("dry_run", False),
+        } for nid in order if nid in results]
+
         final_result = {"results": clean_results, "errors": errors,
-                        "nodes_executed": len(results), "order": order}
+                        "nodes_executed": len(results), "order": order,
+                        "node_summary": node_summary, "debug": debug, "dry_run": dry_run}
         log_pipeline_end(db, pipeline, final_result, start_time)
         return final_result
 

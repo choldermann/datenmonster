@@ -243,6 +243,29 @@ export default function PipelineEditor() {
   const [debugData, setDebugData] = useState(null);    // { results, order, errors } vom debug-run
   const [debugLoading, setDebugLoading] = useState(false);
   const [dryRun, setDryRun] = useState(true);          // Default: sicherer Dry-Run
+  const [history, setHistory] = useState(null);        // null = verborgen, Array = Lauf-Liste
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const handleHistory = async () => {
+    if (!id || id === "new") { alert("Erst speichern!"); return; }
+    if (history) { setHistory(null); return; }         // Toggle
+    setHistoryLoading(true);
+    try {
+      const { data } = await api.get(`/api/pipelines/${id}/runs?limit=20`);
+      setHistory(data.runs || []);
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message);
+      setHistory([]);
+    } finally { setHistoryLoading(false); }
+  };
+
+  const openHistoryRun = (run) => {
+    const summary = run.node_summary || [];
+    const results = {};
+    summary.forEach(n => { results[n.id] = n; });
+    setDebugData({ results, order: summary.map(n => n.id), errors: run.errors || [] });
+    setHistory(null);
+  };
 
   const handleDebugRun = async () => {
     if (!id || id === "new") { alert("Erst speichern!"); return; }
@@ -370,6 +393,7 @@ export default function PipelineEditor() {
         nodeCount={nodes.length} connCount={connections.length}
         onDebugRun={handleDebugRun} debugLoading={debugLoading}
         dryRun={dryRun} onToggleDryRun={() => setDryRun(v => !v)}
+        onHistory={handleHistory} historyLoading={historyLoading}
       />
 
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -443,6 +467,37 @@ export default function PipelineEditor() {
           </div>
         </div>
       , document.body)}
+
+      {history !== null && (
+        <div style={{ position: "absolute", top: 56, right: 12, zIndex: 60, width: 340, maxHeight: "70%", overflowY: "auto",
+          backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10, boxShadow: "0 12px 40px rgba(0,0,0,0.5)" }}>
+          <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${S.border}` }}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: S.accent, flex: 1 }}>Lauf-Historie</span>
+            <button onClick={() => setHistory(null)} style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, fontSize: 16, lineHeight: 1 }}>×</button>
+          </div>
+          {history.length === 0 && (
+            <p style={{ fontSize: 12, color: S.textDim, textAlign: "center", padding: "18px 0" }}>Noch keine Läufe protokolliert.</p>
+          )}
+          {history.map(run => {
+            const col = run.status === "success" ? "#6ee7b7" : run.status === "error" ? "#e07070" : "#fbbf24";
+            return (
+              <div key={run.id} onClick={() => openHistoryRun(run)}
+                style={{ padding: "9px 14px", borderBottom: `1px solid ${S.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
+                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"}
+                onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: col, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 11, color: S.textMain }}>{new Date(run.created_at).toLocaleString("de-DE")}</div>
+                  <div style={{ fontSize: 10, color: S.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {(run.node_summary || []).length} Nodes{run.duration_ms != null ? ` · ${run.duration_ms}ms` : ""}{run.errors?.length ? ` · ${run.errors.length} Fehler` : ""}
+                  </div>
+                </div>
+                <span style={{ fontSize: 9, color: col, textTransform: "uppercase", fontWeight: 700 }}>{run.status}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {debugData && (
         <PipelineRunPanel data={debugData} nodes={nodes} onClose={() => setDebugData(null)} />

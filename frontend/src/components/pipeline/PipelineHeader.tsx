@@ -1,7 +1,7 @@
-import { ArrowLeft, Save, Play, Loader2, Bug } from "lucide-react";
+import { ArrowLeft, Save, Play, Loader2, Bug, History } from "lucide-react";
 import { S } from "./constants";
 
-export default function PipelineHeader({ name, onNameChange, onBack, onSave, onExecute, saving, executing, nodeCount, connCount, onDebugRun, debugLoading, dryRun, onToggleDryRun }) {
+export default function PipelineHeader({ name, onNameChange, onBack, onSave, onExecute, saving, executing, nodeCount, connCount, onDebugRun, debugLoading, dryRun, onToggleDryRun, onHistory, historyLoading }) {
   return (
     <div style={{
       height: 52, flexShrink: 0,
@@ -35,6 +35,15 @@ export default function PipelineHeader({ name, onNameChange, onBack, onSave, onE
         {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
         Speichern
       </button>
+
+      {onHistory && (
+        <button onClick={onHistory} disabled={historyLoading} title="Lauf-Historie anzeigen"
+          style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer", fontSize: 11 }}
+          onMouseEnter={e => e.currentTarget.style.color = S.textBright}
+          onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
+          {historyLoading ? <Loader2 size={13} className="animate-spin" /> : <History size={13} />} Verlauf
+        </button>
+      )}
 
       {onDebugRun && (
         <>

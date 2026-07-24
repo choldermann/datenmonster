@@ -213,6 +213,44 @@ def debug_run_pipeline(pipeline_id: int, dry_run: bool = True,
         raise HTTPException(500, detail={"message": str(e)[:300], "type": type(e).__name__})
 
 
+@router.get("/{pipeline_id}/runs")
+def pipeline_runs(pipeline_id: int, limit: int = 20,
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """
+    Lauf-Historie einer Pipeline aus system_logs (pipeline_end-Zeilen).
+    Jede Zeile = ein Lauf, inkl. persistierter node_summary (B3). Debug-/Dry-Run-
+    Läufe werden herausgefiltert (kein echter Lauf).
+    """
+    from sqlalchemy import text
+    import json
+    rows = db.execute(text("""
+        SELECT id, level, message, details, created_at, duration_ms
+        FROM system_logs
+        WHERE action = 'pipeline_end' AND entity_id = :pid
+        ORDER BY id DESC LIMIT :lim
+    """), {"pid": pipeline_id, "lim": max(1, min(limit, 100))}).mappings().all()
+
+    runs = []
+    for r in rows:
+        try:
+            details = json.loads(r["details"]) if r["details"] else {}
+        except Exception:
+            details = {}
+        if details.get("debug"):
+            continue  # Debug-/Dry-Run-Läufe nicht in der Historie zeigen
+        runs.append({
+            "id": r["id"],
+            "created_at": r["created_at"],
+            "status": r["level"],                       # success | warning | error
+            "message": r["message"],
+            "duration_ms": r["duration_ms"] or details.get("duration_ms"),
+            "errors": details.get("errors", []),
+            "node_summary": details.get("node_summary", []),
+        })
+    return {"runs": runs}
+
+
 @router.post("/{pipeline_id}/toggle")
 def toggle_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):

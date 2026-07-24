@@ -118,6 +118,15 @@ def log_pipeline_end(db, pipeline, result: dict, start: datetime,
         "errors": errors,
         "duration_ms": duration_ms,
     }
+    # Kompakte Node-Zusammenfassung für die Lauf-Historie (B3); Debug/Dry-Run markieren,
+    # damit die Historie sie herausfiltern kann.
+    if result:
+        if result.get("node_summary") is not None:
+            details["node_summary"] = result["node_summary"]
+        if result.get("debug"):
+            details["debug"] = True
+        if result.get("dry_run"):
+            details["dry_run"] = True
     if exc:
         details["exception_type"] = type(exc).__name__
         details["exception_message"] = str(exc)
