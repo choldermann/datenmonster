@@ -121,6 +121,7 @@ def run_mapping_object(
     triggered_by: str = "manual",
     scheduled_job_id: Optional[int] = None,
     _ai_config: Dict = None,
+    _debug_trace: list = None,
 ) -> Dict[str, Any]:
     """
     EINHEITLICHER Einstiegspunkt für ALLE Ausführungspfade:
@@ -155,6 +156,7 @@ def run_mapping_object(
         **ctx.to_execute_kwargs(preview_connections, preview_rows),
         target_options=_preview_target_opts,
         _ai_config=_ai_config,
+        _debug_trace=_debug_trace,
     )
 
     errors = result.get("errors") or []
@@ -1093,6 +1095,66 @@ def execute_mapping(
         except Exception as e:
             errors.append(f"SQL-Node '{out_field}' (Spalte) fehlgeschlagen: {str(e)[:200]}")
             sql_column_data[out_field] = []
+        if _debug_trace is not None:
+            _vals = sql_column_data.get(out_field, [])
+            _debug_trace.append({
+                "id": f"sql_col_{sn.get('id','')}",
+                "label": f"SQL-Spalte: {out_field}",
+                "type": "sql",
+                "rows_in": None,
+                "rows_out": len(_vals),
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": _rows_to_json([{out_field: v} for v in _vals[:5]]),
+                "icon": "sql",
+                "meta": {"mode": "column", "sql": sql_text[:400]},
+            })
+            _dbg_err_idx = len(errors)
+
+    # ─── SQL-Nodes: Ausführen-Modus (Seiteneffekt) ────────────────────────────
+    # mode="exec": Statement mit Seiteneffekt (EXEC/INSERT/UPDATE/DELETE), einmalig,
+    # in einer committenden Transaktion (engine.begin()). Liefert das Statement einen
+    # Wert zurück (z.B. spGetNextNummer), landet die erste Spalte als Konstante im
+    # output_field – ansonsten bleibt es fire-and-forget.
+    for sn in (sql_nodes or []):
+        if sn.get("mode") != "exec":
+            continue
+        out_field = sn.get("output_field") or f"sql_{sn.get('id','')}"
+        conn_id = sn.get("connection_id")
+        sql_text = (sn.get("sql") or "").strip()
+        if not conn_id or not sql_text:
+            continue
+        try:
+            from sqlalchemy import text as sa_text
+            if db:
+                from app.models.dataset import DbConnection as _DBC
+                _conn_obj = db.query(_DBC).filter(_DBC.id == conn_id).first()
+                if not _conn_obj:
+                    errors.append(f"SQL-Node '{out_field}' (exec): Verbindung {conn_id} nicht gefunden")
+                    continue
+            engine = _get_sql_engine(conn_id)
+            with engine.begin() as con:   # begin() committet am Ende, connect() nicht
+                result = con.execute(sa_text(sql_text))
+                if result.returns_rows:
+                    rows_fetched = result.fetchall()
+                    if sn.get("output_field"):
+                        sql_column_data[out_field] = [row[0] for row in rows_fetched]
+        except Exception as e:
+            errors.append(f"SQL-Node '{out_field}' (exec) fehlgeschlagen: {str(e)[:200]}")
+        if _debug_trace is not None:
+            _debug_trace.append({
+                "id": f"sql_exec_{sn.get('id','')}",
+                "label": f"SQL ausführen: {out_field}",
+                "type": "sql",
+                "rows_in": None,
+                "rows_out": None,
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": [],
+                "icon": "sql",
+                "meta": {"mode": "exec", "committed": True, "sql": sql_text[:400]},
+            })
+            _dbg_err_idx = len(errors)
 
     # mode="transform": SQL auf Canvas-Datasets + optionale externe Tabellen
     # Ergebnis ersetzt den bisherigen result_df komplett
@@ -1166,6 +1228,23 @@ def execute_mapping(
 
             except Exception as e:
                 errors.append(f"SQL-Transform fehlgeschlagen: {str(e)[:300]}")
+            if _debug_trace is not None:
+                _prev = _debug_trace[-1]["rows_out"] if _debug_trace else None
+                _rout = 0 if result_df is None else len(result_df)
+                _samp = [] if (result_df is None or result_df.empty) else _rows_to_json(result_df.head(5).to_dict("records"))
+                _debug_trace.append({
+                    "id": f"sql_transform_{sn.get('id','')}",
+                    "label": "SQL-Transform",
+                    "type": "sql",
+                    "rows_in": _prev,
+                    "rows_out": _rout,
+                    "errors": len(errors) - _dbg_err_idx,
+                    "duration_ms": 0,
+                    "sample": _samp,
+                    "icon": "sql",
+                    "meta": {"mode": "transform", "sql": sql_text[:400]},
+                })
+                _dbg_err_idx = len(errors)
 
     # 4. Transformer auf jede Zeile anwenden
     # ─── Sortierung aus canvas_nodes anwenden ────────────────────────────────────
@@ -1685,6 +1764,7 @@ def execute_mapping(
 
     # Flatten result_df rows to dicts (without prefix for direct lookup)
     # Also build a flat lookup without prefix for transformer source_field matching
+    _sql_row_stats: Dict[str, dict] = {}  # zeilenweise SQL-Nodes (scalar/lookup) für Debug-Trace
     for _, raw_row in result_df.head(preview_rows).iterrows():
         flat = dict(raw_row)
         flat_no_prefix = {}
@@ -1849,6 +1929,24 @@ def execute_mapping(
                 else:
                     flat_no_prefix[out_field] = f"[SQL-Fehler: {str(e)[:80]}]"
 
+            # Debug-Trace: zeilenweise SQL-Nodes (scalar/lookup) aufsummieren
+            if _debug_trace is not None and mode in ("scalar", "lookup"):
+                _sk = sn.get("id") or out_field
+                _fields = (sn.get("output_fields") or []) if mode == "lookup" else [out_field]
+                _stat = _sql_row_stats.get(_sk)
+                if _stat is None:
+                    _stat = {"id": sn.get("id", ""), "mode": mode, "sql": sql_text,
+                             "label": (f"SQL-Lookup: {', '.join(_fields)}" if mode == "lookup"
+                                       else f"SQL-Skalar: {out_field}"),
+                             "rows": 0, "errors": 0, "sample": []}
+                    _sql_row_stats[_sk] = _stat
+                _stat["rows"] += 1
+                _vals = {f: flat_no_prefix.get(f) for f in _fields}
+                if any(isinstance(v, str) and v.startswith("[SQL-Fehler") for v in _vals.values()):
+                    _stat["errors"] += 1
+                if len(_stat["sample"]) < 5:
+                    _stat["sample"].append(_vals)
+
         # Apply expr nodes (evaluated per row so connections can pick up outputs)
         for en in (expr_nodes or []):
             for field_def in (en.get("output_fields") or []):
@@ -1908,6 +2006,22 @@ def execute_mapping(
                 out_row[target] = f"[Fehler: {e}]"
 
         output_rows.append(out_row)
+
+    # Summen-Steps für zeilenweise SQL-Nodes (scalar/lookup) – einer je Node
+    if _debug_trace is not None and _sql_row_stats:
+        for _st in _sql_row_stats.values():
+            _debug_trace.append({
+                "id": f"sql_{_st['mode']}_{_st['id']}",
+                "label": _st["label"],
+                "type": "sql",
+                "rows_in": _st["rows"],
+                "rows_out": _st["rows"],
+                "errors": _st["errors"],
+                "duration_ms": 0,
+                "sample": _rows_to_json(_st["sample"][:5]),
+                "icon": "sql",
+                "meta": {"mode": _st["mode"], "sql": (_st["sql"] or "")[:400]},
+            })
 
     if _debug_trace is not None:
         _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0

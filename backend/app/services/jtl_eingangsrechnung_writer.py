@@ -1,0 +1,715 @@
+"""
+Write-Logik für JTL-Eingangsrechnungen (Kopf + Positionen).
+
+Grundlage: Golden-Master-Diff auf der Test-WaWi (2026-07-24). Beim Anlegen einer
+Eingangsrechnung berührt JTL DB-weit nur drei relevante Tabellen:
+  - dbo.tEingangsrechnung      (INSERT, kEingangsrechnung = IDENTITY)
+  - dbo.tEingangsrechnungPos   (INSERT je Position, IDENTITY)
+  - dbo.tLaufendeNummern       (UPDATE des Nummernkreises – NICHT selbst anfassen,
+                                sondern über die JTL-SP dbo.spGetNextNummer)
+Kein Lagerbestand, keine Buchungs-/Export-Queue, keine FiBu – die reine ER ist
+bestand-entkoppelt und hängt nicht zwingend an einem Wareneingang.
+
+Write-Rezept (eine Transaktion):
+  1. EXEC dbo.spGetNextNummer @cName='Eingangsrechnung' → cEigeneRechnungsnummer
+  2. INSERT tEingangsrechnung → SCOPE_IDENTITY() = kEingangsrechnung
+  3. INSERT tEingangsrechnungPos (je Position) mit Bestell-Matching
+
+Dieser Writer löst zuerst alle Referenzen read-only auf (Lieferant, Artikel,
+Bestellung, Dublette), baut daraus einen Plan und führt im Dry-Run NICHTS aus.
+"""
+from __future__ import annotations
+
+import dataclasses
+import datetime
+from dataclasses import dataclass, field
+from decimal import Decimal
+from typing import Optional
+
+from sqlalchemy import create_engine, text
+
+from app.core.database import SessionLocal
+from app.models.dataset import DbConnection
+from app.services.db_service import get_engine_str
+
+NUMMERNKREIS_NAME = "Eingangsrechnung"
+
+# Echte DB-Spalten von tEingangsrechnungPos (die Positions-Dicts tragen zusätzlich
+# Metadaten wie status/_match/_kandidaten fürs Formular, die NICHT ins INSERT dürfen)
+POS_DB_COLS = ["kEingangsrechnung", "kLieferantenbestellung", "kArtikel", "cArtNr",
+               "cLieferantenArtNr", "cName", "cLieferantenBezeichnung", "cEinheit",
+               "cHinweis", "fMenge", "fEKNetto", "fMwSt", "nPosTyp", "kLieferantenBestellungPos"]
+
+
+# ── Eingabe-Strukturen (normalisiert, z.B. aus einer geparsten E-Rechnung) ──────
+@dataclass
+class ERPositionInput:
+    cName: str
+    fMenge: float
+    fEKNetto: float
+    fMwSt: float                                  # Prozentwert, z.B. 19.0
+    cArtNr: Optional[str] = None                  # eigene Artikelnr. → löst kArtikel auf
+    cLieferantenArtNr: Optional[str] = None
+    cLieferantenBezeichnung: Optional[str] = None
+    cEinheit: Optional[str] = None
+    nPosTyp: int = 1
+    # Bestellreferenz aus der Rechnung (z.B. ZUGFeRD BuyerOrderReferencedDocument)
+    # = JTLs cEigeneBestellnummer; stärkstes Matching-Signal wenn vorhanden
+    bestellnummer: Optional[str] = None
+    # Matching-Anker – wenn nicht gesetzt, wird über Scoring gesucht
+    kLieferantenbestellung: Optional[int] = None
+    kLieferantenBestellungPos: Optional[int] = None
+
+
+@dataclass
+class ERZusatzkostenInput:
+    """Fracht/Zuschlag/Rabatt auf Dokumentebene (aus ZUGFeRD SpecifiedTradeAllowanceCharge)."""
+    cName: str
+    betrag: float
+    fMwSt: float = 0.0
+    ist_zuschlag: bool = True         # True=Zuschlag/Fracht, False=Rabatt/Allowance
+
+
+@dataclass
+class ERKopfInput:
+    cFremdbelegnummer: str                         # Lieferanten-Rechnungsnr. (Pflicht)
+    dBelegdatum: datetime.datetime
+    positionen: list[ERPositionInput]
+    dZahlungsziel: Optional[datetime.datetime] = None
+    # Rechnungssummen aus der E-Rechnung (für den Summen-Abgleich)
+    nettoSumme: Optional[float] = None             # TaxBasisTotal (BT-109)
+    steuerSumme: Optional[float] = None            # TaxTotal (BT-110)
+    bruttoSumme: Optional[float] = None            # GrandTotal (BT-112)
+    zusatzkosten: list[ERZusatzkostenInput] = field(default_factory=list)
+    kBenutzer: int = 1
+    cHinweise: Optional[str] = None
+    # Lieferant identifizieren – mind. eins von diesen dreien
+    kLieferant: Optional[int] = None
+    ustIdNr: Optional[str] = None
+    lieferantName: Optional[str] = None
+    # Optionale Adress-Overrides aus der Rechnung (E-Rechnung ist Quelle der Wahrheit;
+    # fehlt ein Feld, wird aus dem Lieferantenstamm ergänzt)
+    cLieferant: Optional[str] = None
+    cStrasse: Optional[str] = None
+    cPLZ: Optional[str] = None
+    cOrt: Optional[str] = None
+    cLandISO: Optional[str] = None
+    cMail: Optional[str] = None
+    cTel: Optional[str] = None
+    cFax: Optional[str] = None
+    # Bestellreferenz auf Kopfebene (gilt für alle Positionen ohne eigene Referenz)
+    bestellnummer: Optional[str] = None
+
+
+# ── Ergebnis-Strukturen ─────────────────────────────────────────────────────────
+@dataclass
+class ERWritePlan:
+    ok: bool
+    dry_run: bool
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    lieferant: dict = field(default_factory=dict)          # aufgelöster Stamm
+    naechste_nummer: Optional[str] = None                  # gepeekt (nicht verbraucht)
+    kopf_werte: dict = field(default_factory=dict)         # Spalte → Wert
+    positionen: list[dict] = field(default_factory=list)   # je Pos: Spalte → Wert (+ _match-Info)
+    statements: list[str] = field(default_factory=list)    # parametrisiertes SQL (Anzeige)
+    zusatzkosten: list[dict] = field(default_factory=list)  # Fracht/Zuschläge (Dokumentebene)
+    summen: dict = field(default_factory=dict)             # {rechnung_*, berechnet_*, differenz}
+    reconciliation_ok: Optional[bool] = None               # Summen-Abgleich bestanden?
+    # nach echtem Write gefüllt:
+    kEingangsrechnung: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        """JSON-serialisierbar fürs Freigabe-Formular / API."""
+        def _j(v):
+            if isinstance(v, Decimal):
+                return float(v)
+            if isinstance(v, (datetime.datetime, datetime.date)):
+                return v.isoformat()
+            if isinstance(v, dict):
+                return {k: _j(x) for k, x in v.items()}
+            if isinstance(v, list):
+                return [_j(x) for x in v]
+            return v
+        return {
+            "ok": self.ok, "dry_run": self.dry_run,
+            "warnings": self.warnings, "errors": self.errors,
+            "lieferant": _j(self.lieferant),
+            "naechste_nummer": self.naechste_nummer,
+            "kopf_werte": _j(self.kopf_werte),
+            "positionen": _j(self.positionen),
+            "zusatzkosten": _j(self.zusatzkosten),
+            "summen": _j(self.summen),
+            "reconciliation_ok": self.reconciliation_ok,
+            "statements": self.statements,
+            "kEingangsrechnung": self.kEingangsrechnung,
+        }
+
+    def report(self) -> str:
+        L = []
+        L.append(f"{'DRY-RUN' if self.dry_run else 'WRITE'}  →  {'OK' if self.ok else 'FEHLER'}")
+        if self.errors:
+            L.append("\nFEHLER:")
+            L += [f"  ✗ {e}" for e in self.errors]
+        if self.warnings:
+            L.append("\nWarnungen:")
+            L += [f"  ⚠ {w}" for w in self.warnings]
+        if self.lieferant:
+            L.append(f"\nLieferant: kLieferant={self.lieferant.get('kLieferant')} "
+                     f"{self.lieferant.get('cFirma')!r} (Match: {self.lieferant.get('_match')})")
+        if self.dry_run and self.naechste_nummer is not None:
+            L.append(f"cEigeneRechnungsnummer (gepeekt, nicht verbraucht): {self.naechste_nummer}")
+        if self.kopf_werte:
+            L.append("\ntEingangsrechnung (Kopf):")
+            for k, v in self.kopf_werte.items():
+                L.append(f"    {k:24} = {v!r}")
+        for i, p in enumerate(self.positionen, 1):
+            aq = f"  [Artikel via {p.get('_artikel_quelle')}]" if p.get("_artikel_quelle") else ""
+            st = p.get("status", "?")
+            L.append(f"\ntEingangsrechnungPos #{i}  [{st}]  (Match: {p.get('_match')}){aq}:")
+            for k, v in p.items():
+                if k.startswith("_"):
+                    continue
+                L.append(f"    {k:26} = {v!r}")
+            kand = p.get("_kandidaten") or []
+            if len(kand) > 1:
+                L.append(f"    Kandidaten ({len(kand)}, für 4-Augen-Freigabe):")
+                for c in kand:
+                    mark = "→" if c["kPos"] == p.get("kLieferantenBestellungPos") else " "
+                    L.append(f"     {mark} #{c['kPos']} {c['bestellnr']} "
+                             f"EK={c['ek']:.2f} Menge={c['menge']:g} offen={c['offen']:g} "
+                             f"score={c['score']:.0f} [{c['why']}]")
+        if self.zusatzkosten:
+            L.append("\nZusatzkosten (Fracht/Zuschläge):")
+            for z in self.zusatzkosten:
+                vz = "＋" if z.get("ist_zuschlag", True) else "－"
+                L.append(f"    {vz} {z['cName']}: {z['betrag']:.2f} (MwSt {z.get('fMwSt',0)}%) "
+                         f"[{z.get('quelle')}]")
+        if self.summen:
+            s = self.summen
+            amp = "✅" if self.reconciliation_ok else "❌"
+            L.append(f"\nSummen-Abgleich {amp}:")
+            L.append(f"    Rechnung: netto={s.get('rechnung_netto')} steuer={s.get('rechnung_steuer')} "
+                     f"brutto={s.get('rechnung_brutto')}")
+            L.append(f"    Berechnet: netto={s.get('berechnet_netto')} steuer={s.get('berechnet_steuer')} "
+                     f"brutto={s.get('berechnet_brutto')}  (Δ {s.get('differenz')})")
+        if self.kEingangsrechnung:
+            L.append(f"\n✓ Geschrieben: kEingangsrechnung = {self.kEingangsrechnung}")
+        return "\n".join(L)
+
+
+class EingangsrechnungWriter:
+    def __init__(self, connection_id: int):
+        db = SessionLocal()
+        try:
+            conn = db.query(DbConnection).filter(DbConnection.id == connection_id).first()
+            if not conn:
+                raise ValueError(f"DB-Verbindung #{connection_id} nicht gefunden")
+            if conn.db_type != "mssql":
+                raise ValueError("Eingangsrechnungs-Write nur für JTL/MSSQL")
+            self._engine = create_engine(get_engine_str(conn),
+                                         connect_args={"timeout": 30, "login_timeout": 10})
+        finally:
+            db.close()
+
+    # ── Read-only-Auflösungen ────────────────────────────────────────────────────
+    def _resolve_lieferant(self, conn, kopf: ERKopfInput, plan: ERWritePlan) -> Optional[dict]:
+        row = None
+        match = None
+        if kopf.kLieferant:
+            row = conn.execute(text("SELECT * FROM dbo.tlieferant WHERE kLieferant = :k"),
+                               {"k": kopf.kLieferant}).mappings().first()
+            match = "kLieferant"
+        if row is None and kopf.ustIdNr:
+            row = conn.execute(text(
+                "SELECT * FROM dbo.tlieferant WHERE REPLACE(cUstid,' ','') = :u"),
+                {"u": kopf.ustIdNr.replace(" ", "")}).mappings().first()
+            match = "USt-IdNr"
+        if row is None and kopf.lieferantName:
+            hits = conn.execute(text(
+                "SELECT * FROM dbo.tlieferant WHERE cFirma = :n"),
+                {"n": kopf.lieferantName}).mappings().all()
+            if len(hits) == 1:
+                row, match = hits[0], "Firmenname (exakt)"
+            elif len(hits) > 1:
+                plan.errors.append(f"Lieferant '{kopf.lieferantName}': {len(hits)} Treffer – nicht eindeutig")
+                return None
+        if row is None:
+            plan.errors.append("Lieferant nicht auflösbar (weder kLieferant, USt-IdNr noch Firmenname trafen)")
+            return None
+        d = dict(row)
+        d["_match"] = match
+        return d
+
+    def _resolve_artikel(self, conn, pos: ERPositionInput, kLieferant: int) -> dict:
+        """
+        Löst kArtikel auf: zuerst über die eigene cArtNr (tArtikel), sonst als
+        Fallback über die Lieferanten-Artikelnummer (tliefartikel) – echte
+        Rechnungen tragen oft nur die Lieferanten-Nr. Gibt kArtikel, die
+        kanonische eigene cArtNr, die Quelle und ggf. eine Warnung zurück.
+        """
+        kArtikel = None
+        quelle = None
+        warnung = None
+
+        # 1) eigene Artikelnummer
+        if pos.cArtNr:
+            r = conn.execute(text("SELECT kArtikel FROM dbo.tArtikel WHERE cArtNr = :a"),
+                             {"a": pos.cArtNr}).first()
+            if r:
+                kArtikel, quelle = int(r[0]), "cArtNr"
+
+        # 2) Fallback: Lieferanten-Artikelnummer über tliefartikel
+        if kArtikel is None and pos.cLieferantenArtNr and kLieferant:
+            rows = conn.execute(text(
+                "SELECT tArtikel_kArtikel AS ka, nStandard FROM dbo.tliefartikel "
+                "WHERE tLieferant_kLieferant = :kl AND cLiefArtNr = :nr"),
+                {"kl": kLieferant, "nr": pos.cLieferantenArtNr}).mappings().all()
+            arts = {int(r["ka"]) for r in rows}
+            std = list({int(r["ka"]) for r in rows if r["nStandard"] == 1})
+            if len(arts) == 1:
+                kArtikel, quelle = arts.pop(), "Lieferanten-ArtNr"
+            elif len(std) == 1:
+                kArtikel, quelle = std[0], "Lieferanten-ArtNr (Standard)"
+            elif len(arts) > 1:
+                warnung = (f"Lieferanten-ArtNr '{pos.cLieferantenArtNr}' mehrdeutig "
+                           f"({len(arts)} Artikel) – manuell zuordnen")
+
+        # kanonische eigene cArtNr für die Zielzeile (falls Rechnung nur Liefer-Nr trug)
+        cArtNr = pos.cArtNr
+        if kArtikel is not None and not cArtNr:
+            r = conn.execute(text("SELECT cArtNr FROM dbo.tArtikel WHERE kArtikel = :k"),
+                             {"k": kArtikel}).first()
+            cArtNr = r[0] if r else None
+
+        return {"kArtikel": kArtikel, "cArtNr": cArtNr, "quelle": quelle, "warnung": warnung}
+
+    def _match_bestellung(self, conn, kLieferant: int, kArtikel: Optional[int],
+                          pos: ERPositionInput, kopf: ERKopfInput,
+                          used_pos_ids: set) -> dict:
+        """
+        Findet die passende Bestellposition via Scoring statt „jüngste".
+        Signale: Bestellnummer-Referenz (stärkstes), Preis-Match, noch offene
+        (nicht schon berechnete) Menge, Mengen-Match, Recency (Tiebreaker).
+        Gibt best match + transparente Kandidatenliste + ggf. Warnung zurück.
+        """
+        if pos.kLieferantenbestellung and pos.kLieferantenBestellungPos:
+            return {"kLieferantenbestellung": pos.kLieferantenbestellung,
+                    "kLieferantenBestellungPos": pos.kLieferantenBestellungPos,
+                    "_match": "explizit vorgegeben", "kandidaten": [], "warnung": None}
+        if not kArtikel:
+            return {"kLieferantenbestellung": None, "kLieferantenBestellungPos": None,
+                    "_match": "kein Artikel → kein Bestell-Match", "kandidaten": [],
+                    "warnung": "kein Artikel auflösbar → keine Bestellzuordnung"}
+
+        bestellnr_ref = (pos.bestellnummer or kopf.bestellnummer or "").strip()
+        rows = conn.execute(text("""
+            SELECT bp.kLieferantenBestellung, bp.kLieferantenBestellungPos,
+                   b.cEigeneBestellnummer, b.nStatus, b.dErstellt,
+                   bp.fMenge, bp.fEKNetto,
+                   (SELECT ISNULL(SUM(er.fMenge),0) FROM dbo.tEingangsrechnungPos er
+                     WHERE er.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS bereits
+            FROM dbo.tLieferantenBestellungPos bp
+            JOIN dbo.tLieferantenBestellung  b ON b.kLieferantenBestellung = bp.kLieferantenBestellung
+            WHERE b.kLieferant = :kl AND bp.kArtikel = :ka AND ISNULL(b.nDeleted,0) = 0
+        """), {"kl": kLieferant, "ka": kArtikel}).mappings().all()
+
+        menge_inv = float(pos.fMenge)
+        ek_inv = float(pos.fEKNetto)
+        scored = []
+        for r in rows:
+            kpos = int(r["kLieferantenBestellungPos"])
+            if kpos in used_pos_ids:           # nicht zwei Rechnungszeilen auf dieselbe Bestellpos
+                continue
+            ek_po = float(r["fEKNetto"]); menge_po = float(r["fMenge"])
+            bereits = float(r["bereits"]); offen = menge_po - bereits
+            score = 0.0; why = []
+            # Preis
+            if abs(ek_po - ek_inv) < 0.005:
+                score += 50; why.append("Preis exakt")
+            elif ek_inv and abs(ek_po - ek_inv) / ek_inv < 0.02:
+                score += 25; why.append("Preis ~")
+            else:
+                why.append(f"Preis {ek_po:.2f}≠{ek_inv:.2f}")
+            # noch offen (gegen bereits berechnete ER) – schützt vor Doppel-Berechnung
+            if offen >= menge_inv - 1e-9:
+                score += 40; why.append("offen genügt")
+            elif offen > 0:
+                score += 15; why.append(f"nur {offen:g} offen")
+            else:
+                score -= 50; why.append("bereits voll berechnet")
+            # Mengen-Match
+            if abs(menge_po - menge_inv) < 1e-9:
+                score += 20; why.append("Menge exakt")
+            # Bestellnummer-Referenz aus der Rechnung → entscheidend
+            if bestellnr_ref and r["cEigeneBestellnummer"] \
+                    and bestellnr_ref == r["cEigeneBestellnummer"].strip():
+                score += 100; why.append("Bestellnr-Referenz")
+            scored.append({
+                "kBest": int(r["kLieferantenBestellung"]), "kPos": kpos,
+                "bestellnr": r["cEigeneBestellnummer"], "nStatus": int(r["nStatus"]),
+                "ek": ek_po, "menge": menge_po, "bereits": bereits, "offen": offen,
+                "score": score, "why": ", ".join(why), "dErstellt": r["dErstellt"],
+            })
+
+        if not scored:
+            return {"kLieferantenbestellung": None, "kLieferantenBestellungPos": None,
+                    "_match": "keine freie Bestellposition gefunden", "kandidaten": [],
+                    "warnung": "keine (freie) Bestellposition – manuell zuordnen"}
+
+        scored.sort(key=lambda x: (x["score"], x["dErstellt"]), reverse=True)
+        best = scored[0]
+        warnung = None
+        if best["offen"] <= 1e-9:
+            warnung = ("gewählte Bestellposition bereits voll berechnet → "
+                       "mögliche Doppel-Rechnung, Prüfung nötig")
+        elif best["score"] <= 0:
+            warnung = ("schwacher Match (Preis abweichend / kaum offen) – Prüfung nötig")
+        elif len(scored) > 1 and (best["score"] - scored[1]["score"]) < 15 \
+                and "Bestellnr-Referenz" not in best["why"]:
+            warnung = (f"mehrdeutig: Top-2 nah beieinander "
+                       f"(#{best['kPos']} score {best['score']:.0f} vs "
+                       f"#{scored[1]['kPos']} score {scored[1]['score']:.0f})")
+        return {"kLieferantenbestellung": best["kBest"],
+                "kLieferantenBestellungPos": best["kPos"],
+                "_match": f"score {best['score']:.0f}: {best['why']} ({best['bestellnr']})",
+                "kandidaten": scored[:5], "warnung": warnung}
+
+    def _find_dublette(self, conn, kLieferant: int, cFremdbelegnummer: str) -> Optional[int]:
+        r = conn.execute(text("""
+            SELECT kEingangsrechnung FROM dbo.tEingangsrechnung
+            WHERE kLieferant = :kl AND cFremdbelegnummer = :nr AND nDeleted = 0
+        """), {"kl": kLieferant, "nr": cFremdbelegnummer}).first()
+        return int(r[0]) if r else None
+
+    def _peek_nummer(self, conn) -> Optional[str]:
+        """Nächste Nummer ansehen OHNE sie zu verbrauchen (@nNoUpdate=1)."""
+        try:
+            r = conn.execute(text(
+                "EXEC dbo.spGetNextNummer @cName=:n, @kFirma=0, @nNoUpdate=1, @nNoSelect=0"),
+                {"n": NUMMERNKREIS_NAME}).first()
+            return str(r[0]) if r else None
+        except Exception as e:  # SP-Aufruf im Read-Kontext soll den Dry-Run nicht killen
+            return f"(nicht peekbar: {str(e)[:80]})"
+
+    def _reconcile(self, kopf: ERKopfInput, plan: ERWritePlan) -> None:
+        """Summen-Abgleich: berechnete Summe (Pos + Zusatzkosten) vs. Rechnungssumme."""
+        if kopf.bruttoSumme is None and kopf.nettoSumme is None:
+            return  # keine Rechnungssumme geliefert → kein Gate
+        netto_pos = sum(float(p["fMenge"]) * float(p["fEKNetto"]) for p in plan.positionen)
+        netto_zk = sum((z["betrag"] if z.get("ist_zuschlag", True) else -z["betrag"])
+                       for z in plan.zusatzkosten)
+        steuer = sum(float(p["fMenge"]) * float(p["fEKNetto"]) * float(p["fMwSt"]) / 100.0
+                     for p in plan.positionen)
+        steuer += sum((z["betrag"] if z.get("ist_zuschlag", True) else -z["betrag"])
+                      * float(z.get("fMwSt", 0)) / 100.0 for z in plan.zusatzkosten)
+        netto_ber = round(netto_pos + netto_zk, 2)
+        steuer_ber = round(steuer, 2)
+        brutto_ber = round(netto_ber + steuer_ber, 2)
+        plan.summen = {
+            "rechnung_netto": kopf.nettoSumme, "rechnung_steuer": kopf.steuerSumme,
+            "rechnung_brutto": kopf.bruttoSumme, "berechnet_netto": netto_ber,
+            "berechnet_steuer": steuer_ber, "berechnet_brutto": brutto_ber,
+        }
+        if kopf.bruttoSumme is not None:
+            ref, cmp, label = kopf.bruttoSumme, brutto_ber, "brutto"
+        else:
+            ref, cmp, label = kopf.nettoSumme, netto_ber, "netto"
+        diff = round(ref - cmp, 2)
+        plan.summen["differenz"] = diff
+        plan.reconciliation_ok = abs(diff) < 0.02
+        if not plan.reconciliation_ok:
+            plan.errors.append(
+                f"Summen-Abgleich ({label}) fehlgeschlagen: Rechnung {ref:.2f} ≠ "
+                f"berechnet {cmp:.2f} (Δ {diff:+.2f}) – Freigabe blockiert")
+
+    def search_artikel(self, q: str, limit: int = 20) -> list[dict]:
+        """Artikelsuche fürs manuelle Zuordnen: über eigene ArtNr, Lieferanten-ArtNr, Name."""
+        like = f"%{q}%"
+        with self._engine.connect() as conn:
+            rows = conn.execute(text("""
+                SELECT TOP (:lim) a.kArtikel, a.cArtNr, MAX(la.cName) AS cName
+                FROM dbo.tArtikel a
+                LEFT JOIN dbo.tliefartikel la ON la.tArtikel_kArtikel = a.kArtikel
+                WHERE a.cArtNr LIKE :q OR la.cLiefArtNr LIKE :q OR la.cName LIKE :q
+                GROUP BY a.kArtikel, a.cArtNr
+                ORDER BY a.cArtNr
+            """), {"lim": limit, "q": like}).mappings().all()
+        return [{"kArtikel": int(r["kArtikel"]), "cArtNr": r["cArtNr"], "cName": r["cName"]}
+                for r in rows]
+
+    def learn_liefartikel(self, kLieferant: int, cLiefArtNr: str, kArtikel: int) -> dict:
+        """
+        Schreibt eine Lieferanten-Artikel-Zuordnung nach tliefartikel zurück, damit
+        sie künftig automatisch greift. Wird vom Freigabe-Formular explizit ausgelöst,
+        wenn ein Nutzer eine bisher unbekannte Liefer-ArtNr manuell zugeordnet hat.
+        Idempotent: legt nur an, wenn die Kombination noch nicht existiert.
+        """
+        with self._engine.begin() as conn:
+            exists = conn.execute(text(
+                "SELECT 1 FROM dbo.tliefartikel WHERE tLieferant_kLieferant=:kl "
+                "AND tArtikel_kArtikel=:ka AND cLiefArtNr=:nr"),
+                {"kl": kLieferant, "ka": kArtikel, "nr": cLiefArtNr}).first()
+            if exists:
+                return {"created": False, "reason": "Zuordnung existiert bereits"}
+            conn.execute(text(
+                "INSERT INTO dbo.tliefartikel "
+                "(tArtikel_kArtikel, tLieferant_kLieferant, cLiefArtNr, nStandard, nLieferbar) "
+                "VALUES (:ka, :kl, :nr, 0, 1)"),
+                {"ka": kArtikel, "kl": kLieferant, "nr": cLiefArtNr})
+        return {"created": True}
+
+    # ── Plan bauen ───────────────────────────────────────────────────────────────
+    def build_plan(self, kopf: ERKopfInput, dry_run: bool = True,
+                   overrides: Optional[dict] = None) -> ERWritePlan:
+        """
+        overrides: {positions_index: {...}} für manuelle Zuordnung im Freigabe-Formular:
+          kArtikel, kLieferantenbestellung, kLieferantenBestellungPos (erzwingen),
+          als_zusatzkosten (bool → Zeile als Zusatzkosten statt Artikelposition),
+          platzhalter (bool → auf Sammelartikel, bewusst ohne 1:1-Zuordnung).
+        """
+        plan = ERWritePlan(ok=False, dry_run=dry_run)
+        overrides = overrides or {}
+
+        # Grund-Validierung
+        if not kopf.cFremdbelegnummer:
+            plan.errors.append("cFremdbelegnummer (Lieferanten-Rechnungsnr.) fehlt")
+        if not kopf.positionen:
+            plan.errors.append("Keine Positionen")
+
+        with self._engine.connect() as conn:
+            lief = self._resolve_lieferant(conn, kopf, plan) if not plan.errors else None
+            if lief:
+                plan.lieferant = {k: v for k, v in lief.items() if not k.startswith("b")}
+                kLieferant = int(lief["kLieferant"])
+
+                dub = self._find_dublette(conn, kLieferant, kopf.cFremdbelegnummer)
+                if dub:
+                    plan.errors.append(
+                        f"Dublette: ER mit cFremdbelegnummer={kopf.cFremdbelegnummer!r} "
+                        f"für diesen Lieferant existiert bereits (kEingangsrechnung={dub})")
+
+                plan.naechste_nummer = self._peek_nummer(conn)
+
+                # Kopf-Werte (Reihenfolge/Defaults aus Golden-Master belegt)
+                plan.kopf_werte = {
+                    "kBenutzer": kopf.kBenutzer,
+                    "kLieferant": kLieferant,
+                    "kAnsprechpartner": 0,
+                    "cFremdbelegnummer": kopf.cFremdbelegnummer,
+                    "cEigeneRechnungsnummer": "«spGetNextNummer»",
+                    "cHinweise": kopf.cHinweise or "",
+                    "cLieferant": kopf.cLieferant or lief.get("cFirma") or "",
+                    "cAdresszusatz": "",
+                    "cStrasse": kopf.cStrasse or lief.get("cStrasse") or "",
+                    "cPLZ": kopf.cPLZ or lief.get("cPLZ") or "",
+                    "cOrt": kopf.cOrt or lief.get("cOrt") or "",
+                    "cLandISO": kopf.cLandISO or "",
+                    "cBundesland": "",
+                    "cTel": kopf.cTel or lief.get("cTelZentralle") or lief.get("cTelDurchwahl") or "",
+                    "cFax": kopf.cFax or lief.get("cFax") or "",
+                    "cMobil": "",
+                    "cMail": kopf.cMail or "",
+                    "nStatus": 0,               # 0 = offen/unbezahlt (Golden-Master)
+                    "nDeleted": 0,
+                    "nZahlungFreigegeben": 0,
+                    "dErstellt": datetime.datetime.now(),
+                    "nKumuliert": 0,
+                    "dBezahlt": None,
+                    "dZahlungsziel": kopf.dZahlungsziel,
+                    "fFremdFaktor": Decimal("1"),   # EUR
+                    "nVerteilungsArt": 0,
+                    "dBelegdatum": kopf.dBelegdatum,
+                }
+                if not (kopf.cLandISO or "").strip():
+                    plan.warnings.append("cLandISO leer – aus der Rechnung übernehmen (relevant für DATEV/Steuer)")
+                if not (kopf.cMail or "").strip():
+                    plan.warnings.append("cMail leer – tlieferant führt keine Mail; ggf. aus Rechnung übernehmen")
+
+                # Zusatzkosten aus der Rechnung (Dokumentebene: Fracht/Zuschläge)
+                for z in kopf.zusatzkosten:
+                    plan.zusatzkosten.append({
+                        "cName": z.cName, "betrag": round(z.betrag, 2), "fMwSt": z.fMwSt,
+                        "ist_zuschlag": z.ist_zuschlag, "quelle": "E-Rechnung (Dokumentebene)",
+                        "status": "non_article"})
+
+                # Positionen auflösen (inkl. manueller Overrides + Status)
+                used_pos_ids: set = set()
+                for idx, pos in enumerate(kopf.positionen):
+                    ov = overrides.get(idx) or overrides.get(str(idx)) or {}
+
+                    # a) Zeile bewusst als Zusatzkosten umklassifiziert
+                    if ov.get("als_zusatzkosten"):
+                        plan.zusatzkosten.append({
+                            "cName": pos.cName, "betrag": round(pos.fMenge * pos.fEKNetto, 2),
+                            "fMwSt": pos.fMwSt, "ist_zuschlag": True,
+                            "quelle": "Position → Zusatzkosten (manuell)", "status": "non_article"})
+                        continue
+
+                    ares = self._resolve_artikel(conn, pos, kLieferant)
+                    kArtikel = ov.get("kArtikel") or ares["kArtikel"]
+                    artikel_quelle = "override (manuell)" if ov.get("kArtikel") else ares["quelle"]
+
+                    if ov.get("kLieferantenBestellungPos"):
+                        m = {"kLieferantenbestellung": ov.get("kLieferantenbestellung"),
+                             "kLieferantenBestellungPos": ov.get("kLieferantenBestellungPos"),
+                             "_match": "override (manuell)", "kandidaten": [], "warnung": None}
+                    else:
+                        m = self._match_bestellung(conn, kLieferant, kArtikel, pos, kopf, used_pos_ids)
+                    if m["kLieferantenBestellungPos"]:
+                        used_pos_ids.add(m["kLieferantenBestellungPos"])
+
+                    # Status bestimmen
+                    if ov.get("platzhalter"):
+                        status = "platzhalter"
+                    elif kArtikel is None and (pos.cArtNr or pos.cLieferantenArtNr):
+                        status = "unknown_article"
+                    elif ares["warnung"] or (m.get("warnung") and "mehrdeutig" in (m.get("warnung") or "")):
+                        status = "ambiguous"
+                    elif kArtikel is not None and not m["kLieferantenBestellungPos"]:
+                        status = "no_order"
+                    elif kArtikel is not None and m["kLieferantenBestellungPos"]:
+                        status = "matched"
+                    else:
+                        status = "unklar"
+
+                    # Warnungen (nur wenn nicht per Override bereits gelöst)
+                    if not ov.get("kArtikel") and ares["warnung"]:
+                        plan.warnings.append(f"Position '{pos.cName}': {ares['warnung']}")
+                    elif status == "unknown_article":
+                        plan.warnings.append(
+                            f"Position '{pos.cName}': Artikel nicht auflösbar "
+                            f"(cArtNr={pos.cArtNr}, Liefer-ArtNr={pos.cLieferantenArtNr})")
+                    if not ov.get("kLieferantenBestellungPos") and m.get("warnung"):
+                        plan.warnings.append(f"Position '{pos.cName}': {m['warnung']}")
+
+                    plan.positionen.append({
+                        "kEingangsrechnung": "«SCOPE_IDENTITY()»",
+                        "kLieferantenbestellung": m["kLieferantenbestellung"],
+                        "kArtikel": kArtikel,
+                        "cArtNr": ares["cArtNr"] or pos.cArtNr or "",
+                        "cLieferantenArtNr": pos.cLieferantenArtNr or "",
+                        "cName": pos.cName,
+                        "cLieferantenBezeichnung": pos.cLieferantenBezeichnung or pos.cName,
+                        "cEinheit": pos.cEinheit or "",
+                        "cHinweis": "",
+                        "fMenge": Decimal(str(pos.fMenge)),
+                        "fEKNetto": Decimal(str(pos.fEKNetto)),
+                        "fMwSt": Decimal(str(pos.fMwSt)),
+                        "nPosTyp": pos.nPosTyp,
+                        "kLieferantenBestellungPos": m["kLieferantenBestellungPos"],
+                        "status": status,
+                        "_zeile": idx,
+                        "_match": m["_match"],
+                        "_artikel_quelle": artikel_quelle,
+                        "_kandidaten": m.get("kandidaten", []),
+                    })
+
+                # Summen-Abgleich (Gate) – Position + Zusatzkosten gegen Rechnungssumme
+                self._reconcile(kopf, plan)
+
+                # Freigabe-Policy „manuell zuordnen": unaufgelöste Zeilen blockieren Write
+                offen = [p["cName"] for p in plan.positionen
+                         if p["status"] in ("unknown_article", "ambiguous", "unklar")]
+                if offen:
+                    plan.errors.append(
+                        "Nicht zugeordnete Positionen (manuelle Zuordnung nötig): "
+                        + ", ".join(offen))
+
+            plan.statements = self._render_statements(plan)
+            plan.ok = not plan.errors
+
+        # Echter Write nur wenn ausdrücklich gewünscht und fehlerfrei – auf einer
+        # eigenen transaktionalen Connection (getrennt von den Read-Auflösungen oben).
+        if not dry_run and plan.ok:
+            self._execute(plan)
+
+        return plan
+
+    def _render_statements(self, plan: ERWritePlan) -> list[str]:
+        """Parametrisiertes SQL für die Anzeige (keine Werte inline – nur zur Ansicht)."""
+        s = []
+        s.append("BEGIN TRAN;")
+        s.append("DECLARE @nr NVARCHAR(50);")
+        s.append("EXEC dbo.spGetNextNummer @cName=N'Eingangsrechnung', @kFirma=0, "
+                 "@nNoUpdate=0, @cNeueNummer=@nr OUTPUT, @nNoSelect=1;")
+        if plan.kopf_werte:
+            cols = [c for c in plan.kopf_werte if c not in ("cEigeneRechnungsnummer",)]
+            collist = ", ".join(["cEigeneRechnungsnummer"] + cols)
+            vallist = ", ".join(["@nr"] + [f":{c}" for c in cols])
+            s.append(f"INSERT INTO dbo.tEingangsrechnung ({collist})\n  VALUES ({vallist});")
+            s.append("DECLARE @kER INT = SCOPE_IDENTITY();")
+        for i, p in enumerate(plan.positionen, 1):
+            cols = [c for c in POS_DB_COLS if c != "kEingangsrechnung"]
+            collist = ", ".join(["kEingangsrechnung"] + cols)
+            vallist = ", ".join(["@kER"] + [f":p{i}_{c}" for c in cols])
+            s.append(f"INSERT INTO dbo.tEingangsrechnungPos ({collist})\n  VALUES ({vallist});")
+        s.append("COMMIT TRAN;")
+        return s
+
+    def _execute(self, plan: ERWritePlan) -> None:
+        """Echter Write in EINER Transaktion. Wird nur mit dry_run=False erreicht."""
+        with self._engine.begin() as conn:
+            nr = conn.execute(text(
+                "EXEC dbo.spGetNextNummer @cName=:n, @kFirma=0, @nNoUpdate=0, @nNoSelect=0"),
+                {"n": NUMMERNKREIS_NAME}).first()
+            cEigene = str(nr[0]) if nr else None
+
+            kopf_vals = dict(plan.kopf_werte)
+            kopf_vals["cEigeneRechnungsnummer"] = cEigene
+            cols = list(kopf_vals.keys())
+            collist = ", ".join(cols)
+            vallist = ", ".join(f":{c}" for c in cols)
+            # SCOPE_IDENTITY() statt OUTPUT INSERTED → trigger-sicher (falls JTL einen
+            # INSERT-Trigger auf tEingangsrechnung hat, würde OUTPUT sonst Fehler 334 werfen).
+            # SCOPE_IDENTITY() muss im SELBEN Batch wie das INSERT stehen, sonst ist der
+            # Scope leer (NULL). SET NOCOUNT ON, damit das SELECT das einzige Resultset ist.
+            new_id = conn.execute(
+                text(f"SET NOCOUNT ON; "
+                     f"INSERT INTO dbo.tEingangsrechnung ({collist}) VALUES ({vallist}); "
+                     f"SELECT CAST(SCOPE_IDENTITY() AS INT);"),
+                kopf_vals).scalar()
+
+            for p in plan.positionen:
+                pv = {k: p.get(k) for k in POS_DB_COLS}
+                pv["kEingangsrechnung"] = new_id
+                cols = list(pv.keys())
+                collist = ", ".join(cols)
+                vallist = ", ".join(f":{c}" for c in cols)
+                conn.execute(text(
+                    f"INSERT INTO dbo.tEingangsrechnungPos ({collist}) VALUES ({vallist})"), pv)
+
+            plan.kEingangsrechnung = int(new_id)
+            plan.kopf_werte["cEigeneRechnungsnummer"] = cEigene
+
+
+def build_dry_run(connection_id: int, kopf: ERKopfInput) -> ERWritePlan:
+    """Bequemer Einstieg: Plan im Dry-Run bauen, nichts schreiben."""
+    return EingangsrechnungWriter(connection_id).build_plan(kopf, dry_run=True)
+
+
+# ── (De)Serialisierung des geparsten Kopfs für die zustandslose API ──────────────
+def serialize_kopf(kopf: ERKopfInput) -> dict:
+    """ERKopfInput → JSON-fähiges dict (datetime als ISO)."""
+    def _d(dt):
+        return dt.isoformat() if dt else None
+    d = dataclasses.asdict(kopf)
+    d["dBelegdatum"] = _d(kopf.dBelegdatum)
+    d["dZahlungsziel"] = _d(kopf.dZahlungsziel)
+    return d
+
+
+def deserialize_kopf(d: dict) -> ERKopfInput:
+    """dict (aus der API) → ERKopfInput, für den Write nach der Freigabe."""
+    def _dt(s):
+        return datetime.datetime.fromisoformat(s) if s else None
+    pos = [ERPositionInput(**p) for p in (d.get("positionen") or [])]
+    zk = [ERZusatzkostenInput(**z) for z in (d.get("zusatzkosten") or [])]
+    fields = {f.name for f in dataclasses.fields(ERKopfInput)}
+    rest = {k: v for k, v in d.items()
+            if k in fields and k not in ("positionen", "zusatzkosten", "dBelegdatum", "dZahlungsziel")}
+    return ERKopfInput(
+        positionen=pos, zusatzkosten=zk,
+        dBelegdatum=_dt(d.get("dBelegdatum")) or datetime.datetime.now(),
+        dZahlungsziel=_dt(d.get("dZahlungsziel")),
+        **rest)

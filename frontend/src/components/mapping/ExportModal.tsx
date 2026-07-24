@@ -131,6 +131,7 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
     { value: "truncate_insert", label: "TRUNCATE + INSERT – alles neu" },
     { value: "update", label: "UPDATE – bestehende aktualisieren" },
     { value: "upsert", label: "UPSERT – neu oder aktualisieren" },
+    { value: "delete", label: "DELETE – Zeilen per Schlüssel löschen" },
   ];
 
   return (
@@ -228,9 +229,9 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
                 </select>
               </div>
             </div>
-            {(writeMode === "update" || writeMode === "upsert") && (
+            {(writeMode === "update" || writeMode === "upsert" || writeMode === "delete") && (
               <div>
-                <p style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Schlüsselspalten (kommagetrennt)</p>
+                <p style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Schlüsselspalten (kommagetrennt){writeMode === "delete" ? " – Pflicht" : ""}</p>
                 <input value={keyColumns} onChange={(e) => setKeyColumns(e.target.value)} placeholder="ID, Artikelnummer"
                   style={{ width: "100%", padding: "7px 10px", backgroundColor: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 12, outline: "none", fontFamily: "monospace", boxSizing: "border-box" }} />
               </div>

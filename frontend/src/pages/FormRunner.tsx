@@ -177,9 +177,9 @@ export default function FormRunner() {
           </div>
         )}
 
-        {/* Widget-Ergebnisse */}
-        {results && widgets.length > 0 && (
-          <WidgetRenderer widgets={widgets} results={results} allowDownload={true} />
+        {/* Widgets: eigenständige (z.B. Eingangsrechnung) sofort, ergebnis-basierte nach Lauf */}
+        {widgets.length > 0 && (results || widgets.some(w => w.type === "eingangsrechnung")) && (
+          <WidgetRenderer widgets={widgets} results={results || {}} allowDownload={true} />
         )}
 
         {/* Rohtabellen für Aktionen ohne Widget */}

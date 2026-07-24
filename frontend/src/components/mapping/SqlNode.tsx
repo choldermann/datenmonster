@@ -178,6 +178,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                 { v: "column",    l: "Spalte",    hint: "Alle Zeilen einmalig" },
                 { v: "transform", l: "Transform", hint: "SQL auf Canvas-Daten" },
                 { v: "lookup",    l: "Lookup",    hint: "Felder per SQL anreichern" },
+                { v: "exec",      l: "Ausführen", hint: "Statement/SP mit Seiteneffekt (committet)" },
               ].map((m) => (
                 <button key={m.v} onClick={() => set("mode", m.v)} title={m.hint}
                   style={{ flex: 1, padding: "4px 4px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer",
@@ -192,6 +193,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
               {mode === "scalar" ? "SQL pro Zeile · {Feldname} als Parameter"
                : mode === "column" ? "SQL einmalig · Ergebnis per Index"
                : mode === "transform" ? "SQL auf Canvas-Datasets · Ersetzt gesamten Output"
+               : mode === "exec" ? "INSERT/UPDATE/DELETE/EXEC · einmalig, committet · Rückgabewert optional als Output-Feld"
                : "SQL-Lookup · :param als Platzhalter · mehrere Output-Felder"}
             </p>
           </div>

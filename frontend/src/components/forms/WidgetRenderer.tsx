@@ -7,6 +7,7 @@ import KpiWidget   from "./widgets/KpiWidget";
 import BarWidget   from "./widgets/BarWidget";
 import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
+import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -16,9 +17,16 @@ const S = {
 const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
+  eingangsrechnung: "Eingangsrechnungs-Freigabe",
 };
 
+// Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
+const STANDALONE_WIDGETS = new Set(["eingangsrechnung"]);
+
 function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
+  // Eigenständige, interaktive Widgets (kein result nötig)
+  if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
+
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
       color: "#e07070", fontSize: 12 }}>
@@ -96,7 +104,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                   <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{title}</span>
-                    {result.total !== undefined && widget.type !== "table" && (
+                    {result.total !== undefined && widget.type !== "table" && !STANDALONE_WIDGETS.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
                   </div>

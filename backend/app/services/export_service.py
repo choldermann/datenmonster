@@ -271,6 +271,15 @@ def export_to_db(
 
     rows_affected = 0
 
+    # Sicherheitsgurt (vor Verbindungsaufbau): Modi, die zeilenweise über Schlüssel
+    # arbeiten, dürfen ohne key_columns nicht laufen – sonst würde DELETE/UPDATE die
+    # ganze Tabelle treffen bzw. ins Leere greifen. Fail-fast als klarer ValueError,
+    # nicht als getarnter DB-Export-Fehler.
+    if write_mode in ("update", "upsert", "delete") and not key_columns:
+        raise ValueError(
+            f"Schreibmodus '{write_mode}' benötigt Schlüsselspalten (key_columns), "
+            f"sonst würde ohne Filter geschrieben/gelöscht.")
+
     try:
         connect_args = {}
         if conn_obj.db_type == "mssql":
@@ -352,6 +361,16 @@ def export_to_db(
                             val_list = ", ".join(f":{k}" for k in row_dict)
                             con.execute(text(f"INSERT INTO {table} ({col_list}) VALUES ({val_list})"), row_dict)
                         rows_affected += 1
+
+            elif write_mode == "delete":
+                # Löscht je DataFrame-Zeile die Treffer über die Schlüsselspalten.
+                # key_columns ist durch den Sicherheitsgurt oben garantiert.
+                for _, row in df.iterrows():
+                    row_dict = {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
+                    where_clause = " AND ".join([f"[{k}] = :{k}" for k in key_columns])
+                    params = {k: row_dict.get(k) for k in key_columns}
+                    result = con.execute(text(f"DELETE FROM {table} WHERE {where_clause}"), params)
+                    rows_affected += result.rowcount
             else:
                 raise ValueError(f"Unbekannter write_mode oder fehlende key_columns: {write_mode}")
 
