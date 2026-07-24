@@ -260,7 +260,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
         deduplicate_fields: deduplicateFields,
         sort_fields: sortFields.filter(sf => sf.field),
         row_limit: rowLimit ? parseInt(rowLimit) : null,
-        key_columns: (writeMode === "update" || writeMode === "upsert")
+        key_columns: (writeMode === "update" || writeMode === "upsert" || writeMode === "delete")
           ? keyColumns.split(",").map(s => s.trim()).filter(Boolean)
           : [],
       },
@@ -281,8 +281,8 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
       setSafetyData(null);
       setSafetyLoading(true);
       setSafetyConfirmed(false);
-      const modeMap: Record<string, string> = { insert: "append", truncate_insert: "replace", update: "upsert", upsert: "upsert" };
-      const kc = (writeMode === "update" || writeMode === "upsert")
+      const modeMap: Record<string, string> = { insert: "append", truncate_insert: "replace", update: "upsert", upsert: "upsert", delete: "delete" };
+      const kc = (writeMode === "update" || writeMode === "upsert" || writeMode === "delete")
         ? keyColumns.split(",").map(s => s.trim()).filter(Boolean)
         : [];
       api.post("/api/db-write/check", {
@@ -423,16 +423,20 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 <div>
                   <label style={lS}>Schreibmodus</label>
                   <select style={iS} value={writeMode} onChange={(e) => setWriteMode(e.target.value)}>
-                    {[{ v: "insert", l: "Insert – neue Zeilen anhängen" }, { v: "truncate_insert", l: "Truncate + Insert – alles neu schreiben" }, { v: "update", l: "Update – bestehende Zeilen aktualisieren" }, { v: "upsert", l: "Upsert – neu oder aktualisieren" }].map((m) => (
+                    {[{ v: "insert", l: "Insert – neue Zeilen anhängen" }, { v: "truncate_insert", l: "Truncate + Insert – alles neu schreiben" }, { v: "update", l: "Update – bestehende Zeilen aktualisieren" }, { v: "upsert", l: "Upsert – neu oder aktualisieren" }, { v: "delete", l: "Delete – Zeilen per Schlüssel löschen" }].map((m) => (
                       <option key={m.v} value={m.v}>{m.l}</option>
                     ))}
                   </select>
                 </div>
-                {(writeMode === "update" || writeMode === "upsert") && (
+                {(writeMode === "update" || writeMode === "upsert" || writeMode === "delete") && (
                   <div>
                     <label style={lS}>Schlüsselspalten (kommagetrennt)</label>
                     <input style={{ ...iS, fontFamily: "monospace" }} value={keyColumns} onChange={(e) => setKeyColumns(e.target.value)} placeholder="z.B. ID, Artikelnummer" />
-                    <p style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>Spalten, die zur Identifikation bestehender Zeilen genutzt werden.</p>
+                    <p style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>
+                      {writeMode === "delete"
+                        ? "Zeilen mit passenden Werten in diesen Spalten werden gelöscht. Pflicht – ohne Schlüssel wird nicht gelöscht."
+                        : "Spalten, die zur Identifikation bestehender Zeilen genutzt werden."}
+                    </p>
                   </div>
                 )}
                 {connId && table && (

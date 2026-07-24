@@ -70,7 +70,7 @@ def get_columns(
 class CheckRequest(BaseModel):
     connection_id: int
     table_name: str
-    write_mode: str = "append"   # append | upsert | replace
+    write_mode: str = "append"   # append | upsert | replace | delete
     key_columns: list[str] = []
 
 
@@ -173,29 +173,34 @@ def check_write(
                         "status": "error", "message": str(e)[:200]})
         can_proceed = False
 
-    # 4) Upsert: Key-Spalten vorhanden?
-    if body.write_mode == "upsert":
+    # 4) Upsert/Delete: Key-Spalten vorhanden? (beide arbeiten zeilenweise über Schlüssel)
+    if body.write_mode in ("upsert", "delete"):
         if not body.key_columns:
-            checks.append({"id": "upsert_key", "label": "Upsert-Schlüssel konfiguriert",
-                            "status": "error", "message": "Kein Key-Feld angegeben — Upsert nicht möglich"})
+            checks.append({"id": "key", "label": "Schlüsselspalten konfiguriert",
+                            "status": "error",
+                            "message": f"Kein Key-Feld angegeben — {body.write_mode.upper()} ohne Schlüssel nicht möglich"})
             can_proceed = False
         elif table_exists:
             col_names = {c["name"] for c in table_columns}
             missing = [k for k in body.key_columns if k not in col_names]
             if missing:
-                checks.append({"id": "upsert_key", "label": "Upsert-Schlüssel in Tabelle vorhanden",
+                checks.append({"id": "key", "label": "Schlüsselspalten in Tabelle vorhanden",
                                 "status": "error",
                                 "message": f"Key-Spalten fehlen in Zieltabelle: {', '.join(missing)}"})
                 can_proceed = False
             else:
-                checks.append({"id": "upsert_key", "label": "Upsert-Schlüssel in Tabelle vorhanden",
+                checks.append({"id": "key", "label": "Schlüsselspalten in Tabelle vorhanden",
                                 "status": "ok",
                                 "message": f"Key: {', '.join(body.key_columns)}"})
 
-    # 5) Replace-Warnung
+    # 5) Zerstörerische Modi: ausdrückliche Warnung
     if body.write_mode == "replace" and table_exists:
         checks.append({"id": "replace_warn", "label": "Replace-Modus",
                         "status": "warn",
                         "message": f"Alle vorhandenen Daten in '{body.table_name}' werden vor dem Schreiben gelöscht"})
+    if body.write_mode == "delete" and table_exists:
+        checks.append({"id": "delete_warn", "label": "Delete-Modus",
+                        "status": "warn",
+                        "message": f"Zeilen in '{body.table_name}' mit passendem Schlüssel werden unwiderruflich gelöscht"})
 
     return {"checks": checks, "table_columns": table_columns, "can_proceed": can_proceed}

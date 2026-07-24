@@ -1094,6 +1094,37 @@ def execute_mapping(
             errors.append(f"SQL-Node '{out_field}' (Spalte) fehlgeschlagen: {str(e)[:200]}")
             sql_column_data[out_field] = []
 
+    # ─── SQL-Nodes: Ausführen-Modus (Seiteneffekt) ────────────────────────────
+    # mode="exec": Statement mit Seiteneffekt (EXEC/INSERT/UPDATE/DELETE), einmalig,
+    # in einer committenden Transaktion (engine.begin()). Liefert das Statement einen
+    # Wert zurück (z.B. spGetNextNummer), landet die erste Spalte als Konstante im
+    # output_field – ansonsten bleibt es fire-and-forget.
+    for sn in (sql_nodes or []):
+        if sn.get("mode") != "exec":
+            continue
+        out_field = sn.get("output_field") or f"sql_{sn.get('id','')}"
+        conn_id = sn.get("connection_id")
+        sql_text = (sn.get("sql") or "").strip()
+        if not conn_id or not sql_text:
+            continue
+        try:
+            from sqlalchemy import text as sa_text
+            if db:
+                from app.models.dataset import DbConnection as _DBC
+                _conn_obj = db.query(_DBC).filter(_DBC.id == conn_id).first()
+                if not _conn_obj:
+                    errors.append(f"SQL-Node '{out_field}' (exec): Verbindung {conn_id} nicht gefunden")
+                    continue
+            engine = _get_sql_engine(conn_id)
+            with engine.begin() as con:   # begin() committet am Ende, connect() nicht
+                result = con.execute(sa_text(sql_text))
+                if result.returns_rows:
+                    rows_fetched = result.fetchall()
+                    if sn.get("output_field"):
+                        sql_column_data[out_field] = [row[0] for row in rows_fetched]
+        except Exception as e:
+            errors.append(f"SQL-Node '{out_field}' (exec) fehlgeschlagen: {str(e)[:200]}")
+
     # mode="transform": SQL auf Canvas-Datasets + optionale externe Tabellen
     # Ergebnis ersetzt den bisherigen result_df komplett
     transform_sql_nodes = [sn for sn in (sql_nodes or []) if sn.get("mode") == "transform"]
