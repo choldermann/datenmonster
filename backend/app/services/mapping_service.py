@@ -1093,6 +1093,21 @@ def execute_mapping(
         except Exception as e:
             errors.append(f"SQL-Node '{out_field}' (Spalte) fehlgeschlagen: {str(e)[:200]}")
             sql_column_data[out_field] = []
+        if _debug_trace is not None:
+            _vals = sql_column_data.get(out_field, [])
+            _debug_trace.append({
+                "id": f"sql_col_{sn.get('id','')}",
+                "label": f"SQL-Spalte: {out_field}",
+                "type": "sql",
+                "rows_in": None,
+                "rows_out": len(_vals),
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": _rows_to_json([{out_field: v} for v in _vals[:5]]),
+                "icon": "sql",
+                "meta": {"mode": "column", "sql": sql_text[:400]},
+            })
+            _dbg_err_idx = len(errors)
 
     # ─── SQL-Nodes: Ausführen-Modus (Seiteneffekt) ────────────────────────────
     # mode="exec": Statement mit Seiteneffekt (EXEC/INSERT/UPDATE/DELETE), einmalig,
@@ -1124,6 +1139,20 @@ def execute_mapping(
                         sql_column_data[out_field] = [row[0] for row in rows_fetched]
         except Exception as e:
             errors.append(f"SQL-Node '{out_field}' (exec) fehlgeschlagen: {str(e)[:200]}")
+        if _debug_trace is not None:
+            _debug_trace.append({
+                "id": f"sql_exec_{sn.get('id','')}",
+                "label": f"SQL ausführen: {out_field}",
+                "type": "sql",
+                "rows_in": None,
+                "rows_out": None,
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": 0,
+                "sample": [],
+                "icon": "sql",
+                "meta": {"mode": "exec", "committed": True, "sql": sql_text[:400]},
+            })
+            _dbg_err_idx = len(errors)
 
     # mode="transform": SQL auf Canvas-Datasets + optionale externe Tabellen
     # Ergebnis ersetzt den bisherigen result_df komplett
@@ -1197,6 +1226,23 @@ def execute_mapping(
 
             except Exception as e:
                 errors.append(f"SQL-Transform fehlgeschlagen: {str(e)[:300]}")
+            if _debug_trace is not None:
+                _prev = _debug_trace[-1]["rows_out"] if _debug_trace else None
+                _rout = 0 if result_df is None else len(result_df)
+                _samp = [] if (result_df is None or result_df.empty) else _rows_to_json(result_df.head(5).to_dict("records"))
+                _debug_trace.append({
+                    "id": f"sql_transform_{sn.get('id','')}",
+                    "label": "SQL-Transform",
+                    "type": "sql",
+                    "rows_in": _prev,
+                    "rows_out": _rout,
+                    "errors": len(errors) - _dbg_err_idx,
+                    "duration_ms": 0,
+                    "sample": _samp,
+                    "icon": "sql",
+                    "meta": {"mode": "transform", "sql": sql_text[:400]},
+                })
+                _dbg_err_idx = len(errors)
 
     # 4. Transformer auf jede Zeile anwenden
     # ─── Sortierung aus canvas_nodes anwenden ────────────────────────────────────

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { X, ChevronDown, ChevronRight, Database, GitMerge, Layers, Calculator, Wand2, Code, Check, ArrowRight, ArrowLeft } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Database, GitMerge, Layers, Calculator, Wand2, Code, Check, ArrowRight, ArrowLeft, Terminal } from "lucide-react";
 import { S } from "./constants";
 
 const STAGE_COLORS = {
@@ -11,6 +11,7 @@ const STAGE_COLORS = {
   rest:      "#14b8a6",
   calc:      "#fb7185",
   python:    "#22c55e",
+  sql:       "#a78bfa",
   output:    "#6ee7b7",
 };
 
@@ -21,6 +22,7 @@ const STAGE_ICONS = {
   transform: Wand2,
   calc:      Calculator,
   python:    Code,
+  sql:       Terminal,
   output:    Check,
 };
 
@@ -179,10 +181,11 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
   const Icon = STAGE_ICONS[stage.type] || Database;
   const dropped = stage.rows_in !== null && stage.rows_out !== null
     ? stage.rows_in - stage.rows_out : 0;
+  const canExpand = stage.sample?.length > 0 || !!stage.meta?.sql;
 
   const handleHeaderClick = () => {
     onSelect();
-    if (stage.sample?.length > 0) setOpen(o => !o);
+    if (canExpand) setOpen(o => !o);
   };
 
   const showOpen = open || isActive;
@@ -220,11 +223,24 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
             </span>
           )}
 
-          {stage.sample?.length > 0 && (
+          {canExpand && (
             showOpen ? <ChevronDown size={12} color={S.textDim} /> : <ChevronRight size={12} color={S.textDim} />
           )}
         </div>
       </div>
+
+      {showOpen && stage.meta?.sql && (
+        <div style={{ padding: "8px 14px 4px" }}>
+          {stage.meta.mode && (
+            <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color, marginRight: 6 }}>
+              {stage.meta.mode}{stage.meta.committed ? " · committed" : ""}
+            </span>
+          )}
+          <pre style={{ margin: "4px 0 0", padding: "8px 10px", backgroundColor: "#0f0f1e", border: `1px solid ${color}33`, borderRadius: 6, fontSize: 10, fontFamily: "monospace", color: S.textMain, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 160, overflow: "auto" }}>
+            {stage.meta.sql}
+          </pre>
+        </div>
+      )}
 
       {showOpen && stage.sample?.length > 0 && (
         <SampleTable stage={stage} selectedRowIdx={selectedRowIdx} onRowSelect={onRowSelect} />
