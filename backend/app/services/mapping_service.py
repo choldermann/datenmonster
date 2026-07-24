@@ -1764,6 +1764,7 @@ def execute_mapping(
 
     # Flatten result_df rows to dicts (without prefix for direct lookup)
     # Also build a flat lookup without prefix for transformer source_field matching
+    _sql_row_stats: Dict[str, dict] = {}  # zeilenweise SQL-Nodes (scalar/lookup) für Debug-Trace
     for _, raw_row in result_df.head(preview_rows).iterrows():
         flat = dict(raw_row)
         flat_no_prefix = {}
@@ -1928,6 +1929,24 @@ def execute_mapping(
                 else:
                     flat_no_prefix[out_field] = f"[SQL-Fehler: {str(e)[:80]}]"
 
+            # Debug-Trace: zeilenweise SQL-Nodes (scalar/lookup) aufsummieren
+            if _debug_trace is not None and mode in ("scalar", "lookup"):
+                _sk = sn.get("id") or out_field
+                _fields = (sn.get("output_fields") or []) if mode == "lookup" else [out_field]
+                _stat = _sql_row_stats.get(_sk)
+                if _stat is None:
+                    _stat = {"id": sn.get("id", ""), "mode": mode, "sql": sql_text,
+                             "label": (f"SQL-Lookup: {', '.join(_fields)}" if mode == "lookup"
+                                       else f"SQL-Skalar: {out_field}"),
+                             "rows": 0, "errors": 0, "sample": []}
+                    _sql_row_stats[_sk] = _stat
+                _stat["rows"] += 1
+                _vals = {f: flat_no_prefix.get(f) for f in _fields}
+                if any(isinstance(v, str) and v.startswith("[SQL-Fehler") for v in _vals.values()):
+                    _stat["errors"] += 1
+                if len(_stat["sample"]) < 5:
+                    _stat["sample"].append(_vals)
+
         # Apply expr nodes (evaluated per row so connections can pick up outputs)
         for en in (expr_nodes or []):
             for field_def in (en.get("output_fields") or []):
@@ -1987,6 +2006,22 @@ def execute_mapping(
                 out_row[target] = f"[Fehler: {e}]"
 
         output_rows.append(out_row)
+
+    # Summen-Steps für zeilenweise SQL-Nodes (scalar/lookup) – einer je Node
+    if _debug_trace is not None and _sql_row_stats:
+        for _st in _sql_row_stats.values():
+            _debug_trace.append({
+                "id": f"sql_{_st['mode']}_{_st['id']}",
+                "label": _st["label"],
+                "type": "sql",
+                "rows_in": _st["rows"],
+                "rows_out": _st["rows"],
+                "errors": _st["errors"],
+                "duration_ms": 0,
+                "sample": _rows_to_json(_st["sample"][:5]),
+                "icon": "sql",
+                "meta": {"mode": _st["mode"], "sql": (_st["sql"] or "")[:400]},
+            })
 
     if _debug_trace is not None:
         _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
