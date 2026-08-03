@@ -167,6 +167,12 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
   // Destatis-CSV Meldungskopf
   const [destatisConfig, setDestatisConfig] = useState(target?.target_options?.destatis_config || { direction: "E", bundesland: "" });
 
+  // Intrastat .idev Kontext (eine Datei, beide Richtungen aus der 'richtung'-Spalte)
+  const [idevConfig, setIdevConfig] = useState(target?.target_options?.idev_config || { login_name: "", bundesland: "05" });
+
+  // Intrahandel-CSV (IDEV Formularmeldung) – Bundesland-Fallback, Richtung pro Zeile
+  const [intraCsvConfig, setIntraCsvConfig] = useState(target?.target_options?.intra_csv_config || { bundesland: "05" });
+
   // DB Key-Columns
   const [keyColumns, setKeyColumns] = useState((target?.target_options?.key_columns || []).join(", "));
 
@@ -254,6 +260,8 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
         ...opts,
         ...(isPluginTarget ? { plugin_config: pluginConfig } : {}),
         ...(targetType === "destatis_csv" ? { destatis_config: destatisConfig } : {}),
+        ...(targetType === "destatis_idev" ? { idev_config: idevConfig } : {}),
+        ...(targetType === "destatis_intra_csv" ? { intra_csv_config: intraCsvConfig } : {}),
         dataset_write_mode: datasetWriteMode,
         required_fields: requiredFields,
         deduplicate_enabled: deduplicateEnabled,
@@ -389,6 +397,34 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 </div>
                 <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
                   16-Spalten-CSV (IDEV-Upload), CRLF/CP1252, ohne Kopfzeile. Kennnummer und Zeitraum werden nicht in die Datei geschrieben – die trägst du im IDEV-Webformular ein. Das Bundesland pro Zeile (Spalte 7) muss aus dem Mapping kommen (Feld <code>bundesland</code>).
+                </div>
+              </div>
+            )}
+            {/* Intrastat .idev Kontext */}
+            {targetType === "destatis_idev" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={lS}>IDEV-Kennnummer (loginName)</label>
+                  <input style={iS} value={idevConfig.login_name || ""} onChange={(e) => setIdevConfig({ ...idevConfig, login_name: e.target.value })} placeholder="z.B. w3s81881" />
+                </div>
+                <div>
+                  <label style={lS}>Bundesland (Ursprung/Bestimmung)</label>
+                  <input style={iS} value={idevConfig.bundesland || ""} onChange={(e) => setIdevConfig({ ...idevConfig, bundesland: e.target.value })} placeholder="z.B. 05" maxLength={2} />
+                </div>
+                <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
+                  Erzeugt EINE <code>.idev</code>-Datei (gzip-JSON) mit beiden Richtungen. Die Richtung (V/E) kommt pro Zeile aus der Spalte <code>richtung</code>, Zeitraum (<code>monat</code>/<code>bzr</code>) aus dem Mapping. Für Versendungen ist die USt-IdNr des Empfängers (<code>vat_id_recipient</code>) Pflicht. Die Datei kann im IDEV-Onlineformular importiert werden.
+                </div>
+              </div>
+            )}
+            {/* Intrahandel-CSV (IDEV Formularmeldung) */}
+            {targetType === "destatis_intra_csv" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={lS}>Bundesland (Ursprung/Bestimmung)</label>
+                  <input style={iS} value={intraCsvConfig.bundesland || ""} onChange={(e) => setIntraCsvConfig({ ...intraCsvConfig, bundesland: e.target.value })} placeholder="z.B. 05" maxLength={2} />
+                </div>
+                <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
+                  16-Spalten-CSV für den IDEV-Import „Außenhandel-A-Intrahandel Formularmeldung" (Standardfilter „CSV"): <code>;</code>-getrennt, CRLF/CP1252, <b>ohne Kopfzeile und ohne Anführungszeichen</b>. Richtung (V/E), Zeitraum und USt-IdNr kommen pro Zeile aus dem Mapping; Bundesland als Fallback hier. Kennnummer/Passwort werden im IDEV-Portal eingegeben, nicht in die Datei geschrieben.
                 </div>
               </div>
             )}

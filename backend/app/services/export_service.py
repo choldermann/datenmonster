@@ -91,6 +91,213 @@ def export_destatis_csv(df: pd.DataFrame, config: Optional[dict] = None) -> byte
     return buf.getvalue().encode("cp1252", errors="replace")
 
 
+# ─── Destatis Intrahandel CSV (IDEV "Außenhandel-A-Intrahandel Formularmeldung") ─
+
+def export_destatis_intrahandel_csv(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """
+    Erzeugt die Destatis-Intrahandel-CSV für den IDEV-CSV-Import in das Formular
+    "Außenhandel-A-Intrahandel Formularmeldung" (hinterlegter Standardfilter "CSV").
+
+    Format laut Destatis-Anleitung (Stand August 2024): 16 Felder, ';'-getrennt,
+    KEINE Kopfzeile, KEINE Anführungszeichen (gelten als Feldbegrenzer und sind
+    verboten), CRLF-Zeilenende, ganze Zahlen (volle kg / volle EURO). Eine Datei
+    enthält BEIDE Richtungen; die Richtung kommt pro Zeile aus der Spalte
+    'richtung' (Fallback: config['direction']).
+
+    Spalten (Pos 1–16):
+      1 Verkehrsrichtung (E/V)          9 Ursprungsland
+      2 Bezugsmonat                    10 Warennummer (8-stellig)
+      3 Art des Geschäfts              11 Warenbezeichnung (freiwillig → leer)
+      4 Verkehrszweig                  12 Eigenmasse (volle kg)
+      5 Versendungsmitgliedstaat (E)   13 Besondere Maßeinheit (→ leer)
+      6 Bestimmungsmitgliedstaat (V)   14 Rechnungsbetrag (volle EURO)
+      7 Bestimmungsbundesland (E)      15 Statistischer Wert (volle EURO)
+      8 Ursprungsbundesland (V)        16 USt-IdNr. Warenempfänger (nur V)
+
+    Erwartete df-Spalten: richtung, monat, transaction_nature, mode_of_transport,
+    partner_country, country_of_origin, commodity_code, net_mass, invoiced_amount,
+    statistical_value und optional bundesland, vat_id_recipient.
+
+    config: { "direction": "V"|"E" (Fallback), "bundesland": "05" (Fallback) }
+    """
+    cfg = config or {}
+    default_dir = str(cfg.get("direction") or "").strip()
+    bl_cfg = str(cfg.get("bundesland") or "").strip()
+
+    def _s(v) -> str:
+        if v is None:
+            return ""
+        try:
+            if pd.isna(v):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        # Anführungszeichen und Trennzeichen sind in der CSV nicht erlaubt
+        return str(v).strip().replace('"', "").replace(";", " ").replace("\r", " ").replace("\n", " ")
+
+    def _num(v) -> str:
+        s = _s(v)
+        if s == "":
+            return ""
+        try:
+            return str(int(round(float(s))))
+        except (TypeError, ValueError):
+            return s
+
+    lines: List[str] = []
+    for _, row in df.iterrows():
+        richtung = _s(row.get("richtung")) or default_dir
+        is_v = richtung == "V"
+        region = _s(row.get("bundesland")) or bl_cfg
+        partner = _s(row.get("partner_country"))
+        vat = _s(row.get("vat_id_recipient"))
+        fields = [
+            richtung,                              # 1  Verkehrsrichtung
+            _s(row.get("monat")),                  # 2  Bezugsmonat
+            _s(row.get("transaction_nature")),     # 3  Art des Geschäfts
+            _s(row.get("mode_of_transport")),      # 4  Verkehrszweig
+            "" if is_v else partner,               # 5  Versendungsmitgliedstaat (nur E)
+            partner if is_v else "",               # 6  Bestimmungsmitgliedstaat (nur V)
+            "" if is_v else region,                # 7  Bestimmungsbundesland (nur E)
+            region if is_v else "",                # 8  Ursprungsbundesland (nur V)
+            _s(row.get("country_of_origin")),      # 9  Ursprungsland
+            _s(row.get("commodity_code")),         # 10 Warennummer
+            "",                                    # 11 Warenbezeichnung (freiwillig)
+            _num(row.get("net_mass")),             # 12 Eigenmasse (volle kg)
+            "",                                    # 13 Besondere Maßeinheit
+            _num(row.get("invoiced_amount")),      # 14 Rechnungsbetrag (volle EURO)
+            _num(row.get("statistical_value")),    # 15 Statistischer Wert (volle EURO)
+            vat if is_v else "",                   # 16 USt-IdNr. Warenempfänger (nur V)
+        ]
+        lines.append(";".join(fields))
+
+    return ("\r\n".join(lines) + ("\r\n" if lines else "")).encode("cp1252", errors="replace")
+
+
+# ─── Destatis Intrastat .idev (IDEV-Onlineformular-Import) ──────────────────────
+
+def export_destatis_idev(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """
+    Erzeugt EINE Destatis-Intrastat-".idev"-Datei (Import-/Exportformat des
+    IDEV-Onlineformulars). Aufbau: 4-Byte-Header 1d e5 00 01, danach ein
+    gzip-Stream mit kompaktem UTF-8-JSON.
+
+    Eine Datei enthält BEIDE Richtungen gemischt (V = Versendung, E = Eingang):
+    die Zeilenrichtung kommt pro df-Zeile aus der Spalte 'richtung' (Fallback:
+    config['direction']).
+
+    Erwartete df-Spalten (je Zeile): richtung ('V'/'E'), commodity_code,
+    transaction_nature, mode_of_transport, net_mass, invoiced_amount,
+    country_of_origin, partner_country und optional bundesland,
+    vat_id_recipient, monat, bzr.
+
+    config: {
+        "login_name": "w3s81881",     # IDEV-Kennnummer (Pflicht)
+        "bundesland": "05",            # Ursprungs-/Bestimmungsbundesland (Fallback)
+        "direction": "V",             # Fallback wenn Zeile keine 'richtung' hat
+        "bzr": "2026",                # Berichtszeitraum-Jahr (Fallback, sonst aus df.bzr)
+        # Kontext-Konstanten (Defaults i.d.R. passend):
+        "statistic_office_id": 1, "form_id": 639, "form_version": 6,
+        "form_context_id": 1, "form_context_name": "intra", "language": "de",
+        "fehlanzeige": "2",
+    }
+    """
+    import gzip as _gzip
+    import time as _time
+
+    cfg = config or {}
+
+    def _s(v) -> str:
+        if v is None:
+            return ""
+        try:
+            if pd.isna(v):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(v).strip()
+
+    def _num(v) -> str:
+        s = _s(v)
+        if s == "":
+            return ""
+        try:
+            return str(int(round(float(s))))
+        except (TypeError, ValueError):
+            return s
+
+    default_dir = _s(cfg.get("direction"))
+    bl_cfg = _s(cfg.get("bundesland"))
+    bzr_cfg = _s(cfg.get("bzr"))
+
+    meldungen: List[Dict[str, str]] = []
+    bzr_seen = ""
+    for _, row in df.iterrows():
+        richtung = _s(row.get("richtung")) or default_dir
+        adg = _s(row.get("transaction_nature"))
+        region = _s(row.get("bundesland")) or bl_cfg
+        row_bzr = _s(row.get("bzr"))
+        if row_bzr and not bzr_seen:
+            bzr_seen = row_bzr
+
+        m: Dict[str, str] = {
+            "artDesGeschäfts": adg,
+            "artDesGeschäfts1": adg[0:1],
+            "artDesGeschäfts2": adg[1:2],
+            "eigenMass": _num(row.get("net_mass")),
+            "monat": _s(row.get("monat")),
+            "rechBetrag": _num(row.get("invoiced_amount")),
+            "richtung": richtung,
+            "ursprLand": _s(row.get("country_of_origin")),
+            "verkehrszweig": _s(row.get("mode_of_transport")),
+            "warennummer": _s(row.get("commodity_code")),
+        }
+        partner = _s(row.get("partner_country"))
+        if richtung == "V":
+            # Versendung: Bestimmungsland, Ursprungsbundesland, USt-IdNr Empfänger
+            m["bestLand"] = partner
+            if region:
+                m["ursprRegion"] = region
+            uid = _s(row.get("vat_id_recipient"))
+            if uid:
+                m["ustIdNrEmpf"] = uid
+        else:
+            # Eingang: Versendungsland, Bestimmungsbundesland
+            m["versLand"] = partner
+            if region:
+                m["bestRegion"] = region
+        # Feldreihenfolge alphabetisch wie im Referenz-Export
+        meldungen.append({k: m[k] for k in sorted(m.keys())})
+
+    bzr = bzr_cfg or bzr_seen
+    now_ms = int(_time.time() * 1000)
+    obj = {
+        "context": {
+            "creationDate": now_ms,
+            "loginName": _s(cfg.get("login_name")),
+            "statisticOfficeId": int(cfg.get("statistic_office_id", 1)),
+            "reportingPeriod": bzr,
+            "formId": int(cfg.get("form_id", 639)),
+            "formVersion": int(cfg.get("form_version", 6)),
+            "formContextId": int(cfg.get("form_context_id", 1)),
+            "formContextName": _s(cfg.get("form_context_name")) or "intra",
+            "language": _s(cfg.get("language")) or "de",
+        },
+        "dataset": {
+            "BZR": bzr,
+            "Fehlanzeige": _s(cfg.get("fehlanzeige")) or "2",
+            "meldung": meldungen,
+        },
+        "formState": {},
+    }
+
+    payload = json.dumps(obj, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    gz_buf = io.BytesIO()
+    with _gzip.GzipFile(fileobj=gz_buf, mode="wb", mtime=now_ms // 1000) as gz:
+        gz.write(payload)
+    return bytes([0x1D, 0xE5, 0x00, 0x01]) + gz_buf.getvalue()
+
+
 # ─── XLSX ─────────────────────────────────────────────────────────────────────
 
 def export_xlsx(df: pd.DataFrame) -> bytes:

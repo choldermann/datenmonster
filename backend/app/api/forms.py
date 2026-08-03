@@ -341,12 +341,17 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                     continue
                 t_fields = ctx.targets[0].get("fields") or []
                 result = execute_mapping(**ctx.to_execute_kwargs(t_fields, preview_rows))
+                _rows = result.get("rows", [])
+                # Fehler (z.B. SQL-Transform-Fehler) sichtbar machen – aber nur wenn
+                # keine Zeilen zurückkamen, damit harmlose Warnungen die Ergebnistabelle
+                # nicht verdecken.
+                _errs = [str(e) for e in (result.get("errors") or []) if str(e).strip()]
                 results[action_id] = {
                     "columns":      result.get("columns", []),
-                    "rows":         result.get("rows", []),
+                    "rows":         _rows,
                     "total":        result.get("total", 0),
                     "column_types": result.get("column_types", {}),
-                    "error":        None,
+                    "error":        ("; ".join(_errs) if (_errs and not _rows) else None),
                 }
             except Exception as e:
                 results[action_id] = {"columns": [], "rows": [], "total": 0,
@@ -380,6 +385,50 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                 }
             except Exception as e:
                 results[action_id] = {"kind": "pipeline", "columns": [], "rows": [],
+                                      "total": 0, "error": str(e)[:300]}
+
+        elif action_type == "export_mapping":
+            # Schreib-Lauf: führt das Mapping aus und schreibt seine Datei-Ziele
+            # (z.B. .idev + CSV) – im Gegensatz zu run_mapping (nur Vorschau).
+            mapping_id = action.get("mapping_id")
+            m = db.query(Mapping).filter(Mapping.id == mapping_id).first() if mapping_id else None
+            if not m:
+                results[action_id] = {"kind": "export", "targets": [], "files": [],
+                                      "total": 0, "error": f"Mapping {mapping_id} nicht gefunden"}
+                continue
+            try:
+                from app.services.mapping_service import MappingContext, run_mapping_object
+                from app.models.export_file import ExportFile
+                from app.models.project import Project
+                ctx = MappingContext.from_orm(m)
+                ctx.run_params = run_params
+                _proj = db.query(Project).filter(Project.id == m.project_id).first() if m.project_id else None
+                result = run_mapping_object(
+                    ctx, preview_rows=999999, db=db,
+                    mapping_id=m.id, mapping_name=m.name,
+                    project_id=m.project_id,
+                    project_name=(_proj.name if _proj else None),
+                    user_id=(user_id or 1),
+                    triggered_by="form",
+                )
+                tr = result.get("targets_results") or []
+                _errs = [str(e) for e in (result.get("errors") or []) if str(e).strip()]
+                # Die soeben erzeugten Datei-Exporte holen (neueste zuerst → für Download-Links)
+                _recent = (db.query(ExportFile)
+                           .filter(ExportFile.mapping_id == m.id)
+                           .order_by(ExportFile.id.desc())
+                           .limit(max(len(tr), 1)).all())
+                files = [{"id": ef.id, "file_name": ef.file_name, "target_name": ef.target_name}
+                         for ef in reversed(_recent)]
+                results[action_id] = {
+                    "kind":    "export",
+                    "targets": tr,
+                    "total":   result.get("total_rows_written", 0),
+                    "files":   files,
+                    "error":   ("; ".join(_errs) if (_errs and not tr) else None),
+                }
+            except Exception as e:
+                results[action_id] = {"kind": "export", "targets": [], "files": [],
                                       "total": 0, "error": str(e)[:300]}
 
         else:
