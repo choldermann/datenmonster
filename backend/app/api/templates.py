@@ -165,6 +165,91 @@ def _rewrite_ids_install(obj, str_to_int: dict):
     return obj
 
 
+def _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
+                      content, db, project_id, default_name):
+    """Legt eine einzelne Pipeline aus ihrer Template-Definition an und gibt das
+    erzeugte Pipeline-Objekt zurück. Wird pro Eintrag in content['pipelines'] (bzw.
+    dem abwärtskompatiblen Singular content['pipeline']) aufgerufen."""
+    import copy
+    from app.models.pipeline import Pipeline
+    from app.models.dataset import Dataset as _DS
+
+    nodes = _apply_config_deep(copy.deepcopy(pipeline_def.get("nodes", [])), config)
+    for node in nodes:
+        ntype = node.get("type", "")
+        ncfg  = node.get("config", {})
+        # Mapping-IDs einsetzen
+        if ntype == "mapping":
+            mid = ncfg.get("mapping_id", "")
+            if isinstance(mid, str) and mid.startswith("{{"):
+                key = mid.strip("{}")
+                if key in mapping_id_map:
+                    node["config"]["mapping_id"] = mapping_id_map[key]
+        # rest_fetch: dataset_name → rest_source_id einsetzen
+        elif ntype == "rest_fetch":
+            ds_name = ncfg.get("dataset_name", "")
+            for tpl_id, real_ds_id in ds_id_map.items():
+                tpl_ds = next((d for d in content.get("datasets", []) if d["id"] == tpl_id), None)
+                if tpl_ds and tpl_ds.get("name") == ds_name and tpl_ds.get("file_type") == "rest_api":
+                    # rest_source_id aus dem angelegten Dataset holen
+                    _ds = db.query(_DS).filter(_DS.id == real_ds_id).first()
+                    if _ds and _ds.query_config:
+                        _qc = _ds.query_config
+                        if isinstance(_qc, str):
+                            import json as _j; _qc = _j.loads(_qc)
+                        node["config"]["rest_source_id"] = _qc.get("rest_source_id")
+                    break
+
+    # connections normalisieren: from/to → from_node/to_node, ports ergänzen
+    raw_conns = pipeline_def.get("connections", [])
+    connections = [
+        {"from_node": c.get("from_node") or c.get("from", ""),
+         "from_port": c.get("from_port", "out"),
+         "to_node":   c.get("to_node")   or c.get("to",   ""),
+         "to_port":   c.get("to_port",   "in")}
+        for c in raw_conns
+    ]
+
+    scheduler_def = pipeline_def.get("scheduler", {})
+
+    # Trigger-Node automatisch vorschalten wenn scheduler definiert
+    # und noch kein trigger-Node in nodes vorhanden
+    has_trigger = any(n.get("type") == "trigger" for n in nodes)
+    if scheduler_def.get("cron") and not has_trigger:
+        trigger_id = "trigger_auto"
+        trigger_node = {
+            "id": trigger_id,
+            "type": "trigger",
+            "label": "Scheduler",
+            "x": 40, "y": 150,
+            "config": {
+                "mode": "cron",
+                "cron": scheduler_def["cron"],
+                "description": scheduler_def.get("description", ""),
+            }
+        }
+        # Trigger als erstes Node einfügen
+        nodes = [trigger_node] + nodes
+        # Erste Connection vom Trigger zum ersten bisherigen Node
+        if nodes[1:]:
+            first_node_id = nodes[1]["id"]
+            connections = [
+                {"from_node": trigger_id, "from_port": "out",
+                 "to_node": first_node_id, "to_port": "in"},
+            ] + connections
+
+    p = Pipeline(
+        name=_apply_config(pipeline_def.get("name", default_name), config),
+        project_id=project_id,
+        nodes=nodes,
+        connections=connections,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return p
+
+
 @router.post("/install")
 def install_template(body: InstallBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """
@@ -174,7 +259,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     from app.models.template import Template
     from app.models.dataset import Dataset
     from app.models.mapping import Mapping
-    from app.models.pipeline import Pipeline
+    # Pipeline-Anlage erfolgt in _install_pipeline (importiert dort selbst).
 
     t = db.query(Template).filter(Template.template_id == body.template_id).first()
     if not t:
@@ -488,84 +573,19 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         mapping_id_map[m_def["id"]] = m.id
         created["mappings"].append({"id": m.id, "name": m.name})
 
-    # ── Pipeline anlegen ─────────────────────────────────────────────────────
-    pipeline_def = content.get("pipeline")
-    if pipeline_def:
-        import copy
-        nodes = _apply_config_deep(copy.deepcopy(pipeline_def.get("nodes", [])), config)
-        for node in nodes:
-            ntype = node.get("type", "")
-            ncfg  = node.get("config", {})
-            # Mapping-IDs einsetzen
-            if ntype == "mapping":
-                mid = ncfg.get("mapping_id", "")
-                if isinstance(mid, str) and mid.startswith("{{"):
-                    key = mid.strip("{}")
-                    if key in mapping_id_map:
-                        node["config"]["mapping_id"] = mapping_id_map[key]
-            # rest_fetch: dataset_name → rest_source_id einsetzen
-            elif ntype == "rest_fetch":
-                ds_name = ncfg.get("dataset_name", "")
-                for tpl_id, real_ds_id in ds_id_map.items():
-                    tpl_ds = next((d for d in content.get("datasets", []) if d["id"] == tpl_id), None)
-                    if tpl_ds and tpl_ds.get("name") == ds_name and tpl_ds.get("file_type") == "rest_api":
-                        # rest_source_id aus dem angelegten Dataset holen
-                        from app.models.dataset import Dataset as _DS
-                        _ds = db.query(_DS).filter(_DS.id == real_ds_id).first()
-                        if _ds and _ds.query_config:
-                            _qc = _ds.query_config
-                            if isinstance(_qc, str):
-                                import json as _j; _qc = _j.loads(_qc)
-                            node["config"]["rest_source_id"] = _qc.get("rest_source_id")
-                        break
-
-        # connections normalisieren: from/to → from_node/to_node, ports ergänzen
-        raw_conns = pipeline_def.get("connections", [])
-        connections = [
-            {"from_node": c.get("from_node") or c.get("from", ""),
-             "from_port": c.get("from_port", "out"),
-             "to_node":   c.get("to_node")   or c.get("to",   ""),
-             "to_port":   c.get("to_port",   "in")}
-            for c in raw_conns
-        ]
-
-        scheduler_def = pipeline_def.get("scheduler", {})
-
-        # Trigger-Node automatisch vorschalten wenn scheduler definiert
-        # und noch kein trigger-Node in nodes vorhanden
-        has_trigger = any(n.get("type") == "trigger" for n in nodes)
-        if scheduler_def.get("cron") and not has_trigger:
-            trigger_id = "trigger_auto"
-            trigger_node = {
-                "id": trigger_id,
-                "type": "trigger",
-                "label": "Scheduler",
-                "x": 40, "y": 150,
-                "config": {
-                    "mode": "cron",
-                    "cron": scheduler_def["cron"],
-                    "description": scheduler_def.get("description", ""),
-                }
-            }
-            # Trigger als erstes Node einfügen
-            nodes = [trigger_node] + nodes
-            # Erste Connection vom Trigger zum ersten bisherigen Node
-            if nodes[1:]:
-                first_node_id = nodes[1]["id"]
-                connections = [
-                    {"from_node": trigger_id, "from_port": "out",
-                     "to_node": first_node_id, "to_port": "in"},
-                ] + connections
-
-        p = Pipeline(
-            name=_apply_config(pipeline_def.get("name", t.name), config),
-            project_id=body.project_id,
-            nodes=nodes,
-            connections=connections,
-        )
-        db.add(p)
-        db.commit()
-        db.refresh(p)
+    # ── Pipelines anlegen ────────────────────────────────────────────────────
+    # Kanonisch ist das Array `pipelines` (mehrere Pipelines pro Template möglich).
+    # Das ältere Singular-Feld `pipeline` wird weiterhin akzeptiert (Fallback), wird
+    # aber nur genutzt, wenn kein Array vorhanden ist – so werden Templates, die (wie
+    # der Export) beides schreiben, nicht doppelt installiert.
+    pipeline_defs = content.get("pipelines") or []
+    if not pipeline_defs and content.get("pipeline"):
+        pipeline_defs = [content["pipeline"]]
+    for pipeline_def in pipeline_defs:
+        if not pipeline_def:
+            continue
+        p = _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
+                              content, db, body.project_id, t.name)
         created["pipelines"].append({"id": p.id, "name": p.name})
 
     # Reports werden nicht mehr installiert – Dashboards leben jetzt als Formulare
@@ -775,6 +795,9 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 "nodes": nodes,
                 "connections": p.connections or [],
             })
+            # Singular `pipeline` = erste Pipeline. Der Installer nutzt das Array
+            # `pipelines` (alle), das Singular ist nur Fallback für ältere
+            # Datenmonster-Versionen, die `pipelines` noch nicht auswerten.
             if not content.get("pipeline"):
                 content["pipeline"] = {
                     "name": p.name,
