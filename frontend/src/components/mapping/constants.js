@@ -43,6 +43,8 @@ export const typeColor = {
 export const TARGET_TYPE_COLORS = {
   csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fce499", xml: "#fcd34d", db: "#f97316",
   destatis_csv: "#5eead4",
+  destatis_idev: "#2dd4bf",
+  destatis_intra_csv: "#34d399",
   estatistik_intrastat: "#c4b5fd",
 };
 export const PLUGIN_TARGET_DEFAULT_COLOR = "#a78bfa";
@@ -53,6 +55,8 @@ export const TARGET_TYPES = [
   { value: "json", label: "JSON" },
   { value: "xml",  label: "XML" },
   { value: "destatis_csv", label: "Destatis CSV" },
+  { value: "destatis_idev", label: "Intrastat .idev" },
+  { value: "destatis_intra_csv", label: "Intrahandel CSV" },
   { value: "db",   label: "Datenbank" },
 ];
 

@@ -59,10 +59,12 @@ def save_export_file(
     from app.models.export_file import ExportFile
     from app.services.export_service import (
         export_csv, export_xlsx, export_json, export_xml, export_destatis_csv,
+        export_destatis_idev, export_destatis_intrahandel_csv,
     )
 
     context = f"job_{job_id}" if job_id else "manual"
-    ext_map = {"csv": "csv", "xlsx": "xlsx", "json": "json", "xml": "xml", "destatis_csv": "csv"}
+    ext_map = {"csv": "csv", "xlsx": "xlsx", "json": "json", "xml": "xml",
+               "destatis_csv": "csv", "destatis_idev": "idev", "destatis_intra_csv": "csv"}
     ext = ext_map.get(target_type, "csv")
 
     path = build_export_path(user_id, project_name, context, target_name, ext)
@@ -72,6 +74,10 @@ def save_export_file(
         content = export_csv(df, delimiter=opts.get("delimiter", ";"), encoding=opts.get("encoding", "utf-8-sig"))
     elif target_type == "destatis_csv":
         content = export_destatis_csv(df, opts.get("destatis_config"))
+    elif target_type == "destatis_idev":
+        content = export_destatis_idev(df, opts.get("idev_config"))
+    elif target_type == "destatis_intra_csv":
+        content = export_destatis_intrahandel_csv(df, opts.get("intra_csv_config"))
     elif target_type == "xlsx":
         content = export_xlsx(df)
     elif target_type == "json":

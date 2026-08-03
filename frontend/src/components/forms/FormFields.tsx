@@ -134,7 +134,8 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
             padding: compact ? "8px 20px" : "10px 24px", borderRadius: 7,
             fontSize: compact ? 12 : 14, fontWeight: 600,
             backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",
-            color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+            color: "#6ee7b7", cursor: running ? "wait" : "pointer",
+            ...(field.fullWidth ? { width: "100%", justifyContent: "center" } : {}) }}>
           {running ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={13} />}
           {field.label || "Ausführen"}
         </button>

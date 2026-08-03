@@ -1210,7 +1210,14 @@ def execute_mapping(
                         _has_limit = bool(_re2.search(r'TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
                         if not _has_limit:
                             if _dialect == 'mssql':
-                                _exec_sql = 'SELECT TOP ' + str(preview_rows) + ' ' + _re2.sub(r'(?i)^\s*SELECT\s+', '', _exec_sql, count=1)
+                                # TOP muss NACH einem evtl. DISTINCT stehen
+                                # (SELECT DISTINCT TOP n …), sonst Syntaxfehler.
+                                if _re2.match(r'(?i)^\s*SELECT\s+DISTINCT\s+', _exec_sql):
+                                    _exec_sql = _re2.sub(r'(?i)^\s*SELECT\s+DISTINCT\s+',
+                                        'SELECT DISTINCT TOP ' + str(preview_rows) + ' ', _exec_sql, count=1)
+                                else:
+                                    _exec_sql = _re2.sub(r'(?i)^\s*SELECT\s+',
+                                        'SELECT TOP ' + str(preview_rows) + ' ', _exec_sql, count=1)
                             else:
                                 _exec_sql = _exec_sql + ' LIMIT ' + str(preview_rows)
                     _exec_sql, _bound_params = _resolve_sql_run_params(_exec_sql, run_params)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Pencil, AlertCircle } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
@@ -40,6 +40,35 @@ function ResultTable({ columns, rows }) {
   );
 }
 
+function ExportResult({ result, onDownload }) {
+  const files = result.files || [];
+  return (
+    <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6ee7b7",
+        fontSize: 12, fontWeight: 600 }}>
+        <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
+      </div>
+      {files.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {files.map(f => (
+            <button key={f.id} onClick={() => onDownload(f.id, f.file_name)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
+                background: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 6,
+                color: S.textBright, cursor: "pointer", fontSize: 12, textAlign: "left" }}>
+              <Download size={13} /> {f.file_name}
+              {f.target_name && <span style={{ color: S.textDim, fontSize: 10 }}>· {f.target_name}</span>}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span style={{ color: S.textDim, fontSize: 11 }}>
+          Dateien liegen im Bereich „Exporte" zum Download.
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function FormRunner() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,6 +78,7 @@ export default function FormRunner() {
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
+  const [activeTab, setActiveTab] = useState(null);
 
   useEffect(() => {
     api.get(`/api/forms/${id}`).then(({ data }) => {
@@ -65,6 +95,22 @@ export default function FormRunner() {
   const setParam = useCallback((name, value) => {
     setParams(prev => ({ ...prev, [name]: value }));
   }, []);
+
+  const downloadExport = async (fileId, fileName) => {
+    try {
+      const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName || `export_${fileId}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError("Download fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+    }
+  };
 
   const runForm = async (actionIds = null) => {
     const miss = validateRequired(form?.schema?.fields || [], params);
@@ -101,6 +147,13 @@ export default function FormRunner() {
   const hasButtonField = fields.some(f => f.type === "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
+  // Optionale Tab-Ansicht der Ergebnisse (aus schema.result_tabs). Jeder Tab
+  // bündelt eine Auswahl an Action-IDs; ohne Konfiguration bleibt alles gestapelt.
+  const resultTabs = schema.result_tabs || [];
+  const currentTab = activeTab || resultTabs[0]?.id || null;
+  const tabActionIds = resultTabs.length
+    ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
+    : null;
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -177,15 +230,37 @@ export default function FormRunner() {
           </div>
         )}
 
+        {/* Ergebnis-Tabs (optional, aus schema.result_tabs) */}
+        {results && resultTabs.length > 0 && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 16,
+            borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
+            {resultTabs.map(tab => {
+              const active = tab.id === currentTab;
+              return (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{ padding: "8px 16px", background: "none", border: "none",
+                    borderBottom: `2px solid ${active ? "#6ee7b7" : "transparent"}`,
+                    color: active ? S.textBright : S.textDim, cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Widgets: eigenständige (z.B. Eingangsrechnung) sofort, ergebnis-basierte nach Lauf */}
         {widgets.length > 0 && (results || widgets.some(w => w.type === "eingangsrechnung")) && (
-          <WidgetRenderer widgets={widgets} results={results || {}} allowDownload={true} />
+          <WidgetRenderer
+            widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
+            results={results || {}} allowDownload={true} />
         )}
 
         {/* Rohtabellen für Aktionen ohne Widget */}
         {results && (() => {
           const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
-          const rawActions = actions.filter(a => !widgetActionIds.has(a.id));
+          const rawActions = actions.filter(a => !widgetActionIds.has(a.id)
+            && (!tabActionIds || tabActionIds.has(a.id)));
           if (!rawActions.length) return null;
           return (
             <div style={{ display: "flex", flexDirection: "column", gap: 16,
@@ -212,6 +287,8 @@ export default function FormRunner() {
                         color: "#e07070", fontSize: 11 }}>
                         <AlertCircle size={13} /> {result.error}
                       </div>
+                    ) : result.kind === "export" ? (
+                      <ExportResult result={result} onDownload={downloadExport} />
                     ) : (
                       <ResultTable columns={result.columns} rows={result.rows} />
                     )}
