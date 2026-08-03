@@ -4,6 +4,39 @@
 >
 > **So verwendest du es:** Gib dieses Dokument der KI als Kontext/Systemprompt mit und beschreibe dann, welches Template du brauchst (welche Auswertung, welche Datenquelle, welche Widgets). Die KI gibt **eine einzelne JSON-Datei** aus. Diese lädst du in Datenmonster unter *Templates → Hochladen* hoch und installierst sie in ein Projekt.
 
+> **Aktuelle Format-Version:** `1.0` – jedes generierte Template setzt `"format_version": "1.0"` (siehe §2).
+
+---
+
+## 0. Regeln für KI-Generatoren (verbindlich)
+
+Diese Regeln gelten für **jedes** Modell (ChatGPT, Claude, Gemini, Qwen …), das aus diesem Dokument ein Template erzeugt. Sie sorgen dafür, dass die Ausgabe modellübergreifend konsistent und ohne Nacharbeit installierbar ist. **Bei Konflikt haben diese Regeln Vorrang vor allem anderen im Dokument.**
+
+**Ausgabeformat**
+1. **Gib ausschließlich die JSON-Datei aus** – kein einleitender Text, keine Erklärung, kein Markdown-Codefence, keine abschließende Bemerkung. Die Antwort beginnt mit `{` und endet mit `}`.
+2. **Niemals Kommentare im JSON** – JSON kennt keine Kommentare (`//` oder `/* */` sind ungültig). Erklärungen gehören, wenn überhaupt, in das `hinweise`-Array.
+3. **Gültiges, striktes JSON** – doppelte Anführungszeichen, keine trailing commas, keine unquoted Keys, keine Python-/JS-Literale (`None`/`True`/`undefined` → `null`/`true`).
+4. **Immer UTF-8**, ohne BOM. Umlaute/Sonderzeichen direkt als UTF-8 ausgeben (kein unnötiges `\uXXXX`-Escaping). In SQL-Strings Zeilenumbrüche als `\n` schreiben.
+
+**Feld- und Struktur-Disziplin**
+5. **Keine zusätzlichen Eigenschaften erfinden** – nur die in diesem Dokument beschriebenen Schlüssel verwenden. Keine ausgedachten Felder, Node-Typen, Widget-Typen oder Action-Typen.
+6. **Alle definierten Arrays immer vorhanden**, auch wenn leer (`[]`). Das gilt insbesondere für **alle** Mapping-Node-Arrays (`canvas_nodes`, `joins`, `sql_nodes`, `agg_nodes`, `transform_nodes`, `constant_nodes`, `rest_nodes`, `lookup_nodes`, `calc_nodes`, `switch_nodes`, `sort_nodes`) sowie `datasets`, `mappings`, `pipelines`, `forms`.
+7. **`format_version` immer setzen** – auf die oben genannte aktuelle Format-Version.
+8. **IDs ausschließlich in `snake_case`** (`[a-z0-9_]`): `template_id`, Mapping-`id`, Dataset-`id`, Action-`id`, Widget-`id`, `config_required[].key`.
+
+**Inhaltliche Vorgaben**
+9. **SQL ausschließlich als T-SQL** (Microsoft SQL Server / JTL-Wawi): `TOP n` statt `LIMIT`, `GETDATE()`, `DATEADD`/`DATEDIFF`, `CAST(... AS DECIMAL(18,2))`, `ISNULL(...)`. Jede Ausgabespalte bekommt einen Alias (`AS Umsatz`).
+10. **Referenzielle Integrität** (die häufigste Fehlerquelle):
+    - Jede `action_id` eines Widgets muss auf eine **existierende Action** zeigen.
+    - Jede `mapping_id` einer Action muss auf ein **existierendes Mapping** (dessen `id`) zeigen.
+    - `targets[].fields[].source_dataset_id` muss `"__sql__" + <sql-node-id>` sein.
+    - Jede in einem Widget referenzierte Spalte muss als SQL-Alias existieren **und** in `output_fields` **und** in `targets[].fields` stehen.
+    - Jeder verwendete `{{platzhalter}}` hat einen `config_required`-Eintrag.
+11. **Keine Zugangsdaten** ausgeben – DB-Verbindungen ausschließlich über `config_required` (`type: "connection"`) + `{{connection_...}}`-Platzhalter. Niemals Hosts, Benutzer, Passwörter, Ports einsetzen.
+
+**Vor der Ausgabe**
+12. **Konsistenzprüfung durchführen** – vor dem Ausgeben die Checkliste in §9 vollständig gegen das erzeugte JSON abarbeiten. Erst ausgeben, wenn alle Punkte erfüllt sind.
+
 ---
 
 ## 1. Was ist ein Template?
@@ -34,6 +67,7 @@ Wenn du nichts anderes brauchst, **halte dich exakt an dieses Muster** – es is
 
 ```json
 {
+  "format_version": "1.0",
   "template_id": "jtl_umsatz_nach_kunde",
   "template_name": "JTL – Umsatz nach Kunde",
   "description": "Kurzbeschreibung, erscheint im Template-Katalog.",
@@ -51,11 +85,12 @@ Wenn du nichts anderes brauchst, **halte dich exakt an dieses Muster** – es is
 
 | Feld | Pflicht | Bedeutung |
 |------|---------|-----------|
+| `format_version` | **ja** | Version des **Template-Formats/dieser Spezifikation** (aktuell `"1.0"`). Erlaubt Datenmonster, künftige Formatänderungen zu erkennen und ältere Templates zu migrieren. **Nicht** mit `version` verwechseln. |
 | `template_id` | **ja** | Eindeutige technische ID, `snake_case`, nur `[a-z0-9_]`. Beim erneuten Upload mit gleicher ID wird das bestehende Template **überschrieben**. |
 | `template_name` | ja | Anzeigename im Katalog. |
 | `description` | empfohlen | Kurzbeschreibung. |
 | `category` | empfohlen | Freitext-Kategorie, z. B. `"jtl-reporting"`. Default `"general"`. |
-| `version` | empfohlen | z. B. `"1.0"`. |
+| `version` | empfohlen | Version **dieses konkreten Templates** (Inhalt), z. B. `"1.0"`, `"2.0"`. Unabhängig von `format_version`. |
 | `author` | optional | z. B. `"Datenmonster"`. |
 | `hinweise` | empfohlen | Array aus Strings. Wird dem Nutzer beim Installieren angezeigt. |
 | `config_required` | siehe §3 | Vom Nutzer beim Install abgefragte Werte (v. a. DB-Verbindung, Zeiträume). |
@@ -497,8 +532,10 @@ widgets[].config.column / x_column / y_columns / label_column / value_column
 
 Die generierende KI soll **eine einzige, valide JSON-Datei** ausgeben und Folgendes sicherstellen:
 
-- [ ] Gültiges JSON (keine Kommentare, keine trailing commas, korrekt escapte `\n` in SQL-Strings).
-- [ ] `template_id` in `snake_case`, eindeutig.
+- [ ] Nur die JSON-Datei ausgegeben (kein Text/Markdown drumherum), gültiges JSON (keine Kommentare, keine trailing commas, korrekt escapte `\n` in SQL-Strings), UTF-8.
+- [ ] `format_version` auf die aktuelle Format-Version gesetzt.
+- [ ] Keine erfundenen Felder/Typen (nur dokumentierte Schlüssel und Node-/Widget-/Action-Typen).
+- [ ] Alle IDs in `snake_case`; `template_id` eindeutig.
 - [ ] Für jede DB-Verbindung ein `config_required`-Eintrag `type: "connection"`; in SQL-Knoten als `connection_id: "{{...}}"` referenziert.
 - [ ] Jeder verwendete `{{platzhalter}}` hat einen `config_required`-Eintrag (außer den Connection-Platzhaltern, die du selbst als `connection`-Eintrag anlegst).
 - [ ] Jedes Mapping: alle Node-Arrays vorhanden (leere als `[]`), SQL-Knoten mit `mode: "transform"`.
@@ -515,6 +552,7 @@ Die generierende KI soll **eine einzige, valide JSON-Datei** ausgeben und Folgen
 
 ```json
 {
+  "format_version": "1.0",
   "template_id": "jtl_umsatz_nach_kunde_demo",
   "template_name": "JTL – Umsatz nach Kunde (Demo)",
   "description": "Dashboard: Gesamtumsatz und Top-Kunden aus der JTL-Wawi.",

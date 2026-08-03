@@ -1,4 +1,5 @@
 {
+  "format_version": "1.0",
   "template_id": "jtl_uebersicht_dashboard",
   "template_name": "JTL – Übersichts-Dashboard",
   "description": "Dashboard-Formular: Umsatz, Einkauf, Bestand, ABC-Analyse und Ladenhüter der JTL-Wawi auf einen Blick.",

@@ -1,4 +1,5 @@
 {
+  "format_version": "1.0",
   "template_id": "jtl_umsatz_nach_artikel",
   "template_name": "JTL – Umsatz nach Artikel",
   "description": "Dashboard-Formular: Top-Artikel, verkaufte Menge und Umsatzanteile aus der JTL-Wawi.",
