@@ -58,6 +58,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
     is_portal_only: bool = False
+    is_admin: bool = False
 
 
 class Token(BaseModel):
@@ -122,10 +123,12 @@ def register(data: UserCreate, db: Session = Depends(get_db), admin: User = Depe
         username=data.username,
         hashed_password=hash_password(data.password),
         is_portal_only=data.is_portal_only,
+        is_admin=data.is_admin,
     )
     db.add(user); db.commit(); db.refresh(user)
     return {
         "id": user.id, "username": user.username,
+        "is_admin": bool(getattr(user, "is_admin", False)),
         "is_portal_only": bool(user.is_portal_only),
     }
 

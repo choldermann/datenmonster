@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import api from "../../../api/client";
+import { useAuth } from "../../../context/AuthContext";
 import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
 import { aiDownloadStore } from "../../../store/aiDownloadStore";
 import { S } from "../constants";
@@ -543,18 +544,33 @@ function AiSettings() {
   );
 }
 
+const ROLE_META = {
+  admin:  { label: "Admin",  color: "#fca5a5", bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.35)", hint: "Vollzugriff inkl. Benutzerverwaltung" },
+  editor: { label: "Editor", color: "#93c5fd", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.35)", hint: "Zugriff auf die volle Plattform (Mappings, Pipelines …)" },
+  portal: { label: "Portal", color: "#fce499", bg: "rgba(252,228,153,0.10)", border: "rgba(252,228,153,0.35)", hint: "Sieht nur veröffentlichte Formulare, keinen Editor" },
+};
+
+const roleOf = (u) => (u.is_admin ? "admin" : (u.is_portal_only ? "portal" : "editor"));
+const roleToFlags = (role) => ({
+  is_admin:       role === "admin",
+  is_portal_only: role === "portal",
+});
+
 function UserManagement() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
-  const [form, setForm] = useState({ username: "", password: "" });
+  const [form, setForm] = useState({ username: "", password: "", role: "editor" });
   const [creating, setCreating] = useState(false);
   const [result, setResult] = useState(null);
   const [showPw, setShowPw] = useState(false);
+  const [busyId, setBusyId] = useState(null);
 
   const load = () => api.get("/api/auth/users").then(({ data }) => setUsers(data)).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+  const selS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "4px 6px", outline: "none", cursor: "pointer" };
 
   const handleCreate = async () => {
     if (!form.username.trim() || form.password.length < 6) {
@@ -563,13 +579,25 @@ function UserManagement() {
     }
     setCreating(true); setResult(null);
     try {
-      const { data } = await api.post("/api/auth/register", { username: form.username.trim(), password: form.password });
-      setResult({ ok: true, msg: `Benutzer "${data.username}" angelegt` });
-      setForm({ username: "", password: "" });
+      const { data } = await api.post("/api/auth/register", {
+        username: form.username.trim(), password: form.password, ...roleToFlags(form.role),
+      });
+      setResult({ ok: true, msg: `Benutzer "${data.username}" (${ROLE_META[form.role].label}) angelegt` });
+      setForm({ username: "", password: "", role: "editor" });
       load();
     } catch (e) {
       setResult({ ok: false, msg: e.response?.data?.detail || "Fehler beim Anlegen" });
     } finally { setCreating(false); }
+  };
+
+  const handleRoleChange = async (u, role) => {
+    setBusyId(u.id);
+    try {
+      await api.patch(`/api/auth/users/${u.id}`, roleToFlags(role));
+      await load();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Rolle ändern fehlgeschlagen");
+    } finally { setBusyId(null); }
   };
 
   const handleDelete = async (id, name) => {
@@ -590,16 +618,31 @@ function UserManagement() {
       {users.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <span style={lS}>Bestehende Benutzer</span>
-          {users.map(u => (
-            <div key={u.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
-              <span style={{ fontSize: 12, color: S.textMain }}>{u.username}</span>
-              <button onClick={() => handleDelete(u.id, u.username)}
-                style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
-                title="Benutzer löschen">
-                <Trash2 size={12} />
-              </button>
-            </div>
-          ))}
+          {users.map(u => {
+            const isSelf = me && u.username === me.username;
+            const rm = ROLE_META[roleOf(u)];
+            return (
+              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+                <span style={{ fontSize: 12, color: S.textMain, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.username}</span>
+                <span title={rm.hint} style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: rm.color, backgroundColor: rm.bg, border: `1px solid ${rm.border}`, borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>{rm.label}</span>
+                {isSelf ? (
+                  <span style={{ fontSize: 10, color: S.textDim, fontStyle: "italic", whiteSpace: "nowrap" }}>(du)</span>
+                ) : (
+                  <select value={roleOf(u)} disabled={busyId === u.id} onChange={e => handleRoleChange(u, e.target.value)}
+                    title="Rolle ändern" style={selS}>
+                    <option value="admin">Admin</option>
+                    <option value="editor">Editor</option>
+                    <option value="portal">Portal</option>
+                  </select>
+                )}
+                <button onClick={() => handleDelete(u.id, u.username)} disabled={isSelf}
+                  style={{ background: "none", border: "none", color: isSelf ? S.border : S.textDim, cursor: isSelf ? "not-allowed" : "pointer", padding: 2, display: "flex", alignItems: "center" }}
+                  title={isSelf ? "Eigenen Account kann man nicht löschen" : "Benutzer löschen"}>
+                  <Trash2 size={12} />
+                </button>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -620,6 +663,15 @@ function UserManagement() {
               {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
             </button>
           </div>
+        </div>
+        <div>
+          <label style={lS}>Rolle</label>
+          <select style={{ ...iS, cursor: "pointer" }} value={form.role} onChange={e => setForm(f => ({ ...f, role: e.target.value }))}>
+            <option value="editor">Editor — volle Plattform</option>
+            <option value="portal">Portal — nur veröffentlichte Formulare</option>
+            <option value="admin">Admin — Vollzugriff inkl. Benutzerverwaltung</option>
+          </select>
+          <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0" }}>{ROLE_META[form.role].hint}</p>
         </div>
         {result && (
           <div style={{ padding: "7px 10px", borderRadius: 4, backgroundColor: result.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${result.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
