@@ -1,7 +1,7 @@
 {
  "format_version": "1.0",
- "template_id": "custom_jtl_intrastat_hako__estatistik___destati_1783313844",
- "template_name": "JTL Intrastat HaKo (eSTATISTIK + Destatis)",
+ "template_id": "jtl_intrastat",
+ "template_name": "JTL Intrastat (eSTATISTIK + Destatis)",
  "description": "Vollständiges Intrastat-Setup: Mappings Ausfuhr/Einfuhr (eSTATISTIK.core + Destatis-CSV), Formular Intrastat Zeitraum, monatliche Pipelines. DB-Verbindung beim Installieren wählen.",
  "category": "jtl",
  "version": "1.0",
@@ -1750,7 +1750,7 @@
  "config_required": [
   {
    "key": "connection_10",
-   "label": "DB-Verbindung „HaKo Server Lokal“",
+   "label": "DB-Verbindung „JTL WaWi“",
    "type": "connection",
    "default": ""
   },
