@@ -65,6 +65,8 @@ class Token(BaseModel):
     access_token: str
     token_type: str
     username: str
+    is_admin: bool = False
+    is_portal_only: bool = False
 
 
 @router.post("/token", response_model=Token)
