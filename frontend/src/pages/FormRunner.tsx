@@ -209,10 +209,15 @@ export default function FormRunner() {
           </div>
         )}
 
-        {exclusionField && inputTab === "exclusions" && (
-          <IntrastatExclusionPanel projectId={form.project_id}
-            connectionId={exclusionField.config?.connection_id ?? null} />
-        )}
+        {exclusionField && inputTab === "exclusions" && (() => {
+          // Verbindung aus dem Template (config.connection_id, beim Install aufgelöst).
+          // Nur übernehmen, wenn es eine gültige Zahl ist – sonst Auto-Erkennung im Panel.
+          const cId = Number(exclusionField.config?.connection_id);
+          return (
+            <IntrastatExclusionPanel projectId={form.project_id}
+              connectionId={Number.isFinite(cId) && cId > 0 ? cId : null} />
+          );
+        })()}
 
         {(!exclusionField || inputTab === "main") && (<>
         {/* Form Fields */}

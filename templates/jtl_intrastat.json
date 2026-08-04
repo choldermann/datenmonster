@@ -1559,7 +1559,9 @@
       "options": [],
       "action_id": "",
       "content": "",
-      "config": {}
+      "config": {
+       "connection_id": "{{connection_10}}"
+      }
      }
     ],
     "layout": [],
