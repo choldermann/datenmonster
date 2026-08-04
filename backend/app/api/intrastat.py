@@ -118,10 +118,13 @@ def search_articles(connection_id: int,
     like = f"%{term}%"
     limit = max(1, min(int(limit or 50), 200))
     sql = _text(
-        f"SELECT TOP {limit} kArtikel, cArtNr, cName "
-        "FROM dbo.tArtikel "
-        "WHERE (:term = '' OR cArtNr LIKE :like OR cName LIKE :like) "
-        "ORDER BY cArtNr"
+        f"SELECT TOP {limit} a.kArtikel, a.cArtNr, b.cName "
+        "FROM dbo.tArtikel a "
+        "LEFT JOIN dbo.tArtikelBeschreibung b "
+        "  ON b.kArtikel = a.kArtikel "
+        "  AND b.kSprache = 1 AND b.kPlattform = 1 AND b.kShop = 0 "
+        "WHERE (:term = '' OR a.cArtNr LIKE :like OR b.cName LIKE :like) "
+        "ORDER BY a.cArtNr"
     )
     try:
         engine = _get_sql_engine(connection_id)

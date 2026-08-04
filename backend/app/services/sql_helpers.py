@@ -121,7 +121,24 @@ def _get_sql_engine(connection_id: int):
         conn_obj = db.query(DbConnection).filter(DbConnection.id == connection_id).first()
         if not conn_obj:
             raise ValueError(f"DB-Verbindung #{connection_id} nicht gefunden")
-        engine = create_engine(get_engine_str(conn_obj))
+        # Pool-Härtung gegen flatterhafte Remote-Server (z.B. SQL Express hinter
+        # DSL/NAT-DDNS): tote Leerlauf-Verbindungen erkennen & transparent neu
+        # aufbauen, Verbindungen vor dem NAT-Idle-Timeout recyceln und dem
+        # Login-Handshake über langsame Leitungen mehr Zeit geben. Ohne diese
+        # Optionen liefert der Cache-Pool sporadisch tote Verbindungen aus →
+        # sporadische Login-/Verbindungsfehler, die beim nächsten Versuch weg sind.
+        db_type = getattr(conn_obj, "db_type", None)
+        connect_args = {}
+        if db_type == "mssql":
+            connect_args = {"timeout": 10, "login_timeout": 10}
+        elif db_type in ("mysql", "postgresql"):
+            connect_args = {"connect_timeout": 10}
+        engine = create_engine(
+            get_engine_str(conn_obj),
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            connect_args=connect_args,
+        )
         _sql_engine_cache[connection_id] = engine
         return engine
     finally:
