@@ -4,6 +4,7 @@ import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download } from "
 import api from "../api/client";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
+import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -79,6 +80,7 @@ export default function FormRunner() {
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
+  const [inputTab, setInputTab] = useState("main");
 
   useEffect(() => {
     api.get(`/api/forms/${id}`).then(({ data }) => {
@@ -143,7 +145,10 @@ export default function FormRunner() {
   );
 
   const schema = form?.schema || {};
-  const fields = schema.fields || [];
+  const allFields = schema.fields || [];
+  // Ausschlussartikel-Feld separat behandeln: es bekommt einen eigenen Eingabe-Reiter.
+  const exclusionField = allFields.find(f => f.type === "article_exclusion") || null;
+  const fields = exclusionField ? allFields.filter(f => f !== exclusionField) : allFields;
   const hasButtonField = fields.some(f => f.type === "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
@@ -185,6 +190,31 @@ export default function FormRunner() {
           </div>
         )}
 
+        {/* Eingabe-Reiter (nur wenn ein Ausschlussartikel-Feld im Schema ist) */}
+        {exclusionField && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${S.border}` }}>
+            {[{ id: "main", label: "Auswertung" },
+              { id: "exclusions", label: exclusionField.label || "Ausschlussartikel" }].map(t => {
+              const active = inputTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setInputTab(t.id)}
+                  style={{ padding: "8px 16px", background: "none", border: "none",
+                    borderBottom: `2px solid ${active ? S.accent : "transparent"}`,
+                    color: active ? S.textBright : S.textDim, cursor: "pointer",
+                    fontSize: 13, fontWeight: active ? 600 : 400 }}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {exclusionField && inputTab === "exclusions" && (
+          <IntrastatExclusionPanel projectId={form.project_id}
+            connectionId={exclusionField.config?.connection_id ?? null} />
+        )}
+
+        {(!exclusionField || inputTab === "main") && (<>
         {/* Form Fields */}
         {fields.length > 0 ? (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
@@ -298,6 +328,7 @@ export default function FormRunner() {
             </div>
           );
         })()}
+        </>)}
       </div>
     </div>
   );

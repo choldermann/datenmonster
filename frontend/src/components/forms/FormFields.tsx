@@ -7,7 +7,7 @@ const S = {
 
 // Feldtypen ohne Wert (reine Anzeige / Aktion) – kein Label davor, keine Pflichtprüfung.
 export const LAYOUT_TYPES = new Set(["heading", "label", "divider", "container"]);
-export const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label", "divider", "container"]);
+export const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label", "divider", "container", "article_exclusion"]);
 
 /** Button-Feld → Liste der auszulösenden Action-IDs (mehrere via action_ids, sonst einzelne). */
 export function buttonActionIds(f) {
@@ -127,6 +127,13 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
         ? <div style={{ fontSize: compact ? 11 : 13, fontWeight: 700, color: S.textDim,
             borderBottom: `1px solid ${S.border}`, paddingBottom: 4, margin: "8px 0 2px" }}>{field.label}</div>
         : null;
+    case "article_exclusion":
+      // Wird im FormRunner als eigener Eingabe-Reiter (IntrastatExclusionPanel)
+      // gerendert. In der Editor-Vorschau nur ein Hinweis.
+      return <div style={{ fontSize: 12, color: S.textDim, padding: "10px 12px", borderRadius: 6,
+        border: `1px dashed ${S.border}` }}>
+        Ausschlussartikel-Reiter „{field.label || "Ausschlussartikel"}" – im ausgefüllten Formular als eigener Tab sichtbar.
+      </div>;
     case "button":
       return (
         <button onClick={() => onRunAction?.(buttonActionIds(field))} disabled={running}

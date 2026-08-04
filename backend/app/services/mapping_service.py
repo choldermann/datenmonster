@@ -134,6 +134,12 @@ def run_mapping_object(
     is_preview = preview_rows <= 500
     targets = ctx.targets
 
+    # Projekt-Ausschlussartikel in run_params injizieren (idempotent – Formular-Pfade
+    # haben es ggf. schon gesetzt). Deckt Pipeline/Scheduler-Läufe ab.
+    if project_id is not None and db is not None:
+        from app.services.article_exclusion_service import apply_article_exclusions
+        ctx.run_params = apply_article_exclusions(ctx.run_params, project_id, db)
+
     if target_index is not None:
         active_targets = [targets[target_index]] if 0 <= target_index < len(targets) else []
     else:

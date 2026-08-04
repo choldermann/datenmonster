@@ -139,7 +139,8 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Mapping")
 
     ctx = MappingContext.from_orm(m)
-    ctx.run_params = body.params or {}
+    from app.services.article_exclusion_service import apply_article_exclusions
+    ctx.run_params = apply_article_exclusions(body.params or {}, m.project_id, db)
     if not ctx.targets:
         return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
 
@@ -308,6 +309,9 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     schema = f.schema or {}
     run_params = data.params or {}
     _validate_required(schema, run_params)
+
+    from app.services.article_exclusion_service import apply_article_exclusions
+    run_params = apply_article_exclusions(run_params, f.project_id, db)
 
     actions = schema.get("actions") or []
     if data.action_ids:

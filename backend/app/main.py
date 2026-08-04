@@ -15,6 +15,7 @@ from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
 from app.models.form import Form, FormSubmission
+from app.models.article_exclusion import ArticleExclusion
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 from app import auth
@@ -25,6 +26,7 @@ from app.api import plugins as plugins_api
 from app.api import events as events_api
 from app.api import db_write as db_write_api
 from app.api import eingangsrechnung as eingangsrechnung_api
+from app.api import intrastat as intrastat_api
 
 
 @asynccontextmanager
@@ -391,6 +393,7 @@ app.include_router(plugins_api.router)
 app.include_router(events_api.router)
 app.include_router(db_write_api.router)
 app.include_router(eingangsrechnung_api.router)
+app.include_router(intrastat_api.router)
 from app.api import forms as forms_api
 from app.api import portal as portal_api
 from app.api import web_proxy as web_proxy_api

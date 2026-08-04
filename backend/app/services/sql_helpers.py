@@ -81,7 +81,25 @@ def _resolve_sql_run_params(sql: str, run_params: dict):
     for name in referenced:
         if name in run_params:
             val = run_params[name]
-            params[name] = int(val) if name in ("year", "month") else val
+            # Listen-Parameter (z.B. Ausschlussartikel für NOT IN) werden in einzelne
+            # gebundene Skalar-Parameter :name__0, :name__1 … expandiert. Leere Liste →
+            # NULL, damit "x NOT IN (NULL)" nicht ungewollt alle Zeilen filtert (die
+            # aufrufenden SQLs kombinieren das mit einer :name_empty=1-Kurzschluss-Klausel).
+            if isinstance(val, (list, tuple, set)):
+                items = list(val)
+                pattern = _re.compile(r":" + _re.escape(name) + r"(?![A-Za-z0-9_])")
+                if not items:
+                    sql = pattern.sub("NULL", sql)
+                else:
+                    placeholders = []
+                    for i, item in enumerate(items):
+                        pname = f"{name}__{i}"
+                        params[pname] = item
+                        placeholders.append(":" + pname)
+                    repl = ", ".join(placeholders)
+                    sql = pattern.sub(lambda _m: repl, sql)
+            else:
+                params[name] = int(val) if name in ("year", "month") else val
         elif name == "year":
             params[name] = default_year
         elif name == "month":
