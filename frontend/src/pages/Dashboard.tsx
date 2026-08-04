@@ -166,27 +166,22 @@ export default function Dashboard() {
     } catch {}
   }, [projectId]);
 
-  const loadFormsCount = useCallback(async () => {
-    try {
-      const p = projectId != null ? `?project_id=${projectId}` : "";
-      const { data } = await api.get(`/api/forms/${p}`);
-      setFormsCount(Array.isArray(data) ? data.length : 0);
-    } catch {}
-  }, [projectId]);
-
   useEffect(() => {
+    // Projektgebundene Zähler filtern nach aktivem Projekt; Templates & Plugins sind global.
+    const pq = projectId != null ? `?project_id=${projectId}` : "";
     Promise.allSettled([
-      api.get("/api/datasets/").then(r => setDatasetsCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/mappings/").then(r => setMappingsCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/connections/").then(r => setConnectionsCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/ftp-sources/").then(r => setFtpCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/rest-sources/").then(r => setRestCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/datasets/${pq}`).then(r => setDatasetsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/mappings/${pq}`).then(r => setMappingsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/connections/${pq}`).then(r => setConnectionsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/ftp-sources/${pq}`).then(r => setFtpCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/rest-sources/${pq}`).then(r => setRestCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/templates/").then(r => setTemplatesCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/pipelines/").then(r => setPipelinesCount(Array.isArray(r.data) ? r.data.length : 0)),
-      api.get("/api/exports/").then(r => setExportsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/pipelines/${pq}`).then(r => setPipelinesCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/forms/${pq}`).then(r => setFormsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/exports/${pq}`).then(r => setExportsCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/plugins/").then(r => setPluginsCount(Array.isArray(r.data) ? r.data.length : 0)),
     ]);
-  }, []);
+  }, [projectId]);
 
   useEffect(() => { loadProjects(); }, [loadProjects]);
   useEffect(() => { if (tab === "datasets" || tab === "ftp" || tab === "rest") loadDatasets(); }, [tab, loadDatasets]);
@@ -198,8 +193,6 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [tab, loadDatasets]);
   useEffect(() => { if (tab === "mappings") loadMappings(); }, [tab, loadMappings]);
-  useEffect(() => { loadFormsCount(); }, [loadFormsCount]);
-  useEffect(() => { if (tab === "forms") loadFormsCount(); }, [tab, loadFormsCount]);
   // Scheduler und Dispatcher brauchen mappings – sicherstellen dass sie geladen sind
   useEffect(() => {
     if ((tab === "scheduler" || tab === "dispatcher") && mappings.length === 0) {
