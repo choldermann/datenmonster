@@ -15,6 +15,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.article_exclusion import ArticleExclusion
 from app.api.projects import can_read_project, require_editor
+from app.api.portal import user_can_access_portal_project
 
 router = APIRouter(prefix="/api/intrastat", tags=["intrastat"])
 
@@ -36,7 +37,8 @@ def _out(e: ArticleExclusion) -> dict:
 def list_exclusions(project_id: Optional[int] = None,
                     db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    if not can_read_project(project_id, user, db):
+    if not (can_read_project(project_id, user, db)
+            or user_can_access_portal_project(project_id, user, db)):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     q = db.query(ArticleExclusion)
     if project_id is not None:
@@ -59,7 +61,11 @@ class ExclusionIn(BaseModel):
 def add_exclusion(data: ExclusionIn,
                   db: Session = Depends(get_db),
                   user: User = Depends(get_current_user)):
-    require_editor(data.project_id, user, db)
+    # Portal-Only-Nutzer dürfen Ausschlüsse eines freigegebenen Formulars pflegen;
+    # alle anderen brauchen wie bisher Editor-Rechte am Projekt.
+    if not (getattr(user, "is_portal_only", False)
+            and user_can_access_portal_project(data.project_id, user, db)):
+        require_editor(data.project_id, user, db)
     existing = (db.query(ArticleExclusion)
                 .filter(ArticleExclusion.project_id == data.project_id,
                         ArticleExclusion.k_artikel == data.k_artikel)
@@ -91,7 +97,9 @@ def delete_exclusion(excl_id: int,
     e = db.query(ArticleExclusion).filter(ArticleExclusion.id == excl_id).first()
     if not e:
         raise HTTPException(404, "Ausschluss nicht gefunden")
-    require_editor(e.project_id, user, db)
+    if not (getattr(user, "is_portal_only", False)
+            and user_can_access_portal_project(e.project_id, user, db)):
+        require_editor(e.project_id, user, db)
     db.delete(e)
     db.commit()
     return {"ok": True}
@@ -108,7 +116,8 @@ def search_articles(connection_id: int,
                     user: User = Depends(get_current_user)):
     """Sucht Artikel (kArtikel, cArtNr, cName) in der JTL-WaWi über die gewählte
     Verbindung. Parametrisiert – kein String-Interpolieren des Suchbegriffs."""
-    if not can_read_project(project_id, user, db):
+    if not (can_read_project(project_id, user, db)
+            or user_can_access_portal_project(project_id, user, db)):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
 
     from sqlalchemy import text as _text

@@ -31,14 +31,16 @@ def _portal_form_out(f: Form) -> dict:
         "id":               f.id,
         "name":             f.name,
         "slug":             f.slug,
+        "project_id":       f.project_id,
         "description":      pc.get("description", ""),
         "icon":             pc.get("icon", ""),
         "is_homepage":      pc.get("is_homepage", False),
         "allow_download":   pc.get("allow_download", False),
         "allow_manual_run": pc.get("allow_manual_run", True),
-        # Schema ohne interne Details — nur Felder und Widgets
+        # Schema ohne interne Details — nur Felder, Widgets und Ergebnis-Register
         "fields":           schema.get("fields", []),
         "widgets":          schema.get("widgets", []),
+        "result_tabs":      schema.get("result_tabs", []),
         # Actions: nur label und id, kein mapping_id
         "actions":          [
             {"id": a.get("id"), "label": a.get("label", "Ausführen"), "type": a.get("type")}
@@ -55,6 +57,25 @@ def _check_portal_access(f: Form, user: User) -> None:
     allowed = pc.get("allowed_users") or []   # [] = alle authentifizierten Benutzer
     if allowed and user.username not in allowed and str(user.id) not in [str(u) for u in allowed]:
         raise HTTPException(403, "Kein Zugriff auf dieses Formular")
+
+
+def user_can_access_portal_project(project_id: Optional[int], user: User, db: Session) -> bool:
+    """True, wenn der User über mind. ein veröffentlichtes Formular Zugriff auf dieses
+    Projekt hat. Erlaubt Portal-(Only-)Nutzern, für ein freigegebenes Formular die
+    zugehörigen Projekt-Ressourcen zu nutzen (z.B. Artikel-Suche + Ausschlussartikel),
+    ohne ihnen echten Projekt-Mitgliedsstatus zu geben."""
+    if project_id is None:
+        return False
+    forms = (db.query(Form)
+             .filter(Form.published == True, Form.project_id == project_id)
+             .all())
+    for f in forms:
+        try:
+            _check_portal_access(f, user)
+            return True
+        except HTTPException:
+            continue
+    return False
 
 
 # ── Endpunkte ─────────────────────────────────────────────────────────────────

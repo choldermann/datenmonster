@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import WidgetRenderer from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
+import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -83,6 +84,43 @@ function ResultTable({ result, formName, actionLabel, allowDownload }) {
   );
 }
 
+// ── Export result (Datei-Downloads) ─────────────────────────────────────────────
+
+function ExportResult({ result, onDownload, allowDownload }) {
+  const files = result.files || [];
+  if (result.error) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
+      color: "#e07070", fontSize: 13 }}>
+      <AlertCircle size={14} /> {result.error}
+    </div>
+  );
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6ee7b7",
+        fontSize: 13, fontWeight: 600 }}>
+        <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
+      </div>
+      {files.length === 0 ? (
+        <span style={{ color: S.textDim, fontSize: 12 }}>Keine Dateien erzeugt.</span>
+      ) : allowDownload ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {files.map(f => (
+            <button key={f.id} onClick={() => onDownload(f.id, f.file_name)}
+              style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px",
+                background: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 8,
+                color: S.textBright, cursor: "pointer", fontSize: 13, textAlign: "left" }}>
+              <Download size={13} /> {f.file_name}
+              {f.target_name && <span style={{ color: S.textDim, fontSize: 11 }}>· {f.target_name}</span>}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <span style={{ color: S.textDim, fontSize: 12 }}>Download ist für dieses Formular deaktiviert.</span>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function PortalRunner() {
@@ -97,6 +135,8 @@ export default function PortalRunner() {
   const [loadErr, setLoadErr] = useState(null);
   const [runErr, setRunErr]   = useState(null);
   const [missing, setMissing] = useState([]);
+  const [activeTab, setActiveTab] = useState(null);
+  const [inputTab, setInputTab]   = useState("main");
 
   useEffect(() => {
     api.get(`/api/portal/forms/${slug}`)
@@ -133,6 +173,22 @@ export default function PortalRunner() {
     } finally { setRunning(false); }
   };
 
+  const downloadExport = async (fileId, fileName) => {
+    try {
+      const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName || `export_${fileId}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setRunErr("Download fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+    }
+  };
+
   const handleLogout = () => { logout(); navigate("/login"); };
 
   // Loading
@@ -143,14 +199,24 @@ export default function PortalRunner() {
     </div>
   );
 
-  const fields  = form?.fields  || [];
+  const allFields = form?.fields  || [];
+  // Ausschlussartikel-Feld separat behandeln: eigener Eingabe-Reiter wie im Editor-Runner.
+  const exclusionField = allFields.find(f => f.type === "article_exclusion") || null;
+  const fields  = exclusionField ? allFields.filter(f => f !== exclusionField) : allFields;
   const actions = form?.actions || [];
   const widgets = form?.widgets || [];
   const hasButtonField = fields.some(f => f.type === "button");
   const allowDownload  = form?.allow_download || false;
-  // Actions ohne Widget → als Rohtabelle zeigen
+  // Optionale Ergebnis-Register (aus schema.result_tabs). Jeder Tab bündelt Action-IDs.
+  const resultTabs = form?.result_tabs || [];
+  const currentTab = activeTab || resultTabs[0]?.id || null;
+  const tabActionIds = resultTabs.length
+    ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
+    : null;
+  // Actions ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Register gefiltert)
   const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
-  const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id));
+  const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id)
+    && (!tabActionIds || tabActionIds.has(a.id)));
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -199,6 +265,35 @@ export default function PortalRunner() {
           </p>
         )}
 
+        {/* Eingabe-Reiter (nur wenn ein Ausschlussartikel-Feld im Schema ist) */}
+        {exclusionField && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${S.border}` }}>
+            {[{ id: "main", label: "Auswertung" },
+              { id: "exclusions", label: exclusionField.label || "Ausschlussartikel" }].map(t => {
+              const active = inputTab === t.id;
+              return (
+                <button key={t.id} onClick={() => setInputTab(t.id)}
+                  style={{ padding: "8px 16px", background: "none", border: "none",
+                    borderBottom: `2px solid ${active ? S.accent : "transparent"}`,
+                    color: active ? S.textBright : S.textDim, cursor: "pointer",
+                    fontSize: 13, fontWeight: active ? 600 : 400 }}>
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Ausschlussartikel-Verwaltung */}
+        {exclusionField && inputTab === "exclusions" && (() => {
+          const cId = Number(exclusionField.config?.connection_id);
+          return (
+            <IntrastatExclusionPanel projectId={form.project_id}
+              connectionId={Number.isFinite(cId) && cId > 0 ? cId : null} />
+          );
+        })()}
+
+        {(!exclusionField || inputTab === "main") && (<>
         {/* ── Form card ── */}
         {fields.length > 0 && (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
@@ -251,10 +346,29 @@ export default function PortalRunner() {
           </div>
         )}
 
+        {/* Ergebnis-Register (optional, aus schema.result_tabs) */}
+        {results && resultTabs.length > 0 && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 16,
+            borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
+            {resultTabs.map(tab => {
+              const active = tab.id === currentTab;
+              return (
+                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                  style={{ padding: "8px 16px", background: "none", border: "none",
+                    borderBottom: `2px solid ${active ? "#6ee7b7" : "transparent"}`,
+                    color: active ? S.textBright : S.textDim, cursor: "pointer",
+                    fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* ── Widget-Ergebnisse ── */}
         {results && widgets.length > 0 && (
           <WidgetRenderer
-            widgets={widgets}
+            widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results}
             allowDownload={allowDownload}
           />
@@ -276,6 +390,8 @@ export default function PortalRunner() {
               </div>
               {result.kind === "pipeline" ? (
                 <PipelineResult result={result} />
+              ) : result.kind === "export" ? (
+                <ExportResult result={result} onDownload={downloadExport} allowDownload={allowDownload} />
               ) : (
                 <ResultTable
                   result={result}
@@ -287,6 +403,7 @@ export default function PortalRunner() {
             </div>
           );
         })}
+        </>)}
       </main>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
