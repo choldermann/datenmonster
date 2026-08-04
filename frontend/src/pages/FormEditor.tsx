@@ -24,6 +24,14 @@ const TABS = [
   { id: "widgets", label: "Widgets" },
 ];
 
+// Kuratierte Emoji-Auswahl für Portal-Kacheln (Business/Daten-Kontext)
+const ICON_CHOICES = [
+  "📊", "📈", "📉", "📋", "🧾", "📄", "🗂️", "📁",
+  "📦", "🚚", "🏭", "🏢", "🛒", "💶", "💰", "🧮",
+  "📅", "⏱️", "🔎", "🔔", "⚙️", "🔧", "✅", "⚠️",
+  "🌍", "🗺️", "🚢", "✈️", "👥", "👤", "🏷️", "⭐",
+];
+
 export default function FormEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -44,6 +52,7 @@ export default function FormEditor() {
   const [selectedFieldId, setSelectedFieldId]   = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(false);
+  const [showIconPicker, setShowIconPicker] = useState(false);
 
   // Load
   useEffect(() => {
@@ -265,14 +274,53 @@ export default function FormEditor() {
                 style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
                   color: S.textMain, fontSize: 11, padding: "4px 8px", outline: "none", width: 260 }} />
             </div>
-            <div>
+            <div style={{ position: "relative" }}>
               <label style={{ display: "block", fontSize: 9, fontWeight: 700, color: S.textDim,
                 marginBottom: 4, textTransform: "uppercase" }}>Icon</label>
-              <input value={portalConfig.icon || ""}
-                onChange={e => setPortalConfig(p => ({ ...p, icon: e.target.value }))}
-                placeholder="📊"
-                style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
-                  color: S.textMain, fontSize: 16, padding: "2px 8px", outline: "none", width: 52, textAlign: "center" }} />
+              <button type="button" onClick={() => setShowIconPicker(v => !v)}
+                title="Icon auswählen"
+                style={{ backgroundColor: S.bgEl, border: `1px solid ${showIconPicker ? S.accent : S.border}`,
+                  borderRadius: 4, cursor: "pointer", fontSize: 20, lineHeight: 1, padding: "3px 8px",
+                  width: 52, height: 30, textAlign: "center" }}>
+                {portalConfig.icon || "📊"}
+              </button>
+              {showIconPicker && (
+                <>
+                  <div onClick={() => setShowIconPicker(false)}
+                    style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+                  <div style={{ position: "absolute", top: "100%", left: 0, marginTop: 4, zIndex: 41,
+                    backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 8,
+                    padding: 8, boxShadow: "0 8px 24px rgba(0,0,0,0.4)", width: 236 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 2 }}>
+                      {ICON_CHOICES.map(em => (
+                        <button key={em} type="button"
+                          onClick={() => { setPortalConfig(p => ({ ...p, icon: em })); setShowIconPicker(false); }}
+                          title={em}
+                          style={{ background: portalConfig.icon === em ? "rgba(252,228,153,0.15)" : "transparent",
+                            border: "none", borderRadius: 4, cursor: "pointer", fontSize: 18, lineHeight: 1,
+                            padding: "4px 0", aspectRatio: "1" }}>
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
+                      marginTop: 6, paddingTop: 6, borderTop: `1px solid ${S.border}` }}>
+                      <button type="button"
+                        onClick={() => { setPortalConfig(p => ({ ...p, icon: "" })); setShowIconPicker(false); }}
+                        style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer",
+                          fontSize: 10 }}>
+                        Standard (📊)
+                      </button>
+                      <input value={portalConfig.icon || ""}
+                        onChange={e => setPortalConfig(p => ({ ...p, icon: e.target.value }))}
+                        placeholder="eigenes"
+                        style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
+                          color: S.textMain, fontSize: 14, padding: "2px 6px", outline: "none", width: 64,
+                          textAlign: "center" }} />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
               {[
