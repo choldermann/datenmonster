@@ -262,7 +262,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <nav className="flex-1 px-3 py-4 flex flex-col gap-1">
+        <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 flex flex-col gap-1">
           {NAV.map(({ id, label, icon: Icon, badge, dividerAfter }) => {
             const active = tab === id;
             return (
@@ -287,7 +287,7 @@ export default function Dashboard() {
           })}
         </nav>
 
-        <div className="px-3 py-4" style={{ borderTop: `1px solid ${S.border}` }}>
+        <div className="shrink-0 px-3 py-4" style={{ borderTop: `1px solid ${S.border}` }}>
           <div style={{ display: "flex", alignItems: "center", padding: "0 12px", marginBottom: 10 }}>
             <p className="text-xs" style={{ color: S.textDim, flex: 1, margin: 0 }}>
               Angemeldet als <span style={{ color: S.textMain }}>{user?.username}</span>
