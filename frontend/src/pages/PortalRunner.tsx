@@ -155,8 +155,10 @@ export default function PortalRunner() {
     setParams(prev => ({ ...prev, [name]: value }));
   }, []);
 
-  const runAction = async (actionIds) => {
-    const miss = validateRequired(form?.fields || [], params);
+  const runAction = async (actionIds, paramsOverride) => {
+    const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
+    if (paramsOverride) setParams(effParams);
+    const miss = validateRequired(form?.fields || [], effParams);
     if (miss.length) {
       setMissing(miss);
       setRunErr("Bitte fülle die markierten Pflichtfelder aus.");
@@ -165,7 +167,7 @@ export default function PortalRunner() {
     setMissing([]);
     setRunning(true); setRunErr(null);
     try {
-      const body = { params, action_ids: (actionIds && actionIds.length) ? actionIds : null };
+      const body = { params: effParams, action_ids: (actionIds && actionIds.length) ? actionIds : null };
       const { data } = await api.post(`/api/portal/forms/${slug}/run`, body);
       setResults(data.results || {});
     } catch (e) {

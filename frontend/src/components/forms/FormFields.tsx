@@ -1,13 +1,105 @@
+import { useEffect } from "react";
 import { Play, Loader2, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
+import DbDropdownField from "./fields/DbDropdownField";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
   textMain: "var(--text-main)", textBright: "var(--text-bright)", textDim: "var(--text-dim)",
+  accent: "var(--accent)",
 };
 
 // Feldtypen ohne Wert (reine Anzeige / Aktion) – kein Label davor, keine Pflichtprüfung.
 export const LAYOUT_TYPES = new Set(["heading", "label", "divider", "container"]);
-export const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label", "divider", "container", "article_exclusion"]);
+export const LABEL_SKIP   = new Set(["checkbox", "switch", "button", "heading", "label", "divider", "container", "article_exclusion", "daterange"]);
+
+// ── Datumsbereich-Presets ──────────────────────────────────────────────────────
+const _p = n => String(n).padStart(2, "0");
+const _fmt = d => `${d.getFullYear()}-${_p(d.getMonth() + 1)}-${_p(d.getDate())}`;
+
+/** Berechnet [von, bis] (ISO yyyy-mm-dd) für eine Preset-ID. */
+export function computeDatePreset(id) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const mk = (yy, mm, dd) => _fmt(new Date(yy, mm, dd));
+  switch (id) {
+    case "this_month": return [mk(y, m, 1), _fmt(now)];
+    case "last_month": return [mk(y, m - 1, 1), mk(y, m, 0)];       // Tag 0 = letzter Tag Vormonat
+    case "this_year":  return [mk(y, 0, 1), _fmt(now)];
+    case "last_year":  return [mk(y - 1, 0, 1), mk(y - 1, 11, 31)];
+    case "days_30":    { const s = new Date(now); s.setDate(s.getDate() - 29); return [_fmt(s), _fmt(now)]; }
+    case "months_12":  { const s = new Date(now); s.setMonth(s.getMonth() - 12); s.setDate(s.getDate() + 1); return [_fmt(s), _fmt(now)]; }
+    default:           return [null, null];
+  }
+}
+
+const DEFAULT_PRESETS = [
+  { id: "this_month", label: "Dieser Monat" },
+  { id: "last_month", label: "Letzter Monat" },
+  { id: "this_year",  label: "Dieses Jahr" },
+  { id: "last_year",  label: "Letztes Jahr" },
+  { id: "days_30",    label: "30 Tage" },
+  { id: "months_12",  label: "12 Monate" },
+];
+
+/**
+ * Datumsbereichs-Filter mit Presets. Schreibt zwei Laufzeit-Parameter
+ * (config.param_from/param_to, Default "von"/"bis") und löst – sofern auto_run –
+ * die verknüpften Actions aus (field.action_ids, sonst alle). SQL bindet sie als
+ * :von / :bis.
+ */
+function DateRangeField({ field, params, setParam, onRunAction, running, inp }) {
+  const cfg = field.config || {};
+  const pf = cfg.param_from || "von";
+  const pt = cfg.param_to || "bis";
+  const presets = cfg.presets || DEFAULT_PRESETS;
+  const autoRun = cfg.auto_run !== false;
+  const from = params?.[pf] ?? "";
+  const to   = params?.[pt] ?? "";
+
+  // Override mitgeben, weil setParam() erst im nächsten Render greift – der Runner
+  // würde sonst die alten Params posten (Stale-Closure).
+  const run = override => { if (autoRun && onRunAction) onRunAction(field.action_ids?.length ? field.action_ids : null, override); };
+  const applyPreset = id => {
+    const [f, t] = computeDatePreset(id);
+    if (f && t) { setParam(pf, f); setParam(pt, t); run({ [pf]: f, [pt]: t }); }
+  };
+
+  // Default-Preset beim ersten Rendern setzen (und – sofern auto_run – das
+  // Dashboard direkt befüllen), wenn noch nichts gewählt ist.
+  useEffect(() => {
+    if (!from && !to && cfg.default) {
+      const [f, t] = computeDatePreset(cfg.default);
+      if (f && t) { setParam(pf, f); setParam(pt, t); run({ [pf]: f, [pt]: t }); }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const dateInp = { ...inp, width: "auto", padding: "7px 10px" };
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 11, color: S.textDim, fontWeight: 600 }}>VON</span>
+        <input type="date" value={from} style={dateInp}
+          onChange={e => { const nf = e.target.value; setParam(pf, nf); if (nf && to) run({ [pf]: nf, [pt]: to }); }} />
+        <span style={{ fontSize: 11, color: S.textDim, fontWeight: 600 }}>BIS</span>
+        <input type="date" value={to} style={dateInp}
+          onChange={e => { const nt = e.target.value; setParam(pt, nt); if (from && nt) run({ [pf]: from, [pt]: nt }); }} />
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {presets.map(p => (
+          <button key={p.id} type="button" onClick={() => applyPreset(p.id)} disabled={running}
+            style={{ fontSize: 11, fontWeight: 600, padding: "6px 12px", borderRadius: 7,
+              background: S.bgEl, border: `1px solid ${S.border}`, color: S.textMain,
+              cursor: running ? "wait" : "pointer" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = S.accent}
+            onMouseLeave={e => e.currentTarget.style.borderColor = S.border}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Button-Feld → Liste der auszulösenden Action-IDs (mehrere via action_ids, sonst einzelne). */
 export function buttonActionIds(f) {
@@ -57,10 +149,16 @@ function groupByRow(fields) {
     .map(([, items]) => items);
 }
 
-function FieldInput({ field, value, onChange, onRunAction, running, inp, hasError, compact }) {
+function FieldInput({ field, value, onChange, onRunAction, running, inp, hasError, compact, params, setParam }) {
   const errStyle = hasError ? { border: "1px solid #f87171" } : {};
   const s = { ...inp, ...errStyle };
   switch (field.type) {
+    case "daterange":
+      return <DateRangeField field={field} params={params} setParam={setParam}
+        onRunAction={onRunAction} running={running} inp={inp} />;
+    case "db_dropdown":
+      return <DbDropdownField field={field} value={value} onChange={onChange} inp={s}
+        onRunAction={onRunAction} running={running} />;
     case "number":
       return <input type="number" value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} style={s} />;
     case "date":
@@ -195,6 +293,8 @@ export default function FormFields({ fields, params, setParam, onRunAction, runn
                   inp={inp}
                   hasError={f.name && errSet.has(f.name)}
                   compact={compact}
+                  params={params}
+                  setParam={setParam}
                 />
               </div>
             );

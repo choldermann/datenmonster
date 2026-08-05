@@ -114,8 +114,10 @@ export default function FormRunner() {
     }
   };
 
-  const runForm = async (actionIds = null) => {
-    const miss = validateRequired(form?.schema?.fields || [], params);
+  const runForm = async (actionIds = null, paramsOverride = null) => {
+    const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
+    if (paramsOverride) setParams(effParams);
+    const miss = validateRequired(form?.schema?.fields || [], effParams);
     if (miss.length) {
       setMissing(miss);
       setError("Bitte fülle die markierten Pflichtfelder aus.");
@@ -126,7 +128,7 @@ export default function FormRunner() {
     setError(null);
     try {
       const { data } = await api.post(`/api/forms/${id}/run`, {
-        params,
+        params: effParams,
         action_ids: (actionIds && actionIds.length) ? actionIds : null,
       });
       setResults(data.results || {});

@@ -402,6 +402,8 @@ app.include_router(portal_api.router)
 app.include_router(web_proxy_api.router)
 from app.api import mail as mail_api
 app.include_router(mail_api.router)
+from app.api import lookup as lookup_api
+app.include_router(lookup_api.router)
 from app.api import ai as ai_api
 app.include_router(ai_api.router)
 from app.api import ai_memory as ai_memory_api

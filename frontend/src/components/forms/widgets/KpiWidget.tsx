@@ -29,7 +29,11 @@ function formatValue(val, decimals = 0, prefix = "", suffix = "") {
 export default function KpiWidget({ widget, result }) {
   const { rows = [] } = result;
   const cfg = widget.config || {};
-  const { column, aggregation = "first", prefix = "", suffix = "", decimals = 0, color } = cfg;
+  const {
+    column, aggregation = "first", prefix = "", suffix = "", decimals = 0, color,
+    // Vorperioden-/Vorjahresvergleich: zweite Spalte aus derselben SQL-Zeile.
+    compare_column, compare_label = "Vorperiode", invert_delta = false,
+  } = cfg;
   const label = widget.label || column || "KPI";
 
   if (!column) return (
@@ -43,8 +47,24 @@ export default function KpiWidget({ widget, result }) {
 
   const kpiColor = color || "var(--accent)";
 
+  // Delta gegen die Vergleichsspalte (Vorperiode/Vorjahr) berechnen.
+  const cmp = compare_column ? aggregate(rows, compare_column, aggregation) : null;
+  let delta = null;
+  if (compare_column && raw != null && cmp != null && Number(cmp) !== 0) {
+    const pct = ((Number(raw) - Number(cmp)) / Math.abs(Number(cmp))) * 100;
+    const up = Number(raw) >= Number(cmp);
+    // Bei invert_delta ist ein Rückgang "gut" (z.B. Storno-Quote) → grün trotz Pfeil unten.
+    const good = invert_delta ? !up : up;
+    delta = {
+      up,
+      color: good ? "#6ee7b7" : "#e07070",
+      pct: Math.abs(pct).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+      cmpText: formatValue(cmp, Number(decimals) || 0, prefix, suffix),
+    };
+  }
+
   return (
-    <div style={{ padding: "28px 24px", textAlign: "center" }}>
+    <div style={{ padding: "24px 24px", textAlign: "center" }}>
       <div style={{ fontSize: 42, fontWeight: 800, color: kpiColor,
         letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 8 }}>
         {text}
@@ -53,6 +73,20 @@ export default function KpiWidget({ widget, result }) {
         textTransform: "uppercase", letterSpacing: "0.08em" }}>
         {label}
       </div>
+      {delta && (
+        <div style={{ marginTop: 10, fontSize: 12, color: delta.color,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          <span style={{ fontWeight: 700 }}>{delta.up ? "↑" : "↓"} {delta.up ? "+" : "−"}{delta.pct} %</span>
+          <span style={{ color: S.textDim, fontWeight: 400 }}>
+            {compare_label}: {delta.cmpText}
+          </span>
+        </div>
+      )}
+      {compare_column && !delta && cmp != null && (
+        <div style={{ marginTop: 10, fontSize: 11, color: S.textDim }}>
+          {compare_label}: {formatValue(cmp, Number(decimals) || 0, prefix, suffix)}
+        </div>
+      )}
     </div>
   );
 }

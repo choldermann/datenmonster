@@ -1,0 +1,1221 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_kennzahlen_dashboard",
+  "template_name": "JTL – Kennzahlen-Dashboard (Umsatz, Lager, Altware)",
+  "description": "Umsatz mit Vorjahresvergleich, Lagerauswertung & Kapitalbindung, Abverkaufsliste und Altware/Ladenhüter – filterbar über Zeitraum und Warengruppe.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
+    "Dashboard öffnen: der Zeitraumfilter lädt automatisch das laufende Jahr; über die Presets (Dieser Monat, Letztes Jahr, 12 Monate …) und den Warengruppen-Filter aktualisieren sich alle Reiter.",
+    "Der Vorjahresvergleich in den Umsatz-KPIs bezieht sich auf den gleichen Zeitraum ein Jahr zuvor.",
+    "Altware/Ladenhüter: 'ladenhueter_tage' legt fest, ab wie vielen Tagen ohne Verkauf ein Artikel mit Bestand als Ladenhüter gilt (Standard 180).",
+    "SCHEMA-PRÜFUNG: Die SQL-Abfragen gehen von einer Standard-JTL-Wawi aus (Rechnung.vRechnung/tRechnungPosition, dbo.tArtikel, dbo.tlagerbestand, dbo.tWarengruppe, dbo.tArtikelBeschreibung). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen anpassen (z.B. cRechnungsnr, kWarengruppe, fEKNetto).",
+    "Der Warengruppen-Filter nutzt dbo.tWarengruppe; falls stattdessen Kategorien gewünscht sind, kann der Feld-'kind' auf 'kategorie' umgestellt werden."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    },
+    {
+      "key": "ladenhueter_tage",
+      "label": "Altware ab … Tagen ohne Verkauf",
+      "type": "text",
+      "default": "180"
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "mapping_umsatz_kpi",
+      "name": "Umsatz-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    UmsatzNetto, UmsatzNettoVJ, AnzahlRechnungen, AnzahlRechnungenVJ,\n    CAST(CASE WHEN AnzahlRechnungen > 0 THEN UmsatzNetto / AnzahlRechnungen END AS DECIMAL(18,2)) AS AvgRechnungswert,\n    CAST(CASE WHEN AnzahlRechnungenVJ > 0 THEN UmsatzNettoVJ / AnzahlRechnungenVJ END AS DECIMAL(18,2)) AS AvgRechnungswertVJ\nFROM (\n    SELECT\n        CAST(SUM(CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNetto,\n        CAST(SUM(CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNettoVJ,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN RE.kRechnung END) AS AnzahlRechnungen,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN RE.kRechnung END) AS AnzahlRechnungenVJ\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE (RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) OR RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis))) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n) x",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "UmsatzNetto",
+            "UmsatzNettoVJ",
+            "AnzahlRechnungen",
+            "AnzahlRechnungenVJ",
+            "AvgRechnungswert",
+            "AvgRechnungswertVJ"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Umsatz-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "UmsatzNetto",
+              "target_field": "UmsatzNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNetto"
+              }
+            },
+            {
+              "source_field": "UmsatzNettoVJ",
+              "target_field": "UmsatzNettoVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNettoVJ"
+              }
+            },
+            {
+              "source_field": "AnzahlRechnungen",
+              "target_field": "AnzahlRechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlRechnungen"
+              }
+            },
+            {
+              "source_field": "AnzahlRechnungenVJ",
+              "target_field": "AnzahlRechnungenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlRechnungenVJ"
+              }
+            },
+            {
+              "source_field": "AvgRechnungswert",
+              "target_field": "AvgRechnungswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgRechnungswert"
+              }
+            },
+            {
+              "source_field": "AvgRechnungswertVJ",
+              "target_field": "AvgRechnungswertVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgRechnungswertVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_umsatz_verlauf",
+      "name": "Umsatz-Verlauf",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n    GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n),\nvj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS UmsatzVorjahr\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120)\n)\nSELECT ISNULL(cur.Monat, vj.Monat) AS Monat,\n       CAST(ISNULL(cur.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n       CAST(ISNULL(vj.UmsatzVorjahr, 0) AS DECIMAL(18,2)) AS UmsatzVorjahr\nFROM cur FULL OUTER JOIN vj ON cur.Monat = vj.Monat\nORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz",
+            "UmsatzVorjahr"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Umsatz-Verlauf",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVorjahr",
+              "target_field": "UmsatzVorjahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVorjahr"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_umsatz_auftraege",
+      "name": "Aufträge im Zeitraum",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 500\n    RE.cRechnungsnr AS Rechnung,\n    CONVERT(char(10), RE.dErstellt, 104) AS Datum,\n    ISNULL(RE.cFirma, RE.cName) AS Kunde,\n    COUNT(POS.kRechnungPosition) AS Positionen,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY RE.cRechnungsnr, CONVERT(char(10), RE.dErstellt, 104), ISNULL(RE.cFirma, RE.cName), RE.dErstellt\nORDER BY RE.dErstellt DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Rechnung",
+            "Datum",
+            "Kunde",
+            "Positionen",
+            "UmsatzNetto"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Aufträge im Zeitraum",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rechnung",
+              "target_field": "Rechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnung"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "UmsatzNetto",
+              "target_field": "UmsatzNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNetto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_lager_kpi",
+      "name": "Lager-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung,\n    COUNT(DISTINCT CASE WHEN LB.fLagerbestand > 0 THEN A.kArtikel END) AS ArtikelMitBestand,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Gesamtmenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nWHERE (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kapitalbindung",
+            "ArtikelMitBestand",
+            "Gesamtmenge"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "ArtikelMitBestand",
+              "target_field": "ArtikelMitBestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelMitBestand"
+              }
+            },
+            {
+              "source_field": "Gesamtmenge",
+              "target_field": "Gesamtmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gesamtmenge"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_kapital_wg",
+      "name": "Kapitalbindung nach Warengruppe",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warengruppe",
+            "Kapitalbindung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Kapitalbindung nach Warengruppe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_lager_tabelle",
+      "name": "Lagerbestand je Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(LB.fLagerbestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(LB.fLagerbestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE LB.fLagerbestand <> 0 AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EK",
+            "Kapitalbindung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lagerbestand je Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_abverkauf",
+      "name": "Abverkaufsliste",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS VerkaufteMenge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto,\n    CAST(ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(CASE WHEN SUM(POS.fAnzahl) > 0\n        THEN ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0)\n             / (SUM(POS.fAnzahl) / NULLIF(DATEDIFF(DAY, :von, :bis) + 1, 0))\n        END AS DECIMAL(18,1)) AS ReichweiteTage\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY VerkaufteMenge DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "VerkaufteMenge",
+            "UmsatzNetto",
+            "Bestand",
+            "ReichweiteTage"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abverkaufsliste",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "VerkaufteMenge",
+              "target_field": "VerkaufteMenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerkaufteMenge"
+              }
+            },
+            {
+              "source_field": "UmsatzNetto",
+              "target_field": "UmsatzNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNetto"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "ReichweiteTage",
+              "target_field": "ReichweiteTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ReichweiteTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_altware_kpi",
+      "name": "Altware-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(SUM(B.Bestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS GebundenesKapital,\n    COUNT(*) AS AnzahlLadenhueter\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "GebundenesKapital",
+            "AnzahlLadenhueter"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Altware-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "GebundenesKapital",
+              "target_field": "GebundenesKapital",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GebundenesKapital"
+              }
+            },
+            {
+              "source_field": "AnzahlLadenhueter",
+              "target_field": "AnzahlLadenhueter",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlLadenhueter"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "mapping_altware_tabelle",
+      "name": "Altware / Ladenhüter",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(B.Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(B.Bestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), LV.LetzterVerkauf, 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, LV.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EK",
+            "Kapitalbindung",
+            "LetzterVerkauf",
+            "TageOhneVerkauf"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Altware / Ladenhüter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "LetzterVerkauf",
+              "target_field": "LetzterVerkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterVerkauf"
+              }
+            },
+            {
+              "source_field": "TageOhneVerkauf",
+              "target_field": "TageOhneVerkauf",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageOhneVerkauf"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Kennzahlen-Dashboard",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 8,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [
+              "act_umsatz_kpi",
+              "act_umsatz_verlauf",
+              "act_umsatz_auftraege",
+              "act_lager_kpi",
+              "act_kapital_wg",
+              "act_lager_tabelle",
+              "act_abverkauf",
+              "act_altware_kpi",
+              "act_altware_tabelle"
+            ],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": true
+            }
+          },
+          {
+            "id": "f_warengruppe",
+            "type": "db_dropdown",
+            "row": 0,
+            "colSpan": 4,
+            "label": "Warengruppe",
+            "name": "kwarengruppe",
+            "action_ids": [
+              "act_umsatz_kpi",
+              "act_umsatz_verlauf",
+              "act_umsatz_auftraege",
+              "act_lager_kpi",
+              "act_kapital_wg",
+              "act_lager_tabelle",
+              "act_abverkauf",
+              "act_altware_kpi",
+              "act_altware_tabelle"
+            ],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "warengruppe",
+              "placeholder": "— alle Warengruppen —",
+              "auto_run": true
+            }
+          }
+        ],
+        "layout": [],
+        "actions": [
+          {
+            "id": "act_umsatz_kpi",
+            "type": "run_mapping",
+            "mapping_id": "mapping_umsatz_kpi",
+            "pipeline_id": null,
+            "label": "Umsatz-Kennzahlen"
+          },
+          {
+            "id": "act_umsatz_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "mapping_umsatz_verlauf",
+            "pipeline_id": null,
+            "label": "Umsatz-Verlauf"
+          },
+          {
+            "id": "act_umsatz_auftraege",
+            "type": "run_mapping",
+            "mapping_id": "mapping_umsatz_auftraege",
+            "pipeline_id": null,
+            "label": "Aufträge"
+          },
+          {
+            "id": "act_lager_kpi",
+            "type": "run_mapping",
+            "mapping_id": "mapping_lager_kpi",
+            "pipeline_id": null,
+            "label": "Lager-Kennzahlen"
+          },
+          {
+            "id": "act_kapital_wg",
+            "type": "run_mapping",
+            "mapping_id": "mapping_kapital_wg",
+            "pipeline_id": null,
+            "label": "Kapital nach Warengruppe"
+          },
+          {
+            "id": "act_lager_tabelle",
+            "type": "run_mapping",
+            "mapping_id": "mapping_lager_tabelle",
+            "pipeline_id": null,
+            "label": "Lagerbestand"
+          },
+          {
+            "id": "act_abverkauf",
+            "type": "run_mapping",
+            "mapping_id": "mapping_abverkauf",
+            "pipeline_id": null,
+            "label": "Abverkauf"
+          },
+          {
+            "id": "act_altware_kpi",
+            "type": "run_mapping",
+            "mapping_id": "mapping_altware_kpi",
+            "pipeline_id": null,
+            "label": "Altware-Kennzahlen"
+          },
+          {
+            "id": "act_altware_tabelle",
+            "type": "run_mapping",
+            "mapping_id": "mapping_altware_tabelle",
+            "pipeline_id": null,
+            "label": "Altware-Liste"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_kpi_umsatz",
+            "type": "kpi",
+            "label": "Umsatz netto",
+            "action_id": "act_umsatz_kpi",
+            "config": {
+              "width": 4,
+              "column": "UmsatzNetto",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "UmsatzNettoVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_kpi_rechnungen",
+            "type": "kpi",
+            "label": "Rechnungen",
+            "action_id": "act_umsatz_kpi",
+            "config": {
+              "width": 4,
+              "column": "AnzahlRechnungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "AnzahlRechnungenVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_kpi_avg",
+            "type": "kpi",
+            "label": "Ø Rechnungswert",
+            "action_id": "act_umsatz_kpi",
+            "config": {
+              "width": 4,
+              "column": "AvgRechnungswert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AvgRechnungswertVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_line_umsatz",
+            "type": "line",
+            "label": "Umsatz-Verlauf (aktuell vs. Vorjahr)",
+            "action_id": "act_umsatz_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Umsatz",
+                "UmsatzVorjahr"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_tbl_auftraege",
+            "type": "table",
+            "label": "Aufträge im Zeitraum",
+            "action_id": "act_umsatz_auftraege",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_kpi_kapital",
+            "type": "kpi",
+            "label": "Gebundenes Kapital",
+            "action_id": "act_lager_kpi",
+            "config": {
+              "width": 4,
+              "column": "Kapitalbindung",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_artikel",
+            "type": "kpi",
+            "label": "Artikel mit Bestand",
+            "action_id": "act_lager_kpi",
+            "config": {
+              "width": 4,
+              "column": "ArtikelMitBestand",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_kpi_menge",
+            "type": "kpi",
+            "label": "Bestandsmenge gesamt",
+            "action_id": "act_lager_kpi",
+            "config": {
+              "width": 4,
+              "column": "Gesamtmenge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_bar_kapital",
+            "type": "bar",
+            "label": "Kapitalbindung nach Warengruppe",
+            "action_id": "act_kapital_wg",
+            "config": {
+              "width": 12,
+              "x_column": "Warengruppe",
+              "y_columns": [
+                "Kapitalbindung"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_tbl_lager",
+            "type": "table",
+            "label": "Lagerbestand je Artikel",
+            "action_id": "act_lager_tabelle",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_tbl_abverkauf",
+            "type": "table",
+            "label": "Abverkaufsliste",
+            "action_id": "act_abverkauf",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_kpi_altkapital",
+            "type": "kpi",
+            "label": "Gebundenes Kapital (Altware)",
+            "action_id": "act_altware_kpi",
+            "config": {
+              "width": 6,
+              "column": "GebundenesKapital",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_altanzahl",
+            "type": "kpi",
+            "label": "Anzahl Ladenhüter",
+            "action_id": "act_altware_kpi",
+            "config": {
+              "width": 6,
+              "column": "AnzahlLadenhueter",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_tbl_altware",
+            "type": "table",
+            "label": "Altware / Ladenhüter",
+            "action_id": "act_altware_tabelle",
+            "config": {
+              "width": 12
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_umsatz",
+            "label": "Umsatz",
+            "action_ids": [
+              "act_umsatz_kpi",
+              "act_umsatz_verlauf",
+              "act_umsatz_auftraege"
+            ]
+          },
+          {
+            "id": "tab_lager",
+            "label": "Lager & Kapitalbindung",
+            "action_ids": [
+              "act_lager_kpi",
+              "act_kapital_wg",
+              "act_lager_tabelle"
+            ]
+          },
+          {
+            "id": "tab_abverkauf",
+            "label": "Abverkauf",
+            "action_ids": [
+              "act_abverkauf"
+            ]
+          },
+          {
+            "id": "tab_altware",
+            "label": "Altware",
+            "action_ids": [
+              "act_altware_kpi",
+              "act_altware_tabelle"
+            ]
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ]
+}
