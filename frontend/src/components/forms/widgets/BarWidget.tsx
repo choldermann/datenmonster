@@ -5,7 +5,9 @@ import {
 
 const S = { textDim: "var(--text-dim)", border: "var(--border)" };
 
-const COLORS = ["#fce49980", "#6ee7b780", "#a78bfa80", "#f87171aa", "#60a5faaa", "#fb923caa"];
+// Kräftige, gut unterscheidbare Farben je Serie/Plattform.
+const COLORS = ["#fce499", "#6ee7b7", "#a78bfa", "#f87171", "#60a5fa", "#fb923c",
+  "#34d399", "#f472b6", "#facc15", "#22d3ee", "#c084fc", "#4ade80"];
 
 // Deutsche Tausenderpunkte für Achse & Tooltip (z.B. 6000000 → 6.000.000).
 const NF = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
@@ -14,20 +16,49 @@ const fmtNum = (v) => (v == null || v === "" || isNaN(Number(v))) ? v : NF.forma
 export default function BarWidget({ widget, result, onDrilldown }) {
   const { rows = [] } = result;
   const cfg = widget.config || {};
-  const { x_column, y_columns = [], stacked = false } = cfg;
+  const { x_column, y_columns = [], series_column, value_column } = cfg;
   const canDrill = !!onDrilldown && !!x_column;
 
-  if (!x_column || !y_columns.length) return (
+  // Zwei Modi:
+  //  a) klassisch: feste Wert-Spalten (y_columns)
+  //  b) Serien-Pivot: eine Kategorie-Spalte (series_column, z.B. Plattform) wird zu
+  //     gestapelten, farblich getrennten Serien; Werte aus value_column.
+  const pivot = !!(series_column && value_column);
+
+  let data = [];
+  let seriesKeys = [];
+  if (pivot) {
+    const xVals = [];
+    const seen = new Set();
+    const byX = {};
+    const skSet = new Set();
+    for (const r of rows) {
+      const xv = r[x_column];
+      const sv = r[series_column];
+      if (xv == null) continue;
+      if (!seen.has(xv)) { seen.add(xv); xVals.push(xv); byX[xv] = { [x_column]: xv }; }
+      const key = (sv == null || sv === "") ? "Unbekannt" : String(sv);
+      skSet.add(key);
+      byX[xv][key] = (byX[xv][key] || 0) + Number(r[value_column] ?? 0);
+    }
+    seriesKeys = [...skSet];
+    data = xVals.map(xv => byX[xv]);
+  } else {
+    seriesKeys = y_columns;
+    data = rows.map(r => {
+      const entry = { [x_column]: r[x_column] };
+      for (const col of y_columns) entry[col] = Number(r[col] ?? 0);
+      return entry;
+    });
+  }
+
+  const stacked = pivot ? (cfg.stacked !== false) : !!cfg.stacked;
+
+  if (!x_column || !seriesKeys.length) return (
     <div style={{ padding: "32px 20px", textAlign: "center", color: S.textDim, fontSize: 12 }}>
-      x_column und y_columns konfigurieren
+      {pivot ? "series_column/value_column konfigurieren" : "x_column und y_columns konfigurieren"}
     </div>
   );
-
-  const data = rows.map(r => {
-    const entry = { [x_column]: r[x_column] };
-    for (const col of y_columns) entry[col] = Number(r[col] ?? 0);
-    return entry;
-  });
 
   return (
     <div style={{ padding: "16px 8px" }}>
@@ -44,10 +75,10 @@ export default function BarWidget({ widget, result, onDrilldown }) {
             labelStyle={{ color: "var(--text-bright)", fontWeight: 600 }}
             formatter={(v, name) => [fmtNum(v), name]}
           />
-          {y_columns.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
-          {y_columns.map((col, i) => (
-            <Bar key={col} dataKey={col} stackId={stacked ? "a" : undefined}
-              fill={COLORS[i % COLORS.length]} radius={[3, 3, 0, 0]} />
+          {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+          {seriesKeys.map((col, i) => (
+            <Bar key={col} dataKey={col} name={col} stackId={stacked ? "a" : undefined}
+              fill={COLORS[i % COLORS.length]} radius={stacked ? 0 : [3, 3, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>

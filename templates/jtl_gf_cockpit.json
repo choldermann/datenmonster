@@ -2027,11 +2027,12 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(YEAR(RE.dErstellt) AS VARCHAR(4)) AS Jahr,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= DATEFROMPARTS(YEAR(GETDATE()) - (TRY_CONVERT(INT, :jahre) - 1), 1, 1)\nGROUP BY YEAR(RE.dErstellt)\nORDER BY Jahr",
+          "sql": "SELECT\n    CAST(YEAR(RE.dErstellt) AS VARCHAR(4)) AS Jahr,\n    ISNULL(FAM.FamName, 'Unbekannt') AS Plattform,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tPlattform P1 ON P1.nPlattform = RE.kPlattform\nLEFT JOIN (SELECT nTyp, MIN(cName) AS FamName FROM dbo.tPlattform WHERE nInet = 0 GROUP BY nTyp) FAM ON FAM.nTyp = P1.nTyp\nWHERE RE.dErstellt >= DATEFROMPARTS(YEAR(GETDATE()) - (TRY_CONVERT(INT, :jahre) - 1), 1, 1)\nGROUP BY YEAR(RE.dErstellt), ISNULL(FAM.FamName, 'Unbekannt')\nORDER BY Jahr",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
             "Jahr",
+            "Plattform",
             "Umsatz"
           ]
         }
@@ -2062,6 +2063,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Jahr"
+              }
+            },
+            {
+              "source_field": "Plattform",
+              "target_field": "Plattform",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Plattform"
               }
             },
             {
@@ -2709,9 +2720,9 @@
             "config": {
               "width": 12,
               "x_column": "Jahr",
-              "y_columns": [
-                "Umsatz"
-              ]
+              "series_column": "Plattform",
+              "value_column": "Umsatz",
+              "stacked": true
             }
           }
         ],
