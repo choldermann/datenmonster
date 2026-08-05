@@ -218,9 +218,11 @@ class AIService:
         return await self._complete([{"role": "user", "content": user_message}], system,
                                     params=params, model=model)
 
-    async def stream_with_context(self, user_message: str, system: str = "", json_mode: bool = False):
+    async def stream_with_context(self, user_message: str, system: str = "", json_mode: bool = False,
+                                  params: "AIParams | None" = None, model: str | None = None):
         """Generic streaming entry-point used by the Context Builder."""
-        async for token in self._stream([{"role": "user", "content": user_message}], system, json_mode=json_mode):
+        async for token in self._stream([{"role": "user", "content": user_message}], system,
+                                        json_mode=json_mode, params=params, model=model):
             yield token
 
     # ── status ───────────────────────────────────────────────────────────────

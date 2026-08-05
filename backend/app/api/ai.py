@@ -309,12 +309,8 @@ async def summarize_data(
     if body.instruction:
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
-    # Cache-Treffer? (gleiches Label + gleiche aufbereitete Daten + gleiche Anweisung)
     import hashlib, time as _t
     ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}".encode("utf-8")).hexdigest()
-    hit = _SUMMARY_CACHE.get(ckey)
-    if hit and hit[0] + _SUMMARY_TTL > _t.time():
-        return {"text": hit[1], "model": hit[2], "cached": True}
 
     # Für Fließtext ein allgemeines Instruct-Modell bevorzugen (das konfigurierte
     # Default-Modell ist oft ein Code-Modell und formuliert schlechtes Deutsch).
@@ -326,14 +322,23 @@ async def summarize_data(
     _PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gemma3:1b", "llama3.2:1b"]
     chosen = next((m for m in _PREF if m in installed), None)
     params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)
-    try:
-        text = await svc.complete_with_context(user_msg, system, params=params, model=chosen)
-    except Exception as e:
-        raise HTTPException(502, f"KI-Anfrage fehlgeschlagen: {str(e)[:200]}")
-    text = (text or "").strip()
-    used = chosen or svc.model
-    _SUMMARY_CACHE[ckey] = (_t.time(), text, used)
-    return {"text": text, "model": used, "cached": False}
+
+    # Als SSE-Stream ausliefern: die Response-Header gehen sofort raus (kein
+    # "Network Error" bei langsamem Kaltstart), Text erscheint fortlaufend.
+    async def gen():
+        hit = _SUMMARY_CACHE.get(ckey)
+        if hit and hit[0] + _SUMMARY_TTL > _t.time():
+            yield hit[1]
+            return
+        parts = []
+        async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
+            parts.append(tok)
+            yield tok
+        text = "".join(parts).strip()
+        if text:
+            _SUMMARY_CACHE[ckey] = (_t.time(), text, chosen or svc.model)
+
+    return _sse_stream(gen())
 
 
 # ── Expression ────────────────────────────────────────────────────────────────
