@@ -11,9 +11,12 @@ from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
+from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.models.user import User
+from app.models.form import Form as FormModel
 from app.services.eingangsrechnung_parser import parse_erechnung, ERechnungParseError
 from app.services.jtl_eingangsrechnung_writer import (
     EingangsrechnungWriter, serialize_kopf, deserialize_kopf)
@@ -21,6 +24,32 @@ from app.services.jtl_eingangsrechnung_writer import (
 router = APIRouter(prefix="/api/eingangsrechnung", tags=["eingangsrechnung"])
 
 MAX_UPLOAD = 20 * 1024 * 1024  # 20 MB
+
+
+def _check_connection_access(connection_id: int, user: User, db: Session) -> None:
+    """Stellt sicher, dass der Benutzer diese JTL-Verbindung nutzen darf.
+
+    Admins und interne Editoren haben ohnehin vollen Connection-Zugriff im Editor.
+    Ein reiner Portal-Benutzer (is_portal_only) darf eine Verbindung NUR ansprechen,
+    wenn sie in einem veröffentlichten Formular als Eingangsrechnungs-Widget gebunden
+    ist, auf das er Zugriff hat — sonst könnte er in eine fremde WaWi schreiben.
+    """
+    if getattr(user, "is_admin", False) or not getattr(user, "is_portal_only", False):
+        return
+    # Lazy-Import vermeidet jegliche Import-Reihenfolge-Probleme beim Modul-Load.
+    from app.api.portal import _check_portal_access
+    forms = db.query(FormModel).filter(FormModel.published == True).all()
+    for f in forms:
+        widgets = (f.schema or {}).get("widgets", [])
+        bound = {str(w.get("config", {}).get("connection_id"))
+                 for w in widgets if w.get("type") == "eingangsrechnung"}
+        if str(connection_id) in bound:
+            try:
+                _check_portal_access(f, user)
+                return
+            except HTTPException:
+                continue
+    raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
 
 
 def _writer(connection_id: int) -> EingangsrechnungWriter:
@@ -49,8 +78,10 @@ async def plan(
     file: UploadFile = File(...),
     overrides: Optional[str] = Form(None),
     user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """E-Rechnung hochladen → parsen → Dry-Run-Plan. Gibt {kopf, plan} zurück."""
+    _check_connection_access(connection_id, user, db)
     data = await file.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Datei zu groß")
@@ -64,16 +95,20 @@ async def plan(
 
 
 @router.post("/replan")
-def replan(req: ReplanRequest, user: User = Depends(get_current_user)):
+def replan(req: ReplanRequest, user: User = Depends(get_current_user),
+           db: Session = Depends(get_db)):
     """Plan mit geänderten Overrides neu berechnen (Live-Vorschau, kein Write)."""
+    _check_connection_access(req.connection_id, user, db)
     kopf = deserialize_kopf(req.kopf)
     p = _writer(req.connection_id).build_plan(kopf, dry_run=True, overrides=req.overrides)
     return p.to_dict()
 
 
 @router.post("/write")
-def write(req: WriteRequest, user: User = Depends(get_current_user)):
+def write(req: WriteRequest, user: User = Depends(get_current_user),
+          db: Session = Depends(get_db)):
     """Freigabe: echten Write ausführen (nur wenn Plan fehlerfrei). Optional lernen."""
+    _check_connection_access(req.connection_id, user, db)
     kopf = deserialize_kopf(req.kopf)
     w = _writer(req.connection_id)
     p = w.build_plan(kopf, dry_run=False, overrides=req.overrides)
@@ -91,8 +126,10 @@ def write(req: WriteRequest, user: User = Depends(get_current_user)):
 
 
 @router.get("/artikel-suche")
-def artikel_suche(connection_id: int, q: str, user: User = Depends(get_current_user)):
+def artikel_suche(connection_id: int, q: str, user: User = Depends(get_current_user),
+                  db: Session = Depends(get_db)):
     """Artikelsuche fürs manuelle Zuordnen (eigene ArtNr / Lieferanten-ArtNr / Name)."""
+    _check_connection_access(connection_id, user, db)
     if len(q.strip()) < 2:
         return {"results": []}
     return {"results": _writer(connection_id).search_artikel(q.strip())}

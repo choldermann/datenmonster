@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download } from "lucide-react";
 import api from "../api/client";
-import WidgetRenderer from "../components/forms/WidgetRenderer";
+import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 
@@ -285,7 +285,7 @@ export default function FormRunner() {
         )}
 
         {/* Widgets: eigenständige (z.B. Eingangsrechnung) sofort, ergebnis-basierte nach Lauf */}
-        {widgets.length > 0 && (results || widgets.some(w => w.type === "eingangsrechnung")) && (
+        {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results || {}} allowDownload={true} />

@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import WidgetRenderer from "../components/forms/WidgetRenderer";
+import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 
@@ -365,11 +365,13 @@ export default function PortalRunner() {
           </div>
         )}
 
-        {/* ── Widget-Ergebnisse ── */}
-        {results && widgets.length > 0 && (
+        {/* ── Widget-Ergebnisse ──
+            Standalone-Widgets (z.B. Eingangsrechnungs-Freigabe) rendern ohne Action-Result;
+            reguläre Widgets erst nach dem Ausführen. Parität zum Editor-FormRunner. */}
+        {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
-            results={results}
+            results={results || {}}
             allowDownload={allowDownload}
           />
         )}

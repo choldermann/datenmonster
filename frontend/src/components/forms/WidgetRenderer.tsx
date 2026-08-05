@@ -21,7 +21,8 @@ const WIDGET_LABELS = {
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
-const STANDALONE_WIDGETS = new Set(["eingangsrechnung"]);
+// Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
+export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung"]);
 
 function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -104,7 +105,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                   <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{title}</span>
-                    {result.total !== undefined && widget.type !== "table" && !STANDALONE_WIDGETS.has(widget.type) && (
+                    {result.total !== undefined && widget.type !== "table" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
                   </div>
