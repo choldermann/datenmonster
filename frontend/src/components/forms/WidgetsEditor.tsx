@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Trash2, ChevronDown, ChevronRight, Table2, Hash,
-         BarChart2, TrendingUp, PieChart, Receipt } from "lucide-react";
+         BarChart2, TrendingUp, PieChart, Receipt, Sparkles } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -29,6 +29,8 @@ const WIDGET_TYPES = [
     desc: "Anteile als Kuchen- oder Donut-Diagramm" },
   { type: "eingangsrechnung", label: "Eingangsrechnungs-Freigabe", Icon: Receipt, color: "#f0abfc",
     desc: "E-Rechnung (ZUGFeRD/XRechnung) hochladen, prüfen und nach JTL verbuchen" },
+  { type: "ai_summary", label: "KI-Analyse", Icon: Sparkles, color: "#38bdf8",
+    desc: "KI formuliert aus dem Ergebnis der Action eine kurze Management-Zusammenfassung" },
 ];
 
 function LabelRow({ label, children }) {
@@ -229,6 +231,17 @@ function WidgetConfig({ widget, actions, onUpdate }) {
             </label>
           </LabelRow>
         </>
+      )}
+
+      {widget.type === "ai_summary" && (
+        <LabelRow label="Zusätzliche Anweisung (optional)">
+          <textarea value={cfg.instruction || ""} onChange={e => set({ instruction: e.target.value })}
+            rows={3} placeholder="z.B. Fokus auf Rentabilität und Handlungsempfehlungen"
+            style={{ ...inp, resize: "vertical" }} />
+          <p style={{ fontSize: 10, color: S.textDim, margin: "6px 0 0", lineHeight: 1.5 }}>
+            Nutzt das Ergebnis der verknüpften Action (KI muss unter Systemeinstellungen aktiv sein).
+          </p>
+        </LabelRow>
       )}
 
       {["bar", "line", "pie"].includes(widget.type) && (

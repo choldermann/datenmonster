@@ -417,7 +417,7 @@ Eine Action führt beim Klick ein Mapping (oder eine Pipeline) aus; ihr Ergebnis
 
 Jedes Widget hat `id`, `type`, `label`, `action_id` (verweist auf eine Action) und `config`. `config.width` ist die Breite im **12-Spalten-Raster** (1–12).
 
-**Widget-Typen:** `kpi`, `bar`, `line`, `pie`, `table`, `eingangsrechnung`.
+**Widget-Typen:** `kpi`, `bar`, `line`, `pie`, `table`, `ai_summary`, `eingangsrechnung`.
 
 #### KPI-Kachel (`kpi`)
 ```json
@@ -477,6 +477,19 @@ Jedes Widget hat `id`, `type`, `label`, `action_id` (verweist auf eine Action) u
 }
 ```
 - Zeigt alle Spalten des Ergebnisses. Nur `width` nötig.
+
+#### KI-Kurzanalyse (`ai_summary`)
+```json
+{
+  "id": "w_ai_uebersicht", "type": "ai_summary", "label": "KI-Kurzanalyse der Kennzahlen",
+  "action_id": "act_overview_kpi",
+  "config": { "width": 12, "instruction": "Fokus auf Entwicklung zum Vorjahr und Handlungsbedarf." }
+}
+```
+- Formuliert aus dem **Ergebnis der verknüpften Action** (Spalten + Zeilen) eine kurze deutsche Management-Zusammenfassung (2–4 Sätze) per KI. **Verbraucht keine eigene DB-Abfrage** – lege es auf die **gleiche `action_id`** wie eine bereits vorhandene KPI-/Tabellen-Action (Datenwiederverwendung), z. B. die Übersichts-KPI-Zeile.
+- Bei **einer** Ergebniszeile (KPI-Zeile) werden Vorjahres-Deltas serverseitig berechnet; erkennt Vergleichsspalten automatisch am Namensschema `<Spalte>` + `<Spalte>VJ` bzw. `…Vorjahr`. Vergib deine Vergleichsspalten entsprechend, dann werden Prozentwerte korrekt formuliert.
+- `config.instruction` (optional): zusätzliche Fokus-Anweisung an die KI. `config.width` wie üblich.
+- **Voraussetzung:** Die KI-Integration muss unter *Systemeinstellungen* aktiv sein (Ollama). Ist sie aus, zeigt das Widget einen Hinweis statt Text. Das Ergebnis wird pro Datenstand gecacht (erneutes Öffnen ist sofort da).
 
 #### Eingangsrechnungs-Freigabe (`eingangsrechnung`)
 Spezial-Widget für den DATEV/JTL-Eingangsrechnungs-Workflow. `config.connection_id` = Ziel-WaWi-Verbindung. Nur verwenden, wenn ausdrücklich gefordert.

@@ -1791,6 +1791,16 @@
             }
           },
           {
+            "id": "w_ai_uebersicht",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse der Kennzahlen",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Fokus auf Entwicklung zum Vorjahr, Ertragslage und konkreten Handlungsbedarf."
+            }
+          },
+          {
             "id": "w_line_umsatz",
             "type": "line",
             "label": "Umsatzentwicklung (aktuell vs. Vorjahr)",

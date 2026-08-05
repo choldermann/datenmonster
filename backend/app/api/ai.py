@@ -238,6 +238,104 @@ async def explain_error(
     return _sse_stream(svc.stream_with_context(context, system))
 
 
+# ── Kennzahlen-Zusammenfassung (Dashboard-Widget "ai_summary") ──────────────────
+
+class SummarizeDataRequest(BaseModel):
+    label: str = ""
+    columns: list = []
+    rows: list = []
+    instruction: Optional[str] = ""
+
+# Kleiner In-Process-Cache: gleiche Daten (z.B. Dashboard mit gleichem Zeitraum
+# erneut geöffnet) liefern die Zusammenfassung sofort, statt das LLM neu laufen zu
+# lassen. Key = Hash aus Label + aufbereitetem Datentext; TTL 1 Stunde.
+_SUMMARY_CACHE: dict = {}
+_SUMMARY_TTL = 3600
+
+@router.post("/summarize-data")
+async def summarize_data(
+    body: SummarizeDataRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Formuliert aus einem Widget-/Mapping-Ergebnis (Spalten + Zeilen) eine kurze
+    deutsche Management-Zusammenfassung. Nutzt das konfigurierte Ollama-Modell.
+    Bewusst generisch, damit beliebige Dashboards das Widget wiederverwenden können."""
+    svc = _require_ai(db)
+    rows = (body.rows or [])[:30]  # Prompt kompakt halten
+    cols = body.columns or (list(rows[0].keys()) if rows else [])
+
+    def _fmt(v):
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            return "-" if v is None else str(v)
+        s = f"{int(fv):,}" if fv == int(fv) else f"{fv:,.2f}"
+        return s.replace(",", "§").replace(".", ",").replace("§", ".")  # de-DE Tausender/Dezimal
+
+    # Kennzahlen aufbereiten. Bei EINER Zeile (KPI-Ergebnis) werden Vorjahres-Deltas
+    # serverseitig berechnet und vorformatiert – das Modell muss dann nicht rechnen
+    # (genauere Prozentwerte/Richtungen, schnelleres/kleineres Modell reicht).
+    if len(rows) == 1:
+        row = rows[0]
+        lines = []
+        for c in cols:
+            if c.endswith("VJ") or c.endswith("Vorjahr"):
+                continue
+            v = row.get(c)
+            vj = row.get(c + "VJ", row.get(c + "Vorjahr"))
+            line = f"{c}: {_fmt(v)}"
+            try:
+                if vj is not None and float(vj) != 0:
+                    pct = 100.0 * (float(v) - float(vj)) / float(vj)
+                    line += f" (Vorjahr {_fmt(vj)}, {pct:+.1f} %)"
+            except (TypeError, ValueError):
+                pass
+            lines.append(line)
+        data_text = "\n".join(lines)
+    else:
+        data_text = "\n".join("; ".join(f"{c}: {_fmt(r.get(c))}" for c in cols) for r in rows) or "(keine Daten)"
+
+    system = (
+        "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer zuarbeitet. "
+        "Die Kennzahlen sind bereits fertig berechnet – inklusive Vorjahreswert und prozentualer "
+        "Veränderung in Klammern. Rechne selbst NICHTS nach und ändere keine Zahlen; nutze die Werte exakt so. "
+        "Fasse in 2 bis 4 kurzen, konkreten deutschen Sätzen zusammen: die wichtigsten Werte, die Entwicklung "
+        "zum Vorjahr (gestiegen/gesunken mit dem angegebenen Prozentwert) und – falls erkennbar – einen klaren "
+        "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
+        "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+    )
+    user_msg = f"Kennzahlen »{body.label or 'Dashboard'}«:\n{data_text}"
+    if body.instruction:
+        user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
+
+    # Cache-Treffer? (gleiches Label + gleiche aufbereitete Daten + gleiche Anweisung)
+    import hashlib, time as _t
+    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}".encode("utf-8")).hexdigest()
+    hit = _SUMMARY_CACHE.get(ckey)
+    if hit and hit[0] + _SUMMARY_TTL > _t.time():
+        return {"text": hit[1], "model": hit[2], "cached": True}
+
+    # Für Fließtext ein allgemeines Instruct-Modell bevorzugen (das konfigurierte
+    # Default-Modell ist oft ein Code-Modell und formuliert schlechtes Deutsch).
+    from app.services.ai_service import get_installed_models
+    try:
+        installed = await get_installed_models(svc.base_url)
+    except Exception:
+        installed = []
+    _PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gemma3:1b", "llama3.2:1b"]
+    chosen = next((m for m in _PREF if m in installed), None)
+    params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)
+    try:
+        text = await svc.complete_with_context(user_msg, system, params=params, model=chosen)
+    except Exception as e:
+        raise HTTPException(502, f"KI-Anfrage fehlgeschlagen: {str(e)[:200]}")
+    text = (text or "").strip()
+    used = chosen or svc.model
+    _SUMMARY_CACHE[ckey] = (_t.time(), text, used)
+    return {"text": text, "model": used, "cached": False}
+
+
 # ── Expression ────────────────────────────────────────────────────────────────
 
 class GenerateExpressionRequest(BaseModel):

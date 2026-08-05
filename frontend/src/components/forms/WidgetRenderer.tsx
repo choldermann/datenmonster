@@ -8,6 +8,7 @@ import BarWidget   from "./widgets/BarWidget";
 import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
+import AiSummaryWidget from "./widgets/AiSummaryWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -17,7 +18,7 @@ const S = {
 const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
-  eingangsrechnung: "Eingangsrechnungs-Freigabe",
+  eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -46,6 +47,7 @@ function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
+    case "ai_summary": return <AiSummaryWidget widget={widget} result={result} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
 }
@@ -105,7 +107,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                   <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{title}</span>
-                    {result.total !== undefined && widget.type !== "table" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
+                    {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
                   </div>
