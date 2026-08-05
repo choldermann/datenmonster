@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
-import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
@@ -136,6 +136,27 @@ export default function FormRunner() {
     }
   };
 
+  const [reporting, setReporting] = useState(false);
+  const downloadReport = async () => {
+    setReporting(true);
+    try {
+      const resp = await api.post(`/api/forms/${id}/report`, { params }, { responseType: "blob" });
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(form?.name || "report").replace(/[^a-z0-9]+/gi, "_")}_${new Date().toISOString().slice(0,10)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // Fehlermeldung steckt bei Blob-Responses im Blob-Text
+      let msg = e.message;
+      try { msg = JSON.parse(await e.response?.data?.text())?.detail || msg; } catch { /* ignore */ }
+      setError("PDF-Report fehlgeschlagen: " + msg);
+    } finally {
+      setReporting(false);
+    }
+  };
+
   const runForm = async (actionIds = null, paramsOverride = null) => {
     const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
     if (paramsOverride) setParams(effParams);
@@ -197,6 +218,15 @@ export default function FormRunner() {
         </button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
+        {widgets.length > 0 && (
+          <button onClick={downloadReport} disabled={reporting}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
+              border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
+              cursor: reporting ? "wait" : "pointer", fontSize: 12, fontWeight: 600 }}>
+            {reporting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={12} />}
+            {reporting ? "Erstelle PDF…" : "PDF-Report"}
+          </button>
+        )}
         <button onClick={() => navigate(`/forms/${id}`)}
           style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", fontSize: 12 }}>

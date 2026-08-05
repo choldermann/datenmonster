@@ -237,6 +237,27 @@ def run_form(form_id: int, data: FormRunRequest,
     return _execute_form(f, data, db, user_id=user.id)
 
 
+@router.post("/{form_id}/report")
+async def form_report(form_id: int, data: FormRunRequest,
+                      db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """Erzeugt aus einem Dashboard-Formular einen PDF-Report (Deckblatt + Reiter)."""
+    from fastapi.responses import Response
+    from app.services.cockpit_report import generate_report
+    _check_editor(user)
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    try:
+        pdf = await generate_report(f, data.params or {}, db)
+    except Exception as e:
+        import traceback as _tb
+        raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}\n{_tb.format_exc()[-400:]}")
+    fname = _slugify(f.name or "report") + "_" + datetime.now().strftime("%Y%m%d") + ".pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
+
+
 # ── Submissions (protokollierte Formular-Läufe) ──────────────────────────────
 
 @router.get("/{form_id}/submissions")
