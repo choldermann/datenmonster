@@ -37,7 +37,10 @@ export default function AiSummaryWidget({ widget, result }) {
       null,
       ac.signal,
     )
-      .catch(e => { if (e.message !== "__ABORTED__") setErr(e.message); })
+      // Abgebrochene Anfrage (Filterwechsel → neue Anfrage) NIE als Fehler zeigen –
+      // ein abgebrochener fetch meldet sich je nach Browser als generischer
+      // Netzwerkfehler, nicht immer als sauberer AbortError.
+      .catch(e => { if (!ac.signal.aborted && e.message !== "__ABORTED__") setErr(e.message); })
       .finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
