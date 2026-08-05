@@ -1,4 +1,4 @@
-import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info } from "lucide-react";
 
 const S = {
   bgMain: "var(--bg-main)",
@@ -11,6 +11,11 @@ const S = {
 };
 
 const ACCENT = "#fce499";
+
+// Erklärung wird automatisch eingeblendet, sobald die Detailtabelle eine
+// Deckungsbeitrags-Spalte enthält (DB, DB I, DB II …).
+const DB_INFO = "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis). "
+  + "Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten).";
 
 // CSV aus Zeilen bauen (RFC-4180-konform: Felder mit " , \n werden gequotet)
 function toCsv(columns, rows) {
@@ -112,6 +117,15 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <X size={16} />
           </button>
         </div>
+
+        {/* DB-Erklärung, wenn die Detailtabelle eine Deckungsbeitrags-Spalte hat */}
+        {!loading && !error && columns.some(c => /^DB([ -]|$)/.test(c)) && (
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "8px 16px",
+            borderBottom: `1px solid ${S.border}`, fontSize: 10.5, lineHeight: 1.5, color: S.textDim,
+            backgroundColor: "rgba(255,255,255,0.02)" }}>
+            <Info size={12} style={{ flexShrink: 0, marginTop: 1 }} /> <span>{DB_INFO}</span>
+          </div>
+        )}
 
         {/* Tabelle */}
         <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin" }}>
