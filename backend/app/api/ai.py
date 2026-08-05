@@ -873,7 +873,7 @@ async def chat(
             )
             system_sections.append({"label": "JOIN-Beziehungen", "content": content})
         if rest_data:
-            data_str = _j.dumps(rest_data, ensure_ascii=False, default=str)[:4000]
+            data_str = _j.dumps(rest_data, ensure_ascii=False, default=str)[:6000]
             system_sections.append({"label": "Kontext", "content": data_str})
     system = "\n\n".join(s["content"] for s in system_sections)
 
