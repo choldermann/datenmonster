@@ -43,7 +43,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto - EK END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto - EK END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * ISNULL(A.fEKNetto, 0) AS EK,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
+          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ,\n    Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -51,6 +51,8 @@
             "UmsatzVJ",
             "Rohertrag",
             "RohertragVJ",
+            "DB2",
+            "DB2VJ",
             "Rechnungen",
             "RechnungenVJ",
             "AktiveKunden",
@@ -58,7 +60,9 @@
             "AvgAuftrag",
             "AvgAuftragVJ",
             "Marge",
-            "MargeVJ"
+            "MargeVJ",
+            "DB2Marge",
+            "DB2MargeVJ"
           ]
         }
       ],
@@ -118,6 +122,26 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "RohertragVJ"
+              }
+            },
+            {
+              "source_field": "DB2",
+              "target_field": "DB2",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2"
+              }
+            },
+            {
+              "source_field": "DB2VJ",
+              "target_field": "DB2VJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2VJ"
               }
             },
             {
@@ -198,6 +222,26 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "MargeVJ"
+              }
+            },
+            {
+              "source_field": "DB2Marge",
+              "target_field": "DB2Marge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2Marge"
+              }
+            },
+            {
+              "source_field": "DB2MargeVJ",
+              "target_field": "DB2MargeVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2MargeVJ"
               }
             }
           ]
@@ -367,14 +411,17 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
             "Kunde",
             "Umsatz",
             "UmsatzVJ",
-            "Veraenderung"
+            "Veraenderung",
+            "DB I",
+            "DB II",
+            "DB-Marge %"
           ]
         }
       ],
@@ -434,6 +481,36 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Veraenderung"
+              }
+            },
+            {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
               }
             }
           ]
@@ -539,14 +616,17 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 20 Warengruppe,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN ISNULL(UmsatzVJ, 0) > 0 THEN 100.0 * (ISNULL(Umsatz, 0) - UmsatzVJ) / UmsatzVJ END AS DECIMAL(18,1)) AS VeraenderungProzent\nFROM (\n    SELECT ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT A.kWarengruppe, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = X.kWarengruppe\n    GROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\n) g ORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 20 Warengruppe,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN ISNULL(UmsatzVJ, 0) > 0 THEN 100.0 * (ISNULL(Umsatz, 0) - UmsatzVJ) / UmsatzVJ END AS DECIMAL(18,1)) AS VeraenderungProzent,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (\n    SELECT ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2\n    FROM (\n        SELECT A.kWarengruppe, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = X.kWarengruppe\n    GROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\n) g ORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
             "Warengruppe",
             "Umsatz",
             "UmsatzVJ",
-            "VeraenderungProzent"
+            "VeraenderungProzent",
+            "DB I",
+            "DB II",
+            "DB-Marge %"
           ]
         }
       ],
@@ -607,6 +687,36 @@
                 "type": "direct",
                 "source_field": "VeraenderungProzent"
               }
+            },
+            {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
+              }
             }
           ]
         }
@@ -625,7 +735,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -634,7 +744,8 @@
             "Warengruppe",
             "Menge",
             "Umsatz",
-            "Rohertrag"
+            "Rohertrag",
+            "DB-Marge %"
           ]
         }
       ],
@@ -715,6 +826,16 @@
                 "type": "direct",
                 "source_field": "Rohertrag"
               }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
+              }
             }
           ]
         }
@@ -733,14 +854,17 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": ";WITH Src AS (\n    SELECT\n        ISNULL(NULLIF(RA.cLand, ''), '(unbekannt)') AS Land,\n        UPPER(ISNULL(RA.cLand, '')) AS LandU,\n        TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) AS p,\n        POS.fAnzahl * POS.fVkNetto AS Wert,\n        RE.kRechnung AS kRechnung\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n), Klass AS (\n    SELECT Land, Wert, kRechnung,\n        CASE\n            WHEN LandU NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN p IS NULL THEN '(ohne PLZ)'\n            WHEN p IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN p IN (3,15,16) THEN 'Brandenburg'\n            WHEN p IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN p IN (7,98,99) THEN 'Thüringen'\n            WHEN p IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN p IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN p IN (20,21,22) THEN 'Hamburg'\n            WHEN p IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN p IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN p = 28 THEN 'Bremen'\n            WHEN p IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN p IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN p IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN p = 66 THEN 'Saarland'\n            WHEN p IN (68,69,88) OR p BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN p BETWEEN 80 AND 87 OR p BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM Src\n)\nSELECT TOP 25\n    Land, Bundesland,\n    CAST(SUM(Wert) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(DISTINCT kRechnung) AS Rechnungen\nFROM Klass\nGROUP BY Land, Bundesland\nORDER BY Umsatz DESC",
+          "sql": ";WITH Src AS (\n    SELECT\n        ISNULL(NULLIF(RA.cLand, ''), '(unbekannt)') AS Land,\n        UPPER(ISNULL(RA.cLand, '')) AS LandU,\n        TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) AS p,\n        POS.fAnzahl * POS.fVkNetto AS Wert,\n        POS.nType AS nType,\n        POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n        RE.kRechnung AS kRechnung\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n), Klass AS (\n    SELECT Land, Wert, kRechnung, nType, DBpos,\n        CASE\n            WHEN LandU NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN p IS NULL THEN '(ohne PLZ)'\n            WHEN p IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN p IN (3,15,16) THEN 'Brandenburg'\n            WHEN p IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN p IN (7,98,99) THEN 'Thüringen'\n            WHEN p IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN p IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN p IN (20,21,22) THEN 'Hamburg'\n            WHEN p IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN p IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN p = 28 THEN 'Bremen'\n            WHEN p IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN p IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN p IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN p = 66 THEN 'Saarland'\n            WHEN p IN (68,69,88) OR p BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN p BETWEEN 80 AND 87 OR p BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM Src\n)\nSELECT TOP 25\n    Land, Bundesland,\n    CAST(SUM(Wert) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(DISTINCT kRechnung) AS Rechnungen,\n    CAST(SUM(CASE WHEN nType = 1 THEN DBpos ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN nType IN (1,2) THEN DBpos ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN SUM(Wert) > 0 THEN 100.0 * SUM(CASE WHEN nType IN (1,2) THEN DBpos ELSE 0 END) / SUM(Wert) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM Klass\nGROUP BY Land, Bundesland\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
             "Land",
             "Bundesland",
             "Umsatz",
-            "Rechnungen"
+            "Rechnungen",
+            "DB I",
+            "DB II",
+            "DB-Marge %"
           ]
         }
       ],
@@ -800,6 +924,36 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
               }
             }
           ]
@@ -1562,7 +1716,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(RE.kRechnung AS VARCHAR(20)) AS kRechnung,\n    RE.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, RE.dErstellt) AS Datum,\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    ISNULL(NULLIF(RA.cLand, ''), '') AS Land,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(*) AS Positionen\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY RE.kRechnung, RE.cRechnungsnr, CONVERT(date, RE.dErstellt),\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))),\n    ISNULL(NULLIF(RA.cLand, ''), '')\nORDER BY Umsatz DESC",
+          "sql": "SELECT\n    CAST(RE.kRechnung AS VARCHAR(20)) AS kRechnung,\n    RE.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, RE.dErstellt) AS Datum,\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    ISNULL(NULLIF(RA.cLand, ''), '') AS Land,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY RE.kRechnung, RE.cRechnungsnr, CONVERT(date, RE.dErstellt),\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))),\n    ISNULL(NULLIF(RA.cLand, ''), '')\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1572,6 +1726,8 @@
             "Kunde",
             "Land",
             "Umsatz",
+            "DB I",
+            "DB II",
             "Positionen"
           ]
         }
@@ -1655,6 +1811,26 @@
               }
             },
             {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
               "source_field": "Positionen",
               "target_field": "Positionen",
               "target_type": "float",
@@ -1681,7 +1857,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": ";WITH R AS (\n    SELECT RE.kRechnung, RE.cRechnungsnr, RE.dErstellt,\n        RA.cFirma, RA.cVorname, RA.cName,\n        CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n)\nSELECT\n    CAST(R.kRechnung AS VARCHAR(20)) AS kRechnung,\n    R.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, R.dErstellt) AS Datum,\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,'')))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(*) AS Positionen\nFROM R\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = R.kRechnung\nWHERE R.Bundesland = :bundesland\nGROUP BY R.kRechnung, R.cRechnungsnr, CONVERT(date, R.dErstellt),\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,''))))\nORDER BY Umsatz DESC",
+          "sql": ";WITH R AS (\n    SELECT RE.kRechnung, RE.cRechnungsnr, RE.dErstellt,\n        RA.cFirma, RA.cVorname, RA.cName,\n        CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n)\nSELECT\n    CAST(R.kRechnung AS VARCHAR(20)) AS kRechnung,\n    R.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, R.dErstellt) AS Datum,\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,'')))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM R\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = R.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE R.Bundesland = :bundesland\nGROUP BY R.kRechnung, R.cRechnungsnr, CONVERT(date, R.dErstellt),\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,''))))\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1690,6 +1866,8 @@
             "Datum",
             "Kunde",
             "Umsatz",
+            "DB I",
+            "DB II",
             "Positionen"
           ]
         }
@@ -1763,6 +1941,26 @@
               }
             },
             {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
               "source_field": "Positionen",
               "target_field": "Positionen",
               "target_type": "float",
@@ -1789,7 +1987,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(POS.kArtikel AS VARCHAR(20)) AS kArtikel,\n    POS.cArtNr AS ArtNr,\n    POS.cName AS Bezeichnung,\n    CAST(POS.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    POS.cEinheit AS Einheit,\n    CAST(POS.fVkNetto AS DECIMAL(18,2)) AS EinzelNetto,\n    CAST(POS.fAnzahl * POS.fVkNetto AS DECIMAL(18,2)) AS Positionswert\nFROM Rechnung.tRechnungPosition POS\nWHERE POS.kRechnung = :kRechnung\nORDER BY Positionswert DESC",
+          "sql": "SELECT\n    CAST(POS.kArtikel AS VARCHAR(20)) AS kArtikel,\n    POS.cArtNr AS ArtNr,\n    POS.cName AS Bezeichnung,\n    CAST(POS.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    POS.cEinheit AS Einheit,\n    CAST(POS.fVkNetto AS DECIMAL(18,2)) AS EinzelNetto,\n    CAST(POS.fAnzahl * POS.fVkNetto AS DECIMAL(18,2)) AS Positionswert,\n    CAST(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS DB,\n    CAST(CASE WHEN POS.fVkNetto <> 0 THEN 100.0 * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) / POS.fVkNetto END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM Rechnung.tRechnungPosition POS\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE POS.kRechnung = :kRechnung\nORDER BY Positionswert DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1799,7 +1997,9 @@
             "Menge",
             "Einheit",
             "EinzelNetto",
-            "Positionswert"
+            "Positionswert",
+            "DB",
+            "DB-Marge %"
           ]
         }
       ],
@@ -1889,6 +2089,26 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Positionswert"
+              }
+            },
+            {
+              "source_field": "DB",
+              "target_field": "DB",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
               }
             }
           ]
@@ -2083,6 +2303,103 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_db_plattform",
+      "name": "Cockpit – Deckungsbeitrag je Plattform",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    ISNULL(FAM.FamName, 'Unbekannt') AS Plattform,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,2)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tPlattform P1 ON P1.nPlattform = RE.kPlattform\nLEFT JOIN (SELECT nTyp, MIN(cName) AS FamName FROM dbo.tPlattform WHERE nInet = 0 GROUP BY nTyp) FAM ON FAM.nTyp = P1.nTyp\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(FAM.FamName, 'Unbekannt')\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Plattform",
+            "Umsatz",
+            "DB I",
+            "DB II",
+            "DB-Marge %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Deckungsbeitrag je Plattform",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Plattform",
+              "target_field": "Plattform",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Plattform"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
               }
             }
           ]
@@ -2310,6 +2627,13 @@
             "mapping_id": "m_jahr",
             "pipeline_id": null,
             "label": "Cockpit – Umsatz nach Jahr"
+          },
+          {
+            "id": "act_db_plattform",
+            "type": "run_mapping",
+            "mapping_id": "m_db_plattform",
+            "pipeline_id": null,
+            "label": "Cockpit – Deckungsbeitrag je Plattform"
           }
         ],
         "widgets": [
@@ -2333,7 +2657,7 @@
           {
             "id": "w_kpi_rohertrag",
             "type": "kpi",
-            "label": "Rohertrag",
+            "label": "Rohertrag (DB I)",
             "action_id": "act_overview_kpi",
             "config": {
               "width": 4,
@@ -2343,6 +2667,23 @@
               "suffix": "",
               "decimals": 2,
               "compare_column": "RohertragVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_db2",
+            "type": "kpi",
+            "action_id": "act_overview_kpi",
+            "label": "Deckungsbeitrag II",
+            "config": {
+              "width": 4,
+              "column": "DB2",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "DB2VJ",
               "compare_label": "Vorjahr",
               "invert_delta": false
             }
@@ -2360,6 +2701,23 @@
               "suffix": " %",
               "decimals": 1,
               "compare_column": "MargeVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_db2marge",
+            "type": "kpi",
+            "action_id": "act_overview_kpi",
+            "label": "DB II-Marge",
+            "config": {
+              "width": 4,
+              "column": "DB2Marge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1,
+              "compare_column": "DB2MargeVJ",
               "compare_label": "Vorjahr",
               "invert_delta": false
             }
@@ -2724,6 +3082,15 @@
               "value_column": "Umsatz",
               "stacked": true
             }
+          },
+          {
+            "id": "w_tbl_db_plattform",
+            "type": "table",
+            "action_id": "act_db_plattform",
+            "label": "Deckungsbeitrag je Plattform",
+            "config": {
+              "width": 12
+            }
           }
         ],
         "result_tabs": [
@@ -2752,7 +3119,8 @@
               "act_top_artikel",
               "act_region",
               "act_rechnungen",
-              "act_jahr"
+              "act_jahr",
+              "act_db_plattform"
             ]
           },
           {
