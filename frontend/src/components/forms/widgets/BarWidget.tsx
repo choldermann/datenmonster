@@ -7,6 +7,10 @@ const S = { textDim: "var(--text-dim)", border: "var(--border)" };
 
 const COLORS = ["#fce49980", "#6ee7b780", "#a78bfa80", "#f87171aa", "#60a5faaa", "#fb923caa"];
 
+// Deutsche Tausenderpunkte für Achse & Tooltip (z.B. 6000000 → 6.000.000).
+const NF = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
+const fmtNum = (v) => (v == null || v === "" || isNaN(Number(v))) ? v : NF.format(Number(v));
+
 export default function BarWidget({ widget, result, onDrilldown }) {
   const { rows = [] } = result;
   const cfg = widget.config || {};
@@ -33,11 +37,12 @@ export default function BarWidget({ widget, result, onDrilldown }) {
           onClick={canDrill ? (e) => { if (e && e.activeLabel != null) onDrilldown(x_column, e.activeLabel); } : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
           <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }} />
-          <YAxis tick={{ fontSize: 11, fill: S.textDim }} width={52} />
+          <YAxis tick={{ fontSize: 11, fill: S.textDim }} width={72} tickFormatter={fmtNum} />
           <Tooltip
             contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)",
               borderRadius: 6, fontSize: 11 }}
             labelStyle={{ color: "var(--text-bright)", fontWeight: 600 }}
+            formatter={(v, name) => [fmtNum(v), name]}
           />
           {y_columns.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {y_columns.map((col, i) => (

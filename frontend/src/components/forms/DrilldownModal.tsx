@@ -25,23 +25,21 @@ function toCsv(columns, rows) {
 
 function fmtCell(v) {
   if (v == null) return "–";
+  // Nur echte Zahlen mit Tausenderpunkten formatieren – String-IDs wie Artikel-/
+  // Rechnungsnummern (numerische Strings) bleiben unverändert (keine 4.038.015).
   if (typeof v === "number") return v.toLocaleString("de-DE", { maximumFractionDigits: 2 });
-  // numerische Strings hübsch ausrichten/formatieren
-  if (typeof v === "string" && v !== "" && !isNaN(Number(v)) && /^-?\d/.test(v))
-    return Number(v).toLocaleString("de-DE", { maximumFractionDigits: 2 });
   return String(v);
 }
 
 function isNumericCol(col, rows) {
-  return rows.some(r => {
-    const v = r[col];
-    return v != null && v !== "" && !isNaN(Number(v));
-  });
+  // Rechtsbündig nur echte Zahlenspalten – numerische String-IDs bleiben linksbündig.
+  return rows.some(r => typeof r[col] === "number");
 }
 
 export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose,
-  trail = [], canDrillDeeper = false, onRowClick = null, onBack = null }) {
-  const columns = rows.length ? Object.keys(rows[0]) : [];
+  trail = [], canDrillDeeper = false, onRowClick = null, onBack = null, hiddenColumns = [] }) {
+  const hidden = new Set(hiddenColumns || []);
+  const columns = (rows.length ? Object.keys(rows[0]) : []).filter(c => !hidden.has(c));
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
 
   const handleExport = () => {

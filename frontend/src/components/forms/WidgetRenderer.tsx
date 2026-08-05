@@ -61,10 +61,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   const seqRef = useRef(0);
 
   // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
-  const openLevel = async ({ mapping_id, param, value, title, field, depth }) => {
+  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden }) => {
     const base = cfgRef.current.base || {};
     const id = ++seqRef.current;
-    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null }]);
+    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [] }]);
     try {
       const params = { ...base, [param]: value };
       const { data } = await api.post("/api/forms/drilldown", { mapping_id, params });
@@ -81,7 +81,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     if (!dd?.mapping_id) return;
     cfgRef.current = { dd, base: baseParams || {} };
     openLevel({ mapping_id: dd.mapping_id, param: dd.param || field, value,
-      title: dd.title || widget.label || "Drilldown", field, depth: 0 });
+      title: dd.title || widget.label || "Drilldown", field, depth: 0, hidden: dd.hidden_columns });
   };
 
   // Klick auf eine Zeile im Modal → nächste Ebene (levels[depth]).
@@ -93,7 +93,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     const val = row[next.key_column];
     if (val === null || val === undefined || val === "") return;
     openLevel({ mapping_id: next.mapping_id, param: next.param || next.key_column, value: val,
-      title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth });
+      title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth, hidden: next.hidden_columns });
   };
 
   // Ist die aktuell oberste Ebene weiter aufklappbar?
@@ -159,6 +159,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         loading={topFrame.loading}
         error={topFrame.error}
         trail={stack.map(f => ({ title: f.title, value: f.value }))}
+        hiddenColumns={topFrame.hidden || []}
         canDrillDeeper={canDrillDeeper}
         onRowClick={handleRowDrill}
         onBack={stack.length > 1 ? backDrill : null}

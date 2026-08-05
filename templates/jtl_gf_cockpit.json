@@ -2525,7 +2525,10 @@
                     "mapping_id": "m_positionen",
                     "param": "kRechnung",
                     "key_column": "kRechnung",
-                    "title": "Rechnungspositionen"
+                    "title": "Rechnungspositionen",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
                   },
                   {
                     "mapping_id": "m_artikel",
@@ -2676,6 +2679,9 @@
                     "key_column": "kArtikel",
                     "title": "Artikel-Detail"
                   }
+                ],
+                "hidden_columns": [
+                  "kArtikel"
                 ]
               }
             }
