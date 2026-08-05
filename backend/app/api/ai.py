@@ -314,13 +314,12 @@ async def summarize_data(
 
     # Für Fließtext ein allgemeines Instruct-Modell bevorzugen (das konfigurierte
     # Default-Modell ist oft ein Code-Modell und formuliert schlechtes Deutsch).
-    from app.services.ai_service import get_installed_models
+    from app.services.ai_service import get_installed_models, pick_prose_model
     try:
         installed = await get_installed_models(svc.base_url)
     except Exception:
         installed = []
-    _PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gemma3:1b", "llama3.2:1b"]
-    chosen = next((m for m in _PREF if m in installed), None)
+    chosen = pick_prose_model(installed, svc.model)
     params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)
 
     # Als SSE-Stream ausliefern: die Response-Header gehen sofort raus (kein

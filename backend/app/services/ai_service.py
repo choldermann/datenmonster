@@ -101,6 +101,24 @@ async def get_installed_models(base_url: str) -> list[str]:
         return []
 
 
+# Für deutschen Fließtext (Summaries) bevorzugte Instruct-Modelle. Ist keins davon
+# installiert, wird das konfigurierte Modell genutzt – und wenn auch das fehlt,
+# irgendein installiertes Modell (statt ins Leere zu laufen).
+_PROSE_PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gemma3:1b",
+               "llama3.2:3b", "llama3.2:1b", "qwen2.5:3b-instruct", "qwen2.5:1.5b-instruct"]
+
+
+def pick_prose_model(installed: list, configured: str | None = None) -> Optional[str]:
+    """Wählt ein für deutschen Fließtext geeignetes, TATSÄCHLICH installiertes Modell."""
+    inst = installed or []
+    for m in _PROSE_PREF:
+        if m in inst:
+            return m
+    if configured and configured in inst:
+        return configured
+    return inst[0] if inst else configured
+
+
 def classify_query(message: str) -> str:
     msg = message.lower()
     if any(w in msg for w in ["agent", "architektur", "konzept", "design", "strategie", "planung", "system design"]):

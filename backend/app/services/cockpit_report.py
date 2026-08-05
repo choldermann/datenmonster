@@ -13,7 +13,7 @@ from typing import Optional
 # Die KI-Management-Summary wird zeitlich begrenzt, damit der (synchrone) Report
 # schnell zurückkommt. Bei Ollama-Kaltstart (>15 s) wird sie übersprungen – beim
 # nächsten Aufruf ist das Modell warm und die Summary ist dabei.
-_SUMMARY_TIMEOUT_S = 12
+_SUMMARY_TIMEOUT_S = 20
 
 import matplotlib
 matplotlib.use("Agg")
@@ -380,14 +380,14 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
                   "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
                   "Anrede, KEINE Briefformel, keine Grußformel.")
-        # Für gutes Deutsch ein Instruct-Modell bevorzugen (Default ist oft ein Code-Modell).
-        from app.services.ai_service import AIParams, get_installed_models
+        # Für gutes Deutsch ein Instruct-Modell bevorzugen, aber IMMER ein tatsächlich
+        # installiertes Modell wählen (sonst schlägt der Ollama-Aufruf still fehl).
+        from app.services.ai_service import AIParams, get_installed_models, pick_prose_model
         try:
             installed = await get_installed_models(svc.base_url)
         except Exception:
             installed = []
-        _PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gemma3:1b", "llama3.2:1b"]
-        chosen = next((m for m in _PREF if m in installed), None)
+        chosen = pick_prose_model(installed, svc.model)
         txt = await svc.complete_with_context(
             "Analysiere diese bereits berechneten Kennzahlen:\n" + "\n".join(lines), system,
             params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=320, num_ctx=4096),
