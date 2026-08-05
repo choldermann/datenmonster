@@ -4,10 +4,16 @@ Deckblatt (Firma aus JTL tFirma, Datum, Zeitraum, gewählte Filter) + je Ergebni
 Reiter die Widgets (KPIs, Tabellen, Diagramme) sowie eine KI-Management-Summary.
 Rein serverseitig: xhtml2pdf (HTML→PDF) + matplotlib (Charts als PNG)."""
 import io
+import asyncio
 import base64
 import datetime
 import html as _html
 from typing import Optional
+
+# Die KI-Management-Summary wird zeitlich begrenzt, damit der (synchrone) Report
+# schnell zurückkommt. Bei Ollama-Kaltstart (>15 s) wird sie übersprungen – beim
+# nächsten Aufruf ist das Modell warm und die Summary ist dabei.
+_SUMMARY_TIMEOUT_S = 12
 
 import matplotlib
 matplotlib.use("Agg")
@@ -396,7 +402,10 @@ async def generate_report(form, params: dict, db) -> bytes:
     conn_id = _resolve_conn_id(schema, db)
     company = _fetch_company(conn_id)
     results = _run_actions(schema, params, db)
-    summary = await _ai_summary(schema, results, db)
+    try:
+        summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
+    except Exception:
+        summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
 
     tabs = schema.get("result_tabs") or []
     if not tabs:  # ohne Reiter: ein einziger Block über alle Actions

@@ -140,11 +140,18 @@ export default function FormRunner() {
   const downloadReport = async () => {
     setReporting(true);
     try {
-      const resp = await api.post(`/api/forms/${id}/report`, { params }, { responseType: "blob" });
+      // Report-Erzeugung kann (KI/JTL) einige Sekunden dauern → großzügiges Timeout.
+      const resp = await api.post(`/api/forms/${id}/report`, { params },
+        { responseType: "blob", timeout: 180000 });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(form?.name || "report").replace(/[^a-z0-9]+/gi, "_")}_${new Date().toISOString().slice(0,10)}.pdf`;
+      // Umlaute transliterieren (ä→ae …), sonst würden sie zu "_".
+      const nameSafe = (form?.name || "report")
+        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+        .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
+        .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
+      a.download = `${nameSafe}_${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {

@@ -253,7 +253,9 @@ async def form_report(form_id: int, data: FormRunRequest,
     except Exception as e:
         import traceback as _tb
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}\n{_tb.format_exc()[-400:]}")
-    fname = _slugify(f.name or "report") + "_" + datetime.now().strftime("%Y%m%d") + ".pdf"
+    _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe",
+                             "Ü": "Ue", "ß": "ss"})
+    fname = _slugify((f.name or "report").translate(_umlaut)) + "_" + datetime.now().strftime("%Y%m%d") + ".pdf"
     return Response(content=pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
