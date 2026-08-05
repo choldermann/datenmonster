@@ -27,6 +27,11 @@ LOOKUP_QUERIES = {
                    "JOIN dbo.tkategoriesprache ks ON ks.kKategorie = k.kKategorie "
                    "WHERE ISNULL(ks.cName, '') <> '' "
                    "ORDER BY ks.cName",
+    # Plattform-Familien (nTyp) – Unterkanäle (ebay.de, Amazon.de …, nInet=1)
+    # werden über nTyp zusammengefasst; value = nTyp, gefiltert wird auf tPlattform.nTyp.
+    "plattform":   "SELECT nTyp AS value, MIN(cName) AS label "
+                   "FROM dbo.tPlattform WHERE nInet = 0 AND nTyp IS NOT NULL "
+                   "GROUP BY nTyp ORDER BY MIN(cName)",
 }
 
 
