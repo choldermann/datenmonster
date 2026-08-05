@@ -1,0 +1,2085 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_gf_cockpit",
+  "template_name": "JTL – Geschäftsführer-Cockpit",
+  "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
+    "Der Zeitraumfilter lädt beim Öffnen automatisch das laufende Jahr; alle KPIs vergleichen mit dem gleichen Zeitraum des Vorjahres. Über die Presets (Dieser Monat, Letztes Jahr, 12 Monate …) aktualisiert sich das gesamte Cockpit.",
+    "Der Reiter 'Trends' zeigt feste rollierende Fenster (24 Monate bzw. letzte 12 vs. vorherige 12 Monate), unabhängig vom Zeitraumfilter.",
+    "Ladenhüter/Warnungen: 'ladenhueter_tage' legt fest, ab wie vielen Tagen ohne Verkauf ein Artikel mit Bestand als Ladenhüter gilt (Standard 180).",
+    "Rohertrag/Marge werden mit dem aktuellen Artikel-EK (dbo.tArtikel.fEKNetto) gerechnet – ein Näherungswert, kein historischer EK.",
+    "SCHEMA-PRÜFUNG: Die Abfragen nutzen Standard-JTL-Tabellen (Rechnung.vRechnung, Rechnung.tRechnungPosition, Rechnung.vRechnungRechnungsadresse, dbo.tArtikel, dbo.tArtikelBeschreibung, dbo.tlagerbestand, dbo.tWarengruppe). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen prüfen."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    },
+    {
+      "key": "ladenhueter_tage",
+      "label": "Ladenhüter ab … Tagen ohne Verkauf",
+      "type": "text",
+      "default": "180"
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "m_overview_kpi",
+      "name": "Cockpit – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto - EK END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto - EK END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * ISNULL(A.fEKNetto, 0) AS EK,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM Rechnung.vRechnung RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Umsatz",
+            "UmsatzVJ",
+            "Rohertrag",
+            "RohertragVJ",
+            "Rechnungen",
+            "RechnungenVJ",
+            "AktiveKunden",
+            "AktiveKundenVJ",
+            "AvgAuftrag",
+            "AvgAuftragVJ",
+            "Marge",
+            "MargeVJ"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "RohertragVJ",
+              "target_field": "RohertragVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RohertragVJ"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "RechnungenVJ",
+              "target_field": "RechnungenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RechnungenVJ"
+              }
+            },
+            {
+              "source_field": "AktiveKunden",
+              "target_field": "AktiveKunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AktiveKunden"
+              }
+            },
+            {
+              "source_field": "AktiveKundenVJ",
+              "target_field": "AktiveKundenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AktiveKundenVJ"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            },
+            {
+              "source_field": "AvgAuftragVJ",
+              "target_field": "AvgAuftragVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftragVJ"
+              }
+            },
+            {
+              "source_field": "Marge",
+              "target_field": "Marge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Marge"
+              }
+            },
+            {
+              "source_field": "MargeVJ",
+              "target_field": "MargeVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MargeVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_umsatz_verlauf",
+      "name": "Cockpit – Umsatzverlauf",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n), vj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120) AS Monat, SUM(POS.fAnzahl * POS.fVkNetto) AS UmsatzVorjahr\n    FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120)\n)\nSELECT ISNULL(cur.Monat, vj.Monat) AS Monat,\n    CAST(ISNULL(cur.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(vj.UmsatzVorjahr, 0) AS DECIMAL(18,2)) AS UmsatzVorjahr\nFROM cur FULL OUTER JOIN vj ON cur.Monat = vj.Monat ORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz",
+            "UmsatzVorjahr"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatzverlauf",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVorjahr",
+              "target_field": "UmsatzVorjahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVorjahr"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_kunden_kpi",
+      "name": "Cockpit – Kunden-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    (SELECT COUNT(*) FROM (SELECT kKunde, MIN(dErstellt) AS erste FROM Rechnung.vRechnung GROUP BY kKunde) f\n       WHERE f.erste >= :von AND f.erste < DATEADD(DAY, 1, :bis)) AS Neukunden,\n    COUNT(DISTINCT RE.kKunde) AS AktiveKunden,\n    CAST(CASE WHEN COUNT(DISTINCT RE.kKunde) > 0 THEN SUM(POS.fAnzahl * POS.fVkNetto) / COUNT(DISTINCT RE.kKunde) END AS DECIMAL(18,2)) AS UmsatzProKunde\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Neukunden",
+            "AktiveKunden",
+            "UmsatzProKunde"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kunden-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Neukunden",
+              "target_field": "Neukunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Neukunden"
+              }
+            },
+            {
+              "source_field": "AktiveKunden",
+              "target_field": "AktiveKunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AktiveKunden"
+              }
+            },
+            {
+              "source_field": "UmsatzProKunde",
+              "target_field": "UmsatzProKunde",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzProKunde"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_top_kunden",
+      "name": "Cockpit – Top-Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Umsatz",
+            "UmsatzVJ",
+            "Veraenderung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Veraenderung",
+              "target_field": "Veraenderung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veraenderung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_kunden_rueckgang",
+      "name": "Cockpit – Kunden mit Rückgang",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Umsatz",
+            "UmsatzVJ",
+            "Rueckgang"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kunden mit Rückgang",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rueckgang",
+              "target_field": "Rueckgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rueckgang"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_wg_entwicklung",
+      "name": "Cockpit – Warengruppen-Entwicklung",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 20 Warengruppe,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN ISNULL(UmsatzVJ, 0) > 0 THEN 100.0 * (ISNULL(Umsatz, 0) - UmsatzVJ) / UmsatzVJ END AS DECIMAL(18,1)) AS VeraenderungProzent\nFROM (\n    SELECT ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT A.kWarengruppe, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = X.kWarengruppe\n    GROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\n) g ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warengruppe",
+            "Umsatz",
+            "UmsatzVJ",
+            "VeraenderungProzent"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Warengruppen-Entwicklung",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "VeraenderungProzent",
+              "target_field": "VeraenderungProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VeraenderungProzent"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_top_artikel",
+      "name": "Cockpit – Top-Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Menge",
+            "Umsatz",
+            "Rohertrag"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_region",
+      "name": "Cockpit – Umsatz nach Region",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 25\n    ISNULL(NULLIF(RA.cLand, ''), '(unbekannt)') AS Land,\n    ISNULL(NULLIF(RA.cBundesland, ''), '(ohne Angabe)') AS Bundesland,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(DISTINCT RE.kRechnung) AS Rechnungen\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(NULLIF(RA.cLand, ''), '(unbekannt)'), ISNULL(NULLIF(RA.cBundesland, ''), '(ohne Angabe)')\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Land",
+            "Bundesland",
+            "Umsatz",
+            "Rechnungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz nach Region",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Bundesland",
+              "target_field": "Bundesland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bundesland"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_kapital_kpi",
+      "name": "Cockpit – Kapital-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung,\n    COUNT(DISTINCT CASE WHEN LB.fLagerbestand > 0 THEN A.kArtikel END) AS ArtikelMitBestand,\n    CAST(SUM(CASE WHEN LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()) THEN LB.fLagerbestand * ISNULL(A.fEKNetto, 0) END) AS DECIMAL(18,2)) AS LadenhueterKapital\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nWHERE LB.fLagerbestand <> 0",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kapitalbindung",
+            "ArtikelMitBestand",
+            "LadenhueterKapital"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kapital-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "ArtikelMitBestand",
+              "target_field": "ArtikelMitBestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelMitBestand"
+              }
+            },
+            {
+              "source_field": "LadenhueterKapital",
+              "target_field": "LadenhueterKapital",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LadenhueterKapital"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_kapital_wg",
+      "name": "Cockpit – Kapital nach Warengruppe",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nGROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warengruppe",
+            "Kapitalbindung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kapital nach Warengruppe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_kapital_artikel",
+      "name": "Cockpit – Kapital je Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) <> 0\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EK",
+            "Kapitalbindung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kapital je Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_trend",
+      "name": "Cockpit – Trend Umsatz & Rohertrag",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE RE.dErstellt >= DATEADD(MONTH, -24, CAST(GETDATE() AS date))\nGROUP BY CONVERT(char(7), RE.dErstellt, 120) ORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz",
+            "Rohertrag"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Trend Umsatz & Rohertrag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_trend_wg",
+      "name": "Cockpit – Warengruppen-Trend (12M)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 20 Warengruppe,\n    CAST(ISNULL(Umsatz12, 0) AS DECIMAL(18,2)) AS Umsatz12M,\n    CAST(ISNULL(UmsatzVor12, 0) AS DECIMAL(18,2)) AS UmsatzVor12M,\n    CAST(CASE WHEN ISNULL(UmsatzVor12, 0) > 0 THEN 100.0 * (ISNULL(Umsatz12, 0) - UmsatzVor12) / UmsatzVor12 END AS DECIMAL(18,1)) AS VeraenderungProzent\nFROM (\n    SELECT ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n        SUM(CASE WHEN RE.dErstellt >= DATEADD(MONTH, -12, CAST(GETDATE() AS date)) THEN POS.fAnzahl * POS.fVkNetto END) AS Umsatz12,\n        SUM(CASE WHEN RE.dErstellt >= DATEADD(MONTH, -24, CAST(GETDATE() AS date)) AND RE.dErstellt < DATEADD(MONTH, -12, CAST(GETDATE() AS date)) THEN POS.fAnzahl * POS.fVkNetto END) AS UmsatzVor12\n    FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\n    WHERE RE.dErstellt >= DATEADD(MONTH, -24, CAST(GETDATE() AS date))\n    GROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\n) g ORDER BY Umsatz12M DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warengruppe",
+            "Umsatz12M",
+            "UmsatzVor12M",
+            "VeraenderungProzent"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Warengruppen-Trend (12M)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Umsatz12M",
+              "target_field": "Umsatz12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz12M"
+              }
+            },
+            {
+              "source_field": "UmsatzVor12M",
+              "target_field": "UmsatzVor12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVor12M"
+              }
+            },
+            {
+              "source_field": "VeraenderungProzent",
+              "target_field": "VeraenderungProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VeraenderungProzent"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_warn_ladenhueter",
+      "name": "Cockpit – Warnung Ladenhüter",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, MAX(LV.LetzterVerkauf), GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\n    AND (MAX(LV.LetzterVerkauf) IS NULL OR MAX(LV.LetzterVerkauf) < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "Kapitalbindung",
+            "LetzterVerkauf",
+            "TageOhneVerkauf"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Warnung Ladenhüter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "LetzterVerkauf",
+              "target_field": "LetzterVerkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterVerkauf"
+              }
+            },
+            {
+              "source_field": "TageOhneVerkauf",
+              "target_field": "TageOhneVerkauf",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageOhneVerkauf"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_warn_bestand",
+      "name": "Cockpit – Warnung Bestand",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Verkauft90Tage,\n    CAST(ISNULL(B.Bestand, 0) AS DECIMAL(18,2)) AS Bestand\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\nWHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, B.Bestand\nHAVING ISNULL(B.Bestand, 0) <= 0\nORDER BY Verkauft90Tage DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Verkauft90Tage",
+            "Bestand"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Warnung Bestand",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Verkauft90Tage",
+              "target_field": "Verkauft90Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verkauft90Tage"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_warn_marge",
+      "name": "Cockpit – Warnung Marge",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS MargeProzent\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\nORDER BY Rohertrag ASC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Menge",
+            "Umsatz",
+            "Rohertrag",
+            "MargeProzent"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Warnung Marge",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "MargeProzent",
+              "target_field": "MargeProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MargeProzent"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Geschäftsführer-Cockpit",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 12,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": true
+            }
+          }
+        ],
+        "layout": [],
+        "actions": [
+          {
+            "id": "act_overview_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_overview_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kennzahlen"
+          },
+          {
+            "id": "act_umsatz_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_umsatz_verlauf",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatzverlauf"
+          },
+          {
+            "id": "act_kunden_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_kunden_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kunden-Kennzahlen"
+          },
+          {
+            "id": "act_top_kunden",
+            "type": "run_mapping",
+            "mapping_id": "m_top_kunden",
+            "pipeline_id": null,
+            "label": "Cockpit – Top-Kunden"
+          },
+          {
+            "id": "act_kunden_rueckgang",
+            "type": "run_mapping",
+            "mapping_id": "m_kunden_rueckgang",
+            "pipeline_id": null,
+            "label": "Cockpit – Kunden mit Rückgang"
+          },
+          {
+            "id": "act_wg_entwicklung",
+            "type": "run_mapping",
+            "mapping_id": "m_wg_entwicklung",
+            "pipeline_id": null,
+            "label": "Cockpit – Warengruppen-Entwicklung"
+          },
+          {
+            "id": "act_top_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_top_artikel",
+            "pipeline_id": null,
+            "label": "Cockpit – Top-Artikel"
+          },
+          {
+            "id": "act_region",
+            "type": "run_mapping",
+            "mapping_id": "m_region",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz nach Region"
+          },
+          {
+            "id": "act_kapital_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_kapital_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kapital-Kennzahlen"
+          },
+          {
+            "id": "act_kapital_wg",
+            "type": "run_mapping",
+            "mapping_id": "m_kapital_wg",
+            "pipeline_id": null,
+            "label": "Cockpit – Kapital nach Warengruppe"
+          },
+          {
+            "id": "act_kapital_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_kapital_artikel",
+            "pipeline_id": null,
+            "label": "Cockpit – Kapital je Artikel"
+          },
+          {
+            "id": "act_trend",
+            "type": "run_mapping",
+            "mapping_id": "m_trend",
+            "pipeline_id": null,
+            "label": "Cockpit – Trend Umsatz & Rohertrag"
+          },
+          {
+            "id": "act_trend_wg",
+            "type": "run_mapping",
+            "mapping_id": "m_trend_wg",
+            "pipeline_id": null,
+            "label": "Cockpit – Warengruppen-Trend (12M)"
+          },
+          {
+            "id": "act_warn_ladenhueter",
+            "type": "run_mapping",
+            "mapping_id": "m_warn_ladenhueter",
+            "pipeline_id": null,
+            "label": "Cockpit – Warnung Ladenhüter"
+          },
+          {
+            "id": "act_warn_bestand",
+            "type": "run_mapping",
+            "mapping_id": "m_warn_bestand",
+            "pipeline_id": null,
+            "label": "Cockpit – Warnung Bestand"
+          },
+          {
+            "id": "act_warn_marge",
+            "type": "run_mapping",
+            "mapping_id": "m_warn_marge",
+            "pipeline_id": null,
+            "label": "Cockpit – Warnung Marge"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_kpi_umsatz",
+            "type": "kpi",
+            "label": "Umsatz netto",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "Umsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "UmsatzVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_rohertrag",
+            "type": "kpi",
+            "label": "Rohertrag",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rohertrag",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "RohertragVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_marge",
+            "type": "kpi",
+            "label": "Marge",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "Marge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1,
+              "compare_column": "MargeVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_rechnungen",
+            "type": "kpi",
+            "label": "Rechnungen",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rechnungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "RechnungenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_avg",
+            "type": "kpi",
+            "label": "Ø Auftragswert",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "AvgAuftrag",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AvgAuftragVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_kunden",
+            "type": "kpi",
+            "label": "Aktive Kunden",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "AktiveKunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "AktiveKundenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_line_umsatz",
+            "type": "line",
+            "label": "Umsatzentwicklung (aktuell vs. Vorjahr)",
+            "action_id": "act_umsatz_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Umsatz",
+                "UmsatzVorjahr"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_kpi_aktivekunden",
+            "type": "kpi",
+            "label": "Aktive Kunden",
+            "action_id": "act_kunden_kpi",
+            "config": {
+              "width": 4,
+              "column": "AktiveKunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_kpi_neukunden",
+            "type": "kpi",
+            "label": "Neukunden",
+            "action_id": "act_kunden_kpi",
+            "config": {
+              "width": 4,
+              "column": "Neukunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_kpi_umsatzprokunde",
+            "type": "kpi",
+            "label": "Ø Umsatz je Kunde",
+            "action_id": "act_kunden_kpi",
+            "config": {
+              "width": 4,
+              "column": "UmsatzProKunde",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_tbl_top_kunden",
+            "type": "table",
+            "label": "Top 10 Kunden (Umsatz vs. Vorjahr)",
+            "action_id": "act_top_kunden",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_tbl_rueckgang",
+            "type": "table",
+            "label": "Kunden mit größtem Umsatzrückgang",
+            "action_id": "act_kunden_rueckgang",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_bar_wg",
+            "type": "bar",
+            "label": "Umsatz nach Warengruppe (aktuell vs. Vorjahr)",
+            "action_id": "act_wg_entwicklung",
+            "config": {
+              "width": 12,
+              "x_column": "Warengruppe",
+              "y_columns": [
+                "Umsatz",
+                "UmsatzVJ"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_tbl_wg",
+            "type": "table",
+            "label": "Warengruppen-Entwicklung",
+            "action_id": "act_wg_entwicklung",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_tbl_top_artikel",
+            "type": "table",
+            "label": "Top 15 Artikel nach Umsatz",
+            "action_id": "act_top_artikel",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_tbl_region",
+            "type": "table",
+            "label": "Umsatz nach Land / Bundesland",
+            "action_id": "act_region",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_kpi_kapital",
+            "type": "kpi",
+            "label": "Kapitalbindung Lager",
+            "action_id": "act_kapital_kpi",
+            "config": {
+              "width": 4,
+              "column": "Kapitalbindung",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_kpi_artikelbestand",
+            "type": "kpi",
+            "label": "Artikel mit Bestand",
+            "action_id": "act_kapital_kpi",
+            "config": {
+              "width": 4,
+              "column": "ArtikelMitBestand",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_kpi_ladenhueter_kap",
+            "type": "kpi",
+            "label": "Kapital in Ladenhütern",
+            "action_id": "act_kapital_kpi",
+            "config": {
+              "width": 4,
+              "column": "LadenhueterKapital",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_bar_kapital_wg",
+            "type": "bar",
+            "label": "Kapitalbindung nach Warengruppe",
+            "action_id": "act_kapital_wg",
+            "config": {
+              "width": 12,
+              "x_column": "Warengruppe",
+              "y_columns": [
+                "Kapitalbindung"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_tbl_kapital_artikel",
+            "type": "table",
+            "label": "Top 15 Artikel nach Kapitalbindung",
+            "action_id": "act_kapital_artikel",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_line_trend",
+            "type": "line",
+            "label": "Umsatz & Rohertrag – 24 Monate",
+            "action_id": "act_trend",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Umsatz",
+                "Rohertrag"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_tbl_trend_wg",
+            "type": "table",
+            "label": "Warengruppen-Trend (letzte 12 vs. vorherige 12 Monate)",
+            "action_id": "act_trend_wg",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_tbl_warn_ladenhueter",
+            "type": "table",
+            "label": "Ladenhüter – Kapital ohne Verkauf",
+            "action_id": "act_warn_ladenhueter",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_tbl_warn_bestand",
+            "type": "table",
+            "label": "Umsatzstarke Artikel ohne Bestand",
+            "action_id": "act_warn_bestand",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_tbl_warn_marge",
+            "type": "table",
+            "label": "Artikel mit negativer Marge",
+            "action_id": "act_warn_marge",
+            "config": {
+              "width": 12
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_uebersicht",
+            "label": "Unternehmensübersicht",
+            "action_ids": [
+              "act_overview_kpi",
+              "act_umsatz_verlauf"
+            ]
+          },
+          {
+            "id": "tab_kunden",
+            "label": "Kundenentwicklung",
+            "action_ids": [
+              "act_kunden_kpi",
+              "act_top_kunden",
+              "act_kunden_rueckgang"
+            ]
+          },
+          {
+            "id": "tab_umsatz",
+            "label": "Umsatzanalyse",
+            "action_ids": [
+              "act_wg_entwicklung",
+              "act_top_artikel",
+              "act_region"
+            ]
+          },
+          {
+            "id": "tab_kapital",
+            "label": "Kapitalbindung",
+            "action_ids": [
+              "act_kapital_kpi",
+              "act_kapital_wg",
+              "act_kapital_artikel"
+            ]
+          },
+          {
+            "id": "tab_trends",
+            "label": "Trends",
+            "action_ids": [
+              "act_trend",
+              "act_trend_wg"
+            ]
+          },
+          {
+            "id": "tab_warnungen",
+            "label": "Warnungen",
+            "action_ids": [
+              "act_warn_ladenhueter",
+              "act_warn_bestand",
+              "act_warn_marge"
+            ]
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ]
+}
