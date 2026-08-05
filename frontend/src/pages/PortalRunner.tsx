@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { useAIAssistant } from "../contexts/AIAssistantContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
@@ -137,6 +138,13 @@ export default function PortalRunner() {
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
   const [inputTab, setInputTab]   = useState("main");
+  const { setFormAiAllowed } = useAIAssistant();
+
+  // KI-Assistent im Portal nur zeigen, wenn das Formular es erlaubt.
+  useEffect(() => {
+    setFormAiAllowed(!!form?.show_ai_assistant);
+    return () => setFormAiAllowed(false);
+  }, [form, setFormAiAllowed]);
 
   useEffect(() => {
     api.get(`/api/portal/forms/${slug}`)

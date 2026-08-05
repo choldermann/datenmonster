@@ -27,6 +27,11 @@ interface AIAssistantContextType {
   pendingMessage: string | null;
   setPendingMessage: (msg: string | null) => void;
   triggerExplainError: (errorText: string, extraContext?: Record<string, any>) => void;
+  // Opt-in: Formular-Runner blenden den schwebenden Assistenten standardmäßig aus
+  // (er wird dort nicht mit Formulardaten gefüttert). Ein Formular/Template kann
+  // ihn per schema.show_ai_assistant wieder einblenden.
+  formAiAllowed: boolean;
+  setFormAiAllowed: (v: boolean) => void;
 }
 
 const AIAssistantContext = createContext<AIAssistantContextType>({
@@ -42,12 +47,15 @@ const AIAssistantContext = createContext<AIAssistantContextType>({
   pendingMessage: null,
   setPendingMessage: () => {},
   triggerExplainError: () => {},
+  formAiAllowed: false,
+  setFormAiAllowed: () => {},
 });
 
 export function AIAssistantProvider({ children }: { children: ReactNode }) {
   const [pageContext, _setPageContext] = useState<PageContext | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
+  const [formAiAllowed, setFormAiAllowed] = useState(false);
   const generateNodesCallbackRef = useRef<((result: any) => void) | null>(null);
   const suggestTablesCallbackRef = useRef<((result: any) => void) | null>(null);
 
@@ -85,7 +93,7 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, setPageContextActions, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, setPageContextActions, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError, formAiAllowed, setFormAiAllowed }}>
       {children}
     </AIAssistantContext.Provider>
   );

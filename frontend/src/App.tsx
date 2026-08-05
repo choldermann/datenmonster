@@ -1,9 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import "./hooks/useTheme"; // Theme beim Start sofort anwenden
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider } from "./context/ProjectContext";
-import { AIAssistantProvider } from "./contexts/AIAssistantContext";
+import { AIAssistantProvider, useAIAssistant } from "./contexts/AIAssistantContext";
 import { aiDownloadStore } from "./store/aiDownloadStore";
 import FloatingAIAssistant from "./components/ai/FloatingAIAssistant";
 import Login from "./pages/Login";
@@ -15,6 +15,18 @@ import FormEditor from "./pages/FormEditor";
 import FormRunner from "./pages/FormRunner";
 import PortalHome from "./pages/PortalHome";
 import PortalRunner from "./pages/PortalRunner";
+
+/** Blendet den schwebenden KI-Assistenten in Formular-Runnern aus (Editor-Run
+ *  /forms/:id/run und Portal /app/:slug), sofern das Formular ihn nicht per
+ *  schema.show_ai_assistant ausdrücklich einblendet. Sonst ist er überall aktiv. */
+function AiAssistantGate() {
+  const location = useLocation();
+  const { formAiAllowed } = useAIAssistant();
+  const onFormRoute = /\/forms\/[^/]+\/run$/.test(location.pathname)
+    || location.pathname.startsWith("/app/");
+  if (onFormRoute && !formAiAllowed) return null;
+  return <FloatingAIAssistant />;
+}
 
 /** Schützt Editor-Routen: Portal-Only-Benutzer werden zu /portal umgeleitet. */
 function EditorRoute({ children }) {
@@ -102,7 +114,7 @@ export default function App() {
               <Route path="*" element={<DefaultRedirect />} />
             </Routes>
             <AiDownloadBanner />
-            <FloatingAIAssistant />
+            <AiAssistantGate />
           </BrowserRouter>
           </AIAssistantProvider>
         </ProjectProvider>
