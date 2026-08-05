@@ -292,7 +292,7 @@ export default function FormRunner() {
         {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
-            results={results || {}} allowDownload={true} />
+            results={results || {}} allowDownload={true} baseParams={params} />
         )}
 
         {/* Rohtabellen für Aktionen ohne Widget */}

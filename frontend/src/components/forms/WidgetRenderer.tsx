@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { AlertCircle } from "lucide-react";
 import api from "../../api/client";
 import DrilldownModal from "./DrilldownModal";
@@ -42,7 +42,7 @@ function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
     : undefined;
 
   switch (widget.type) {
-    case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} />;
+    case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} />;
     case "kpi":   return <KpiWidget   widget={widget} result={result} />;
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
@@ -52,24 +52,55 @@ function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
   }
 }
 
-export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false }) {
-  const [drilldown, setDrilldown] = useState(null);
+export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {} }) {
+  // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
+  // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
+  // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
+  const [stack, setStack] = useState([]);
+  const cfgRef = useRef({ dd: null, base: {} });
+  const seqRef = useRef(0);
 
-  // Mapping-Drilldown (Stufe B): parametrisiertes Detail-Mapping ausführen.
-  const handleDrilldown = async (widget, field, value) => {
-    const dd = widget.config?.drilldown;
-    if (!dd?.mapping_id) return;
-    const title = widget.label || "Drilldown";
-    setDrilldown({ title, field, value, rows: [], loading: true });
+  // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
+  const openLevel = async ({ mapping_id, param, value, title, field, depth }) => {
+    const base = cfgRef.current.base || {};
+    const id = ++seqRef.current;
+    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null }]);
     try {
-      const params = { [dd.param || field]: value };
-      const { data } = await api.post("/api/forms/drilldown", { mapping_id: dd.mapping_id, params });
-      setDrilldown({ title, field, value, rows: data.rows || [], loading: false });
+      const params = { ...base, [param]: value };
+      const { data } = await api.post("/api/forms/drilldown", { mapping_id, params });
+      setStack(prev => prev.map(f => f.id === id ? { ...f, rows: data.rows || [], loading: false } : f));
     } catch (e) {
-      setDrilldown({ title, field, value, rows: [], loading: false,
-        error: e.response?.data?.detail || e.message });
+      setStack(prev => prev.map(f => f.id === id
+        ? { ...f, loading: false, error: e.response?.data?.detail || e.message } : f));
     }
   };
+
+  // Einstieg aus einem Widget (Chart-Segment oder Tabellenzeile).
+  const handleDrilldown = (widget, field, value) => {
+    const dd = widget.config?.drilldown;
+    if (!dd?.mapping_id) return;
+    cfgRef.current = { dd, base: baseParams || {} };
+    openLevel({ mapping_id: dd.mapping_id, param: dd.param || field, value,
+      title: dd.title || widget.label || "Drilldown", field, depth: 0 });
+  };
+
+  // Klick auf eine Zeile im Modal → nächste Ebene (levels[depth]).
+  const handleRowDrill = (row) => {
+    const dd = cfgRef.current.dd;
+    const depth = stack.length; // nächster Frame-Index
+    const next = dd?.levels?.[depth - 1];
+    if (!next?.mapping_id) return;
+    const val = row[next.key_column];
+    if (val === null || val === undefined || val === "") return;
+    openLevel({ mapping_id: next.mapping_id, param: next.param || next.key_column, value: val,
+      title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth });
+  };
+
+  // Ist die aktuell oberste Ebene weiter aufklappbar?
+  const topFrame = stack[stack.length - 1] || null;
+  const canDrillDeeper = !!(cfgRef.current.dd?.levels?.[stack.length - 1]?.mapping_id);
+  const closeDrill = () => setStack([]);
+  const backDrill = () => setStack(prev => prev.slice(0, -1));
 
   if (!widgets.length) return null;
 
@@ -119,15 +150,19 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         </div>
       ))}
     </div>
-    {drilldown && (
+    {topFrame && (
       <DrilldownModal
-        title={drilldown.title}
-        field={drilldown.field}
-        value={drilldown.value}
-        rows={drilldown.rows}
-        loading={drilldown.loading}
-        error={drilldown.error}
-        onClose={() => setDrilldown(null)}
+        title={topFrame.title}
+        field={topFrame.field}
+        value={topFrame.value}
+        rows={topFrame.rows}
+        loading={topFrame.loading}
+        error={topFrame.error}
+        trail={stack.map(f => ({ title: f.title, value: f.value }))}
+        canDrillDeeper={canDrillDeeper}
+        onRowClick={handleRowDrill}
+        onBack={stack.length > 1 ? backDrill : null}
+        onClose={closeDrill}
       />
     )}
     </>

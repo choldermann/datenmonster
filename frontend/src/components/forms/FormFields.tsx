@@ -198,18 +198,26 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
           <span style={{ fontSize: compact ? 12 : 14, color: S.textMain }}>{field.label}</span>
         </label>
       );
-    case "dropdown":
+    case "dropdown": {
+      // Als Dashboard-Filter nutzbar: bei config.auto_run löst eine Auswahl direkt
+      // die verknüpften Actions aus (Override mitgeben gegen Stale-Closure, wie daterange).
+      const ddAutoRun = !!field.config?.auto_run;
+      const onDdChange = (v) => {
+        onChange(v);
+        if (ddAutoRun && onRunAction) onRunAction(field.action_ids?.length ? field.action_ids : null, { [field.name]: v });
+      };
       return (
         <div style={{ position: "relative" }}>
-          <select value={value ?? ""} onChange={e => onChange(e.target.value)}
+          <select value={value ?? ""} onChange={e => onDdChange(e.target.value)}
             style={{ ...s, cursor: "pointer", appearance: "none", paddingRight: 30 }}>
-            <option value="">— auswählen —</option>
+            {!ddAutoRun && <option value="">— auswählen —</option>}
             {(field.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <ChevronDown size={14} style={{ position: "absolute", right: 9, top: "50%",
             transform: "translateY(-50%)", pointerEvents: "none", color: S.textDim }} />
         </div>
       );
+    }
     case "multiselect":
       return (
         <select multiple value={Array.isArray(value) ? value : []}

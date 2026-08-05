@@ -1,4 +1,4 @@
-import { X, Download, Search, Loader2, AlertCircle } from "lucide-react";
+import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 const S = {
   bgMain: "var(--bg-main)",
@@ -39,7 +39,8 @@ function isNumericCol(col, rows) {
   });
 }
 
-export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose }) {
+export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose,
+  trail = [], canDrillDeeper = false, onRowClick = null, onBack = null }) {
   const columns = rows.length ? Object.keys(rows[0]) : [];
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
 
@@ -75,14 +76,34 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
       >
         {/* Header */}
         <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 10 }}>
-          <Search size={14} style={{ color: ACCENT, flexShrink: 0 }} />
+          {onBack ? (
+            <button onClick={onBack} title="Eine Ebene zurück"
+              style={{ background: "none", border: `1px solid ${S.border}`, borderRadius: 5, color: S.textMain, cursor: "pointer", padding: "3px 6px", display: "flex", alignItems: "center", flexShrink: 0 }}>
+              <ChevronLeft size={14} />
+            </button>
+          ) : (
+            <Search size={14} style={{ color: ACCENT, flexShrink: 0 }} />
+          )}
           <div style={{ flex: 1, minWidth: 0 }}>
+            {/* Breadcrumb-Pfad über alle Ebenen */}
+            {trail.length > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", marginBottom: 3 }}>
+                {trail.map((t, i) => (
+                  <span key={i} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9.5,
+                    color: i === trail.length - 1 ? ACCENT : S.textDim, whiteSpace: "nowrap" }}>
+                    {i > 0 && <ChevronRight size={9} style={{ color: S.textDim }} />}
+                    {t.title}{t.value != null && t.value !== "" ? `: ${String(t.value)}` : ""}
+                  </span>
+                ))}
+              </div>
+            )}
             <p style={{ fontSize: 13, fontWeight: 700, color: S.textBright, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {title || "Drilldown"}
             </p>
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
               {field ? <><span style={{ color: S.textMain }}>{field}</span> = <span style={{ color: ACCENT }}>{String(value)}</span> · </> : null}
               {loading ? "lädt…" : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
+              {canDrillDeeper && !loading && rows.length > 0 ? " · Zeile klicken für Details" : ""}
             </p>
           </div>
           <button onClick={handleExport} disabled={!rows.length}
@@ -123,7 +144,12 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
               </thead>
               <tbody>
                 {rows.map((row, i) => (
-                  <tr key={i} style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" }}>
+                  <tr key={i}
+                    onClick={canDrillDeeper && onRowClick ? () => onRowClick(row) : undefined}
+                    style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
+                      cursor: canDrillDeeper && onRowClick ? "pointer" : "default" }}
+                    onMouseEnter={canDrillDeeper ? e => e.currentTarget.style.backgroundColor = `${ACCENT}18` : undefined}
+                    onMouseLeave={canDrillDeeper ? e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" : undefined}>
                     {columns.map(c => (
                       <td key={c} style={{ padding: "5px 12px", color: numericCols.has(c) ? S.textBright : S.textMain, textAlign: numericCols.has(c) ? "right" : "left", whiteSpace: "nowrap" }}>
                         {fmtCell(row[c])}

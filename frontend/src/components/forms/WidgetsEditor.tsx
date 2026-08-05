@@ -244,13 +244,21 @@ function WidgetConfig({ widget, actions, onUpdate }) {
         </LabelRow>
       )}
 
-      {["bar", "line", "pie"].includes(widget.type) && (
+      {["bar", "line", "pie", "table"].includes(widget.type) && (
         <LabelRow label="Drilldown">
           <DrilldownConfig
             value={cfg.drilldown}
             dimensionField={widget.type === "pie" ? cfg.label_column : cfg.x_column}
+            needsKeyColumn={widget.type === "table"}
             onChange={(dd) => set({ drilldown: dd })}
           />
+        </LabelRow>
+      )}
+      {widget.type === "table" && (
+        <LabelRow label="Ausgeblendete Spalten (Komma-getrennt)">
+          <Inp value={(cfg.hidden_columns || []).join(", ")}
+            onChange={v => set({ hidden_columns: v.split(",").map(s => s.trim()).filter(Boolean) })}
+            placeholder="z.B. kRechnung, kArtikel" />
         </LabelRow>
       )}
     </div>

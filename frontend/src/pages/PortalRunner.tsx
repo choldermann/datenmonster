@@ -376,6 +376,7 @@ export default function PortalRunner() {
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results || {}}
             allowDownload={allowDownload}
+            baseParams={params}
           />
         )}
 

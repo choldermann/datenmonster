@@ -5,9 +5,24 @@ const S = {
   textMain: "var(--text-main)", textDim: "var(--text-dim)", accent: "var(--accent)",
 };
 
-export default function TableWidget({ widget, result, allowDownload }) {
-  const { columns = [], rows = [], total } = result;
-  if (!columns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
+export default function TableWidget({ widget, result, allowDownload, onDrilldown }) {
+  const cfg = widget.config || {};
+  const dd = cfg.drilldown;
+  // Technische Spalten (z.B. kRechnung/kArtikel als Drilldown-Schlüssel) können
+  // ausgeblendet werden – sie bleiben in den Zeilendaten für den Drilldown erhalten.
+  const hidden = new Set(cfg.hidden_columns || []);
+  const allColumns = result.columns || [];
+  const columns = allColumns.filter(c => !hidden.has(c));
+  const { rows = [], total } = result;
+  // Zeilen sind klickbar, wenn ein Detail-Mapping + Schlüsselspalte konfiguriert ist.
+  const rowClickable = !!(onDrilldown && dd?.mapping_id && dd?.key_column);
+  const clickRow = (row) => {
+    if (!rowClickable) return;
+    const v = row[dd.key_column];
+    if (v === null || v === undefined || v === "") return;
+    onDrilldown(dd.key_column, v);
+  };
+  if (!allColumns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
   const downloadCsv = () => {
     const header = columns.join(";");
@@ -52,7 +67,8 @@ export default function TableWidget({ widget, result, allowDownload }) {
           </thead>
           <tbody>
             {rows.map((row, i) => (
-              <tr key={i} style={{ borderBottom: `1px solid ${S.border}` }}
+              <tr key={i} onClick={() => clickRow(row)}
+                style={{ borderBottom: `1px solid ${S.border}`, cursor: rowClickable ? "pointer" : "default" }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)"}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
                 {columns.map(c => (
