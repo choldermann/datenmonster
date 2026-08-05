@@ -135,6 +135,13 @@ function WidgetConfig({ widget, actions, onUpdate }) {
         </div>
       </LabelRow>
 
+      {/* Info-Text über dem Widget (z.B. Kennzahl-Erklärung) */}
+      <LabelRow label="Info-Text (über dem Widget)">
+        <textarea value={cfg.info || ""} onChange={e => set({ info: e.target.value })}
+          rows={2} placeholder="optionaler Erklärtext, wird über dem Widget angezeigt"
+          style={{ ...inp, resize: "vertical" }} />
+      </LabelRow>
+
       {/* Typ-spezifische Config */}
       {widget.type === "eingangsrechnung" && (
         <LabelRow label="JTL-Verbindung (Ziel-WaWi)">

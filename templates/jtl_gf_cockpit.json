@@ -2846,7 +2846,8 @@
             "label": "Top 10 Kunden (Umsatz vs. Vorjahr)",
             "action_id": "act_top_kunden",
             "config": {
-              "width": 6
+              "width": 6,
+              "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
           },
           {
@@ -2879,7 +2880,8 @@
             "label": "Warengruppen-Entwicklung",
             "action_id": "act_wg_entwicklung",
             "config": {
-              "width": 6
+              "width": 6,
+              "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
           },
           {
@@ -2888,7 +2890,8 @@
             "label": "Top 15 Artikel nach Umsatz",
             "action_id": "act_top_artikel",
             "config": {
-              "width": 6
+              "width": 6,
+              "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
           },
           {
@@ -2921,7 +2924,8 @@
                     "title": "Artikel-Detail"
                   }
                 ]
-              }
+              },
+              "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
           },
           {
@@ -3089,7 +3093,8 @@
             "action_id": "act_db_plattform",
             "label": "Deckungsbeitrag je Plattform",
             "config": {
-              "width": 12
+              "width": 12,
+              "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
           }
         ],

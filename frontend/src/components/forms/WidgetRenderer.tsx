@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Info } from "lucide-react";
 import api from "../../api/client";
 import DrilldownModal from "./DrilldownModal";
 import TableWidget from "./widgets/TableWidget";
@@ -141,6 +141,14 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
+                  </div>
+                )}
+                {widget.config?.info && (
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "9px 16px",
+                    borderBottom: `1px solid ${S.border}`, fontSize: 11, lineHeight: 1.5,
+                    color: S.textDim, backgroundColor: "rgba(255,255,255,0.02)" }}>
+                    <Info size={13} style={{ flexShrink: 0, marginTop: 1, color: S.textDim }} />
+                    <span>{widget.config.info}</span>
                   </div>
                 )}
                 <WidgetBody widget={widget} result={result} allowDownload={allowDownload} onDrilldown={handleDrilldown} />
