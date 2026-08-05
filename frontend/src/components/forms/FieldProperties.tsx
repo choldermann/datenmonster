@@ -243,6 +243,7 @@ export default function FieldProperties({ field, onChange, actions }) {
                 style={{ ...inp, cursor: "pointer" }}>
                 <option value="warengruppe">Warengruppe</option>
                 <option value="kategorie">Kategorie</option>
+                <option value="plattform">Plattform</option>
               </select>
             </div>
           </Row>
