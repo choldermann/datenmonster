@@ -5,6 +5,14 @@ const S = {
   textMain: "var(--text-main)", textDim: "var(--text-dim)", accent: "var(--accent)",
 };
 
+// Nur echte Zahlen mit deutschen Tausenderpunkten formatieren (6.000.000);
+// numerische String-IDs (Artikel-/Rechnungsnr) bleiben unverändert.
+function fmtCell(v) {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "number") return v.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  return String(v);
+}
+
 export default function TableWidget({ widget, result, allowDownload, onDrilldown }) {
   const cfg = widget.config || {};
   const dd = cfg.drilldown;
@@ -22,6 +30,8 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
     if (v === null || v === undefined || v === "") return;
     onDrilldown(dd.key_column, v);
   };
+  // Zahlenspalten rechtsbündig (bessere Lesbarkeit der Beträge).
+  const numericCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number")));
   if (!allColumns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
   const downloadCsv = () => {
@@ -59,7 +69,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
           <thead>
             <tr style={{ position: "sticky", top: 0, backgroundColor: S.bgEl }}>
               {columns.map(c => (
-                <th key={c} style={{ padding: "8px 12px", textAlign: "left",
+                <th key={c} style={{ padding: "8px 12px", textAlign: numericCols.has(c) ? "right" : "left",
                   borderBottom: `1px solid ${S.border}`, color: S.textDim,
                   fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>{c}</th>
               ))}
@@ -72,7 +82,8 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)"}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
                 {columns.map(c => (
-                  <td key={c} style={{ padding: "7px 12px", color: S.textMain }}>{row[c] ?? ""}</td>
+                  <td key={c} style={{ padding: "7px 12px", color: S.textMain,
+                    textAlign: numericCols.has(c) ? "right" : "left" }}>{fmtCell(row[c])}</td>
                 ))}
               </tr>
             ))}
