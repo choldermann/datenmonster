@@ -30,18 +30,37 @@ export default function AiSummaryWidget({ widget, result }) {
     if (!rows.length) { setText(""); setErr(null); return; }
     const ac = new AbortController();
     setLoading(true); setErr(null); setText("");
-    streamRequest(
-      "/summarize-data",
-      { label: widget.label || "", columns, rows, instruction: cfg.instruction || "" },
-      (_tok, full) => setText(full),
-      null,
-      ac.signal,
-    )
-      // Abgebrochene Anfrage (Filterwechsel → neue Anfrage) NIE als Fehler zeigen –
-      // ein abgebrochener fetch meldet sich je nach Browser als generischer
-      // Netzwerkfehler, nicht immer als sauberer AbortError.
-      .catch(e => { if (!ac.signal.aborted && e.message !== "__ABORTED__") setErr(e.message); })
-      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+
+    // Beim Filterwechsel (z.B. Zeitraum) wird die noch streamende Anfrage per abort()
+    // abgebrochen und sofort eine neue gestartet. Die gerade schließende SSE-Verbindung
+    // kann die neue Anfrage mit "Failed to fetch" abschmieren lassen – das ist KEIN
+    // echter Serverausfall. Darum bei transientem Netzwerkfehler einmal kurz verzögert
+    // neu versuchen (der Retry feuert nur, wenn noch kein Token gestreamt wurde).
+    async function run() {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await streamRequest(
+            "/summarize-data",
+            { label: widget.label || "", columns, rows, instruction: cfg.instruction || "" },
+            (_tok, full) => { if (!ac.signal.aborted) setText(full); },
+            null,
+            ac.signal,
+          );
+          return;
+        } catch (e) {
+          if (ac.signal.aborted || e.message === "__ABORTED__") return;
+          const transient = /nicht erreichbar|Netzwerkfehler/.test(e.message);
+          if (attempt === 0 && transient) {
+            await new Promise(r => setTimeout(r, 500));
+            if (ac.signal.aborted) return;
+            continue;
+          }
+          setErr(e.message);
+          return;
+        }
+      }
+    }
+    run().finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataKey]);
