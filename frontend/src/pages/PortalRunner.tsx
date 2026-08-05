@@ -249,8 +249,8 @@ export default function PortalRunner() {
         </div>
       </header>
 
-      {/* ── Main ── */}
-      <main style={{ maxWidth: 1100, margin: "0 auto", padding: "36px 24px" }}>
+      {/* ── Main ── (Dashboards mit Widgets breiter) */}
+      <main style={{ maxWidth: widgets.length ? 1200 : 1100, margin: "0 auto", padding: "36px 24px" }}>
 
         {/* Load error */}
         {loadErr && (

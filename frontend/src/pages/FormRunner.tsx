@@ -184,7 +184,8 @@ export default function FormRunner() {
         </button>
       </div>
 
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 20px" }}>
+      {/* Dashboards (mit Widgets) breiter rendern als reine Eingabeformulare. */}
+      <div style={{ maxWidth: widgets.length ? 1200 : 900, margin: "0 auto", padding: "32px 20px" }}>
 
         {error && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 6,
