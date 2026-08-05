@@ -281,6 +281,25 @@ Ein Mapping besteht aus **Quell-/Verarbeitungsknoten** und **Zielen (`targets`)*
 
 > **SQL-Dialekt:** Die JTL-Wawi läuft auf **Microsoft SQL Server (T-SQL)**. Nutze `TOP n` (nicht `LIMIT`), `DATEADD`/`DATEDIFF`/`GETDATE()`, `CAST(... AS DECIMAL(18,2))`, `ISNULL(...)`, `CONVERT(char(7), datum, 120)` für Jahr-Monat, Fensterfunktionen (`SUM() OVER (...)`) für ABC-Analysen. Vergib den Ausgabespalten sprechende Aliase (`AS Umsatz`) – diese Aliase sind die Spaltennamen für Widgets.
 
+### 5.2.1 Zwei Arten von Platzhaltern: `{{key}}` (Install-Zeit) vs. `:name` (Laufzeit)
+
+Es gibt **zwei** grundverschiedene Platzhalter-Mechanismen – nicht verwechseln:
+
+| Syntax | Wann ersetzt | Quelle | Wofür |
+|--------|--------------|--------|-------|
+| `{{key}}` | **einmalig beim Installieren** | `config_required`-Wert des Nutzers | Verbindungs-ID, feste Grenzwerte/Zeiträume, die pro Installation gelten (z. B. `DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE())`). Wird als Literal in den SQL-Text geschrieben. |
+| `:name` | **bei jeder Ausführung** | Wert eines **Formularfelds** (`field.name` = `name`) | Interaktive Filter, die der Nutzer im Dashboard ändert – Zeitraum, Warengruppe, Drilldown. Wird als **gebundener Parameter** übergeben (SQL-Injection-sicher, nie String-Interpolation). |
+
+**Regel für interaktive Dashboards:** Filter, die der Nutzer zur Laufzeit verstellt, laufen über `:name` und ein passendes **Formularfeld** mit `name: "<name>"` (siehe §6.3, u. a. `daterange`, `db_dropdown`). Feste, pro Installation gültige Werte laufen über `{{key}}` + `config_required`.
+
+```sql
+-- :von / :bis kommen aus einem daterange-Feld, :kwarengruppe aus einem db_dropdown-Feld
+WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)
+  AND (NULLIF(:kwarengruppe, '') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe, '') AS INT))
+```
+
+> **Wichtig:** Jeder im SQL verwendete `:name` **muss** durch ein Formularfeld gedeckt sein (dessen Feldwert bei jeder Ausführung mitgeschickt wird), sonst bleibt der Parameter ungebunden und das SQL schlägt fehl. Für „alle"-Auswahl leere Werte mit `NULLIF(:name, '')` abfangen. `:year`/`:month` haben einen eingebauten Fallback (letzter voller Kalendermonat), falls kein Feld sie liefert.
+
 ### 5.3 Ziele (`targets`)
 
 Für Reporting **immer**:
@@ -345,16 +364,17 @@ Wenn du sie nicht brauchst: als leeres Array `[]` mitgeben.
 
 ## 6. `forms` – Formulare & Dashboards
 
-Ein Formular kann **Eingabeformular**, **Dashboard** oder beides sein. Es besteht aus einem `schema` mit vier Teilen:
+Ein Formular kann **Eingabeformular**, **Dashboard** oder beides sein. Es besteht aus einem `schema` mit bis zu fünf Teilen (`result_tabs` ist optional):
 
 ```json
 {
   "name": "Umsatz nach Artikel",
   "schema": {
-    "fields":  [ /* Eingabefelder + Layout (optional) */ ],
-    "layout":  [ /* meist leer */ ],
-    "actions": [ /* führen Mappings/Pipelines aus */ ],
-    "widgets": [ /* zeigen Ergebnisse an */ ]
+    "fields":      [ /* Eingabe-/Filterfelder + Layout (optional) */ ],
+    "layout":      [ /* meist leer */ ],
+    "actions":     [ /* führen Mappings/Pipelines aus */ ],
+    "widgets":     [ /* zeigen Ergebnisse an */ ],
+    "result_tabs": [ /* optional: Widgets in Reiter gruppieren (§6.2.1) */ ]
   },
   "portal_config": {}
 }
@@ -395,17 +415,21 @@ Jedes Widget hat `id`, `type`, `label`, `action_id` (verweist auf eine Action) u
 #### KPI-Kachel (`kpi`)
 ```json
 {
-  "id": "w_kpi_umsatz", "type": "kpi", "label": "Gesamtumsatz netto",
+  "id": "w_kpi_umsatz", "type": "kpi", "label": "Umsatz netto",
   "action_id": "act_kpi",
   "config": {
-    "width": 3,
-    "column": "Gesamtumsatz",
+    "width": 4,
+    "column": "UmsatzNetto",
     "aggregation": "first",
-    "prefix": "€ ", "suffix": "", "decimals": 2
+    "prefix": "€ ", "suffix": "", "decimals": 2,
+    "compare_column": "UmsatzNettoVJ",
+    "compare_label": "Vorjahr",
+    "invert_delta": false
   }
 }
 ```
 - `column`: anzuzeigende Spalte. `aggregation`: `first` | `sum` | `avg` | `count` | `max` | `min`. `prefix`/`suffix`/`decimals` formatieren die Zahl. (Für einen einzelnen SQL-Aggregatwert `"first"` verwenden; für „Anzahl Zeilen" `"count"` auf einer beliebigen Spalte.)
+- **Vergleichswert (optional):** `compare_column` = zweite Spalte **aus derselben SQL-Zeile** (z. B. der Vorjahreswert). Die KPI zeigt dann Delta (Pfeil ↑↓ + %) und den Vergleichswert an. `compare_label` beschriftet ihn (Default `"Vorperiode"`). `invert_delta: true` färbt einen Rückgang grün – für Kennzahlen, bei denen weniger besser ist (z. B. Storno-Quote). Das SQL muss beide Werte als Aliase liefern (also z. B. `AS UmsatzNetto` **und** `AS UmsatzNettoVJ`), beide in `output_fields`/`targets[].fields`.
 
 #### Balkendiagramm (`bar`)
 ```json
@@ -452,6 +476,30 @@ Spezial-Widget für den DATEV/JTL-Eingangsrechnungs-Workflow. `config.connection
 
 > **Balken-/Linien-/Kreis-Widgets** unterstützen optional `config.drilldown` (Klick auf ein Segment lädt Detaildaten). Für die Erstgenerierung weglassen.
 
+#### Mehrere Serien (Vergleichslinien/-balken)
+
+`line`- und `bar`-Widgets akzeptieren mehrere `y_columns`. So baust du z. B. „Aktuell vs. Vorjahr":
+das SQL liefert pro X-Wert (z. B. Monat) zwei Spalten (`Umsatz`, `UmsatzVorjahr`), das Widget setzt
+`"y_columns": ["Umsatz", "UmsatzVorjahr"]`. Ab zwei Serien wird automatisch eine Legende gezeigt.
+
+### 6.2.1 `result_tabs` – Ergebnis-Register (Reiter)
+
+Ein Dashboard kann seine Widgets in **Reiter** gruppieren (wie im Screenshot „Umsatz / Lager / …").
+`result_tabs` ist ein **optionaler fünfter Schlüssel** im `schema` (neben `fields`, `layout`, `actions`, `widgets`):
+
+```json
+"result_tabs": [
+  { "id": "tab_umsatz", "label": "Umsatz",
+    "action_ids": ["act_umsatz_kpi", "act_umsatz_verlauf", "act_umsatz_auftraege"] },
+  { "id": "tab_lager", "label": "Lager & Kapitalbindung",
+    "action_ids": ["act_lager_kpi", "act_kapital_wg", "act_lager_tabelle"] }
+]
+```
+
+- Jeder Reiter bündelt Actions über `action_ids`. Ein Widget erscheint im Reiter, dessen `action_ids` seine `action_id` enthalten.
+- **Alle** Actions laufen gemeinsam (z. B. beim Klick auf ein Zeitraum-Preset) – die Reiter steuern nur die **Anzeige**, nicht die Ausführung.
+- `id` in `snake_case`, `label` ist der Reitertext. Ohne `result_tabs` werden alle Widgets untereinander gezeigt.
+
 ### 6.3 `fields` – Eingabefelder & Layout (optional)
 
 Nur für echte Eingabeformulare nötig. Jedes Feld:
@@ -470,12 +518,50 @@ Nur für echte Eingabeformulare nötig. Jedes Feld:
 |--------|--------|----------|
 | Eingabe | `text`, `textarea`, `number`, `date`, `time`, `file` | `name` = technischer Feldname (Pflicht bei Eingabefeldern). `placeholder` bei text/textarea/number. |
 | Auswahl | `checkbox`, `switch`, `dropdown`, `multiselect`, `radio` | `dropdown`/`multiselect`/`radio` brauchen `options: [{ "value": "...", "label": "..." }]`. |
+| Filter (Dashboard) | `daterange`, `db_dropdown` | Interaktive Filter, die Laufzeit-Parameter (`:name`) setzen und die Widgets aktualisieren. Siehe unten. |
 | Aktion | `button` | `action_id` verweist auf eine Action; kein `name`. |
 | Layout | `heading`, `label`, `divider`, `container` | `heading`/`label` nutzen `content` als Text. Kein `name`/`required`. |
 
 - `row`: Zeilenindex; `colSpan`: Breite im 12er-Raster.
 - `required: true` markiert Pflichtfelder (nur Eingabefelder).
 - Ein **Button** löst eine Action aus – so kombinierst du Eingaben mit Auswertung (die Eingabewerte können als SQL-Parameter genutzt werden, sofern das Mapping darauf ausgelegt ist).
+
+#### Dashboard-Filter: `daterange` (Zeitraum mit Presets)
+
+Setzt **zwei** Laufzeit-Parameter (`config.param_from`/`param_to`, Default `von`/`bis`) und aktualisiert die Widgets. Ideal als Kopfzeile eines Dashboards zusammen mit einem Vorjahresvergleich.
+
+```json
+{
+  "id": "f_zeitraum", "type": "daterange", "row": 0, "colSpan": 8,
+  "label": "Zeitraum", "name": "zeitraum",
+  "action_ids": ["act_umsatz_kpi", "act_umsatz_verlauf"],
+  "config": { "param_from": "von", "param_to": "bis", "default": "this_year", "auto_run": true }
+}
+```
+
+- Rendert VON/BIS-Datumsfelder + Preset-Buttons: `this_month`, `last_month`, `this_year`, `last_year`, `days_30`, `months_12`.
+- `config.default` = Preset, mit dem das Dashboard **beim Öffnen automatisch** lädt. `auto_run: true` löst bei jeder Änderung die Actions aus.
+- `action_ids` = welche Actions ausgelöst werden (leer/fehlt → alle Actions des Formulars).
+- Das SQL bindet die Werte als `:von` / `:bis` (siehe §5.2.1). Für einen Vorjahresvergleich im selben SQL: `DATEADD(YEAR, -1, :von)` … `DATEADD(YEAR, -1, :bis)`.
+
+#### Dashboard-Filter: `db_dropdown` (Auswahl aus der DB, z. B. Warengruppe)
+
+Dropdown, dessen Optionen **live aus der JTL-DB** geladen werden – ohne SQL im Template (aus Sicherheitsgründen). Der Feld-`name` ist der Laufzeit-Parameter.
+
+```json
+{
+  "id": "f_warengruppe", "type": "db_dropdown", "row": 0, "colSpan": 4,
+  "label": "Warengruppe", "name": "kwarengruppe",
+  "action_ids": ["act_umsatz_kpi", "act_umsatz_verlauf"],
+  "config": { "connection_id": "{{connection_jtl}}", "kind": "warengruppe",
+              "placeholder": "— alle Warengruppen —", "auto_run": true }
+}
+```
+
+- `config.kind`: vordefinierte Lookup-Art. Verfügbar: `"warengruppe"` (aus `dbo.tWarengruppe`), `"kategorie"` (aus `dbo.tkategorie`). Weitere Arten werden serverseitig hinterlegt.
+- `config.connection_id`: `"{{connection_jtl}}"` (wird beim Install aufgelöst).
+- Der Feld-`name` (z. B. `kwarengruppe`) ist der `:name`, den das SQL bindet. Leerauswahl → leerer String; im SQL mit `NULLIF(:kwarengruppe, '') IS NULL` als „alle" behandeln.
+- `auto_run: true` aktualisiert die Widgets bei Auswahl.
 
 ### 6.4 `portal_config`
 
@@ -540,8 +626,9 @@ Die generierende KI soll **eine einzige, valide JSON-Datei** ausgeben und Folgen
 - [ ] Jeder verwendete `{{platzhalter}}` hat einen `config_required`-Eintrag (außer den Connection-Platzhaltern, die du selbst als `connection`-Eintrag anlegst).
 - [ ] Jedes Mapping: alle Node-Arrays vorhanden (leere als `[]`), SQL-Knoten mit `mode: "transform"`.
 - [ ] `source_dataset_id` = `"__sql__" + sql-node-id` in **jedem** Ziel-Feld.
-- [ ] Jede im Widget genutzte Spalte kommt als Alias im SQL vor **und** steht in `output_fields` **und** in `targets[].fields`.
-- [ ] Jede Action `mapping_id` = existierende Mapping-`id`; jedes Widget `action_id` = existierende Action-`id`.
+- [ ] Jede im Widget genutzte Spalte kommt als Alias im SQL vor **und** steht in `output_fields` **und** in `targets[].fields`. Das gilt auch für `compare_column` bei KPI-Kacheln.
+- [ ] Jede Action `mapping_id` = existierende Mapping-`id`; jedes Widget `action_id` = existierende Action-`id`; jede `result_tabs[].action_ids` = existierende Action-`id`.
+- [ ] Jeder Laufzeit-`:name` im SQL ist durch ein **Formularfeld** gedeckt (Feld-`name` bzw. `daterange`-`param_from`/`param_to`); feste Installations-Werte dagegen als `{{key}}` + `config_required` (nicht `:name`).
 - [ ] T-SQL-Dialekt (MS SQL Server / JTL-Wawi): `TOP n`, `GETDATE()`, `DATEADD`, `CAST(... AS DECIMAL(18,2))`.
 - [ ] Widget-`config.width` je Zeile sinnvoll aufs 12er-Raster verteilt.
 - [ ] `pipelines: []` und `portal_config: {}` gesetzt, falls nicht gebraucht.
@@ -658,4 +745,3 @@ Häufig genutzte Tabellen/Views (MS SQL Server, Schema meist `dbo` bzw. `Rechnun
 - **Artikel/Bestand:** `dbo.tArtikel` (`kArtikel`, `cArtNr`, `fEKNetto`), `dbo.tlagerbestand` (`kArtikel`, `fLagerbestand`), Bezeichnung über `dbo.tArtikelBeschreibung` (`kArtikel`, `cName`, `kSprache`, `kPlattform` – i. d. R. `= 1`).
 
 > Diese Schema-Stellen können je nach JTL-Version abweichen. In `hinweise` immer erwähnen, dass der Nutzer bei abweichender Version die geflaggten Stellen prüfen soll.
-```
