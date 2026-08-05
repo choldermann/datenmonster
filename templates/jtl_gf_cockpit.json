@@ -1548,6 +1548,535 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_rechnungen",
+      "name": "Cockpit – Rechnungen im Zeitraum",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(RE.kRechnung AS VARCHAR(20)) AS kRechnung,\n    RE.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, RE.dErstellt) AS Datum,\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    ISNULL(NULLIF(RA.cLand, ''), '') AS Land,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(*) AS Positionen\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY RE.kRechnung, RE.cRechnungsnr, CONVERT(date, RE.dErstellt),\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))),\n    ISNULL(NULLIF(RA.cLand, ''), '')\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kRechnung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Land",
+            "Umsatz",
+            "Positionen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Rechnungen im Zeitraum",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_rechnungen_region",
+      "name": "Cockpit – Rechnungen (Region)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": ";WITH R AS (\n    SELECT RE.kRechnung, RE.cRechnungsnr, RE.dErstellt,\n        RA.cFirma, RA.cVorname, RA.cName,\n        CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM Rechnung.vRechnung RE\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n)\nSELECT\n    CAST(R.kRechnung AS VARCHAR(20)) AS kRechnung,\n    R.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, R.dErstellt) AS Datum,\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,'')))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    COUNT(*) AS Positionen\nFROM R\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = R.kRechnung\nWHERE R.Bundesland = :bundesland\nGROUP BY R.kRechnung, R.cRechnungsnr, CONVERT(date, R.dErstellt),\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,''))))\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kRechnung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Positionen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Rechnungen (Region)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_positionen",
+      "name": "Cockpit – Rechnungspositionen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(POS.kArtikel AS VARCHAR(20)) AS kArtikel,\n    POS.cArtNr AS ArtNr,\n    POS.cName AS Bezeichnung,\n    CAST(POS.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    POS.cEinheit AS Einheit,\n    CAST(POS.fVkNetto AS DECIMAL(18,2)) AS EinzelNetto,\n    CAST(POS.fAnzahl * POS.fVkNetto AS DECIMAL(18,2)) AS Positionswert\nFROM Rechnung.tRechnungPosition POS\nWHERE POS.kRechnung = :kRechnung\nORDER BY Positionswert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Einheit",
+            "EinzelNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Rechnungspositionen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_field": "EinzelNetto",
+              "target_field": "EinzelNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EinzelNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_artikel",
+      "name": "Cockpit – Artikel-Detail",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Bezeichnung",
+            "EAN",
+            "HAN",
+            "VKNetto",
+            "EKNetto",
+            "Herkunftsland"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikel-Detail",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_jahr",
+      "name": "Cockpit – Umsatz nach Jahr",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(YEAR(RE.dErstellt) AS VARCHAR(4)) AS Jahr,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= DATEFROMPARTS(YEAR(GETDATE()) - (TRY_CONVERT(INT, :jahre) - 1), 1, 1)\nGROUP BY YEAR(RE.dErstellt)\nORDER BY Jahr",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Jahr",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz nach Jahr",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Jahr",
+              "target_field": "Jahr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Jahr"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -1568,6 +2097,62 @@
               "param_from": "von",
               "param_to": "bis",
               "default": "this_year",
+              "auto_run": true
+            }
+          },
+          {
+            "id": "f_jahre",
+            "type": "dropdown",
+            "name": "jahre",
+            "label": "Jahre (Verlauf)",
+            "row": 1,
+            "default": "5",
+            "action_ids": [
+              "act_jahr"
+            ],
+            "options": [
+              {
+                "value": "1",
+                "label": "1 Jahre"
+              },
+              {
+                "value": "2",
+                "label": "2 Jahre"
+              },
+              {
+                "value": "3",
+                "label": "3 Jahre"
+              },
+              {
+                "value": "4",
+                "label": "4 Jahre"
+              },
+              {
+                "value": "5",
+                "label": "5 Jahre"
+              },
+              {
+                "value": "6",
+                "label": "6 Jahre"
+              },
+              {
+                "value": "7",
+                "label": "7 Jahre"
+              },
+              {
+                "value": "8",
+                "label": "8 Jahre"
+              },
+              {
+                "value": "9",
+                "label": "9 Jahre"
+              },
+              {
+                "value": "10",
+                "label": "10 Jahre"
+              }
+            ],
+            "config": {
               "auto_run": true
             }
           }
@@ -1685,6 +2270,20 @@
             "mapping_id": "m_warn_marge",
             "pipeline_id": null,
             "label": "Cockpit – Warnung Marge"
+          },
+          {
+            "id": "act_rechnungen",
+            "type": "run_mapping",
+            "mapping_id": "m_rechnungen",
+            "pipeline_id": null,
+            "label": "Cockpit – Rechnungen im Zeitraum"
+          },
+          {
+            "id": "act_jahr",
+            "type": "run_mapping",
+            "mapping_id": "m_jahr",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz nach Jahr"
           }
         ],
         "widgets": [
@@ -1911,10 +2510,31 @@
           {
             "id": "w_tbl_region",
             "type": "table",
-            "label": "Umsatz nach Land / Bundesland",
+            "label": "Umsatz nach Land / Bundesland (Klick → Rechnungen → Positionen → Artikel)",
             "action_id": "act_region",
             "config": {
-              "width": 12
+              "width": 12,
+              "drilldown": {
+                "type": "mapping",
+                "mapping_id": "m_rechnungen_region",
+                "param": "bundesland",
+                "key_column": "Bundesland",
+                "title": "Rechnungen (Region)",
+                "levels": [
+                  {
+                    "mapping_id": "m_positionen",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Rechnungspositionen"
+                  },
+                  {
+                    "mapping_id": "m_artikel",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              }
             }
           },
           {
@@ -2032,6 +2652,46 @@
             "config": {
               "width": 12
             }
+          },
+          {
+            "id": "w_tbl_rechnungen",
+            "type": "table",
+            "action_id": "act_rechnungen",
+            "label": "Rechnungen im Zeitraum (Klick → Positionen → Artikel)",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kRechnung"
+              ],
+              "drilldown": {
+                "type": "mapping",
+                "mapping_id": "m_positionen",
+                "param": "kRechnung",
+                "key_column": "kRechnung",
+                "title": "Rechnungspositionen",
+                "levels": [
+                  {
+                    "mapping_id": "m_artikel",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_bar_jahr",
+            "type": "bar",
+            "action_id": "act_jahr",
+            "label": "Umsatzentwicklung nach Jahr",
+            "config": {
+              "width": 12,
+              "x_column": "Jahr",
+              "y_columns": [
+                "Umsatz"
+              ]
+            }
           }
         ],
         "result_tabs": [
@@ -2058,7 +2718,9 @@
             "action_ids": [
               "act_wg_entwicklung",
               "act_top_artikel",
-              "act_region"
+              "act_region",
+              "act_rechnungen",
+              "act_jahr"
             ]
           },
           {

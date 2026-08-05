@@ -608,6 +608,17 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             did = w.get("dataset_id")
             if isinstance(did, str) and did in ds_id_map:
                 w["dataset_id"] = ds_id_map[did]
+            # Drilldown-Mapping-Referenzen (Template-String-IDs → echte DB-IDs)
+            # auch verschachtelt in config.drilldown.mapping_id und levels[].mapping_id.
+            dd = (w.get("config") or {}).get("drilldown")
+            if isinstance(dd, dict):
+                dmid = dd.get("mapping_id")
+                if isinstance(dmid, str) and dmid in mapping_id_map:
+                    dd["mapping_id"] = mapping_id_map[dmid]
+                for lvl in dd.get("levels") or []:
+                    lmid = lvl.get("mapping_id")
+                    if isinstance(lmid, str) and lmid in mapping_id_map:
+                        lvl["mapping_id"] = mapping_id_map[lmid]
         schema = _apply_config_deep(schema, config)
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),
