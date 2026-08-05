@@ -293,12 +293,19 @@ Es gibt **zwei** grundverschiedene Platzhalter-Mechanismen – nicht verwechseln
 **Regel für interaktive Dashboards:** Filter, die der Nutzer zur Laufzeit verstellt, laufen über `:name` und ein passendes **Formularfeld** mit `name: "<name>"` (siehe §6.3, u. a. `daterange`, `db_dropdown`). Feste, pro Installation gültige Werte laufen über `{{key}}` + `config_required`.
 
 ```sql
--- :von / :bis kommen aus einem daterange-Feld, :kwarengruppe aus einem db_dropdown-Feld
+-- :von / :bis kommen aus einem daterange-Feld, :kwarengruppe aus einem db_dropdown-Feld.
+-- Einfachauswahl (Feld ohne "multiple"): :kwarengruppe ist ein Skalar, "alle" via NULLIF.
 WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)
   AND (NULLIF(:kwarengruppe, '') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe, '') AS INT))
+
+-- Mehrfachauswahl (db_dropdown mit "multiple": true): :kwarengruppe ist eine Liste.
+-- Das Backend expandiert sie zu einer IN-Liste (:kwarengruppe → :kwarengruppe__0, __1 …)
+-- und bindet automatisch das Begleit-Flag :kwarengruppe_empty (1 = nichts gewählt = alle).
+WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)
+  AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))
 ```
 
-> **Wichtig:** Jeder im SQL verwendete `:name` **muss** durch ein Formularfeld gedeckt sein (dessen Feldwert bei jeder Ausführung mitgeschickt wird), sonst bleibt der Parameter ungebunden und das SQL schlägt fehl. Für „alle"-Auswahl leere Werte mit `NULLIF(:name, '')` abfangen. `:year`/`:month` haben einen eingebauten Fallback (letzter voller Kalendermonat), falls kein Feld sie liefert.
+> **Wichtig:** Jeder im SQL verwendete `:name` **muss** durch ein Formularfeld gedeckt sein (dessen Feldwert bei jeder Ausführung mitgeschickt wird), sonst bleibt der Parameter ungebunden und das SQL schlägt fehl. Für „alle"-Auswahl bei Einfachfeldern leere Werte mit `NULLIF(:name, '')` abfangen; bei Mehrfachauswahl das automatisch gebundene `:name_empty`-Flag im Muster `(:name_empty = 1 OR col IN (:name))` nutzen. `:year`/`:month` haben einen eingebauten Fallback (letzter voller Kalendermonat), falls kein Feld sie liefert.
 
 ### 5.3 Ziele (`targets`)
 
@@ -528,7 +535,7 @@ Nur für echte Eingabeformulare nötig. Jedes Feld:
 
 #### Dashboard-Filter: `daterange` (Zeitraum mit Presets)
 
-Setzt **zwei** Laufzeit-Parameter (`config.param_from`/`param_to`, Default `von`/`bis`) und aktualisiert die Widgets. Ideal als Kopfzeile eines Dashboards zusammen mit einem Vorjahresvergleich.
+Setzt **zwei** Laufzeit-Parameter (`config.param_from`/`param_to`, Default `von`/`bis`) und aktualisiert die Widgets. Rendert einen **Kalender-Popover** zur Bereichsauswahl plus Preset-Buttons. Ideal als Kopfzeile eines Dashboards zusammen mit einem Vorjahresvergleich.
 
 ```json
 {
@@ -539,7 +546,7 @@ Setzt **zwei** Laufzeit-Parameter (`config.param_from`/`param_to`, Default `von`
 }
 ```
 
-- Rendert VON/BIS-Datumsfelder + Preset-Buttons: `this_month`, `last_month`, `this_year`, `last_year`, `days_30`, `months_12`.
+- Rendert einen Kalender-Popover (Bereichsauswahl per Klick auf Start-/Endtag) + Preset-Buttons: `this_month`, `last_month`, `this_year`, `last_year`, `days_30`, `months_12`.
 - `config.default` = Preset, mit dem das Dashboard **beim Öffnen automatisch** lädt. `auto_run: true` löst bei jeder Änderung die Actions aus.
 - `action_ids` = welche Actions ausgelöst werden (leer/fehlt → alle Actions des Formulars).
 - Das SQL bindet die Werte als `:von` / `:bis` (siehe §5.2.1). Für einen Vorjahresvergleich im selben SQL: `DATEADD(YEAR, -1, :von)` … `DATEADD(YEAR, -1, :bis)`.
@@ -554,13 +561,16 @@ Dropdown, dessen Optionen **live aus der JTL-DB** geladen werden – ohne SQL im
   "label": "Warengruppe", "name": "kwarengruppe",
   "action_ids": ["act_umsatz_kpi", "act_umsatz_verlauf"],
   "config": { "connection_id": "{{connection_jtl}}", "kind": "warengruppe",
-              "placeholder": "— alle Warengruppen —", "auto_run": true }
+              "placeholder": "— alle Warengruppen —", "multiple": true, "auto_run": true }
 }
 ```
 
 - `config.kind`: vordefinierte Lookup-Art. Verfügbar: `"warengruppe"` (aus `dbo.tWarengruppe`), `"kategorie"` (aus `dbo.tkategorie`). Weitere Arten werden serverseitig hinterlegt.
 - `config.connection_id`: `"{{connection_jtl}}"` (wird beim Install aufgelöst).
-- Der Feld-`name` (z. B. `kwarengruppe`) ist der `:name`, den das SQL bindet. Leerauswahl → leerer String; im SQL mit `NULLIF(:kwarengruppe, '') IS NULL` als „alle" behandeln.
+- `config.multiple`: `true` → **Mehrfachauswahl** (Checkbox-Popover); der Feldwert ist eine **Liste**. Setze dann auch das Feld-`default` auf `[]`. Ohne `multiple` ist es ein Einfach-Dropdown mit skalarem Wert.
+- Der Feld-`name` (z. B. `kwarengruppe`) ist der `:name`, den das SQL bindet.
+  - **Einfachauswahl:** Leerauswahl → leerer String; im SQL mit `NULLIF(:kwarengruppe, '') IS NULL` als „alle" behandeln.
+  - **Mehrfachauswahl:** Liste; im SQL das Muster `(:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))` nutzen (Backend expandiert die IN-Liste und bindet `:kwarengruppe_empty` automatisch; leere Auswahl = alle).
 - `auto_run: true` aktualisiert die Widgets bei Auswahl.
 
 ### 6.4 `portal_config`

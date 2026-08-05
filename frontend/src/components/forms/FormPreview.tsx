@@ -17,8 +17,9 @@ export default function FormPreview({ schema, formId, onClose }) {
   const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
   const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id));
   const [params, setParams] = useState(() => {
+    const isMulti = f => f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
     const d = {};
-    for (const f of fields) d[f.name] = f.default ?? "";
+    for (const f of fields) d[f.name] = f.default ?? (isMulti(f) ? [] : "");
     return d;
   });
   const [running, setRunning] = useState(false);

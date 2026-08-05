@@ -142,9 +142,10 @@ export default function PortalRunner() {
     api.get(`/api/portal/forms/${slug}`)
       .then(({ data }) => {
         setForm(data);
+        const isMulti = f => f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
         const defaults = {};
         for (const f of (data.fields || [])) {
-          if (f.name) defaults[f.name] = f.default ?? "";
+          if (f.name) defaults[f.name] = f.default ?? (isMulti(f) ? [] : "");
         }
         setParams(defaults);
       })

@@ -5,6 +5,24 @@ Engine-Cache, Parameter-Auflösung, Aggregation.
 
 _sql_engine_cache: dict = {}
 
+import re as _re_mod
+_ISO_DATE_RE = _re_mod.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _coerce_param(val):
+    """Wandelt reine ISO-Datumsstrings (YYYY-MM-DD) in echte date-Objekte um, damit
+    der DB-Treiber sie als DATE bindet statt als nvarchar. Sonst interpretiert z.B.
+    MS SQL Server unter deutscher Spracheinstellung »2026-07-31« als Tag/Monat-
+    vertauscht → »Monat 31« → Fehler 242 (22007, out of range). Andere Werte bleiben
+    unverändert."""
+    if isinstance(val, str) and _ISO_DATE_RE.match(val):
+        import datetime
+        try:
+            return datetime.date.fromisoformat(val)
+        except ValueError:
+            return val
+    return val
+
 
 def _resolve_sql_params(sql: str, flat_row: dict):
     """
@@ -87,6 +105,12 @@ def _resolve_sql_run_params(sql: str, run_params: dict):
             # aufrufenden SQLs kombinieren das mit einer :name_empty=1-Kurzschluss-Klausel).
             if isinstance(val, (list, tuple, set)):
                 items = list(val)
+                # Begleit-Flag :name_empty automatisch binden, falls im SQL referenziert
+                # (empty-sicheres Muster »(:name_empty = 1 OR col IN (:name))« – so muss
+                # der Aufrufer nur die Liste liefern, nicht zusätzlich das Flag).
+                empty_key = f"{name}_empty"
+                if empty_key in referenced and empty_key not in run_params:
+                    params[empty_key] = 1 if not items else 0
                 pattern = _re.compile(r":" + _re.escape(name) + r"(?![A-Za-z0-9_])")
                 if not items:
                     sql = pattern.sub("NULL", sql)
@@ -99,7 +123,7 @@ def _resolve_sql_run_params(sql: str, run_params: dict):
                     repl = ", ".join(placeholders)
                     sql = pattern.sub(lambda _m: repl, sql)
             else:
-                params[name] = int(val) if name in ("year", "month") else val
+                params[name] = int(val) if name in ("year", "month") else _coerce_param(val)
         elif name == "year":
             params[name] = default_year
         elif name == "month":

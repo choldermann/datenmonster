@@ -45,6 +45,21 @@ function FieldPreviewContent({ field }) {
           {(field.options || []).map(o => <option key={o.value}>{o.label}</option>)}
         </select>
       );
+    case "daterange":
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, pointerEvents: "none" }}>
+          <span style={{ ...inputBase, width: "auto", color: "var(--text-dim)",
+            display: "inline-flex", alignItems: "center", gap: 6 }}>📅 Zeitraum wählen</span>
+          <span style={{ fontSize: 9, color: S.textDim }}>+ Presets</span>
+        </div>
+      );
+    case "db_dropdown":
+      return (
+        <select disabled style={{ ...inputBase, color: "var(--text-dim)" }}>
+          <option>{field.config?.placeholder || "— aus DB —"}
+            {field.config?.multiple ? " (Mehrfach)" : ""}</option>
+        </select>
+      );
     case "radio":
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 3, pointerEvents: "none" }}>

@@ -1,6 +1,7 @@
-import { useEffect } from "react";
-import { Play, Loader2, ChevronDown, CheckCircle2, AlertTriangle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Play, Loader2, ChevronDown, CheckCircle2, AlertTriangle, Calendar } from "lucide-react";
 import DbDropdownField from "./fields/DbDropdownField";
+import CalendarRange, { fmtDE } from "./fields/CalendarRange";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -64,6 +65,19 @@ function DateRangeField({ field, params, setParam, onRunAction, running, inp }) 
     if (f && t) { setParam(pf, f); setParam(pt, t); run({ [pf]: f, [pt]: t }); }
   };
 
+  // Kalender-Popover; schließt bei Klick außerhalb.
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  // Kalenderauswahl: setzt beide Params und löst (sofern auto_run) die Actions aus.
+  const onCalChange = (f, t) => { setParam(pf, f); setParam(pt, t); if (f && t) run({ [pf]: f, [pt]: t }); };
+
   // Default-Preset beim ersten Rendern setzen (und – sofern auto_run – das
   // Dashboard direkt befüllen), wenn noch nichts gewählt ist.
   useEffect(() => {
@@ -74,17 +88,17 @@ function DateRangeField({ field, params, setParam, onRunAction, running, inp }) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dateInp = { ...inp, width: "auto", padding: "7px 10px" };
+  const label = from && to ? `${fmtDE(from)} – ${fmtDE(to)}`
+    : from ? `ab ${fmtDE(from)}` : "Zeitraum wählen";
+
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ fontSize: 11, color: S.textDim, fontWeight: 600 }}>VON</span>
-        <input type="date" value={from} style={dateInp}
-          onChange={e => { const nf = e.target.value; setParam(pf, nf); if (nf && to) run({ [pf]: nf, [pt]: to }); }} />
-        <span style={{ fontSize: 11, color: S.textDim, fontWeight: 600 }}>BIS</span>
-        <input type="date" value={to} style={dateInp}
-          onChange={e => { const nt = e.target.value; setParam(pt, nt); if (from && nt) run({ [pf]: from, [pt]: nt }); }} />
-      </div>
+    <div ref={wrapRef} style={{ position: "relative", display: "flex",
+      alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      <button type="button" onClick={() => setOpen(o => !o)} disabled={running}
+        style={{ ...inp, width: "auto", display: "inline-flex", alignItems: "center", gap: 8,
+          cursor: running ? "wait" : "pointer", color: from ? S.textMain : S.textDim }}>
+        <Calendar size={14} style={{ color: S.textDim }} /> {label}
+      </button>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {presets.map(p => (
           <button key={p.id} type="button" onClick={() => applyPreset(p.id)} disabled={running}
@@ -97,6 +111,13 @@ function DateRangeField({ field, params, setParam, onRunAction, running, inp }) 
           </button>
         ))}
       </div>
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 40,
+          background: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 10,
+          padding: 14, boxShadow: "0 8px 28px rgba(0,0,0,0.4)" }}>
+          <CalendarRange from={from} to={to} onChange={onCalChange} />
+        </div>
+      )}
     </div>
   );
 }

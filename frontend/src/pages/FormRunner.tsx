@@ -85,10 +85,12 @@ export default function FormRunner() {
   useEffect(() => {
     api.get(`/api/forms/${id}`).then(({ data }) => {
       setForm(data);
-      // Standardwerte setzen
+      // Standardwerte setzen. Mehrfachauswahl-Felder starten als leere Liste,
+      // damit das Backend :name_empty=1 (= kein Filter) bindet.
+      const isMulti = f => f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
       const defaults = {};
       for (const f of (data.schema?.fields || [])) {
-        defaults[f.name] = f.default ?? "";
+        defaults[f.name] = f.default ?? (isMulti(f) ? [] : "");
       }
       setParams(defaults);
     }).catch(() => setError("Formular nicht gefunden"));

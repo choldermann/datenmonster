@@ -39,11 +39,23 @@ function Section({ title, children }) {
 const COL_SPANS = [2, 3, 4, 6, 8, 9, 12];
 
 const HAS_OPTIONS = new Set(["dropdown", "multiselect", "radio"]);
-const HAS_NAME    = new Set(["text", "textarea", "number", "date", "time", "checkbox", "switch", "dropdown", "multiselect", "radio", "file"]);
+const HAS_NAME    = new Set(["text", "textarea", "number", "date", "time", "checkbox", "switch", "dropdown", "multiselect", "radio", "file", "db_dropdown"]);
 const HAS_DEFAULT = new Set(["text", "number", "date", "time"]);
 const HAS_PLACEHOLDER = new Set(["text", "textarea", "number"]);
 const HAS_CONTENT = new Set(["heading", "label"]);
 const IS_LAYOUT   = new Set(["heading", "label", "divider", "container"]);
+// Felder, die Actions per action_ids auslösen (Button + Dashboard-Filter).
+const HAS_ACTIONS = new Set(["button", "daterange", "db_dropdown"]);
+
+const DATE_PRESETS = [
+  { id: "", label: "— keins (leer starten) —" },
+  { id: "this_month", label: "Dieser Monat" },
+  { id: "last_month", label: "Letzter Monat" },
+  { id: "this_year",  label: "Dieses Jahr" },
+  { id: "last_year",  label: "Letztes Jahr" },
+  { id: "days_30",    label: "30 Tage" },
+  { id: "months_12",  label: "12 Monate" },
+];
 
 export default function FieldProperties({ field, onChange, actions }) {
   if (!field) return (
@@ -58,6 +70,8 @@ export default function FieldProperties({ field, onChange, actions }) {
 
   const def = getFieldDef(field.type);
   const set = (patch) => onChange({ ...field, ...patch });
+  const setCfg = (patch) => set({ config: { ...(field.config || {}), ...patch } });
+  const cfg = field.config || {};
 
   return (
     <div style={{ width: 240, flexShrink: 0, borderLeft: `1px solid ${S.border}`,
@@ -176,8 +190,89 @@ export default function FieldProperties({ field, onChange, actions }) {
         </Section>
       )}
 
-      {/* Button → Actions verknüpfen (mehrere möglich) */}
-      {field.type === "button" && (() => {
+      {/* Dashboard-Filter: Zeitraum (daterange) */}
+      {field.type === "daterange" && (
+        <Section title="Zeitraum-Filter">
+          <Row>
+            <div style={{ flex: 1 }}>
+              <Label>Standard-Preset (beim Öffnen)</Label>
+              <select value={cfg.default || ""} onChange={e => setCfg({ default: e.target.value })}
+                style={{ ...inp, cursor: "pointer" }}>
+                {DATE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </div>
+          </Row>
+          <Row>
+            <div style={{ flex: 1 }}>
+              <Label>Param »von«</Label>
+              <input value={cfg.param_from || ""} onChange={e => setCfg({ param_from: e.target.value.replace(/\s+/g, "_") })}
+                placeholder="von" style={{ ...inp, fontFamily: "monospace", color: def.color }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Label>Param »bis«</Label>
+              <input value={cfg.param_to || ""} onChange={e => setCfg({ param_to: e.target.value.replace(/\s+/g, "_") })}
+                placeholder="bis" style={{ ...inp, fontFamily: "monospace", color: def.color }} />
+            </div>
+          </Row>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={cfg.auto_run !== false}
+              onChange={e => setCfg({ auto_run: e.target.checked })} style={{ width: 13, height: 13 }} />
+            <span style={{ fontSize: 11, color: S.textMain }}>Bei Änderung automatisch ausführen</span>
+          </label>
+          <p style={{ fontSize: 9, color: S.textDim, marginTop: 6, lineHeight: 1.4 }}>
+            Das SQL bindet die Werte als <code>:{cfg.param_from || "von"}</code> / <code>:{cfg.param_to || "bis"}</code>.
+          </p>
+        </Section>
+      )}
+
+      {/* Dashboard-Filter: DB-Auswahl (db_dropdown) */}
+      {field.type === "db_dropdown" && (
+        <Section title="DB-Auswahl">
+          <Row>
+            <div style={{ flex: 1 }}>
+              <Label>Verbindungs-ID</Label>
+              <input value={cfg.connection_id ?? ""} onChange={e => setCfg({ connection_id: e.target.value })}
+                placeholder="{{connection_jtl}} oder Zahl"
+                style={{ ...inp, fontFamily: "monospace" }} />
+            </div>
+          </Row>
+          <Row>
+            <div style={{ flex: 1 }}>
+              <Label>Lookup-Art</Label>
+              <select value={cfg.kind || "warengruppe"} onChange={e => setCfg({ kind: e.target.value })}
+                style={{ ...inp, cursor: "pointer" }}>
+                <option value="warengruppe">Warengruppe</option>
+                <option value="kategorie">Kategorie</option>
+              </select>
+            </div>
+          </Row>
+          <Row>
+            <div style={{ flex: 1 }}>
+              <Label>Platzhalter</Label>
+              <input value={cfg.placeholder || ""} onChange={e => setCfg({ placeholder: e.target.value })}
+                placeholder="— alle —" style={inp} />
+            </div>
+          </Row>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
+            <input type="checkbox" checked={!!cfg.multiple}
+              onChange={e => setCfg({ multiple: e.target.checked })} style={{ width: 13, height: 13 }} />
+            <span style={{ fontSize: 11, color: S.textMain }}>Mehrfachauswahl (Multiselect)</span>
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={cfg.auto_run !== false}
+              onChange={e => setCfg({ auto_run: e.target.checked })} style={{ width: 13, height: 13 }} />
+            <span style={{ fontSize: 11, color: S.textMain }}>Bei Änderung automatisch ausführen</span>
+          </label>
+          <p style={{ fontSize: 9, color: S.textDim, marginTop: 6, lineHeight: 1.4 }}>
+            {cfg.multiple
+              ? <>Liste → SQL-Muster <code>(:{field.name || "param"}_empty = 1 OR spalte IN (:{field.name || "param"}))</code>.</>
+              : <>SQL bindet <code>:{field.name || "param"}</code>; „alle" via <code>NULLIF(:{field.name || "param"}, '')</code>.</>}
+          </p>
+        </Section>
+      )}
+
+      {/* Button/Filter → Actions verknüpfen (mehrere möglich) */}
+      {HAS_ACTIONS.has(field.type) && (() => {
         const selIds = (field.action_ids && field.action_ids.length)
           ? field.action_ids
           : (field.action_id ? [field.action_id] : []);

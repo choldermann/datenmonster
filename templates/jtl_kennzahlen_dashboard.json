@@ -43,7 +43,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    UmsatzNetto, UmsatzNettoVJ, AnzahlRechnungen, AnzahlRechnungenVJ,\n    CAST(CASE WHEN AnzahlRechnungen > 0 THEN UmsatzNetto / AnzahlRechnungen END AS DECIMAL(18,2)) AS AvgRechnungswert,\n    CAST(CASE WHEN AnzahlRechnungenVJ > 0 THEN UmsatzNettoVJ / AnzahlRechnungenVJ END AS DECIMAL(18,2)) AS AvgRechnungswertVJ\nFROM (\n    SELECT\n        CAST(SUM(CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNetto,\n        CAST(SUM(CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNettoVJ,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN RE.kRechnung END) AS AnzahlRechnungen,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN RE.kRechnung END) AS AnzahlRechnungenVJ\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE (RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) OR RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis))) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n) x",
+          "sql": "SELECT\n    UmsatzNetto, UmsatzNettoVJ, AnzahlRechnungen, AnzahlRechnungenVJ,\n    CAST(CASE WHEN AnzahlRechnungen > 0 THEN UmsatzNetto / AnzahlRechnungen END AS DECIMAL(18,2)) AS AvgRechnungswert,\n    CAST(CASE WHEN AnzahlRechnungenVJ > 0 THEN UmsatzNettoVJ / AnzahlRechnungenVJ END AS DECIMAL(18,2)) AS AvgRechnungswertVJ\nFROM (\n    SELECT\n        CAST(SUM(CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNetto,\n        CAST(SUM(CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN POS.fAnzahl * POS.fVkNetto END) AS DECIMAL(18,2)) AS UmsatzNettoVJ,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN RE.kRechnung END) AS AnzahlRechnungen,\n        COUNT(DISTINCT CASE WHEN RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN RE.kRechnung END) AS AnzahlRechnungenVJ\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE (RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) OR RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis))) AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\n) x",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -151,7 +151,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n    GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n),\nvj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS UmsatzVorjahr\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120)\n)\nSELECT ISNULL(cur.Monat, vj.Monat) AS Monat,\n       CAST(ISNULL(cur.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n       CAST(ISNULL(vj.UmsatzVorjahr, 0) AS DECIMAL(18,2)) AS UmsatzVorjahr\nFROM cur FULL OUTER JOIN vj ON cur.Monat = vj.Monat\nORDER BY Monat",
+          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\n    GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n),\nvj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120) AS Monat,\n           SUM(POS.fAnzahl * POS.fVkNetto) AS UmsatzVorjahr\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= DATEADD(YEAR,-1,:von) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, RE.dErstellt), 120)\n)\nSELECT ISNULL(cur.Monat, vj.Monat) AS Monat,\n       CAST(ISNULL(cur.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n       CAST(ISNULL(vj.UmsatzVorjahr, 0) AS DECIMAL(18,2)) AS UmsatzVorjahr\nFROM cur FULL OUTER JOIN vj ON cur.Monat = vj.Monat\nORDER BY Monat",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -226,7 +226,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 500\n    RE.cRechnungsnr AS Rechnung,\n    CONVERT(char(10), RE.dErstellt, 104) AS Datum,\n    ISNULL(RE.cFirma, RE.cName) AS Kunde,\n    COUNT(POS.kRechnungPosition) AS Positionen,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY RE.cRechnungsnr, CONVERT(char(10), RE.dErstellt, 104), ISNULL(RE.cFirma, RE.cName), RE.dErstellt\nORDER BY RE.dErstellt DESC",
+          "sql": "SELECT TOP 500\n    RE.cRechnungsnr AS Rechnung,\n    CONVERT(char(10), RE.dErstellt, 104) AS Datum,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    COUNT(POS.kRechnungPosition) AS Positionen,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nGROUP BY RE.cRechnungsnr, CONVERT(char(10), RE.dErstellt, 104), RA.cFirma, RA.cVorname, RA.cName, RE.dErstellt\nORDER BY RE.dErstellt DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -311,6 +311,81 @@
       ]
     },
     {
+      "id": "mapping_top_kunden",
+      "name": "Top 10 Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 10\n    MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto,\n    COUNT(DISTINCT RE.kRechnung) AS Rechnungen\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nGROUP BY RE.kKunde\nORDER BY UmsatzNetto DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "UmsatzNetto",
+            "Rechnungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Top 10 Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "UmsatzNetto",
+              "target_field": "UmsatzNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNetto"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "mapping_lager_kpi",
       "name": "Lager-Kennzahlen",
       "canvas_nodes": [],
@@ -323,7 +398,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung,\n    COUNT(DISTINCT CASE WHEN LB.fLagerbestand > 0 THEN A.kArtikel END) AS ArtikelMitBestand,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Gesamtmenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nWHERE (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))",
+          "sql": "SELECT\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung,\n    COUNT(DISTINCT CASE WHEN LB.fLagerbestand > 0 THEN A.kArtikel END) AS ArtikelMitBestand,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Gesamtmenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nWHERE (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -398,7 +473,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 15\n    ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 15\n    ISNULL(WG.cName, '(ohne Warengruppe)') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nGROUP BY ISNULL(WG.cName, '(ohne Warengruppe)')\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -462,7 +537,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(LB.fLagerbestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(LB.fLagerbestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE LB.fLagerbestand <> 0 AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(LB.fLagerbestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(LB.fLagerbestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE LB.fLagerbestand <> 0 AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -570,7 +645,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS VerkaufteMenge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto,\n    CAST(ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(CASE WHEN SUM(POS.fAnzahl) > 0\n        THEN ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0)\n             / (SUM(POS.fAnzahl) / NULLIF(DATEDIFF(DAY, :von, :bis) + 1, 0))\n        END AS DECIMAL(18,1)) AS ReichweiteTage\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY VerkaufteMenge DESC",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS VerkaufteMenge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS UmsatzNetto,\n    CAST(ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(CASE WHEN SUM(POS.fAnzahl) > 0\n        THEN ISNULL((SELECT SUM(fLagerbestand) FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel), 0)\n             / (SUM(POS.fAnzahl) / NULLIF(DATEDIFF(DAY, :von, :bis) + 1, 0))\n        END AS DECIMAL(18,1)) AS ReichweiteTage\nFROM Rechnung.vRechnung RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY VerkaufteMenge DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -689,7 +764,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(SUM(B.Bestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS GebundenesKapital,\n    COUNT(*) AS AnzahlLadenhueter\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))",
+          "sql": "SELECT\n    CAST(SUM(B.Bestand * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS GebundenesKapital,\n    COUNT(*) AS AnzahlLadenhueter\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -753,7 +828,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(B.Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(B.Bestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), LV.LetzterVerkauf, 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, LV.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (NULLIF(:kwarengruppe,'') IS NULL OR A.kWarengruppe = CAST(NULLIF(:kwarengruppe,'') AS INT))\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 300\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(B.Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(B.Bestand * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), LV.LetzterVerkauf, 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, LV.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nCROSS APPLY (SELECT ISNULL(SUM(fLagerbestand), 0) AS Bestand FROM dbo.tlagerbestand WHERE kArtikel = A.kArtikel) B\nOUTER APPLY (\n    SELECT MAX(RE.dErstellt) AS LetzterVerkauf\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE POS.cArtNr = A.cArtNr\n) LV\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE B.Bestand > 0\n    AND (LV.LetzterVerkauf IS NULL OR LV.LetzterVerkauf < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\n    AND (:kwarengruppe_empty = 1 OR A.kWarengruppe IN (:kwarengruppe))\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -893,7 +968,8 @@
               "act_lager_tabelle",
               "act_abverkauf",
               "act_altware_kpi",
-              "act_altware_tabelle"
+              "act_altware_tabelle",
+              "act_top_kunden"
             ],
             "config": {
               "param_from": "von",
@@ -909,6 +985,7 @@
             "colSpan": 4,
             "label": "Warengruppe",
             "name": "kwarengruppe",
+            "default": [],
             "action_ids": [
               "act_umsatz_kpi",
               "act_umsatz_verlauf",
@@ -918,12 +995,14 @@
               "act_lager_tabelle",
               "act_abverkauf",
               "act_altware_kpi",
-              "act_altware_tabelle"
+              "act_altware_tabelle",
+              "act_top_kunden"
             ],
             "config": {
               "connection_id": "{{connection_jtl}}",
               "kind": "warengruppe",
               "placeholder": "— alle Warengruppen —",
+              "multiple": true,
               "auto_run": true
             }
           }
@@ -992,6 +1071,13 @@
             "mapping_id": "mapping_altware_tabelle",
             "pipeline_id": null,
             "label": "Altware-Liste"
+          },
+          {
+            "id": "act_top_kunden",
+            "type": "run_mapping",
+            "mapping_id": "mapping_top_kunden",
+            "pipeline_id": null,
+            "label": "Top 10 Kunden"
           }
         ],
         "widgets": [
@@ -1063,6 +1149,15 @@
             "type": "table",
             "label": "Aufträge im Zeitraum",
             "action_id": "act_umsatz_auftraege",
+            "config": {
+              "width": 12
+            }
+          },
+          {
+            "id": "w_tbl_top_kunden",
+            "type": "table",
+            "label": "Top 10 Kunden (Umsatz netto)",
+            "action_id": "act_top_kunden",
             "config": {
               "width": 12
             }
@@ -1186,7 +1281,8 @@
             "action_ids": [
               "act_umsatz_kpi",
               "act_umsatz_verlauf",
-              "act_umsatz_auftraege"
+              "act_umsatz_auftraege",
+              "act_top_kunden"
             ]
           },
           {

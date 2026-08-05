@@ -1,6 +1,7 @@
 import {
   Type, AlignLeft, Hash, Calendar, Clock, CheckSquare, ToggleLeft,
   ChevronDown, List, Circle, Paperclip, Play, Tag, Heading, Minus, Square, Layers,
+  CalendarRange, Database,
 } from "lucide-react";
 
 export const FIELD_GROUPS = [
@@ -25,6 +26,14 @@ export const FIELD_GROUPS = [
       { type: "dropdown",    label: "Dropdown",          Icon: ChevronDown, color: "#f9a8d4", defaultColSpan: 6 },
       { type: "multiselect", label: "Mehrfachauswahl",  Icon: List,        color: "#f9a8d4", defaultColSpan: 8 },
       { type: "radio",       label: "Radio Buttons",    Icon: Circle,      color: "#f9a8d4", defaultColSpan: 6 },
+    ],
+  },
+  {
+    id: "filter",
+    label: "Dashboard-Filter",
+    types: [
+      { type: "daterange",   label: "Zeitraum (Kalender)", Icon: CalendarRange, color: "#38bdf8", defaultColSpan: 8 },
+      { type: "db_dropdown", label: "DB-Auswahl",          Icon: Database,      color: "#38bdf8", defaultColSpan: 4 },
     ],
   },
   {
@@ -78,6 +87,18 @@ export function newField(type, rowIndex = 0) {
       { value: "option1", label: "Option 1" },
       { value: "option2", label: "Option 2" },
     ];
+  }
+  // Dashboard-Filter: eigene action_ids-Verknüpfung + config-Objekt.
+  if (type === "daterange") {
+    base.name = "zeitraum";
+    base.action_ids = [];
+    base.config = { param_from: "von", param_to: "bis", default: "this_year", auto_run: true };
+  }
+  if (type === "db_dropdown") {
+    base.name = "kwarengruppe";
+    base.action_ids = [];
+    base.config = { connection_id: "", kind: "warengruppe",
+                    placeholder: "— alle —", multiple: false, auto_run: true };
   }
   return base;
 }
