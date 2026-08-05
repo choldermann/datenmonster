@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
+import { buildDashboardContext } from "../components/forms/dashboardContext";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
@@ -82,7 +83,7 @@ export default function FormRunner() {
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
   const [inputTab, setInputTab] = useState("main");
-  const { setFormAiAllowed } = useAIAssistant();
+  const { setFormAiAllowed, setPageContext } = useAIAssistant();
 
   // Schwebenden KI-Assistenten in diesem Formular nur zeigen, wenn ausdrücklich
   // erlaubt (schema.show_ai_assistant); beim Verlassen zurücksetzen.
@@ -90,6 +91,16 @@ export default function FormRunner() {
     setFormAiAllowed(!!form?.schema?.show_ai_assistant);
     return () => setFormAiAllowed(false);
   }, [form, setFormAiAllowed]);
+
+  // Bei aktivem Assistenten die aktuell angezeigten Ergebnisse (aktiver Reiter) +
+  // gesetzte Filter als Kontext einspeisen, damit die KI Fragen dazu beantworten kann.
+  useEffect(() => {
+    const sch = form?.schema;
+    if (!sch?.show_ai_assistant) return;
+    setPageContext(buildDashboardContext(sch.widgets, sch.actions, sch.result_tabs,
+      form?.name, results, params, activeTab));
+    return () => setPageContext(null);
+  }, [form, results, params, activeTab, setPageContext]);
 
   useEffect(() => {
     api.get(`/api/forms/${id}`).then(({ data }) => {

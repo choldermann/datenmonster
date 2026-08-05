@@ -2755,7 +2755,8 @@
               "act_warn_marge"
             ]
           }
-        ]
+        ],
+        "show_ai_assistant": true
       },
       "portal_config": {}
     }

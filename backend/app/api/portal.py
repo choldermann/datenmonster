@@ -37,6 +37,7 @@ def _portal_form_out(f: Form) -> dict:
         "is_homepage":      pc.get("is_homepage", False),
         "allow_download":   pc.get("allow_download", False),
         "allow_manual_run": pc.get("allow_manual_run", True),
+        "show_ai_assistant": schema.get("show_ai_assistant", False),
         # Schema ohne interne Details — nur Felder, Widgets und Ergebnis-Register
         "fields":           schema.get("fields", []),
         "widgets":          schema.get("widgets", []),

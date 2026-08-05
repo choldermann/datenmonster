@@ -445,6 +445,15 @@ async def suggest_datasets(
 # ── Globaler Assistent ────────────────────────────────────────────────────────
 
 _PAGE_SYSTEM_PROMPTS = {
+    "form_dashboard": (
+        "Du bist der KI-Assistent für ein Datenmonster-Dashboard/Formular, das der Benutzer "
+        "gerade ansieht. Im Kontext (Abschnitt »Kontext«) stehen die aktuell angezeigten "
+        "Kennzahlen/Tabellen des aktiven Reiters sowie die gesetzten Filter (z.B. Zeitraum). "
+        "Beantworte Fragen NUR anhand dieser real angezeigten Daten – erfinde keine Zahlen, "
+        "rechne nicht ungefragt Werte neu und nenne nur Kennzahlen, die im Kontext vorkommen. "
+        "Antworte knapp, konkret und auf Deutsch; weise auf Auffälligkeiten/Trends und ggf. "
+        "Handlungsbedarf hin, wenn danach gefragt wird."
+    ),
     "dashboard": (
         "Du bist der KI-Assistent für das Datenmonster Dashboard. "
         "Das Dashboard zeigt alle Projekte und deren Inhalte: Datasets (Datenquellen), "

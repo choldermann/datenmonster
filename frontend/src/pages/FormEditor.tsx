@@ -336,6 +336,15 @@ export default function FormEditor() {
                   {l}
                 </label>
               ))}
+              {/* Formular-Ebene (Schema): schwebenden KI-Assistenten in diesem
+                  Formular/Dashboard einblenden und mit den Ergebnisdaten füttern. */}
+              <label style={{ display: "flex", alignItems: "center", gap: 6,
+                cursor: "pointer", fontSize: 11, color: S.textMain }}>
+                <input type="checkbox" checked={!!schema.show_ai_assistant}
+                  onChange={e => setSchema(s => ({ ...s, show_ai_assistant: e.target.checked }))}
+                  style={{ width: 12, height: 12 }} />
+                KI-Assistent anzeigen
+              </label>
             </div>
             {appUrl && published && (
               <a href={appUrl} target="_blank" rel="noreferrer"
