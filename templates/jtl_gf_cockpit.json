@@ -43,7 +43,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ,\n    Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
+          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ,\n    Warenumsatz, Wareneinsatz, Versandergebnis,\n    Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Warenumsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto - DBpos END), 0) AS DECIMAL(18,2)) AS Wareneinsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 2 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Versandergebnis,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -53,6 +53,9 @@
             "RohertragVJ",
             "DB2",
             "DB2VJ",
+            "Warenumsatz",
+            "Wareneinsatz",
+            "Versandergebnis",
             "Rechnungen",
             "RechnungenVJ",
             "AktiveKunden",
@@ -142,6 +145,36 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "DB2VJ"
+              }
+            },
+            {
+              "source_field": "Warenumsatz",
+              "target_field": "Warenumsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warenumsatz"
+              }
+            },
+            {
+              "source_field": "Wareneinsatz",
+              "target_field": "Wareneinsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wareneinsatz"
+              }
+            },
+            {
+              "source_field": "Versandergebnis",
+              "target_field": "Versandergebnis",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versandergebnis"
               }
             },
             {
@@ -3348,7 +3381,11 @@
               "decimals": 2,
               "compare_column": "RohertragVJ",
               "compare_label": "Vorjahr",
-              "invert_delta": false
+              "invert_delta": false,
+              "breakdown": [
+                { "label": "Warenumsatz", "column": "Warenumsatz" },
+                { "label": "− Wareneinsatz (EK)", "column": "Wareneinsatz" }
+              ]
             }
           },
           {
@@ -3365,7 +3402,11 @@
               "decimals": 2,
               "compare_column": "DB2VJ",
               "compare_label": "Vorjahr",
-              "invert_delta": false
+              "invert_delta": false,
+              "breakdown": [
+                { "label": "Rohertrag (DB I)", "column": "Rohertrag" },
+                { "label": "+ Versandergebnis", "column": "Versandergebnis" }
+              ]
             }
           },
           {

@@ -33,6 +33,11 @@ export default function KpiWidget({ widget, result }) {
     column, aggregation = "first", prefix = "", suffix = "", decimals = 0, color,
     // Vorperioden-/Vorjahresvergleich: zweite Spalte aus derselben SQL-Zeile.
     compare_column, compare_label = "Vorperiode", invert_delta = false,
+    // Zusammensetzung: weitere Spalten aus derselben SQL-Zeile als kleine Zeilen
+    // unter dem Wert (z.B. Warenumsatz − Wareneinsatz = Rohertrag). Jeder Eintrag:
+    // { label, column, prefix?, suffix?, decimals? } – prefix/suffix/decimals fallen
+    // auf die Widget-Werte zurück.
+    breakdown,
   } = cfg;
   const label = widget.label || column || "KPI";
 
@@ -85,6 +90,26 @@ export default function KpiWidget({ widget, result }) {
       {compare_column && !delta && cmp != null && (
         <div style={{ marginTop: 10, fontSize: 11, color: S.textDim }}>
           {compare_label}: {formatValue(cmp, Number(decimals) || 0, prefix, suffix)}
+        </div>
+      )}
+      {Array.isArray(breakdown) && breakdown.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid var(--border)",
+          display: "flex", flexDirection: "column", gap: 3 }}>
+          {breakdown.map((b, i) => {
+            const bv = aggregate(rows, b.column, aggregation);
+            return (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between",
+                fontSize: 11, color: S.textDim }}>
+                <span>{b.label || b.column}</span>
+                <span style={{ fontWeight: 600, color: S.textMain }}>
+                  {formatValue(bv,
+                    b.decimals != null ? Number(b.decimals) : Number(decimals) || 0,
+                    b.prefix != null ? b.prefix : prefix,
+                    b.suffix != null ? b.suffix : suffix)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
