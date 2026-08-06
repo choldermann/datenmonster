@@ -625,6 +625,13 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 amid = ai.get("mapping_id")
                 if isinstance(amid, str) and amid in mapping_id_map:
                     ai["mapping_id"] = mapping_id_map[amid]
+            # Aufgabenliste: config.row_detail.map[<key>].mapping_id (Detail-Mappings).
+            rd = (w.get("config") or {}).get("row_detail")
+            if isinstance(rd, dict) and isinstance(rd.get("map"), dict):
+                for ent in rd["map"].values():
+                    rmid = ent.get("mapping_id") if isinstance(ent, dict) else None
+                    if isinstance(rmid, str) and rmid in mapping_id_map:
+                        ent["mapping_id"] = mapping_id_map[rmid]
         schema = _apply_config_deep(schema, config)
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),
@@ -846,6 +853,12 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 amid = ai.get("mapping_id")
                 if isinstance(amid, int) and amid in mapping_real_to_tpl:
                     ai["mapping_id"] = mapping_real_to_tpl[amid]
+            rd = (w.get("config") or {}).get("row_detail")
+            if isinstance(rd, dict) and isinstance(rd.get("map"), dict):
+                for ent in rd["map"].values():
+                    rmid = ent.get("mapping_id") if isinstance(ent, dict) else None
+                    if isinstance(rmid, int) and rmid in mapping_real_to_tpl:
+                        ent["mapping_id"] = mapping_real_to_tpl[rmid]
         portal_config = dict(fo.portal_config or {})
         portal_config.pop("allowed_users", None)  # instanzspezifische User-IDs nicht exportieren
         content["forms"].append({

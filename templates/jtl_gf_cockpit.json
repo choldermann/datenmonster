@@ -2709,6 +2709,200 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_tagesaufgaben",
+      "name": "Cockpit – Aufgabenliste (Ampel)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH C AS (\n    SELECT\n        (SELECT COUNT(*) FROM (\n            SELECT X.kKunde\n            FROM (\n                SELECT RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n                    CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n                    CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n            ) X\n            GROUP BY X.kKunde\n            HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n        ) k) AS n_kunden,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n            LEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(V.LetzterVerkauf) IS NULL OR MAX(V.LetzterVerkauf) < DATEADD(DAY, -180, GETDATE()))\n        ) l) AS n_ladenhueter,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n            LEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\n            WHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\n            GROUP BY A.kArtikel, B.Bestand\n            HAVING ISNULL(B.Bestand, 0) <= 0\n        ) b) AS n_nachbestellen,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n            WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\n            GROUP BY A.kArtikel\n            HAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\n        ) m) AS n_marge,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n            LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\n        ) d) AS n_beschreibung,\n        (SELECT SUM(CASE WHEN Rohertrag < Vor THEN 1 ELSE 0 END)\n         FROM (\n            SELECT Rohertrag, LAG(Rohertrag) OVER (ORDER BY Monat) AS Vor, ROW_NUMBER() OVER (ORDER BY Monat DESC) AS rn\n            FROM (\n                SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n                       SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS Rohertrag\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n                WHERE RE.dErstellt >= DATEADD(MONTH, -6, DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))\n                  AND RE.dErstellt < DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date))\n                GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n            ) mm\n         ) z WHERE rn <= 3) AS n_trend\n)\nSELECT sort, Ampel, Anzahl, Aufgabe, check_key FROM (\n    SELECT 1 AS sort, CASE WHEN n_kunden > 15 THEN 'rot' WHEN n_kunden > 5 THEN 'orange' WHEN n_kunden > 0 THEN 'gelb' ELSE 'gruen' END AS Ampel, n_kunden AS Anzahl, 'Kunden mit Umsatzrückgang kontaktieren' AS Aufgabe, 'kunden_rueckgang' AS check_key FROM C\n    UNION ALL SELECT 2, CASE WHEN n_ladenhueter > 10 THEN 'rot' WHEN n_ladenhueter > 3 THEN 'orange' WHEN n_ladenhueter > 0 THEN 'gelb' ELSE 'gruen' END, n_ladenhueter, 'Ladenhüter abbauen', 'ladenhueter' FROM C\n    UNION ALL SELECT 3, CASE WHEN n_nachbestellen > 10 THEN 'rot' WHEN n_nachbestellen > 0 THEN 'orange' ELSE 'gruen' END, n_nachbestellen, 'Artikel nachbestellen (verkauft, kein Bestand)', 'nachbestellen' FROM C\n    UNION ALL SELECT 4, CASE WHEN n_marge > 10 THEN 'rot' WHEN n_marge > 0 THEN 'orange' ELSE 'gruen' END, n_marge, 'Artikel mit negativer Marge prüfen', 'marge' FROM C\n    UNION ALL SELECT 5, CASE WHEN n_trend >= 3 THEN 'rot' WHEN n_trend >= 2 THEN 'orange' ELSE 'gruen' END, n_trend, CASE WHEN n_trend >= 2 THEN 'Monate mit sinkendem Rohertrag' ELSE 'Rohertrag stabil oder steigend' END, 'trend' FROM C\n    UNION ALL SELECT 6, CASE WHEN n_beschreibung > 500 THEN 'gelb' ELSE 'gruen' END, n_beschreibung, 'Artikelbeschreibungen verbessern', 'beschreibung' FROM C\n) q\nORDER BY CASE Ampel WHEN 'rot' THEN 0 WHEN 'orange' THEN 1 WHEN 'gelb' THEN 2 ELSE 3 END, sort",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "sort",
+            "Ampel",
+            "Anzahl",
+            "Aufgabe",
+            "check_key"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Aufgabenliste (Ampel)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            },
+            {
+              "source_field": "Ampel",
+              "target_field": "Ampel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ampel"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Aufgabe",
+              "target_field": "Aufgabe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aufgabe"
+              }
+            },
+            {
+              "source_field": "check_key",
+              "target_field": "check_key",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "check_key"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_beschreibung_todo",
+      "name": "Cockpit – Artikelbeschreibungen offen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) AS Beschreibungslaenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\nORDER BY Bestand DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "Beschreibungslaenge"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikelbeschreibungen offen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Beschreibungslaenge",
+              "target_field": "Beschreibungslaenge",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Beschreibungslaenge"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2806,6 +3000,13 @@
         ],
         "layout": [],
         "actions": [
+          {
+            "id": "act_tagesaufgaben",
+            "type": "run_mapping",
+            "mapping_id": "m_tagesaufgaben",
+            "pipeline_id": null,
+            "label": "Cockpit – Aufgabenliste"
+          },
           {
             "id": "act_overview_kpi",
             "type": "run_mapping",
@@ -2941,6 +3142,51 @@
           }
         ],
         "widgets": [
+          {
+            "id": "w_tasklist",
+            "type": "tasklist",
+            "label": "📋 Aufgabenliste des Tages",
+            "action_id": "act_tagesaufgaben",
+            "config": {
+              "width": 12,
+              "info": "Heute empfohlen – klicken Sie eine Zeile für die Detailliste.",
+              "row_detail": {
+                "key_column": "check_key",
+                "map": {
+                  "kunden_rueckgang": {
+                    "mapping_id": "m_kunden_rueckgang",
+                    "title": "Kunden mit Umsatzrückgang",
+                    "hidden_columns": [
+                      "kKunde"
+                    ]
+                  },
+                  "ladenhueter": {
+                    "mapping_id": "m_warn_ladenhueter",
+                    "title": "Ladenhüter – Kapital ohne Verkauf",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
+                  },
+                  "nachbestellen": {
+                    "mapping_id": "m_warn_bestand",
+                    "title": "Artikel nachbestellen (verkauft, kein Bestand)"
+                  },
+                  "marge": {
+                    "mapping_id": "m_warn_marge",
+                    "title": "Artikel mit negativer Marge"
+                  },
+                  "beschreibung": {
+                    "mapping_id": "m_beschreibung_todo",
+                    "title": "Artikelbeschreibungen verbessern"
+                  },
+                  "trend": {
+                    "mapping_id": "m_trend",
+                    "title": "Umsatz- & Rohertrag-Trend (24 Monate)"
+                  }
+                }
+              }
+            }
+          },
           {
             "id": "w_kpi_umsatz",
             "type": "kpi",
@@ -3431,6 +3677,7 @@
             "id": "tab_uebersicht",
             "label": "Unternehmensübersicht",
             "action_ids": [
+              "act_tagesaufgaben",
               "act_overview_kpi",
               "act_umsatz_verlauf"
             ]

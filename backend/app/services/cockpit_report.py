@@ -247,6 +247,25 @@ def _table_html(widget: dict, result: dict) -> str:
             f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
 
 
+def _tasklist_html(widget: dict, result: dict) -> str:
+    """Aufgabenliste (Ampel + Anzahl + Text) für den PDF-Report."""
+    AMPEL = {"rot": "#c0392b", "orange": "#d97b1f", "gelb": "#c9a71f", "gruen": "#3f8f45"}
+    order = {"rot": 0, "orange": 1, "gelb": 2, "gruen": 3}
+    rows = sorted(result.get("rows", []),
+                  key=lambda r: (order.get(str(r.get("Ampel", "")).lower(), 9), r.get("sort", 99)))
+    if not rows:
+        return ""
+    items = []
+    for r in rows:
+        col = AMPEL.get(str(r.get("Ampel", "")).lower(), "#999999")
+        anz = r.get("Anzahl")
+        anz_s = f"<b>{_esc(anz)}</b> &nbsp;" if anz not in (None, "") else ""
+        items.append(f'<tr><td style="width:14px;color:{col};font-size:12pt">&#9679;</td>'
+                     f'<td style="font-size:9pt;color:{DARK};padding:2px 0">{anz_s}{_esc(r.get("Aufgabe", ""))}</td></tr>')
+    return (f'<div style="font-size:9pt;font-weight:bold;margin:4px 0 2px;color:{DARK}">{_esc(widget.get("label", ""))}</div>'
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:8px">{"".join(items)}</table>')
+
+
 def _widgets_for_tab(schema: dict, action_ids: set) -> list:
     return [w for w in schema.get("widgets", [])
             if not action_ids or w.get("action_id") in action_ids]
@@ -275,7 +294,9 @@ def _render_tab(schema: dict, tab: dict, results: dict) -> str:
                 parts.append(flush_kpis())
             continue
         parts.append(flush_kpis())
-        if wt == "table":
+        if wt == "tasklist":
+            parts.append(_tasklist_html(w, res))
+        elif wt == "table":
             parts.append(f'<div style="font-size:9pt;font-weight:bold;margin:4px 0 2px;color:{DARK}">{_esc(w.get("label",""))}</div>')
             parts.append(_table_html(w, res))
         elif wt in ("bar", "line", "pie"):

@@ -10,6 +10,7 @@ import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
+import TaskListWidget from "./widgets/TaskListWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -20,13 +21,14 @@ const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
+  tasklist: "Aufgabenliste",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung"]);
 
-function WidgetBody({ widget, result, allowDownload, onDrilldown, onAiAction }) {
+function WidgetBody({ widget, result, allowDownload, onDrilldown, onAiAction, onTaskClick }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
 
@@ -53,6 +55,7 @@ function WidgetBody({ widget, result, allowDownload, onDrilldown, onAiAction }) 
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "ai_summary": return <AiSummaryWidget widget={widget} result={result} />;
+    case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
 }
@@ -89,13 +92,23 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     const id = ++seqRef.current;
     setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [] }]);
     try {
-      const params = { ...base, [param]: value };
+      // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
+      const params = param ? { ...base, [param]: value } : { ...base };
       const { data } = await api.post("/api/forms/drilldown", { mapping_id, params });
       setStack(prev => prev.map(f => f.id === id ? { ...f, rows: data.rows || [], loading: false } : f));
     } catch (e) {
       setStack(prev => prev.map(f => f.id === id
         ? { ...f, loading: false, error: e.response?.data?.detail || e.message } : f));
     }
+  };
+
+  // Klick auf eine Aufgabenzeile (tasklist) → Detailliste des jeweiligen Checks.
+  const handleTaskClick = (widget, row, detail) => {
+    if (!detail?.mapping_id) return;
+    cfgRef.current = { dd: null, base: baseParams || {} };
+    openLevel({ mapping_id: detail.mapping_id, param: detail.param || null, value: null,
+      title: detail.title || row.Aufgabe || "Detail", field: "", depth: 0,
+      hidden: detail.hidden_columns || [] });
   };
 
   // Einstieg aus einem Widget (Chart-Segment oder Tabellenzeile).
@@ -161,7 +174,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                   <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{title}</span>
-                    {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
+                    {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && widget.type !== "tasklist" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
                   </div>
@@ -174,7 +187,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} />
+                <WidgetBody widget={widget} result={result} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} />
               </div>
             );
           })}
