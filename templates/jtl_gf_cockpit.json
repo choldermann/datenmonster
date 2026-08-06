@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -3432,6 +3432,416 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_op_kpi",
+      "name": "Cockpit – Offene Posten Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  CAST(SUM(CASE WHEN E.fOffenerWert>0 THEN E.fOffenerWert ELSE 0 END) AS DECIMAL(18,2)) AS OffenGesamt,\n  CAST(SUM(CASE WHEN E.fOffenerWert>0 AND E.dZahlungsziel < CAST(GETDATE() AS DATE) THEN E.fOffenerWert ELSE 0 END) AS DECIMAL(18,2)) AS OffenUeberfaellig,\n  CAST(100.0*SUM(CASE WHEN E.fOffenerWert>0 AND E.dZahlungsziel < CAST(GETDATE() AS DATE) THEN E.fOffenerWert ELSE 0 END)/NULLIF(SUM(CASE WHEN E.fOffenerWert>0 THEN E.fOffenerWert ELSE 0 END),0) AS DECIMAL(18,1)) AS UeberfaelligQuote,\n  CAST(SUM(CASE WHEN E.fOffenerWert>0 THEN E.fOffenerWert ELSE 0 END)/NULLIF((SELECT SUM(E2.fVkBruttoGesamt) FROM Rechnung.vRechnungEckdaten E2 JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE2 ON RE2.kRechnung=E2.kRechnung WHERE RE2.dErstellt>=DATEADD(DAY,-365,CAST(GETDATE() AS DATE)) AND RE2.nStorno=0),0)*365 AS DECIMAL(18,1)) AS DSO\nFROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung WHERE RE.nStorno=0",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "OffenGesamt",
+            "OffenUeberfaellig",
+            "UeberfaelligQuote",
+            "DSO"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Offene Posten Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "OffenGesamt",
+              "target_field": "OffenGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenGesamt"
+              }
+            },
+            {
+              "source_field": "OffenUeberfaellig",
+              "target_field": "OffenUeberfaellig",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenUeberfaellig"
+              }
+            },
+            {
+              "source_field": "UeberfaelligQuote",
+              "target_field": "UeberfaelligQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UeberfaelligQuote"
+              }
+            },
+            {
+              "source_field": "DSO",
+              "target_field": "DSO",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DSO"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_op_aging",
+      "name": "Cockpit – Offene Posten Fälligkeiten",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT Bucket, SortOrder, COUNT(*) AS Anzahl, CAST(SUM(fOffenerWert) AS DECIMAL(18,2)) AS Summe FROM (\n  SELECT E.fOffenerWert,\n    CASE WHEN E.dZahlungsziel IS NULL OR E.dZahlungsziel>=CAST(GETDATE() AS DATE) THEN 'Nicht fällig'\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=30 THEN '1–30 Tage überfällig'\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=60 THEN '31–60 Tage überfällig'\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=90 THEN '61–90 Tage überfällig'\n      ELSE 'über 90 Tage überfällig' END AS Bucket,\n    CASE WHEN E.dZahlungsziel IS NULL OR E.dZahlungsziel>=CAST(GETDATE() AS DATE) THEN 0\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=30 THEN 1\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=60 THEN 2\n      WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=90 THEN 3 ELSE 4 END AS SortOrder\n  FROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung\n  WHERE E.fOffenerWert>0 AND RE.nStorno=0\n) x GROUP BY Bucket,SortOrder ORDER BY SortOrder",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bucket",
+            "SortOrder",
+            "Anzahl",
+            "Summe"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Offene Posten Fälligkeiten",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bucket",
+              "target_field": "Bucket",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bucket"
+              }
+            },
+            {
+              "source_field": "SortOrder",
+              "target_field": "SortOrder",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SortOrder"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Summe",
+              "target_field": "Summe",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Summe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_op_top",
+      "name": "Cockpit – Größte überfällige Rechnungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 20 RE.kKunde AS kKunde, RE.kRechnung AS kRechnung, LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))) AS Kunde,\n  RE.cRechnungsnr AS Rechnungsnr, CAST(RE.dErstellt AS DATE) AS Rechnungsdatum,\n  CAST(E.dZahlungsziel AS DATE) AS Zahlungsziel, DATEDIFF(DAY,E.dZahlungsziel,GETDATE()) AS TageUeberfaellig,\n  CAST(E.fOffenerWert AS DECIMAL(18,2)) AS OffenerBetrag, ISNULL(E.nMahnstufe,0) AS Mahnstufe\nFROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung=E.kRechnung\nWHERE E.fOffenerWert>0 AND E.dZahlungsziel<CAST(GETDATE() AS DATE) AND RE.nStorno=0\nORDER BY E.fOffenerWert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "kRechnung",
+            "Kunde",
+            "Rechnungsnr",
+            "Rechnungsdatum",
+            "Zahlungsziel",
+            "TageUeberfaellig",
+            "OffenerBetrag",
+            "Mahnstufe"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Größte überfällige Rechnungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Rechnungsdatum",
+              "target_field": "Rechnungsdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
+              }
+            },
+            {
+              "source_field": "OffenerBetrag",
+              "target_field": "OffenerBetrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerBetrag"
+              }
+            },
+            {
+              "source_field": "Mahnstufe",
+              "target_field": "Mahnstufe",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mahnstufe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_op_debitoren",
+      "name": "Cockpit – Offene Posten je Kunde",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15 kKunde, MAX(Kunde) AS Kunde,\n  CAST(SUM(OffenerWert) AS DECIMAL(18,2)) AS OffenGesamt,\n  CAST(SUM(CASE WHEN ueberf=1 THEN OffenerWert ELSE 0 END) AS DECIMAL(18,2)) AS DavonUeberfaellig,\n  COUNT(*) AS AnzahlRechnungen\nFROM (\n  SELECT RE.kKunde AS kKunde, LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))) AS Kunde, E.fOffenerWert AS OffenerWert,\n    CASE WHEN E.dZahlungsziel<CAST(GETDATE() AS DATE) THEN 1 ELSE 0 END AS ueberf\n  FROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung\n  LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung=E.kRechnung\n  WHERE E.fOffenerWert>0 AND RE.nStorno=0\n) x GROUP BY kKunde ORDER BY OffenGesamt DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "OffenGesamt",
+            "DavonUeberfaellig",
+            "AnzahlRechnungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Offene Posten je Kunde",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "OffenGesamt",
+              "target_field": "OffenGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenGesamt"
+              }
+            },
+            {
+              "source_field": "DavonUeberfaellig",
+              "target_field": "DavonUeberfaellig",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DavonUeberfaellig"
+              }
+            },
+            {
+              "source_field": "AnzahlRechnungen",
+              "target_field": "AnzahlRechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlRechnungen"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -3696,6 +4106,34 @@
             "mapping_id": "m_zahlungsmoral_verschlechterung",
             "pipeline_id": null,
             "label": "Cockpit – Zahlungsmoral verschlechtert"
+          },
+          {
+            "id": "act_op_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_op_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Offene Posten Kennzahlen"
+          },
+          {
+            "id": "act_op_aging",
+            "type": "run_mapping",
+            "mapping_id": "m_op_aging",
+            "pipeline_id": null,
+            "label": "Cockpit – Offene Posten Fälligkeiten"
+          },
+          {
+            "id": "act_op_top",
+            "type": "run_mapping",
+            "mapping_id": "m_op_top",
+            "pipeline_id": null,
+            "label": "Cockpit – Größte überfällige Rechnungen"
+          },
+          {
+            "id": "act_op_debitoren",
+            "type": "run_mapping",
+            "mapping_id": "m_op_debitoren",
+            "pipeline_id": null,
+            "label": "Cockpit – Offene Posten je Kunde"
           }
         ],
         "widgets": [
@@ -4337,6 +4775,102 @@
                 "kKunde"
               ]
             }
+          },
+          {
+            "id": "w_op_offen",
+            "type": "kpi",
+            "label": "Offene Forderungen",
+            "action_id": "act_op_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffenGesamt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_op_ueberf",
+            "type": "kpi",
+            "label": "Davon überfällig",
+            "action_id": "act_op_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffenUeberfaellig",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_op_quote",
+            "type": "kpi",
+            "label": "Überfälligkeitsquote",
+            "action_id": "act_op_kpi",
+            "config": {
+              "width": 3,
+              "column": "UeberfaelligQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "  %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_op_dso",
+            "type": "kpi",
+            "label": "DSO (Ø Forderungslaufzeit)",
+            "action_id": "act_op_kpi",
+            "config": {
+              "width": 3,
+              "column": "DSO",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "  Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_op_aging",
+            "type": "table",
+            "label": "Fälligkeiten (Aging)",
+            "action_id": "act_op_aging",
+            "config": {
+              "width": 6,
+              "hidden_columns": [
+                "SortOrder"
+              ],
+              "info": "Offene Forderungen nach Überfälligkeit gestaffelt. Fälligkeit = Zahlungsziel der Rechnung (dZahlungsziel)."
+            }
+          },
+          {
+            "id": "w_op_debitoren",
+            "type": "table",
+            "label": "Offene Posten je Kunde (Top-Debitoren)",
+            "action_id": "act_op_debitoren",
+            "config": {
+              "width": 6,
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "info": "Größte offene Forderungen je Kunde. Gesperrte Kunden sind bewusst enthalten (Forderungen bleiben relevant)."
+            }
+          },
+          {
+            "id": "w_op_top",
+            "type": "table",
+            "label": "Größte überfällige Rechnungen (Mahnkandidaten)",
+            "action_id": "act_op_top",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kKunde",
+                "kRechnung"
+              ],
+              "info": "Überfällige Einzelrechnungen, absteigend nach offenem Betrag. Über den E-Mail-Button lässt sich die Liste als Mahnkandidaten an Mitarbeiter senden."
+            }
           }
         ],
         "result_tabs": [
@@ -4359,6 +4893,16 @@
               "act_zm_kpi",
               "act_zm_kunden",
               "act_zm_verschlechterung"
+            ]
+          },
+          {
+            "id": "tab_op",
+            "label": "Offene Posten",
+            "action_ids": [
+              "act_op_kpi",
+              "act_op_aging",
+              "act_op_debitoren",
+              "act_op_top"
             ]
           },
           {
