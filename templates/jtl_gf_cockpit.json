@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "1.8",
+  "version": "1.9",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -3842,6 +3842,255 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_op_kunde_detail",
+      "name": "Cockpit – Offene Rechnungen je Kunde (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT RE.cRechnungsnr AS Rechnungsnr, CAST(RE.dErstellt AS DATE) AS Rechnungsdatum,\n  CAST(E.dZahlungsziel AS DATE) AS Zahlungsziel, DATEDIFF(DAY,E.dZahlungsziel,GETDATE()) AS TageUeberfaellig,\n  CAST(E.fVkBruttoGesamt AS DECIMAL(18,2)) AS RechnungBrutto, CAST(E.fZahlung AS DECIMAL(18,2)) AS Bezahlt,\n  CAST(E.fOffenerWert AS DECIMAL(18,2)) AS OffenerBetrag, ISNULL(E.nMahnstufe,0) AS Mahnstufe\nFROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung\nWHERE RE.kKunde = :kKunde AND E.fOffenerWert>0 AND RE.nStorno=0 ORDER BY E.fOffenerWert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Rechnungsnr",
+            "Rechnungsdatum",
+            "Zahlungsziel",
+            "TageUeberfaellig",
+            "RechnungBrutto",
+            "Bezahlt",
+            "OffenerBetrag",
+            "Mahnstufe"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Offene Rechnungen je Kunde (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Rechnungsdatum",
+              "target_field": "Rechnungsdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
+              }
+            },
+            {
+              "source_field": "RechnungBrutto",
+              "target_field": "RechnungBrutto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RechnungBrutto"
+              }
+            },
+            {
+              "source_field": "Bezahlt",
+              "target_field": "Bezahlt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezahlt"
+              }
+            },
+            {
+              "source_field": "OffenerBetrag",
+              "target_field": "OffenerBetrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerBetrag"
+              }
+            },
+            {
+              "source_field": "Mahnstufe",
+              "target_field": "Mahnstufe",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mahnstufe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_op_bucket_detail",
+      "name": "Cockpit – Offene Rechnungen je Fälligkeit (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))) AS Kunde, RE.cRechnungsnr AS Rechnungsnr, CAST(RE.dErstellt AS DATE) AS Rechnungsdatum,\n  CAST(E.dZahlungsziel AS DATE) AS Zahlungsziel, DATEDIFF(DAY,E.dZahlungsziel,GETDATE()) AS TageUeberfaellig,\n  CAST(E.fOffenerWert AS DECIMAL(18,2)) AS OffenerBetrag, ISNULL(E.nMahnstufe,0) AS Mahnstufe\nFROM Rechnung.vRechnungEckdaten E JOIN (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE ON RE.kRechnung=E.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung=E.kRechnung\nWHERE E.fOffenerWert>0 AND RE.nStorno=0\n  AND (CASE WHEN E.dZahlungsziel IS NULL OR E.dZahlungsziel>=CAST(GETDATE() AS DATE) THEN 0\n    WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=30 THEN 1 WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=60 THEN 2\n    WHEN DATEDIFF(DAY,E.dZahlungsziel,GETDATE())<=90 THEN 3 ELSE 4 END) = :bucket\nORDER BY E.fOffenerWert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Rechnungsnr",
+            "Rechnungsdatum",
+            "Zahlungsziel",
+            "TageUeberfaellig",
+            "OffenerBetrag",
+            "Mahnstufe"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Offene Rechnungen je Fälligkeit (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Rechnungsdatum",
+              "target_field": "Rechnungsdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
+              }
+            },
+            {
+              "source_field": "OffenerBetrag",
+              "target_field": "OffenerBetrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerBetrag"
+              }
+            },
+            {
+              "source_field": "Mahnstufe",
+              "target_field": "Mahnstufe",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mahnstufe"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4842,7 +5091,13 @@
               "hidden_columns": [
                 "SortOrder"
               ],
-              "info": "Offene Forderungen nach Überfälligkeit gestaffelt. Fälligkeit = Zahlungsziel der Rechnung (dZahlungsziel)."
+              "info": "Offene Forderungen nach Überfälligkeit gestaffelt. Fälligkeit = Zahlungsziel der Rechnung (dZahlungsziel).",
+              "drilldown": {
+                "mapping_id": "m_op_bucket_detail",
+                "key_column": "SortOrder",
+                "param": "bucket",
+                "title": "Offene Rechnungen (Fälligkeit)"
+              }
             }
           },
           {
@@ -4855,7 +5110,13 @@
               "hidden_columns": [
                 "kKunde"
               ],
-              "info": "Größte offene Forderungen je Kunde. Gesperrte Kunden sind bewusst enthalten (Forderungen bleiben relevant)."
+              "info": "Größte offene Forderungen je Kunde. Gesperrte Kunden sind bewusst enthalten (Forderungen bleiben relevant).",
+              "drilldown": {
+                "mapping_id": "m_op_kunde_detail",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Offene Rechnungen des Kunden"
+              }
             }
           },
           {
@@ -4869,7 +5130,16 @@
                 "kKunde",
                 "kRechnung"
               ],
-              "info": "Überfällige Einzelrechnungen, absteigend nach offenem Betrag. Über den E-Mail-Button lässt sich die Liste als Mahnkandidaten an Mitarbeiter senden."
+              "info": "Überfällige Einzelrechnungen, absteigend nach offenem Betrag. Über den E-Mail-Button lässt sich die Liste als Mahnkandidaten an Mitarbeiter senden.",
+              "drilldown": {
+                "mapping_id": "m_positionen",
+                "key_column": "kRechnung",
+                "param": "kRechnung",
+                "title": "Rechnungspositionen",
+                "hidden_columns": [
+                  "kArtikel"
+                ]
+              }
             }
           }
         ],
