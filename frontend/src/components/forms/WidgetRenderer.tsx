@@ -105,7 +105,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   // Klick auf eine Aufgabenzeile (tasklist) → Detailliste des jeweiligen Checks.
   const handleTaskClick = (widget, row, detail) => {
     if (!detail?.mapping_id) return;
-    cfgRef.current = { dd: null, base: baseParams || {} };
+    // detail als "dd" merken → falls detail.levels[] gesetzt ist, kann in der
+    // Detailliste per Zeilenklick eine weitere Ebene geöffnet werden (z.B.
+    // Artikelbeschreibungen → aktuelle Beschreibung des Artikels).
+    cfgRef.current = { dd: detail, base: baseParams || {} };
     openLevel({ mapping_id: detail.mapping_id, param: detail.param || null, value: null,
       title: detail.title || row.Aufgabe || "Detail", field: "", depth: 0,
       hidden: detail.hidden_columns || [] });
@@ -208,6 +211,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         onRowClick={handleRowDrill}
         onBack={stack.length > 1 ? backDrill : null}
         onClose={closeDrill}
+        emailEnabled={allowDownload}
       />
     )}
     {aiAction && (

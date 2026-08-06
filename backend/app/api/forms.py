@@ -43,6 +43,16 @@ class DrilldownRequest(BaseModel):
     max_rows:   Optional[int] = 200
 
 
+class EmailTableRequest(BaseModel):
+    recipients: str                      # Komma-/Semikolon-getrennt
+    subject:    Optional[str] = None
+    message:    Optional[str] = None
+    title:      Optional[str] = None
+    columns:    Optional[List[str]] = None
+    rows:       List[dict]
+    filename:   Optional[str] = None
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 def form_out(f: Form) -> dict:
@@ -167,6 +177,67 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
         "rows":    result.get("rows", []),
         "total":   result.get("total", 0),
     }
+
+
+@router.post("/email-table")
+def email_table(body: EmailTableRequest, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """
+    Verschickt eine (im Modal angezeigte) Tabelle per E-Mail an Mitarbeiter –
+    als HTML-Vorschau im Body plus CSV-Anhang zum Bearbeiten (z.B. Artikel-
+    beschreibungen). Nutzt die SMTP-Konfiguration aus den Systemeinstellungen.
+    """
+    from app.services.email_service import send_email, get_email_config
+
+    recipients = [r.strip() for r in re.split(r"[,;]", body.recipients or "") if r.strip()]
+    if not recipients:
+        raise HTTPException(400, "Keine Empfänger angegeben")
+    if not all(re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", r) for r in recipients):
+        raise HTTPException(400, "Mindestens eine E-Mail-Adresse ist ungültig")
+    if not get_email_config(db).get("host"):
+        raise HTTPException(400, "SMTP ist nicht konfiguriert (Systemeinstellungen → E-Mail)")
+
+    rows = body.rows or []
+    cols = body.columns or (list(rows[0].keys()) if rows else [])
+    title = body.title or "Tabelle"
+
+    # CSV (RFC-4180, ';' als Trenner, BOM für Excel)
+    def _csv(v):
+        s = "" if v is None else str(v)
+        return '"' + s.replace('"', '""') + '"' if re.search(r'[";\n]', s) else s
+    csv_lines = [";".join(_csv(c) for c in cols)]
+    csv_lines += [";".join(_csv(r.get(c)) for c in cols) for r in rows]
+    csv_bytes = ("﻿" + "\n".join(csv_lines)).encode("utf-8")
+
+    # HTML-Vorschau
+    def _h(v):
+        s = "" if v is None else str(v)
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    thead = "".join(f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #ccc;'>{_h(c)}</th>" for c in cols)
+    tbody = "".join("<tr>" + "".join(f"<td style='padding:5px 10px;border-bottom:1px solid #eee;'>{_h(r.get(c))}</td>" for c in cols) + "</tr>" for r in rows)
+    intro = _h(body.message).replace("\n", "<br>") if body.message else ""
+    sender = getattr(user, "username", None) or getattr(user, "email", None) or "Cockpit"
+    html = (
+        "<div style=\"font-family:Arial,sans-serif;font-size:13px;color:#222;\">"
+        + (f"<p>{intro}</p>" if intro else "")
+        + f"<p><b>{_h(title)}</b> – {len(rows)} Zeilen (Tabelle auch als CSV im Anhang zum Bearbeiten)</p>"
+        + f"<table style=\"border-collapse:collapse;font-size:12px;\"><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+        + f"<p style=\"color:#888;font-size:11px;margin-top:14px;\">Gesendet aus dem Datenmonster GF-Cockpit von {_h(sender)}.</p></div>"
+    )
+    plain = (f"{body.message}\n\n" if body.message else "") + f"{title} – {len(rows)} Zeilen. Details siehe CSV-Anhang."
+    fname = (body.filename or re.sub(r"[^a-zA-Z0-9]+", "_", title)[:40] or "tabelle") + ".csv"
+
+    try:
+        send_email(
+            to=recipients[0],
+            cc=",".join(recipients[1:]) if len(recipients) > 1 else None,
+            subject=body.subject or f"Cockpit: {title}",
+            body=plain, html_body=html, db=db,
+            attachments=[{"filename": fname, "data": csv_bytes, "mime": "text/csv"}],
+        )
+    except Exception as e:
+        raise HTTPException(500, f"E-Mail-Versand fehlgeschlagen: {str(e)[:200]}")
+    return {"ok": True, "recipients": recipients, "rows": len(rows)}
 
 
 @router.get("/{form_id}")

@@ -5,7 +5,9 @@ import smtplib
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Optional, List
+from email.mime.base import MIMEBase
+from email import encoders
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +65,16 @@ def send_email(
         if html_body:
             alt.attach(MIMEText(html_body, "html", "utf-8"))
         msg.attach(alt)
+        # Anhänge tatsächlich anhängen (data = bytes)
+        for att in attachments:
+            mime = att.get("mime", "application/octet-stream")
+            maintype, _, subtype = mime.partition("/")
+            part = MIMEBase(maintype or "application", subtype or "octet-stream")
+            data = att.get("data", b"")
+            part.set_payload(data if isinstance(data, (bytes, bytearray)) else str(data).encode("utf-8"))
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f'attachment; filename="{att.get("filename", "anhang")}"')
+            msg.attach(part)
     else:
         msg = MIMEMultipart("alternative")
         msg.attach(MIMEText(body, "plain", "utf-8"))

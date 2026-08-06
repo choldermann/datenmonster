@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "1.6",
+  "version": "1.7",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -2853,7 +2853,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) AS Beschreibungslaenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\nORDER BY Bestand DESC",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) AS Beschreibungslaenge,\n    A.kArtikel AS kArtikel\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\nORDER BY Bestand DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2861,7 +2861,8 @@
             "Artikel",
             "Warengruppe",
             "Bestand",
-            "Beschreibungslaenge"
+            "Beschreibungslaenge",
+            "kArtikel"
           ]
         }
       ],
@@ -2931,6 +2932,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Beschreibungslaenge"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
               }
             }
           ]
@@ -3335,6 +3346,92 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_beschreibung_detail",
+      "name": "Cockpit – Artikelbeschreibung (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Bezeichnung,\n    LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen,\n    CASE WHEN LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))) = '' THEN '(keine Beschreibung hinterlegt)' ELSE AB.cBeschreibung END AS Beschreibung\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Bezeichnung",
+            "Zeichen",
+            "Beschreibung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikelbeschreibung (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Zeichen",
+              "target_field": "Zeichen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zeichen"
+              }
+            },
+            {
+              "source_field": "Beschreibung",
+              "target_field": "Beschreibung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Beschreibung"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -3637,7 +3734,18 @@
                   },
                   "beschreibung": {
                     "mapping_id": "m_beschreibung_todo",
-                    "title": "Artikelbeschreibungen verbessern"
+                    "title": "Artikelbeschreibungen verbessern",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ],
+                    "levels": [
+                      {
+                        "mapping_id": "m_beschreibung_detail",
+                        "key_column": "kArtikel",
+                        "param": "kArtikel",
+                        "title": "Aktuelle Beschreibung"
+                      }
+                    ]
                   },
                   "trend": {
                     "mapping_id": "m_trend",
