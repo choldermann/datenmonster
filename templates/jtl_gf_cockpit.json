@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "1.0",
+  "version": "1.6",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -3055,6 +3055,286 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_zahlungsmoral_kpi",
+      "name": "Cockpit – Zahlungsmoral-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(AVG(CASE WHEN cur = 1 THEN Tage * 1.0 END) AS DECIMAL(18,1)) AS ZahldauerTage,\n    CAST(AVG(CASE WHEN vj = 1 THEN Tage * 1.0 END) AS DECIMAL(18,1)) AS ZahldauerTageVJ,\n    CAST(100.0 * SUM(CASE WHEN cur = 1 AND Tage > 30 THEN 1 ELSE 0 END) / NULLIF(SUM(CASE WHEN cur = 1 THEN 1 ELSE 0 END), 0) AS DECIMAL(18,1)) AS AnteilVerspaetet\nFROM (\n    SELECT RE.kRechnung, RE.kKunde, RE.dErstellt,\n        CASE WHEN DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) < 0 THEN 0 ELSE DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) END AS Tage,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN (SELECT kRechnung, MAX(dDatum) AS dZahlung FROM dbo.tZahlung WHERE kRechnung IS NOT NULL AND fBetrag > 0 GROUP BY kRechnung) Z ON Z.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n) b",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ZahldauerTage",
+            "ZahldauerTageVJ",
+            "AnteilVerspaetet"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Zahlungsmoral-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ZahldauerTage",
+              "target_field": "ZahldauerTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerTage"
+              }
+            },
+            {
+              "source_field": "ZahldauerTageVJ",
+              "target_field": "ZahldauerTageVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerTageVJ"
+              }
+            },
+            {
+              "source_field": "AnteilVerspaetet",
+              "target_field": "AnteilVerspaetet",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnteilVerspaetet"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_zahlungsmoral_kunden",
+      "name": "Cockpit – Zahlungsmoral je Kunde",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15 kKunde, Kunde,\n    CAST(ZahldauerTage AS DECIMAL(18,1)) AS ZahldauerTage,\n    CAST(AnteilVerspaetet AS DECIMAL(18,1)) AS AnteilVerspaetet,\n    Anzahl\nFROM (\n    SELECT b.kKunde,\n        MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        AVG(b.Tage * 1.0) AS ZahldauerTage,\n        100.0 * SUM(CASE WHEN b.Tage > 30 THEN 1 ELSE 0 END) / COUNT(*) AS AnteilVerspaetet,\n        COUNT(*) AS Anzahl\n    FROM (\n    SELECT RE.kRechnung, RE.kKunde, RE.dErstellt,\n        CASE WHEN DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) < 0 THEN 0 ELSE DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) END AS Tage,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN (SELECT kRechnung, MAX(dDatum) AS dZahlung FROM dbo.tZahlung WHERE kRechnung IS NOT NULL AND fBetrag > 0 GROUP BY kRechnung) Z ON Z.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) b\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = b.kRechnung\n    WHERE b.cur = 1 AND b.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    GROUP BY b.kKunde\n    HAVING COUNT(*) >= 2\n) g\nORDER BY ZahldauerTage DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "ZahldauerTage",
+            "AnteilVerspaetet",
+            "Anzahl"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Zahlungsmoral je Kunde",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "ZahldauerTage",
+              "target_field": "ZahldauerTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerTage"
+              }
+            },
+            {
+              "source_field": "AnteilVerspaetet",
+              "target_field": "AnteilVerspaetet",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnteilVerspaetet"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_zahlungsmoral_verschlechterung",
+      "name": "Cockpit – Zahlungsmoral verschlechtert",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15 kKunde, Kunde,\n    CAST(ZahldauerAkt AS DECIMAL(18,1)) AS ZahldauerAkt,\n    CAST(ZahldauerVJ AS DECIMAL(18,1)) AS ZahldauerVJ,\n    CAST(ZahldauerAkt - ZahldauerVJ AS DECIMAL(18,1)) AS Verschlechterung,\n    AnzahlAkt\nFROM (\n    SELECT b.kKunde,\n        MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        AVG(CASE WHEN b.cur = 1 THEN b.Tage * 1.0 END) AS ZahldauerAkt,\n        AVG(CASE WHEN b.vj = 1 THEN b.Tage * 1.0 END) AS ZahldauerVJ,\n        SUM(CASE WHEN b.cur = 1 THEN 1 ELSE 0 END) AS AnzahlAkt\n    FROM (\n    SELECT RE.kRechnung, RE.kKunde, RE.dErstellt,\n        CASE WHEN DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) < 0 THEN 0 ELSE DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) END AS Tage,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN (SELECT kRechnung, MAX(dDatum) AS dZahlung FROM dbo.tZahlung WHERE kRechnung IS NOT NULL AND fBetrag > 0 GROUP BY kRechnung) Z ON Z.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) b\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = b.kRechnung\n    WHERE b.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    GROUP BY b.kKunde\n    HAVING SUM(CASE WHEN b.cur = 1 THEN 1 ELSE 0 END) >= 2\n       AND SUM(CASE WHEN b.vj = 1 THEN 1 ELSE 0 END) >= 2\n       AND AVG(CASE WHEN b.cur = 1 THEN b.Tage * 1.0 END) > AVG(CASE WHEN b.vj = 1 THEN b.Tage * 1.0 END)\n) g\nORDER BY Verschlechterung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "ZahldauerAkt",
+            "ZahldauerVJ",
+            "Verschlechterung",
+            "AnzahlAkt"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Zahlungsmoral verschlechtert",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "ZahldauerAkt",
+              "target_field": "ZahldauerAkt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerAkt"
+              }
+            },
+            {
+              "source_field": "ZahldauerVJ",
+              "target_field": "ZahldauerVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerVJ"
+              }
+            },
+            {
+              "source_field": "Verschlechterung",
+              "target_field": "Verschlechterung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verschlechterung"
+              }
+            },
+            {
+              "source_field": "AnzahlAkt",
+              "target_field": "AnzahlAkt",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlAkt"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -3298,6 +3578,27 @@
             "mapping_id": "m_gesperrte_artikel",
             "pipeline_id": null,
             "label": "Cockpit – Gesperrte Artikel"
+          },
+          {
+            "id": "act_zm_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_zahlungsmoral_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Zahlungsmoral-Kennzahlen"
+          },
+          {
+            "id": "act_zm_kunden",
+            "type": "run_mapping",
+            "mapping_id": "m_zahlungsmoral_kunden",
+            "pipeline_id": null,
+            "label": "Cockpit – Zahlungsmoral je Kunde"
+          },
+          {
+            "id": "act_zm_verschlechterung",
+            "type": "run_mapping",
+            "mapping_id": "m_zahlungsmoral_verschlechterung",
+            "pipeline_id": null,
+            "label": "Cockpit – Zahlungsmoral verschlechtert"
           }
         ],
         "widgets": [
@@ -3383,8 +3684,14 @@
               "compare_label": "Vorjahr",
               "invert_delta": false,
               "breakdown": [
-                { "label": "Warenumsatz", "column": "Warenumsatz" },
-                { "label": "− Wareneinsatz (EK)", "column": "Wareneinsatz" }
+                {
+                  "label": "Warenumsatz",
+                  "column": "Warenumsatz"
+                },
+                {
+                  "label": "− Wareneinsatz (EK)",
+                  "column": "Wareneinsatz"
+                }
               ]
             }
           },
@@ -3404,8 +3711,14 @@
               "compare_label": "Vorjahr",
               "invert_delta": false,
               "breakdown": [
-                { "label": "Rohertrag (DB I)", "column": "Rohertrag" },
-                { "label": "+ Versandergebnis", "column": "Versandergebnis" }
+                {
+                  "label": "Rohertrag (DB I)",
+                  "column": "Rohertrag"
+                },
+                {
+                  "label": "+ Versandergebnis",
+                  "column": "Versandergebnis"
+                }
               ]
             }
           },
@@ -3851,6 +4164,71 @@
               "width": 12,
               "info": "Inaktive Artikel (cAktiv=N), die noch Lagerbestand binden – sonst überall ausgeblendet. Abverkauf prüfen."
             }
+          },
+          {
+            "id": "w_kpi_zahldauer",
+            "type": "kpi",
+            "label": "Ø Zahlungsdauer",
+            "action_id": "act_zm_kpi",
+            "config": {
+              "width": 4,
+              "column": "ZahldauerTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_kpi_zahldauer_vj",
+            "type": "kpi",
+            "label": "Ø Zahlungsdauer Vorjahr",
+            "action_id": "act_zm_kpi",
+            "config": {
+              "width": 4,
+              "column": "ZahldauerTageVJ",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_kpi_verspaetet",
+            "type": "kpi",
+            "label": "Anteil verspätet (> 30 Tage)",
+            "action_id": "act_zm_kpi",
+            "config": {
+              "width": 4,
+              "column": "AnteilVerspaetet",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_tbl_zm_kunden",
+            "type": "table",
+            "label": "Zahlungsmoral je Kunde (langsamste Zahler)",
+            "action_id": "act_zm_kunden",
+            "config": {
+              "width": 6,
+              "info": "Ø Zahlungsdauer = Tage von Rechnungsdatum bis zur (letzten) Zahlung im gewählten Zeitraum. Anteil verspätet = Anteil der Rechnungen, die erst nach mehr als 30 Tagen beglichen wurden."
+            }
+          },
+          {
+            "id": "w_tbl_zm_verschlechterung",
+            "type": "table",
+            "label": "Kunden mit sich verschlechternder Zahlungsmoral",
+            "action_id": "act_zm_verschlechterung",
+            "config": {
+              "width": 6,
+              "info": "Vergleich der Ø Zahlungsdauer im gewählten Zeitraum gegenüber dem Vorjahreszeitraum. Verschlechterung = zusätzliche Tage bis zur Zahlung (positiv = zahlt später). Nur Kunden mit mind. 2 bezahlten Rechnungen je Zeitraum.",
+              "hidden_columns": [
+                "kKunde"
+              ]
+            }
           }
         ],
         "result_tabs": [
@@ -3869,7 +4247,10 @@
             "action_ids": [
               "act_kunden_kpi",
               "act_top_kunden",
-              "act_kunden_rueckgang"
+              "act_kunden_rueckgang",
+              "act_zm_kpi",
+              "act_zm_kunden",
+              "act_zm_verschlechterung"
             ]
           },
           {
