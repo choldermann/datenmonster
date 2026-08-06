@@ -411,7 +411,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -530,7 +530,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 kKunde, Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT X.kKunde AS kKunde, MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
+          "sql": "SELECT TOP 10 kKunde, Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT X.kKunde AS kKunde, MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -746,7 +746,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1123,7 +1123,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) <> 0\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung\nFROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) <> 0\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1392,7 +1392,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 200\n    A.kArtikel AS kArtikel,\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, MAX(LV.LetzterVerkauf), GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\n    AND (MAX(LV.LetzterVerkauf) IS NULL OR MAX(LV.LetzterVerkauf) < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 200\n    A.kArtikel AS kArtikel,\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, MAX(LV.LetzterVerkauf), GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\n    AND (MAX(LV.LetzterVerkauf) IS NULL OR MAX(LV.LetzterVerkauf) < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1522,7 +1522,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Verkauft90Tage,\n    CAST(ISNULL(B.Bestand, 0) AS DECIMAL(18,2)) AS Bestand\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\nWHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, B.Bestand\nHAVING ISNULL(B.Bestand, 0) <= 0\nORDER BY Verkauft90Tage DESC",
+          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Verkauft90Tage,\n    CAST(ISNULL(B.Bestand, 0) AS DECIMAL(18,2)) AS Bestand\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\nWHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, B.Bestand\nHAVING ISNULL(B.Bestand, 0) <= 0\nORDER BY Verkauft90Tage DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1619,7 +1619,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS MargeProzent\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\nORDER BY Rohertrag ASC",
+          "sql": "SELECT TOP 100\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS MargeProzent\nFROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\nORDER BY Rohertrag ASC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1738,7 +1738,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(RE.kRechnung AS VARCHAR(20)) AS kRechnung,\n    RE.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, RE.dErstellt) AS Datum,\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    ISNULL(NULLIF(RA.cLand, ''), '') AS Land,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY RE.kRechnung, RE.cRechnungsnr, CONVERT(date, RE.dErstellt),\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))),\n    ISNULL(NULLIF(RA.cLand, ''), '')\nORDER BY Umsatz DESC",
+          "sql": "SELECT\n    CAST(RE.kRechnung AS VARCHAR(20)) AS kRechnung,\n    RE.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, RE.dErstellt) AS Datum,\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))) AS Kunde,\n    ISNULL(NULLIF(RA.cLand, ''), '') AS Land,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\nGROUP BY RE.kRechnung, RE.cRechnungsnr, CONVERT(date, RE.dErstellt),\n    ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,'')))),\n    ISNULL(NULLIF(RA.cLand, ''), '')\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1879,7 +1879,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": ";WITH R AS (\n    SELECT RE.kRechnung, RE.cRechnungsnr, RE.dErstellt,\n        RA.cFirma, RA.cVorname, RA.cName,\n        CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n)\nSELECT\n    CAST(R.kRechnung AS VARCHAR(20)) AS kRechnung,\n    R.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, R.dErstellt) AS Datum,\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,'')))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM R\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = R.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE R.Bundesland = :bundesland\nGROUP BY R.kRechnung, R.cRechnungsnr, CONVERT(date, R.dErstellt),\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,''))))\nORDER BY Umsatz DESC",
+          "sql": ";WITH R AS (\n    SELECT RE.kRechnung, RE.cRechnungsnr, RE.dErstellt,\n        RA.cFirma, RA.cVorname, RA.cName,\n        CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n)\nSELECT\n    CAST(R.kRechnung AS VARCHAR(20)) AS kRechnung,\n    R.cRechnungsnr AS Rechnungsnr,\n    CONVERT(date, R.dErstellt) AS Datum,\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,'')))) AS Kunde,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    COUNT(*) AS Positionen\nFROM R\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = R.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE R.Bundesland = :bundesland\nGROUP BY R.kRechnung, R.cRechnungsnr, CONVERT(date, R.dErstellt),\n    ISNULL(NULLIF(R.cFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname,'') + ' ' + ISNULL(R.cName,''))))\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2150,7 +2150,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2441,7 +2441,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH KU AS (\n    SELECT RE.kKunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        COUNT(DISTINCT RE.kRechnung) AS Bestellungen,\n        MIN(RE.dErstellt) AS dErste,\n        MAX(RE.dErstellt) AS dLetzte\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    GROUP BY RE.kKunde\n),\nR AS (\n    SELECT kKunde, Umsatz, Bestellungen, dErste, dLetzte,\n        RANK() OVER (ORDER BY Umsatz DESC) AS Rang,\n        COUNT(*) OVER () AS KundenGesamt\n    FROM KU\n)\nSELECT TOP 1\n    CONVERT(char(10), R.dLetzte, 104) AS LetzteBestellung,\n    DATEDIFF(DAY, R.dLetzte, GETDATE()) AS TageInaktiv,\n    R.Bestellungen AS BestellungenGesamt,\n    CAST(R.Umsatz AS DECIMAL(18,2)) AS UmsatzGesamt,\n    R.Rang AS RangHistorisch,\n    R.KundenGesamt AS KundenGesamt,\n    CASE WHEN R.Bestellungen > 1 THEN DATEDIFF(DAY, R.dErste, R.dLetzte) / (R.Bestellungen - 1) END AS TageZwischenBestellungen,\n    STUFF((SELECT TOP 3 ', ' + ISNULL(AB.cName, P2.cArtNr)\n           FROM Rechnung.tRechnungPosition P2\n           JOIN Rechnung.vRechnung R2 ON R2.kRechnung = P2.kRechnung\n           LEFT JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr\n           LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A2.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n           WHERE R2.kKunde = :kKunde\n           GROUP BY ISNULL(AB.cName, P2.cArtNr)\n           ORDER BY SUM(P2.fAnzahl) DESC\n           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS TopArtikel\nFROM R\nWHERE R.kKunde = :kKunde",
+          "sql": "WITH KU AS (\n    SELECT RE.kKunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        COUNT(DISTINCT RE.kRechnung) AS Bestellungen,\n        MIN(RE.dErstellt) AS dErste,\n        MAX(RE.dErstellt) AS dLetzte\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n        GROUP BY RE.kKunde\n),\nR AS (\n    SELECT kKunde, Umsatz, Bestellungen, dErste, dLetzte,\n        RANK() OVER (ORDER BY Umsatz DESC) AS Rang,\n        COUNT(*) OVER () AS KundenGesamt\n    FROM KU\n)\nSELECT TOP 1\n    CONVERT(char(10), R.dLetzte, 104) AS LetzteBestellung,\n    DATEDIFF(DAY, R.dLetzte, GETDATE()) AS TageInaktiv,\n    R.Bestellungen AS BestellungenGesamt,\n    CAST(R.Umsatz AS DECIMAL(18,2)) AS UmsatzGesamt,\n    R.Rang AS RangHistorisch,\n    R.KundenGesamt AS KundenGesamt,\n    CASE WHEN R.Bestellungen > 1 THEN DATEDIFF(DAY, R.dErste, R.dLetzte) / (R.Bestellungen - 1) END AS TageZwischenBestellungen,\n    STUFF((SELECT TOP 3 ', ' + ISNULL(AB.cName, P2.cArtNr)\n           FROM Rechnung.tRechnungPosition P2\n           JOIN Rechnung.vRechnung R2 ON R2.kRechnung = P2.kRechnung\n           LEFT JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr\n           LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A2.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n           WHERE R2.kKunde = :kKunde\n           GROUP BY ISNULL(AB.cName, P2.cArtNr)\n           ORDER BY SUM(P2.fAnzahl) DESC\n           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS TopArtikel\nFROM R\nWHERE R.kKunde = :kKunde",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2571,7 +2571,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 1\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VK,\n    CAST(ISNULL(LB.Bestand, 0) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    ISNULL(DATEDIFF(DAY, V.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf,\n    CASE WHEN ISNULL(V.Menge12M, 0) > 0 THEN CAST(ISNULL(LB.Bestand, 0) / (V.Menge12M / 365.0) AS DECIMAL(18,0)) END AS Lagerreichweite,\n    CASE WHEN A.fVKNetto > 0 THEN CAST(100.0 * (A.fVKNetto - ISNULL(A.fEKNetto, 0)) / A.fVKNetto AS DECIMAL(18,1)) END AS MargeProzent,\n    (SELECT TOP 1 ISNULL(AB2.cName, P2.cArtNr)\n     FROM Rechnung.tRechnungPosition P1\n     JOIN Rechnung.tRechnungPosition P2 ON P2.kRechnung = P1.kRechnung AND P2.cArtNr <> P1.cArtNr\n     JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr\n     JOIN (SELECT kArtikel FROM dbo.tlagerbestand GROUP BY kArtikel HAVING SUM(fLagerbestand) > 0) LBc ON LBc.kArtikel = A2.kArtikel\n     LEFT JOIN dbo.tArtikelBeschreibung AB2 ON AB2.kArtikel = A2.kArtikel AND AB2.kSprache = 1 AND AB2.kPlattform = 1 AND AB2.kShop = 0\n     WHERE P1.cArtNr = A.cArtNr\n     GROUP BY ISNULL(AB2.cName, P2.cArtNr)\n     ORDER BY COUNT(*) DESC) AS BundleKandidat\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf,\n                  SUM(CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, GETDATE()) THEN P.fAnzahl ELSE 0 END) AS Menge12M\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\nWHERE A.kArtikel = :kArtikel",
+          "sql": "SELECT TOP 1\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VK,\n    CAST(ISNULL(LB.Bestand, 0) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    ISNULL(DATEDIFF(DAY, V.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf,\n    CASE WHEN ISNULL(V.Menge12M, 0) > 0 THEN CAST(ISNULL(LB.Bestand, 0) / (V.Menge12M / 365.0) AS DECIMAL(18,0)) END AS Lagerreichweite,\n    CASE WHEN A.fVKNetto > 0 THEN CAST(100.0 * (A.fVKNetto - ISNULL(A.fEKNetto, 0)) / A.fVKNetto AS DECIMAL(18,1)) END AS MargeProzent,\n    (SELECT TOP 1 ISNULL(AB2.cName, P2.cArtNr)\n     FROM Rechnung.tRechnungPosition P1\n     JOIN Rechnung.tRechnungPosition P2 ON P2.kRechnung = P1.kRechnung AND P2.cArtNr <> P1.cArtNr\n     JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr AND A2.cAktiv = 'Y'\n     JOIN (SELECT kArtikel FROM dbo.tlagerbestand GROUP BY kArtikel HAVING SUM(fLagerbestand) > 0) LBc ON LBc.kArtikel = A2.kArtikel\n     LEFT JOIN dbo.tArtikelBeschreibung AB2 ON AB2.kArtikel = A2.kArtikel AND AB2.kSprache = 1 AND AB2.kPlattform = 1 AND AB2.kShop = 0\n     WHERE P1.cArtNr = A.cArtNr\n     GROUP BY ISNULL(AB2.cName, P2.cArtNr)\n     ORDER BY COUNT(*) DESC) AS BundleKandidat\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf,\n                  SUM(CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, GETDATE()) THEN P.fAnzahl ELSE 0 END) AS Menge12M\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2723,7 +2723,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH C AS (\n    SELECT\n        (SELECT COUNT(*) FROM (\n            SELECT X.kKunde\n            FROM (\n                SELECT RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n                    CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n                    CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n            ) X\n            GROUP BY X.kKunde\n            HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n        ) k) AS n_kunden,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n            LEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(V.LetzterVerkauf) IS NULL OR MAX(V.LetzterVerkauf) < DATEADD(DAY, -180, GETDATE()))\n        ) l) AS n_ladenhueter,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n            LEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\n            WHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\n            GROUP BY A.kArtikel, B.Bestand\n            HAVING ISNULL(B.Bestand, 0) <= 0\n        ) b) AS n_nachbestellen,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n            WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\n            GROUP BY A.kArtikel\n            HAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\n        ) m) AS n_marge,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n            LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\n        ) d) AS n_beschreibung,\n        (SELECT SUM(CASE WHEN Rohertrag < Vor THEN 1 ELSE 0 END)\n         FROM (\n            SELECT Rohertrag, LAG(Rohertrag) OVER (ORDER BY Monat) AS Vor, ROW_NUMBER() OVER (ORDER BY Monat DESC) AS rn\n            FROM (\n                SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n                       SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS Rohertrag\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n                WHERE RE.dErstellt >= DATEADD(MONTH, -6, DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))\n                  AND RE.dErstellt < DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date))\n                GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n            ) mm\n         ) z WHERE rn <= 3) AS n_trend\n)\nSELECT sort, Ampel, Anzahl, Aufgabe, check_key FROM (\n    SELECT 1 AS sort, CASE WHEN n_kunden > 15 THEN 'rot' WHEN n_kunden > 5 THEN 'orange' WHEN n_kunden > 0 THEN 'gelb' ELSE 'gruen' END AS Ampel, n_kunden AS Anzahl, 'Kunden mit Umsatzrückgang kontaktieren' AS Aufgabe, 'kunden_rueckgang' AS check_key FROM C\n    UNION ALL SELECT 2, CASE WHEN n_ladenhueter > 10 THEN 'rot' WHEN n_ladenhueter > 3 THEN 'orange' WHEN n_ladenhueter > 0 THEN 'gelb' ELSE 'gruen' END, n_ladenhueter, 'Ladenhüter abbauen', 'ladenhueter' FROM C\n    UNION ALL SELECT 3, CASE WHEN n_nachbestellen > 10 THEN 'rot' WHEN n_nachbestellen > 0 THEN 'orange' ELSE 'gruen' END, n_nachbestellen, 'Artikel nachbestellen (verkauft, kein Bestand)', 'nachbestellen' FROM C\n    UNION ALL SELECT 4, CASE WHEN n_marge > 10 THEN 'rot' WHEN n_marge > 0 THEN 'orange' ELSE 'gruen' END, n_marge, 'Artikel mit negativer Marge prüfen', 'marge' FROM C\n    UNION ALL SELECT 5, CASE WHEN n_trend >= 3 THEN 'rot' WHEN n_trend >= 2 THEN 'orange' ELSE 'gruen' END, n_trend, CASE WHEN n_trend >= 2 THEN 'Monate mit sinkendem Rohertrag' ELSE 'Rohertrag stabil oder steigend' END, 'trend' FROM C\n    UNION ALL SELECT 6, CASE WHEN n_beschreibung > 500 THEN 'gelb' ELSE 'gruen' END, n_beschreibung, 'Artikelbeschreibungen verbessern', 'beschreibung' FROM C\n) q\nORDER BY CASE Ampel WHEN 'rot' THEN 0 WHEN 'orange' THEN 1 WHEN 'gelb' THEN 2 ELSE 3 END, sort",
+          "sql": "WITH C AS (\n    SELECT\n        (SELECT COUNT(*) FROM (\n            SELECT X.kKunde\n            FROM (\n                SELECT RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n                    CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n                    CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n            ) X\n            GROUP BY X.kKunde\n            HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n        ) k) AS n_kunden,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\n            LEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(V.LetzterVerkauf) IS NULL OR MAX(V.LetzterVerkauf) < DATEADD(DAY, -180, GETDATE()))\n        ) l) AS n_ladenhueter,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\n            LEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\n            WHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\n            GROUP BY A.kArtikel, B.Bestand\n            HAVING ISNULL(B.Bestand, 0) <= 0\n        ) b) AS n_nachbestellen,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\n            WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\n            GROUP BY A.kArtikel\n            HAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\n        ) m) AS n_marge,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\n            LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\n        ) d) AS n_beschreibung,\n        (SELECT SUM(CASE WHEN Rohertrag < Vor THEN 1 ELSE 0 END)\n         FROM (\n            SELECT Rohertrag, LAG(Rohertrag) OVER (ORDER BY Monat) AS Vor, ROW_NUMBER() OVER (ORDER BY Monat DESC) AS rn\n            FROM (\n                SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n                       SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS Rohertrag\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n                WHERE RE.dErstellt >= DATEADD(MONTH, -6, DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))\n                  AND RE.dErstellt < DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date))\n                GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n            ) mm\n         ) z WHERE rn <= 3) AS n_trend,\n        (SELECT COUNT(*) FROM (SELECT A.kArtikel FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel WHERE A.cAktiv <> 'Y' GROUP BY A.kArtikel HAVING SUM(LB.fLagerbestand) > 0) g) AS n_gesperrt\n)\nSELECT sort, Ampel, Anzahl, Aufgabe, check_key FROM (\n    SELECT 1 AS sort, CASE WHEN n_kunden > 15 THEN 'rot' WHEN n_kunden > 5 THEN 'orange' WHEN n_kunden > 0 THEN 'gelb' ELSE 'gruen' END AS Ampel, n_kunden AS Anzahl, 'Kunden mit Umsatzrückgang kontaktieren' AS Aufgabe, 'kunden_rueckgang' AS check_key FROM C\n    UNION ALL SELECT 2, CASE WHEN n_ladenhueter > 10 THEN 'rot' WHEN n_ladenhueter > 3 THEN 'orange' WHEN n_ladenhueter > 0 THEN 'gelb' ELSE 'gruen' END, n_ladenhueter, 'Ladenhüter abbauen', 'ladenhueter' FROM C\n    UNION ALL SELECT 3, CASE WHEN n_nachbestellen > 10 THEN 'rot' WHEN n_nachbestellen > 0 THEN 'orange' ELSE 'gruen' END, n_nachbestellen, 'Artikel nachbestellen (verkauft, kein Bestand)', 'nachbestellen' FROM C\n    UNION ALL SELECT 4, CASE WHEN n_marge > 10 THEN 'rot' WHEN n_marge > 0 THEN 'orange' ELSE 'gruen' END, n_marge, 'Artikel mit negativer Marge prüfen', 'marge' FROM C\n    UNION ALL SELECT 5, CASE WHEN n_trend >= 3 THEN 'rot' WHEN n_trend >= 2 THEN 'orange' ELSE 'gruen' END, n_trend, CASE WHEN n_trend >= 2 THEN 'Monate mit sinkendem Rohertrag' ELSE 'Rohertrag stabil oder steigend' END, 'trend' FROM C\n    UNION ALL SELECT 6, CASE WHEN n_beschreibung > 500 THEN 'gelb' ELSE 'gruen' END, n_beschreibung, 'Artikelbeschreibungen verbessern', 'beschreibung' FROM C\n    UNION ALL SELECT 7, CASE WHEN n_gesperrt > 0 THEN 'orange' ELSE 'gruen' END, n_gesperrt, 'Gesperrte Artikel mit Bestand abverkaufen', 'gesperrte_artikel' FROM C\n) q\nORDER BY CASE Ampel WHEN 'rot' THEN 0 WHEN 'orange' THEN 1 WHEN 'gelb' THEN 2 ELSE 3 END, sort",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2820,7 +2820,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) AS Beschreibungslaenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\nORDER BY Bestand DESC",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) AS Beschreibungslaenge\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nHAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\nORDER BY Bestand DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2898,6 +2898,125 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Beschreibungslaenge"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gesperrte_artikel",
+      "name": "Cockpit – Gesperrte Artikel mit Bestand",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nWHERE A.cAktiv <> 'Y'\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\nORDER BY Kapitalbindung DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EK",
+            "Kapitalbindung",
+            "LetzterVerkauf"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Gesperrte Artikel mit Bestand",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "LetzterVerkauf",
+              "target_field": "LetzterVerkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterVerkauf"
               }
             }
           ]
@@ -3139,6 +3258,13 @@
             "mapping_id": "m_db_plattform",
             "pipeline_id": null,
             "label": "Cockpit – Deckungsbeitrag je Plattform"
+          },
+          {
+            "id": "act_gesperrt",
+            "type": "run_mapping",
+            "mapping_id": "m_gesperrte_artikel",
+            "pipeline_id": null,
+            "label": "Cockpit – Gesperrte Artikel"
           }
         ],
         "widgets": [
@@ -3182,6 +3308,10 @@
                   "trend": {
                     "mapping_id": "m_trend",
                     "title": "Umsatz- & Rohertrag-Trend (24 Monate)"
+                  },
+                  "gesperrte_artikel": {
+                    "mapping_id": "m_gesperrte_artikel",
+                    "title": "Gesperrte Artikel mit Bestand"
                   }
                 }
               }
@@ -3670,6 +3800,16 @@
               "width": 12,
               "info": "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel). Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten). DB-Marge % bezogen auf den Umsatz."
             }
+          },
+          {
+            "id": "w_tbl_gesperrt",
+            "type": "table",
+            "label": "Gesperrte Artikel mit Bestand (totes Kapital)",
+            "action_id": "act_gesperrt",
+            "config": {
+              "width": 12,
+              "info": "Inaktive Artikel (cAktiv=N), die noch Lagerbestand binden – sonst überall ausgeblendet. Abverkauf prüfen."
+            }
           }
         ],
         "result_tabs": [
@@ -3726,7 +3866,8 @@
             "action_ids": [
               "act_warn_ladenhueter",
               "act_warn_bestand",
-              "act_warn_marge"
+              "act_warn_marge",
+              "act_gesperrt"
             ]
           }
         ],
