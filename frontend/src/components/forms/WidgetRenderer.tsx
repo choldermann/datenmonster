@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { AlertCircle, Info } from "lucide-react";
 import api from "../../api/client";
 import DrilldownModal from "./DrilldownModal";
+import AiActionModal from "./AiActionModal";
 import TableWidget from "./widgets/TableWidget";
 import KpiWidget   from "./widgets/KpiWidget";
 import BarWidget   from "./widgets/BarWidget";
@@ -25,7 +26,7 @@ const WIDGET_LABELS = {
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung"]);
 
-function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
+function WidgetBody({ widget, result, allowDownload, onDrilldown, onAiAction }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
 
@@ -40,9 +41,13 @@ function WidgetBody({ widget, result, allowDownload, onDrilldown }) {
   const drill = onDrilldown && widget.config?.drilldown?.mapping_id
     ? (field, value) => onDrilldown(widget, field, value)
     : undefined;
+  // KI-Handlungsempfehlung pro Zeile, wenn config.ai_action gesetzt ist.
+  const aiAct = onAiAction && widget.config?.ai_action?.mapping_id
+    ? (row) => onAiAction(widget, row)
+    : undefined;
 
   switch (widget.type) {
-    case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} />;
+    case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} onAiAction={aiAct} />;
     case "kpi":   return <KpiWidget   widget={widget} result={result} />;
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
@@ -57,8 +62,26 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
   // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
   const [stack, setStack] = useState([]);
+  const [aiAction, setAiAction] = useState(null);
   const cfgRef = useRef({ dd: null, base: {} });
   const seqRef = useRef(0);
+
+  // Klick auf eine Zeile eines Widgets mit config.ai_action → KI-Empfehlungs-Modal.
+  const handleAiAction = (widget, row) => {
+    const cfg = widget.config?.ai_action;
+    if (!cfg?.mapping_id || !cfg?.key_column) return;
+    const keyValue = row[cfg.key_column];
+    if (keyValue === null || keyValue === undefined || keyValue === "") return;
+    setAiAction({
+      kind: cfg.kind,
+      label: cfg.label_column ? row[cfg.label_column] : String(keyValue),
+      title: cfg.title || widget.label || "KI-Handlungsempfehlung",
+      factsMapping: cfg.mapping_id,
+      keyParam: cfg.param || cfg.key_column,
+      keyValue,
+      baseParams: baseParams || {},
+    });
+  };
 
   // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
   const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden }) => {
@@ -151,7 +174,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} allowDownload={allowDownload} onDrilldown={handleDrilldown} />
+                <WidgetBody widget={widget} result={result} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} />
               </div>
             );
           })}
@@ -173,6 +196,9 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         onBack={stack.length > 1 ? backDrill : null}
         onClose={closeDrill}
       />
+    )}
+    {aiAction && (
+      <AiActionModal {...aiAction} onClose={() => setAiAction(null)} />
     )}
     </>
   );

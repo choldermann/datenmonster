@@ -619,6 +619,12 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                     lmid = lvl.get("mapping_id")
                     if isinstance(lmid, str) and lmid in mapping_id_map:
                         lvl["mapping_id"] = mapping_id_map[lmid]
+            # KI-Handlungsempfehlung: config.ai_action.mapping_id (Analyse-Mapping).
+            ai = (w.get("config") or {}).get("ai_action")
+            if isinstance(ai, dict):
+                amid = ai.get("mapping_id")
+                if isinstance(amid, str) and amid in mapping_id_map:
+                    ai["mapping_id"] = mapping_id_map[amid]
         schema = _apply_config_deep(schema, config)
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),
@@ -834,6 +840,12 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
             did = w.get("dataset_id")
             if isinstance(did, int) and did in ds_real_to_tpl:
                 w["dataset_id"] = ds_real_to_tpl[did]
+            # KI-Handlungsempfehlung: config.ai_action.mapping_id (echte ID → Template-String).
+            ai = (w.get("config") or {}).get("ai_action")
+            if isinstance(ai, dict):
+                amid = ai.get("mapping_id")
+                if isinstance(amid, int) and amid in mapping_real_to_tpl:
+                    ai["mapping_id"] = mapping_real_to_tpl[amid]
         portal_config = dict(fo.portal_config or {})
         portal_config.pop("allowed_users", None)  # instanzspezifische User-IDs nicht exportieren
         content["forms"].append({

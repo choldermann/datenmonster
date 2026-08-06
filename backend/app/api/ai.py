@@ -340,6 +340,190 @@ async def summarize_data(
     return _sse_stream(gen())
 
 
+# ── KI-Handlungsempfehlung (Klick auf Widget-Zeile) ─────────────────────────────
+
+class RecommendActionRequest(BaseModel):
+    kind: str                        # "customer_winback" | "article_liquidation"
+    label: str = ""
+    columns: list = []
+    rows: list = []                  # Fakten aus dem Analyse-Mapping (i.d.R. 1 Zeile)
+    instruction: Optional[str] = ""
+
+
+def _ra_num(v):
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ra_de(v, unit=""):
+    """Deutsche Zahlformatierung (Tausenderpunkt, Komma) mit optionaler Einheit."""
+    f = _ra_num(v)
+    if f is None:
+        return "–"
+    s = f"{int(f):,}" if f == int(f) else f"{f:,.2f}"
+    s = s.replace(",", "§").replace(".", ",").replace("§", ".")
+    return f"{s} {unit}".strip()
+
+
+def _ra_clamp(x, lo=0.0, hi=1.0):
+    return max(lo, min(hi, x))
+
+
+def _winback_facts(row: dict) -> dict:
+    """Nachvollziehbare Rückgewinnungs-Heuristik aus den SQL-Fakten.
+    Score = 0.5·Recency + 0.3·Wert + 0.2·Treue, jeweils 0..1 → 0..100 %.
+    Bewusst simpel/erklärbar: die Zahl muss gegenüber der GF verteidigbar sein."""
+    tage_inaktiv = _ra_num(row.get("TageInaktiv"))
+    intervall    = _ra_num(row.get("TageZwischenBestellungen"))
+    bestellungen = _ra_num(row.get("BestellungenGesamt")) or 0
+    rang         = _ra_num(row.get("RangHistorisch"))
+    kunden_ges   = _ra_num(row.get("KundenGesamt"))
+
+    # Recency: solange der Kunde im Rahmen seines üblichen Bestellrhythmus liegt,
+    # ist Rückgewinnung wahrscheinlich; ab dem 6-fachen Intervall gilt er als verloren.
+    ref = intervall if (intervall and intervall > 0) else 90.0
+    if tage_inaktiv is None:
+        recency = 0.3
+    else:
+        recency = _ra_clamp(1.0 - max(0.0, tage_inaktiv - 2 * ref) / (4 * ref))
+
+    # Wert: historischer Umsatzrang als Perzentil (Top-Kunde → hoher Score).
+    if rang and kunden_ges and kunden_ges > 1:
+        value = _ra_clamp(1.0 - (rang - 1) / (kunden_ges - 1))
+    else:
+        value = 0.5
+
+    # Treue: Anzahl Bestellungen (ab 10 Bestellungen voll gewertet).
+    freq = _ra_clamp(bestellungen / 10.0)
+
+    prob = round((0.5 * recency + 0.3 * value + 0.2 * freq) * 100)
+    # Perzentil mit Untergrenze 1 %, damit Platz 1 nicht als "Top 0 %" erscheint.
+    top_pct = max(1, round(100.0 * rang / kunden_ges)) if (rang and kunden_ges and kunden_ges > 0) else None
+
+    return {"probability": prob, "top_percent": top_pct,
+            "recency": round(recency, 2), "value": round(value, 2), "freq": round(freq, 2)}
+
+
+def _liquidation_facts(row: dict) -> dict:
+    """Rabatt- und Kapitalfreisetzungs-Heuristik für Ladenhüter."""
+    bestand = _ra_num(row.get("Bestand")) or 0
+    ek      = _ra_num(row.get("EK")) or 0
+    marge   = _ra_num(row.get("MargeProzent"))
+    reichw  = _ra_num(row.get("Lagerreichweite"))
+    kapital = _ra_num(row.get("Kapitalbindung"))
+    if kapital is None:
+        kapital = bestand * ek
+
+    # Rabatt aus Lagerreichweite abgeleitet (je träger, desto aggressiver),
+    # aber nie so tief, dass die Marge negativ würde (max. Marge − 5 Punkte).
+    if reichw is None:      base = 25    # kein Absatz → maximal drücken
+    elif reichw > 730:      base = 20
+    elif reichw > 365:      base = 15
+    elif reichw > 180:      base = 10
+    else:                   base = 5
+    if marge is not None:
+        base = min(base, max(0, int(marge) - 5))
+    discount = int(round(base / 5.0) * 5)
+
+    return {"capital_release": round(kapital, 2), "discount": discount,
+            "reichweite": None if reichw is None else int(reichw)}
+
+
+@router.post("/recommend-action")
+async def recommend_action(
+    body: RecommendActionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """KI-Handlungsempfehlung für eine einzelne Widget-Zeile (Kunde bzw. Artikel).
+    Kennzahlen wie Rückgewinnungswahrscheinlichkeit oder Rabatt werden serverseitig
+    DETERMINISTISCH aus den übergebenen SQL-Fakten berechnet (nicht vom Modell geraten)
+    und als »meta«-Event vorab gesendet; das Modell formuliert nur die Prosa drumherum."""
+    svc = _require_ai(db)
+    row = (body.rows or [{}])[0] or {}
+
+    if body.kind == "customer_winback":
+        facts = _winback_facts(row)
+        lines = [
+            f"Kunde: {body.label or row.get('Kunde', '')}",
+            f"Letzte Bestellung: {row.get('LetzteBestellung', '–')}",
+            f"Tage inaktiv: {_ra_de(row.get('TageInaktiv'))}",
+            f"Bestellungen gesamt: {_ra_de(row.get('BestellungenGesamt'))}",
+            f"Umsatz gesamt (Lifetime): {_ra_de(row.get('UmsatzGesamt'), '€')}",
+        ]
+        if facts.get("top_percent") is not None:
+            lines.append(f"Umsatzrang: Platz {_ra_de(row.get('RangHistorisch'))} von "
+                         f"{_ra_de(row.get('KundenGesamt'))} (Top {facts['top_percent']} %)")
+        if row.get("TopArtikel"):
+            lines.append(f"Meistgekaufte Artikel: {row.get('TopArtikel')}")
+        lines.append(f"Berechnete Rückgewinnungswahrscheinlichkeit: {facts['probability']} %")
+        system = (
+            "Du bist ein nüchterner Vertriebs-Analyst, der einem Geschäftsführer zuarbeitet. "
+            "Du erhältst FERTIG BERECHNETE Fakten zu einem Kunden mit Umsatzrückgang, inklusive einer bereits "
+            "berechneten Rückgewinnungswahrscheinlichkeit. Rechne NICHTS nach und ändere keine Zahlen – nutze die "
+            "Werte exakt. Formuliere in 3–4 kurzen deutschen Sätzen: (1) die Situation (seit wann inaktiv, welcher "
+            "Kundenwert), (2) eine konkrete Handlungsempfehlung (z. B. persönlicher/telefonischer Kontakt, passendes "
+            "Angebot), (3) falls meistgekaufte Artikel genannt sind, empfiehl diese als Aufhänger fürs Gespräch. "
+            "Nenne die Rückgewinnungswahrscheinlichkeit NICHT erneut als Zahl (die zeigt die Oberfläche bereits an). "
+            "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel."
+        )
+    elif body.kind == "article_liquidation":
+        facts = _liquidation_facts(row)
+        reich = "über 3 Jahre / praktisch kein Absatz" if facts["reichweite"] is None \
+            else f"{_ra_de(facts['reichweite'])} Tage"
+        lines = [
+            f"Artikel: {body.label or row.get('Artikel', '')} (Nr. {row.get('ArtNr', '')})",
+            f"Lagerbestand: {_ra_de(row.get('Bestand'))} Stück",
+            f"Lagerreichweite: {reich}",
+            f"Tage ohne Verkauf: {_ra_de(row.get('TageOhneVerkauf'))}",
+            f"Gebundenes Kapital: {_ra_de(facts['capital_release'], '€')}",
+            f"EK/VK netto: {_ra_de(row.get('EK'), '€')} / {_ra_de(row.get('VK') or row.get('VKNetto'), '€')}",
+        ]
+        if row.get("MargeProzent") is not None:
+            lines.append(f"Marge: {_ra_de(row.get('MargeProzent'))} %")
+        if row.get("BundleKandidat"):
+            lines.append(f"Häufig zusammen gekaufter Artikel (Bundle-Kandidat): {row.get('BundleKandidat')}")
+        lines.append(f"Empfohlener Rabatt: {facts['discount']} %")
+        system = (
+            "Du bist ein nüchterner Category-Manager, der einem Geschäftsführer zuarbeitet. "
+            "Du erhältst FERTIG BERECHNETE Fakten zu einem Ladenhüter (hohe Lagerreichweite / gebundenes Kapital) "
+            "inklusive eines bereits berechneten Rabattvorschlags. Rechne NICHTS nach und ändere keine Zahlen. "
+            "Formuliere in 3–4 kurzen deutschen Sätzen eine konkrete Abverkaufs-Empfehlung: (1) den empfohlenen "
+            "Rabatt in Prozent nennen, (2) falls ein Bundle-Kandidat genannt ist, ein Bündelangebot mit diesem "
+            "Artikel vorschlagen, (3) den Nutzen (Freisetzung des gebundenen Kapitals) benennen. "
+            "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel."
+        )
+    else:
+        raise HTTPException(400, f"Unbekannte Aktion: {body.kind}")
+
+    user_msg = "Fakten:\n" + "\n".join(lines)
+    if body.instruction:
+        user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
+
+    # Prosa-Modell bevorzugen (Default ist oft ein Code-Modell → schlechtes Deutsch).
+    from app.services.ai_service import get_installed_models, pick_prose_model
+    try:
+        installed = await get_installed_models(svc.base_url)
+    except Exception:
+        installed = []
+    chosen = pick_prose_model(installed, svc.model)
+    params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=360, num_ctx=4096)
+
+    async def generate():
+        # Berechnete Kennzahlen zuerst – die Oberfläche rendert sie als Chips.
+        yield f"data: {json.dumps({'meta': facts})}\n\n"
+        try:
+            async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
+                yield f"data: {json.dumps({'token': tok})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': f'Modell-Fehler: {e}'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 # ── Expression ────────────────────────────────────────────────────────────────
 
 class GenerateExpressionRequest(BaseModel):

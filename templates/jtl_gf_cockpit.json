@@ -530,10 +530,11 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
+          "sql": "SELECT TOP 10 kKunde, Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT X.kKunde AS kKunde, MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kKunde",
             "Kunde",
             "Umsatz",
             "UmsatzVJ",
@@ -559,6 +560,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
             {
               "source_field": "Kunde",
               "target_field": "Kunde",
@@ -1381,10 +1392,11 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, MAX(LV.LetzterVerkauf), GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\n    AND (MAX(LV.LetzterVerkauf) IS NULL OR MAX(LV.LetzterVerkauf) < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 200\n    A.kArtikel AS kArtikel,\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf,\n    ISNULL(DATEDIFF(DAY, MAX(LV.LetzterVerkauf), GETDATE()), 9999) AS TageOhneVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\n    AND (MAX(LV.LetzterVerkauf) IS NULL OR MAX(LV.LetzterVerkauf) < DATEADD(DAY, -{{ladenhueter_tage}}, GETDATE()))\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
@@ -1413,6 +1425,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -2405,6 +2427,288 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_kunde_analyse",
+      "name": "Cockpit – Kunden-Analyse (KI)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH KU AS (\n    SELECT RE.kKunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        COUNT(DISTINCT RE.kRechnung) AS Bestellungen,\n        MIN(RE.dErstellt) AS dErste,\n        MAX(RE.dErstellt) AS dLetzte\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    GROUP BY RE.kKunde\n),\nR AS (\n    SELECT kKunde, Umsatz, Bestellungen, dErste, dLetzte,\n        RANK() OVER (ORDER BY Umsatz DESC) AS Rang,\n        COUNT(*) OVER () AS KundenGesamt\n    FROM KU\n)\nSELECT TOP 1\n    CONVERT(char(10), R.dLetzte, 104) AS LetzteBestellung,\n    DATEDIFF(DAY, R.dLetzte, GETDATE()) AS TageInaktiv,\n    R.Bestellungen AS BestellungenGesamt,\n    CAST(R.Umsatz AS DECIMAL(18,2)) AS UmsatzGesamt,\n    R.Rang AS RangHistorisch,\n    R.KundenGesamt AS KundenGesamt,\n    CASE WHEN R.Bestellungen > 1 THEN DATEDIFF(DAY, R.dErste, R.dLetzte) / (R.Bestellungen - 1) END AS TageZwischenBestellungen,\n    STUFF((SELECT TOP 3 ', ' + ISNULL(AB.cName, P2.cArtNr)\n           FROM Rechnung.tRechnungPosition P2\n           JOIN Rechnung.vRechnung R2 ON R2.kRechnung = P2.kRechnung\n           LEFT JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr\n           LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A2.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n           WHERE R2.kKunde = :kKunde\n           GROUP BY ISNULL(AB.cName, P2.cArtNr)\n           ORDER BY SUM(P2.fAnzahl) DESC\n           FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, '') AS TopArtikel\nFROM R\nWHERE R.kKunde = :kKunde",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "LetzteBestellung",
+            "TageInaktiv",
+            "BestellungenGesamt",
+            "UmsatzGesamt",
+            "RangHistorisch",
+            "KundenGesamt",
+            "TageZwischenBestellungen",
+            "TopArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kunden-Analyse (KI)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "LetzteBestellung",
+              "target_field": "LetzteBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzteBestellung"
+              }
+            },
+            {
+              "source_field": "TageInaktiv",
+              "target_field": "TageInaktiv",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageInaktiv"
+              }
+            },
+            {
+              "source_field": "BestellungenGesamt",
+              "target_field": "BestellungenGesamt",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellungenGesamt"
+              }
+            },
+            {
+              "source_field": "UmsatzGesamt",
+              "target_field": "UmsatzGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzGesamt"
+              }
+            },
+            {
+              "source_field": "RangHistorisch",
+              "target_field": "RangHistorisch",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RangHistorisch"
+              }
+            },
+            {
+              "source_field": "KundenGesamt",
+              "target_field": "KundenGesamt",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenGesamt"
+              }
+            },
+            {
+              "source_field": "TageZwischenBestellungen",
+              "target_field": "TageZwischenBestellungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageZwischenBestellungen"
+              }
+            },
+            {
+              "source_field": "TopArtikel",
+              "target_field": "TopArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TopArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_artikel_analyse",
+      "name": "Cockpit – Artikel-Analyse (KI)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 1\n    A.cArtNr AS ArtNr,\n    AB.cName AS Artikel,\n    CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VK,\n    CAST(ISNULL(LB.Bestand, 0) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    ISNULL(DATEDIFF(DAY, V.LetzterVerkauf, GETDATE()), 9999) AS TageOhneVerkauf,\n    CASE WHEN ISNULL(V.Menge12M, 0) > 0 THEN CAST(ISNULL(LB.Bestand, 0) / (V.Menge12M / 365.0) AS DECIMAL(18,0)) END AS Lagerreichweite,\n    CASE WHEN A.fVKNetto > 0 THEN CAST(100.0 * (A.fVKNetto - ISNULL(A.fEKNetto, 0)) / A.fVKNetto AS DECIMAL(18,1)) END AS MargeProzent,\n    (SELECT TOP 1 ISNULL(AB2.cName, P2.cArtNr)\n     FROM Rechnung.tRechnungPosition P1\n     JOIN Rechnung.tRechnungPosition P2 ON P2.kRechnung = P1.kRechnung AND P2.cArtNr <> P1.cArtNr\n     JOIN dbo.tArtikel A2 ON A2.cArtNr = P2.cArtNr\n     JOIN (SELECT kArtikel FROM dbo.tlagerbestand GROUP BY kArtikel HAVING SUM(fLagerbestand) > 0) LBc ON LBc.kArtikel = A2.kArtikel\n     LEFT JOIN dbo.tArtikelBeschreibung AB2 ON AB2.kArtikel = A2.kArtikel AND AB2.kSprache = 1 AND AB2.kPlattform = 1 AND AB2.kShop = 0\n     WHERE P1.cArtNr = A.cArtNr\n     GROUP BY ISNULL(AB2.cName, P2.cArtNr)\n     ORDER BY COUNT(*) DESC) AS BundleKandidat\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf,\n                  SUM(CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, GETDATE()) THEN P.fAnzahl ELSE 0 END) AS Menge12M\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\nWHERE A.kArtikel = :kArtikel",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Bestand",
+            "EK",
+            "VK",
+            "Kapitalbindung",
+            "TageOhneVerkauf",
+            "Lagerreichweite",
+            "MargeProzent",
+            "BundleKandidat"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikel-Analyse (KI)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "VK",
+              "target_field": "VK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VK"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "TageOhneVerkauf",
+              "target_field": "TageOhneVerkauf",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageOhneVerkauf"
+              }
+            },
+            {
+              "source_field": "Lagerreichweite",
+              "target_field": "Lagerreichweite",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerreichweite"
+              }
+            },
+            {
+              "source_field": "MargeProzent",
+              "target_field": "MargeProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MargeProzent"
+              }
+            },
+            {
+              "source_field": "BundleKandidat",
+              "target_field": "BundleKandidat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BundleKandidat"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2856,7 +3160,19 @@
             "label": "Kunden mit größtem Umsatzrückgang",
             "action_id": "act_kunden_rueckgang",
             "config": {
-              "width": 6
+              "width": 6,
+              "ai_action": {
+                "kind": "customer_winback",
+                "mapping_id": "m_kunde_analyse",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "label_column": "Kunde",
+                "title": "Kundenrückgang – KI-Empfehlung"
+              },
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "info": "Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung (Rückgewinnung)."
             }
           },
           {
@@ -3023,7 +3339,19 @@
             "label": "Ladenhüter – Kapital ohne Verkauf",
             "action_id": "act_warn_ladenhueter",
             "config": {
-              "width": 12
+              "width": 12,
+              "ai_action": {
+                "kind": "article_liquidation",
+                "mapping_id": "m_artikel_analyse",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "label_column": "Artikel",
+                "title": "Ladenhüter – KI-Empfehlung"
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "info": "Klick auf einen Artikel öffnet eine KI-Abverkaufsempfehlung (Rabatt/Bundle)."
             }
           },
           {

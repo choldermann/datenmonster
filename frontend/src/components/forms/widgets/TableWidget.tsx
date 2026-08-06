@@ -13,19 +13,28 @@ function fmtCell(v) {
   return String(v);
 }
 
-export default function TableWidget({ widget, result, allowDownload, onDrilldown }) {
+export default function TableWidget({ widget, result, allowDownload, onDrilldown, onAiAction }) {
   const cfg = widget.config || {};
   const dd = cfg.drilldown;
+  const ai = cfg.ai_action;
   // Technische Spalten (z.B. kRechnung/kArtikel als Drilldown-Schlüssel) können
   // ausgeblendet werden – sie bleiben in den Zeilendaten für den Drilldown erhalten.
   const hidden = new Set(cfg.hidden_columns || []);
   const allColumns = result.columns || [];
   const columns = allColumns.filter(c => !hidden.has(c));
   const { rows = [], total } = result;
-  // Zeilen sind klickbar, wenn ein Detail-Mapping + Schlüsselspalte konfiguriert ist.
-  const rowClickable = !!(onDrilldown && dd?.mapping_id && dd?.key_column);
+  // Zeilen sind klickbar, wenn eine KI-Aktion oder ein Detail-Mapping (+ Schlüsselspalte)
+  // konfiguriert ist. KI-Aktion hat Vorrang, falls beides gesetzt wäre.
+  const aiClickable = !!(onAiAction && ai?.mapping_id && ai?.key_column);
+  const rowClickable = aiClickable || !!(onDrilldown && dd?.mapping_id && dd?.key_column);
   const clickRow = (row) => {
-    if (!rowClickable) return;
+    if (aiClickable) {
+      const v = row[ai.key_column];
+      if (v === null || v === undefined || v === "") return;
+      onAiAction(row);
+      return;
+    }
+    if (!onDrilldown || !dd?.mapping_id || !dd?.key_column) return;
     const v = row[dd.key_column];
     if (v === null || v === undefined || v === "") return;
     onDrilldown(dd.key_column, v);
