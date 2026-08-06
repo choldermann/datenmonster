@@ -71,7 +71,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
       <div
         onClick={e => e.stopPropagation()}
         style={{
-          width: "min(1000px, 92vw)", maxHeight: "85vh",
+          width: "min(1400px, 96vw)", maxHeight: "85vh",
           backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
           display: "flex", flexDirection: "column", overflow: "hidden",
           boxShadow: "0 20px 60px rgba(0,0,0,0.5)",
