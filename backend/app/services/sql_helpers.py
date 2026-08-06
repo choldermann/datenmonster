@@ -167,3 +167,40 @@ def _get_sql_engine(connection_id: int):
         return engine
     finally:
         db.close()
+
+
+# Fehler-Marker, die auf einen transienten Verbindungsaussetzer hindeuten (kein
+# echter SQL-/Datenfehler): 08S01 = Communication link failure, 10060/0x274C =
+# TCP-Timeout, 08001 = Verbindungsaufbau fehlgeschlagen, HYT00/HYT01 = Timeout
+# expired. Bei diesen ist ein kurzer Retry sinnvoll – beim nächsten Versuch ist
+# der Server über DSL/NAT/VPN oft wieder erreichbar.
+_TRANSIENT_DB_MARKERS = (
+    "08S01", "08001", "10060", "0x274C", "0x274c",
+    "HYT00", "HYT01", "Communication link failure",
+    "TCP Provider", "Login timeout", "server was not found",
+)
+
+
+def _is_transient_db_error(exc) -> bool:
+    msg = str(exc)
+    return any(m in msg for m in _TRANSIENT_DB_MARKERS)
+
+
+def run_sql_with_retry(fn, *, retries: int = 2, delay: float = 0.8):
+    """Führt fn() aus und wiederholt bei transienten Verbindungsfehlern (TCP-
+    Timeout / Communication link failure) mit kurzer, ansteigender Pause. Echte
+    SQL-/Datenfehler werden sofort weitergereicht. fn kapselt die eigentliche
+    read_sql/execute-Operation und baut die Connection frisch aus dem Pool auf,
+    damit der Retry nicht dieselbe tote Verbindung erwischt (pool_pre_ping)."""
+    import time as _time
+    last = None
+    for attempt in range(retries + 1):
+        try:
+            return fn()
+        except Exception as e:  # noqa: BLE001 – bewusst breit, danach gefiltert
+            last = e
+            if attempt < retries and _is_transient_db_error(e):
+                _time.sleep(delay * (attempt + 1))
+                continue
+            raise
+    raise last  # pragma: no cover – defensiv, Schleife raised bereits

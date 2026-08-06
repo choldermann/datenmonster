@@ -24,6 +24,7 @@ from app.services.expression_engine import (
 )
 from app.services.sql_helpers import (
     _resolve_sql_params, _resolve_sql_lookup_params, _resolve_sql_run_params, _get_sql_engine,
+    run_sql_with_retry,
 )
 from app.services.mapping_writer import _is_plugin_target, _write_target
 
@@ -1094,10 +1095,11 @@ def execute_mapping(
                     sql_column_data[out_field] = []
                     continue
             engine = _get_sql_engine(conn_id)
-            with engine.connect() as con:
-                result = con.execute(sa_text(sql_text))
-                rows_fetched = result.fetchall()
-                sql_column_data[out_field] = [row[0] for row in rows_fetched]
+            def _read_col():
+                with engine.connect() as con:
+                    return con.execute(sa_text(sql_text)).fetchall()
+            rows_fetched = run_sql_with_retry(_read_col)
+            sql_column_data[out_field] = [row[0] for row in rows_fetched]
         except Exception as e:
             errors.append(f"SQL-Node '{out_field}' (Spalte) fehlgeschlagen: {str(e)[:200]}")
             sql_column_data[out_field] = []
@@ -1228,9 +1230,11 @@ def execute_mapping(
                                 _exec_sql = _exec_sql + ' LIMIT ' + str(preview_rows)
                     _exec_sql, _bound_params = _resolve_sql_run_params(_exec_sql, run_params)
                     if _bound_params:
-                        result_df = _pd_t.read_sql(_sa.text(_exec_sql), ext_engine, params=_bound_params)
+                        result_df = run_sql_with_retry(
+                            lambda: _pd_t.read_sql(_sa.text(_exec_sql), ext_engine, params=_bound_params))
                     else:
-                        result_df = _pd_t.read_sql(_exec_sql, ext_engine)
+                        result_df = run_sql_with_retry(
+                            lambda: _pd_t.read_sql(_exec_sql, ext_engine))
                 else:
                     _tf_sql, _bound_params = _resolve_sql_run_params(sql_text, run_params)
                     with tmp_engine.connect() as con:
