@@ -1,6 +1,5 @@
-import { useState } from "react";
-import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Mail, Send, CheckCircle2 } from "lucide-react";
-import api from "../../api/client";
+import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info } from "lucide-react";
+import EmailTableButton from "./EmailTableButton";
 
 const S = {
   bgMain: "var(--bg-main)",
@@ -52,29 +51,6 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   // Lange Textspalten (z.B. Artikelbeschreibung) umbrechen statt horizontal scrollen.
   const longTextCols = new Set(columns.filter(c => !numericCols.has(c)
     && rows.some(r => typeof r[c] === "string" && r[c].length > 60)));
-
-  // E-Mail-Panel-State: Tabelle an Mitarbeiter schicken (CSV-Anhang + HTML-Vorschau)
-  const [mailOpen, setMailOpen] = useState(false);
-  const [recipients, setRecipients] = useState("");
-  const [subject, setSubject] = useState("");
-  const [message, setMessage] = useState("");
-  const [sending, setSending] = useState(false);
-  const [mailMsg, setMailMsg] = useState(null);   // { ok, text }
-
-  const sendMail = async () => {
-    if (!recipients.trim()) { setMailMsg({ ok: false, text: "Bitte mindestens einen Empfänger angeben." }); return; }
-    setSending(true); setMailMsg(null);
-    try {
-      const { data } = await api.post("/api/forms/email-table", {
-        recipients, subject: subject || null, message: message || null,
-        title: title || "Tabelle", columns, rows,
-      });
-      setMailMsg({ ok: true, text: `Gesendet an ${data.recipients.join(", ")} (${data.rows} Zeilen).` });
-      setTimeout(() => { setMailOpen(false); setMailMsg(null); }, 2500);
-    } catch (e) {
-      setMailMsg({ ok: false, text: e.response?.data?.detail || e.message || "Versand fehlgeschlagen." });
-    } finally { setSending(false); }
-  };
 
   const handleExport = () => {
     const csv = toCsv(columns, rows);
@@ -139,11 +115,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             </p>
           </div>
           {emailEnabled && (
-            <button onClick={() => { setMailOpen(o => !o); setMailMsg(null); }} disabled={!rows.length}
-              title="Tabelle per E-Mail an Mitarbeiter senden"
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid ${mailOpen ? ACCENT : S.border}`, backgroundColor: mailOpen ? `${ACCENT}22` : "transparent", color: mailOpen ? ACCENT : S.textMain, opacity: rows.length ? 1 : 0.5 }}>
-              <Mail size={12} /> E-Mail
-            </button>
+            <EmailTableButton columns={columns} rows={rows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
           <button onClick={handleExport} disabled={!rows.length}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid ${ACCENT}44`, backgroundColor: `${ACCENT}15`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
@@ -153,35 +125,6 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <X size={16} />
           </button>
         </div>
-
-        {/* E-Mail-Panel: Tabelle an Mitarbeiter schicken (CSV-Anhang + HTML-Vorschau) */}
-        {emailEnabled && mailOpen && (
-          <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`, backgroundColor: "rgba(255,255,255,0.02)", display: "flex", flexDirection: "column", gap: 8 }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <input value={recipients} onChange={e => setRecipients(e.target.value)}
-                placeholder="Empfänger (mehrere mit Komma trennen)"
-                style={{ flex: "2 1 260px", minWidth: 220, padding: "6px 9px", fontSize: 12, borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textMain }} />
-              <input value={subject} onChange={e => setSubject(e.target.value)}
-                placeholder={`Betreff (Standard: „Cockpit: ${title || "Tabelle"}")`}
-                style={{ flex: "1 1 200px", minWidth: 160, padding: "6px 9px", fontSize: 12, borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textMain }} />
-            </div>
-            <textarea value={message} onChange={e => setMessage(e.target.value)} rows={2}
-              placeholder="Nachricht an die Mitarbeiter (optional) – z. B. „Bitte Beschreibungen ergänzen und zurücksenden.“"
-              style={{ padding: "6px 9px", fontSize: 12, borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textMain, resize: "vertical", fontFamily: "inherit" }} />
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <button onClick={sendMail} disabled={sending || !rows.length}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 5, fontSize: 12, fontWeight: 700, cursor: sending ? "wait" : "pointer", border: "none", backgroundColor: ACCENT, color: "#1a1a1a" }}>
-                {sending ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Send size={13} />}
-                {sending ? "Sende…" : `Senden (${rows.length} Zeilen als CSV)`}
-              </button>
-              {mailMsg && (
-                <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: mailMsg.ok ? "#5cb85c" : "#e07070" }}>
-                  {mailMsg.ok ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {mailMsg.text}
-                </span>
-              )}
-            </div>
-          </div>
-        )}
 
         {/* DB-Erklärung, wenn die Detailtabelle eine Deckungsbeitrags-Spalte hat */}
         {!loading && !error && columns.some(c => /^DB([ -]|$)/.test(c)) && (

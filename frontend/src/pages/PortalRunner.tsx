@@ -6,6 +6,7 @@ import { useAuth } from "../context/AuthContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
+import EmailTableButton from "../components/forms/EmailTableButton";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 
@@ -50,12 +51,15 @@ function ResultTable({ result, formName, actionLabel, allowDownload }) {
         padding: "10px 18px", borderBottom: `1px solid ${S.border}` }}>
         {total !== undefined && <span style={{ fontSize: 12, color: S.textDim }}>{total} Zeilen</span>}
         {canDownload && (
-          <button onClick={downloadCsv}
-            style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
-              color: S.accent, background: "none", border: `1px solid ${S.border}`,
-              borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
-            <Download size={11} /> CSV
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <EmailTableButton columns={columns} rows={rows} title={`${formName} – ${actionLabel}`} disabled={!rows.length} />
+            <button onClick={downloadCsv}
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+                color: S.accent, background: "none", border: `1px solid ${S.border}`,
+                borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
+              <Download size={11} /> CSV
+            </button>
+          </div>
         )}
       </div>
       <div style={{ overflowX: "auto", maxHeight: 520 }}>

@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import EmailTableButton from "../EmailTableButton";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -64,12 +65,15 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
           padding: "8px 16px", borderBottom: `1px solid ${S.border}` }}>
           {total !== undefined && <span style={{ fontSize: 11, color: S.textDim }}>{total} Zeilen</span>}
           {canDownload && (
-            <button onClick={downloadCsv}
-              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
-                color: S.accent, background: "none", border: `1px solid ${S.border}`,
-                borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
-              <Download size={11} /> CSV
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <EmailTableButton columns={columns} rows={rows} title={widget.label || "Tabelle"} disabled={!rows.length} />
+              <button onClick={downloadCsv}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+                  color: S.accent, background: "none", border: `1px solid ${S.border}`,
+                  borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
+                <Download size={11} /> CSV
+              </button>
+            </div>
           )}
         </div>
       )}
