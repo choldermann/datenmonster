@@ -75,6 +75,7 @@ Alle unter `POST/GET https://monstersuite.de/api/v1/ai/...`. Fehlerformat einhei
 | `POST /api/v1/ai/balance`  | aktuelles Guthaben + Monatsverbrauch | Lizenz |
 | `POST /api/v1/ai/usage`    | Verbrauchs-/Transaktionsverlauf (Dashboard) | Lizenz |
 | `POST /api/v1/ai/packages` | verfügbare Credit-Pakete (S/M/L) | Lizenz |
+| `POST /api/v1/ai/purchase/invoice` | Credit-Paket per Rechnung bestellen (Lexware-Entwurf) | Lizenz |
 | `POST /api/v1/ai/models`   | für die Lizenz nutzbare Modelle + Request-Types | Lizenz |
 
 > **Alle Endpunkte sind POST** (auch die lesenden): Sie tragen den Lizenz-Auth-Body
@@ -187,8 +188,8 @@ Dashboard-Daten (Query: `?from=&to=&limit=`). Nur **Metadaten**.
 
 ## 6. `POST /api/v1/ai/packages`
 
-Admin-konfigurierbare Pakete (keine Codewerte). Kaufprozess selbst ist **noch nicht**
-Teil dieses Vertrags — nur die Anzeige + eine `checkout_url`-Schnittstelle wird vorbereitet.
+Admin-konfigurierbare Pakete (keine Codewerte). Liefert nur die Anzeige; der Kauf
+läuft über `/purchase/invoice` (§6a).
 ```json
 { "packages": [
   {"code":"S","name":"Starter","price_eur":"10.00","credits":1000,"sort":1},
@@ -196,6 +197,25 @@ Teil dieses Vertrags — nur die Anzeige + eine `checkout_url`-Schnittstelle wir
   {"code":"L","name":"Large",  "price_eur":"50.00","credits":7500,"sort":3}
 ]}
 ```
+
+## 6a. `POST /api/v1/ai/purchase/invoice`
+
+Bestellt ein Credit-Paket **per Rechnung** (kein sofortiger Online-Checkout). Der
+Gateway legt in Lexware eine **Rechnung als Entwurf** an (nicht finalisiert) und
+verschickt sie an die Kontaktdaten der Lizenz. Credits werden **erst nach manuellem
+Zahlungseingang** über eine `PURCHASE`-Buchung (§8) gutgeschrieben — dieser Endpunkt
+bucht selbst noch nichts.
+
+Request: Lizenz-Auth-Body (§1) + `{ "package_code": "S" | "M" | "L" }`.
+```json
+{ "message": "Rechnung wird erstellt und per E-Mail zugestellt. Nach Zahlungseingang wird das Guthaben freigeschaltet." }
+```
+- `message` (Pflicht) — anzeigefertiger deutscher Hinweis für den Client.
+- `invoice_number` (optional) — nur bei bereits **finalisierter** Rechnung setzen.
+  Bei einem Entwurf **weglassen**; der Client zeigt dann keine Nummer an.
+
+Fehler (Auswahl): `unknown_package` (404), `not_entitled` (403), `provider_error`
+(502, Lexware nicht erreichbar) — jeweils im Standard-Fehlerformat (§2).
 
 ---
 
@@ -348,14 +368,14 @@ Kein Big-Bang. Provider-Abstraktion, bestehende Signaturen erhalten:
   `datenmonster`). Alle `ai.py`-Endpunkte bleiben unverändert; sie setzen künftig nur
   ihren `request_type`.
 - Frontend: Anbieterwahl (Ollama vs. Datenmonster AI) + Guthaben/Verbrauch (`/balance`)
-  + „Guthaben aufladen" (Schnittstelle, kein Checkout).
+  + „Guthaben aufladen" (Paketwahl → `/purchase/invoice`, Rechnung per E-Mail).
 
 ---
 
 ## Offen / später (bewusst nicht in Slice 1)
 
-- Bezahlanbindung (PayPal ist in monstersuite vorhanden — `paypal_helper.py`) →
-  `PURCHASE`-Buchung nach erfolgreichem Kauf; nur Schnittstelle vorbereiten.
+- Automatische `PURCHASE`-Buchung nach Zahlungseingang. Aktuell: Rechnung per
+  `/purchase/invoice` (§6a), Zahlung (u.a. PayPal) + Gutschrift laufen manuell.
 - Auto-Modellwahl-Routing (`pick_model`) als Hook vorhanden, Logik minimal.
 - Weitere Provider (Anthropic, Gemini) — durch `provider`-Feld + Interface offen.
 - Extraktion zu einem eigenständigen MonsterSuite-Credit-Service (kein Microservice jetzt).
