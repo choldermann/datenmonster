@@ -12,9 +12,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 # Die KI-Management-Summary wird zeitlich begrenzt, damit der (synchrone) Report
-# schnell zurückkommt. Bei Ollama-Kaltstart (>15 s) wird sie übersprungen – beim
-# nächsten Aufruf ist das Modell warm und die Summary ist dabei.
-_SUMMARY_TIMEOUT_S = 20
+# schnell zurückkommt. Die Text-Generierung selbst dauert auf CPU auch bei WARMEM
+# Modell ~20–25 s (nicht nur der Kaltstart). Damit die Analyse zuverlässig in den
+# Report kommt, ist das Limit großzügig (Report bleibt mit den nun parallelen
+# Mappings trotzdem unter dem ~60 s-Proxy-Timeout). Ist das Modell kalt, reicht es
+# evtl. nicht → Summary wird übersprungen; deshalb Modelle in den Einstellungen
+# vorwärmen (Warmup, keep_alive) – dann ist sie zuverlässig dabei.
+_SUMMARY_TIMEOUT_S = 45
 
 # Cockpit-Reports lösen dieselben ~28 read-only Mapping-Abfragen aus wie der
 # Form-Run. Nacheinander summieren die sich zu >60 s und laufen in einen Timeout.
@@ -425,17 +429,19 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
                   "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
                   "Anrede, KEINE Briefformel, keine Grußformel.")
-        # Für gutes Deutsch ein Instruct-Modell bevorzugen, aber IMMER ein tatsächlich
-        # installiertes Modell wählen (sonst schlägt der Ollama-Aufruf still fehl).
+        # Textmodell wählen: bevorzugt das in den Einstellungen gewählte `ai_prose_model`,
+        # sonst ein bewährtes Instruct-Modell – aber IMMER installiert (sonst still Fehler).
         from app.services.ai_service import AIParams, get_installed_models, pick_prose_model
+        from app.api.settings import get_setting
         try:
             installed = await get_installed_models(svc.base_url)
         except Exception:
             installed = []
-        chosen = pick_prose_model(installed, svc.model)
+        prose_setting = get_setting(db, "ai_prose_model", "") or None
+        chosen = pick_prose_model(installed, svc.model, explicit=prose_setting)
         txt = await svc.complete_with_context(
             "Analysiere diese bereits berechneten Kennzahlen:\n" + "\n".join(lines), system,
-            params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=320, num_ctx=4096),
+            params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=240, num_ctx=4096),
             model=chosen)
         return (txt or "").strip()
     except Exception:

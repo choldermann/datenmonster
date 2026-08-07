@@ -101,6 +101,42 @@ async def get_installed_models(base_url: str) -> list[str]:
         return []
 
 
+async def get_loaded_models(base_url: str) -> list[str]:
+    """Modelle, die AKTUELL im Speicher geladen (warm) sind – aus Ollama /api/ps.
+    Anders als /api/tags (installiert auf Platte) sagt das, ob eine Anfrage sofort
+    beantwortet werden kann oder erst ein Kaltstart (Laden ins RAM/VRAM) läuft."""
+    try:
+        async with httpx.AsyncClient(timeout=3) as c:
+            r = await c.get(f"{base_url}/api/ps")
+            return [m["name"] for m in r.json().get("models", [])]
+    except Exception:
+        return []
+
+
+async def warmup_model(base_url: str, model: str, keep_alive: str = "30m",
+                       timeout: int = 180) -> dict:
+    """Lädt EIN Ollama-Modell in den Speicher (Kaltstart vorziehen), damit spätere
+    Anfragen – z.B. die Report-Summary – nicht in einen Timeout laufen. Nutzt einen
+    1-Token-Generate mit keep_alive, ohne echte Ausgabe. Gibt {model, loaded, seconds,
+    error} zurück. Idempotent: bei bereits warmem Modell kehrt der Call schnell zurück."""
+    if not model:
+        return {"model": model, "loaded": False, "seconds": 0.0, "error": "kein Modell"}
+    t0 = time.time()
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as c:
+            r = await c.post(f"{base_url}/api/generate", json={
+                "model": model, "prompt": "ok", "stream": False,
+                "keep_alive": keep_alive, "options": {"num_predict": 1},
+            })
+            data = r.json()
+        err = data.get("error")
+        return {"model": model, "loaded": err is None and bool(data.get("done")),
+                "seconds": round(time.time() - t0, 1), "error": err}
+    except Exception as e:
+        return {"model": model, "loaded": False,
+                "seconds": round(time.time() - t0, 1), "error": str(e)[:200]}
+
+
 # Für deutschen Fließtext (Summaries) bevorzugte Instruct-Modelle. Ist keins davon
 # installiert, wird das konfigurierte Modell genutzt – und wenn auch das fehlt,
 # irgendein installiertes Modell (statt ins Leere zu laufen).
@@ -108,15 +144,22 @@ _PROSE_PREF = ["gemma3:4b", "qwen3.5:4b", "qwen3.5:2b", "phi4-mini:latest", "gem
                "llama3.2:3b", "llama3.2:1b", "qwen2.5:3b-instruct", "qwen2.5:1.5b-instruct"]
 
 
-def pick_prose_model(installed: list, configured: str | None = None) -> Optional[str]:
-    """Wählt ein für deutschen Fließtext geeignetes, TATSÄCHLICH installiertes Modell."""
+def pick_prose_model(installed: list, configured: str | None = None,
+                     explicit: str | None = None) -> Optional[str]:
+    """Wählt ein für deutschen Fließtext geeignetes Modell. Reihenfolge:
+    1. `explicit` – vom Nutzer in den Einstellungen gewähltes Textmodell (Vorrang,
+       sofern installiert oder die Installations-Liste unbekannt ist, z.B. Gateway).
+    2. bewährte Prosa-Modelle (`_PROSE_PREF`), sofern installiert.
+    3. das konfigurierte (Code-)Modell, sonst irgendein installiertes."""
     inst = installed or []
+    if explicit and (not inst or explicit in inst):
+        return explicit
     for m in _PROSE_PREF:
         if m in inst:
             return m
     if configured and configured in inst:
         return configured
-    return inst[0] if inst else configured
+    return inst[0] if inst else (explicit or configured)
 
 
 def classify_query(message: str) -> str:

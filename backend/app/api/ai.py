@@ -119,6 +119,39 @@ async def pull_model(
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 
+class WarmupRequest(BaseModel):
+    # Optional gezielt EIN Modell aufwärmen; sonst Code- + Textmodell aus den Einstellungen.
+    model: Optional[str] = None
+
+
+@router.post("/warmup")
+async def warmup(body: WarmupRequest, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Lädt die konfigurierten Modelle vorab in den Speicher (Kaltstart vorziehen),
+    damit spätere KI-Aufrufe – v.a. die Bericht-Summary – nicht in einen Timeout laufen.
+    Nur für Ollama sinnvoll; beim Gateway (Datenmonster AI) ist das Modell remote und
+    sofort bereit → No-op mit ready=true."""
+    from app.api.settings import get_setting
+    from app.services.ai_service import warmup_model
+    provider = get_setting(db, "ai_provider", "ollama")
+    if provider != "ollama":
+        return {"provider": provider, "results": [], "ready": True}
+    base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+    if body.model:
+        models = [body.model]
+    else:
+        code  = get_setting(db, "ai_model", "qwen2.5-coder:3b")
+        prose = get_setting(db, "ai_prose_model", "") or code
+        # Reihenfolge/Deduplizierung: erst Text- dann Code-Modell (Text ist für Berichte
+        # kritisch), doppelte nur einmal aufwärmen.
+        models = list(dict.fromkeys([prose, code]))
+    results = []
+    for m in models:
+        results.append(await warmup_model(base_url, m))
+    return {"provider": provider, "results": results,
+            "ready": all(r.get("loaded") for r in results)}
+
+
 # ── Status ────────────────────────────────────────────────────────────────────
 
 @router.get("/status")
@@ -139,14 +172,25 @@ async def ai_status(db: Session = Depends(get_db), user: User = Depends(get_curr
         model = get_setting(db, "ai_dm_model", "auto")
         svc = DatamonsterAIService(db=db, model=model)
         result["model"] = model
+        result["prose_model"] = get_setting(db, "ai_prose_model", "") or model
         result.update(await svc.check_status())
+        # Gateway-Modelle sind remote → immer „bereit" (kein Kaltstart).
+        result["code_ready"] = result["prose_ready"] = result.get("reachable", True)
     else:
-        from app.services.ai_service import AIService
+        from app.services.ai_service import AIService, get_installed_models, pick_prose_model, get_loaded_models
         base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
         model    = get_setting(db, "ai_model",    "qwen2.5-coder:3b")
         svc = AIService(base_url=base_url, model=model)
         result["model"] = model
         result.update(await svc.check_status())
+        # Echtes „im Speicher geladen" (warm) aus /api/ps – nicht nur „installiert".
+        installed = await get_installed_models(base_url)
+        prose = pick_prose_model(installed, model, explicit=get_setting(db, "ai_prose_model", "") or None)
+        result["prose_model"] = prose
+        loaded = set(await get_loaded_models(base_url))
+        result["loaded_models"] = sorted(loaded)
+        result["code_ready"]  = model in loaded
+        result["prose_ready"] = prose in loaded if prose else False
 
     return result
 
@@ -420,14 +464,15 @@ async def summarize_data(
     import hashlib, time as _t
     ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}|{sections_text}".encode("utf-8")).hexdigest()
 
-    # Für Fließtext ein allgemeines Instruct-Modell bevorzugen (das konfigurierte
-    # Default-Modell ist oft ein Code-Modell und formuliert schlechtes Deutsch).
+    # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst ein Instruct-Modell
+    # (das Default-/Code-Modell formuliert oft schlechtes Deutsch).
     from app.services.ai_service import get_installed_models, pick_prose_model
+    from app.api.settings import get_setting
     try:
         installed = await get_installed_models(svc.base_url)
     except Exception:
         installed = []
-    chosen = pick_prose_model(installed, svc.model)
+    chosen = pick_prose_model(installed, svc.model, explicit=get_setting(db, "ai_prose_model", "") or None)
     # Mit Zusatz-Sektionen mehr Platz für Text und Kontext.
     if sections:
         params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=520, num_ctx=8192)
@@ -614,13 +659,15 @@ async def recommend_action(
     if body.instruction:
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
-    # Prosa-Modell bevorzugen (Default ist oft ein Code-Modell → schlechtes Deutsch).
+    # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst Instruct-Modell
+    # (Default ist oft ein Code-Modell → schlechtes Deutsch).
     from app.services.ai_service import get_installed_models, pick_prose_model
+    from app.api.settings import get_setting
     try:
         installed = await get_installed_models(svc.base_url)
     except Exception:
         installed = []
-    chosen = pick_prose_model(installed, svc.model)
+    chosen = pick_prose_model(installed, svc.model, explicit=get_setting(db, "ai_prose_model", "") or None)
     params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=360, num_ctx=4096)
 
     async def generate():

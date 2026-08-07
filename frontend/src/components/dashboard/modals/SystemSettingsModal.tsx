@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor, Zap } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import api from "../../../api/client";
 import { useAuth } from "../../../context/AuthContext";
@@ -400,6 +400,7 @@ function AiSettings() {
     ai_provider: "ollama",
     ai_base_url: "http://ollama:11434",
     ai_model:    "qwen2.5-coder:3b",
+    ai_prose_model: "",   // Textmodell (Berichte/Erklärungen); "" = automatisch
     ai_dm_model: "auto",
     ai_timeout:  120,
   });
@@ -413,6 +414,8 @@ function AiSettings() {
   const [installedModels, setInstalledModels] = useState([]);
   const [pulling, setPulling]   = useState(false);
   const [pullProgress, setPullProgress] = useState(null); // {status, percent, completed, total}
+  const [aiStatus, setAiStatus] = useState(null); // {code_ready, prose_ready, prose_model, loaded_models}
+  const [warming, setWarming]   = useState(false);
 
   useEffect(() => {
     api.get("/api/settings/ai").then(({ data }) => {
@@ -429,10 +432,23 @@ function AiSettings() {
     const refreshModels = () =>
       listModels().then(({ models }) => setInstalledModels(models || [])).catch(() => {});
     refreshModels();
-    // Alle 10s aktualisieren solange die Komponente offen ist (laufende Downloads)
-    const interval = setInterval(refreshModels, 10000);
+    refreshStatus();
+    // Alle 10s aktualisieren solange die Komponente offen ist (laufende Downloads
+    // + Modell-Bereitschaft aus /api/ps).
+    const interval = setInterval(() => { refreshModels(); refreshStatus(); }, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const refreshStatus = () =>
+    api.get("/api/ai/status").then(({ data }) => setAiStatus(data)).catch(() => {});
+
+  // Modelle vorab in den Speicher laden (Kaltstart vorziehen), damit v.a. die
+  // Bericht-Summary nicht in den Timeout läuft. Aktualisiert danach die Badges.
+  const handleWarmup = async () => {
+    setWarming(true);
+    try { await api.post("/api/ai/warmup", {}); } catch (e) { /* Badge bleibt „nicht bereit" */ }
+    finally { setWarming(false); refreshStatus(); }
+  };
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -478,6 +494,9 @@ function AiSettings() {
       await api.post("/api/settings/ai", { ...form, ai_model: effectiveModel });
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
+      // Nach dem Speichern die gewählten Modelle direkt aufwärmen (Auto-Warmup),
+      // damit sie beim ersten echten Aufruf bereits im Speicher liegen. Nur Ollama.
+      if (form.ai_enabled && form.ai_provider === "ollama") handleWarmup();
     } catch (e) {
       alert(e.response?.data?.detail || e.message);
     } finally { setSaving(false); }
@@ -510,6 +529,14 @@ function AiSettings() {
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+
+  // Bereitschafts-Badge: lädt gerade / im Speicher bereit / noch nicht geladen (Kaltstart).
+  const readyBadge = (ready) => {
+    const base = { fontSize: 9, display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 6px", borderRadius: 8, fontWeight: 600 };
+    if (warming) return <span style={{ ...base, color: ACCENT, backgroundColor: "rgba(252,228,153,0.12)" }}><Loader2 size={9} className="animate-spin" /> lädt…</span>;
+    if (ready)   return <span style={{ ...base, color: "#6ee7b7", backgroundColor: "rgba(110,231,183,0.1)" }}><Check size={9} /> bereit</span>;
+    return <span style={{ ...base, color: S.textDim, backgroundColor: "rgba(255,255,255,0.05)" }}>○ Kaltstart</span>;
+  };
 
   if (loading) return <p style={{ color: S.textDim, fontSize: 12 }}>Lade...</p>;
 
@@ -552,9 +579,12 @@ function AiSettings() {
             </span>
           </div>
 
-          {/* Modell */}
+          {/* Modell (Code) */}
           <div>
-            <label style={lS}>Modell</label>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <label style={{ ...lS, marginBottom: 0 }}>Modell für Code (SQL, Python, Assistent)</label>
+              {readyBadge(aiStatus?.code_ready)}
+            </div>
             {!useCustom ? (
               <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4, paddingRight: 2 }}>
                 {PRESET_MODELS.map(m => {
@@ -683,6 +713,43 @@ function AiSettings() {
                 )}
               </div>
             )}
+          </div>
+
+          {/* Modell (Text/Berichte) */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+              <label style={{ ...lS, marginBottom: 0 }}>Modell für Texte (Berichte, Erklärungen)</label>
+              {readyBadge(aiStatus?.prose_ready)}
+            </div>
+            <select style={iS} value={form.ai_prose_model} onChange={e => set("ai_prose_model", e.target.value)}>
+              <option value="">Automatisch{aiStatus?.prose_model ? ` (${aiStatus.prose_model})` : ""}</option>
+              {installedModels.map(m => (
+                <option key={m.name} value={m.name}>{m.name}</option>
+              ))}
+            </select>
+            <span style={{ fontSize: 10, color: S.textDim, marginTop: 3, display: "block", lineHeight: 1.4 }}>
+              Für flüssiges Deutsch in Berichten/Zusammenfassungen. Code-Modelle (z.B. Qwen-Coder)
+              schreiben oft holpriges Deutsch – hier ein Chat-Modell wie <b>gemma3:4b</b> oder
+              <b> qwen3.5:4b</b> wählen. „Automatisch" nimmt ein bewährtes installiertes Textmodell.
+            </span>
+          </div>
+
+          {/* Warmup: Modelle vorab in den Speicher laden */}
+          <div style={{ padding: "10px 12px", borderRadius: 6, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, color: S.textMain, fontWeight: 600 }}>Modelle vorladen (Kaltstart vermeiden)</div>
+                <p style={{ fontSize: 10, color: S.textDim, margin: "3px 0 0", lineHeight: 1.4 }}>
+                  Lädt Code- und Textmodell in den Speicher, damit z.B. der Bericht die KI-Analyse
+                  nicht wegen Kaltstart-Timeout verwirft. Passiert automatisch beim Speichern.
+                </p>
+              </div>
+              <button onClick={handleWarmup} disabled={warming}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent", color: warming ? S.textDim : ACCENT, cursor: warming ? "default" : "pointer", fontSize: 11, fontWeight: 600, flexShrink: 0 }}>
+                {warming ? <Loader2 size={12} className="animate-spin" /> : <Zap size={12} />}
+                {warming ? "Lädt…" : "Jetzt laden"}
+              </button>
+            </div>
           </div>
 
           </>)}
