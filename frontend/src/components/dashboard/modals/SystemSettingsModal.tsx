@@ -1,5 +1,4 @@
 import { useState, useEffect } from "react";
-import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import api from "../../../api/client";
@@ -266,21 +265,34 @@ const DM_MODELS = [
 ];
 
 function TopUpPanel({ onDone }) {
-  const [cfg, setCfg] = useState(null);         // { paypal_client_id, mode, configured }
   const [packages, setPackages] = useState(null);
   const [selected, setSelected] = useState(null);  // package_code
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);         // { type, text }
+  const [done, setDone] = useState(false);
   useEffect(() => {
-    api.get("/api/ai/purchase/config").then(({ data }) => setCfg(data)).catch(e => setCfg({ error: e.message }));
     api.get("/api/ai/credit-packages").then(({ data }) => setPackages(data.packages || [])).catch(() => setPackages([]));
   }, []);
-  if (cfg === null || packages === null)
-    return <div style={{ fontSize: 11, color: S.textDim }}>Lade Kaufoptionen…</div>;
-  if (cfg?.error || !cfg?.configured)
-    return <div style={{ fontSize: 11, color: "#e07070" }}>Kauf momentan nicht verfügbar{cfg?.error ? `: ${cfg.error}` : " (PayPal nicht konfiguriert)"}.</div>;
+  if (packages === null)
+    return <div style={{ fontSize: 11, color: S.textDim }}>Lade Pakete…</div>;
+  if (packages.length === 0)
+    return <div style={{ fontSize: 11, color: "#e07070" }}>Pakete momentan nicht verfügbar.</div>;
 
-  const sel = packages.find(p => p.code === selected);
+  const requestInvoice = async () => {
+    if (!selected) return;
+    setBusy(true); setMsg(null);
+    try {
+      const { data } = await api.post("/api/ai/purchase/invoice", { package_code: selected });
+      setMsg({ type: "ok", text: data.message + (data.invoice_number ? ` (Rechnung ${data.invoice_number})` : "") });
+      setDone(true);
+      onDone && onDone();
+    } catch (err) {
+      setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -289,7 +301,7 @@ function TopUpPanel({ onDone }) {
         {packages.map(p => {
           const s = selected === p.code;
           return (
-            <div key={p.code} onClick={() => { setSelected(p.code); setMsg(null); }}
+            <div key={p.code} onClick={() => { setSelected(p.code); setMsg(null); setDone(false); }}
               style={{ flex: 1, cursor: "pointer", padding: "8px 6px", borderRadius: 5, textAlign: "center",
                 backgroundColor: s ? "rgba(252,228,153,0.10)" : S.bgEl,
                 border: `1px solid ${s ? "rgba(252,228,153,0.45)" : S.border}` }}>
@@ -301,42 +313,17 @@ function TopUpPanel({ onDone }) {
         })}
       </div>
       {msg && <div style={{ fontSize: 11, color: msg.type === "ok" ? "#7fd07f" : "#e07070" }}>{msg.text}</div>}
-      {sel && cfg.paypal_client_id && (
-        <div style={{ opacity: busy ? 0.5 : 1, pointerEvents: busy ? "none" : "auto" }}>
-          <PayPalScriptProvider options={{ "client-id": cfg.paypal_client_id, currency: "EUR" }}>
-            <PayPalButtons
-              key={sel.code}
-              style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 38 }}
-              createOrder={async () => {
-                setBusy(true); setMsg(null);
-                try {
-                  const { data } = await api.post("/api/ai/purchase/create", { package_code: sel.code });
-                  return data.order_id;
-                } catch (err) {
-                  setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
-                  setBusy(false);
-                  throw err;
-                }
-              }}
-              onApprove={async (data) => {
-                try {
-                  const res = await api.post("/api/ai/purchase/capture", { order_id: data.orderID });
-                  setMsg({ type: "ok", text: `Gutgeschrieben: +${res.data.credits} Credits (Guthaben ${res.data.balance})` });
-                  setSelected(null);
-                  onDone && onDone();
-                } catch (err) {
-                  setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
-                } finally {
-                  setBusy(false);
-                }
-              }}
-              onError={() => { setMsg({ type: "err", text: "PayPal-Fehler" }); setBusy(false); }}
-              onCancel={() => setBusy(false)}
-            />
-          </PayPalScriptProvider>
-          {cfg.mode !== "live" && <div style={{ fontSize: 9, color: S.textDim, marginTop: 4 }}>Testmodus (PayPal {cfg.mode})</div>}
-        </div>
+      {!done && (
+        <button onClick={requestInvoice} disabled={!selected || busy}
+          style={{ padding: "8px 12px", borderRadius: 5, border: "none", fontSize: 12, fontWeight: 700,
+            backgroundColor: selected ? ACCENT : S.bgEl, color: selected ? "#111" : S.textDim,
+            cursor: selected && !busy ? "pointer" : "default", opacity: busy ? 0.6 : 1 }}>
+          {busy ? "Rechnung wird erstellt…" : "Rechnung anfordern"}
+        </button>
       )}
+      <div style={{ fontSize: 9, color: S.textDim }}>
+        Du erhältst eine Rechnung per E-Mail (Zahlung u.a. per PayPal). Nach Zahlungseingang schalten wir dein Guthaben frei.
+      </div>
     </div>
   );
 }

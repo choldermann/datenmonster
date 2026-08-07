@@ -185,13 +185,9 @@ def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_c
         return {"packages": [], "error": f"Gateway nicht erreichbar: {e}"}
 
 
-# ── Credit-Kauf (PayPal-Proxy zum Gateway) ────────────────────────────────────
-class PurchaseCreateReq(BaseModel):
+# ── Credit-Kauf: Rechnung anfordern (Proxy zum Gateway) ───────────────────────
+class PurchaseInvoiceReq(BaseModel):
     package_code: str
-
-
-class PurchaseCaptureReq(BaseModel):
-    order_id: str
 
 
 def _gateway_post(db, path: str, extra: dict | None = None, timeout: int = 30):
@@ -210,39 +206,17 @@ def _gateway_post(db, path: str, extra: dict | None = None, timeout: int = 30):
         return data, r.status_code
 
 
-@router.get("/purchase/config")
-def ai_purchase_config(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Öffentliche PayPal-Parameter (Client-ID/Modus) fürs Frontend-SDK."""
-    try:
-        data, status = _gateway_post(db, "/purchase/config", timeout=10)
-        return data
-    except Exception as e:
-        return {"configured": False, "error": f"Gateway nicht erreichbar: {e}"}
-
-
-@router.post("/purchase/create")
-def ai_purchase_create(req: PurchaseCreateReq, db: Session = Depends(get_db),
-                       user: User = Depends(get_current_user)):
-    """PayPal-Order für ein Credit-Paket anlegen (gibt order_id zurück)."""
-    try:
-        data, status = _gateway_post(db, "/purchase/create", {"package_code": req.package_code})
-    except Exception as e:
-        raise HTTPException(502, f"Gateway nicht erreichbar: {e}")
-    if status >= 400:
-        raise HTTPException(status, data.get("message") or data.get("error") or "Kauf fehlgeschlagen")
-    return data
-
-
-@router.post("/purchase/capture")
-def ai_purchase_capture(req: PurchaseCaptureReq, db: Session = Depends(get_db),
+@router.post("/purchase/invoice")
+def ai_purchase_invoice(req: PurchaseInvoiceReq, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
-    """PayPal-Zahlung bestätigen → Credits werden am Gateway gutgeschrieben."""
+    """Credit-Paket bestellen → Gateway erstellt eine Lexware-Rechnung. Credits
+    werden erst nach Zahlungseingang manuell freigeschaltet."""
     try:
-        data, status = _gateway_post(db, "/purchase/capture", {"order_id": req.order_id})
+        data, status = _gateway_post(db, "/purchase/invoice", {"package_code": req.package_code})
     except Exception as e:
         raise HTTPException(502, f"Gateway nicht erreichbar: {e}")
     if status >= 400:
-        raise HTTPException(status, data.get("message") or data.get("error") or "Zahlung fehlgeschlagen")
+        raise HTTPException(status, data.get("message") or data.get("error") or "Bestellung fehlgeschlagen")
     return data
 
 
