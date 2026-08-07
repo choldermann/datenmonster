@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { PayPalScriptProvider, PayPalButtons } from "@paypal/react-paypal-js";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import api from "../../../api/client";
@@ -264,16 +265,94 @@ const DM_MODELS = [
   { id: "gpt-4o",      label: "gpt-4o",      desc: "Leistungsfähig — komplexe SQL/Analyse" },
 ];
 
+function TopUpPanel({ onDone }) {
+  const [cfg, setCfg] = useState(null);         // { paypal_client_id, mode, configured }
+  const [packages, setPackages] = useState(null);
+  const [selected, setSelected] = useState(null);  // package_code
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);         // { type, text }
+  useEffect(() => {
+    api.get("/api/ai/purchase/config").then(({ data }) => setCfg(data)).catch(e => setCfg({ error: e.message }));
+    api.get("/api/ai/credit-packages").then(({ data }) => setPackages(data.packages || [])).catch(() => setPackages([]));
+  }, []);
+  if (cfg === null || packages === null)
+    return <div style={{ fontSize: 11, color: S.textDim }}>Lade Kaufoptionen…</div>;
+  if (cfg?.error || !cfg?.configured)
+    return <div style={{ fontSize: 11, color: "#e07070" }}>Kauf momentan nicht verfügbar{cfg?.error ? `: ${cfg.error}` : " (PayPal nicht konfiguriert)"}.</div>;
+
+  const sel = packages.find(p => p.code === selected);
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <label style={lS}>Paket wählen</label>
+      <div style={{ display: "flex", gap: 8 }}>
+        {packages.map(p => {
+          const s = selected === p.code;
+          return (
+            <div key={p.code} onClick={() => { setSelected(p.code); setMsg(null); }}
+              style={{ flex: 1, cursor: "pointer", padding: "8px 6px", borderRadius: 5, textAlign: "center",
+                backgroundColor: s ? "rgba(252,228,153,0.10)" : S.bgEl,
+                border: `1px solid ${s ? "rgba(252,228,153,0.45)" : S.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: s ? ACCENT : S.textMain }}>{p.name}</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: s ? ACCENT : S.textMain, marginTop: 2 }}>{p.credits} Cr.</div>
+              <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{Number(p.price_eur).toFixed(2)} €</div>
+            </div>
+          );
+        })}
+      </div>
+      {msg && <div style={{ fontSize: 11, color: msg.type === "ok" ? "#7fd07f" : "#e07070" }}>{msg.text}</div>}
+      {sel && cfg.paypal_client_id && (
+        <div style={{ opacity: busy ? 0.5 : 1, pointerEvents: busy ? "none" : "auto" }}>
+          <PayPalScriptProvider options={{ "client-id": cfg.paypal_client_id, currency: "EUR" }}>
+            <PayPalButtons
+              key={sel.code}
+              style={{ layout: "vertical", color: "gold", shape: "rect", label: "pay", height: 38 }}
+              createOrder={async () => {
+                setBusy(true); setMsg(null);
+                try {
+                  const { data } = await api.post("/api/ai/purchase/create", { package_code: sel.code });
+                  return data.order_id;
+                } catch (err) {
+                  setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
+                  setBusy(false);
+                  throw err;
+                }
+              }}
+              onApprove={async (data) => {
+                try {
+                  const res = await api.post("/api/ai/purchase/capture", { order_id: data.orderID });
+                  setMsg({ type: "ok", text: `Gutgeschrieben: +${res.data.credits} Credits (Guthaben ${res.data.balance})` });
+                  setSelected(null);
+                  onDone && onDone();
+                } catch (err) {
+                  setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
+                } finally {
+                  setBusy(false);
+                }
+              }}
+              onError={() => { setMsg({ type: "err", text: "PayPal-Fehler" }); setBusy(false); }}
+              onCancel={() => setBusy(false)}
+            />
+          </PayPalScriptProvider>
+          {cfg.mode !== "live" && <div style={{ fontSize: 9, color: S.textDim, marginTop: 4 }}>Testmodus (PayPal {cfg.mode})</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DatenmonsterAiPanel({ model, onModel }) {
   const [credits, setCredits] = useState(null);
   const [loading, setLoading] = useState(true);
-  useEffect(() => {
+  const [showTopUp, setShowTopUp] = useState(false);
+  const loadCredits = () => {
     setLoading(true);
     api.get("/api/ai/credits")
       .then(({ data }) => setCredits(data))
       .catch(e => setCredits({ error: e.message }))
       .finally(() => setLoading(false));
-  }, []);
+  };
+  useEffect(() => { loadCredits(); }, []);
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -296,10 +375,15 @@ function DatenmonsterAiPanel({ model, onModel }) {
             )}
           </>
         )}
-        <button onClick={() => alert("Kauf-Prozess folgt — die Pakete (S/M/L) werden im nächsten Schritt angebunden.")}
+        <button onClick={() => setShowTopUp(v => !v)}
           style={{ marginTop: 10, padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-          Guthaben aufladen
+          {showTopUp ? "Schließen" : "Guthaben aufladen"}
         </button>
+        {showTopUp && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(252,228,153,0.2)" }}>
+            <TopUpPanel onDone={loadCredits} />
+          </div>
+        )}
       </div>
       {/* Modellwahl */}
       <div>

@@ -174,7 +174,7 @@ def ai_credits(db: Session = Depends(get_db), user: User = Depends(get_current_u
 
 @router.get("/credit-packages")
 def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Kaufbare Credit-Pakete (S/M/L) vom Gateway. Kaufprozess folgt später."""
+    """Kaufbare Credit-Pakete (S/M/L) vom Gateway."""
     from app.api.license import license_auth_body, LICENSE_SERVER
     try:
         with httpx.Client(timeout=10) as c:
@@ -183,6 +183,67 @@ def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_c
             return r.json()
     except Exception as e:
         return {"packages": [], "error": f"Gateway nicht erreichbar: {e}"}
+
+
+# ── Credit-Kauf (PayPal-Proxy zum Gateway) ────────────────────────────────────
+class PurchaseCreateReq(BaseModel):
+    package_code: str
+
+
+class PurchaseCaptureReq(BaseModel):
+    order_id: str
+
+
+def _gateway_post(db, path: str, extra: dict | None = None, timeout: int = 30):
+    """Lizenz-authentifizierter POST an den monstersuite-Gateway."""
+    from app.api.license import license_auth_body, LICENSE_SERVER
+    body = license_auth_body(db)
+    if extra:
+        body.update(extra)
+    with httpx.Client(timeout=timeout) as c:
+        r = c.post(f"{LICENSE_SERVER}/api/v1/ai{path}", json=body)
+        # Fehlerantworten (402/404/502) transparent durchreichen
+        try:
+            data = r.json()
+        except Exception:
+            data = {"error": "gateway_error", "message": r.text[:200]}
+        return data, r.status_code
+
+
+@router.get("/purchase/config")
+def ai_purchase_config(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Öffentliche PayPal-Parameter (Client-ID/Modus) fürs Frontend-SDK."""
+    try:
+        data, status = _gateway_post(db, "/purchase/config", timeout=10)
+        return data
+    except Exception as e:
+        return {"configured": False, "error": f"Gateway nicht erreichbar: {e}"}
+
+
+@router.post("/purchase/create")
+def ai_purchase_create(req: PurchaseCreateReq, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    """PayPal-Order für ein Credit-Paket anlegen (gibt order_id zurück)."""
+    try:
+        data, status = _gateway_post(db, "/purchase/create", {"package_code": req.package_code})
+    except Exception as e:
+        raise HTTPException(502, f"Gateway nicht erreichbar: {e}")
+    if status >= 400:
+        raise HTTPException(status, data.get("message") or data.get("error") or "Kauf fehlgeschlagen")
+    return data
+
+
+@router.post("/purchase/capture")
+def ai_purchase_capture(req: PurchaseCaptureReq, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """PayPal-Zahlung bestätigen → Credits werden am Gateway gutgeschrieben."""
+    try:
+        data, status = _gateway_post(db, "/purchase/capture", {"order_id": req.order_id})
+    except Exception as e:
+        raise HTTPException(502, f"Gateway nicht erreichbar: {e}")
+    if status >= 400:
+        raise HTTPException(status, data.get("message") or data.get("error") or "Zahlung fehlgeschlagen")
+    return data
 
 
 class TestConnectionRequest(BaseModel):
