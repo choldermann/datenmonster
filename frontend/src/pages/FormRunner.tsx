@@ -80,6 +80,7 @@ export default function FormRunner() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [aiSummaries, setAiSummaries] = useState({}); // {action_id: KI-Analysetext} für den PDF-Report
+  const [aiLoading, setAiLoading] = useState({});     // {action_id: bool} – KI-Analyse streamt noch
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
@@ -168,6 +169,10 @@ export default function FormRunner() {
     }
   };
 
+  // Report-Button sperren, solange eine KI-Analyse noch streamt – so kann man nicht
+  // „zu früh" klicken und einen Report ohne (bzw. mit halber) KI-Analyse auslösen.
+  const aiBusy = Object.values(aiLoading).some(Boolean);
+
   const runForm = async (actionIds = null, paramsOverride = null) => {
     const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
     if (paramsOverride) setParams(effParams);
@@ -230,12 +235,14 @@ export default function FormRunner() {
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
         {widgets.length > 0 && (
-          <button onClick={downloadReport} disabled={reporting}
+          <button onClick={downloadReport} disabled={reporting || aiBusy}
+            title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
               border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
-              cursor: reporting ? "wait" : "pointer", fontSize: 12, fontWeight: 600 }}>
-            {reporting ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={12} />}
-            {reporting ? "Erstelle PDF…" : "PDF-Report"}
+              opacity: (reporting || aiBusy) ? 0.5 : 1,
+              cursor: reporting ? "wait" : aiBusy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}>
+            {(reporting || aiBusy) ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={12} />}
+            {reporting ? "Erstelle PDF…" : aiBusy ? "KI-Analyse läuft…" : "PDF-Report"}
           </button>
         )}
         <button onClick={() => navigate(`/forms/${id}`)}
@@ -355,7 +362,10 @@ export default function FormRunner() {
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results || {}} allowDownload={true} baseParams={params}
-            onAiText={(aid, text) => setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text })} />
+            onAiText={(aid, text, loading) => {
+              setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
+              setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
+            }} />
         )}
 
         {/* Rohtabellen für Aktionen ohne Widget */}

@@ -85,11 +85,12 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
-  // Fertigen KI-Text nach oben melden (FormRunner gibt ihn dem PDF-Report mit, damit
-  // der Report den langsamen KI-Aufruf überspringt).
+  // Fertigen KI-Text + Lade-Status nach oben melden: FormRunner gibt den Text dem
+  // PDF-Report mit (Report überspringt so den langsamen KI-Aufruf) und sperrt den
+  // Report-Button, solange die Analyse noch streamt.
   useEffect(() => {
-    onAiText?.(widget.action_id, text || "");
-  }, [text, widget.action_id]);
+    onAiText?.(widget.action_id, text || "", loading);
+  }, [text, loading, widget.action_id]);
 
   // Zusatz-Sektionen aus den übrigen Action-Ergebnissen aufbauen (leere fallen raus).
   const sections = useMemo(() => {
