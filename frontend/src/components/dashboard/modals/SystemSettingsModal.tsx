@@ -283,7 +283,7 @@ function TopUpPanel({ onDone }) {
     setBusy(true); setMsg(null);
     try {
       const { data } = await api.post("/api/ai/purchase/invoice", { package_code: selected });
-      setMsg({ type: "ok", text: data.message + (data.invoice_number ? ` (Rechnung ${data.invoice_number})` : "") });
+      setMsg({ type: "ok", text: data.message });
       setDone(true);
       onDone && onDone();
     } catch (err) {
