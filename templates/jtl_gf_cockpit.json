@@ -4220,6 +4220,211 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_klumpen_kpi",
+      "name": "Cockpit – Klumpenrisiko KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH kc AS (\n  SELECT X.kKunde, SUM(X.Netto) AS Umsatz\n  FROM (SELECT RE.kKunde, POS.fAnzahl*POS.fVkNetto AS Netto\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n        WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY,1,:bis)\n          AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')) X\n  GROUP BY X.kKunde HAVING SUM(X.Netto) > 0),\nrc AS (SELECT Umsatz, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) rn FROM kc),\nka AS (SELECT A.kArtikel, SUM(POS.fAnzahl*POS.fVkNetto) AS Umsatz\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  JOIN dbo.tArtikel A ON A.cArtNr=POS.cArtNr AND A.cAktiv='Y'\n  WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY,1,:bis)\n  GROUP BY A.kArtikel HAVING SUM(POS.fAnzahl*POS.fVkNetto) > 0),\nra AS (SELECT Umsatz, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) rn FROM ka)\nSELECT\n  (SELECT CAST(SUM(Umsatz) AS DECIMAL(18,2)) FROM rc) AS GesamtUmsatz,\n  (SELECT COUNT(*) FROM rc) AS AnzahlKunden,\n  (SELECT CAST(100.0*SUM(CASE WHEN rn<=5 THEN Umsatz END)/NULLIF(SUM(Umsatz),0) AS DECIMAL(18,1)) FROM rc) AS Top5KundenAnteil,\n  (SELECT CAST(100.0*SUM(CASE WHEN rn<=10 THEN Umsatz END)/NULLIF(SUM(Umsatz),0) AS DECIMAL(18,1)) FROM rc) AS Top10KundenAnteil,\n  (SELECT CAST(100.0*SUM(CASE WHEN rn<=5 THEN Umsatz END)/NULLIF(SUM(Umsatz),0) AS DECIMAL(18,1)) FROM ra) AS Top5ArtikelAnteil",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "GesamtUmsatz",
+            "AnzahlKunden",
+            "Top5KundenAnteil",
+            "Top10KundenAnteil",
+            "Top5ArtikelAnteil"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Klumpenrisiko KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "GesamtUmsatz",
+              "target_field": "GesamtUmsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GesamtUmsatz"
+              }
+            },
+            {
+              "source_field": "AnzahlKunden",
+              "target_field": "AnzahlKunden",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnzahlKunden"
+              }
+            },
+            {
+              "source_field": "Top5KundenAnteil",
+              "target_field": "Top5KundenAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Top5KundenAnteil"
+              }
+            },
+            {
+              "source_field": "Top10KundenAnteil",
+              "target_field": "Top10KundenAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Top10KundenAnteil"
+              }
+            },
+            {
+              "source_field": "Top5ArtikelAnteil",
+              "target_field": "Top5ArtikelAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Top5ArtikelAnteil"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_abc_kunden",
+      "name": "Cockpit – ABC-Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH k AS (\n  SELECT X.kKunde,\n    MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,''))))) AS Kunde,\n    SUM(X.Netto) AS Umsatz\n  FROM (SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl*POS.fVkNetto AS Netto\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n        WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY,1,:bis)\n          AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')) X\n  LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung=X.kRechnung\n  GROUP BY X.kKunde HAVING SUM(X.Netto) > 0),\nr AS (SELECT Kunde, Umsatz, SUM(Umsatz) OVER () AS Gesamt,\n        SUM(Umsatz) OVER (ORDER BY Umsatz DESC ROWS UNBOUNDED PRECEDING) AS Kum,\n        ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS Rang FROM k)\nSELECT TOP 50 Rang, Kunde, CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n  CAST(100.0*Umsatz/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Anteil %],\n  CAST(100.0*Kum/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Kumuliert %],\n  CASE WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 80 THEN 'A' WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 95 THEN 'B' ELSE 'C' END AS ABC\nFROM r ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Rang",
+            "Kunde",
+            "Umsatz",
+            "Anteil %",
+            "Kumuliert %",
+            "ABC"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – ABC-Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rang",
+              "target_field": "Rang",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rang"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            },
+            {
+              "source_field": "Kumuliert %",
+              "target_field": "Kumuliert %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kumuliert %"
+              }
+            },
+            {
+              "source_field": "ABC",
+              "target_field": "ABC",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ABC"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4519,6 +4724,20 @@
             "mapping_id": "m_kapital_umschlag",
             "pipeline_id": null,
             "label": "Cockpit – Lagerumschlag & Reichweite"
+          },
+          {
+            "id": "act_klumpen_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_klumpen_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Klumpenrisiko KPI"
+          },
+          {
+            "id": "act_klumpen_abc",
+            "type": "run_mapping",
+            "mapping_id": "m_abc_kunden",
+            "pipeline_id": null,
+            "label": "Cockpit – ABC-Kunden"
           }
         ],
         "widgets": [
@@ -5304,6 +5523,58 @@
               "width": 12,
               "info": "Umschlag/Jahr = auf 365 Tage hochgerechnete Verkaufsmenge geteilt durch aktuellen Bestand (wie oft der Bestand pro Jahr umgeschlagen wird). Reichweite (Tage) = wie lange der aktuelle Bestand beim Absatz des Zeitraums reicht. Niedriger Umschlag / hohe Reichweite = gebundenes Kapital / Überbestand."
             }
+          },
+          {
+            "id": "w_kpi_top5_kunden",
+            "type": "kpi",
+            "label": "Top-5 Kunden – Umsatzanteil",
+            "action_id": "act_klumpen_kpi",
+            "config": {
+              "width": 4,
+              "column": "Top5KundenAnteil",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_kpi_top10_kunden",
+            "type": "kpi",
+            "label": "Top-10 Kunden – Umsatzanteil",
+            "action_id": "act_klumpen_kpi",
+            "config": {
+              "width": 4,
+              "column": "Top10KundenAnteil",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_kpi_top5_artikel",
+            "type": "kpi",
+            "label": "Top-5 Artikel – Umsatzanteil",
+            "action_id": "act_klumpen_kpi",
+            "config": {
+              "width": 4,
+              "column": "Top5ArtikelAnteil",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_tbl_abc_kunden",
+            "type": "table",
+            "action_id": "act_klumpen_abc",
+            "label": "ABC-Kunden (Top 50 nach Umsatz)",
+            "config": {
+              "width": 12,
+              "info": "Klumpenrisiko = Abhängigkeit von wenigen Kunden/Artikeln (hoher Top-5-Anteil = Risiko bei Wegfall). ABC-Klasse nach kumuliertem Umsatzanteil: A bis 80 %, B bis 95 %, C Rest. Gesperrte Kunden ausgeschlossen."
+            }
           }
         ],
         "result_tabs": [
@@ -5376,6 +5647,14 @@
               "act_warn_bestand",
               "act_warn_marge",
               "act_gesperrt"
+            ]
+          },
+          {
+            "id": "tab_klumpen",
+            "label": "Klumpenrisiko / ABC",
+            "action_ids": [
+              "act_klumpen_kpi",
+              "act_klumpen_abc"
             ]
           }
         ],
