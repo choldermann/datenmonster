@@ -4425,6 +4425,136 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_abc_artikel",
+      "name": "Cockpit – ABC-Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH a AS (\n  SELECT A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName,'') AS Warengruppe,\n    SUM(POS.fAnzahl*POS.fVkNetto) AS Umsatz\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  JOIN dbo.tArtikel A ON A.cArtNr=POS.cArtNr AND A.cAktiv='Y'\n  LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe=A.kWarengruppe\n  LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel=A.kArtikel AND AB.kSprache=1 AND AB.kPlattform=1 AND AB.kShop=0\n  WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY,1,:bis)\n  GROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName HAVING SUM(POS.fAnzahl*POS.fVkNetto) > 0),\nr AS (SELECT ArtNr, Artikel, Warengruppe, Umsatz, SUM(Umsatz) OVER () AS Gesamt,\n        SUM(Umsatz) OVER (ORDER BY Umsatz DESC ROWS UNBOUNDED PRECEDING) AS Kum,\n        ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS Rang FROM a)\nSELECT TOP 50 Rang, ArtNr, Artikel, Warengruppe, CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n  CAST(100.0*Umsatz/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Anteil %],\n  CAST(100.0*Kum/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Kumuliert %],\n  CASE WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 80 THEN 'A' WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 95 THEN 'B' ELSE 'C' END AS ABC\nFROM r ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Rang",
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Umsatz",
+            "Anteil %",
+            "Kumuliert %",
+            "ABC"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – ABC-Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rang",
+              "target_field": "Rang",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rang"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            },
+            {
+              "source_field": "Kumuliert %",
+              "target_field": "Kumuliert %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kumuliert %"
+              }
+            },
+            {
+              "source_field": "ABC",
+              "target_field": "ABC",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ABC"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4738,6 +4868,13 @@
             "mapping_id": "m_abc_kunden",
             "pipeline_id": null,
             "label": "Cockpit – ABC-Kunden"
+          },
+          {
+            "id": "act_klumpen_abc_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_abc_artikel",
+            "pipeline_id": null,
+            "label": "Cockpit – ABC-Artikel"
           }
         ],
         "widgets": [
@@ -5575,6 +5712,16 @@
               "width": 12,
               "info": "Klumpenrisiko = Abhängigkeit von wenigen Kunden/Artikeln (hoher Top-5-Anteil = Risiko bei Wegfall). ABC-Klasse nach kumuliertem Umsatzanteil: A bis 80 %, B bis 95 %, C Rest. Gesperrte Kunden ausgeschlossen."
             }
+          },
+          {
+            "id": "w_tbl_abc_artikel",
+            "type": "table",
+            "action_id": "act_klumpen_abc_artikel",
+            "label": "ABC-Artikel (Top 50 nach Umsatz)",
+            "config": {
+              "width": 12,
+              "info": "Umsatzstärkste Artikel mit Anteil, kumuliertem Anteil und ABC-Klasse (A bis 80 %, B bis 95 %, C Rest). Nur aktive Artikel."
+            }
           }
         ],
         "result_tabs": [
@@ -5654,7 +5801,8 @@
             "label": "Klumpenrisiko / ABC",
             "action_ids": [
               "act_klumpen_kpi",
-              "act_klumpen_abc"
+              "act_klumpen_abc",
+              "act_klumpen_abc_artikel"
             ]
           }
         ],
