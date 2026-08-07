@@ -232,12 +232,104 @@ const PRESET_MODELS = [
   },
 ];
 
+function ProviderSelector({ value, onChange }) {
+  const opts = [
+    { id: "ollama",       label: "Lokal / Ollama",  desc: "Kostenlos, läuft komplett auf deinem Server" },
+    { id: "datenmonster", label: "Datenmonster AI", desc: "Zentrale KI per Credits — kein eigener Key nötig" },
+  ];
+  return (
+    <div>
+      <label style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 6 }}>KI-Anbieter</label>
+      <div style={{ display: "flex", gap: 8 }}>
+        {opts.map(o => {
+          const sel = value === o.id;
+          return (
+            <div key={o.id} onClick={() => onChange(o.id)}
+              style={{ flex: 1, cursor: "pointer", padding: "10px 12px", borderRadius: 6,
+                backgroundColor: sel ? "rgba(252,228,153,0.08)" : S.bgEl,
+                border: `1px solid ${sel ? "rgba(252,228,153,0.4)" : S.border}` }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: sel ? ACCENT : S.textMain }}>{o.label}</div>
+              <div style={{ fontSize: 10, color: S.textDim, marginTop: 2, lineHeight: 1.4 }}>{o.desc}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const DM_MODELS = [
+  { id: "auto",        label: "Automatisch", desc: "Datenmonster wählt je Aufgabe (günstig ↔ leistungsfähig)" },
+  { id: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Günstig & schnell — Standard" },
+  { id: "gpt-4o",      label: "gpt-4o",      desc: "Leistungsfähig — komplexe SQL/Analyse" },
+];
+
+function DatenmonsterAiPanel({ model, onModel }) {
+  const [credits, setCredits] = useState(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    setLoading(true);
+    api.get("/api/ai/credits")
+      .then(({ data }) => setCredits(data))
+      .catch(e => setCredits({ error: e.message }))
+      .finally(() => setLoading(false));
+  }, []);
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* Guthaben */}
+      <div style={{ padding: "12px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.2)" }}>
+        {loading ? (
+          <span style={{ fontSize: 11, color: S.textDim }}>Lade Guthaben…</span>
+        ) : credits?.error ? (
+          <span style={{ fontSize: 11, color: "#e07070" }}>Guthaben nicht abrufbar: {credits.error}</span>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 22, fontWeight: 800, color: ACCENT }}>{credits?.balance ?? "–"}</span>
+              <span style={{ fontSize: 11, color: S.textDim }}>Credits</span>
+            </div>
+            {credits?.month && (
+              <div style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>
+                Diesen Monat: {credits.month.credits_used ?? 0} Credits · {credits.month.requests ?? 0} Anfragen
+              </div>
+            )}
+          </>
+        )}
+        <button onClick={() => alert("Kauf-Prozess folgt — die Pakete (S/M/L) werden im nächsten Schritt angebunden.")}
+          style={{ marginTop: 10, padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+          Guthaben aufladen
+        </button>
+      </div>
+      {/* Modellwahl */}
+      <div>
+        <label style={lS}>Modell</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {DM_MODELS.map(m => {
+            const sel = model === m.id;
+            return (
+              <div key={m.id} onClick={() => onModel(m.id)}
+                style={{ cursor: "pointer", padding: "8px 10px", borderRadius: 5,
+                  backgroundColor: sel ? "rgba(252,228,153,0.08)" : S.bgEl,
+                  border: `1px solid ${sel ? "rgba(252,228,153,0.35)" : S.border}` }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: sel ? ACCENT : S.textMain }}>{m.label}</div>
+                <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{m.desc}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AiSettings() {
   const [form, setForm] = useState({
     ai_enabled:  false,
     ai_provider: "ollama",
     ai_base_url: "http://ollama:11434",
     ai_model:    "qwen2.5-coder:3b",
+    ai_dm_model: "auto",
     ai_timeout:  120,
   });
   const [customModel, setCustomModel] = useState("");
@@ -323,6 +415,12 @@ function AiSettings() {
   const handleTest = async () => {
     setTesting(true); setTestResult(null);
     try {
+      if (form.ai_provider === "datenmonster") {
+        const { data } = await api.get("/api/ai/credits");
+        if (data?.error) setTestResult({ ok: false, msg: `Gateway: ${data.error}` });
+        else setTestResult({ ok: true, msg: `Datenmonster AI verbunden ✓ — Guthaben: ${data.balance ?? "?"} Credits` });
+        return;
+      }
       const status = await testAiConnection(form.ai_base_url, effectiveModel);
       if (status.ollama_reachable) {
         setTestResult({
@@ -347,8 +445,9 @@ function AiSettings() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <p style={{ fontSize: 11, color: S.textDim, margin: 0, lineHeight: 1.6 }}>
-        Lokale KI-Unterstützung über Ollama — kostenlos, läuft komplett auf deinem Server.
-        KI-Buttons erscheinen in SQL-, Python- und Expressions-Nodes sowie im Mapping-Canvas.
+        KI-Unterstützung für SQL-, Python- und Expressions-Nodes sowie den Mapping-Canvas.
+        Wähle den Anbieter: <b>Ollama</b> (kostenlos, lokal) oder <b>Datenmonster AI</b>
+        (zentral per Credits, kein eigener OpenAI-Key nötig).
       </p>
 
       {/* KI aktivieren */}
@@ -364,6 +463,14 @@ function AiSettings() {
 
       {form.ai_enabled && (
         <>
+          {/* Anbieterwahl */}
+          <ProviderSelector value={form.ai_provider} onChange={v => set("ai_provider", v)} />
+
+          {form.ai_provider === "datenmonster" && (
+            <DatenmonsterAiPanel model={form.ai_dm_model} onModel={v => set("ai_dm_model", v)} />
+          )}
+
+          {form.ai_provider === "ollama" && (<>
           {/* Ollama URL */}
           <div>
             <label style={lS}>Ollama URL</label>
@@ -507,13 +614,15 @@ function AiSettings() {
             )}
           </div>
 
+          </>)}
+
           {/* Timeout */}
           <div>
             <label style={lS}>Timeout (Sekunden)</label>
             <input style={{ ...iS, width: 80 }} type="number" min={10} max={600}
               value={form.ai_timeout} onChange={e => set("ai_timeout", parseInt(e.target.value) || 120)} />
             <span style={{ fontSize: 10, color: S.textDim, marginTop: 3, display: "block" }}>
-              Ohne GPU: 60–120s empfohlen
+              {form.ai_provider === "datenmonster" ? "Gilt auch für Gateway-Anfragen" : "Ohne GPU: 60–120s empfohlen"}
             </span>
           </div>
 

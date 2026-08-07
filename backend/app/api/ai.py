@@ -125,20 +125,64 @@ async def pull_model(
 async def ai_status(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from app.api.settings import get_setting
     enabled  = get_setting(db, "ai_enabled",  "false") == "true"
-    base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
-    model    = get_setting(db, "ai_model",    "qwen2.5-coder:3b")
+    provider = get_setting(db, "ai_provider", "ollama")
 
-    result = {"enabled": enabled, "model": model, "preset_models": PRESET_MODELS}
+    result = {"enabled": enabled, "provider": provider, "preset_models": PRESET_MODELS}
 
-    if enabled:
-        from app.services.ai_service import AIService
-        svc = AIService(base_url=base_url, model=model)
-        status = await svc.check_status()
-        result.update(status)
+    if not enabled:
+        result.update({"model": get_setting(db, "ai_model", "qwen2.5-coder:3b"),
+                       "ollama_reachable": False, "model_loaded": False})
+        return result
+
+    if provider == "datenmonster":
+        from app.services.ai_gateway import DatamonsterAIService
+        model = get_setting(db, "ai_dm_model", "auto")
+        svc = DatamonsterAIService(db=db, model=model)
+        result["model"] = model
+        result.update(await svc.check_status())
     else:
-        result.update({"ollama_reachable": False, "model_loaded": False})
+        from app.services.ai_service import AIService
+        base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
+        model    = get_setting(db, "ai_model",    "qwen2.5-coder:3b")
+        svc = AIService(base_url=base_url, model=model)
+        result["model"] = model
+        result.update(await svc.check_status())
 
     return result
+
+
+# ── Datenmonster AI: Guthaben & Pakete (Proxy zum monstersuite-Gateway) ────────
+
+@router.get("/credits")
+def ai_credits(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Aktuelles Guthaben + Monatsverbrauch der Lizenz. Nur bei provider=datenmonster."""
+    from app.api.settings import get_setting
+    provider = get_setting(db, "ai_provider", "ollama")
+    if provider != "datenmonster":
+        return {"provider": provider, "enabled": False}
+    from app.api.license import license_auth_body, LICENSE_SERVER
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/ai/balance", json=license_auth_body(db))
+            r.raise_for_status()
+            data = r.json()
+        return {"provider": "datenmonster", "enabled": True, **data}
+    except Exception as e:
+        return {"provider": "datenmonster", "enabled": True,
+                "error": f"Gateway nicht erreichbar: {e}"}
+
+
+@router.get("/credit-packages")
+def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Kaufbare Credit-Pakete (S/M/L) vom Gateway. Kaufprozess folgt später."""
+    from app.api.license import license_auth_body, LICENSE_SERVER
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/ai/packages", json=license_auth_body(db))
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        return {"packages": [], "error": f"Gateway nicht erreichbar: {e}"}
 
 
 class TestConnectionRequest(BaseModel):
@@ -1813,22 +1857,9 @@ async def transform_preview(
     messages = [{"role": "user", "content": prompt + "\n\nAntworte ausschließlich als JSON."}]
 
     try:
-        resp = httpx.post(
-            f"{svc.base_url}/api/chat",
-            json={
-                "model": model,
-                "messages": messages,
-                "stream": False,
-                "format": {"type": "json_schema", "json_schema": {"name": "result", "strict": True, "schema": json_schema}},
-                "options": {"temperature": 0.2},
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        content = resp.json().get("message", {}).get("content", "{}")
-        result = json.loads(content)
+        result = await svc.complete_json(messages, json_schema, model=model, temperature=0.2)
         return {"result": result}
     except httpx.ReadTimeout:
-        raise HTTPException(504, "Ollama Timeout – Modell antwortet nicht")
+        raise HTTPException(504, "KI-Timeout – Modell antwortet nicht")
     except Exception as e:
         raise HTTPException(500, f"KI-Fehler: {e}")

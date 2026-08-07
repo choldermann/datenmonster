@@ -72,10 +72,14 @@ Alle unter `POST/GET https://monstersuite.de/api/v1/ai/...`. Fehlerformat einhei
 | Methode & Pfad | Zweck | Auth |
 |---|---|---|
 | `POST /api/v1/ai/generate` | KI-Anfrage ausführen (SSE-Stream), abrechnen | Lizenz |
-| `GET  /api/v1/ai/balance`  | aktuelles Guthaben + Monatsverbrauch | Lizenz |
-| `GET  /api/v1/ai/usage`    | Verbrauchs-/Transaktionsverlauf (Dashboard) | Lizenz |
-| `GET  /api/v1/ai/packages` | verfügbare Credit-Pakete (S/M/L) | Lizenz |
-| `GET  /api/v1/ai/models`   | für die Lizenz nutzbare Modelle + Request-Types | Lizenz |
+| `POST /api/v1/ai/balance`  | aktuelles Guthaben + Monatsverbrauch | Lizenz |
+| `POST /api/v1/ai/usage`    | Verbrauchs-/Transaktionsverlauf (Dashboard) | Lizenz |
+| `POST /api/v1/ai/packages` | verfügbare Credit-Pakete (S/M/L) | Lizenz |
+| `POST /api/v1/ai/models`   | für die Lizenz nutzbare Modelle + Request-Types | Lizenz |
+
+> **Alle Endpunkte sind POST** (auch die lesenden): Sie tragen den Lizenz-Auth-Body
+> (§1) im JSON-Request — identisch zur Plugin-API (`/api/v1/plugins/catalog`). Ein
+> GET mit Body wäre nicht zuverlässig durch Proxies transportierbar.
 
 Admin-Endpunkte (Betreiber, Login-Auth in monstersuite, **nicht** Teil des Client-Vertrags):
 `/api/admin/ai/overview`, `/api/admin/ai/credit-adjust`, `/api/admin/ai/pricing`,
@@ -153,7 +157,7 @@ Error-Codes: `insufficient_credits` (402), `rate_limited` (429), `provider_error
 
 ---
 
-## 4. `GET /api/v1/ai/balance`
+## 4. `POST /api/v1/ai/balance`
 
 Liefert Kontostand + Monatsaggregat für die KI-Einstellungen-Kachel im Frontend.
 ```json
@@ -165,7 +169,7 @@ Liefert Kontostand + Monatsaggregat für die KI-Einstellungen-Kachel im Frontend
 }
 ```
 
-## 5. `GET /api/v1/ai/usage`
+## 5. `POST /api/v1/ai/usage`
 
 Dashboard-Daten (Query: `?from=&to=&limit=`). Nur **Metadaten**.
 ```json
@@ -181,7 +185,7 @@ Dashboard-Daten (Query: `?from=&to=&limit=`). Nur **Metadaten**.
 }
 ```
 
-## 6. `GET /api/v1/ai/packages`
+## 6. `POST /api/v1/ai/packages`
 
 Admin-konfigurierbare Pakete (keine Codewerte). Kaufprozess selbst ist **noch nicht**
 Teil dieses Vertrags — nur die Anzeige + eine `checkout_url`-Schnittstelle wird vorbereitet.

@@ -237,11 +237,34 @@ class AIService:
                                     params=params, model=model)
 
     async def stream_with_context(self, user_message: str, system: str = "", json_mode: bool = False,
-                                  params: "AIParams | None" = None, model: str | None = None):
-        """Generic streaming entry-point used by the Context Builder."""
+                                  params: "AIParams | None" = None, model: str | None = None,
+                                  request_type: str = "OTHER"):
+        """Generic streaming entry-point used by the Context Builder.
+
+        `request_type` wird für Ollama ignoriert (kostenlos, keine Abrechnung),
+        ist aber Teil der gemeinsamen Provider-Signatur (siehe DatamonsterAIService)."""
         async for token in self._stream([{"role": "user", "content": user_message}], system,
                                         json_mode=json_mode, params=params, model=model):
             yield token
+
+    async def complete_json(self, messages: list[dict], json_schema: dict, model: str | None = None,
+                            temperature: float = 0.2, request_type: str = "TRANSFORMATION") -> dict:
+        """Single-shot strukturierte JSON-Ausgabe via Ollamas json_schema-Format."""
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model":    model or self.model,
+                    "messages": messages,
+                    "stream":   False,
+                    "format":   {"type": "json_schema",
+                                 "json_schema": {"name": "result", "strict": True, "schema": json_schema}},
+                    "options":  {"temperature": temperature},
+                },
+            )
+            r.raise_for_status()
+            content = r.json().get("message", {}).get("content", "{}")
+        return json.loads(content)
 
     # ── status ───────────────────────────────────────────────────────────────
 
@@ -265,12 +288,21 @@ class AIService:
             return {"ollama_reachable": False, "model_loaded": False, "available_models": [], "error": str(e)}
 
 
-def build_ai_service(db) -> Optional["AIService"]:
+def build_ai_service(db):
+    """Baut den aktiven KI-Provider. `ai_provider`:
+       - "ollama"       → lokales Ollama (Default, kostenlos)
+       - "datenmonster" → zentraler monstersuite-Gateway (Credit-Abrechnung)
+    Beide Provider teilen dieselbe öffentliche Oberfläche → ai.py bleibt unverändert."""
     from app.api.settings import get_setting
     enabled = get_setting(db, "ai_enabled", "false")
     if enabled != "true":
         return None
+    timeout = int(get_setting(db, "ai_timeout", str(DEFAULT_TIMEOUT)))
+    provider = get_setting(db, "ai_provider", "ollama")
+    if provider == "datenmonster":
+        from app.services.ai_gateway import DatamonsterAIService
+        model = get_setting(db, "ai_dm_model", "auto")
+        return DatamonsterAIService(db=db, model=model, timeout=timeout)
     base_url = get_setting(db, "ai_base_url", DEFAULT_BASE_URL)
     model    = get_setting(db, "ai_model",    DEFAULT_MODEL)
-    timeout  = int(get_setting(db, "ai_timeout", str(DEFAULT_TIMEOUT)))
     return AIService(base_url=base_url, model=model, timeout=timeout)

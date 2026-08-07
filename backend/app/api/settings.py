@@ -109,9 +109,10 @@ class AiConfig(BaseModel):
     ai_provider: str  = "ollama"
     ai_base_url: str  = "http://ollama:11434"
     ai_model:    str  = "qwen2.5-coder:3b"
+    ai_dm_model: str  = "auto"     # Modell für »Datenmonster AI« (Gateway): auto|gpt-4o-mini|gpt-4o
     ai_timeout:  int  = 120
 
-AI_KEYS = ["ai_enabled", "ai_provider", "ai_base_url", "ai_model", "ai_timeout"]
+AI_KEYS = ["ai_enabled", "ai_provider", "ai_base_url", "ai_model", "ai_dm_model", "ai_timeout"]
 
 @router.get("/ai")
 def get_ai_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -121,6 +122,7 @@ def get_ai_settings(db: Session = Depends(get_db), user: User = Depends(get_curr
         "ai_provider": get_setting(db, "ai_provider", "ollama"),
         "ai_base_url": get_setting(db, "ai_base_url", "http://ollama:11434"),
         "ai_model":    get_setting(db, "ai_model",    "qwen2.5-coder:3b"),
+        "ai_dm_model": get_setting(db, "ai_dm_model", "auto"),
         "ai_timeout":  int(get_setting(db, "ai_timeout", "120")),
     }
 
@@ -131,5 +133,6 @@ def save_ai_settings(body: AiConfig, db: Session = Depends(get_db), user: User =
     set_setting(db, "ai_provider", body.ai_provider)
     set_setting(db, "ai_base_url", body.ai_base_url)
     set_setting(db, "ai_model",    body.ai_model)
+    set_setting(db, "ai_dm_model", body.ai_dm_model)
     set_setting(db, "ai_timeout",  str(body.ai_timeout))
     return {"ok": True}
