@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -398,6 +399,53 @@ def _validate_required(schema: dict, run_params: dict) -> None:
         raise HTTPException(422, f"Pflichtfelder fehlen: {', '.join(missing)}")
 
 
+# Cockpit-artige Formulare lösen mit EINEM Klick viele unabhängige, read-only
+# Mapping-Abfragen aus. Nacheinander summieren die sich zu >60 s und laufen dann in
+# Proxy-/Client-Timeouts (»Network Error«). Da es reine Lese-Abfragen sind, führen
+# wir sie gedrosselt PARALLEL aus – 5 = Kompromiss aus Tempo und Last auf der
+# Quell-DB (z.B. produktive JTL-WaWi). Viele Cockpit-Abfragen sind zudem
+# zeitraum-unabhängig (Lagerbestand), daher hilft ein kleinerer Zeitraum allein nicht.
+_FORM_RUN_CONCURRENCY = 5
+
+
+def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int) -> dict:
+    """Führt EINE run_mapping-Action read-only aus. Öffnet eine EIGENE DB-Session
+    (SQLAlchemy-Sessions sind nicht thread-sicher), damit die Funktion gefahrlos
+    parallel laufen kann. Gibt das fertige Ergebnis-Dict für results[action_id] zurück."""
+    from app.core.database import SessionLocal
+    from app.services.mapping_service import MappingContext, execute_mapping
+    mapping_id = action.get("mapping_id")
+    if not mapping_id:
+        return {"columns": [], "rows": [], "total": 0, "error": "mapping_id fehlt"}
+    db = SessionLocal()
+    try:
+        m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
+        if not m:
+            return {"columns": [], "rows": [], "total": 0,
+                    "error": f"Mapping {mapping_id} nicht gefunden"}
+        ctx = MappingContext.from_orm(m)
+        ctx.run_params = dict(run_params)  # eigene Kopie je Thread (keine geteilte Mutation)
+        if not ctx.targets:
+            return {"columns": [], "rows": [], "total": 0, "error": "Mapping hat keine Ziele"}
+        t_fields = ctx.targets[0].get("fields") or []
+        result = execute_mapping(**ctx.to_execute_kwargs(t_fields, preview_rows))
+        _rows = result.get("rows", [])
+        # Fehler (z.B. SQL-Transform-Fehler) nur zeigen, wenn keine Zeilen kamen –
+        # harmlose Warnungen sollen die Ergebnistabelle nicht verdecken.
+        _errs = [str(e) for e in (result.get("errors") or []) if str(e).strip()]
+        return {
+            "columns":      result.get("columns", []),
+            "rows":         _rows,
+            "total":        result.get("total", 0),
+            "column_types": result.get("column_types", {}),
+            "error":        ("; ".join(_errs) if (_errs and not _rows) else None),
+        }
+    except Exception as e:
+        return {"columns": [], "rows": [], "total": 0, "error": str(e)[:300]}
+    finally:
+        db.close()
+
+
 def _execute_form(f: Form, data: FormRunRequest, db: Session,
                   user_id: Optional[int] = None) -> dict:
     schema = f.schema or {}
@@ -414,46 +462,25 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     preview_rows = data.preview_rows or 500
     results = {}
 
+    # Read-only Mapping-Vorschauen gedrosselt parallel (der große Zeitgewinn bei
+    # Cockpit-Formularen). Übrige Action-Typen laufen danach sequenziell weiter.
+    mapping_actions = [a for a in actions if a.get("type") == "run_mapping"]
+    if len(mapping_actions) == 1:
+        a0 = mapping_actions[0]
+        results[a0.get("id")] = _run_mapping_preview(a0, run_params, preview_rows)
+    elif mapping_actions:
+        with ThreadPoolExecutor(max_workers=_FORM_RUN_CONCURRENCY) as ex:
+            futs = {ex.submit(_run_mapping_preview, a, run_params, preview_rows): a.get("id")
+                    for a in mapping_actions}
+            for fut in as_completed(futs):
+                results[futs[fut]] = fut.result()
+
     for action in actions:
         action_id  = action.get("id")
         action_type = action.get("type")
 
         if action_type == "run_mapping":
-            mapping_id = action.get("mapping_id")
-            if not mapping_id:
-                results[action_id] = {"columns": [], "rows": [], "total": 0,
-                                      "error": "mapping_id fehlt"}
-                continue
-            m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
-            if not m:
-                results[action_id] = {"columns": [], "rows": [], "total": 0,
-                                      "error": f"Mapping {mapping_id} nicht gefunden"}
-                continue
-            try:
-                from app.services.mapping_service import MappingContext, execute_mapping
-                ctx = MappingContext.from_orm(m)
-                ctx.run_params = run_params
-                if not ctx.targets:
-                    results[action_id] = {"columns": [], "rows": [], "total": 0,
-                                          "error": "Mapping hat keine Ziele"}
-                    continue
-                t_fields = ctx.targets[0].get("fields") or []
-                result = execute_mapping(**ctx.to_execute_kwargs(t_fields, preview_rows))
-                _rows = result.get("rows", [])
-                # Fehler (z.B. SQL-Transform-Fehler) sichtbar machen – aber nur wenn
-                # keine Zeilen zurückkamen, damit harmlose Warnungen die Ergebnistabelle
-                # nicht verdecken.
-                _errs = [str(e) for e in (result.get("errors") or []) if str(e).strip()]
-                results[action_id] = {
-                    "columns":      result.get("columns", []),
-                    "rows":         _rows,
-                    "total":        result.get("total", 0),
-                    "column_types": result.get("column_types", {}),
-                    "error":        ("; ".join(_errs) if (_errs and not _rows) else None),
-                }
-            except Exception as e:
-                results[action_id] = {"columns": [], "rows": [], "total": 0,
-                                      "error": str(e)[:300]}
+            continue  # bereits parallel oben erledigt
 
         elif action_type == "run_pipeline":
             pipeline_id = action.get("pipeline_id")
