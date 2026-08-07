@@ -8,12 +8,19 @@ import asyncio
 import base64
 import datetime
 import html as _html
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
 # Die KI-Management-Summary wird zeitlich begrenzt, damit der (synchrone) Report
 # schnell zurückkommt. Bei Ollama-Kaltstart (>15 s) wird sie übersprungen – beim
 # nächsten Aufruf ist das Modell warm und die Summary ist dabei.
 _SUMMARY_TIMEOUT_S = 20
+
+# Cockpit-Reports lösen dieselben ~28 read-only Mapping-Abfragen aus wie der
+# Form-Run. Nacheinander summieren die sich zu >60 s und laufen in einen Timeout.
+# Daher gedrosselt PARALLEL (analog zum Form-Run, s. app/api/forms.py). 5 =
+# Kompromiss aus Tempo und Last auf der Quell-DB (z.B. produktive JTL-WaWi).
+_REPORT_RUN_CONCURRENCY = 5
 
 import matplotlib
 matplotlib.use("Agg")
@@ -80,22 +87,39 @@ def _fetch_company(conn_id: Optional[int]) -> dict:
         return {}
 
 
-def _run_actions(schema: dict, params: dict, db) -> dict:
-    results = {}
-    for a in schema.get("actions", []):
-        if a.get("type") != "run_mapping" or not a.get("mapping_id"):
-            continue
-        m = db.query(Mapping).filter(Mapping.id == a["mapping_id"]).first()
+def _run_one_action(action: dict, params: dict) -> dict:
+    """Führt EINE run_mapping-Action read-only aus – mit EIGENER DB-Session, damit
+    die Funktion gefahrlos parallel laufen kann (SQLAlchemy-Sessions sind nicht
+    thread-sicher). Gibt das Ergebnis-Dict für results[action_id] zurück."""
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        m = db.query(Mapping).filter(Mapping.id == action["mapping_id"]).first()
         if not m or not m.targets:
-            results[a["id"]] = {"columns": [], "rows": []}
-            continue
-        try:
-            ctx = MappingContext.from_orm(m)
-            ctx.run_params = params
-            res = execute_mapping(**ctx.to_execute_kwargs(ctx.targets[0].get("fields") or [], 500))
-            results[a["id"]] = {"columns": res.get("columns", []), "rows": res.get("rows", [])}
-        except Exception:
-            results[a["id"]] = {"columns": [], "rows": []}
+            return {"columns": [], "rows": []}
+        ctx = MappingContext.from_orm(m)
+        ctx.run_params = dict(params)  # eigene Kopie je Thread (keine geteilte Mutation)
+        res = execute_mapping(**ctx.to_execute_kwargs(ctx.targets[0].get("fields") or [], 500))
+        return {"columns": res.get("columns", []), "rows": res.get("rows", [])}
+    except Exception:
+        return {"columns": [], "rows": []}
+    finally:
+        db.close()
+
+
+def _run_actions(schema: dict, params: dict, db) -> dict:
+    """Alle Mapping-Actions des Reports read-only ausführen. Gedrosselt PARALLEL,
+    damit ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run)."""
+    actions = [a for a in schema.get("actions", [])
+               if a.get("type") == "run_mapping" and a.get("mapping_id")]
+    results = {}
+    if len(actions) == 1:
+        results[actions[0]["id"]] = _run_one_action(actions[0], params)
+    elif actions:
+        with ThreadPoolExecutor(max_workers=_REPORT_RUN_CONCURRENCY) as ex:
+            futs = {ex.submit(_run_one_action, a, params): a["id"] for a in actions}
+            for fut in as_completed(futs):
+                results[futs[fut]] = fut.result()
     return results
 
 
