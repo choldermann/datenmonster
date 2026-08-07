@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { streamRequest } from "../../../services/aiService";
 
@@ -6,16 +6,78 @@ const S = {
   textMain: "var(--text-main)", textDim: "var(--text-dim)", accent: "var(--accent)",
 };
 
+// de-DE Zahlformatierung (Tausenderpunkt, Komma). money → auf ganze Euro gerundet.
+function deNum(v, money = false) {
+  const f = typeof v === "number" ? v : parseFloat(v);
+  if (!isFinite(f)) return null;
+  const s = new Intl.NumberFormat("de-DE", {
+    maximumFractionDigits: money ? 0 : 1,
+  }).format(f);
+  return money ? `${s} €` : s;
+}
+
+function pctChange(cur, vj) {
+  const c = parseFloat(cur), v = parseFloat(vj);
+  if (!isFinite(c) || !isFinite(v) || v === 0) return null;
+  const p = (100 * (c - v)) / v;
+  return `${p >= 0 ? "+" : ""}${p.toFixed(1)} %`;
+}
+
+// Baut aus einem Action-Ergebnis (rows) einen kompakten, vorformatierten Kurztext.
+// Die KI rechnet nichts nach – sie webt diese Texte nur in die Lagebeurteilung ein.
+function buildSectionText(kind, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+
+  if (kind === "platform") {
+    // Nur Plattformen mit Umsatz im Zeitraum; Entwicklung ggü. Vorjahr.
+    const withRev = rows.filter(r => parseFloat(r.Umsatz) > 0).slice(0, 6);
+    if (!withRev.length) return "";
+    return withRev.map(r => {
+      const chg = pctChange(r.Umsatz, r.UmsatzVJ);
+      const marge = r["DB-Marge %"];
+      let line = `${r.Plattform}: ${deNum(r.Umsatz, true)}`;
+      if (r.UmsatzVJ != null) line += ` (VJ ${deNum(r.UmsatzVJ, true)}${chg ? `, ${chg}` : ""})`;
+      if (marge != null && isFinite(parseFloat(marge))) line += `, DB-Marge ${deNum(marge)} %`;
+      return line;
+    }).join("\n");
+  }
+
+  if (kind === "decline") {
+    // Kunden mit rückläufigem Umsatz (Rueckgang = UmsatzVJ − Umsatz, absteigend).
+    const sum = rows.reduce((a, r) => a + (parseFloat(r.Rueckgang) || 0), 0);
+    const ex = rows.slice(0, 2)
+      .map(r => `${r.Kunde} (−${deNum(r.Rueckgang, true)})`).join(", ");
+    return `${rows.length} Kunden mit rückläufigem Umsatz, zusammen −${deNum(sum, true)} gegenüber dem Vorjahr.`
+      + (ex ? ` Beispiele: ${ex}.` : "");
+  }
+
+  if (kind === "ladenhueter") {
+    const sum = rows.reduce((a, r) => a + (parseFloat(r.Kapitalbindung) || 0), 0);
+    const ex = rows.slice(0, 2).map(r => {
+      const tage = parseFloat(r.TageOhneVerkauf);
+      const t = isFinite(tage) && tage < 9999 ? `, ${deNum(tage)} Tage ohne Verkauf` : ", kein Verkauf erfasst";
+      return `${r.Artikel} (${deNum(r.Kapitalbindung, true)}${t})`;
+    }).join(", ");
+    return `${rows.length} Ladenhüter binden zusammen ${deNum(sum, true)} Kapital.`
+      + (ex ? ` Beispiele: ${ex}.` : "");
+  }
+
+  return "";
+}
+
 /**
  * Widget "ai_summary": erzeugt aus dem Ergebnis der verknüpften Action (z.B. der
  * KPI-Zeile) eine kurze KI-Management-Zusammenfassung über /api/ai/summarize-data.
  * Verbraucht KEINE eigene DB-Abfrage – es nutzt das bereits geladene Action-Ergebnis.
- * Der Endpunkt streamt (SSE), damit der Text fortlaufend erscheint und langsame
- * Modell-Kaltstarts nicht zu "Network Error" führen.
  *
- * config: { width, instruction? }
+ * Optional können über config.extra_sections weitere, bereits geladene Action-
+ * Ergebnisse desselben Formulars einbezogen werden (z.B. Umsatz je Plattform,
+ * Kundenrückgang, Ladenhüter). Sie werden hier vorformatiert und als »sections«
+ * mitgeschickt, damit die KI eine reichere Lagebeurteilung schreibt.
+ *
+ * config: { width, instruction?, extra_sections?: [{action_id, label, kind}] }
  */
-export default function AiSummaryWidget({ widget, result }) {
+export default function AiSummaryWidget({ widget, result, results }) {
   const cfg = widget.config || {};
   const rows = result?.rows || [];
   const columns = result?.columns || [];
@@ -23,8 +85,16 @@ export default function AiSummaryWidget({ widget, result }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Zusatz-Sektionen aus den übrigen Action-Ergebnissen aufbauen (leere fallen raus).
+  const sections = useMemo(() => {
+    const defs = Array.isArray(cfg.extra_sections) ? cfg.extra_sections : [];
+    return defs
+      .map(s => ({ label: s.label || "", text: buildSectionText(s.kind, (results?.[s.action_id]?.rows) || []) }))
+      .filter(s => s.text);
+  }, [cfg.extra_sections, results]);
+
   // Nur (neu) generieren, wenn sich die zugrunde liegenden Daten ändern.
-  const dataKey = JSON.stringify(rows) + "|" + (cfg.instruction || "");
+  const dataKey = JSON.stringify(rows) + "|" + JSON.stringify(sections) + "|" + (cfg.instruction || "");
 
   useEffect(() => {
     if (!rows.length) { setText(""); setErr(null); return; }
@@ -41,7 +111,7 @@ export default function AiSummaryWidget({ widget, result }) {
         try {
           await streamRequest(
             "/summarize-data",
-            { label: widget.label || "", columns, rows, instruction: cfg.instruction || "" },
+            { label: widget.label || "", columns, rows, sections, instruction: cfg.instruction || "" },
             (_tok, full) => { if (!ac.signal.aborted) setText(full); },
             null,
             ac.signal,

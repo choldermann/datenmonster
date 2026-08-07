@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "1.9",
+  "version": "2.0",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -2377,7 +2377,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    ISNULL(FAM.FamName, 'Unbekannt') AS Plattform,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN POS.nType = 1 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(CASE WHEN POS.nType IN (1,2) THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) ELSE 0 END) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,2)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nLEFT JOIN dbo.tPlattform P1 ON P1.nPlattform = RE.kPlattform\nLEFT JOIN (SELECT nTyp, MIN(cName) AS FamName FROM dbo.tPlattform WHERE nInet = 0 GROUP BY nTyp) FAM ON FAM.nTyp = P1.nTyp\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(FAM.FamName, 'Unbekannt')\nORDER BY Umsatz DESC",
+          "sql": "SELECT\n    FamName AS Plattform,\n    CAST(SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN vj = 1 THEN Netto ELSE 0 END) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(SUM(CASE WHEN cur = 1 AND nType = 1 THEN dbBetrag ELSE 0 END) AS DECIMAL(18,2)) AS [DB I],\n    CAST(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN dbBetrag ELSE 0 END) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) > 0\n        THEN 100.0 * SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN dbBetrag ELSE 0 END)\n             / SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) END AS DECIMAL(18,2)) AS [DB-Marge %]\nFROM (\n    SELECT\n        ISNULL(FAM.FamName, 'Unbekannt') AS FamName,\n        POS.fAnzahl * POS.fVkNetto AS Netto,\n        POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS dbBetrag,\n        POS.nType AS nType,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN dbo.tPlattform P1 ON P1.nPlattform = RE.kPlattform\n    LEFT JOIN (SELECT nTyp, MIN(cName) AS FamName FROM dbo.tPlattform WHERE nInet = 0 GROUP BY nTyp) FAM ON FAM.nTyp = P1.nTyp\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n) X\nGROUP BY FamName\nHAVING SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) > 0\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2425,6 +2425,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
               }
             },
             {
@@ -4609,7 +4619,24 @@
             "action_id": "act_overview_kpi",
             "config": {
               "width": 12,
-              "instruction": "Fokus auf Entwicklung zum Vorjahr, Ertragslage und konkreten Handlungsbedarf."
+              "instruction": "Fokus auf Entwicklung zum Vorjahr, Ertragslage und konkreten Handlungsbedarf. Gehe auch auf die Umsatzentwicklung je Plattform, Kunden mit Rückgang und Ladenhüter ein (je mit Größenordnung und höchstens ein bis zwei Beispielen, keine vollständigen Listen).",
+              "extra_sections": [
+                {
+                  "action_id": "act_db_plattform",
+                  "label": "Umsatzentwicklung je Plattform (ggü. Vorjahr)",
+                  "kind": "platform"
+                },
+                {
+                  "action_id": "act_kunden_rueckgang",
+                  "label": "Kunden mit Umsatzrückgang",
+                  "kind": "decline"
+                },
+                {
+                  "action_id": "act_warn_ladenhueter",
+                  "label": "Ladenhüter (gebundenes Kapital)",
+                  "kind": "ladenhueter"
+                }
+              ]
             }
           },
           {

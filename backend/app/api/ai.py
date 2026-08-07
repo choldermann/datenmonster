@@ -324,6 +324,11 @@ class SummarizeDataRequest(BaseModel):
     columns: list = []
     rows: list = []
     instruction: Optional[str] = ""
+    # Optionale Zusatz-Sektionen: bereits fertig aufbereitete Kurztexte, die neben
+    # den Haupt-Kennzahlen in die Analyse einfließen (z.B. Umsatz je Plattform,
+    # Kundenrückgang, Ladenhüter). Jede: {"label": str, "text": str}. Der Client
+    # aggregiert/formatiert vor – das Modell rechnet nicht, es webt nur zusammen.
+    sections: list = []
 
 # Kleiner In-Process-Cache: gleiche Daten (z.B. Dashboard mit gleichem Zeitraum
 # erneut geöffnet) liefern die Zusammenfassung sofort, statt das LLM neu laufen zu
@@ -375,21 +380,45 @@ async def summarize_data(
     else:
         data_text = "\n".join("; ".join(f"{c}: {_fmt(r.get(c))}" for c in cols) for r in rows) or "(keine Daten)"
 
-    system = (
-        "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer zuarbeitet. "
-        "Die Kennzahlen sind bereits fertig berechnet – inklusive Vorjahreswert und prozentualer "
-        "Veränderung in Klammern. Rechne selbst NICHTS nach und ändere keine Zahlen; nutze die Werte exakt so. "
-        "Fasse in 2 bis 4 kurzen, konkreten deutschen Sätzen zusammen: die wichtigsten Werte, die Entwicklung "
-        "zum Vorjahr (gestiegen/gesunken mit dem angegebenen Prozentwert) und – falls erkennbar – einen klaren "
-        "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
-        "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+    # Zusatz-Sektionen (vom Client fertig aufbereitet) anhängen.
+    sections = [s for s in (body.sections or [])
+                if isinstance(s, dict) and str(s.get("text", "")).strip()]
+    sections_text = "\n\n".join(
+        f"{s.get('label', 'Weitere Kennzahlen')}:\n{str(s['text']).strip()}" for s in sections
     )
+
+    if sections:
+        system = (
+            "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer zuarbeitet. "
+            "Alle Werte sind bereits fertig berechnet (inkl. Vorjahr und prozentualer Veränderung in Klammern). "
+            "Rechne selbst NICHTS nach und ändere keine Zahlen; nutze die Werte exakt so. "
+            "Du erhältst neben den Haupt-Kennzahlen mehrere thematische Blöcke (z.B. Umsatz je Plattform, "
+            "Kunden mit Rückgang, Ladenhüter). Verwebe sie zu einer zusammenhängenden Lagebeurteilung in "
+            "4 bis 6 kurzen, konkreten deutschen Sätzen: (1) Gesamtlage inkl. Entwicklung zum Vorjahr, "
+            "(2) auffällige Plattform-Entwicklung, (3) Kundenrückgang und Ladenhüter als Themen mit ihrer "
+            "Größenordnung und – wo genannt – ein bis zwei markanten Beispielen, (4) klarer Handlungsbedarf. "
+            "Zähle KEINE vollständigen Ranglisten auf und nenne höchstens die genannten Beispiele. "
+            "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
+            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+        )
+    else:
+        system = (
+            "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer zuarbeitet. "
+            "Die Kennzahlen sind bereits fertig berechnet – inklusive Vorjahreswert und prozentualer "
+            "Veränderung in Klammern. Rechne selbst NICHTS nach und ändere keine Zahlen; nutze die Werte exakt so. "
+            "Fasse in 2 bis 4 kurzen, konkreten deutschen Sätzen zusammen: die wichtigsten Werte, die Entwicklung "
+            "zum Vorjahr (gestiegen/gesunken mit dem angegebenen Prozentwert) und – falls erkennbar – einen klaren "
+            "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
+            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+        )
     user_msg = f"Kennzahlen »{body.label or 'Dashboard'}«:\n{data_text}"
+    if sections_text:
+        user_msg += f"\n\n{sections_text}"
     if body.instruction:
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
     import hashlib, time as _t
-    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}".encode("utf-8")).hexdigest()
+    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}|{sections_text}".encode("utf-8")).hexdigest()
 
     # Für Fließtext ein allgemeines Instruct-Modell bevorzugen (das konfigurierte
     # Default-Modell ist oft ein Code-Modell und formuliert schlechtes Deutsch).
@@ -399,7 +428,11 @@ async def summarize_data(
     except Exception:
         installed = []
     chosen = pick_prose_model(installed, svc.model)
-    params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)
+    # Mit Zusatz-Sektionen mehr Platz für Text und Kontext.
+    if sections:
+        params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=520, num_ctx=8192)
+    else:
+        params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)
 
     # Als SSE-Stream ausliefern: die Response-Header gehen sofort raus (kein
     # "Network Error" bei langsamem Kaltstart), Text erscheint fortlaufend.
