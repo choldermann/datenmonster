@@ -14,6 +14,7 @@ const TABS = [
   { id: "ai", label: "KI", icon: "✨" },
   { id: "models", label: "Modelle", icon: "🧠" },
   { id: "users", label: "Benutzer", icon: "👤" },
+  { id: "network", label: "Netzwerk", icon: "🛡️" },
   { id: "appearance", label: "Optik", icon: "🎨" },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
 ];
@@ -1321,6 +1322,84 @@ function ModelLibrary() {
   );
 }
 
+function NetworkSettings() {
+  const [form, setForm] = useState({ allowlist: "", blocklist: "", allow_loopback: false });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get("/api/settings/egress")
+      .then(({ data }) => { if (data) setForm(f => ({ ...f, ...data })); })
+      .catch(() => {}).finally(() => setLoading(false));
+  }, []);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleSave = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      await api.post("/api/settings/egress", form);
+      setSaved(true); setTimeout(() => setSaved(false), 2500);
+    } catch (e) {
+      alert(e.response?.data?.detail || e.message);
+    } finally { setSaving(false); }
+  };
+
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+  const taS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%", minHeight: 70, fontFamily: "monospace", resize: "vertical" };
+
+  if (loading) return <p style={{ color: S.textDim, fontSize: 12 }}>Lade...</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 560 }}>
+      <p style={{ fontSize: 11, color: S.textDim, margin: 0, lineHeight: 1.6 }}>
+        Steuert, welche Ziele serverseitige HTTP-Aufrufe (REST-Connector / API-Studio, Web-Import)
+        erreichen dürfen (SSRF-Schutz). <b>Cloud-Metadata-Endpunkte werden immer blockiert.</b>
+        Interne/private Netze sind erlaubt (für On-Prem-APIs) und werden protokolliert.
+        Ein Eintrag pro Zeile oder kommagetrennt: Hostname (z.B. <code>api.intern.local</code>),
+        IP oder CIDR (z.B. <code>10.0.0.0/8</code>).
+      </p>
+
+      <div>
+        <label style={lS}>Allowlist (immer erlauben, übersteuert Blocks)</label>
+        <textarea style={taS} value={form.allowlist}
+          onChange={e => set("allowlist", e.target.value)}
+          placeholder={"api.intern.local\n10.20.0.0/16"} />
+      </div>
+
+      <div>
+        <label style={lS}>Blocklist (immer blockieren)</label>
+        <textarea style={taS} value={form.blocklist}
+          onChange={e => set("blocklist", e.target.value)}
+          placeholder={"169.254.0.0/16\nsecret-host.example"} />
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.allow_loopback ? "rgba(252,228,153,0.07)" : S.bgEl, border: `1px solid ${form.allow_loopback ? "rgba(252,228,153,0.25)" : S.border}` }}
+        onClick={() => set("allow_loopback", !form.allow_loopback)}>
+        <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.allow_loopback ? ACCENT : S.border}`, backgroundColor: form.allow_loopback ? ACCENT : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {form.allow_loopback && <Check size={10} color="#111" strokeWidth={3} />}
+        </div>
+        <div>
+          <span style={{ fontSize: 11, color: form.allow_loopback ? ACCENT : S.textMain, fontWeight: form.allow_loopback ? 700 : 400 }}>
+            Loopback (127.0.0.1 / localhost) als Ziel zulassen
+          </span>
+          <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>
+            Standard: aus. Nur aktivieren, wenn eine API auf demselben Host läuft.
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <button onClick={handleSave} disabled={saving}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+          {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
+          {saved ? "Gespeichert!" : "Speichern"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AppearanceSettings() {
   const { mode, setMode } = useTheme();
 
@@ -1393,6 +1472,7 @@ export default function SystemSettingsModal({ onClose }) {
           {activeTab === "ai"         && <AiSettings />}
           {activeTab === "models"     && <ModelLibrary />}
           {activeTab === "users"      && <UserManagement />}
+          {activeTab === "network"    && <NetworkSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
         </div>
       </div>

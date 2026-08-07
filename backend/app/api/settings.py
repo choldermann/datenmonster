@@ -140,3 +140,38 @@ def save_ai_settings(body: AiConfig, db: Session = Depends(get_db), user: User =
     set_setting(db, "ai_dm_model", body.ai_dm_model)
     set_setting(db, "ai_timeout",  str(body.ai_timeout))
     return {"ok": True}
+
+
+# ── Netzwerk / SSRF-Egress-Policy ─────────────────────────────────────────────
+# Steuert, welche Ziele serverseitige HTTP-Aufrufe (REST-Connector/API-Studio,
+# Web-Proxy) erreichen dürfen. Siehe app/core/net_guard.py.
+
+class EgressConfig(BaseModel):
+    allowlist:     str  = ""     # Hosts/CIDRs, kommagetrennt – übersteuern Blocks (z.B. On-Prem-API)
+    blocklist:     str  = ""     # Hosts/CIDRs, kommagetrennt – immer blockiert
+    allow_loopback: bool = False  # 127.0.0.1/::1 als Ziel zulassen (Standard: nein)
+
+
+@router.get("/egress")
+def get_egress_settings(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    return {
+        "allowlist":      get_setting(db, "api_egress_allowlist", ""),
+        "blocklist":      get_setting(db, "api_egress_blocklist", ""),
+        "allow_loopback": get_setting(db, "api_egress_allow_loopback", "false") == "true",
+    }
+
+
+@router.post("/egress")
+def save_egress_settings(body: EgressConfig, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _require_admin(user)
+    set_setting(db, "api_egress_allowlist",      body.allowlist or "")
+    set_setting(db, "api_egress_blocklist",      body.blocklist or "")
+    set_setting(db, "api_egress_allow_loopback", "true" if body.allow_loopback else "false")
+    # Guard-Cache sofort invalidieren, damit die neue Policy ohne Neustart greift.
+    try:
+        from app.core import net_guard
+        net_guard._policy_cache["ts"] = 0.0
+    except Exception:
+        pass
+    return {"ok": True}
