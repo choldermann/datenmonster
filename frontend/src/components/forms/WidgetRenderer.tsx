@@ -28,7 +28,7 @@ const WIDGET_LABELS = {
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung"]);
 
-function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick }) {
+function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
 
@@ -54,13 +54,13 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
-    case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} />;
+    case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} onAiText={onAiText} />;
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
 }
 
-export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {} }) {
+export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText }) {
   // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
   // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
@@ -190,7 +190,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} />
+                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
               </div>
             );
           })}

@@ -36,6 +36,9 @@ class FormRunRequest(BaseModel):
     params: Optional[dict] = {}
     action_ids: Optional[List[str]] = None
     preview_rows: Optional[int] = 500
+    # Beim PDF-Report: bereits im Formular erzeugte KI-Analyse mitgeben, damit der
+    # Report den (langsamen, timeout-gefährdeten) KI-Aufruf überspringen kann.
+    ai_summary: Optional[str] = None
 
 
 class DrilldownRequest(BaseModel):
@@ -321,7 +324,8 @@ async def form_report(form_id: int, data: FormRunRequest,
     if not f:
         raise HTTPException(404, "Formular nicht gefunden")
     try:
-        pdf = await generate_report(f, data.params or {}, db)
+        pdf = await generate_report(f, data.params or {}, db,
+                                    precomputed_summary=data.ai_summary)
     except Exception as e:
         import traceback as _tb
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}\n{_tb.format_exc()[-400:]}")

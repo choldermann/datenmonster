@@ -448,15 +448,20 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
         return ""
 
 
-async def generate_report(form, params: dict, db) -> bytes:
+async def generate_report(form, params: dict, db, precomputed_summary: str | None = None) -> bytes:
     schema = form.schema or {}
     conn_id = _resolve_conn_id(schema, db)
     company = _fetch_company(conn_id)
     results = _run_actions(schema, params, db)
-    try:
-        summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
-    except Exception:
-        summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
+    # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
+    # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
+    if precomputed_summary and precomputed_summary.strip():
+        summary = precomputed_summary.strip()
+    else:
+        try:
+            summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
+        except Exception:
+            summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
 
     tabs = schema.get("result_tabs") or []
     if not tabs:  # ohne Reiter: ein einziger Block über alle Actions

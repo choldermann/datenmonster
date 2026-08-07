@@ -79,6 +79,7 @@ export default function FormRunner() {
   const [params, setParams] = useState({});
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
+  const [aiSummaries, setAiSummaries] = useState({}); // {action_id: KI-Analysetext} für den PDF-Report
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
@@ -140,8 +141,11 @@ export default function FormRunner() {
   const downloadReport = async () => {
     setReporting(true);
     try {
+      // Bereits im Formular erzeugte KI-Analyse mitgeben → Report überspringt den
+      // langsamen KI-Aufruf (verhindert den Timeout/„Network Error").
+      const aiSummary = Object.values(aiSummaries).find(t => t && t.trim()) || null;
       // Report-Erzeugung kann (KI/JTL) einige Sekunden dauern → großzügiges Timeout.
-      const resp = await api.post(`/api/forms/${id}/report`, { params },
+      const resp = await api.post(`/api/forms/${id}/report`, { params, ai_summary: aiSummary },
         { responseType: "blob", timeout: 180000 });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement("a");
@@ -350,7 +354,8 @@ export default function FormRunner() {
         {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
-            results={results || {}} allowDownload={true} baseParams={params} />
+            results={results || {}} allowDownload={true} baseParams={params}
+            onAiText={(aid, text) => setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text })} />
         )}
 
         {/* Rohtabellen für Aktionen ohne Widget */}

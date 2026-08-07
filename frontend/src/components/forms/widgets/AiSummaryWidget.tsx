@@ -77,13 +77,19 @@ function buildSectionText(kind, rows) {
  *
  * config: { width, instruction?, extra_sections?: [{action_id, label, kind}] }
  */
-export default function AiSummaryWidget({ widget, result, results }) {
+export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const cfg = widget.config || {};
   const rows = result?.rows || [];
   const columns = result?.columns || [];
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+
+  // Fertigen KI-Text nach oben melden (FormRunner gibt ihn dem PDF-Report mit, damit
+  // der Report den langsamen KI-Aufruf überspringt).
+  useEffect(() => {
+    onAiText?.(widget.action_id, text || "");
+  }, [text, widget.action_id]);
 
   // Zusatz-Sektionen aus den übrigen Action-Ergebnissen aufbauen (leere fallen raus).
   const sections = useMemo(() => {
