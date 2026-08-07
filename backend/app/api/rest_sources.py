@@ -13,10 +13,48 @@ from app.api.projects import (
     require_editor, can_read_project,
     get_accessible_project_ids, get_project_role,
 )
-from app.services.rest_service import fetch_rest_source, test_rest_source
+from app.services.rest_service import fetch_rest_source, test_rest_source, _SENSITIVE_AUTH_KEYS
 from app.services.file_service import dataframe_to_storage, infer_column_types
+from app.core.security import encrypt_credential
 
 router = APIRouter(prefix="/api/rest-sources", tags=["rest-sources"])
+
+# Platzhalter, den das Frontend für unveränderte Secrets zurückschickt.
+_SECRET_MASK = "***"
+
+
+def _encrypt_auth(auth_config: dict) -> dict:
+    """Secrets in auth_config für die Speicherung verschlüsseln (Neuanlage)."""
+    ac = dict(auth_config or {})
+    for k in _SENSITIVE_AUTH_KEYS:
+        if ac.get(k) and ac[k] != _SECRET_MASK:
+            ac[k] = encrypt_credential(ac[k])
+    return ac
+
+
+def _merge_auth(new: dict, existing: dict) -> dict:
+    """Beim Update: Maske (unverändert) → gespeicherten verschlüsselten Wert behalten;
+    echter neuer Wert → verschlüsseln; sonstige Felder aus `new` übernehmen."""
+    new = dict(new or {})
+    existing = existing or {}
+    for k in _SENSITIVE_AUTH_KEYS:
+        if new.get(k) == _SECRET_MASK:
+            if existing.get(k):
+                new[k] = existing[k]
+            else:
+                new.pop(k, None)
+        elif new.get(k):
+            new[k] = encrypt_credential(new[k])
+    return new
+
+
+def _mask_auth(auth_config: dict) -> dict:
+    """Secrets für die Ausgabe maskieren – nie Klartext ODER Ciphertext ausliefern."""
+    ac = dict(auth_config or {})
+    for k in _SENSITIVE_AUTH_KEYS:
+        if ac.get(k):
+            ac[k] = _SECRET_MASK
+    return ac
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -80,7 +118,7 @@ def source_out(s: RestSource) -> dict:
         "body_type": s.body_type,
         "body_content": s.body_content,
         "auth_type": s.auth_type,
-        "auth_config": s.auth_config or {},
+        "auth_config": _mask_auth(s.auth_config or {}),
         "data_path": s.data_path,
         "flatten": s.flatten,
         "pagination": s.pagination or {},
@@ -173,7 +211,9 @@ def create_rest_source(
     if payload.project_id is None and not getattr(user, "is_admin", False):
         raise HTTPException(403, "Nur Administratoren können projektlose REST-Sources anlegen")
     require_editor(payload.project_id, user, db)
-    s = RestSource(**payload.model_dump())
+    data = payload.model_dump()
+    data["auth_config"] = _encrypt_auth(data.get("auth_config") or {})
+    s = RestSource(**data)
     db.add(s); db.commit(); db.refresh(s)
     return source_out(s)
 
@@ -204,7 +244,10 @@ def update_rest_source(
         if payload.project_id is None and not getattr(user, "is_admin", False):
             raise HTTPException(403, "Nur Administratoren können Sources aus Projekten entfernen")
         require_editor(payload.project_id, user, db)
-    for k, v in payload.model_dump().items():
+    data = payload.model_dump()
+    # Secrets: Maske = unverändert (gespeicherten Wert behalten), sonst neu verschlüsseln.
+    data["auth_config"] = _merge_auth(data.get("auth_config") or {}, s.auth_config or {})
+    for k, v in data.items():
         setattr(s, k, v)
     db.commit(); db.refresh(s)
     return source_out(s)

@@ -20,6 +20,25 @@ import pandas as pd
 import requests
 from requests.auth import HTTPBasicAuth
 
+from app.core.net_guard import assert_url_allowed, guarded_request
+from app.core.security import decrypt_credential
+
+# Sensible Felder in auth_config, die verschlüsselt gespeichert werden.
+_SENSITIVE_AUTH_KEYS = ("password", "token", "value", "client_secret")
+
+
+def _decrypt_auth_config(auth_config: dict) -> dict:
+    """auth_config-Kopie mit entschlüsselten Secrets. Legacy-Klartext (unverschlüsselt
+    gespeichert) läuft dank decrypt_credential-Fallback unverändert durch – ebenso die
+    Klartextwerte aus dem Test-Dialog."""
+    if not auth_config:
+        return {}
+    out = dict(auth_config)
+    for k in _SENSITIVE_AUTH_KEYS:
+        if out.get(k):
+            out[k] = decrypt_credential(out[k])
+    return out
+
 
 # ── OAuth2 Token Cache (In-Memory, reicht für einen Container) ────────────────
 _oauth2_cache: dict[str, tuple[str, float]] = {}  # key → (token, expires_at)
@@ -111,6 +130,7 @@ def _get_oauth2_token(cfg: dict) -> str:
     if cached and time.time() < cached[1] - 30:  # 30s Puffer
         return cached[0]
 
+    assert_url_allowed(cfg["token_url"])  # SSRF-Schutz auch für den Token-Endpoint
     resp = requests.post(
         cfg["token_url"],
         data={
@@ -190,7 +210,7 @@ def _do_request(
     elif body_type == "raw" and body_content:
         kwargs["data"] = _resolve_templates(body_content).encode("utf-8")
 
-    resp = session.request(method.upper(), url, **kwargs)
+    resp = guarded_request(session, method, url, **kwargs)  # SSRF-geprüft (inkl. Redirects)
     resp.raise_for_status()
 
     content_type = resp.headers.get("Content-Type", "")
@@ -342,10 +362,10 @@ def fetch_rest_source(source) -> pd.DataFrame:
     headers = _resolve_dict(source.headers or {})
     params  = _resolve_dict(source.query_params or {})
 
-    # Auth
+    # Auth (Secrets vor Gebrauch entschlüsseln – stored=verschlüsselt, Test=Klartext)
     session, extra_headers, extra_params = _build_session(
         source.auth_type or "none",
-        source.auth_config or {},
+        _decrypt_auth_config(source.auth_config or {}),
     )
     headers.update(extra_headers)
     params.update(extra_params)

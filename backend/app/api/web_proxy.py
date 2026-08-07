@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 from app.core.security import get_current_user
+from app.core.net_guard import assert_url_allowed, guarded_request, EgressBlocked
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -137,16 +138,22 @@ def _validate_url(url: str) -> None:
             or host.startswith("10.")
             or host.startswith("172.")):
         raise HTTPException(403, "Interne URLs sind nicht erlaubt")
+    # Zusätzlich der zentrale, DNS-basierte SSRF-Guard (fängt Metadata/Loopback auch
+    # bei Namensauflösung/Rebinding, was die reine String-Prüfung oben nicht kann).
+    try:
+        assert_url_allowed(url)
+    except EgressBlocked as e:
+        raise HTTPException(403, f"Ziel blockiert: {e}")
 
 
 def _fetch_html(url: str) -> tuple[str, str]:
     """Gibt (html_text, effective_url) zurück."""
     try:
-        resp = requests.get(
-            url,
+        session = requests.Session()
+        resp = guarded_request(  # prüft SSRF auch für jeden Redirect-Hop
+            session, "GET", url, allow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0 (compatible; Datenmonster/1.0)"},
             timeout=20,
-            allow_redirects=True,
         )
         resp.raise_for_status()
     except requests.HTTPError as e:
