@@ -4101,6 +4101,125 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_kapital_umschlag",
+      "name": "Cockpit – Lagerumschlag & Reichweite",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 20\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(V.Menge, 0) AS DECIMAL(18,2)) AS VerkauftImZeitraum,\n    CAST(CASE WHEN SUM(LB.fLagerbestand) > 0\n         THEN ISNULL(V.Menge, 0) * 365.0 / NULLIF(DATEDIFF(DAY, :von, :bis) + 1, 0) / SUM(LB.fLagerbestand)\n         ELSE 0 END AS DECIMAL(18,2)) AS UmschlagProJahr,\n    CASE WHEN ISNULL(V.Menge, 0) > 0\n         THEN CAST(SUM(LB.fLagerbestand) * (DATEDIFF(DAY, :von, :bis) + 1) / V.Menge AS INT)\n         ELSE 9999 END AS ReichweiteTage\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.kArtikel, SUM(P.fAnzahl) AS Menge\n           FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           WHERE P.nType = 1 AND R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\n           GROUP BY P.kArtikel) V ON V.kArtikel = A.kArtikel\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, V.Menge\nHAVING SUM(LB.fLagerbestand) > 0\nORDER BY Bestand DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "VerkauftImZeitraum",
+            "UmschlagProJahr",
+            "ReichweiteTage"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Lagerumschlag & Reichweite",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "VerkauftImZeitraum",
+              "target_field": "VerkauftImZeitraum",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerkauftImZeitraum"
+              }
+            },
+            {
+              "source_field": "UmschlagProJahr",
+              "target_field": "UmschlagProJahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmschlagProJahr"
+              }
+            },
+            {
+              "source_field": "ReichweiteTage",
+              "target_field": "ReichweiteTage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ReichweiteTage"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4393,6 +4512,13 @@
             "mapping_id": "m_op_debitoren",
             "pipeline_id": null,
             "label": "Cockpit – Offene Posten je Kunde"
+          },
+          {
+            "id": "act_kapital_umschlag",
+            "type": "run_mapping",
+            "mapping_id": "m_kapital_umschlag",
+            "pipeline_id": null,
+            "label": "Cockpit – Lagerumschlag & Reichweite"
           }
         ],
         "widgets": [
@@ -5168,6 +5294,16 @@
                 ]
               }
             }
+          },
+          {
+            "id": "w_tbl_kapital_umschlag",
+            "type": "table",
+            "action_id": "act_kapital_umschlag",
+            "label": "Lagerumschlag & Reichweite (Top 20 nach Bestand)",
+            "config": {
+              "width": 12,
+              "info": "Umschlag/Jahr = auf 365 Tage hochgerechnete Verkaufsmenge geteilt durch aktuellen Bestand (wie oft der Bestand pro Jahr umgeschlagen wird). Reichweite (Tage) = wie lange der aktuelle Bestand beim Absatz des Zeitraums reicht. Niedriger Umschlag / hohe Reichweite = gebundenes Kapital / Überbestand."
+            }
           }
         ],
         "result_tabs": [
@@ -5220,7 +5356,8 @@
             "action_ids": [
               "act_kapital_kpi",
               "act_kapital_wg",
-              "act_kapital_artikel"
+              "act_kapital_artikel",
+              "act_kapital_umschlag"
             ]
           },
           {
