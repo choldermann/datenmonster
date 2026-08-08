@@ -5324,6 +5324,27 @@
             "mapping_id": "m_churn",
             "pipeline_id": null,
             "label": "Cockpit – Churn / Schlafende Kunden"
+          },
+          {
+            "id": "act_neukunden",
+            "type": "run_mapping",
+            "mapping_id": "m_neukunden",
+            "pipeline_id": null,
+            "label": "Cockpit – Neukunden"
+          },
+          {
+            "id": "act_ma_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ma_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Mitarbeiter-Kennzahlen"
+          },
+          {
+            "id": "act_ma_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_ma_liste",
+            "pipeline_id": null,
+            "label": "Cockpit – Mitarbeiter-Übersicht"
           }
         ],
         "widgets": [
@@ -6308,6 +6329,83 @@
               ],
               "info": "Früher regelmäßige Kunden, die zuletzt deutlich länger als ihr gewohnter Bestellrhythmus nichts mehr gekauft haben (Top 25 nach Umsatz). Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung zur Rückgewinnung."
             }
+          },
+          {
+            "id": "w_tbl_neukunden",
+            "type": "table",
+            "label": "Neukunden im Zeitraum",
+            "action_id": "act_neukunden",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "info": "Kunden mit ihrer ersten Bestellung im gewählten Zeitraum – mit Datum, Plattform, betreuendem Mitarbeiter, Region sowie bisherigem Umsatz und Marge."
+            }
+          },
+          {
+            "id": "w_ma_kpi_anzahl",
+            "type": "kpi",
+            "label": "Aktive Verkäufer",
+            "action_id": "act_ma_kpi",
+            "config": {
+              "width": 4,
+              "column": "AktiveVerkaeufer",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ma_kpi_umsatz",
+            "type": "kpi",
+            "label": "Ø Umsatz je Verkäufer",
+            "action_id": "act_ma_kpi",
+            "config": {
+              "width": 4,
+              "column": "UmsatzProVerkaeufer",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ma_kpi_marge",
+            "type": "kpi",
+            "label": "Ø Marge",
+            "action_id": "act_ma_kpi",
+            "config": {
+              "width": 4,
+              "column": "MargeProzent",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_tbl_ma",
+            "type": "table",
+            "label": "Mitarbeiter-Übersicht",
+            "action_id": "act_ma_liste",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kBenutzer"
+              ],
+              "drilldown": {
+                "mapping_id": "m_ma_rechnungen",
+                "key_column": "kBenutzer",
+                "param": "kBenutzer",
+                "title": "Rechnungen des Mitarbeiters",
+                "hidden_columns": [
+                  "kRechnung"
+                ]
+              },
+              "info": "Umsatz, Marge und Auftragswert je Mitarbeiter (aus der Rechnung). Klick auf eine Zeile zeigt die Rechnungen des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen."
+            }
           }
         ],
         "result_tabs": [
@@ -6329,7 +6427,16 @@
               "act_kunden_rueckgang",
               "act_zm_kpi",
               "act_zm_kunden",
-              "act_zm_verschlechterung"
+              "act_zm_verschlechterung",
+              "act_neukunden"
+            ]
+          },
+          {
+            "id": "tab_mitarbeiter",
+            "label": "Mitarbeiter",
+            "action_ids": [
+              "act_ma_kpi",
+              "act_ma_liste"
             ]
           },
           {
