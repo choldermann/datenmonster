@@ -4976,6 +4976,530 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_retouren_kpi",
+      "name": "Cockpit – Retouren KPI",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  r.Retouren, r.RetourenVJ, r.Menge, r.MengeVJ, r.Wert, r.WertVJ,\n  CAST(CASE WHEN s.Umsatz > 0 THEN 100.0 * r.Wert / s.Umsatz END AS DECIMAL(18,2)) AS Quote,\n  CAST(CASE WHEN s.UmsatzVJ > 0 THEN 100.0 * r.WertVJ / s.UmsatzVJ END AS DECIMAL(18,2)) AS QuoteVJ\nFROM (\n  SELECT\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kRMRetoure END) AS Retouren,\n    COUNT(DISTINCT CASE WHEN vj = 1 THEN kRMRetoure END) AS RetourenVJ,\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN fAnzahl END), 0) AS DECIMAL(18,2)) AS Menge,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN fAnzahl END), 0) AS DECIMAL(18,2)) AS MengeVJ,\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN fAnzahl * fVKNetto END), 0) AS DECIMAL(18,2)) AS Wert,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN fAnzahl * fVKNetto END), 0) AS DECIMAL(18,2)) AS WertVJ\n  FROM (\n    SELECT R.kRMRetoure, POS.fAnzahl, POS.fVKNetto,\n      CASE WHEN R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n      CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, :von) AND R.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM dbo.tRMRetoure R\n    JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n    WHERE R.dErstellt >= DATEADD(YEAR, -1, :von) AND R.dErstellt < DATEADD(DAY, 1, :bis)\n  ) p\n) r\nCROSS JOIN (\n  SELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ\n  FROM (\n    SELECT POS.fAnzahl * POS.fVkNetto AS Netto,\n      CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n      CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n  ) q\n) s",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Retouren",
+            "RetourenVJ",
+            "Menge",
+            "MengeVJ",
+            "Wert",
+            "WertVJ",
+            "Quote",
+            "QuoteVJ"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Retouren KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Retouren",
+              "target_field": "Retouren",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retouren"
+              }
+            },
+            {
+              "source_field": "RetourenVJ",
+              "target_field": "RetourenVJ",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RetourenVJ"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "MengeVJ",
+              "target_field": "MengeVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeVJ"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "WertVJ",
+              "target_field": "WertVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertVJ"
+              }
+            },
+            {
+              "source_field": "Quote",
+              "target_field": "Quote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Quote"
+              }
+            },
+            {
+              "source_field": "QuoteVJ",
+              "target_field": "QuoteVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "QuoteVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_retouren_gruende",
+      "name": "Cockpit – Retourengründe",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') AS Grund,\n  COUNT(*) AS Positionen,\n  CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n  CAST(SUM(POS.fAnzahl * POS.fVKNetto) AS DECIMAL(18,2)) AS Wert,\n  CAST(100.0 * SUM(POS.fAnzahl) / NULLIF(SUM(SUM(POS.fAnzahl)) OVER (), 0) AS DECIMAL(18,1)) AS [Anteil %]\nFROM dbo.tRMRetoure R\nJOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\nWHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)')\nORDER BY Menge DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Grund",
+            "Positionen",
+            "Menge",
+            "Wert",
+            "Anteil %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Retourengründe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_retouren_artikel",
+      "name": "Cockpit – Top-Retouren-Artikel",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  ret.cArtNr AS ArtNr,\n  ret.Artikel,\n  CAST(ret.Menge AS DECIMAL(18,2)) AS [Retour-Menge],\n  CAST(ret.Wert AS DECIMAL(18,2)) AS [Retour-Wert],\n  ret.Retouren AS Vorgaenge,\n  CAST(sales.VerkaufMenge AS DECIMAL(18,2)) AS [Verkauft Menge],\n  CAST(CASE WHEN sales.VerkaufMenge > 0 THEN 100.0 * ret.Menge / sales.VerkaufMenge END AS DECIMAL(18,1)) AS [Retourenquote %]\nFROM (\n  SELECT POS.cArtNr,\n    MAX(POS.cName) AS Artikel,\n    SUM(POS.fAnzahl) AS Menge,\n    SUM(POS.fAnzahl * POS.fVKNetto) AS Wert,\n    COUNT(DISTINCT R.kRMRetoure) AS Retouren\n  FROM dbo.tRMRetoure R\n  JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n  WHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\n    AND ISNULL(POS.cArtNr, '') <> ''\n  GROUP BY POS.cArtNr\n) ret\nLEFT JOIN (\n  SELECT POS.cArtNr, SUM(POS.fAnzahl) AS VerkaufMenge\n  FROM Rechnung.vRechnung RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n  WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    AND POS.nType = 1 AND ISNULL(POS.cArtNr, '') <> ''\n  GROUP BY POS.cArtNr\n) sales ON sales.cArtNr = ret.cArtNr\nORDER BY ret.Wert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Retour-Menge",
+            "Retour-Wert",
+            "Vorgaenge",
+            "Verkauft Menge",
+            "Retourenquote %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Retouren-Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Retour-Menge",
+              "target_field": "Retour-Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retour-Menge"
+              }
+            },
+            {
+              "source_field": "Retour-Wert",
+              "target_field": "Retour-Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retour-Wert"
+              }
+            },
+            {
+              "source_field": "Vorgaenge",
+              "target_field": "Vorgaenge",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorgaenge"
+              }
+            },
+            {
+              "source_field": "Verkauft Menge",
+              "target_field": "Verkauft Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verkauft Menge"
+              }
+            },
+            {
+              "source_field": "Retourenquote %",
+              "target_field": "Retourenquote %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retourenquote %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_retouren_kunden",
+      "name": "Cockpit – Top-Retouren-Kunden",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''),\n      LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, ''))) ))), ''), '(unbekannt)') AS Kunde,\n  MAX(R.cKundenNr) AS KundenNr,\n  COUNT(DISTINCT R.kRMRetoure) AS Retouren,\n  CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n  CAST(SUM(POS.fAnzahl * POS.fVKNetto) AS DECIMAL(18,2)) AS Wert\nFROM RM.lvRetoure R\nJOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\nWHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''),\n      LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, '')))))), ''), '(unbekannt)')\nORDER BY Wert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "KundenNr",
+            "Retouren",
+            "Menge",
+            "Wert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Retouren-Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "KundenNr",
+              "target_field": "KundenNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenNr"
+              }
+            },
+            {
+              "source_field": "Retouren",
+              "target_field": "Retouren",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retouren"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_retouren_trend",
+      "name": "Cockpit – Retouren-Trend (13 Monate)",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n  CONVERT(char(7), R.dErstellt, 126) AS Monat,\n  CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n  CAST(SUM(POS.fAnzahl * POS.fVKNetto) AS DECIMAL(18,2)) AS Wert,\n  COUNT(DISTINCT R.kRMRetoure) AS Retouren\nFROM dbo.tRMRetoure R\nJOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\nWHERE R.dErstellt >= DATEADD(MONTH, -12, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n  AND R.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY CONVERT(char(7), R.dErstellt, 126)\nORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Menge",
+            "Wert",
+            "Retouren"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Retouren-Trend (13 Monate)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Retouren",
+              "target_field": "Retouren",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retouren"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -5345,6 +5869,41 @@
             "mapping_id": "m_ma_liste",
             "pipeline_id": null,
             "label": "Cockpit – Mitarbeiter-Übersicht"
+          },
+          {
+            "id": "act_retouren_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_retouren_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Retouren KPI"
+          },
+          {
+            "id": "act_retouren_gruende",
+            "type": "run_mapping",
+            "mapping_id": "m_retouren_gruende",
+            "pipeline_id": null,
+            "label": "Cockpit – Retourengründe"
+          },
+          {
+            "id": "act_retouren_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_retouren_artikel",
+            "pipeline_id": null,
+            "label": "Cockpit – Top-Retouren-Artikel"
+          },
+          {
+            "id": "act_retouren_kunden",
+            "type": "run_mapping",
+            "mapping_id": "m_retouren_kunden",
+            "pipeline_id": null,
+            "label": "Cockpit – Top-Retouren-Kunden"
+          },
+          {
+            "id": "act_retouren_trend",
+            "type": "run_mapping",
+            "mapping_id": "m_retouren_trend",
+            "pipeline_id": null,
+            "label": "Cockpit – Retouren-Trend (13 Monate)"
           }
         ],
         "widgets": [
@@ -6422,6 +6981,131 @@
               "info": "Auftragseingang je Mitarbeiter aus dem Auftrag/Angebot (Verkäufer-Sicht). Aufträge und Angebote getrennt ausgewiesen. Klick auf eine Zeile zeigt die Vorgänge (Aufträge + Angebote) des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen.",
               "full_rows": true
             }
+          },
+          {
+            "id": "w_ret_kpi_anzahl",
+            "type": "kpi",
+            "label": "Retouren",
+            "action_id": "act_retouren_kpi",
+            "config": {
+              "width": 3,
+              "column": "Retouren",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "RetourenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_ret_kpi_menge",
+            "type": "kpi",
+            "label": "Retournierte Menge",
+            "action_id": "act_retouren_kpi",
+            "config": {
+              "width": 3,
+              "column": "Menge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Stk",
+              "decimals": 0,
+              "compare_column": "MengeVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_ret_kpi_wert",
+            "type": "kpi",
+            "label": "Retourenwert netto",
+            "action_id": "act_retouren_kpi",
+            "config": {
+              "width": 3,
+              "column": "Wert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "WertVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_ret_kpi_quote",
+            "type": "kpi",
+            "label": "Retourenquote (Wert)",
+            "action_id": "act_retouren_kpi",
+            "config": {
+              "width": 3,
+              "column": "Quote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 2,
+              "compare_column": "QuoteVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_ret_trend",
+            "type": "bar",
+            "label": "Retourenwert je Monat (13 Monate)",
+            "action_id": "act_retouren_trend",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Wert"
+              ],
+              "stacked": false
+            }
+          },
+          {
+            "id": "w_ret_gruende_tbl",
+            "type": "table",
+            "label": "Retourengründe",
+            "action_id": "act_retouren_gruende",
+            "config": {
+              "width": 6,
+              "info": "Verteilung der Retourengründe nach retournierter Menge im Zeitraum."
+            }
+          },
+          {
+            "id": "w_ret_gruende_pie",
+            "type": "pie",
+            "label": "Retourengründe (Anteil Menge)",
+            "action_id": "act_retouren_gruende",
+            "config": {
+              "width": 6,
+              "label_column": "Grund",
+              "value_column": "Menge"
+            }
+          },
+          {
+            "id": "w_ret_artikel",
+            "type": "table",
+            "label": "Top-Retouren-Artikel",
+            "action_id": "act_retouren_artikel",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Nach Retour-Wert. Retourenquote je Artikel = retournierte Menge / verkaufte Menge im Zeitraum."
+            }
+          },
+          {
+            "id": "w_ret_kunden",
+            "type": "table",
+            "label": "Top-Retouren-Kunden",
+            "action_id": "act_retouren_kunden",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Kunden mit dem höchsten Retouren-Wert im Zeitraum."
+            }
           }
         ],
         "result_tabs": [
@@ -6522,6 +7206,17 @@
               "act_klumpen_abc_artikel",
               "act_abc_vert_kunden",
               "act_abc_vert_artikel"
+            ]
+          },
+          {
+            "id": "tab_retouren",
+            "label": "Retouren",
+            "action_ids": [
+              "act_retouren_kpi",
+              "act_retouren_trend",
+              "act_retouren_gruende",
+              "act_retouren_artikel",
+              "act_retouren_kunden"
             ]
           }
         ],
