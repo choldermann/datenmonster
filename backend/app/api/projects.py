@@ -188,7 +188,10 @@ def delete_project(project_id: int, db: Session = Depends(get_db), user: User = 
                     import logging as _l; _l.getLogger("datenmonster").warning(f"Datei löschen {path}: {_e}")
         db.delete(ds)
 
-    # 7. DB-Verbindungen
+    # 7. DB-Verbindungen (+ gecachte Engines verwerfen)
+    from app.services.sql_helpers import invalidate_sql_engine
+    for _c in db.query(DbConnection.id).filter(DbConnection.project_id == project_id).all():
+        invalidate_sql_engine(_c[0])
     db.query(DbConnection).filter(DbConnection.project_id == project_id).delete()
 
     # 8. Projekt-Mitglieder + Projekt

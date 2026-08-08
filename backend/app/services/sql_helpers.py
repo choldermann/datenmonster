@@ -169,6 +169,22 @@ def _get_sql_engine(connection_id: int):
         db.close()
 
 
+def invalidate_sql_engine(connection_id: int) -> bool:
+    """Entfernt die gecachte Engine einer DB-Verbindung und gibt ihren Pool frei.
+    Muss nach Update/Delete einer Verbindung aufgerufen werden, sonst nutzt das
+    laufende Backend weiter die alte Engine (alte Credentials/Host) bis zum
+    Neustart. Gibt True zurück, wenn ein Eintrag entfernt wurde."""
+    global _sql_engine_cache
+    engine = _sql_engine_cache.pop(connection_id, None)
+    if engine is None:
+        return False
+    try:
+        engine.dispose()
+    except Exception:
+        pass
+    return True
+
+
 # Fehler-Marker, die auf einen transienten Verbindungsaussetzer hindeuten (kein
 # echter SQL-/Datenfehler): 08S01 = Communication link failure, 10060/0x274C =
 # TCP-Timeout, 08001 = Verbindungsaufbau fehlgeschlagen, HYT00/HYT01 = Timeout

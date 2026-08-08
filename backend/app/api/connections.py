@@ -907,6 +907,10 @@ def update_connection(conn_id: int, data: ConnectionCreate, db: Session = Depend
         else:
             setattr(conn, k, v)
     db.commit()
+    # Gecachte Engine verwerfen, sonst nutzt das laufende Backend weiter die alte
+    # Verbindung (Host/Instanz/Credentials/Port) bis zum Neustart.
+    from app.services.sql_helpers import invalidate_sql_engine
+    invalidate_sql_engine(conn_id)
     return conn_out(conn)
 
 
@@ -918,4 +922,6 @@ def delete_connection(conn_id: int, db: Session = Depends(get_db), user: User = 
     require_editor(conn.project_id, user, db)
     db.delete(conn)
     db.commit()
+    from app.services.sql_helpers import invalidate_sql_engine
+    invalidate_sql_engine(conn_id)
     return {"ok": True}
