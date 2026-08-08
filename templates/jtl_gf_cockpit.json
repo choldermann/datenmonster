@@ -5520,7 +5520,7 @@
               "param_from": "von",
               "param_to": "bis",
               "default": "this_year",
-              "auto_run": true
+              "auto_run": false
             }
           },
           {
@@ -5576,7 +5576,7 @@
               }
             ],
             "config": {
-              "auto_run": true
+              "auto_run": false
             }
           },
           {
@@ -5590,7 +5590,7 @@
               "connection_id": "{{connection_jtl}}",
               "kind": "plattform",
               "multiple": true,
-              "auto_run": true,
+              "auto_run": false,
               "placeholder": "Alle Plattformen"
             }
           }
