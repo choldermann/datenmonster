@@ -373,6 +373,11 @@ class SummarizeDataRequest(BaseModel):
     # Kundenrückgang, Ladenhüter). Jede: {"label": str, "text": str}. Der Client
     # aggregiert/formatiert vor – das Modell rechnet nicht, es webt nur zusammen.
     sections: list = []
+    # Ausgabeform: "prose" (Standard, Fließtext) oder "report" – eine ausführlichere
+    # Lagebeurteilung in logisch geordneten Themenblöcken plus eine Markdown-Tabelle
+    # (Bereich | Status | Kommentar) mit gut/verbesserungswürdig. Nur sinnvoll, wenn
+    # viele Zusatz-Sektionen mitgegeben werden (z.B. alle KPIs des Cockpits).
+    layout: Optional[str] = "prose"
 
 # Kleiner In-Process-Cache: gleiche Daten (z.B. Dashboard mit gleichem Zeitraum
 # erneut geöffnet) liefern die Zusammenfassung sofort, statt das LLM neu laufen zu
@@ -431,7 +436,30 @@ async def summarize_data(
         f"{s.get('label', 'Weitere Kennzahlen')}:\n{str(s['text']).strip()}" for s in sections
     )
 
-    if sections:
+    is_report = (body.layout or "prose").lower() == "report" and bool(sections)
+    if is_report:
+        system = (
+            "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer eine kompakte Lagebeurteilung "
+            "des gesamten Cockpits schreibt. Du erhältst die Kennzahlen aller Bereiche (Ertragslage, Kunden, "
+            "Zahlungsmoral, Offene Posten/Liquidität, Kapitalbindung/Lager, Klumpenrisiko, Ausblick/Prognose, "
+            "schlafende Kunden). Alle Werte sind bereits fertig berechnet – inkl. Vorjahr und prozentualer "
+            "Veränderung in Klammern. Rechne NICHTS nach und ändere keine Zahlen; nutze sie exakt so. "
+            "Erfinde nichts zu Bereichen, zu denen keine Daten geliefert wurden.\n\n"
+            "Schreibe die Lagebeurteilung als klar getrennte Themenblöcke – jeder mit fettem Vorspann-Label "
+            "und in FESTER Reihenfolge (überspringe Blöcke ohne Daten). HÖCHSTENS ein bis zwei knappe Sätze "
+            "pro Block, keine Wiederholungen zwischen den Blöcken, keine nummerierten Listen, keine Tabelle:\n"
+            "**Ertragslage:** Umsatz, Rohertrag/Marge und DB II mit Entwicklung zum Vorjahr.\n"
+            "**Kunden:** aktive/Neukunden, Umsatz je Kunde, Kunden mit Rückgang (Größenordnung, max. 1 Beispiel).\n"
+            "**Liquidität:** offene/überfällige Forderungen, DSO, Zahlungsmoral.\n"
+            "**Kapital & Lager:** gebundenes Kapital, Ladenhüter (Größenordnung, max. 1 Beispiel).\n"
+            "**Risiko:** Klumpenrisiko/ABC – Umsatzanteil der Top-Kunden/-Artikel.\n"
+            "**Ausblick:** Umsatzprognose Jahresende vs. Vorjahr und schlafende Kunden (Anzahl, max. 1 Beispiel).\n"
+            "**Handlungsbedarf:** die zwei bis drei wichtigsten Maßnahmen in EINEM Satz.\n\n"
+            "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung, kein Text danach. "
+            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
+            "'Tage' sind Tage."
+        )
+    elif sections:
         system = (
             "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer zuarbeitet. "
             "Alle Werte sind bereits fertig berechnet (inkl. Vorjahr und prozentualer Veränderung in Klammern). "
@@ -462,7 +490,7 @@ async def summarize_data(
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
     import hashlib, time as _t
-    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}|{sections_text}".encode("utf-8")).hexdigest()
+    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}|{sections_text}|{body.layout}".encode("utf-8")).hexdigest()
 
     # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst ein Instruct-Modell
     # (das Default-/Code-Modell formuliert oft schlechtes Deutsch).
@@ -474,7 +502,11 @@ async def summarize_data(
         installed = []
     chosen = pick_prose_model(installed, svc.model, explicit=get_setting(db, "ai_prose_model", "") or None)
     # Mit Zusatz-Sektionen mehr Platz für Text und Kontext.
-    if sections:
+    if is_report:
+        # Report: Themenblöcke über alle Bereiche (Bewertungstabelle baut der Client
+        # deterministisch) → mehr Platz für Text und Kontext.
+        params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=900, num_ctx=12288)
+    elif sections:
         params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=520, num_ctx=8192)
     else:
         params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=320, num_ctx=4096)

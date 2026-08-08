@@ -5550,12 +5550,13 @@
             "action_id": "act_overview_kpi",
             "config": {
               "width": 12,
-              "instruction": "Fokus auf Entwicklung zum Vorjahr, Ertragslage und konkreten Handlungsbedarf. Gehe auch auf die Umsatzentwicklung je Plattform, Kunden mit Rückgang und Ladenhüter ein (je mit Größenordnung und höchstens ein bis zwei Beispielen, keine vollständigen Listen).",
+              "report_layout": true,
+              "instruction": "Berücksichtige alle gelieferten Bereiche des Cockpits gleichgewichtig und halte die feste Blockreihenfolge ein.",
               "extra_sections": [
                 {
-                  "action_id": "act_db_plattform",
-                  "label": "Umsatzentwicklung je Plattform (ggü. Vorjahr)",
-                  "kind": "platform"
+                  "action_id": "act_kunden_kpi",
+                  "label": "Kunden-Kennzahlen",
+                  "kind": "kpi"
                 },
                 {
                   "action_id": "act_kunden_rueckgang",
@@ -5563,9 +5564,44 @@
                   "kind": "decline"
                 },
                 {
+                  "action_id": "act_zm_kpi",
+                  "label": "Zahlungsmoral",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_op_kpi",
+                  "label": "Offene Posten / Liquidität",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_db_plattform",
+                  "label": "Umsatzentwicklung je Plattform (ggü. Vorjahr)",
+                  "kind": "platform"
+                },
+                {
+                  "action_id": "act_kapital_kpi",
+                  "label": "Kapitalbindung & Lager",
+                  "kind": "kpi"
+                },
+                {
                   "action_id": "act_warn_ladenhueter",
                   "label": "Ladenhüter (gebundenes Kapital)",
                   "kind": "ladenhueter"
+                },
+                {
+                  "action_id": "act_klumpen_kpi",
+                  "label": "Klumpenrisiko / ABC",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_forecast",
+                  "label": "Umsatzprognose Jahresende",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_churn",
+                  "label": "Schlafende Kunden (Churn)",
+                  "kind": "churn"
                 }
               ]
             }
