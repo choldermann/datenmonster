@@ -4749,6 +4749,233 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_forecast",
+      "name": "Cockpit – Umsatz-Forecast",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT\n    SUM(CASE WHEN RE.dErstellt >= DATEFROMPARTS(YEAR(:bis),1,1) AND RE.dErstellt < DATEADD(DAY,1,:bis) THEN POS.fAnzahl*POS.fVkNetto END) AS IstYTD,\n    SUM(CASE WHEN RE.dErstellt >= DATEFROMPARTS(YEAR(:bis)-1,1,1) AND RE.dErstellt < DATEADD(DAY,1,DATEADD(YEAR,-1,:bis)) THEN POS.fAnzahl*POS.fVkNetto END) AS VJytd,\n    SUM(CASE WHEN RE.dErstellt >= DATEFROMPARTS(YEAR(:bis)-1,1,1) AND RE.dErstellt < DATEFROMPARTS(YEAR(:bis),1,1) THEN POS.fAnzahl*POS.fVkNetto END) AS VJgesamt\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  WHERE RE.dErstellt >= DATEFROMPARTS(YEAR(:bis)-1,1,1) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n),\nd AS (\n  SELECT IstYTD, VJytd, VJgesamt,\n    DATEDIFF(DAY, DATEFROMPARTS(YEAR(:bis),1,1), DATEFROMPARTS(YEAR(:bis),12,31))+1 AS TageJahr,\n    DATEDIFF(DAY, DATEFROMPARTS(YEAR(:bis),1,1), :bis)+1 AS TageVergangen\n  FROM p\n),\nf AS (\n  SELECT IstYTD, VJytd, VJgesamt, TageJahr, TageVergangen,\n    ISNULL(IstYTD,0) * 1.0 * TageJahr / NULLIF(TageVergangen,0) AS PrognoseLinear,\n    CASE WHEN ISNULL(VJytd,0) > 0 THEN IstYTD * VJgesamt / VJytd\n         ELSE ISNULL(IstYTD,0) * 1.0 * TageJahr / NULLIF(TageVergangen,0) END AS PrognoseSaison\n  FROM d\n)\nSELECT\n  CAST(ISNULL(IstYTD,0) AS DECIMAL(18,2)) AS [Ist YTD],\n  CAST(ISNULL(VJytd,0) AS DECIMAL(18,2)) AS [Vorjahr gl. Zeitraum],\n  CAST(ISNULL(VJgesamt,0) AS DECIMAL(18,2)) AS [Vorjahr gesamt],\n  CAST(PrognoseLinear AS DECIMAL(18,2)) AS [Prognose linear],\n  CAST(PrognoseSaison AS DECIMAL(18,2)) AS [Prognose Jahresende],\n  CAST(CASE WHEN ISNULL(VJgesamt,0) > 0 THEN 100.0*(PrognoseSaison/VJgesamt - 1) END AS DECIMAL(18,1)) AS [Prognose vs VJ %]\nFROM f",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Ist YTD",
+            "Vorjahr gl. Zeitraum",
+            "Vorjahr gesamt",
+            "Prognose linear",
+            "Prognose Jahresende",
+            "Prognose vs VJ %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz-Forecast",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Ist YTD",
+              "target_field": "Ist YTD",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ist YTD"
+              }
+            },
+            {
+              "source_field": "Vorjahr gl. Zeitraum",
+              "target_field": "Vorjahr gl. Zeitraum",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr gl. Zeitraum"
+              }
+            },
+            {
+              "source_field": "Vorjahr gesamt",
+              "target_field": "Vorjahr gesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr gesamt"
+              }
+            },
+            {
+              "source_field": "Prognose linear",
+              "target_field": "Prognose linear",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Prognose linear"
+              }
+            },
+            {
+              "source_field": "Prognose Jahresende",
+              "target_field": "Prognose Jahresende",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Prognose Jahresende"
+              }
+            },
+            {
+              "source_field": "Prognose vs VJ %",
+              "target_field": "Prognose vs VJ %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Prognose vs VJ %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_churn",
+      "name": "Cockpit – Churn / Schlafende Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH base AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt, POS.fAnzahl*POS.fVkNetto AS Netto\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  WHERE RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n    AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')\n),\nagg AS (\n  SELECT kKunde,\n    COUNT(DISTINCT kRechnung) AS Bestellungen,\n    MIN(dErstellt) AS ErsterKauf,\n    MAX(dErstellt) AS LetzterKauf,\n    SUM(Netto) AS Umsatz\n  FROM base GROUP BY kKunde\n  HAVING COUNT(DISTINCT kRechnung) >= 2 AND SUM(Netto) > 0\n),\ncalc AS (\n  SELECT a.*,\n    DATEDIFF(DAY, LetzterKauf, :bis) AS TageInaktiv,\n    CAST(DATEDIFF(DAY, ErsterKauf, LetzterKauf)*1.0/NULLIF(Bestellungen-1,0) AS DECIMAL(18,0)) AS IntervallTage\n  FROM agg a\n)\nSELECT TOP 25\n  c.kKunde,\n  (SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))))\n     FROM Rechnung.vRechnungRechnungsadresse RA WHERE RA.kKunde=c.kKunde) AS Kunde,\n  CONVERT(VARCHAR(10), c.LetzterKauf, 104) AS [Letzter Kauf],\n  c.TageInaktiv AS [Tage inaktiv],\n  c.Bestellungen,\n  c.IntervallTage AS [Ø Intervall Tage],\n  CAST(c.Umsatz AS DECIMAL(18,2)) AS [Umsatz 24M]\nFROM calc c\nWHERE c.TageInaktiv > 90 AND c.TageInaktiv > 2 * c.IntervallTage\nORDER BY c.Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "Letzter Kauf",
+            "Tage inaktiv",
+            "Bestellungen",
+            "Ø Intervall Tage",
+            "Umsatz 24M"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Churn / Schlafende Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Letzter Kauf",
+              "target_field": "Letzter Kauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letzter Kauf"
+              }
+            },
+            {
+              "source_field": "Tage inaktiv",
+              "target_field": "Tage inaktiv",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tage inaktiv"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "Ø Intervall Tage",
+              "target_field": "Ø Intervall Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Intervall Tage"
+              }
+            },
+            {
+              "source_field": "Umsatz 24M",
+              "target_field": "Umsatz 24M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz 24M"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -5083,6 +5310,20 @@
             "mapping_id": "m_abc_vert_artikel",
             "pipeline_id": null,
             "label": "ABC-Verteilung Artikel"
+          },
+          {
+            "id": "act_forecast",
+            "type": "run_mapping",
+            "mapping_id": "m_forecast",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz-Forecast"
+          },
+          {
+            "id": "act_churn",
+            "type": "run_mapping",
+            "mapping_id": "m_churn",
+            "pipeline_id": null,
+            "label": "Cockpit – Churn / Schlafende Kunden"
           }
         ],
         "widgets": [
@@ -5950,6 +6191,87 @@
               "width": 12,
               "info": "Umsatzstärkste Artikel mit Anteil, kumuliertem Anteil und ABC-Klasse (A bis 80 %, B bis 95 %, C Rest). Nur aktive Artikel."
             }
+          },
+          {
+            "id": "w_fc_prognose",
+            "type": "kpi",
+            "label": "Prognose Jahresende",
+            "action_id": "act_forecast",
+            "config": {
+              "width": 3,
+              "column": "Prognose Jahresende",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "Vorjahr gesamt",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_fc_ytd",
+            "type": "kpi",
+            "label": "Ist YTD (Jahr bis Stichtag)",
+            "action_id": "act_forecast",
+            "config": {
+              "width": 3,
+              "column": "Ist YTD",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_fc_vsvj",
+            "type": "kpi",
+            "label": "Prognose ggü. Vorjahr",
+            "action_id": "act_forecast",
+            "config": {
+              "width": 3,
+              "column": "Prognose vs VJ %",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_fc_linear",
+            "type": "kpi",
+            "label": "Prognose (linear)",
+            "action_id": "act_forecast",
+            "config": {
+              "width": 3,
+              "column": "Prognose linear",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Lineare Hochrechnung ohne Saison. Die Hauptprognose berücksichtigt den Vorjahres-Verlauf."
+            }
+          },
+          {
+            "id": "w_churn",
+            "type": "table",
+            "label": "Schlafende Kunden (Churn-Kandidaten)",
+            "action_id": "act_churn",
+            "config": {
+              "width": 12,
+              "ai_action": {
+                "kind": "customer_winback",
+                "mapping_id": "m_kunde_analyse",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "label_column": "Kunde",
+                "title": "Reaktivierung – KI-Empfehlung"
+              },
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "info": "Früher regelmäßige Kunden, die zuletzt deutlich länger als ihr gewohnter Bestellrhythmus nichts mehr gekauft haben (Top 25 nach Umsatz). Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung zur Rückgewinnung."
+            }
           }
         ],
         "result_tabs": [
@@ -5972,6 +6294,14 @@
               "act_zm_kpi",
               "act_zm_kunden",
               "act_zm_verschlechterung"
+            ]
+          },
+          {
+            "id": "tab_ausblick",
+            "label": "Ausblick",
+            "action_ids": [
+              "act_forecast",
+              "act_churn"
             ]
           },
           {
