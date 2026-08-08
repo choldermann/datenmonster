@@ -4,6 +4,7 @@ Deckblatt (Firma aus JTL tFirma, Datum, Zeitraum, gewählte Filter) + je Ergebni
 Reiter die Widgets (KPIs, Tabellen, Diagramme) sowie eine KI-Management-Summary.
 Rein serverseitig: xhtml2pdf (HTML→PDF) + matplotlib (Charts als PNG)."""
 import io
+import re
 import asyncio
 import base64
 import datetime
@@ -448,6 +449,135 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
         return ""
 
 
+# ── Report-Layout: Summary-Prosa + deterministische Bewertungstabelle ───────────
+
+def _inline_html(s: str) -> str:
+    """**fett** → <strong>, Rest escapen."""
+    out = []
+    for p in re.split(r"(\*\*[^*]+\*\*)", s):
+        m = re.match(r"^\*\*([^*]+)\*\*$", p)
+        out.append(f"<strong>{_esc(m.group(1))}</strong>" if m else _esc(p))
+    return "".join(out)
+
+
+def _summary_to_html(summary: str) -> str:
+    """Report-Prosa in echte HTML-Absätze wandeln (Zeilenumbrüche + **fett** bleiben
+    erhalten – im PDF war zuvor alles zu einem Block zusammengelaufen)."""
+    paras = [ln.strip() for ln in re.split(r"\n+", summary or "") if ln.strip()]
+    return "".join(
+        f'<p style="font-size:10pt;line-height:1.5;color:{DARK};margin:0 0 5pt">{_inline_html(p)}</p>'
+        for p in paras
+    )
+
+
+def _asnum(v):
+    try:
+        f = float(v)
+        return f if f == f else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _apct(cur, vj):
+    c, v = _asnum(cur), _asnum(vj)
+    return None if (c is None or v is None or v == 0) else 100.0 * (c - v) / v
+
+
+def _spct(p):
+    return "–" if p is None else f"{p:+.1f} %".replace(".", ",")
+
+
+def _eur(v):
+    return "–" if _asnum(v) is None else _fmt(v, 0) + " €"
+
+
+def _pctval(v):
+    return "–" if _asnum(v) is None else _fmt(v, 1) + " %"
+
+
+def _assessment_rows(results: dict) -> list:
+    """Deterministische Bewertung je Cockpit-Bereich – identisch zur Frontend-Logik
+    (buildAssessment in AiSummaryWidget.tsx). Gibt (Bereich, gut?, Kommentar)-Tupel."""
+    def rows_of(aid):
+        return (results.get(aid) or {}).get("rows") or []
+
+    def one(aid):
+        rs = rows_of(aid)
+        return rs[0] if rs else None
+
+    out = []
+    ov = one("act_overview_kpi")
+    if ov:
+        p = _apct(ov.get("Umsatz"), ov.get("UmsatzVJ"))
+        out.append(("Ertragslage", p is None or p >= 0,
+                    f"Umsatz {_spct(p)} ggü. Vorjahr, DB II-Marge {_pctval(ov.get('DB2Marge'))}"))
+    kk = one("act_kunden_kpi")
+    decl = rows_of("act_kunden_rueckgang")
+    if kk or decl:
+        ap = _apct(ov.get("AktiveKunden"), ov.get("AktiveKundenVJ")) if ov else None
+        decl_sum = sum((_asnum(r.get("Rueckgang")) or 0) for r in decl)
+        good = (ap is None or ap >= 0) and len(decl) <= 5
+        neu = f"{_fmt(kk.get('Neukunden'), 0)} Neukunden, " if kk and kk.get("Neukunden") is not None else ""
+        out.append(("Kunden", good, f"{neu}{len(decl)} Kunden rückläufig (−{_eur(decl_sum)})"))
+    zm = one("act_zm_kpi")
+    op = one("act_op_kpi")
+    if zm or op:
+        zd = _asnum(zm.get("ZahldauerTage")) if zm else None
+        zdv = _asnum(zm.get("ZahldauerTageVJ")) if zm else None
+        uq = _asnum(op.get("UeberfaelligQuote")) if op else None
+        good = (zd is None or zdv is None or zd <= zdv) and (uq is None or uq < 25)
+        parts = []
+        if op:
+            parts.append(f"überfällig {_pctval(op.get('UeberfaelligQuote'))}")
+            if op.get("DSO") is not None:
+                parts.append(f"DSO {_fmt(op.get('DSO'), 1)}")
+        if zm:
+            parts.append(f"Zahldauer {_fmt(zm.get('ZahldauerTage'), 1)} Tage")
+        out.append(("Liquidität", good, ", ".join(parts)))
+    kap = one("act_kapital_kpi")
+    if kap:
+        bind = _asnum(kap.get("Kapitalbindung"))
+        lh = _asnum(kap.get("LadenhueterKapital"))
+        share = (lh / bind) if (bind and lh is not None) else None
+        out.append(("Kapital & Lager", share is None or share < 0.15,
+                    f"{_eur(kap.get('Kapitalbindung'))} gebunden, davon {_eur(kap.get('LadenhueterKapital'))} Ladenhüter"))
+    kl = one("act_klumpen_kpi")
+    if kl:
+        t5 = _asnum(kl.get("Top5KundenAnteil"))
+        out.append(("Risiko", t5 is None or t5 < 30,
+                    f"Top-5-Kunden {_pctval(kl.get('Top5KundenAnteil'))}, Top-10 {_pctval(kl.get('Top10KundenAnteil'))}"))
+    fc = one("act_forecast")
+    churn_n = len(rows_of("act_churn"))
+    if fc:
+        pv = _asnum(fc.get("Prognose vs VJ %"))
+        out.append(("Ausblick", pv is None or pv >= 0,
+                    f"Prognose {_spct(pv)} ggü. Vorjahr" + (f", {churn_n} schlafende Kunden" if churn_n else "")))
+    return out
+
+
+def _assessment_html(rows: list) -> str:
+    if not rows:
+        return ""
+    th = (f'style="padding:3pt 5pt;border-bottom:1.5px solid {ACCENT};font-size:9pt;'
+          f'text-align:left;color:{ACCENT}"')
+    head = (f'<h2 style="color:{ACCENT};font-size:12pt;border-bottom:1px solid {ACCENT};'
+            f'padding-bottom:2px;margin-top:12pt">Bewertung</h2>'
+            f'<table style="width:100%;border-collapse:collapse;margin-top:4pt">'
+            f'<tr><th {th}>Bereich</th><th {th}>Status</th><th {th}>Kommentar</th></tr>')
+    trs = []
+    for bereich, good, kommentar in rows:
+        color = "#2e7d32" if good else "#c98a1c"
+        status = "gut" if good else "verbesserungswürdig"
+        trs.append(
+            f'<tr><td style="padding:3pt 5pt;border-bottom:0.5px solid #ddd;font-size:9pt;'
+            f'font-weight:bold;color:{DARK}">{_esc(bereich)}</td>'
+            f'<td style="padding:3pt 5pt;border-bottom:0.5px solid #ddd;font-size:9pt;'
+            f'font-weight:bold;color:{color}">{_esc(status)}</td>'
+            f'<td style="padding:3pt 5pt;border-bottom:0.5px solid #ddd;font-size:9pt;'
+            f'color:{DARK}">{_esc(kommentar)}</td></tr>')
+    return head + "".join(trs) + "</table>"
+
+
 async def generate_report(form, params: dict, db, precomputed_summary: str | None = None) -> bytes:
     schema = form.schema or {}
     conn_id = _resolve_conn_id(schema, db)
@@ -468,13 +598,21 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
         tabs = [{"id": "all", "label": form.name or "Bericht",
                  "action_ids": [a.get("id") for a in schema.get("actions", [])]}]
 
+    ai_widget = next((w for w in schema.get("widgets", []) if w.get("type") == "ai_summary"), None)
+    is_report = bool((ai_widget or {}).get("config", {}).get("report_layout"))
+
     body = [_cover_html(company, schema, params, conn_id, form.name or "Report")]
-    if summary:
+    if summary or is_report:
         body.append(
             f'<div style="page-break-before:always"></div>'
             f'<h2 style="color:{ACCENT};font-size:13pt;border-bottom:2px solid {ACCENT};padding-bottom:3px">'
-            f'Management-Summary</h2>'
-            f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">{_esc(summary)}</p>')
+            f'Management-Summary</h2>')
+        if summary:
+            # Report-Prosa als Absätze (mit **fett**); sonst einfacher Fließtext.
+            body.append(_summary_to_html(summary) if is_report
+                        else f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">{_esc(summary)}</p>')
+        if is_report:
+            body.append(_assessment_html(_assessment_rows(results)))
     for tab in tabs:
         body.append(f'<div style="page-break-before:always"></div>')
         body.append(_render_tab(schema, tab, results))
