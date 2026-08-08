@@ -92,10 +92,12 @@ def _fetch_company(conn_id: Optional[int]) -> dict:
         return {}
 
 
-def _run_one_action(action: dict, params: dict) -> dict:
+def _run_one_action(action: dict, params: dict, row_cap: int = None) -> dict:
     """Führt EINE run_mapping-Action read-only aus – mit EIGENER DB-Session, damit
     die Funktion gefahrlos parallel laufen kann (SQLAlchemy-Sessions sind nicht
-    thread-sicher). Gibt das Ergebnis-Dict für results[action_id] zurück."""
+    thread-sicher). Gibt das Ergebnis-Dict für results[action_id] zurück.
+    row_cap: bei full_rows-Tabellen die volle Zeilenzahl laden, damit der Report die
+    Fußzeile »… und N weitere Zeilen« korrekt berechnen kann."""
     from app.core.database import SessionLocal
     db = SessionLocal()
     try:
@@ -104,7 +106,8 @@ def _run_one_action(action: dict, params: dict) -> dict:
             return {"columns": [], "rows": []}
         ctx = MappingContext.from_orm(m)
         ctx.run_params = dict(params)  # eigene Kopie je Thread (keine geteilte Mutation)
-        res = execute_mapping(**ctx.to_execute_kwargs(ctx.targets[0].get("fields") or [], 500))
+        res = execute_mapping(**ctx.to_execute_kwargs(ctx.targets[0].get("fields") or [], 500),
+                              row_cap=row_cap)
         return {"columns": res.get("columns", []), "rows": res.get("rows", [])}
     except Exception:
         return {"columns": [], "rows": []}
@@ -115,14 +118,18 @@ def _run_one_action(action: dict, params: dict) -> dict:
 def _run_actions(schema: dict, params: dict, db) -> dict:
     """Alle Mapping-Actions des Reports read-only ausführen. Gedrosselt PARALLEL,
     damit ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run)."""
+    from app.api.forms import _expandable_action_ids, FULL_ROWS_CAP
+    expandable = _expandable_action_ids(schema)
     actions = [a for a in schema.get("actions", [])
                if a.get("type") == "run_mapping" and a.get("mapping_id")]
+    def _cap(a):
+        return FULL_ROWS_CAP if a.get("id") in expandable else None
     results = {}
     if len(actions) == 1:
-        results[actions[0]["id"]] = _run_one_action(actions[0], params)
+        results[actions[0]["id"]] = _run_one_action(actions[0], params, _cap(actions[0]))
     elif actions:
         with ThreadPoolExecutor(max_workers=_REPORT_RUN_CONCURRENCY) as ex:
-            futs = {ex.submit(_run_one_action, a, params): a["id"] for a in actions}
+            futs = {ex.submit(_run_one_action, a, params, _cap(a)): a["id"] for a in actions}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
     return results
@@ -262,8 +269,11 @@ def _table_html(widget: dict, result: dict) -> str:
     head = "".join(f'<th style="padding:4px 6px;border:1px solid #ddd;background:#eee;'
                    f'font-size:8pt;text-align:{"right" if any(_is_num(r.get(c)) for r in rows) else "left"}">'
                    f'{_esc(c)}</th>' for c in cols)
+    # Report bewusst gekürzt: max. 25 Zeilen, Rest als Hinweis-Fußzeile (die volle
+    # Tabelle steckt im Cockpit / im E-Mail- und CSV-Export).
+    REPORT_MAX = 25
     body = ""
-    for r in rows[:40]:
+    for r in rows[:REPORT_MAX]:
         tds = ""
         for c in cols:
             v = r.get(c)
@@ -271,6 +281,11 @@ def _table_html(widget: dict, result: dict) -> str:
             tds += (f'<td style="padding:3px 6px;border:1px solid #eee;font-size:8pt;'
                     f'text-align:{"right" if num else "left"}">{_esc(_fmt(v) if num else v)}</td>')
         body += f"<tr>{tds}</tr>"
+    if len(rows) > REPORT_MAX:
+        rest = len(rows) - REPORT_MAX
+        body += (f'<tr><td colspan="{len(cols)}" style="padding:4px 6px;border:1px solid #eee;'
+                 f'font-size:8pt;font-style:italic;color:{MUTED};text-align:center">'
+                 f'… und {rest} weitere Zeilen (gesamt {len(rows)}) – vollständig im Cockpit / CSV-Export</td></tr>')
     info_html = (f'<div style="font-size:8pt;color:{MUTED};margin:2px 0 4px">{_esc(info)}</div>' if info else "")
     return (info_html + '<table style="width:100%;border-collapse:collapse;margin-bottom:6px">'
             f"<thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")

@@ -24,7 +24,7 @@ from app.services.expression_engine import (
 )
 from app.services.sql_helpers import (
     _resolve_sql_params, _resolve_sql_lookup_params, _resolve_sql_run_params, _get_sql_engine,
-    run_sql_with_retry,
+    run_sql_with_retry, _apply_row_cap,
 )
 from app.services.mapping_writer import _is_plugin_target, _write_target
 
@@ -879,6 +879,7 @@ def execute_mapping(
     run_params: Dict = None,
     target_options: Dict = None,
     preview_rows: int = 50,
+    row_cap: int = None,
     _debug_trace: list = None,
     _ai_config: Dict = None,
 ) -> Dict[str, Any]:
@@ -1212,7 +1213,12 @@ def execute_mapping(
                 if not dfs and conn_id:
                     ext_engine = _get_sql_engine(conn_id)
                     _exec_sql = sql_text
-                    if is_preview:
+                    if row_cap:
+                        # Explizite Obergrenze (z.B. Cockpit-Listen-Tabellen): das
+                        # ÄUSSERE SELECT auf row_cap deckeln – hebt hartkodierte
+                        # TOP N an und ersetzt das übliche Preview-Limit.
+                        _exec_sql = _apply_row_cap(_exec_sql, row_cap, ext_engine.dialect.name)
+                    elif is_preview:
                         import re as _re2
                         _dialect = ext_engine.dialect.name
                         _has_limit = bool(_re2.search(r'TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
@@ -1713,7 +1719,11 @@ def execute_mapping(
                 _limit = target_options.get("row_limit")
                 if _limit and isinstance(_limit, int) and _limit > 0:
                     output_rows = output_rows[:_limit]
-            if is_preview and len(output_rows) > 50:
+            if row_cap:
+                # Explizite Obergrenze: SQL ist bereits per _apply_row_cap gedeckelt;
+                # als Sicherheitsnetz hier nochmals hart begrenzen (kein 50er-Preview-Cap).
+                output_rows = output_rows[:row_cap]
+            elif is_preview and len(output_rows) > 50:
                 output_rows = output_rows[:50]
             return {
                 "columns": target_columns,
@@ -1782,7 +1792,7 @@ def execute_mapping(
     # Flatten result_df rows to dicts (without prefix for direct lookup)
     # Also build a flat lookup without prefix for transformer source_field matching
     _sql_row_stats: Dict[str, dict] = {}  # zeilenweise SQL-Nodes (scalar/lookup) für Debug-Trace
-    for _, raw_row in result_df.head(preview_rows).iterrows():
+    for _, raw_row in result_df.head(row_cap or preview_rows).iterrows():
         flat = dict(raw_row)
         flat_no_prefix = {}
         for k, v in flat.items():

@@ -411,8 +411,29 @@ def _validate_required(schema: dict, run_params: dict) -> None:
 # zeitraum-unabhängig (Lagerbestand), daher hilft ein kleinerer Zeitraum allein nicht.
 _FORM_RUN_CONCURRENCY = 5
 
+# Obergrenze für als "full_rows" markierte Tabellen-Widgets (z.B. Cockpit-Listen).
+# Hebt die hartkodierten TOP N der Mapping-SQLs an (via _apply_row_cap) und den
+# 50er-Preview-Cap auf, sodass die Tabelle möglichst vollständig geladen wird
+# (UI-Anzeige = Basis für E-Mail-/CSV-Export). Bewusst begrenzt, damit sehr große
+# Abfragen die Quell-WaWi und das Browser-Rendering nicht überlasten.
+FULL_ROWS_CAP = 2000
 
-def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int) -> dict:
+
+def _expandable_action_ids(schema: dict) -> set:
+    """Action-IDs, deren Tabellen-Widget vollständig (bis FULL_ROWS_CAP) laden soll
+    – markiert per config.full_rows am table-Widget. Rankings/Charts/KPIs bleiben
+    dadurch unberührt."""
+    out = set()
+    for w in (schema.get("widgets") or []):
+        if w.get("type") == "table" and (w.get("config") or {}).get("full_rows"):
+            aid = w.get("action_id")
+            if aid:
+                out.add(aid)
+    return out
+
+
+def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
+                         row_cap: int = None) -> dict:
     """Führt EINE run_mapping-Action read-only aus. Öffnet eine EIGENE DB-Session
     (SQLAlchemy-Sessions sind nicht thread-sicher), damit die Funktion gefahrlos
     parallel laufen kann. Gibt das fertige Ergebnis-Dict für results[action_id] zurück."""
@@ -432,7 +453,7 @@ def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int) -> d
         if not ctx.targets:
             return {"columns": [], "rows": [], "total": 0, "error": "Mapping hat keine Ziele"}
         t_fields = ctx.targets[0].get("fields") or []
-        result = execute_mapping(**ctx.to_execute_kwargs(t_fields, preview_rows))
+        result = execute_mapping(**ctx.to_execute_kwargs(t_fields, preview_rows), row_cap=row_cap)
         _rows = result.get("rows", [])
         # Fehler (z.B. SQL-Transform-Fehler) nur zeigen, wenn keine Zeilen kamen –
         # harmlose Warnungen sollen die Ergebnistabelle nicht verdecken.
@@ -466,15 +487,20 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     preview_rows = data.preview_rows or 500
     results = {}
 
+    # Als full_rows markierte Tabellen (z.B. Cockpit-Listen) vollständig laden.
+    expandable = _expandable_action_ids(schema)
+    def _cap_for(a):
+        return FULL_ROWS_CAP if a.get("id") in expandable else None
+
     # Read-only Mapping-Vorschauen gedrosselt parallel (der große Zeitgewinn bei
     # Cockpit-Formularen). Übrige Action-Typen laufen danach sequenziell weiter.
     mapping_actions = [a for a in actions if a.get("type") == "run_mapping"]
     if len(mapping_actions) == 1:
         a0 = mapping_actions[0]
-        results[a0.get("id")] = _run_mapping_preview(a0, run_params, preview_rows)
+        results[a0.get("id")] = _run_mapping_preview(a0, run_params, preview_rows, _cap_for(a0))
     elif mapping_actions:
         with ThreadPoolExecutor(max_workers=_FORM_RUN_CONCURRENCY) as ex:
-            futs = {ex.submit(_run_mapping_preview, a, run_params, preview_rows): a.get("id")
+            futs = {ex.submit(_run_mapping_preview, a, run_params, preview_rows, _cap_for(a)): a.get("id")
                     for a in mapping_actions}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()

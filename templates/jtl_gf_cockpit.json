@@ -5712,7 +5712,8 @@
               "hidden_columns": [
                 "kKunde"
               ],
-              "info": "Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung (Rückgewinnung)."
+              "info": "Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung (Rückgewinnung).",
+              "full_rows": true
             }
           },
           {
@@ -5891,7 +5892,8 @@
               "hidden_columns": [
                 "kArtikel"
               ],
-              "info": "Klick auf einen Artikel öffnet eine KI-Abverkaufsempfehlung (Rabatt/Bundle)."
+              "info": "Klick auf einen Artikel öffnet eine KI-Abverkaufsempfehlung (Rabatt/Bundle).",
+              "full_rows": true
             }
           },
           {
@@ -5900,7 +5902,8 @@
             "label": "Umsatzstarke Artikel ohne Bestand",
             "action_id": "act_warn_bestand",
             "config": {
-              "width": 12
+              "width": 12,
+              "full_rows": true
             }
           },
           {
@@ -5909,7 +5912,8 @@
             "label": "Artikel mit negativer Marge",
             "action_id": "act_warn_marge",
             "config": {
-              "width": 12
+              "width": 12,
+              "full_rows": true
             }
           },
           {
@@ -5939,7 +5943,8 @@
                 "hidden_columns": [
                   "kArtikel"
                 ]
-              }
+              },
+              "full_rows": true
             }
           },
           {
@@ -5972,7 +5977,8 @@
             "action_id": "act_gesperrt",
             "config": {
               "width": 12,
-              "info": "Inaktive Artikel (cAktiv=N), die noch Lagerbestand binden – sonst überall ausgeblendet. Abverkauf prüfen."
+              "info": "Inaktive Artikel (cAktiv=N), die noch Lagerbestand binden – sonst überall ausgeblendet. Abverkauf prüfen.",
+              "full_rows": true
             }
           },
           {
@@ -6024,7 +6030,8 @@
             "action_id": "act_zm_kunden",
             "config": {
               "width": 6,
-              "info": "Ø Zahlungsdauer = Tage von Rechnungsdatum bis zur (letzten) Zahlung im gewählten Zeitraum. Anteil verspätet = Anteil der Rechnungen, die erst nach mehr als 30 Tagen beglichen wurden."
+              "info": "Ø Zahlungsdauer = Tage von Rechnungsdatum bis zur (letzten) Zahlung im gewählten Zeitraum. Anteil verspätet = Anteil der Rechnungen, die erst nach mehr als 30 Tagen beglichen wurden.",
+              "full_rows": true
             }
           },
           {
@@ -6037,7 +6044,8 @@
               "info": "Vergleich der Ø Zahlungsdauer im gewählten Zeitraum gegenüber dem Vorjahreszeitraum. Verschlechterung = zusätzliche Tage bis zur Zahlung (positiv = zahlt später). Nur Kunden mit mind. 2 bezahlten Rechnungen je Zeitraum.",
               "hidden_columns": [
                 "kKunde"
-              ]
+              ],
+              "full_rows": true
             }
           },
           {
@@ -6131,7 +6139,8 @@
                 "key_column": "kKunde",
                 "param": "kKunde",
                 "title": "Offene Rechnungen des Kunden"
-              }
+              },
+              "full_rows": true
             }
           },
           {
@@ -6154,7 +6163,8 @@
                 "hidden_columns": [
                   "kArtikel"
                 ]
-              }
+              },
+              "full_rows": true
             }
           },
           {
@@ -6164,7 +6174,8 @@
             "label": "Lagerumschlag & Reichweite (Top 20 nach Bestand)",
             "config": {
               "width": 12,
-              "info": "Umschlag/Jahr = auf 365 Tage hochgerechnete Verkaufsmenge geteilt durch aktuellen Bestand (wie oft der Bestand pro Jahr umgeschlagen wird). Reichweite (Tage) = wie lange der aktuelle Bestand beim Absatz des Zeitraums reicht. Niedriger Umschlag / hohe Reichweite = gebundenes Kapital / Überbestand."
+              "info": "Umschlag/Jahr = auf 365 Tage hochgerechnete Verkaufsmenge geteilt durch aktuellen Bestand (wie oft der Bestand pro Jahr umgeschlagen wird). Reichweite (Tage) = wie lange der aktuelle Bestand beim Absatz des Zeitraums reicht. Niedriger Umschlag / hohe Reichweite = gebundenes Kapital / Überbestand.",
+              "full_rows": true
             }
           },
           {
@@ -6236,7 +6247,8 @@
             "label": "ABC-Kunden (Top 50 nach Umsatz)",
             "config": {
               "width": 12,
-              "info": "Klumpenrisiko = Abhängigkeit von wenigen Kunden/Artikeln (hoher Top-5-Anteil = Risiko bei Wegfall). ABC-Klasse nach kumuliertem Umsatzanteil: A bis 80 %, B bis 95 %, C Rest. Gesperrte Kunden ausgeschlossen."
+              "info": "Klumpenrisiko = Abhängigkeit von wenigen Kunden/Artikeln (hoher Top-5-Anteil = Risiko bei Wegfall). ABC-Klasse nach kumuliertem Umsatzanteil: A bis 80 %, B bis 95 %, C Rest. Gesperrte Kunden ausgeschlossen.",
+              "full_rows": true
             }
           },
           {
@@ -6246,7 +6258,8 @@
             "label": "ABC-Artikel (Top 50 nach Umsatz)",
             "config": {
               "width": 12,
-              "info": "Umsatzstärkste Artikel mit Anteil, kumuliertem Anteil und ABC-Klasse (A bis 80 %, B bis 95 %, C Rest). Nur aktive Artikel."
+              "info": "Umsatzstärkste Artikel mit Anteil, kumuliertem Anteil und ABC-Klasse (A bis 80 %, B bis 95 %, C Rest). Nur aktive Artikel.",
+              "full_rows": true
             }
           },
           {
@@ -6327,7 +6340,8 @@
               "hidden_columns": [
                 "kKunde"
               ],
-              "info": "Früher regelmäßige Kunden, die zuletzt deutlich länger als ihr gewohnter Bestellrhythmus nichts mehr gekauft haben (Top 25 nach Umsatz). Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung zur Rückgewinnung."
+              "info": "Früher regelmäßige Kunden, die zuletzt deutlich länger als ihr gewohnter Bestellrhythmus nichts mehr gekauft haben (Top 25 nach Umsatz). Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung zur Rückgewinnung.",
+              "full_rows": true
             }
           },
           {
@@ -6340,7 +6354,8 @@
               "hidden_columns": [
                 "kKunde"
               ],
-              "info": "Kunden mit ihrer ersten Bestellung im gewählten Zeitraum – mit Datum, Plattform, betreuendem Mitarbeiter, Region sowie bisherigem Umsatz und Marge."
+              "info": "Kunden mit ihrer ersten Bestellung im gewählten Zeitraum – mit Datum, Plattform, betreuendem Mitarbeiter, Region sowie bisherigem Umsatz und Marge.",
+              "full_rows": true
             }
           },
           {
@@ -6404,7 +6419,8 @@
                   "kAuftrag"
                 ]
               },
-              "info": "Auftragseingang je Mitarbeiter aus dem Auftrag/Angebot (Verkäufer-Sicht). Aufträge und Angebote getrennt ausgewiesen. Klick auf eine Zeile zeigt die Vorgänge (Aufträge + Angebote) des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen."
+              "info": "Auftragseingang je Mitarbeiter aus dem Auftrag/Angebot (Verkäufer-Sicht). Aufträge und Angebote getrennt ausgewiesen. Klick auf eine Zeile zeigt die Vorgänge (Aufträge + Angebote) des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen.",
+              "full_rows": true
             }
           }
         ],

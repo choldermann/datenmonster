@@ -131,6 +131,60 @@ def _resolve_sql_run_params(sql: str, run_params: dict):
     return sql, params
 
 
+def _apply_row_cap(sql: str, cap: int, dialect: str = "mssql") -> str:
+    """Setzt/ersetzt im ÄUSSEREN (Ergebnis-)SELECT ein Zeilenlimit auf `cap`.
+    Der äußere SELECT ist der LETZTE SELECT auf Klammer-Tiefe 0 – das deckt sowohl
+    einfache Queries als auch CTEs (`WITH … SELECT …`) ab. Subquery-/CTE-INTERNE
+    TOPs bleiben unangetastet, damit Korrelations-Subqueries (z.B. TOP 1) nicht
+    kaputtgehen. Bei irgendeiner Unsicherheit wird das SQL UNVERÄNDERT
+    zurückgegeben (Fail-safe – lieber altes Limit als kaputtes SQL).
+
+    Dient dazu, die hartkodierten `TOP N` der Cockpit-Listen-Tabellen zur Laufzeit
+    auf eine höhere, aufrufer-gesteuerte Obergrenze anzuheben, ohne die gespeicherten
+    Mapping-SQLs zu editieren (wirkt so auch für künftige Template-Installationen)."""
+    import re as _re_cap
+    if not sql or not isinstance(cap, int) or cap <= 0:
+        return sql
+    try:
+        # Klammer-Tiefe je Zeichen (Cockpit-SQLs enthalten keine Klammern in String-
+        # Literalen, daher ist eine einfache Zählung ausreichend und robust).
+        depth = 0
+        depths = []
+        for ch in sql:
+            if ch == "(":
+                depth += 1
+            depths.append(depth)
+            if ch == ")":
+                depth -= 1
+        sel_positions = [m.start() for m in _re_cap.finditer(r"(?is)\bselect\b", sql)
+                         if depths[m.start()] == 0]
+        if not sel_positions:
+            return sql
+        sel = sel_positions[-1]  # äußerer Ergebnis-SELECT
+        from_positions = [m.start() for m in _re_cap.finditer(r"(?is)\bfrom\b", sql)
+                          if depths[m.start()] == 0 and m.start() > sel]
+        header_end = from_positions[0] if from_positions else len(sql)
+        header = sql[sel:header_end]
+
+        if dialect == "mssql":
+            new_header, n = _re_cap.subn(
+                r"(?is)^(\s*select\s+(distinct\s+)?)top\s*\(?\s*\d+\s*\)?\s+",
+                lambda m: f"{m.group(1)}TOP ({cap}) ", header, count=1)
+            if n == 0:
+                new_header, n = _re_cap.subn(
+                    r"(?is)^(\s*select\s+(distinct\s+)?)",
+                    lambda m: f"{m.group(1)}TOP ({cap}) ", header, count=1)
+            if n == 0:
+                return sql
+            return sql[:sel] + new_header + sql[header_end:]
+        else:
+            if _re_cap.search(r"(?is)\blimit\s+\d+", sql):
+                return sql
+            return sql.rstrip().rstrip(";") + f"\nLIMIT {cap}"
+    except Exception:
+        return sql
+
+
 def _get_sql_engine(connection_id: int):
     """Holt oder erstellt eine SQLAlchemy-Engine für eine DB-Verbindung."""
     global _sql_engine_cache
