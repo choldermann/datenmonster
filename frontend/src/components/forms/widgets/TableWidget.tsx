@@ -1,3 +1,4 @@
+import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
 import EmailTableButton from "../EmailTableButton";
 
@@ -16,6 +17,10 @@ function fmtCell(v) {
 
 export default function TableWidget({ widget, result, allowDownload, onDrilldown, onAiAction }) {
   const cfg = widget.config || {};
+  // Sortierung per Klick auf den Spaltenkopf (rein clientseitig auf den geladenen Zeilen).
+  const [sort, setSort] = useState(null);
+  const toggleSort = (col) => setSort(s =>
+    s?.col === col ? (s.dir === "asc" ? { col, dir: "desc" } : null) : { col, dir: "asc" });
   const dd = cfg.drilldown;
   const ai = cfg.ai_action;
   // Technische Spalten (z.B. kRechnung/kArtikel als Drilldown-Schlüssel) können
@@ -42,11 +47,28 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   };
   // Zahlenspalten rechtsbündig (bessere Lesbarkeit der Beträge).
   const numericCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number")));
+
+  // Sortierte Zeilen: Zahlen numerisch, sonst locale-Vergleich; Nullwerte ans Ende.
+  const sortedRows = useMemo(() => {
+    if (!sort) return rows;
+    const num = numericCols.has(sort.col);
+    const dir = sort.dir === "asc" ? 1 : -1;
+    const nullRank = (v) => (v === null || v === undefined || v === "");
+    return [...rows].sort((a, b) => {
+      const va = a[sort.col], vb = b[sort.col];
+      if (nullRank(va) && nullRank(vb)) return 0;
+      if (nullRank(va)) return 1;   // Leerwerte immer ans Ende
+      if (nullRank(vb)) return -1;
+      if (num) return (Number(va) - Number(vb)) * dir;
+      return String(va).localeCompare(String(vb), "de", { numeric: true }) * dir;
+    });
+  }, [rows, sort, numericCols]);
+
   if (!allColumns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
   const downloadCsv = () => {
     const header = columns.join(";");
-    const body = rows.map(r =>
+    const body = sortedRows.map(r =>
       columns.map(c => `"${(r[c] ?? "").toString().replace(/"/g, '""')}"`).join(";")
     ).join("\n");
     const blob = new Blob(["﻿" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
@@ -66,7 +88,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
           {total !== undefined && <span style={{ fontSize: 11, color: S.textDim }}>{total} Zeilen</span>}
           {canDownload && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <EmailTableButton columns={columns} rows={rows} title={widget.label || "Tabelle"} disabled={!rows.length} />
+              <EmailTableButton columns={columns} rows={sortedRows} title={widget.label || "Tabelle"} disabled={!rows.length} />
               <button onClick={downloadCsv}
                 style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
                   color: S.accent, background: "none", border: `1px solid ${S.border}`,
@@ -82,14 +104,20 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
           <thead>
             <tr style={{ position: "sticky", top: 0, backgroundColor: S.bgEl }}>
               {columns.map(c => (
-                <th key={c} style={{ padding: "8px 12px", textAlign: numericCols.has(c) ? "right" : "left",
-                  borderBottom: `1px solid ${S.border}`, color: S.textDim,
-                  fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>{c}</th>
+                <th key={c} onClick={() => toggleSort(c)}
+                  title="Klicken zum Sortieren"
+                  style={{ padding: "8px 12px", textAlign: numericCols.has(c) ? "right" : "left",
+                  borderBottom: `1px solid ${S.border}`, color: sort?.col === c ? S.accent : S.textDim,
+                  fontWeight: 600, whiteSpace: "nowrap", fontSize: 11,
+                  cursor: "pointer", userSelect: "none" }}>
+                  {c}<span style={{ marginLeft: 4, opacity: sort?.col === c ? 1 : 0.25 }}>
+                    {sort?.col === c ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {rows.map((row, i) => (
+            {sortedRows.map((row, i) => (
               <tr key={i} onClick={() => clickRow(row)}
                 style={{ borderBottom: `1px solid ${S.border}`, cursor: rowClickable ? "pointer" : "default" }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)"}
