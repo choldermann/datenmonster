@@ -54,6 +54,8 @@ def _check_portal_access(f: Form, user: User) -> None:
     """Prüft ob der Benutzer Zugriff auf dieses veröffentlichte Formular hat."""
     if not f.published:
         raise HTTPException(404, "Formular nicht gefunden")
+    if getattr(user, "is_admin", False):
+        return  # Admins sehen/nutzen immer alle veröffentlichten Formulare
     pc = f.portal_config or {}
     allowed = pc.get("allowed_users") or []   # [] = alle authentifizierten Benutzer
     if allowed and user.username not in allowed and str(user.id) not in [str(u) for u in allowed]:

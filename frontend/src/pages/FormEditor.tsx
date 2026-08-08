@@ -53,6 +53,12 @@ export default function FormEditor() {
   const [showPreview, setShowPreview] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
+  const [users, setUsers] = useState([]);
+
+  // Datenmonster-Benutzer für die Zugriffsauswahl laden
+  useEffect(() => {
+    api.get("/api/auth/users").then(({ data }) => setUsers(data || [])).catch(() => {});
+  }, []);
 
   // Load
   useEffect(() => {
@@ -345,6 +351,48 @@ export default function FormEditor() {
                   style={{ width: 12, height: 12 }} />
                 KI-Assistent anzeigen
               </label>
+            </div>
+            {/* Zugriff: welche Datenmonster-Benutzer das Formular sehen/nutzen dürfen.
+                Leere Auswahl = alle authentifizierten Benutzer. */}
+            <div>
+              <label style={{ display: "block", fontSize: 9, fontWeight: 700, color: S.textDim,
+                marginBottom: 4, textTransform: "uppercase" }}>Zugriff</label>
+              {(() => {
+                const allowed = portalConfig.allowed_users || [];
+                const restricted = allowed.length > 0;
+                const toggle = (uid) => setPortalConfig(p => {
+                  const cur = p.allowed_users || [];
+                  const next = cur.includes(uid) ? cur.filter(x => x !== uid) : [...cur, uid];
+                  return { ...p, allowed_users: next };
+                });
+                return (
+                  <div style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`,
+                    borderRadius: 4, padding: "6px 8px", minWidth: 200, maxHeight: 132,
+                    overflowY: "auto" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
+                      fontSize: 11, color: S.textMain, paddingBottom: 4, marginBottom: 4,
+                      borderBottom: `1px solid ${S.border}` }}>
+                      <input type="checkbox" checked={!restricted}
+                        onChange={() => setPortalConfig(p => ({ ...p, allowed_users: [] }))}
+                        style={{ width: 12, height: 12 }} />
+                      Alle Benutzer
+                    </label>
+                    {users.length === 0 && (
+                      <div style={{ fontSize: 10, color: S.textDim }}>Keine weiteren Benutzer</div>
+                    )}
+                    {users.map(u => (
+                      <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 6,
+                        cursor: "pointer", fontSize: 11,
+                        color: restricted ? S.textMain : S.textDim }}>
+                        <input type="checkbox" checked={allowed.includes(u.id)}
+                          onChange={() => toggle(u.id)}
+                          style={{ width: 12, height: 12 }} />
+                        {u.username}
+                      </label>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
             {appUrl && published && (
               <a href={appUrl} target="_blank" rel="noreferrer"
