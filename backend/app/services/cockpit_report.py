@@ -570,8 +570,10 @@ def _assessment_rows(results: dict) -> list:
     rt = one("act_retouren_kpi")
     if rt:
         q, qvj = _asnum(rt.get("Quote")), _asnum(rt.get("QuoteVJ"))
-        # gut, wenn die Retourenquote ggü. Vorjahr nicht gestiegen ist.
-        good = q is None or qvj is None or q <= qvj
+        # Niedrige Retourenquote (< 5 %) ist generell gut; erst darüber zählt zusätzlich
+        # der Vorjahresvergleich (nicht gestiegen).
+        RET_QUOTE_OK = 5.0
+        good = q is None or q < RET_QUOTE_OK or (qvj is not None and q <= qvj)
         chg = _apct(q, qvj)
         out.append(("Retouren", good,
                     f"Retourenquote {_pctval(rt.get('Quote'))} (VJ {_pctval(rt.get('QuoteVJ'))}"

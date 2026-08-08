@@ -442,7 +442,7 @@ async def summarize_data(
             "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer eine kompakte Lagebeurteilung "
             "des gesamten Cockpits schreibt. Du erhältst die Kennzahlen aller Bereiche (Ertragslage, Kunden, "
             "Zahlungsmoral, Offene Posten/Liquidität, Kapitalbindung/Lager, Klumpenrisiko, Ausblick/Prognose, "
-            "schlafende Kunden). Alle Werte sind bereits fertig berechnet – inkl. Vorjahr und prozentualer "
+            "schlafende Kunden, Retouren). Alle Werte sind bereits fertig berechnet – inkl. Vorjahr und prozentualer "
             "Veränderung in Klammern. Rechne NICHTS nach und ändere keine Zahlen; nutze sie exakt so. "
             "Erfinde nichts zu Bereichen, zu denen keine Daten geliefert wurden.\n\n"
             "Schreibe die Lagebeurteilung als klar getrennte Themenblöcke – jeder mit fettem Vorspann-Label "
@@ -454,6 +454,8 @@ async def summarize_data(
             "**Kapital & Lager:** gebundenes Kapital, Ladenhüter (Größenordnung, max. 1 Beispiel).\n"
             "**Risiko:** Klumpenrisiko/ABC – Umsatzanteil der Top-Kunden/-Artikel.\n"
             "**Ausblick:** Umsatzprognose Jahresende vs. Vorjahr und schlafende Kunden (Anzahl, max. 1 Beispiel).\n"
+            "**Retouren:** Retourenquote (Wert-basiert) und Retourenwert mit Entwicklung zum Vorjahr; "
+            "eine sehr niedrige Quote ausdrücklich als gut einordnen.\n"
             "**Handlungsbedarf:** die zwei bis drei wichtigsten Maßnahmen in EINEM Satz.\n\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung, kein Text danach. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
@@ -490,7 +492,12 @@ async def summarize_data(
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
     import hashlib, time as _t
-    ckey = hashlib.md5(f"{body.label}|{body.instruction}|{data_text}|{sections_text}|{body.layout}".encode("utf-8")).hexdigest()
+    # Prompt-Version im Cache-Key: bei Änderungen an den System-Prompts hier hochzählen,
+    # sonst würden alte (z.B. Retouren-lose) Analysen aus dem Cache weiter ausgeliefert.
+    _PROMPT_VERSION = "2"
+    ckey = hashlib.md5(
+        f"{_PROMPT_VERSION}|{body.label}|{body.instruction}|{data_text}|{sections_text}|{body.layout}".encode("utf-8")
+    ).hexdigest()
 
     # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst ein Instruct-Modell
     # (das Default-/Code-Modell formuliert oft schlechtes Deutsch).

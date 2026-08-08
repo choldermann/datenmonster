@@ -102,8 +102,11 @@ function buildAssessment(results) {
   const rt = one("act_retouren_kpi");
   if (rt) {
     const q = num(rt.Quote), qvj = num(rt.QuoteVJ);
-    // gut, wenn die Retourenquote ggü. Vorjahr nicht gestiegen ist.
-    const good = (q == null || qvj == null || q <= qvj);
+    // Eine niedrige Retourenquote ist generell gut (absolut, < 5 %); erst darüber
+    // zählt zusätzlich, ob sie ggü. Vorjahr nicht gestiegen ist. So wird eine winzige
+    // Quote (z.B. 0,4 %) nicht wegen eines minimalen VJ-Anstiegs als schlecht markiert.
+    const RET_QUOTE_OK = 5;
+    const good = (q == null) || (q < RET_QUOTE_OK) || (qvj != null && q <= qvj);
     const chg = pctNum(q, qvj);
     out.push({ bereich: "Retouren", good,
       kommentar: `Retourenquote ${deNum(rt.Quote)} % (VJ ${deNum(rt.QuoteVJ)} %${chg != null ? `, ${signPct(chg)}` : ""}), `
