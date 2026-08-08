@@ -6346,11 +6346,11 @@
           {
             "id": "w_ma_kpi_anzahl",
             "type": "kpi",
-            "label": "Aktive Verkäufer",
+            "label": "Aktive Mitarbeiter",
             "action_id": "act_ma_kpi",
             "config": {
               "width": 4,
-              "column": "AktiveVerkaeufer",
+              "column": "AktiveMitarbeiter",
               "aggregation": "first",
               "prefix": "",
               "suffix": "",
@@ -6360,11 +6360,11 @@
           {
             "id": "w_ma_kpi_umsatz",
             "type": "kpi",
-            "label": "Ø Umsatz je Verkäufer",
+            "label": "Auftragswert gesamt",
             "action_id": "act_ma_kpi",
             "config": {
               "width": 4,
-              "column": "UmsatzProVerkaeufer",
+              "column": "AuftragswertGesamt",
               "aggregation": "first",
               "prefix": "€ ",
               "suffix": "",
@@ -6374,15 +6374,15 @@
           {
             "id": "w_ma_kpi_marge",
             "type": "kpi",
-            "label": "Ø Marge",
+            "label": "Angebotswert gesamt",
             "action_id": "act_ma_kpi",
             "config": {
               "width": 4,
-              "column": "MargeProzent",
+              "column": "AngebotswertGesamt",
               "aggregation": "first",
-              "prefix": "",
-              "suffix": " %",
-              "decimals": 1
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
             }
           },
           {
@@ -6396,15 +6396,15 @@
                 "kBenutzer"
               ],
               "drilldown": {
-                "mapping_id": "m_ma_rechnungen",
+                "mapping_id": "m_ma_vorgaenge",
                 "key_column": "kBenutzer",
                 "param": "kBenutzer",
-                "title": "Rechnungen des Mitarbeiters",
+                "title": "Vorgänge des Mitarbeiters",
                 "hidden_columns": [
-                  "kRechnung"
+                  "kAuftrag"
                 ]
               },
-              "info": "Umsatz, Marge und Auftragswert je Mitarbeiter (aus der Rechnung). Klick auf eine Zeile zeigt die Rechnungen des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen."
+              "info": "Auftragseingang je Mitarbeiter aus dem Auftrag/Angebot (Verkäufer-Sicht). Aufträge und Angebote getrennt ausgewiesen. Klick auf eine Zeile zeigt die Vorgänge (Aufträge + Angebote) des Mitarbeiters. Hinweis: „Administrator“/„Lager“ sind System-/Shop-Buchungen."
             }
           }
         ],
