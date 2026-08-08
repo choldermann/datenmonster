@@ -29,7 +29,7 @@ function unitFor(col) {
   const c = String(col).toLowerCase();
   if (/%|anteil|quote|marge/.test(c)) return "%";
   if (/tage|dso|zahldauer/.test(c)) return "Tage";
-  if (/umsatz|kapital|offen|ertrag|db2|db ii|auftrag|einsatz|prognose|ytd|vorjahr|ladenh|versand|forderung/.test(c)) return "€";
+  if (/umsatz|kapital|offen|ertrag|db2|db ii|auftrag|einsatz|prognose|ytd|vorjahr|ladenh|versand|forderung|wert/.test(c)) return "€";
   return "";
 }
 
@@ -98,6 +98,16 @@ function buildAssessment(results) {
     const pv = num(fc["Prognose vs VJ %"]);
     out.push({ bereich: "Ausblick", good: (pv == null || pv >= 0),
       kommentar: `Prognose ${signPct(pv)} ggü. Vorjahr${churnN ? `, ${churnN} schlafende Kunden` : ""}` });
+  }
+  const rt = one("act_retouren_kpi");
+  if (rt) {
+    const q = num(rt.Quote), qvj = num(rt.QuoteVJ);
+    // gut, wenn die Retourenquote ggü. Vorjahr nicht gestiegen ist.
+    const good = (q == null || qvj == null || q <= qvj);
+    const chg = pctNum(q, qvj);
+    out.push({ bereich: "Retouren", good,
+      kommentar: `Retourenquote ${deNum(rt.Quote)} % (VJ ${deNum(rt.QuoteVJ)} %${chg != null ? `, ${signPct(chg)}` : ""}), `
+        + `Wert ${deNum(rt.Wert, true)}` });
   }
   return out;
 }

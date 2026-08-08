@@ -567,6 +567,15 @@ def _assessment_rows(results: dict) -> list:
         pv = _asnum(fc.get("Prognose vs VJ %"))
         out.append(("Ausblick", pv is None or pv >= 0,
                     f"Prognose {_spct(pv)} ggü. Vorjahr" + (f", {churn_n} schlafende Kunden" if churn_n else "")))
+    rt = one("act_retouren_kpi")
+    if rt:
+        q, qvj = _asnum(rt.get("Quote")), _asnum(rt.get("QuoteVJ"))
+        # gut, wenn die Retourenquote ggü. Vorjahr nicht gestiegen ist.
+        good = q is None or qvj is None or q <= qvj
+        chg = _apct(q, qvj)
+        out.append(("Retouren", good,
+                    f"Retourenquote {_pctval(rt.get('Quote'))} (VJ {_pctval(rt.get('QuoteVJ'))}"
+                    + (f", {_spct(chg)}" if chg is not None else "") + f"), Wert {_eur(rt.get('Wert'))}"))
     return out
 
 

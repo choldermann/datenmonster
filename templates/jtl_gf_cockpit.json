@@ -6182,6 +6182,11 @@
                   "action_id": "act_churn",
                   "label": "Schlafende Kunden (Churn)",
                   "kind": "churn"
+                },
+                {
+                  "action_id": "act_retouren_kpi",
+                  "label": "Retouren",
+                  "kind": "kpi"
                 }
               ]
             }
