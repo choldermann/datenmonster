@@ -162,6 +162,26 @@ def pick_prose_model(installed: list, configured: str | None = None,
     return inst[0] if inst else (explicit or configured)
 
 
+async def resolve_prose_model(db, svc) -> Optional[str]:
+    """Textmodell für Prosa-Ausgaben (Summary, Lagebericht, Handlungsempfehlung) –
+    passend zum AKTIVEN Provider.
+
+    Beim Gateway-Provider (»Datenmonster AI«) ist `ai_prose_model` NICHT anwendbar:
+    dort steht ein Ollama-Modellname (z.B. "gemma3:4b") drin, den der Gateway gegen
+    seine Whitelist prüft (docs/monstersuite-ai-gateway-api.md §4). Früher wurde er
+    trotzdem mitgeschickt – die Anfrage lief also nicht am gewählten Gateway-Modell.
+    Deshalb hier `ai_dm_model` (bzw. "auto") durchreichen."""
+    from app.api.settings import get_setting
+    if get_setting(db, "ai_provider", "ollama") == "datenmonster":
+        return getattr(svc, "model", None) or None
+    try:
+        installed = await get_installed_models(svc.base_url)
+    except Exception:
+        installed = []
+    return pick_prose_model(installed, getattr(svc, "model", None),
+                            explicit=get_setting(db, "ai_prose_model", "") or None)
+
+
 def classify_query(message: str) -> str:
     msg = message.lower()
     if any(w in msg for w in ["agent", "architektur", "konzept", "design", "strategie", "planung", "system design"]):

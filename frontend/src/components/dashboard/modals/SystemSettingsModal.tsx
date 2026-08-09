@@ -508,7 +508,9 @@ function AiSettings() {
     try {
       if (form.ai_provider === "datenmonster") {
         const { data } = await api.get("/api/ai/credits");
-        if (data?.error) setTestResult({ ok: false, msg: `Gateway: ${data.error}` });
+        // Der Server liefert bereits einen vollständigen, handlungsleitenden Satz
+        // (z.B. „Lizenz nicht aktiviert …") – kein „Gateway:"-Präfix davorsetzen.
+        if (data?.error) setTestResult({ ok: false, msg: data.error });
         else setTestResult({ ok: true, msg: `Datenmonster AI verbunden ✓ — Guthaben: ${data.balance ?? "?"} Credits` });
         return;
       }

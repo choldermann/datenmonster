@@ -445,16 +445,11 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
                   "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
                   "Anrede, KEINE Briefformel, keine Grußformel.")
-        # Textmodell wählen: bevorzugt das in den Einstellungen gewählte `ai_prose_model`,
-        # sonst ein bewährtes Instruct-Modell – aber IMMER installiert (sonst still Fehler).
-        from app.services.ai_service import AIParams, get_installed_models, pick_prose_model
-        from app.api.settings import get_setting
-        try:
-            installed = await get_installed_models(svc.base_url)
-        except Exception:
-            installed = []
-        prose_setting = get_setting(db, "ai_prose_model", "") or None
-        chosen = pick_prose_model(installed, svc.model, explicit=prose_setting)
+        # Textmodell wählen: beim lokalen Ollama das gewählte `ai_prose_model` (bzw. ein
+        # bewährtes Instruct-Modell, aber IMMER installiert – sonst still Fehler), beim
+        # Gateway-Provider dessen eigenes Modell.
+        from app.services.ai_service import AIParams, resolve_prose_model
+        chosen = await resolve_prose_model(db, svc)
         txt = await svc.complete_with_context(
             "Analysiere diese bereits berechneten Kennzahlen:\n" + "\n".join(lines), system,
             params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=240, num_ctx=4096),

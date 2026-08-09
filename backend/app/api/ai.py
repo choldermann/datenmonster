@@ -212,8 +212,9 @@ def ai_credits(db: Session = Depends(get_db), user: User = Depends(get_current_u
             data = r.json()
         return {"provider": "datenmonster", "enabled": True, **data}
     except Exception as e:
+        from app.services.ai_gateway import describe_gateway_error
         return {"provider": "datenmonster", "enabled": True,
-                "error": f"Gateway nicht erreichbar: {e}"}
+                "error": describe_gateway_error(e)}
 
 
 @router.get("/credit-packages")
@@ -226,7 +227,8 @@ def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_c
             r.raise_for_status()
             return r.json()
     except Exception as e:
-        return {"packages": [], "error": f"Gateway nicht erreichbar: {e}"}
+        from app.services.ai_gateway import describe_gateway_error
+        return {"packages": [], "error": describe_gateway_error(e)}
 
 
 # ── Credit-Kauf: Rechnung anfordern (Proxy zum Gateway) ───────────────────────
@@ -491,23 +493,24 @@ async def summarize_data(
     if body.instruction:
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
+    # Textmodell passend zum aktiven Provider (beim Gateway gilt `ai_dm_model`).
+    from app.services.ai_service import resolve_prose_model
+    from app.api.settings import get_setting
+    provider = get_setting(db, "ai_provider", "ollama")
+    chosen = await resolve_prose_model(db, svc)
+
     import hashlib, time as _t
     # Prompt-Version im Cache-Key: bei Änderungen an den System-Prompts hier hochzählen,
     # sonst würden alte (z.B. Retouren-lose) Analysen aus dem Cache weiter ausgeliefert.
+    # Provider + Modell gehören ZWINGEND in den Key: sonst liefert ein Modellwechsel
+    # innerhalb der TTL den Text des vorherigen Modells zurück (sieht aus, als würden
+    # alle Modelle dasselbe schreiben).
     _PROMPT_VERSION = "2"
     ckey = hashlib.md5(
-        f"{_PROMPT_VERSION}|{body.label}|{body.instruction}|{data_text}|{sections_text}|{body.layout}".encode("utf-8")
+        f"{_PROMPT_VERSION}|{provider}|{chosen or svc.model}|{body.label}|{body.instruction}"
+        f"|{data_text}|{sections_text}|{body.layout}".encode("utf-8")
     ).hexdigest()
 
-    # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst ein Instruct-Modell
-    # (das Default-/Code-Modell formuliert oft schlechtes Deutsch).
-    from app.services.ai_service import get_installed_models, pick_prose_model
-    from app.api.settings import get_setting
-    try:
-        installed = await get_installed_models(svc.base_url)
-    except Exception:
-        installed = []
-    chosen = pick_prose_model(installed, svc.model, explicit=get_setting(db, "ai_prose_model", "") or None)
     # Mit Zusatz-Sektionen mehr Platz für Text und Kontext.
     if is_report:
         # Report: Themenblöcke über alle Bereiche (Bewertungstabelle baut der Client
@@ -520,20 +523,31 @@ async def summarize_data(
 
     # Als SSE-Stream ausliefern: die Response-Header gehen sofort raus (kein
     # "Network Error" bei langsamem Kaltstart), Text erscheint fortlaufend.
+    # Vorab ein »meta«-Event mit dem tatsächlich verwendeten Modell – sonst ist von
+    # außen nicht erkennbar, wer den Text geschrieben hat (bzw. ob er aus dem Cache kam).
     async def gen():
         hit = _SUMMARY_CACHE.get(ckey)
-        if hit and hit[0] + _SUMMARY_TTL > _t.time():
-            yield hit[1]
+        cached = bool(hit and hit[0] + _SUMMARY_TTL > _t.time())
+        yield f"data: {json.dumps({'meta': {'model': chosen or svc.model, 'provider': provider, 'cached': cached}})}\n\n"
+        if cached:
+            yield f"data: {json.dumps({'token': hit[1]})}\n\n"
+            yield "data: [DONE]\n\n"
             return
         parts = []
-        async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
-            parts.append(tok)
-            yield tok
+        try:
+            async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
+                parts.append(tok)
+                yield f"data: {json.dumps({'token': tok})}\n\n"
+        except Exception as e:
+            # z.B. GatewayError (insufficient_credits, invalid_key, Modell nicht in der
+            # Whitelist) – sichtbar machen statt den Stream stumm abbrechen zu lassen.
+            yield f"data: {json.dumps({'error': str(e)[:300]})}\n\n"
         text = "".join(parts).strip()
         if text:
             _SUMMARY_CACHE[ckey] = (_t.time(), text, chosen or svc.model)
+        yield "data: [DONE]\n\n"
 
-    return _sse_stream(gen())
+    return StreamingResponse(gen(), media_type="text/event-stream")
 
 
 # ── KI-Handlungsempfehlung (Klick auf Widget-Zeile) ─────────────────────────────
@@ -698,15 +712,9 @@ async def recommend_action(
     if body.instruction:
         user_msg += f"\n\nZusätzliche Anweisung: {body.instruction}"
 
-    # Textmodell: bevorzugt das gewählte `ai_prose_model`, sonst Instruct-Modell
-    # (Default ist oft ein Code-Modell → schlechtes Deutsch).
-    from app.services.ai_service import get_installed_models, pick_prose_model
-    from app.api.settings import get_setting
-    try:
-        installed = await get_installed_models(svc.base_url)
-    except Exception:
-        installed = []
-    chosen = pick_prose_model(installed, svc.model, explicit=get_setting(db, "ai_prose_model", "") or None)
+    # Textmodell passend zum aktiven Provider (beim Gateway gilt `ai_dm_model`).
+    from app.services.ai_service import resolve_prose_model
+    chosen = await resolve_prose_model(db, svc)
     params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=360, num_ctx=4096)
 
     async def generate():

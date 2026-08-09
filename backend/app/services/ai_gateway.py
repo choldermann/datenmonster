@@ -32,6 +32,35 @@ class GatewayError(RuntimeError):
         super().__init__(message or code)
 
 
+def describe_gateway_error(exc: Exception) -> str:
+    """Gateway-Fehler in einen Satz übersetzen, der sagt, WAS zu tun ist.
+
+    Wichtig: ein abgewiesener Aufruf ist NICHT dasselbe wie ein unerreichbarer
+    Server. Der Gateway authentifiziert über die Lizenz — ohne aktivierte Lizenz
+    kommt 401 zurück, und die pauschale Meldung »Gateway nicht erreichbar« schickt
+    einen auf die Suche nach einem Netzwerkproblem, das es nicht gibt.
+    """
+    if isinstance(exc, httpx.HTTPStatusError):
+        code = exc.response.status_code
+        if code == 401:
+            return ("Lizenz nicht aktiviert oder ungültig — bitte im Reiter »Lizenz« "
+                    "Schlüssel und E-Mail eintragen und aktivieren.")
+        if code == 402:
+            return "Guthaben aufgebraucht — bitte Credits aufladen."
+        if code == 403:
+            return "Diese Lizenz ist nicht für Datenmonster AI freigeschaltet."
+        if code == 429:
+            return "Zu viele Anfragen — bitte einen Moment warten."
+        return f"Gateway meldet Fehler (HTTP {code})."
+    if isinstance(exc, GatewayError):
+        if exc.code == "insufficient_credits":
+            return "Guthaben aufgebraucht — bitte Credits aufladen."
+        if exc.code == "invalid_key":
+            return "Lizenz nicht aktiviert oder ungültig — bitte im Reiter »Lizenz« aktivieren."
+        return str(exc)
+    return f"Gateway nicht erreichbar: {exc}"
+
+
 class DatamonsterAIService:
     def __init__(self, db, model: str = "auto", timeout: int = GATEWAY_TIMEOUT):
         # `base_url` zeigt bewusst auf den Gateway-Namespace: Ollama-spezifische
@@ -203,5 +232,5 @@ class DatamonsterAIService:
                 "gateway_reachable": False,
                 "model_loaded": False,
                 "available_models": [],
-                "error": str(e),
+                "error": describe_gateway_error(e),
             }

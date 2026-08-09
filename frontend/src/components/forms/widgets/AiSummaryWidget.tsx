@@ -323,6 +323,9 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
+  // Welches Modell den Text geschrieben hat (bzw. ob er aus dem Server-Cache kam) –
+  // sonst ist ein Modellwechsel im Ergebnis nicht nachvollziehbar.
+  const [meta, setMeta] = useState(null);
 
   // Fertigen KI-Text + Lade-Status nach oben melden: FormRunner gibt den Text dem
   // PDF-Report mit (Report überspringt so den langsamen KI-Aufruf) und sperrt den
@@ -349,9 +352,9 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const dataKey = JSON.stringify(rows) + "|" + JSON.stringify(sections) + "|" + (cfg.instruction || "");
 
   useEffect(() => {
-    if (!rows.length) { setText(""); setErr(null); return; }
+    if (!rows.length) { setText(""); setErr(null); setMeta(null); return; }
     const ac = new AbortController();
-    setLoading(true); setErr(null); setText("");
+    setLoading(true); setErr(null); setText(""); setMeta(null);
 
     // Beim Filterwechsel (z.B. Zeitraum) wird die noch streamende Anfrage per abort()
     // abgebrochen und sofort eine neue gestartet. Die gerade schließende SSE-Verbindung
@@ -367,7 +370,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
               instruction: cfg.instruction || "",
               layout: cfg.report_layout ? "report" : "prose" },
             (_tok, full) => { if (!ac.signal.aborted) setText(full); },
-            null,
+            m => { if (!ac.signal.aborted) setMeta(m); },
             ac.signal,
           );
           return;
@@ -396,6 +399,11 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
         color: S.accent }}>
         <Sparkles size={12} /> KI-Analyse
         {loading && <Loader2 size={11} style={{ animation: "spin 1s linear infinite", color: S.textDim }} />}
+        {meta?.model && (
+          <span style={{ color: S.textDim, fontWeight: 500, letterSpacing: 0, textTransform: "none" }}>
+            · {meta.model}{meta.cached ? " (zwischengespeichert)" : ""}
+          </span>
+        )}
       </div>
       {!rows.length ? (
         <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Warten auf Kennzahlen …</p>
