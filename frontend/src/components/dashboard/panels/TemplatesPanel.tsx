@@ -11,6 +11,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
   const [expanded, setExpanded] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [installed, setInstalled] = useState(false);
+  const [summary, setSummary] = useState("");  // „x neu, y wiederverwendet"
   const [error, setError] = useState("");
   const [config, setConfig] = useState({});
   const [dbConnections, setDbConnections] = useState([]);
@@ -30,11 +31,17 @@ function TemplateCard({ template, projectId, onInstalled }) {
     setInstalling(true);
     setError("");
     try {
-      await api.post("/api/templates/install", {
+      const { data } = await api.post("/api/templates/install", {
         template_id: template.template_id,
         project_id: projectId,
         config,
       });
+      // Der Installer verwendet gleichnamige Objekte im Projekt wieder, statt
+      // Doppel anzulegen – das Ergebnis kurz zurückmelden.
+      const objs = Object.values(data?.created || {}).flat();
+      const reused = objs.filter(o => o && o.reused).length;
+      setSummary(`${objs.length - reused} neu angelegt`
+        + (reused ? `, ${reused} vorhandene wiederverwendet` : ""));
       setInstalled(true);
       setTimeout(() => onInstalled(), 1000);
     } catch (e) {
@@ -140,6 +147,13 @@ function TemplateCard({ template, projectId, onInstalled }) {
           {error && (
             <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
               <p style={{ fontSize: 11, color: "#e07070", margin: 0 }}>✗ {error}</p>
+            </div>
+          )}
+
+          {summary && !error && (
+            <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5,
+              backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)" }}>
+              <p style={{ fontSize: 11, color: "#6ee7b7", margin: 0 }}>✓ {summary}</p>
             </div>
           )}
 

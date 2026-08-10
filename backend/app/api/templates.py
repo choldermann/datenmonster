@@ -238,8 +238,23 @@ def _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
                  "to_node": first_node_id, "to_port": "in"},
             ] + connections
 
+    # Gleichnamige Pipeline im Projekt? → aktualisieren statt ein Duplikat anlegen
+    # (sonst liefe nach einer zweiten Installation derselbe Ablauf doppelt im
+    # Scheduler). Der Aufrufer erkennt die Wiederverwendung am gesetzten Flag.
+    p_name = _apply_config(pipeline_def.get("name", default_name), config)
+    p = db.query(Pipeline).filter(Pipeline.project_id == project_id,
+                                  Pipeline.name == p_name).first()
+    if p is not None:
+        p.nodes = nodes
+        p.connections = connections
+        flag_modified(p, "nodes")
+        flag_modified(p, "connections")
+        db.commit()
+        p._dm_reused = True
+        return p
+
     p = Pipeline(
-        name=_apply_config(pipeline_def.get("name", default_name), config),
+        name=p_name,
         project_id=project_id,
         nodes=nodes,
         connections=connections,
@@ -274,6 +289,19 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             config[key] = req["default"]
     created = {"datasets": [], "mappings": [], "pipelines": []}
 
+    # ── Wiederverwendung statt Doppel ────────────────────────────────────────
+    # Zweimal installieren (oder zwei Templates, die sich dieselbe Auswertung
+    # teilen) legte bisher alles ein zweites Mal an. Deshalb: existiert im
+    # Zielprojekt schon ein Dataset/Mapping mit demselben NAMEN, wird dieses
+    # wiederverwendet und mit dem Stand aus dem Template aktualisiert (so kommen
+    # SQL-Korrekturen einer neuen Template-Version an). Formulare werden dabei
+    # bewusst NICHT angefasst – installierte Dashboards sind oft nachträglich
+    # gepatcht, ein Überschreiben würde diese Arbeit verwerfen.
+    ds_by_name = {d.name: d for d in db.query(Dataset)
+                  .filter(Dataset.project_id == body.project_id).all() if d.name}
+    map_by_name = {m.name: m for m in db.query(Mapping)
+                   .filter(Mapping.project_id == body.project_id).all() if m.name}
+
     # ── Datasets anlegen ──────────────────────────────────────────────────────
     ds_id_map = {}
     for ds_def in content.get("datasets", []):
@@ -282,6 +310,23 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
 
         # Platzhalter in columns ersetzen (falls Strings)
         columns = [_apply_config(c, config) if isinstance(c, str) else c for c in columns]
+
+        # Schon vorhanden? → weiterverwenden (SQL-Datasets auf Template-Stand bringen).
+        existing_ds = ds_by_name.get(ds_def.get("name", "Dataset"))
+        if existing_ds is not None:
+            if file_type == "db_query" and existing_ds.file_type == "db_query":
+                existing_ds.source_sql = _apply_config(ds_def.get("sql", ""), config)
+                existing_ds.source_connection_id = _resolve_conn_value(
+                    ds_def.get("source_connection_id"), config)
+                if ds_def.get("query_config") is not None:
+                    existing_ds.query_config = ds_def["query_config"]
+                if columns:
+                    existing_ds.columns = columns
+                db.commit()
+            ds_id_map[ds_def["id"]] = existing_ds.id
+            created["datasets"].append({"id": existing_ds.id, "name": existing_ds.name,
+                                        "file_type": existing_ds.file_type, "reused": True})
+            continue
 
         ds_kwargs = dict(
             name=ds_def.get("name", "Dataset"),
@@ -418,6 +463,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                     pass
 
         ds_id_map[ds_def["id"]] = ds.id
+        ds_by_name[ds.name] = ds  # Doppel innerhalb desselben Templates vermeiden
         created["datasets"].append({"id": ds.id, "name": ds.name, "file_type": file_type})
 
     # ── Mappings anlegen ──────────────────────────────────────────────────────
@@ -551,9 +597,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 "fields": connections,
             }]
 
-        m = Mapping(
-            name=m_def.get("name", "Mapping"),
-            project_id=body.project_id,
+        m_name = m_def.get("name", "Mapping")
+        m_fields = dict(
             canvas_nodes=canvas_nodes,
             joins=joins,
             sql_nodes=sql_nodes,
@@ -567,9 +612,25 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             sort_nodes=sort_nodes,
             targets=targets,
         )
+        # Gleichnamiges Mapping im Projekt? → wiederverwenden und auf den Stand des
+        # Templates bringen, statt ein Duplikat anzulegen. Bestehende Formulare, die
+        # per mapping_id darauf zeigen, bleiben dadurch funktionsfähig.
+        existing_m = map_by_name.get(m_name)
+        if existing_m is not None:
+            for key, val in m_fields.items():
+                setattr(existing_m, key, val)
+                flag_modified(existing_m, key)
+            db.commit()
+            mapping_id_map[m_def["id"]] = existing_m.id
+            created["mappings"].append({"id": existing_m.id, "name": existing_m.name,
+                                        "reused": True})
+            continue
+
+        m = Mapping(name=m_name, project_id=body.project_id, **m_fields)
         db.add(m)
         db.commit()
         db.refresh(m)
+        map_by_name[m_name] = m  # Doppel innerhalb desselben Templates vermeiden
         mapping_id_map[m_def["id"]] = m.id
         created["mappings"].append({"id": m.id, "name": m.name})
 
@@ -586,7 +647,10 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             continue
         p = _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
                               content, db, body.project_id, t.name)
-        created["pipelines"].append({"id": p.id, "name": p.name})
+        entry = {"id": p.id, "name": p.name}
+        if getattr(p, "_dm_reused", False):
+            entry["reused"] = True
+        created["pipelines"].append(entry)
 
     # Reports werden nicht mehr installiert – Dashboards leben jetzt als Formulare
     # (Form-Widgets binden an Actions/Mappings). Ein "reports"-Schlüssel in alten
@@ -598,7 +662,18 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     # ein manueller Schritt nach dem Import; slug hat zudem einen Unique-Constraint).
     from app.models.form import Form
     import copy as _copy
+    form_by_name = {f.name: f for f in db.query(Form)
+                    .filter(Form.project_id == body.project_id).all() if f.name}
     for f_def in content.get("forms", []):
+        # Gleichnamiges Formular vorhanden? → unangetastet lassen. Installierte
+        # Dashboards werden im Betrieb gepatcht (zusätzliche Reiter/Widgets); ein
+        # Überschreiben mit dem Template-Schema würde diese Arbeit verwerfen.
+        f_name = _apply_config(f_def.get("name", "Formular"), config)
+        existing_f = form_by_name.get(f_name)
+        if existing_f is not None:
+            created.setdefault("forms", []).append(
+                {"id": existing_f.id, "name": existing_f.name, "reused": True})
+            continue
         schema = _copy.deepcopy(f_def.get("schema", {}) or {})
         for a in schema.get("actions", []) or []:
             mid = a.get("mapping_id")
@@ -647,11 +722,15 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     # ── Installation protokollieren (erzeugte Objekt-IDs) ────────────────────
     # Damit delete_template gezielt per ID löschen kann statt fehleranfällig nach
     # Namen (Namensabgleich konnte gleichnamige Originale mitlöschen).
+    # WICHTIG: nur wirklich NEU angelegte Objekte protokollieren – wiederverwendete
+    # (reused) gehörten schon vorher zum Projekt und dürfen beim Deinstallieren des
+    # Templates nicht mitgelöscht werden.
     inst_record = {
         "project_id": body.project_id,
         "at": datetime.now(timezone.utc).isoformat(),
         "objects": {
-            typ: [o["id"] for o in created.get(typ, []) if isinstance(o, dict) and "id" in o]
+            typ: [o["id"] for o in created.get(typ, [])
+                  if isinstance(o, dict) and "id" in o and not o.get("reused")]
             for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms", "reports")
         },
     }
