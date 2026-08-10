@@ -115,13 +115,16 @@ def _run_one_action(action: dict, params: dict, row_cap: int = None) -> dict:
         db.close()
 
 
-def _run_actions(schema: dict, params: dict, db) -> dict:
-    """Alle Mapping-Actions des Reports read-only ausführen. Gedrosselt PARALLEL,
-    damit ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run)."""
+def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None) -> dict:
+    """Mapping-Actions des Reports read-only ausführen. Gedrosselt PARALLEL, damit
+    ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run).
+    only_ids: nur diese Action-IDs ausführen (Abschnittsauswahl im Report-Dialog) –
+    abgewählte Reiter kosten so auch keine Laufzeit mehr."""
     from app.api.forms import _expandable_action_ids, FULL_ROWS_CAP
     expandable = _expandable_action_ids(schema)
     actions = [a for a in schema.get("actions", [])
-               if a.get("type") == "run_mapping" and a.get("mapping_id")]
+               if a.get("type") == "run_mapping" and a.get("mapping_id")
+               and (only_ids is None or a.get("id") in only_ids)]
     def _cap(a):
         return FULL_ROWS_CAP if a.get("id") in expandable else None
     results = {}
@@ -505,6 +508,15 @@ def _pctval(v):
     return "–" if _asnum(v) is None else _fmt(v, 1) + " %"
 
 
+# Action-IDs, die die Bewertungstabelle auswertet. Wird die Bewertung angefordert,
+# müssen diese Abfragen auch dann laufen, wenn ihr Reiter abgewählt wurde.
+_ASSESSMENT_ACTION_IDS = {
+    "act_overview_kpi", "act_kunden_kpi", "act_kunden_rueckgang", "act_zm_kpi",
+    "act_op_kpi", "act_kapital_kpi", "act_klumpen_kpi", "act_forecast",
+    "act_churn", "act_retouren_kpi",
+}
+
+
 def _assessment_rows(results: dict) -> list:
     """Deterministische Bewertung je Cockpit-Bereich – identisch zur Frontend-Logik
     (buildAssessment in AiSummaryWidget.tsx). Gibt (Bereich, gut?, Kommentar)-Tupel."""
@@ -599,20 +611,17 @@ def _assessment_html(rows: list) -> str:
     return head + "".join(trs) + "</table>"
 
 
-async def generate_report(form, params: dict, db, precomputed_summary: str | None = None) -> bytes:
+SECTION_SUMMARY = "__summary__"
+SECTION_ASSESSMENT = "__assessment__"
+
+
+async def generate_report(form, params: dict, db, precomputed_summary: str | None = None,
+                          sections: Optional[list] = None) -> bytes:
+    """sections: Auswahl aus dem Report-Dialog – Reiter-IDs plus die Pseudo-IDs
+    SECTION_SUMMARY / SECTION_ASSESSMENT. None = kompletter Report (wie bisher)."""
     schema = form.schema or {}
     conn_id = _resolve_conn_id(schema, db)
     company = _fetch_company(conn_id)
-    results = _run_actions(schema, params, db)
-    # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
-    # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
-    if precomputed_summary and precomputed_summary.strip():
-        summary = precomputed_summary.strip()
-    else:
-        try:
-            summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
-        except Exception:
-            summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
 
     tabs = schema.get("result_tabs") or []
     if not tabs:  # ohne Reiter: ein einziger Block über alle Actions
@@ -622,8 +631,39 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
     ai_widget = next((w for w in schema.get("widgets", []) if w.get("type") == "ai_summary"), None)
     is_report = bool((ai_widget or {}).get("config", {}).get("report_layout"))
 
+    # Abschnittsauswahl auswerten: Reiter filtern, KI-Summary/Bewertung ein-/ausschalten
+    # und daraus die wirklich benötigten Mapping-Actions ableiten.
+    sel = set(sections) if sections is not None else None
+    want_summary = SECTION_SUMMARY in sel if sel is not None else True
+    want_assessment = (SECTION_ASSESSMENT in sel if sel is not None else True) and is_report
+    if sel is not None:
+        tabs = [t for t in tabs if t.get("id") in sel]
+
+    only_ids = None
+    if sel is not None:
+        only_ids = set()
+        for t in tabs:
+            only_ids.update(t.get("action_ids") or [])
+        if want_assessment:
+            only_ids |= _ASSESSMENT_ACTION_IDS
+        if want_summary and ai_widget and ai_widget.get("action_id"):
+            only_ids.add(ai_widget["action_id"])
+
+    results = _run_actions(schema, params, db, only_ids)
+    # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
+    # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
+    if not want_summary:
+        summary = ""
+    elif precomputed_summary and precomputed_summary.strip():
+        summary = precomputed_summary.strip()
+    else:
+        try:
+            summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
+        except Exception:
+            summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
+
     body = [_cover_html(company, schema, params, conn_id, form.name or "Report")]
-    if summary or is_report:
+    if summary or want_assessment:
         body.append(
             f'<div style="page-break-before:always"></div>'
             f'<h2 style="color:{ACCENT};font-size:13pt;border-bottom:2px solid {ACCENT};padding-bottom:3px">'
@@ -632,7 +672,7 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             # Report-Prosa als Absätze (mit **fett**); sonst einfacher Fließtext.
             body.append(_summary_to_html(summary) if is_report
                         else f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">{_esc(summary)}</p>')
-        if is_report:
+        if want_assessment:
             body.append(_assessment_html(_assessment_rows(results)))
     for tab in tabs:
         body.append(f'<div style="page-break-before:always"></div>')

@@ -7,6 +7,7 @@ import api from "../api/client";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
+import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -139,14 +140,19 @@ export default function FormRunner() {
   };
 
   const [reporting, setReporting] = useState(false);
-  const downloadReport = async () => {
+  const [reportModal, setReportModal] = useState(false); // Abschnittsauswahl vor dem PDF
+  const downloadReport = async (sections) => {
     setReporting(true);
     try {
       // Bereits im Formular erzeugte KI-Analyse mitgeben → Report überspringt den
-      // langsamen KI-Aufruf (verhindert den Timeout/„Network Error").
-      const aiSummary = Object.values(aiSummaries).find(t => t && t.trim()) || null;
+      // langsamen KI-Aufruf (verhindert den Timeout/„Network Error"). Ist die
+      // KI-Analyse abgewählt, gar nicht erst mitschicken.
+      const wantSummary = !sections || sections.includes(SECTION_SUMMARY);
+      const aiSummary = wantSummary
+        ? (Object.values(aiSummaries).find(t => t && t.trim()) || null) : null;
       // Report-Erzeugung kann (KI/JTL) einige Sekunden dauern → großzügiges Timeout.
-      const resp = await api.post(`/api/forms/${id}/report`, { params, ai_summary: aiSummary },
+      const resp = await api.post(`/api/forms/${id}/report`,
+        { params, ai_summary: aiSummary, sections: sections || null },
         { responseType: "blob", timeout: 180000 });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement("a");
@@ -166,6 +172,7 @@ export default function FormRunner() {
       setError("PDF-Report fehlgeschlagen: " + msg);
     } finally {
       setReporting(false);
+      setReportModal(false);
     }
   };
 
@@ -235,7 +242,7 @@ export default function FormRunner() {
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
         {widgets.length > 0 && (
-          <button onClick={downloadReport} disabled={reporting || aiBusy}
+          <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
             title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
               border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
@@ -412,6 +419,13 @@ export default function FormRunner() {
         })()}
         </>)}
       </div>
+
+      {/* Abschnittsauswahl für den PDF-Report */}
+      {reportModal && (
+        <ReportOptionsModal formId={id} schema={schema} busy={reporting}
+          onClose={() => { if (!reporting) setReportModal(false); }}
+          onConfirm={downloadReport} />
+      )}
     </div>
   );
 }
