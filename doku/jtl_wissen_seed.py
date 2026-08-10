@@ -130,6 +130,41 @@ EINTRAEGE = [
      "Lösung: den Ausdruck in einer abgeleiteten Tabelle/CTE als Spalte vorberechnen (z. B. "
      "CASE WHEN EXISTS(...) THEN 1 ELSE 0 END AS Flag bzw. ROW_NUMBER() OVER (...) AS rn) und "
      "erst in der äußeren Abfrage aggregieren."),
+    ("fact", "JTL – cHAN ist oft die eigene Artikelnummer, keine Herstellernummer",
+     "In tArtikel.cHAN steht bei vielen Beständen nicht die Nummer des Herstellers, sondern eine "
+     "Kopie der eigenen cArtNr (gemessen: 1.510 von 2.818 aktiven Artikeln). Für Abgleiche mit "
+     "Herstellerdaten ist cHAN deshalb nur brauchbar, wenn cHAN <> cArtNr gilt. Bei manchen "
+     "Herstellern steht dort auch ein Produktname statt einer Nummer (z. B. 'rhenus FY 122 L'), "
+     "und derselbe cHAN kann mehrere Artikel abdecken (Gebindegrößen, Farben, Konfektionsgrößen)."),
+
+    ("fact", "JTL – Artikelbeschreibungen und ihre Felder",
+     "Beschreibungstexte liegen in dbo.tArtikelBeschreibung: cName (Artikelname), cBeschreibung "
+     "(Langtext) und cKurzBeschreibung. Join über kArtikel mit kSprache=1, kPlattform=1, kShop=0. "
+     "In der Praxis enthält cKurzBeschreibung häufig die eigentlichen technischen Daten (Maße, "
+     "Material, Verpackungsstaffel), während cBeschreibung leer ist — beim Erzeugen von Texten "
+     "ist die Kurzbeschreibung deshalb die wichtigste Quelle im Artikelstamm."),
+
+    ("rule", "JTL – Lagerbestand kommt aus tlagerbestand, nicht aus tArtikel",
+     "tArtikel.nLagerbestand ist in lagergeführten Beständen durchgehend 0. Der reale Bestand "
+     "steht in dbo.tlagerbestand und muss je Artikel summiert werden: "
+     "(SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel). "
+     "Gilt für alle Auswertungen, die nach Bestand priorisieren oder Kapitalbindung rechnen."),
+
+    ("rule", "JTL – Pflichtfelder der Intrastat-Meldung im Artikelstamm",
+     "Eine Intrastat-Meldezeile braucht drei Angaben aus dbo.tArtikel: cTaric (achtstellige "
+     "Warennummer der Kombinierten Nomenklatur), cHerkunftsland (Ursprungsland, seit 2022 auch "
+     "bei der Versendung Pflicht) und das Gewicht als Eigenmasse — dabei fGewicht prüfen und auf "
+     "fArtGewicht ausweichen, denn gepflegt ist mal das eine, mal das andere. Fehlt eines davon, "
+     "ist die Zeile nicht meldefähig. Artikel mit cHerkunftsland NOT IN ('', 'DE') sind die "
+     "vorrangigen Kandidaten für die Pflege."),
+
+    ("rule", "Mapping – Ziel ohne Feldliste erzeugt leere Zeilen",
+     "Wird ein Mapping per Skript angelegt und bekommt targets[0].fields nicht gefüllt, liefert "
+     "execute_mapping zu jeder echten Zeile eine zusätzliche leere ({}). Die Feldliste muss je "
+     "Ausgabespalte einen Eintrag haben: source_field/target_field = Spaltenname, target_type "
+     "'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer "
+     "{'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe "
+     "hart auf 50 Zeilen — für vollständige Listen row_cap übergeben."),
 ]
 
 db = SessionLocal()

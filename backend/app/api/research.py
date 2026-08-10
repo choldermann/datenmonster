@@ -34,7 +34,33 @@ class EanResearchRequest(BaseModel):
 def manufacturers(user: User = Depends(get_current_user)):
     """Für welche Hersteller gibt es einen Adapter?"""
     from app.services.product_research import HERSTELLER
-    return [{"id": h["id"], "name": h["name"]} for h in HERSTELLER]
+    return [{"id": h["id"], "name": h["name"],
+             "liefert_ean": bool(h.get("nummer_aus_url")),
+             "liefert_text": bool(h.get("abschnitte"))} for h in HERSTELLER]
+
+
+class SupportedRequest(BaseModel):
+    namen: list[str] = []
+
+
+@router.post("/supported")
+def supported(body: SupportedRequest, user: User = Depends(get_current_user)):
+    """Welche der übergebenen Herstellernamen lassen sich auswerten?
+
+    Die Zuordnung Name → Adapter steckt in der Registry (Regex je Hersteller);
+    die Oberfläche soll sie nicht nachbauen müssen.
+    """
+    from app.services.product_research import hersteller_profil
+    out = {}
+    for name in body.namen[:500]:
+        p = hersteller_profil(name or "")
+        out[name] = {
+            "auswertbar":   bool(p),
+            "adapter":      p["name"] if p else None,
+            "liefert_ean":  bool(p and p.get("nummer_aus_url")),
+            "liefert_text": bool(p and p.get("abschnitte")),
+        }
+    return out
 
 
 @router.post("/ean")

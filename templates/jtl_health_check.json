@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.2",
+  "version": "1.4",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -13,7 +13,8 @@
     "Ein Klick auf eine Ampel-Zeile öffnet die zugehörige Detailliste; dieselben Listen stehen als Reiter zur Verfügung und lassen sich per CSV exportieren.",
     "Nicht jede Lücke ist ein Fehler: Dienstleistungs- und Freipositionen brauchen keine EAN, Filialen desselben Kunden sind legitime Mehrfachanlagen.",
     "Der Reiter „Artikelstamm“ enthält eine KI-gestützte Artikelbeschreibung: Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell.",
-    "Ganz oben im Reiter „Artikelstamm“ steht „Fehlende EANs beim Hersteller holen“: Für Artikel ohne EAN wird die offizielle Nummer über die Hersteller-Artikelnummer auf der Produktseite des Herstellers nachgeschlagen (derzeit Deiss und Denios). Die Vorschläge lassen sich als CSV ausgeben; geschrieben wird nichts."
+    "Ganz oben im Reiter „Artikelstamm“ steht „Fehlende EANs beim Hersteller holen“: Für Artikel ohne EAN wird die offizielle Nummer über die Hersteller-Artikelnummer auf der Produktseite des Herstellers nachgeschlagen (derzeit Deiss und Denios). Die Vorschläge lassen sich als CSV ausgeben; geschrieben wird nichts.",
+    "Der Reiter „Artikelstamm“ beginnt mit der Hersteller-Übersicht: je Hersteller die Lücken (ohne EAN, ohne Herstellernummer, dürftiger Text) und ob seine Produktseiten auswertbar sind. Klick auf einen Hersteller listet dessen Artikel, Klick auf einen Artikel öffnet den Beschreibungsvorschlag."
   ],
   "config_required": [
     {
@@ -1359,7 +1360,99 @@
           "sql": "SELECT TOP 500\n  A.kArtikel                                      AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(H.cName, '')                             AS Hersteller,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  ISNULL(WG.cName, '')                            AS Warengruppe,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(AB.cName, '') <> ''\n  AND LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) < {{beschreibung_min_zeichen}}\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
         }
       ],
-      "targets": []
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel mit dürftiger Beschreibung",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Zeichen",
+              "target_field": "Zeichen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zeichen"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "m_hc_beschreibung_fakten",
@@ -1399,7 +1492,119 @@
           "sql": "SELECT TOP 1\n  A.cArtNr                                                   AS ArtNr,\n  ISNULL(AB.cName, '')                                       AS Artikel,\n  ISNULL(H.cName, '')                                        AS Hersteller,\n  ISNULL(A.cBarcode, '')                                     AS EAN,\n  ISNULL(A.cHAN, '')                                         AS HAN,\n  ISNULL(WG.cName, '')                                       AS Warengruppe,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))), 800)      AS Beschreibung,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cKurzBeschreibung, ''))), 400)  AS Kurzbeschreibung,\n  CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2))               AS VKNetto,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))               AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE A.kArtikel = :kArtikel"
         }
       ],
-      "targets": []
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikelbeschreibung Fakten",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Beschreibung",
+              "target_field": "Beschreibung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Beschreibung"
+              }
+            },
+            {
+              "source_field": "Kurzbeschreibung",
+              "target_field": "Kurzbeschreibung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kurzbeschreibung"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            }
+          ]
+        }
+      ]
     },
     {
       "id": "m_hc_ean_kandidaten",
@@ -1435,7 +1640,394 @@
           "sql": "SELECT TOP 2000\n  A.kArtikel                                   AS kArtikel,\n  A.cArtNr                                     AS ArtNr,\n  ISNULL(AB.cName, '')                         AS Artikel,\n  ISNULL(H.cName, '')                          AS Hersteller,\n  A.cHAN                                       AS HAN,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cBarcode, '') = ''\n  AND ISNULL(A.cHAN, '') <> ''\n  AND A.cHAN <> A.cArtNr\n  AND ISNULL(H.cName, '') <> ''\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
         }
       ],
-      "targets": []
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – EAN-Kandidaten (Hersteller bekannt)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_hersteller",
+      "name": "Health-Check – Hersteller-Übersicht",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kHersteller",
+            "Hersteller",
+            "Artikel",
+            "OhneEAN",
+            "OhneHAN",
+            "DuerftigerText",
+            "OhneTaric",
+            "OhneHerkunft",
+            "OhneGewicht",
+            "Auslandsartikel",
+            "Lagerwert"
+          ],
+          "sql": "SELECT\n  ISNULL(H.kHersteller, 0)                     AS kHersteller,\n  ISNULL(H.cName, '(ohne Hersteller)')         AS Hersteller,\n  COUNT(*)                                     AS Artikel,\n  SUM(CASE WHEN ISNULL(A.cBarcode, '') = '' THEN 1 ELSE 0 END)          AS OhneEAN,\n  SUM(CASE WHEN ISNULL(A.cHAN, '') = '' OR A.cHAN = A.cArtNr\n           THEN 1 ELSE 0 END)                                            AS OhneHAN,\n  SUM(CASE WHEN LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))\n                < {{beschreibung_min_zeichen}} THEN 1 ELSE 0 END)        AS DuerftigerText,\n  SUM(CASE WHEN ISNULL(A.cTaric, '') = '' THEN 1 ELSE 0 END)             AS OhneTaric,\n  SUM(CASE WHEN ISNULL(A.cHerkunftsland, '') = '' THEN 1 ELSE 0 END)     AS OhneHerkunft,\n  SUM(CASE WHEN ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0\n           THEN 1 ELSE 0 END)                                            AS OhneGewicht,\n  SUM(CASE WHEN ISNULL(A.cHerkunftsland, '') NOT IN ('', 'DE')\n           THEN 1 ELSE 0 END)                                            AS Auslandsartikel,\n  CAST(SUM(ISNULL(LB.Bestand, 0) * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Lagerwert\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\nGROUP BY ISNULL(H.kHersteller, 0), ISNULL(H.cName, '(ohne Hersteller)')\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Hersteller-Übersicht",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kHersteller",
+              "target_field": "kHersteller",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kHersteller"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "OhneEAN",
+              "target_field": "OhneEAN",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneEAN"
+              }
+            },
+            {
+              "source_field": "OhneHAN",
+              "target_field": "OhneHAN",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneHAN"
+              }
+            },
+            {
+              "source_field": "DuerftigerText",
+              "target_field": "DuerftigerText",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DuerftigerText"
+              }
+            },
+            {
+              "source_field": "OhneTaric",
+              "target_field": "OhneTaric",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneTaric"
+              }
+            },
+            {
+              "source_field": "OhneHerkunft",
+              "target_field": "OhneHerkunft",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneHerkunft"
+              }
+            },
+            {
+              "source_field": "OhneGewicht",
+              "target_field": "OhneGewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneGewicht"
+              }
+            },
+            {
+              "source_field": "Auslandsartikel",
+              "target_field": "Auslandsartikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auslandsartikel"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_hersteller_artikel",
+      "name": "Health-Check – Artikel eines Herstellers",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "EAN",
+            "HAN",
+            "Warennummer",
+            "Herkunftsland",
+            "Gewicht",
+            "Zeichen",
+            "Bestand"
+          ],
+          "sql": "SELECT TOP 1000\n  A.kArtikel                                      AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  CASE WHEN A.cHAN = A.cArtNr THEN '' ELSE ISNULL(A.cHAN, '') END AS HAN,\n  ISNULL(A.cTaric, '')                            AS Warennummer,\n  ISNULL(A.cHerkunftsland, '')                    AS Herkunftsland,\n  CAST(CASE WHEN ISNULL(A.fGewicht, 0) > 0 THEN A.fGewicht\n            ELSE ISNULL(A.fArtGewicht, 0) END AS DECIMAL(18,3)) AS Gewicht,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kHersteller, 0) = :kHersteller\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel eines Herstellers",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Warennummer",
+              "target_field": "Warennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warennummer"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
+              }
+            },
+            {
+              "source_field": "Gewicht",
+              "target_field": "Gewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewicht"
+              }
+            },
+            {
+              "source_field": "Zeichen",
+              "target_field": "Zeichen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zeichen"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -1557,6 +2149,13 @@
             "mapping_id": "m_hc_ean_kandidaten",
             "pipeline_id": null,
             "label": "Health-Check – EAN-Kandidaten"
+          },
+          {
+            "id": "act_hc_hersteller",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_hersteller",
+            "pipeline_id": null,
+            "label": "Health-Check – Hersteller-Übersicht"
           }
         ],
         "widgets": [
@@ -1860,6 +2459,19 @@
                 "batch": 20
               }
             }
+          },
+          {
+            "id": "w_hc_hersteller",
+            "type": "hersteller_navigator",
+            "label": "Stammdaten je Hersteller",
+            "action_id": "act_hc_hersteller",
+            "config": {
+              "width": 12,
+              "hersteller_navigator": {
+                "artikel_mapping_id": "m_hc_hersteller_artikel",
+                "fakten_mapping_id": "m_hc_beschreibung_fakten"
+              }
+            }
           }
         ],
         "result_tabs": [
@@ -1876,6 +2488,7 @@
             "id": "tab_hc_artikel",
             "label": "Artikelstamm",
             "action_ids": [
+              "act_hc_hersteller",
               "act_hc_ean_kandidaten",
               "act_hc_ohne_ean",
               "act_hc_ohne_gewicht",

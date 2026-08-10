@@ -700,6 +700,13 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 amid = ai.get("mapping_id")
                 if isinstance(amid, str) and amid in mapping_id_map:
                     ai["mapping_id"] = mapping_id_map[amid]
+            # Hersteller-Navigator: Artikel- und Fakten-Mapping in der Konfiguration.
+            hn = (w.get("config") or {}).get("hersteller_navigator")
+            if isinstance(hn, dict):
+                for schluessel in ("artikel_mapping_id", "fakten_mapping_id"):
+                    hmid = hn.get(schluessel)
+                    if isinstance(hmid, str) and hmid in mapping_id_map:
+                        hn[schluessel] = mapping_id_map[hmid]
             # EAN-Recherche: config.ean_research.mapping_id (Kandidaten-Mapping).
             er = (w.get("config") or {}).get("ean_research")
             if isinstance(er, dict):

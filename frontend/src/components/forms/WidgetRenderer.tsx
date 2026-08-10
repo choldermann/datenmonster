@@ -10,6 +10,7 @@ import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
+import HerstellerNavigator from "./widgets/HerstellerNavigator";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
 
@@ -58,6 +59,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} onAiText={onAiText} />;
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
+    case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
 }
