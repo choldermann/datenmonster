@@ -32,6 +32,11 @@ LOOKUP_QUERIES = {
     "plattform":   "SELECT nTyp AS value, MIN(cName) AS label "
                    "FROM dbo.tPlattform WHERE nInet = 0 AND nTyp IS NOT NULL "
                    "GROUP BY nTyp ORDER BY MIN(cName)",
+    # Lieferanten (Einkauf). Gelöschte/inaktive (cAktiv = 'N') bleiben außen vor.
+    "lieferant":   "SELECT kLieferant AS value, cFirma AS label "
+                   "FROM dbo.tlieferant "
+                   "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cFirma, '') <> '' "
+                   "ORDER BY cFirma",
 }
 
 

@@ -1,0 +1,2047 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_einkauf_cockpit",
+  "template_name": "JTL – Einkaufs-Cockpit",
+  "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
+    "„Offen\" = Bestellung mit Restmenge (fAnzahlOffen > 0), weder gelöscht noch manuell abgeschlossen. Die Reiter „Offene Bestellungen\" und „Lieferantenstamm\" sind Momentaufnahmen und ignorieren den Zeitraumfilter.",
+    "Termintreue vergleicht den Soll-Liefertermin der Bestellung mit dem tatsächlichen Wareneingang (dbo.tWarenLagerEingang). Ausgewertet werden nur Bestellungen mit gesetztem Liefertermin.",
+    "Sehr alte offene Bestellungen verzerren den Ø-Verzug – in der Praxis meist Karteileichen, die in der Wawi manuell abgeschlossen werden sollten.",
+    "Der Lieferanten-Filter nutzt die Lookup-Art „lieferant\" (aktive Lieferanten aus dbo.tlieferant)."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "m_ek_kpi",
+      "name": "Einkauf – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestellvolumen",
+            "BestellvolumenVJ",
+            "Bestellungen",
+            "BestellungenVJ",
+            "AvgBestellung",
+            "AvgBestellungVJ",
+            "Lieferanten",
+            "LieferantenVJ"
+          ],
+          "sql": "WITH best AS (\n    SELECT B.kLieferantenBestellung, B.kLieferant,\n        CASE WHEN B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN B.dErstellt >= DATEADD(YEAR, -1, :von)\n              AND B.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0\n      AND B.dErstellt >= DATEADD(YEAR, -1, :von) AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n)\nSELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS BestellvolumenVJ,\n    SUM(cur) AS Bestellungen,\n    SUM(vj) AS BestellungenVJ,\n    CAST(CASE WHEN SUM(cur) > 0 THEN SUM(CASE WHEN cur = 1 THEN Wert END) / SUM(cur) END\n        AS DECIMAL(18,2)) AS AvgBestellung,\n    CAST(CASE WHEN SUM(vj) > 0 THEN SUM(CASE WHEN vj = 1 THEN Wert END) / SUM(vj) END\n        AS DECIMAL(18,2)) AS AvgBestellungVJ,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kLieferant END) AS Lieferanten,\n    COUNT(DISTINCT CASE WHEN vj = 1 THEN kLieferant END) AS LieferantenVJ\nFROM best"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestellvolumen",
+              "target_field": "Bestellvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellvolumen"
+              }
+            },
+            {
+              "source_field": "BestellvolumenVJ",
+              "target_field": "BestellvolumenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellvolumenVJ"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "BestellungenVJ",
+              "target_field": "BestellungenVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellungenVJ"
+              }
+            },
+            {
+              "source_field": "AvgBestellung",
+              "target_field": "AvgBestellung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestellung"
+              }
+            },
+            {
+              "source_field": "AvgBestellungVJ",
+              "target_field": "AvgBestellungVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestellungVJ"
+              }
+            },
+            {
+              "source_field": "Lieferanten",
+              "target_field": "Lieferanten",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferanten"
+              }
+            },
+            {
+              "source_field": "LieferantenVJ",
+              "target_field": "LieferantenVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LieferantenVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_monat",
+      "name": "Einkauf – Bestellvolumen je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Bestellvolumen",
+            "Vorjahr"
+          ],
+          "sql": "WITH pos AS (\n    SELECT B.dErstellt, P.fMenge * P.fEKNetto AS Wert\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n), cur AS (\n    SELECT CONVERT(char(7), dErstellt, 120) AS Monat, SUM(Wert) AS Wert FROM pos\n    WHERE dErstellt >= :von AND dErstellt < DATEADD(DAY, 1, :bis)\n    GROUP BY CONVERT(char(7), dErstellt, 120)\n), vj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, dErstellt), 120) AS Monat, SUM(Wert) AS Wert FROM pos\n    WHERE dErstellt >= DATEADD(YEAR, -1, :von)\n      AND dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, dErstellt), 120)\n)\nSELECT cur.Monat AS Monat,\n    CAST(ISNULL(cur.Wert, 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(vj.Wert, 0) AS DECIMAL(18,2)) AS Vorjahr\nFROM cur LEFT JOIN vj ON vj.Monat = cur.Monat\nORDER BY cur.Monat"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellvolumen je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Bestellvolumen",
+              "target_field": "Bestellvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellvolumen"
+              }
+            },
+            {
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_lieferanten",
+      "name": "Einkauf – Volumen je Lieferant",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Bestellungen",
+            "Bestellvolumen",
+            "AvgBestellung",
+            "LetzteBestellung"
+          ],
+          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(DISTINCT B.kLieferantenBestellung) AS Bestellungen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto), 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto) / NULLIF(COUNT(DISTINCT B.kLieferantenBestellung), 0), 0)\n        AS DECIMAL(18,2)) AS AvgBestellung,\n    CONVERT(char(10), MAX(B.dErstellt), 104) AS LetzteBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0\n  AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nORDER BY SUM(P.fMenge * P.fEKNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Volumen je Lieferant",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "Bestellvolumen",
+              "target_field": "Bestellvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellvolumen"
+              }
+            },
+            {
+              "source_field": "AvgBestellung",
+              "target_field": "AvgBestellung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestellung"
+              }
+            },
+            {
+              "source_field": "LetzteBestellung",
+              "target_field": "LetzteBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzteBestellung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_offen_kpi",
+      "name": "Einkauf – Offene Bestellungen KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "OffeneBestellungen",
+            "OffenerWert",
+            "Ueberfaellig",
+            "AvgVerzugTage"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS OffeneBestellungen,\n    CAST(ISNULL(SUM(OffenerWert), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    SUM(CASE WHEN VerzugTage > 0 THEN 1 ELSE 0 END) AS Ueberfaellig,\n    CAST(ISNULL(AVG(CASE WHEN VerzugTage > 0 THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage\nFROM (\n    SELECT B.kLieferantenBestellung,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN B.dLieferdatum IS NOT NULL THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END AS VerzugTage\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2 WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung AND P2.fAnzahlOffen > 0) AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "OffeneBestellungen",
+              "target_field": "OffeneBestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneBestellungen"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Ueberfaellig",
+              "target_field": "Ueberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberfaellig"
+              }
+            },
+            {
+              "source_field": "AvgVerzugTage",
+              "target_field": "AvgVerzugTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgVerzugTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_offen_liste",
+      "name": "Einkauf – Offene Bestellungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestellnummer",
+            "Lieferant",
+            "Bestelldatum",
+            "Liefertermin",
+            "VerzugTage",
+            "OffenerWert",
+            "OffenePositionen"
+          ],
+          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "VerzugTage",
+              "target_field": "VerzugTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerzugTage"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "OffenePositionen",
+              "target_field": "OffenePositionen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenePositionen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_offen_alter",
+      "name": "Einkauf – Offene Bestellungen nach Verzug",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Verzugsklasse",
+            "Bestellungen",
+            "OffenerWert",
+            "sort"
+          ],
+          "sql": "SELECT Verzugsklasse, COUNT(*) AS Bestellungen,\n    CAST(ISNULL(SUM(OffenerWert), 0) AS DECIMAL(18,2)) AS OffenerWert, MIN(sort) AS sort\nFROM (\n    SELECT\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN B.dLieferdatum IS NULL THEN 'ohne Termin'\n             WHEN B.dLieferdatum >= GETDATE() THEN 'im Termin'\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 7  THEN 'bis 7 Tage über'\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 30 THEN '8-30 Tage über'\n             ELSE 'über 30 Tage über' END AS Verzugsklasse,\n        CASE WHEN B.dLieferdatum IS NULL THEN 0\n             WHEN B.dLieferdatum >= GETDATE() THEN 1\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 7  THEN 2\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 30 THEN 3 ELSE 4 END AS sort\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2 WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung AND P2.fAnzahlOffen > 0) AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n) X\nGROUP BY Verzugsklasse\nORDER BY MIN(sort)"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen nach Verzug",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Verzugsklasse",
+              "target_field": "Verzugsklasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verzugsklasse"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_termintreue_kpi",
+      "name": "Einkauf – Termintreue KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferungen",
+            "TermintreueQuote",
+            "AvgVerzugTage",
+            "AvgLieferzeitTage"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS Lieferungen,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(CASE WHEN VerzugTage <= 0 THEN 1 ELSE 0 END)\n        / COUNT(*) END AS DECIMAL(18,1)) AS TermintreueQuote,\n    CAST(ISNULL(AVG(CASE WHEN VerzugTage > 0 THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    CAST(ISNULL(AVG(CAST(LieferzeitTage AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgLieferzeitTage\nFROM (\n    SELECT DATEDIFF(DAY, SollTermin, IstTermin) AS VerzugTage,\n           DATEDIFF(DAY, Bestelldatum, IstTermin) AS LieferzeitTage\n    FROM (\n    SELECT B.kLieferant, B.kLieferantenBestellung, B.dErstellt AS Bestelldatum,\n        B.dLieferdatum AS SollTermin,\n        MIN(ISNULL(W.dGeliefertAM, W.dErstellt)) AS IstTermin\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n    GROUP BY B.kLieferant, B.kLieferantenBestellung, B.dErstellt, B.dLieferdatum\n) W1\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Termintreue KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferungen",
+              "target_field": "Lieferungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferungen"
+              }
+            },
+            {
+              "source_field": "TermintreueQuote",
+              "target_field": "TermintreueQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TermintreueQuote"
+              }
+            },
+            {
+              "source_field": "AvgVerzugTage",
+              "target_field": "AvgVerzugTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgVerzugTage"
+              }
+            },
+            {
+              "source_field": "AvgLieferzeitTage",
+              "target_field": "AvgLieferzeitTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgLieferzeitTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_termintreue_lieferant",
+      "name": "Einkauf – Termintreue je Lieferant",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Lieferungen",
+            "PuenktlichQuote",
+            "AvgVerzugTage",
+            "AvgLieferzeitTage"
+          ],
+          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(*) AS Lieferungen,\n    CAST(100.0 * SUM(CASE WHEN X.VerzugTage <= 0 THEN 1 ELSE 0 END) / COUNT(*)\n        AS DECIMAL(18,1)) AS PuenktlichQuote,\n    CAST(ISNULL(AVG(CASE WHEN X.VerzugTage > 0 THEN CAST(X.VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    CAST(ISNULL(AVG(CAST(X.LieferzeitTage AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgLieferzeitTage\nFROM (\n    SELECT kLieferant, DATEDIFF(DAY, SollTermin, IstTermin) AS VerzugTage,\n           DATEDIFF(DAY, Bestelldatum, IstTermin) AS LieferzeitTage\n    FROM (\n    SELECT B.kLieferant, B.kLieferantenBestellung, B.dErstellt AS Bestelldatum,\n        B.dLieferdatum AS SollTermin,\n        MIN(ISNULL(W.dGeliefertAM, W.dErstellt)) AS IstTermin\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n    GROUP BY B.kLieferant, B.kLieferantenBestellung, B.dErstellt, B.dLieferdatum\n) W1\n) X\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = X.kLieferant\nGROUP BY X.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nHAVING COUNT(*) >= 3\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Termintreue je Lieferant",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Lieferungen",
+              "target_field": "Lieferungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferungen"
+              }
+            },
+            {
+              "source_field": "PuenktlichQuote",
+              "target_field": "PuenktlichQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "PuenktlichQuote"
+              }
+            },
+            {
+              "source_field": "AvgVerzugTage",
+              "target_field": "AvgVerzugTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgVerzugTage"
+              }
+            },
+            {
+              "source_field": "AvgLieferzeitTage",
+              "target_field": "AvgLieferzeitTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgLieferzeitTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_lieferantenstamm",
+      "name": "Einkauf – Lieferantenstamm",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Land",
+            "LieferzeitTage",
+            "ZahlungszielTage",
+            "SkontoProzent",
+            "Mindestbestellwert",
+            "Volumen12M"
+          ],
+          "sql": "SELECT TOP 200\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(L.cISO, ISNULL(L.cLand, '')) AS Land,\n    ISNULL(L.nLieferzeit, 0) AS LieferzeitTage,\n    ISNULL(L.nZahlungsziel, 0) AS ZahlungszielTage,\n    CAST(ISNULL(L.fSkonto, 0) AS DECIMAL(18,2)) AS SkontoProzent,\n    CAST(ISNULL(L.fMindestbestellwert, 0) AS DECIMAL(18,2)) AS Mindestbestellwert,\n    CAST(ISNULL((SELECT SUM(P.fMenge * P.fEKNetto)\n        FROM dbo.tLieferantenBestellung B\n        JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n        WHERE B.kLieferant = L.kLieferant AND ISNULL(B.nDeleted, 0) = 0\n          AND B.dErstellt >= DATEADD(MONTH, -12, GETDATE())), 0) AS DECIMAL(18,2)) AS Volumen12M\nFROM dbo.tlieferant L\nWHERE ISNULL(L.cAktiv, 'Y') <> 'N'\nORDER BY 7 DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Lieferantenstamm",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "LieferzeitTage",
+              "target_field": "LieferzeitTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LieferzeitTage"
+              }
+            },
+            {
+              "source_field": "ZahlungszielTage",
+              "target_field": "ZahlungszielTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahlungszielTage"
+              }
+            },
+            {
+              "source_field": "SkontoProzent",
+              "target_field": "SkontoProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SkontoProzent"
+              }
+            },
+            {
+              "source_field": "Mindestbestellwert",
+              "target_field": "Mindestbestellwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mindestbestellwert"
+              }
+            },
+            {
+              "source_field": "Volumen12M",
+              "target_field": "Volumen12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Volumen12M"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_er_kpi",
+      "name": "Einkauf – Eingangsrechnungen KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Rechnungsvolumen",
+            "RechnungsvolumenVJ",
+            "Rechnungen",
+            "OffeneVerbindlichkeiten",
+            "OffeneRechnungen",
+            "Ueberfaellig"
+          ],
+          "sql": "SELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS Rechnungsvolumen,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS RechnungsvolumenVJ,\n    SUM(cur) AS Rechnungen,\n    CAST(ISNULL(SUM(CASE WHEN offen = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS OffeneVerbindlichkeiten,\n    SUM(offen) AS OffeneRechnungen,\n    SUM(CASE WHEN offen = 1 AND ueberf = 1 THEN 1 ELSE 0 END) AS Ueberfaellig\nFROM (\n    SELECT (SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS Wert,\n        CASE WHEN R.dBelegdatum >= :von AND R.dBelegdatum < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN R.dBelegdatum >= DATEADD(YEAR, -1, :von)\n              AND R.dBelegdatum < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        CASE WHEN R.dBezahlt IS NULL THEN 1 ELSE 0 END AS offen,\n        CASE WHEN R.dZahlungsziel IS NOT NULL AND R.dZahlungsziel < GETDATE() THEN 1 ELSE 0 END AS ueberf\n    FROM dbo.tEingangsrechnung R\n    WHERE ISNULL(R.nDeleted, 0) = 0 AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Eingangsrechnungen KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rechnungsvolumen",
+              "target_field": "Rechnungsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsvolumen"
+              }
+            },
+            {
+              "source_field": "RechnungsvolumenVJ",
+              "target_field": "RechnungsvolumenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RechnungsvolumenVJ"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "OffeneVerbindlichkeiten",
+              "target_field": "OffeneVerbindlichkeiten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneVerbindlichkeiten"
+              }
+            },
+            {
+              "source_field": "OffeneRechnungen",
+              "target_field": "OffeneRechnungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneRechnungen"
+              }
+            },
+            {
+              "source_field": "Ueberfaellig",
+              "target_field": "Ueberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberfaellig"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_er_offen",
+      "name": "Einkauf – Offene Eingangsrechnungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Rechnungsnummer",
+            "Belegdatum",
+            "Zahlungsziel",
+            "TageUeberfaellig",
+            "Betrag"
+          ],
+          "sql": "SELECT TOP 500\n    ISNULL(NULLIF(R.cLieferant, ''), ISNULL(L.cFirma, 'unbekannt')) AS Lieferant,\n    ISNULL(NULLIF(R.cFremdbelegnummer, ''), R.cEigeneRechnungsnummer) AS Rechnungsnummer,\n    ISNULL(CONVERT(char(10), R.dBelegdatum, 104), '') AS Belegdatum,\n    ISNULL(CONVERT(char(10), R.dZahlungsziel, 104), '') AS Zahlungsziel,\n    ISNULL(CASE WHEN R.dZahlungsziel < GETDATE()\n        THEN DATEDIFF(DAY, R.dZahlungsziel, GETDATE()) END, 0) AS TageUeberfaellig,\n    CAST((SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS DECIMAL(18,2)) AS Betrag\nFROM dbo.tEingangsrechnung R\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\nWHERE ISNULL(R.nDeleted, 0) = 0 AND R.dBezahlt IS NULL AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\nORDER BY 5 DESC, 6 DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Eingangsrechnungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Rechnungsnummer",
+              "target_field": "Rechnungsnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnummer"
+              }
+            },
+            {
+              "source_field": "Belegdatum",
+              "target_field": "Belegdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Belegdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
+              }
+            },
+            {
+              "source_field": "Betrag",
+              "target_field": "Betrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Betrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_er_lieferant",
+      "name": "Einkauf – Rechnungsvolumen je Lieferant",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Rechnungen",
+            "Rechnungsvolumen",
+            "AvgRechnung"
+          ],
+          "sql": "SELECT TOP 50 Lieferant,\n    COUNT(*) AS Rechnungen,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Rechnungsvolumen,\n    CAST(ISNULL(AVG(Wert), 0) AS DECIMAL(18,2)) AS AvgRechnung\nFROM (\n    SELECT R.kLieferant,\n        ISNULL(NULLIF(L.cFirma, ''), ISNULL(NULLIF(R.cLieferant, ''), 'unbekannt')) AS Lieferant,\n        (SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS Wert\n    FROM dbo.tEingangsrechnung R\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\n    WHERE ISNULL(R.nDeleted, 0) = 0\n      AND R.dBelegdatum >= :von AND R.dBelegdatum < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\n) X\nGROUP BY kLieferant, Lieferant\nORDER BY 3 DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Rechnungsvolumen je Lieferant",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "Rechnungsvolumen",
+              "target_field": "Rechnungsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsvolumen"
+              }
+            },
+            {
+              "source_field": "AvgRechnung",
+              "target_field": "AvgRechnung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_artikel",
+      "name": "Einkauf – Top-Einkaufsartikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Einkaufswert",
+            "AvgEK",
+            "LetzterEK"
+          ],
+          "sql": "WITH pos AS (\n    SELECT P.cArtNr, P.kArtikel, P.cName, P.fMenge, P.fEKNetto,\n        ROW_NUMBER() OVER (PARTITION BY P.cArtNr ORDER BY B.dErstellt DESC) AS rn_neu\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(P.cArtNr, '') <> ''\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n), agg AS (\n    SELECT cArtNr,\n        MAX(CASE WHEN rn_neu = 1 THEN kArtikel END) AS kArtikel,\n        MAX(CASE WHEN rn_neu = 1 THEN cName END) AS cNameBestellung,\n        SUM(fMenge) AS Menge,\n        SUM(fMenge * fEKNetto) AS Einkaufswert,\n        MAX(CASE WHEN rn_neu = 1 THEN fEKNetto END) AS LetzterEK\n    FROM pos GROUP BY cArtNr\n)\nSELECT TOP 50\n    agg.cArtNr AS ArtNr,\n    ISNULL(AB.cName, ISNULL(agg.cNameBestellung, '')) AS Artikel,\n    CAST(agg.Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(agg.Einkaufswert AS DECIMAL(18,2)) AS Einkaufswert,\n    CAST(CASE WHEN agg.Menge > 0 THEN agg.Einkaufswert / agg.Menge END AS DECIMAL(18,4)) AS AvgEK,\n    CAST(agg.LetzterEK AS DECIMAL(18,4)) AS LetzterEK\nFROM agg\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = agg.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nORDER BY agg.Einkaufswert DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Top-Einkaufsartikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            },
+            {
+              "source_field": "AvgEK",
+              "target_field": "AvgEK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgEK"
+              }
+            },
+            {
+              "source_field": "LetzterEK",
+              "target_field": "LetzterEK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterEK"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_preise",
+      "name": "Einkauf – EK-Preisentwicklung",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "EKVorher",
+            "EKAktuell",
+            "Veraenderung",
+            "VeraenderungProzent",
+            "Menge12M",
+            "Mehrkosten"
+          ],
+          "sql": "WITH pos AS (\n    SELECT P.cArtNr, P.kArtikel, P.fMenge, P.fEKNetto, B.dErstellt,\n        ROW_NUMBER() OVER (PARTITION BY P.cArtNr ORDER BY B.dErstellt DESC) AS rn_neu,\n        ROW_NUMBER() OVER (PARTITION BY P.cArtNr ORDER BY B.dErstellt ASC) AS rn_alt\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(P.cArtNr, '') <> '' AND P.fEKNetto > 0\n      AND B.dErstellt >= DATEADD(MONTH, -12, GETDATE())\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n), agg AS (\n    SELECT cArtNr,\n        MAX(CASE WHEN rn_alt = 1 THEN fEKNetto END) AS EKVorher,\n        MAX(CASE WHEN rn_neu = 1 THEN fEKNetto END) AS EKAktuell,\n        MAX(CASE WHEN rn_neu = 1 THEN kArtikel END) AS kArtikel,\n        SUM(fMenge) AS Menge12M\n    FROM pos GROUP BY cArtNr\n)\nSELECT TOP 50\n    agg.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '') AS Artikel,\n    CAST(agg.EKVorher AS DECIMAL(18,4)) AS EKVorher,\n    CAST(agg.EKAktuell AS DECIMAL(18,4)) AS EKAktuell,\n    CAST(agg.EKAktuell - agg.EKVorher AS DECIMAL(18,4)) AS Veraenderung,\n    CAST(100.0 * (agg.EKAktuell - agg.EKVorher) / NULLIF(agg.EKVorher, 0) AS DECIMAL(18,1)) AS VeraenderungProzent,\n    CAST(agg.Menge12M AS DECIMAL(18,2)) AS Menge12M,\n    CAST((agg.EKAktuell - agg.EKVorher) * agg.Menge12M AS DECIMAL(18,2)) AS Mehrkosten\nFROM agg\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = agg.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE agg.EKVorher IS NOT NULL AND agg.EKAktuell IS NOT NULL\n  AND ABS(agg.EKAktuell - agg.EKVorher) > 0.001\nORDER BY ABS((agg.EKAktuell - agg.EKVorher) * agg.Menge12M) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – EK-Preisentwicklung",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "EKVorher",
+              "target_field": "EKVorher",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKVorher"
+              }
+            },
+            {
+              "source_field": "EKAktuell",
+              "target_field": "EKAktuell",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKAktuell"
+              }
+            },
+            {
+              "source_field": "Veraenderung",
+              "target_field": "Veraenderung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veraenderung"
+              }
+            },
+            {
+              "source_field": "VeraenderungProzent",
+              "target_field": "VeraenderungProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VeraenderungProzent"
+              }
+            },
+            {
+              "source_field": "Menge12M",
+              "target_field": "Menge12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge12M"
+              }
+            },
+            {
+              "source_field": "Mehrkosten",
+              "target_field": "Mehrkosten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mehrkosten"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Einkaufs-Cockpit",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 12,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": false
+            }
+          },
+          {
+            "id": "f_lieferant",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Lieferant",
+            "name": "lieferant",
+            "action_ids": [],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "lieferant",
+              "multiple": true,
+              "auto_run": false,
+              "placeholder": "Alle Lieferanten"
+            }
+          }
+        ],
+        "layout": "grid",
+        "actions": [
+          {
+            "id": "act_ek_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_kpi",
+            "pipeline_id": null,
+            "label": "Einkauf – Kennzahlen"
+          },
+          {
+            "id": "act_ek_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_monat",
+            "pipeline_id": null,
+            "label": "Bestellvolumen je Monat"
+          },
+          {
+            "id": "act_ek_lieferanten",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_lieferanten",
+            "pipeline_id": null,
+            "label": "Volumen je Lieferant"
+          },
+          {
+            "id": "act_ek_offen_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_offen_kpi",
+            "pipeline_id": null,
+            "label": "Offene Bestellungen – Kennzahlen"
+          },
+          {
+            "id": "act_ek_offen_alter",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_offen_alter",
+            "pipeline_id": null,
+            "label": "Offene Bestellungen nach Verzug"
+          },
+          {
+            "id": "act_ek_offen_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_offen_liste",
+            "pipeline_id": null,
+            "label": "Offene Bestellungen"
+          },
+          {
+            "id": "act_ek_termintreue_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_termintreue_kpi",
+            "pipeline_id": null,
+            "label": "Termintreue – Kennzahlen"
+          },
+          {
+            "id": "act_ek_termintreue_lieferant",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_termintreue_lieferant",
+            "pipeline_id": null,
+            "label": "Termintreue je Lieferant"
+          },
+          {
+            "id": "act_ek_lieferantenstamm",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_lieferantenstamm",
+            "pipeline_id": null,
+            "label": "Lieferantenstamm"
+          },
+          {
+            "id": "act_ek_er_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_er_kpi",
+            "pipeline_id": null,
+            "label": "Eingangsrechnungen – Kennzahlen"
+          },
+          {
+            "id": "act_ek_er_offen",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_er_offen",
+            "pipeline_id": null,
+            "label": "Offene Eingangsrechnungen"
+          },
+          {
+            "id": "act_ek_er_lieferant",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_er_lieferant",
+            "pipeline_id": null,
+            "label": "Rechnungsvolumen je Lieferant"
+          },
+          {
+            "id": "act_ek_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_artikel",
+            "pipeline_id": null,
+            "label": "Top-Einkaufsartikel"
+          },
+          {
+            "id": "act_ek_preise",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_preise",
+            "pipeline_id": null,
+            "label": "EK-Preisentwicklung"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_ek_kpi_vol",
+            "type": "kpi",
+            "label": "Bestellvolumen netto",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestellvolumen",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "BestellvolumenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ek_kpi_anz",
+            "type": "kpi",
+            "label": "Bestellungen",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestellungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "BestellungenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ek_kpi_avg",
+            "type": "kpi",
+            "label": "Ø Bestellwert",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgBestellung",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AvgBestellungVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ek_kpi_lief",
+            "type": "kpi",
+            "label": "Aktive Lieferanten",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Lieferanten",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "LieferantenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ek_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Einkauf",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Einkaufslage: Bestellvolumen gegenüber Vorjahr, offene Bestellungen und Lieferverzug, Termintreue der Lieferanten sowie offene Verbindlichkeiten. Nenne konkreten Handlungsbedarf (überfällige Bestellungen, unzuverlässige Lieferanten, fällige Rechnungen).",
+              "extra_sections": [
+                {
+                  "action_id": "act_ek_offen_kpi",
+                  "label": "Offene Bestellungen",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ek_termintreue_kpi",
+                  "label": "Termintreue",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ek_er_kpi",
+                  "label": "Eingangsrechnungen",
+                  "kind": "kpi"
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_ek_line_monat",
+            "type": "line",
+            "label": "Bestellvolumen je Monat (aktuell vs. Vorjahr)",
+            "action_id": "act_ek_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Bestellvolumen",
+                "Vorjahr"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_ek_tbl_lief",
+            "type": "table",
+            "label": "Volumen je Lieferant",
+            "action_id": "act_ek_lieferanten",
+            "config": {
+              "width": 12,
+              "info": "Bestellwert = Summe der Bestellpositionen (inkl. Fracht-/Zuschlagspositionen), netto in EUR.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_o_anz",
+            "type": "kpi",
+            "label": "Offene Bestellungen",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffeneBestellungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_o_wert",
+            "type": "kpi",
+            "label": "Offener Bestellwert",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffenerWert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_ek_o_ueberf",
+            "type": "kpi",
+            "label": "Liefertermin überschritten",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ueberfaellig",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_o_verzug",
+            "type": "kpi",
+            "label": "Ø Verzug",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgVerzugTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ek_bar_verzug",
+            "type": "bar",
+            "label": "Offener Bestellwert nach Verzug",
+            "action_id": "act_ek_offen_alter",
+            "config": {
+              "width": 12,
+              "x_column": "Verzugsklasse",
+              "y_columns": [
+                "OffenerWert"
+              ]
+            }
+          },
+          {
+            "id": "w_ek_tbl_offen",
+            "type": "table",
+            "label": "Offene Bestellungen (nach offenem Wert)",
+            "action_id": "act_ek_offen_liste",
+            "config": {
+              "width": 12,
+              "info": "Momentaufnahme, unabhängig vom Zeitraum: Bestellungen mit Restmenge, weder gelöscht noch manuell abgeschlossen. Sehr alte Einträge sind meist Karteileichen – manuell abschließen bereinigt die Liste.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_t_anz",
+            "type": "kpi",
+            "label": "Ausgewertete Lieferungen",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "Lieferungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_t_quote",
+            "type": "kpi",
+            "label": "Termintreue",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "TermintreueQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ek_t_verzug",
+            "type": "kpi",
+            "label": "Ø Verzug (verspätet)",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgVerzugTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ek_t_lz",
+            "type": "kpi",
+            "label": "Ø Lieferzeit",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgLieferzeitTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ek_tbl_termin",
+            "type": "table",
+            "label": "Termintreue je Lieferant (ab 3 Lieferungen)",
+            "action_id": "act_ek_termintreue_lieferant",
+            "config": {
+              "width": 6,
+              "info": "Ist-Termin aus dem echten Wareneingang (tWarenLagerEingang), Soll-Termin aus der Bestellung. Pünktlich = Wareneingang nicht nach dem Soll-Termin."
+            }
+          },
+          {
+            "id": "w_ek_tbl_stamm",
+            "type": "table",
+            "label": "Lieferantenstamm (Konditionen & Volumen 12 Monate)",
+            "action_id": "act_ek_lieferantenstamm",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_er_vol",
+            "type": "kpi",
+            "label": "Rechnungsvolumen",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rechnungsvolumen",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "RechnungsvolumenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ek_er_anz",
+            "type": "kpi",
+            "label": "Rechnungen",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rechnungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_er_offen_wert",
+            "type": "kpi",
+            "label": "Offene Verbindlichkeiten",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "OffeneVerbindlichkeiten",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_ek_er_offen_anz",
+            "type": "kpi",
+            "label": "Offene Rechnungen",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "OffeneRechnungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_er_ueberf",
+            "type": "kpi",
+            "label": "Davon überfällig",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "Ueberfaellig",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ek_tbl_eroffen",
+            "type": "table",
+            "label": "Offene Eingangsrechnungen (überfällige zuerst)",
+            "action_id": "act_ek_er_offen",
+            "config": {
+              "width": 12,
+              "info": "Offen = kein Bezahldatum gesetzt. Betrag = Summe der Rechnungspositionen netto.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_tbl_erlief",
+            "type": "table",
+            "label": "Rechnungsvolumen je Lieferant",
+            "action_id": "act_ek_er_lieferant",
+            "config": {
+              "width": 12,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_tbl_artikel",
+            "type": "table",
+            "label": "Top-Einkaufsartikel",
+            "action_id": "act_ek_artikel",
+            "config": {
+              "width": 12,
+              "info": "Ø EK = Einkaufswert / Menge im Zeitraum, letzter EK = Preis der jüngsten Bestellung.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ek_tbl_preise",
+            "type": "table",
+            "label": "EK-Preisentwicklung (letzte 12 Monate)",
+            "action_id": "act_ek_preise",
+            "config": {
+              "width": 12,
+              "info": "Vergleich erste vs. letzte Bestellung je Artikel in den letzten 12 Monaten. „Mehrkosten\" = Preisdifferenz × bestellte Menge – sortiert nach größter Ergebniswirkung. Ignoriert den Zeitraumfilter.",
+              "full_rows": true
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_ek_volumen",
+            "label": "Einkaufsvolumen",
+            "action_ids": [
+              "act_ek_kpi",
+              "act_ek_monat",
+              "act_ek_lieferanten"
+            ]
+          },
+          {
+            "id": "tab_ek_offen",
+            "label": "Offene Bestellungen",
+            "action_ids": [
+              "act_ek_offen_kpi",
+              "act_ek_offen_alter",
+              "act_ek_offen_liste"
+            ]
+          },
+          {
+            "id": "tab_ek_qualitaet",
+            "label": "Lieferantenqualität",
+            "action_ids": [
+              "act_ek_termintreue_kpi",
+              "act_ek_termintreue_lieferant",
+              "act_ek_lieferantenstamm"
+            ]
+          },
+          {
+            "id": "tab_ek_rechnungen",
+            "label": "Eingangsrechnungen",
+            "action_ids": [
+              "act_ek_er_kpi",
+              "act_ek_er_offen",
+              "act_ek_er_lieferant"
+            ]
+          },
+          {
+            "id": "tab_ek_artikel",
+            "label": "Artikel & Preise",
+            "action_ids": [
+              "act_ek_artikel",
+              "act_ek_preise"
+            ]
+          }
+        ],
+        "show_ai_assistant": true
+      },
+      "portal_config": {}
+    }
+  ]
+}
