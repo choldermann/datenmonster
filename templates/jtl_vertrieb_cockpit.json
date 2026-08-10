@@ -4,14 +4,15 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
     "Der Reiter „Auftragsbestand\" ist eine Momentaufnahme und ignoriert den Zeitraumfilter.",
     "JTL verknüpft Angebot und Auftrag nicht (getrennte Nummernkreise). Die Conversion ist deshalb eine Heuristik: Angebot gilt als gewonnen, wenn derselbe Kunde binnen 60 Tagen einen Auftrag erhalten hat.",
     "Mitarbeiter = Erfasser des Belegs (kBenutzerErstellt). Im Backoffice erfasste Aufträge laufen auf die erfassende Person; die Angebotstabelle bildet den aktiven Vertrieb besser ab.",
-    "Sechs Auswertungen werden mit dem GF-Cockpit geteilt (gleiche Mappingnamen) – bei einer Installation im selben Projekt werden sie wiederverwendet statt doppelt angelegt."
+    "Sechs Auswertungen werden mit dem GF-Cockpit geteilt (gleiche Mappingnamen) – bei einer Installation im selben Projekt werden sie wiederverwendet statt doppelt angelegt.",
+    "Reiter „Regionen\": Das Bundesland wird aus der PLZ der Rechnungsadresse hergeleitet (JTL füllt cBundesland nicht). Die Marktdurchdringung vergleicht den Umsatzanteil mit dem Bevölkerungsanteil des Bundeslands (fest hinterlegt, Statistisches Bundesamt 2024) – sie ist eine Orientierung, kein Marktanteil: Branchenschwerpunkte können regional stark abweichen."
   ],
   "config_required": [
     {
@@ -2072,6 +2073,473 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ve_bundesland",
+      "name": "Vertrieb – Auftragseingang je Bundesland",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bundesland",
+            "Auftragseingang",
+            "AuftragseingangVJ",
+            "Veraenderung",
+            "Kunden",
+            "Auftraege",
+            "UmsatzAnteil",
+            "BevoelkerungsAnteil",
+            "Marktdurchdringung",
+            "Potenzial",
+            "Bewertung"
+          ],
+          "sql": "WITH auf AS (\n    SELECT Bundesland, kKunde, kAuftrag, Wert,\n        CASE WHEN dErstellt >= :von AND dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN dErstellt >= DATEADD(YEAR, -1, :von)\n              AND dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (\n    SELECT CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland, A.kKunde, A.kAuftrag, E.fWertNetto AS Wert, A.dErstellt\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    LEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\n    WHERE dErstellt >= DATEADD(YEAR, -1, :von) AND dErstellt < DATEADD(DAY, 1, :bis)\n), je_bl AS (\n    SELECT Bundesland,\n        ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS Umsatz,\n        ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS UmsatzVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS Kunden,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kAuftrag END) AS Auftraege\n    FROM auf GROUP BY Bundesland\n), ges AS (\n    -- Bezugsgröße für den Umsatzanteil: nur Inland, damit der Vergleich mit dem\n    -- Bevölkerungsanteil sauber bleibt.\n    SELECT SUM(CASE WHEN CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END IS NOT NULL\n               THEN Umsatz ELSE 0 END) AS UmsatzInland FROM je_bl\n)\nSELECT je_bl.Bundesland AS Bundesland,\n    CAST(je_bl.Umsatz AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(je_bl.UmsatzVJ AS DECIMAL(18,2)) AS AuftragseingangVJ,\n    CAST(CASE WHEN je_bl.UmsatzVJ > 0 THEN 100.0 * (je_bl.Umsatz - je_bl.UmsatzVJ) / je_bl.UmsatzVJ END\n        AS DECIMAL(18,1)) AS Veraenderung,\n    je_bl.Kunden AS Kunden,\n    je_bl.Auftraege AS Auftraege,\n    CAST(CASE WHEN ges.UmsatzInland > 0 AND CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END IS NOT NULL\n        THEN 100.0 * je_bl.Umsatz / ges.UmsatzInland END AS DECIMAL(18,1)) AS UmsatzAnteil,\n    CAST(CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END AS DECIMAL(18,1)) AS BevoelkerungsAnteil,\n    CAST(CASE WHEN ges.UmsatzInland > 0 AND CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END > 0\n        THEN (100.0 * je_bl.Umsatz / ges.UmsatzInland) / CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END\n        END AS DECIMAL(18,2)) AS Marktdurchdringung,\n    CAST(CASE WHEN ges.UmsatzInland > 0 AND CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END > 0\n        THEN (CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END - 100.0 * je_bl.Umsatz / ges.UmsatzInland)\n             / 100.0 * ges.UmsatzInland END AS DECIMAL(18,2)) AS Potenzial,\n    CASE WHEN CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END IS NULL THEN 'keine Bewertung'\n         WHEN ges.UmsatzInland = 0 THEN 'keine Bewertung'\n         WHEN (100.0 * je_bl.Umsatz / ges.UmsatzInland) / CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END < 0.5\n             THEN 'deutlich unterrepräsentiert'\n         WHEN (100.0 * je_bl.Umsatz / ges.UmsatzInland) / CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END < 0.8\n             THEN 'unterrepräsentiert'\n         WHEN (100.0 * je_bl.Umsatz / ges.UmsatzInland) / CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END > 1.2\n             THEN 'stark'\n         ELSE 'im Rahmen' END AS Bewertung\nFROM je_bl CROSS JOIN ges\nORDER BY je_bl.Umsatz DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang je Bundesland",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bundesland",
+              "target_field": "Bundesland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bundesland"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "AuftragseingangVJ",
+              "target_field": "AuftragseingangVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AuftragseingangVJ"
+              }
+            },
+            {
+              "source_field": "Veraenderung",
+              "target_field": "Veraenderung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veraenderung"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "UmsatzAnteil",
+              "target_field": "UmsatzAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzAnteil"
+              }
+            },
+            {
+              "source_field": "BevoelkerungsAnteil",
+              "target_field": "BevoelkerungsAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BevoelkerungsAnteil"
+              }
+            },
+            {
+              "source_field": "Marktdurchdringung",
+              "target_field": "Marktdurchdringung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Marktdurchdringung"
+              }
+            },
+            {
+              "source_field": "Potenzial",
+              "target_field": "Potenzial",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Potenzial"
+              }
+            },
+            {
+              "source_field": "Bewertung",
+              "target_field": "Bewertung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bewertung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_nachfass_kunden",
+      "name": "Vertrieb – Nachfass-Kandidaten je Bundesland",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bundesland",
+            "Kunde",
+            "Ort",
+            "Umsatz",
+            "UmsatzVJ",
+            "Rueckgang",
+            "LetzterAuftrag",
+            "TageInaktiv",
+            "Grund"
+          ],
+          "sql": "SELECT TOP 500\n    K.Bundesland AS Bundesland,\n    LTRIM(RTRIM(ISNULL(NULLIF(MAX(AD.cFirma), ''),\n        ISNULL(MAX(AD.cVorname), '') + ' ' + ISNULL(MAX(AD.cName), '')))) AS Kunde,\n    LTRIM(ISNULL(MAX(AD.cPLZ), '') + ' ' + ISNULL(MAX(AD.cOrt), '')) AS Ort,\n    CAST(K.Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(K.UmsatzVJ AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(K.UmsatzVJ - K.Umsatz AS DECIMAL(18,2)) AS Rueckgang,\n    CONVERT(char(10), K.LetzterAuftrag, 104) AS LetzterAuftrag,\n    DATEDIFF(DAY, K.LetzterAuftrag, GETDATE()) AS TageInaktiv,\n    CASE WHEN K.Umsatz = 0 THEN 'kein Auftrag im Zeitraum (Vorjahr aktiv)'\n         WHEN K.UmsatzVJ > 0 AND K.Umsatz < K.UmsatzVJ * 0.7 THEN 'Umsatz deutlich rückläufig'\n         ELSE 'Umsatz rückläufig' END AS Grund\nFROM (\n    SELECT Bundesland, kKunde,\n        SUM(CASE WHEN cur = 1 THEN Wert ELSE 0 END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Wert ELSE 0 END) AS UmsatzVJ,\n        MAX(dErstellt) AS LetzterAuftrag,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kAuftrag END) AS Auftraege\n    FROM (\n        SELECT Bundesland, kKunde, kAuftrag, Wert, dErstellt,\n            CASE WHEN dErstellt >= :von AND dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN dErstellt >= DATEADD(YEAR, -1, :von)\n                  AND dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (\n    SELECT CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland, A.kKunde, A.kAuftrag, E.fWertNetto AS Wert, A.dErstellt\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    LEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\n        WHERE dErstellt >= DATEADD(YEAR, -1, :von) AND dErstellt < DATEADD(DAY, 1, :bis)\n    ) Y\n    GROUP BY Bundesland, kKunde\n) K\nJOIN dbo.tkunde KU ON KU.kKunde = K.kKunde\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE K.UmsatzVJ > 0 AND K.Umsatz < K.UmsatzVJ\n  AND ISNULL(KU.cSperre, 'N') <> 'Y'\nGROUP BY K.Bundesland, K.kKunde, K.Umsatz, K.UmsatzVJ, K.LetzterAuftrag\nORDER BY K.UmsatzVJ - K.Umsatz DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Nachfass-Kandidaten je Bundesland",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bundesland",
+              "target_field": "Bundesland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bundesland"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rueckgang",
+              "target_field": "Rueckgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rueckgang"
+              }
+            },
+            {
+              "source_field": "LetzterAuftrag",
+              "target_field": "LetzterAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterAuftrag"
+              }
+            },
+            {
+              "source_field": "TageInaktiv",
+              "target_field": "TageInaktiv",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageInaktiv"
+              }
+            },
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_region_analyse",
+      "name": "Vertrieb – Regionen-Analyse (KI)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bundesland",
+            "Umsatz",
+            "UmsatzVJ",
+            "UmsatzAnteil",
+            "BevoelkerungsAnteil",
+            "Marktdurchdringung",
+            "Potenzial",
+            "Kunden",
+            "KundenRueckgang",
+            "RueckgangSumme",
+            "Kandidaten"
+          ],
+          "sql": "WITH auf AS (\n    SELECT Bundesland, kKunde, kAuftrag, Wert,\n        CASE WHEN dErstellt >= :von AND dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN dErstellt >= DATEADD(YEAR, -1, :von)\n              AND dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM (\n    SELECT CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland, A.kKunde, A.kAuftrag, E.fWertNetto AS Wert, A.dErstellt\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    LEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\n    WHERE dErstellt >= DATEADD(YEAR, -1, :von) AND dErstellt < DATEADD(DAY, 1, :bis)\n), je_bl AS (\n    SELECT Bundesland,\n        ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS Umsatz,\n        ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS UmsatzVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS Kunden\n    FROM auf GROUP BY Bundesland\n), ges AS (\n    SELECT SUM(CASE WHEN CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END IS NOT NULL\n               THEN Umsatz ELSE 0 END) AS UmsatzInland FROM je_bl\n), kand AS (\n    SELECT K.Bundesland, K.kKunde, K.Umsatz, K.UmsatzVJ,\n        LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n            ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n        ISNULL(AD.cOrt, '') AS Ort,\n        ROW_NUMBER() OVER (PARTITION BY K.Bundesland ORDER BY K.UmsatzVJ - K.Umsatz DESC) AS rn\n    FROM (\n    SELECT Bundesland, kKunde,\n        SUM(CASE WHEN cur = 1 THEN Wert ELSE 0 END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Wert ELSE 0 END) AS UmsatzVJ,\n        MAX(dErstellt) AS LetzterAuftrag,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kAuftrag END) AS Auftraege\n    FROM (\n        SELECT Bundesland, kKunde, kAuftrag, Wert, dErstellt,\n            CASE WHEN dErstellt >= :von AND dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN dErstellt >= DATEADD(YEAR, -1, :von)\n                  AND dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (\n    SELECT CASE\n            WHEN UPPER(ISNULL(RA.cLand, '')) NOT IN ('', 'DE', 'D', 'DEU', 'DEUTSCHLAND', 'GERMANY') THEN '(Ausland)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IS NULL THEN '(ohne PLZ)'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (3,15,16) THEN 'Brandenburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (7,98,99) THEN 'Thüringen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (20,21,22) THEN 'Hamburg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 28 THEN 'Bremen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) = 66 THEN 'Saarland'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) IN (68,69,88) OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 80 AND 87 OR TRY_CONVERT(INT, LEFT(RA.cPLZ, 2)) BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland, A.kKunde, A.kAuftrag, E.fWertNetto AS Wert, A.dErstellt\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    LEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\n        WHERE dErstellt >= DATEADD(YEAR, -1, :von) AND dErstellt < DATEADD(DAY, 1, :bis)\n    ) Y\n    GROUP BY Bundesland, kKunde\n) K\n    JOIN dbo.tkunde KU ON KU.kKunde = K.kKunde\n    LEFT JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n    WHERE K.UmsatzVJ > 0 AND K.Umsatz < K.UmsatzVJ AND ISNULL(KU.cSperre, 'N') <> 'Y'\n)\nSELECT TOP 1\n    je_bl.Bundesland AS Bundesland,\n    CAST(je_bl.Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(je_bl.UmsatzVJ AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN ges.UmsatzInland > 0 THEN 100.0 * je_bl.Umsatz / ges.UmsatzInland END\n        AS DECIMAL(18,1)) AS UmsatzAnteil,\n    CAST(CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END AS DECIMAL(18,1)) AS BevoelkerungsAnteil,\n    CAST(CASE WHEN ges.UmsatzInland > 0 AND CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END > 0\n        THEN (100.0 * je_bl.Umsatz / ges.UmsatzInland) / CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END\n        END AS DECIMAL(18,2)) AS Marktdurchdringung,\n    CAST(CASE WHEN ges.UmsatzInland > 0 AND CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END > 0\n        THEN (CASE je_bl.Bundesland\n            WHEN 'Nordrhein-Westfalen' THEN 21.5 WHEN 'Bayern' THEN 16.1\n            WHEN 'Baden-Württemberg' THEN 13.6 WHEN 'Niedersachsen' THEN 9.7\n            WHEN 'Hessen' THEN 7.7 WHEN 'Rheinland-Pfalz' THEN 5.0\n            WHEN 'Sachsen' THEN 4.9 WHEN 'Berlin' THEN 4.6\n            WHEN 'Schleswig-Holstein' THEN 3.5 WHEN 'Brandenburg' THEN 3.1\n            WHEN 'Sachsen-Anhalt' THEN 2.6 WHEN 'Thüringen' THEN 2.5\n            WHEN 'Hamburg' THEN 2.3 WHEN 'Mecklenburg-Vorpommern' THEN 1.9\n            WHEN 'Saarland' THEN 1.2 WHEN 'Bremen' THEN 0.8\n            ELSE NULL END - 100.0 * je_bl.Umsatz / ges.UmsatzInland)\n             / 100.0 * ges.UmsatzInland END AS DECIMAL(18,2)) AS Potenzial,\n    je_bl.Kunden AS Kunden,\n    (SELECT COUNT(*) FROM kand WHERE kand.Bundesland = je_bl.Bundesland) AS KundenRueckgang,\n    CAST(ISNULL((SELECT SUM(kand.UmsatzVJ - kand.Umsatz) FROM kand\n                  WHERE kand.Bundesland = je_bl.Bundesland), 0) AS DECIMAL(18,2)) AS RueckgangSumme,\n    ISNULL(STUFF((SELECT '; ' + kand.Kunde + ' (' + kand.Ort + ', −'\n                        + FORMAT(kand.UmsatzVJ - kand.Umsatz, 'N0', 'de-DE') + ' €)'\n                   FROM kand WHERE kand.Bundesland = je_bl.Bundesland AND kand.rn <= 5\n                   ORDER BY kand.rn\n                   FOR XML PATH(''), TYPE).value('.', 'NVARCHAR(MAX)'), 1, 2, ''), '') AS Kandidaten\nFROM je_bl CROSS JOIN ges\nWHERE je_bl.Bundesland = :bundesland"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Regionen-Analyse (KI)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bundesland",
+              "target_field": "Bundesland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bundesland"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "UmsatzAnteil",
+              "target_field": "UmsatzAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzAnteil"
+              }
+            },
+            {
+              "source_field": "BevoelkerungsAnteil",
+              "target_field": "BevoelkerungsAnteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BevoelkerungsAnteil"
+              }
+            },
+            {
+              "source_field": "Marktdurchdringung",
+              "target_field": "Marktdurchdringung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Marktdurchdringung"
+              }
+            },
+            {
+              "source_field": "Potenzial",
+              "target_field": "Potenzial",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Potenzial"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "KundenRueckgang",
+              "target_field": "KundenRueckgang",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenRueckgang"
+              }
+            },
+            {
+              "source_field": "RueckgangSumme",
+              "target_field": "RueckgangSumme",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RueckgangSumme"
+              }
+            },
+            {
+              "source_field": "Kandidaten",
+              "target_field": "Kandidaten",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kandidaten"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2253,6 +2721,20 @@
             "mapping_id": "m_ve_mitarbeiter_ang",
             "pipeline_id": null,
             "label": "Mitarbeiter – Angebote"
+          },
+          {
+            "id": "act_ve_bundesland",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_bundesland",
+            "pipeline_id": null,
+            "label": "Auftragseingang je Bundesland"
+          },
+          {
+            "id": "act_ve_nachfass",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_nachfass_kunden",
+            "pipeline_id": null,
+            "label": "Nachfass-Kandidaten"
           }
         ],
         "widgets": [
@@ -2641,6 +3123,50 @@
               "width": 6,
               "info": "Angebote bilden die aktive Vertriebsarbeit besser ab als Aufträge."
             }
+          },
+          {
+            "id": "w_ve_tbl_bundesland",
+            "type": "table",
+            "label": "Auftragseingang je Bundesland (Marktdurchdringung)",
+            "action_id": "act_ve_bundesland",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Marktdurchdringung = Umsatzanteil geteilt durch Bevölkerungsanteil des Bundeslands. Unter 0,8 = schwächer erschlossen als es die Größe der Region hergibt, „Potenzial\" ist der rechnerische Mehrumsatz bei durchschnittlicher Erschließung. Klicken Sie eine Zeile für die KI-Empfehlung mit konkreten Betrieben.",
+              "ai_action": {
+                "kind": "region_potential",
+                "mapping_id": "m_ve_region_analyse",
+                "key_column": "Bundesland",
+                "param": "bundesland",
+                "label_column": "Bundesland",
+                "title": "Regionen-Potenzial – KI-Empfehlung"
+              }
+            }
+          },
+          {
+            "id": "w_ve_bar_bundesland",
+            "type": "bar",
+            "label": "Umsatzanteil gegen Bevölkerungsanteil je Bundesland",
+            "action_id": "act_ve_bundesland",
+            "config": {
+              "width": 12,
+              "x_column": "Bundesland",
+              "y_columns": [
+                "UmsatzAnteil",
+                "BevoelkerungsAnteil"
+              ]
+            }
+          },
+          {
+            "id": "w_ve_tbl_nachfass",
+            "type": "table",
+            "label": "Nachfass-Kandidaten (Kunden mit Umsatzrückgang)",
+            "action_id": "act_ve_nachfass",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Kunden, die im Vorjahreszeitraum mehr gekauft haben als jetzt – sortiert nach der Höhe des Rückgangs. Spalte „Bundesland\" zum Sortieren anklicken, um eine Region gezielt abzuarbeiten."
+            }
           }
         ],
         "result_tabs": [
@@ -2682,6 +3208,14 @@
               "act_ve_rueckgang",
               "act_ve_churn",
               "act_ve_abc"
+            ]
+          },
+          {
+            "id": "tab_ve_regionen",
+            "label": "Regionen",
+            "action_ids": [
+              "act_ve_bundesland",
+              "act_ve_nachfass"
             ]
           },
           {

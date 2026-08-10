@@ -28,6 +28,18 @@ function factChips(kind, row, meta) {
     if (meta?.top_percent != null) chips.push(["Kundenrang", `Top ${meta.top_percent} %`]);
     return chips;
   }
+  if (kind === "region_potential") {
+    const chips = [
+      ["Auftragseingang", fmtNum(row.Umsatz) + " €"],
+      ["Vorjahr", fmtNum(row.UmsatzVJ) + " €"],
+      ["Umsatzanteil", fmtNum(row.UmsatzAnteil, 1) + " %"],
+      ["Bevölkerungsanteil", fmtNum(row.BevoelkerungsAnteil, 1) + " %"],
+      ["Aktive Kunden", fmtNum(row.Kunden)],
+      ["Kunden rückläufig", fmtNum(row.KundenRueckgang)],
+    ];
+    if (meta?.bewertung) chips.push(["Bewertung", meta.bewertung]);
+    return chips;
+  }
   // article_liquidation
   const chips = [
     ["Lagerbestand", fmtNum(row.Bestand) + " Stk"],
@@ -89,6 +101,9 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   // Hervorgehobene Kennzahl (rechts oben): Wahrscheinlichkeit bzw. Kapitalfreisetzung.
   const primary = kind === "customer_winback"
     ? (meta?.probability != null ? { val: `${meta.probability} %`, cap: "Rückgewinnung" } : null)
+    : kind === "region_potential"
+    ? (meta?.marktdurchdringung != null
+        ? { val: `${fmtNum(meta.marktdurchdringung, 2)}`, cap: "Marktdurchdringung" } : null)
     : (meta?.capital_release != null ? { val: `${fmtNum(meta.capital_release)} €`, cap: "Kapitalfreisetzung" } : null);
   const discount = kind === "article_liquidation" && meta?.discount != null ? meta.discount : null;
 
@@ -150,6 +165,16 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
               borderRadius: 8, padding: "9px 12px" }}>
               <TrendingDown size={15} style={{ color: ACCENT, flexShrink: 0 }} />
               Empfohlener Rabatt: <strong style={{ color: ACCENT }}>{discount} %</strong>
+            </div>
+          )}
+
+          {kind === "region_potential" && meta?.potenzial != null && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5,
+              color: S.textMain, backgroundColor: `${ACCENT}12`, border: `1px solid ${ACCENT}33`,
+              borderRadius: 8, padding: "9px 12px" }}>
+              <TrendingDown size={15} style={{ color: ACCENT, flexShrink: 0, transform: "rotate(180deg)" }} />
+              Rechnerisches Zusatzpotenzial bei durchschnittlicher Erschließung:&nbsp;
+              <strong style={{ color: ACCENT }}>{fmtNum(meta.potenzial)} €</strong>
             </div>
           )}
 

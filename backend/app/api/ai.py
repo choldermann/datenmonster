@@ -641,6 +641,35 @@ def _liquidation_facts(row: dict) -> dict:
             "reichweite": None if reichw is None else int(reichw)}
 
 
+def _region_facts(row: dict) -> dict:
+    """Kennzahlen zur Marktdurchdringung einer Region – deterministisch aus dem SQL.
+
+    Marktdurchdringung = Umsatzanteil / Bevölkerungsanteil (1,0 = so stark vertreten
+    wie das Bundesland groß ist). Das Zusatzpotenzial ist der Umsatz, der bei
+    durchschnittlicher Durchdringung zusätzlich anfiele – bewusst als grobe
+    Orientierung, nicht als Prognose."""
+    md = _ra_num(row.get("Marktdurchdringung"))
+    potenzial = _ra_num(row.get("Potenzial"))
+    rueckgang = _ra_num(row.get("RueckgangSumme"))
+    if md is None:
+        stufe = "unbekannt"
+    elif md < 0.5:
+        stufe = "deutlich unterrepräsentiert"
+    elif md < 0.8:
+        stufe = "unterrepräsentiert"
+    elif md > 1.2:
+        stufe = "stark"
+    else:
+        stufe = "im Rahmen"
+    return {
+        "marktdurchdringung": None if md is None else round(md, 2),
+        "bewertung": stufe,
+        # Nur ausweisen, wenn wirklich Luft nach oben ist (negative Werte = überdurchschnittlich).
+        "potenzial": None if potenzial is None or potenzial <= 0 else round(potenzial, 2),
+        "rueckgang": None if rueckgang is None or rueckgang <= 0 else round(rueckgang, 2),
+    }
+
+
 @router.post("/recommend-action")
 async def recommend_action(
     body: RecommendActionRequest,
@@ -704,6 +733,41 @@ async def recommend_action(
             "Rabatt in Prozent nennen, (2) falls ein Bundle-Kandidat genannt ist, ein Bündelangebot mit diesem "
             "Artikel vorschlagen, (3) den Nutzen (Freisetzung des gebundenen Kapitals) benennen. "
             "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel."
+        )
+    elif body.kind == "region_potential":
+        facts = _region_facts(row)
+        lines = [
+            f"Bundesland: {body.label or row.get('Bundesland', '')}",
+            f"Auftragseingang im Zeitraum: {_ra_de(row.get('Umsatz'), '€')} "
+            f"(Vorjahr {_ra_de(row.get('UmsatzVJ'), '€')})",
+            f"Anteil am Inlands-Auftragseingang: {_ra_de(row.get('UmsatzAnteil'))} %",
+            f"Bevölkerungsanteil des Bundeslands: {_ra_de(row.get('BevoelkerungsAnteil'))} %",
+            # Faktor, KEIN Prozentwert – ohne diese Erklärung liest das Modell die Zahl
+            # als Prozentangabe und formuliert Unsinn ("0,2 Prozent Marktdurchdringung").
+            f"Marktdurchdringung: Faktor {_ra_de(row.get('Marktdurchdringung'))} "
+            f"(Faktor 1,0 = Umsatzanteil entspricht genau dem Bevölkerungsanteil, "
+            f"unter 1,0 = schwächer erschlossen, über 1,0 = stärker erschlossen)",
+            f"Aktive Kunden im Bundesland: {_ra_de(row.get('Kunden'))}",
+            f"Davon mit rückläufigem Umsatz: {_ra_de(row.get('KundenRueckgang'))} "
+            f"(zusammen {_ra_de(row.get('RueckgangSumme'), '€')} weniger als im Vorjahr)",
+        ]
+        if facts.get("potenzial") is not None:
+            lines.append(f"Rechnerisches Zusatzpotenzial bei durchschnittlicher Durchdringung: "
+                         f"{_ra_de(facts['potenzial'], '€')}")
+        if row.get("Kandidaten"):
+            lines.append(f"Größte Rückgänge (Betrieb, Ort, Rückgang): {row.get('Kandidaten')}")
+        system = (
+            "Du bist ein nüchterner Vertriebsleiter, der einem Geschäftsführer zuarbeitet. Du erhältst "
+            "FERTIG BERECHNETE Fakten zu EINEM Bundesland: Auftragseingang, Vorjahresvergleich, den "
+            "Umsatzanteil im Vergleich zum Bevölkerungsanteil (= Marktdurchdringung) und eine Liste "
+            "konkreter Betriebe mit Umsatzrückgang. Rechne NICHTS nach und ändere keine Zahlen. "
+            "Formuliere in 4–5 kurzen deutschen Sätzen: (1) ob die Region gemessen an ihrer Größe "
+            "unter- oder überdurchschnittlich erschlossen ist, (2) woran das laut Zahlen liegt "
+            "(wenige Kunden insgesamt oder Rückgänge bei Bestandskunden), (3) NENNE die zwei bis drei "
+            "wichtigsten Betriebe aus der Liste NAMENTLICH als konkrete Nachfass-Kandidaten, "
+            "(4) einen realistischen nächsten Schritt (Besuchstour, Telefonaktion, Außendienst-Einsatz). "
+            "Erfinde keine Firmennamen, die nicht in der Liste stehen. Reiner Fließtext, keine "
+            "Aufzählung, keine Einleitungsfloskel."
         )
     else:
         raise HTTPException(400, f"Unbekannte Aktion: {body.kind}")
