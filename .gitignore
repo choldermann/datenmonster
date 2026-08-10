@@ -102,3 +102,6 @@ ehthumbs.db
 Thumbs.db
 Desktop.ini
 doku/heute.md
+
+# ─── Claude Code (lokale Maschine) ───────────────────────────────────────────
+.claude/settings.local.json
