@@ -1,0 +1,1585 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_versand_cockpit",
+  "template_name": "JTL – Versand-Cockpit",
+  "description": "Versandsicht auf die JTL-Wawi: Sendungsaufkommen je Versandart, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und der Rückstand nicht versendeter Lieferscheine.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Der Versanddienstleister kommt aus dbo.tVersandArt.cName – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt und ist durchgängig leer.",
+    "Durchlaufzeit = Stunden vom Auftragsdatum (Verkauf.tAuftrag.dErstellt) bis zum Versanddatum der Sendung. Verknüpfung: tVersand → tLieferschein → tAuftrag (tLieferschein.kBestellung = kAuftrag).",
+    "Die Liste „Sendungen ohne Tracking\" blendet Versandarten aus, die generell ohne Tracking-Nummer arbeiten (Selbstabholer, Spedition): gezeigt werden nur Versandarten mit sonst mindestens 50 % Tracking-Quote.",
+    "Der Reiter „Rückstand\" ist eine Momentaufnahme und ignoriert den Zeitraumfilter. Sehr alte Lieferscheine ohne Versand sind meist Altlasten aus der Wawi-Einführung."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "m_vs_kpi",
+      "name": "Versand – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sendungen",
+            "SendungenVJ",
+            "AvgDauerStunden",
+            "AvgDauerStundenVJ",
+            "OhneTracking",
+            "TrackingQuote",
+            "Gewicht",
+            "AvgGewicht"
+          ],
+          "sql": "WITH s AS (\n    SELECT V.cIdentCode, V.fGewicht,\n        CASE WHEN A.dErstellt IS NOT NULL THEN DATEDIFF(HOUR, A.dErstellt, V.dVersendet) END AS DauerStd,\n        CASE WHEN V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN V.dVersendet >= DATEADD(YEAR, -1, :von)\n              AND V.dVersendet < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet IS NOT NULL\n      AND V.dVersendet >= DATEADD(YEAR, -1, :von) AND V.dVersendet < DATEADD(DAY, 1, :bis)\n      AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n)\nSELECT\n    SUM(cur) AS Sendungen,\n    SUM(vj) AS SendungenVJ,\n    CAST(ISNULL(AVG(CASE WHEN cur = 1 AND DauerStd >= 0 THEN CAST(DauerStd AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgDauerStunden,\n    CAST(ISNULL(AVG(CASE WHEN vj = 1 AND DauerStd >= 0 THEN CAST(DauerStd AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgDauerStundenVJ,\n    SUM(CASE WHEN cur = 1 AND ISNULL(cIdentCode, '') = '' THEN 1 ELSE 0 END) AS OhneTracking,\n    CAST(CASE WHEN SUM(cur) > 0 THEN 100.0 * SUM(CASE WHEN cur = 1 AND ISNULL(cIdentCode, '') <> ''\n        THEN 1 ELSE 0 END) / SUM(cur) END AS DECIMAL(18,1)) AS TrackingQuote,\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN fGewicht END), 0) AS DECIMAL(18,2)) AS Gewicht,\n    CAST(ISNULL(AVG(CASE WHEN cur = 1 THEN fGewicht END), 0) AS DECIMAL(18,2)) AS AvgGewicht\nFROM s"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "SendungenVJ",
+              "target_field": "SendungenVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SendungenVJ"
+              }
+            },
+            {
+              "source_field": "AvgDauerStunden",
+              "target_field": "AvgDauerStunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgDauerStunden"
+              }
+            },
+            {
+              "source_field": "AvgDauerStundenVJ",
+              "target_field": "AvgDauerStundenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgDauerStundenVJ"
+              }
+            },
+            {
+              "source_field": "OhneTracking",
+              "target_field": "OhneTracking",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneTracking"
+              }
+            },
+            {
+              "source_field": "TrackingQuote",
+              "target_field": "TrackingQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TrackingQuote"
+              }
+            },
+            {
+              "source_field": "Gewicht",
+              "target_field": "Gewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewicht"
+              }
+            },
+            {
+              "source_field": "AvgGewicht",
+              "target_field": "AvgGewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgGewicht"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_monat",
+      "name": "Versand – Sendungen je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Sendungen",
+            "Vorjahr"
+          ],
+          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), V.dVersendet, 120) AS Monat, COUNT(*) AS Anz\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n    GROUP BY CONVERT(char(7), V.dVersendet, 120)\n), vj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, V.dVersendet), 120) AS Monat, COUNT(*) AS Anz\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet >= DATEADD(YEAR, -1, :von)\n      AND V.dVersendet < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, V.dVersendet), 120)\n)\nSELECT cur.Monat AS Monat, cur.Anz AS Sendungen, ISNULL(vj.Anz, 0) AS Vorjahr\nFROM cur LEFT JOIN vj ON vj.Monat = cur.Monat\nORDER BY cur.Monat"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Sendungen je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_versandart",
+      "name": "Versand – Sendungen je Versandart",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Versandart",
+            "Sendungen",
+            "Anteil",
+            "AvgGewicht",
+            "AvgDauerStunden",
+            "TrackingQuote"
+          ],
+          "sql": "SELECT Versandart, COUNT(*) AS Sendungen,\n    CAST(100.0 * COUNT(*) / SUM(COUNT(*)) OVER () AS DECIMAL(18,1)) AS Anteil,\n    CAST(ISNULL(AVG(fGewicht), 0) AS DECIMAL(18,2)) AS AvgGewicht,\n    CAST(ISNULL(AVG(CASE WHEN DauerStd >= 0 THEN CAST(DauerStd AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgDauerStunden,\n    CAST(100.0 * SUM(CASE WHEN MitTracking = 1 THEN 1 ELSE 0 END) / COUNT(*)\n        AS DECIMAL(18,1)) AS TrackingQuote\nFROM (\n    SELECT ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart, V.fGewicht,\n        CASE WHEN ISNULL(V.cIdentCode, '') <> '' THEN 1 ELSE 0 END AS MitTracking,\n        CASE WHEN A.dErstellt IS NOT NULL THEN DATEDIFF(HOUR, A.dErstellt, V.dVersendet) END AS DauerStd\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n) X\nGROUP BY Versandart\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Sendungen je Versandart",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Versandart",
+              "target_field": "Versandart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versandart"
+              }
+            },
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "Anteil",
+              "target_field": "Anteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil"
+              }
+            },
+            {
+              "source_field": "AvgGewicht",
+              "target_field": "AvgGewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgGewicht"
+              }
+            },
+            {
+              "source_field": "AvgDauerStunden",
+              "target_field": "AvgDauerStunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgDauerStunden"
+              }
+            },
+            {
+              "source_field": "TrackingQuote",
+              "target_field": "TrackingQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TrackingQuote"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_dauer_kpi",
+      "name": "Versand – Durchlaufzeit KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sendungen",
+            "AvgStunden",
+            "SelberTagQuote",
+            "Bis48hQuote",
+            "Ueber72h"
+          ],
+          "sql": "SELECT COUNT(*) AS Sendungen,\n    CAST(ISNULL(AVG(CAST(DauerStd AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgStunden,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(CASE WHEN DauerStd <= 24 THEN 1 ELSE 0 END)\n        / COUNT(*) END AS DECIMAL(18,1)) AS SelberTagQuote,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(CASE WHEN DauerStd <= 48 THEN 1 ELSE 0 END)\n        / COUNT(*) END AS DECIMAL(18,1)) AS Bis48hQuote,\n    SUM(CASE WHEN DauerStd > 72 THEN 1 ELSE 0 END) AS Ueber72h\nFROM (\n    SELECT A.cAuftragsNr, A.dErstellt AS Auftragsdatum, V.dVersendet,\n        DATEDIFF(HOUR, A.dErstellt, V.dVersendet) AS DauerStd,\n        ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart, A.kAuftrag\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet IS NOT NULL AND A.dErstellt IS NOT NULL\n      AND V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis)\n      AND DATEDIFF(HOUR, A.dErstellt, V.dVersendet) >= 0\n      AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Durchlaufzeit KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "AvgStunden",
+              "target_field": "AvgStunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgStunden"
+              }
+            },
+            {
+              "source_field": "SelberTagQuote",
+              "target_field": "SelberTagQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SelberTagQuote"
+              }
+            },
+            {
+              "source_field": "Bis48hQuote",
+              "target_field": "Bis48hQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bis48hQuote"
+              }
+            },
+            {
+              "source_field": "Ueber72h",
+              "target_field": "Ueber72h",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueber72h"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_dauer_klassen",
+      "name": "Versand – Durchlaufzeit-Klassen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Klasse",
+            "Sendungen",
+            "sort"
+          ],
+          "sql": "SELECT Klasse, COUNT(*) AS Sendungen, MIN(sort) AS sort\nFROM (\n    SELECT CASE WHEN DauerStd <= 24 THEN 'bis 24 h'\n                WHEN DauerStd <= 48 THEN '24-48 h'\n                WHEN DauerStd <= 72 THEN '48-72 h'\n                WHEN DauerStd <= 168 THEN '3-7 Tage'\n                ELSE 'über 7 Tage' END AS Klasse,\n           CASE WHEN DauerStd <= 24 THEN 1 WHEN DauerStd <= 48 THEN 2\n                WHEN DauerStd <= 72 THEN 3 WHEN DauerStd <= 168 THEN 4 ELSE 5 END AS sort\n    FROM (\n    SELECT A.cAuftragsNr, A.dErstellt AS Auftragsdatum, V.dVersendet,\n        DATEDIFF(HOUR, A.dErstellt, V.dVersendet) AS DauerStd,\n        ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart, A.kAuftrag\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet IS NOT NULL AND A.dErstellt IS NOT NULL\n      AND V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis)\n      AND DATEDIFF(HOUR, A.dErstellt, V.dVersendet) >= 0\n      AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n) X\n) Y\nGROUP BY Klasse\nORDER BY MIN(sort)"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Durchlaufzeit-Klassen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Klasse",
+              "target_field": "Klasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Klasse"
+              }
+            },
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_langsam",
+      "name": "Versand – Längste Durchlaufzeiten",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Auftragsnr",
+            "Kunde",
+            "Auftragsdatum",
+            "Versanddatum",
+            "DauerTage",
+            "Versandart"
+          ],
+          "sql": "SELECT TOP 200\n    X.cAuftragsNr AS Auftragsnr,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CONVERT(char(10), X.Auftragsdatum, 104) AS Auftragsdatum,\n    CONVERT(char(10), X.dVersendet, 104) AS Versanddatum,\n    CAST(X.DauerStd / 24.0 AS DECIMAL(18,1)) AS DauerTage,\n    X.Versandart AS Versandart\nFROM (\n    SELECT A.cAuftragsNr, A.dErstellt AS Auftragsdatum, V.dVersendet,\n        DATEDIFF(HOUR, A.dErstellt, V.dVersendet) AS DauerStd,\n        ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart, A.kAuftrag\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet IS NOT NULL AND A.dErstellt IS NOT NULL\n      AND V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis)\n      AND DATEDIFF(HOUR, A.dErstellt, V.dVersendet) >= 0\n      AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n) X\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = X.kAuftrag\nORDER BY X.DauerStd DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Längste Durchlaufzeiten",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Auftragsdatum",
+              "target_field": "Auftragsdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsdatum"
+              }
+            },
+            {
+              "source_field": "Versanddatum",
+              "target_field": "Versanddatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versanddatum"
+              }
+            },
+            {
+              "source_field": "DauerTage",
+              "target_field": "DauerTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DauerTage"
+              }
+            },
+            {
+              "source_field": "Versandart",
+              "target_field": "Versandart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versandart"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_tracking_kpi",
+      "name": "Versand – Tracking KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sendungen",
+            "MitTracking",
+            "OhneTracking",
+            "TrackingQuote"
+          ],
+          "sql": "SELECT COUNT(*) AS Sendungen,\n    SUM(CASE WHEN ISNULL(V.cIdentCode, '') <> '' THEN 1 ELSE 0 END) AS MitTracking,\n    SUM(CASE WHEN ISNULL(V.cIdentCode, '') = '' THEN 1 ELSE 0 END) AS OhneTracking,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(CASE WHEN ISNULL(V.cIdentCode, '') <> ''\n        THEN 1 ELSE 0 END) / COUNT(*) END AS DECIMAL(18,1)) AS TrackingQuote\n\n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\nWHERE V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Tracking KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "MitTracking",
+              "target_field": "MitTracking",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MitTracking"
+              }
+            },
+            {
+              "source_field": "OhneTracking",
+              "target_field": "OhneTracking",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneTracking"
+              }
+            },
+            {
+              "source_field": "TrackingQuote",
+              "target_field": "TrackingQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TrackingQuote"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_ohne_tracking",
+      "name": "Versand – Sendungen ohne Tracking",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Versanddatum",
+            "Auftragsnr",
+            "Kunde",
+            "Versandart",
+            "Gewicht",
+            "TrackingQuoteArt"
+          ],
+          "sql": "WITH quote AS (\n    SELECT V.kVersandArt,\n        100.0 * SUM(CASE WHEN ISNULL(V.cIdentCode, '') <> '' THEN 1 ELSE 0 END) / COUNT(*) AS q\n    FROM dbo.tVersand V\n    WHERE V.dVersendet >= DATEADD(MONTH, -12, GETDATE())\n    GROUP BY V.kVersandArt\n)\nSELECT TOP 300\n    CONVERT(char(10), V.dVersendet, 104) AS Versanddatum,\n    ISNULL(A.cAuftragsNr, '') AS Auftragsnr,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart,\n    CAST(ISNULL(V.fGewicht, 0) AS DECIMAL(18,2)) AS Gewicht,\n    CAST(ISNULL(quote.q, 0) AS DECIMAL(18,1)) AS TrackingQuoteArt\n\n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN quote ON quote.kVersandArt = V.kVersandArt\nWHERE ISNULL(V.cIdentCode, '') = ''\n  AND V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis)\n  AND ISNULL(quote.q, 0) >= 50\n  AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\nORDER BY V.dVersendet DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Sendungen ohne Tracking",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Versanddatum",
+              "target_field": "Versanddatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versanddatum"
+              }
+            },
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Versandart",
+              "target_field": "Versandart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versandart"
+              }
+            },
+            {
+              "source_field": "Gewicht",
+              "target_field": "Gewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewicht"
+              }
+            },
+            {
+              "source_field": "TrackingQuoteArt",
+              "target_field": "TrackingQuoteArt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TrackingQuoteArt"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_rueckstand_kpi",
+      "name": "Versand – Rückstand KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "LieferscheineOffen",
+            "AeltesteTage",
+            "SendungenOhneDatum",
+            "AvgAlterTage"
+          ],
+          "sql": "SELECT\n    (SELECT COUNT(*) FROM dbo.tLieferschein LS\n      LEFT JOIN dbo.tLieferscheinEckdaten LE ON LE.kLieferschein = LS.kLieferschein\n      WHERE LE.dVersendet IS NULL) AS LieferscheineOffen,\n    ISNULL((SELECT MAX(DATEDIFF(DAY, LS.dErstellt, GETDATE())) FROM dbo.tLieferschein LS\n      LEFT JOIN dbo.tLieferscheinEckdaten LE ON LE.kLieferschein = LS.kLieferschein\n      WHERE LE.dVersendet IS NULL), 0) AS AeltesteTage,\n    (SELECT COUNT(*) FROM dbo.tVersand WHERE dVersendet IS NULL) AS SendungenOhneDatum,\n    ISNULL((SELECT CAST(AVG(CAST(DATEDIFF(DAY, LS.dErstellt, GETDATE()) AS FLOAT)) AS DECIMAL(18,1))\n      FROM dbo.tLieferschein LS\n      LEFT JOIN dbo.tLieferscheinEckdaten LE ON LE.kLieferschein = LS.kLieferschein\n      WHERE LE.dVersendet IS NULL), 0) AS AvgAlterTage"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Rückstand KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "LieferscheineOffen",
+              "target_field": "LieferscheineOffen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LieferscheineOffen"
+              }
+            },
+            {
+              "source_field": "AeltesteTage",
+              "target_field": "AeltesteTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AeltesteTage"
+              }
+            },
+            {
+              "source_field": "SendungenOhneDatum",
+              "target_field": "SendungenOhneDatum",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SendungenOhneDatum"
+              }
+            },
+            {
+              "source_field": "AvgAlterTage",
+              "target_field": "AvgAlterTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAlterTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_rueckstand_liste",
+      "name": "Versand – Lieferscheine ohne Versand",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferschein",
+            "Auftragsnr",
+            "Kunde",
+            "Erstellt",
+            "AlterTage",
+            "Pakete"
+          ],
+          "sql": "SELECT TOP 300\n    LS.cLieferscheinNr AS Lieferschein,\n    ISNULL(A.cAuftragsNr, '') AS Auftragsnr,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CONVERT(char(10), LS.dErstellt, 104) AS Erstellt,\n    DATEDIFF(DAY, LS.dErstellt, GETDATE()) AS AlterTage,\n    ISNULL(LE.nAnzahlPakete, 0) AS Pakete\nFROM dbo.tLieferschein LS\nLEFT JOIN dbo.tLieferscheinEckdaten LE ON LE.kLieferschein = LS.kLieferschein\nLEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nWHERE LE.dVersendet IS NULL\nORDER BY LS.dErstellt"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Lieferscheine ohne Versand",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferschein",
+              "target_field": "Lieferschein",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferschein"
+              }
+            },
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Erstellt",
+              "target_field": "Erstellt",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erstellt"
+              }
+            },
+            {
+              "source_field": "AlterTage",
+              "target_field": "AlterTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AlterTage"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_wochentag",
+      "name": "Versand – Sendungen je Wochentag",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Wochentag",
+            "Sendungen",
+            "sort"
+          ],
+          "sql": "SELECT Wochentag, COUNT(*) AS Sendungen, MIN(sort) AS sort\nFROM (\n    SELECT CASE DATEPART(WEEKDAY, DATEADD(DAY, @@DATEFIRST - 1, V.dVersendet))\n             WHEN 1 THEN 'Montag' WHEN 2 THEN 'Dienstag' WHEN 3 THEN 'Mittwoch'\n             WHEN 4 THEN 'Donnerstag' WHEN 5 THEN 'Freitag' WHEN 6 THEN 'Samstag'\n             ELSE 'Sonntag' END AS Wochentag,\n           DATEPART(WEEKDAY, DATEADD(DAY, @@DATEFIRST - 1, V.dVersendet)) AS sort\n    \n    FROM dbo.tVersand V\n    JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n    LEFT JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n    LEFT JOIN dbo.tVersandArt VA ON VA.kVersandArt = V.kVersandArt\n\n    WHERE V.dVersendet >= :von AND V.dVersendet < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n) X\nGROUP BY Wochentag\nORDER BY MIN(sort)"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Sendungen je Wochentag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Wochentag",
+              "target_field": "Wochentag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wochentag"
+              }
+            },
+            {
+              "source_field": "Sendungen",
+              "target_field": "Sendungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sendungen"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Versand-Cockpit",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 12,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": false
+            }
+          },
+          {
+            "id": "f_versandart",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Versandart",
+            "name": "versandart",
+            "action_ids": [],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "versandart",
+              "multiple": true,
+              "auto_run": false,
+              "placeholder": "Alle Versandarten"
+            }
+          }
+        ],
+        "layout": "grid",
+        "actions": [
+          {
+            "id": "act_vs_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_kpi",
+            "pipeline_id": null,
+            "label": "Versand – Kennzahlen"
+          },
+          {
+            "id": "act_vs_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_monat",
+            "pipeline_id": null,
+            "label": "Sendungen je Monat"
+          },
+          {
+            "id": "act_vs_versandart",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_versandart",
+            "pipeline_id": null,
+            "label": "Sendungen je Versandart"
+          },
+          {
+            "id": "act_vs_wochentag",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_wochentag",
+            "pipeline_id": null,
+            "label": "Sendungen je Wochentag"
+          },
+          {
+            "id": "act_vs_dauer_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_dauer_kpi",
+            "pipeline_id": null,
+            "label": "Durchlaufzeit – Kennzahlen"
+          },
+          {
+            "id": "act_vs_dauer_klassen",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_dauer_klassen",
+            "pipeline_id": null,
+            "label": "Durchlaufzeit-Klassen"
+          },
+          {
+            "id": "act_vs_langsam",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_langsam",
+            "pipeline_id": null,
+            "label": "Längste Durchlaufzeiten"
+          },
+          {
+            "id": "act_vs_tracking_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_tracking_kpi",
+            "pipeline_id": null,
+            "label": "Tracking – Kennzahlen"
+          },
+          {
+            "id": "act_vs_ohne_tracking",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_ohne_tracking",
+            "pipeline_id": null,
+            "label": "Sendungen ohne Tracking"
+          },
+          {
+            "id": "act_vs_rueckstand_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_rueckstand_kpi",
+            "pipeline_id": null,
+            "label": "Rückstand – Kennzahlen"
+          },
+          {
+            "id": "act_vs_rueckstand_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_rueckstand_liste",
+            "pipeline_id": null,
+            "label": "Lieferscheine ohne Versand"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_vs_k_send",
+            "type": "kpi",
+            "label": "Sendungen",
+            "action_id": "act_vs_kpi",
+            "config": {
+              "width": 3,
+              "column": "Sendungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "SendungenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_vs_k_dauer",
+            "type": "kpi",
+            "label": "Ø Durchlaufzeit",
+            "action_id": "act_vs_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgDauerStunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " h",
+              "decimals": 1,
+              "compare_column": "AvgDauerStundenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_vs_k_track",
+            "type": "kpi",
+            "label": "Tracking-Quote",
+            "action_id": "act_vs_kpi",
+            "config": {
+              "width": 3,
+              "column": "TrackingQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_vs_k_gew",
+            "type": "kpi",
+            "label": "Ø Gewicht",
+            "action_id": "act_vs_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgGewicht",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " kg",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_vs_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Versand",
+            "action_id": "act_vs_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Versandlage: Sendungsmenge gegenüber Vorjahr, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und den Rückstand nicht versendeter Lieferscheine. Nenne konkreten Handlungsbedarf.",
+              "extra_sections": [
+                {
+                  "action_id": "act_vs_dauer_kpi",
+                  "label": "Durchlaufzeit",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_vs_tracking_kpi",
+                  "label": "Tracking",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_vs_rueckstand_kpi",
+                  "label": "Rückstand",
+                  "kind": "kpi"
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_vs_line_monat",
+            "type": "line",
+            "label": "Sendungen je Monat (aktuell vs. Vorjahr)",
+            "action_id": "act_vs_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Sendungen",
+                "Vorjahr"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_vs_tbl_art",
+            "type": "table",
+            "label": "Sendungen je Versandart",
+            "action_id": "act_vs_versandart",
+            "config": {
+              "width": 6,
+              "info": "Der Dienstleister steckt im Namen der Versandart – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt."
+            }
+          },
+          {
+            "id": "w_vs_bar_wt",
+            "type": "bar",
+            "label": "Sendungen je Wochentag",
+            "action_id": "act_vs_wochentag",
+            "config": {
+              "width": 6,
+              "x_column": "Wochentag",
+              "y_columns": [
+                "Sendungen"
+              ]
+            }
+          },
+          {
+            "id": "w_vs_d_anz",
+            "type": "kpi",
+            "label": "Ausgewertete Sendungen",
+            "action_id": "act_vs_dauer_kpi",
+            "config": {
+              "width": 3,
+              "column": "Sendungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_d_avg",
+            "type": "kpi",
+            "label": "Ø Auftrag → Versand",
+            "action_id": "act_vs_dauer_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgStunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " h",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_vs_d_24",
+            "type": "kpi",
+            "label": "Binnen 24 h versendet",
+            "action_id": "act_vs_dauer_kpi",
+            "config": {
+              "width": 3,
+              "column": "SelberTagQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_vs_d_72",
+            "type": "kpi",
+            "label": "Länger als 72 h",
+            "action_id": "act_vs_dauer_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ueber72h",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_bar_klassen",
+            "type": "bar",
+            "label": "Verteilung der Durchlaufzeit",
+            "action_id": "act_vs_dauer_klassen",
+            "config": {
+              "width": 12,
+              "x_column": "Klasse",
+              "y_columns": [
+                "Sendungen"
+              ]
+            }
+          },
+          {
+            "id": "w_vs_tbl_lang",
+            "type": "table",
+            "label": "Längste Durchlaufzeiten",
+            "action_id": "act_vs_langsam",
+            "config": {
+              "width": 12,
+              "info": "Gemessen vom Auftragsdatum bis zum Versanddatum der Sendung. Sehr lange Läufe sind meist Rückstands- oder Streckenaufträge.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_vs_t_anz",
+            "type": "kpi",
+            "label": "Sendungen",
+            "action_id": "act_vs_tracking_kpi",
+            "config": {
+              "width": 3,
+              "column": "Sendungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_t_mit",
+            "type": "kpi",
+            "label": "Mit Tracking-Nummer",
+            "action_id": "act_vs_tracking_kpi",
+            "config": {
+              "width": 3,
+              "column": "MitTracking",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_t_ohne",
+            "type": "kpi",
+            "label": "Ohne Tracking-Nummer",
+            "action_id": "act_vs_tracking_kpi",
+            "config": {
+              "width": 3,
+              "column": "OhneTracking",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_t_quote",
+            "type": "kpi",
+            "label": "Tracking-Quote",
+            "action_id": "act_vs_tracking_kpi",
+            "config": {
+              "width": 3,
+              "column": "TrackingQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_vs_tbl_ohne",
+            "type": "table",
+            "label": "Sendungen ohne Tracking (nur trackingfähige Versandarten)",
+            "action_id": "act_vs_ohne_tracking",
+            "config": {
+              "width": 12,
+              "info": "Gezeigt werden nur Versandarten, die sonst zu mindestens 50 % eine Tracking-Nummer haben – Selbstabholer und Spedition tauchen also nicht als Fehler auf.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_vs_r_anz",
+            "type": "kpi",
+            "label": "Lieferscheine ohne Versand",
+            "action_id": "act_vs_rueckstand_kpi",
+            "config": {
+              "width": 3,
+              "column": "LieferscheineOffen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_r_avg",
+            "type": "kpi",
+            "label": "Ø Alter",
+            "action_id": "act_vs_rueckstand_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgAlterTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_vs_r_max",
+            "type": "kpi",
+            "label": "Ältester Vorgang",
+            "action_id": "act_vs_rueckstand_kpi",
+            "config": {
+              "width": 3,
+              "column": "AeltesteTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_r_sd",
+            "type": "kpi",
+            "label": "Sendungen ohne Versanddatum",
+            "action_id": "act_vs_rueckstand_kpi",
+            "config": {
+              "width": 3,
+              "column": "SendungenOhneDatum",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_vs_tbl_rueck",
+            "type": "table",
+            "label": "Lieferscheine ohne Versand (älteste zuerst)",
+            "action_id": "act_vs_rueckstand_liste",
+            "config": {
+              "width": 12,
+              "info": "Momentaufnahme, unabhängig vom Zeitraum. Sehr alte Einträge sind in der Regel Altlasten aus der Wawi-Einführung und keine offenen Sendungen.",
+              "full_rows": true
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_vs_uebersicht",
+            "label": "Versandübersicht",
+            "action_ids": [
+              "act_vs_kpi",
+              "act_vs_monat",
+              "act_vs_versandart",
+              "act_vs_wochentag"
+            ]
+          },
+          {
+            "id": "tab_vs_dauer",
+            "label": "Durchlaufzeit",
+            "action_ids": [
+              "act_vs_dauer_kpi",
+              "act_vs_dauer_klassen",
+              "act_vs_langsam"
+            ]
+          },
+          {
+            "id": "tab_vs_tracking",
+            "label": "Tracking",
+            "action_ids": [
+              "act_vs_tracking_kpi",
+              "act_vs_ohne_tracking"
+            ]
+          },
+          {
+            "id": "tab_vs_rueckstand",
+            "label": "Rückstand",
+            "action_ids": [
+              "act_vs_rueckstand_kpi",
+              "act_vs_rueckstand_liste"
+            ]
+          }
+        ],
+        "show_ai_assistant": true
+      },
+      "portal_config": {}
+    }
+  ]
+}

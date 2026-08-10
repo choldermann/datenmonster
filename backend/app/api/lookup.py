@@ -37,6 +37,12 @@ LOOKUP_QUERIES = {
                    "FROM dbo.tlieferant "
                    "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cFirma, '') <> '' "
                    "ORDER BY cFirma",
+    # Versandarten (Versand). Der Dienstleister steckt im Namen der Versandart –
+    # dbo.tVersand.cLogistiker ist in der Praxis leer.
+    "versandart":  "SELECT kVersandArt AS value, cName AS label "
+                   "FROM dbo.tVersandArt "
+                   "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cName, '') <> '' "
+                   "ORDER BY cName",
 }
 
 

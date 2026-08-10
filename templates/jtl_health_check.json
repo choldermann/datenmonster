@@ -1,0 +1,1743 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_health_check",
+  "template_name": "JTL – Stammdaten-Health-Check",
+  "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
+    "Das Template hat bewusst KEINEN Zeitraumfilter – alle Prüfungen sind Momentaufnahmen. Ein Klick auf „Mappings ausführen\" startet die Prüfung.",
+    "Ampel: grün = keine Treffer, gelb = Einzelfälle, rot = über dem Schwellwert. Die Schwellwerte sind bewusst einfach gehalten und können im Mapping „Health-Check – Übersicht (Ampel)\" angepasst werden.",
+    "Ein Klick auf eine Ampel-Zeile öffnet die zugehörige Detailliste; dieselben Listen stehen als Reiter zur Verfügung und lassen sich per CSV exportieren.",
+    "Nicht jede Lücke ist ein Fehler: Dienstleistungs- und Freipositionen brauchen keine EAN, Filialen desselben Kunden sind legitime Mehrfachanlagen."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "m_hc_ohne_ean",
+      "name": "Health-Check – Artikel ohne EAN",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "HAN",
+            "VKNetto"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHAN, '') AS HAN, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cBarcode, '') = ''\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne EAN",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_gewicht",
+      "name": "Health-Check – Artikel ohne Gewicht",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "VKNetto",
+            "Lagerbestand"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne Gewicht",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "Lagerbestand",
+              "target_field": "Lagerbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerbestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_ek",
+      "name": "Health-Check – Artikel ohne EK",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "VKNetto",
+            "LetzterEK"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.fLetzterEK, 0) AS DECIMAL(18,2)) AS LetzterEK\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fEKNetto, 0) = 0\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne EK",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "LetzterEK",
+              "target_field": "LetzterEK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterEK"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_vk_unter_ek",
+      "name": "Health-Check – VK unter EK",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "VKNetto",
+            "EKNetto",
+            "Verlust"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto, CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto, CAST(A.fVKNetto - A.fEKNetto AS DECIMAL(18,2)) AS Verlust\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto\nORDER BY A.fVKNetto - A.fEKNetto"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – VK unter EK",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Verlust",
+              "target_field": "Verlust",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verlust"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_warengruppe",
+      "name": "Health-Check – Artikel ohne Warengruppe",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Lagerbestand"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kWarengruppe, 0) = 0\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne Warengruppe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Lagerbestand",
+              "target_field": "Lagerbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerbestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_name",
+      "name": "Health-Check – Artikel ohne Bezeichnung",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(AB.cName, '') = ''\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne Bezeichnung",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_taric",
+      "name": "Health-Check – Artikel ohne Warentarifnummer",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Herkunftsland",
+            "Lagerbestand"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHerkunftsland, '') AS Herkunftsland, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cTaric, '') = ''\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne Warentarifnummer",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
+              }
+            },
+            {
+              "source_field": "Lagerbestand",
+              "target_field": "Lagerbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerbestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ohne_herkunftsland",
+      "name": "Health-Check – Artikel ohne Herkunftsland",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Warentarifnummer",
+            "Lagerbestand"
+          ],
+          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cTaric, '') AS Warentarifnummer, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cHerkunftsland, '') = ''\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne Herkunftsland",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Warentarifnummer",
+              "target_field": "Warentarifnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warentarifnummer"
+              }
+            },
+            {
+              "source_field": "Lagerbestand",
+              "target_field": "Lagerbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerbestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ean_doppelt",
+      "name": "Health-Check – Doppelte EAN",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "EAN",
+            "Anzahl",
+            "Artikelnummern"
+          ],
+          "sql": "SELECT TOP 500\n    A.cBarcode AS EAN,\n    COUNT(*) AS Anzahl,\n    STUFF((SELECT ', ' + A2.cArtNr FROM dbo.tArtikel A2\n            WHERE A2.cBarcode = A.cBarcode AND ISNULL(A2.nDelete, 0) = 0\n              AND ISNULL(A2.cAktiv, 'Y') = 'Y'\n            FOR XML PATH('')), 1, 2, '') AS Artikelnummern\nFROM dbo.tArtikel A\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.cBarcode, '') <> ''\nGROUP BY A.cBarcode\nHAVING COUNT(*) > 1\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Doppelte EAN",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Artikelnummern",
+              "target_field": "Artikelnummern",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummern"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kunden_ohne_mail",
+      "name": "Health-Check – Kunden ohne E-Mail",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kundennummer",
+            "Kunde",
+            "Ort",
+            "Telefon",
+            "Kunde_seit"
+          ],
+          "sql": "SELECT TOP 500\n    ISNULL(K.cKundenNr, '') AS Kundennummer,\n    LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n        ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n    LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n    ISNULL(AD.cTel, '') AS Telefon,\n    ISNULL(CONVERT(char(10), K.dErstellt, 104), '') AS Kunde_seit\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y'\nORDER BY K.dErstellt DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kunden ohne E-Mail",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kundennummer",
+              "target_field": "Kundennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennummer"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "Telefon",
+              "target_field": "Telefon",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Telefon"
+              }
+            },
+            {
+              "source_field": "Kunde_seit",
+              "target_field": "Kunde_seit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde_seit"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kunden_dubletten",
+      "name": "Health-Check – Kundendubletten",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "PLZ",
+            "Anzahl",
+            "Kundennummern"
+          ],
+          "sql": "SELECT TOP 500\n    AD.cFirma AS Kunde,\n    ISNULL(AD.cPLZ, '') AS PLZ,\n    COUNT(*) AS Anzahl,\n    STUFF((SELECT ', ' + ISNULL(K2.cKundenNr, '')\n            FROM dbo.tkunde K2 JOIN dbo.tAdresse A2 ON A2.kKunde = K2.kKunde AND A2.nStandard = 1\n            WHERE A2.cFirma = AD.cFirma AND ISNULL(A2.cPLZ, '') = ISNULL(AD.cPLZ, '')\n            FOR XML PATH('')), 1, 2, '') AS Kundennummern\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cFirma, '') <> ''\nGROUP BY AD.cFirma, AD.cPLZ\nHAVING COUNT(*) > 1\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kundendubletten",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "PLZ",
+              "target_field": "PLZ",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "PLZ"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Kundennummern",
+              "target_field": "Kundennummern",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennummern"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_summary",
+      "name": "Health-Check – Übersicht (Ampel)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Ampel",
+            "Anzahl",
+            "Aufgabe",
+            "check_key",
+            "sort"
+          ],
+          "sql": "SELECT\n    CASE WHEN Anzahl = 0 THEN 'gruen'\n         WHEN Anzahl >= Grenze THEN 'rot'\n         ELSE 'gelb' END AS Ampel,\n    Anzahl, Aufgabe, check_key, sort\nFROM (\n\n    SELECT 'artikel_ohne_ean' AS check_key, 'Artikel ohne EAN/Barcode' AS Aufgabe, 1 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_gewicht' AS check_key, 'Artikel ohne Gewicht' AS Aufgabe, 2 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0) AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_ek' AS check_key, 'Artikel ohne Einkaufspreis' AS Aufgabe, 3 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_vk_unter_ek' AS check_key, 'Artikel mit VK unter EK (Verlustgeschäft)' AS Aufgabe, 4 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_warengruppe' AS check_key, 'Artikel ohne Warengruppe' AS Aufgabe, 5 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_name' AS check_key, 'Artikel ohne Bezeichnung' AS Aufgabe, 6 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = '') AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_taric' AS check_key, 'Artikel ohne Warentarifnummer (Intrastat/Zoll)' AS Aufgabe, 7 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_herkunftsland' AS check_key, 'Artikel ohne Herkunftsland (Intrastat/Zoll)' AS Aufgabe, 8 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'ean_doppelt' AS check_key, 'Mehrfach vergebene EAN' AS Aufgabe, 20 AS sort,\n        (SELECT COUNT(*) FROM (SELECT A.cBarcode FROM dbo.tArtikel A\n            WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n              AND ISNULL(A.cBarcode, '') <> ''\n            GROUP BY A.cBarcode HAVING COUNT(*) > 1) X) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_mail' AS check_key, 'Kunden ohne E-Mail-Adresse' AS Aufgabe, 21 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n          WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'kunden_dubletten' AS check_key, 'Mögliche Kundendubletten' AS Aufgabe, 22 AS sort,\n        (SELECT COUNT(*) FROM (SELECT AD.cFirma, AD.cPLZ FROM dbo.tkunde K\n            JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n            WHERE ISNULL(AD.cFirma, '') <> ''\n            GROUP BY AD.cFirma, AD.cPLZ HAVING COUNT(*) > 1) X) AS Anzahl,\n        10 AS Grenze\n) X\nORDER BY CASE WHEN Anzahl = 0 THEN 3 WHEN Anzahl >= Grenze THEN 1 ELSE 2 END, sort"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Übersicht (Ampel)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Ampel",
+              "target_field": "Ampel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ampel"
+              }
+            },
+            {
+              "source_field": "Anzahl",
+              "target_field": "Anzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Aufgabe",
+              "target_field": "Aufgabe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aufgabe"
+              }
+            },
+            {
+              "source_field": "check_key",
+              "target_field": "check_key",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "check_key"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kpi",
+      "name": "Health-Check – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "AktiveArtikel",
+            "ArtikelMitLuecke",
+            "Vollstaendigkeit",
+            "AktiveKunden",
+            "KundenOhneMail"
+          ],
+          "sql": "SELECT\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) AS AktiveArtikel,\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = '')) AS ArtikelMitLuecke,\n    CAST(100.0 * ((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) - (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = ''))) / NULLIF((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0), 0)\n        AS DECIMAL(18,1)) AS Vollstaendigkeit,\n    (SELECT COUNT(*) FROM dbo.tkunde K WHERE ISNULL(K.cSperre, 'N') <> 'Y') AS AktiveKunden,\n    (SELECT COUNT(*) FROM dbo.tkunde K\n      JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n      WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS KundenOhneMail"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "AktiveArtikel",
+              "target_field": "AktiveArtikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AktiveArtikel"
+              }
+            },
+            {
+              "source_field": "ArtikelMitLuecke",
+              "target_field": "ArtikelMitLuecke",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelMitLuecke"
+              }
+            },
+            {
+              "source_field": "Vollstaendigkeit",
+              "target_field": "Vollstaendigkeit",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vollstaendigkeit"
+              }
+            },
+            {
+              "source_field": "AktiveKunden",
+              "target_field": "AktiveKunden",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AktiveKunden"
+              }
+            },
+            {
+              "source_field": "KundenOhneMail",
+              "target_field": "KundenOhneMail",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenOhneMail"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_luecken",
+      "name": "Health-Check – Lücken je Feld",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Feld",
+            "Fehlend",
+            "Anteil",
+            "sort"
+          ],
+          "sql": "SELECT Feld, Fehlend,\n    CAST(100.0 * Fehlend / NULLIF((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0), 0) AS DECIMAL(18,1)) AS Anteil,\n    sort\nFROM (\n    SELECT 'EAN/Barcode' AS Feld, (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Fehlend, 1 AS sort\n    UNION ALL SELECT 'Gewicht', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0), 2\n    UNION ALL SELECT 'Einkaufspreis', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0), 3\n    UNION ALL SELECT 'Warengruppe', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0), 4\n    UNION ALL SELECT 'Warentarifnummer', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = ''), 5\n    UNION ALL SELECT 'Herkunftsland', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = ''), 6\n    UNION ALL SELECT 'Bezeichnung', (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = ''), 7\n) X\nORDER BY sort"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Lücken je Feld",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Feld",
+              "target_field": "Feld",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Feld"
+              }
+            },
+            {
+              "source_field": "Fehlend",
+              "target_field": "Fehlend",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fehlend"
+              }
+            },
+            {
+              "source_field": "Anteil",
+              "target_field": "Anteil",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Stammdaten-Health-Check",
+      "schema": {
+        "fields": [],
+        "layout": "grid",
+        "actions": [
+          {
+            "id": "act_hc_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_kpi",
+            "pipeline_id": null,
+            "label": "Health-Check – Kennzahlen"
+          },
+          {
+            "id": "act_hc_summary",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_summary",
+            "pipeline_id": null,
+            "label": "Health-Check – Übersicht"
+          },
+          {
+            "id": "act_hc_luecken",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_luecken",
+            "pipeline_id": null,
+            "label": "Lücken je Feld"
+          },
+          {
+            "id": "act_hc_ohne_ean",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_ean",
+            "pipeline_id": null,
+            "label": "Artikel ohne EAN"
+          },
+          {
+            "id": "act_hc_ohne_gewicht",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_gewicht",
+            "pipeline_id": null,
+            "label": "Artikel ohne Gewicht"
+          },
+          {
+            "id": "act_hc_ohne_warengruppe",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_warengruppe",
+            "pipeline_id": null,
+            "label": "Artikel ohne Warengruppe"
+          },
+          {
+            "id": "act_hc_ohne_name",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_name",
+            "pipeline_id": null,
+            "label": "Artikel ohne Bezeichnung"
+          },
+          {
+            "id": "act_hc_ean_doppelt",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ean_doppelt",
+            "pipeline_id": null,
+            "label": "Doppelte EAN"
+          },
+          {
+            "id": "act_hc_ohne_ek",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_ek",
+            "pipeline_id": null,
+            "label": "Artikel ohne EK"
+          },
+          {
+            "id": "act_hc_vk_unter_ek",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_vk_unter_ek",
+            "pipeline_id": null,
+            "label": "VK unter EK"
+          },
+          {
+            "id": "act_hc_ohne_taric",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_taric",
+            "pipeline_id": null,
+            "label": "Artikel ohne Warentarifnummer"
+          },
+          {
+            "id": "act_hc_ohne_herkunftsland",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ohne_herkunftsland",
+            "pipeline_id": null,
+            "label": "Artikel ohne Herkunftsland"
+          },
+          {
+            "id": "act_hc_kunden_ohne_mail",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_kunden_ohne_mail",
+            "pipeline_id": null,
+            "label": "Kunden ohne E-Mail"
+          },
+          {
+            "id": "act_hc_kunden_dubletten",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_kunden_dubletten",
+            "pipeline_id": null,
+            "label": "Kundendubletten"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_hc_k_art",
+            "type": "kpi",
+            "label": "Aktive Artikel",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 3,
+              "column": "AktiveArtikel",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_hc_k_luecke",
+            "type": "kpi",
+            "label": "Artikel mit Datenlücke",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 3,
+              "column": "ArtikelMitLuecke",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_hc_k_voll",
+            "type": "kpi",
+            "label": "Vollständig gepflegt",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 3,
+              "column": "Vollstaendigkeit",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_hc_k_mail",
+            "type": "kpi",
+            "label": "Kunden ohne E-Mail",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 3,
+              "column": "KundenOhneMail",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_hc_tasklist",
+            "type": "tasklist",
+            "label": "🚦 Stammdaten-Prüfungen",
+            "action_id": "act_hc_summary",
+            "config": {
+              "width": 12,
+              "info": "Grün = keine Treffer, gelb = Einzelfälle, rot = über dem Schwellwert. Klicken Sie eine Zeile für die Detailliste.",
+              "row_detail": {
+                "key_column": "check_key",
+                "map": {
+                  "artikel_ohne_ean": {
+                    "mapping_id": "m_hc_ohne_ean",
+                    "title": "Artikel ohne EAN/Barcode"
+                  },
+                  "artikel_ohne_gewicht": {
+                    "mapping_id": "m_hc_ohne_gewicht",
+                    "title": "Artikel ohne Gewicht"
+                  },
+                  "artikel_ohne_ek": {
+                    "mapping_id": "m_hc_ohne_ek",
+                    "title": "Artikel ohne Einkaufspreis"
+                  },
+                  "artikel_vk_unter_ek": {
+                    "mapping_id": "m_hc_vk_unter_ek",
+                    "title": "Artikel mit VK unter EK"
+                  },
+                  "artikel_ohne_warengruppe": {
+                    "mapping_id": "m_hc_ohne_warengruppe",
+                    "title": "Artikel ohne Warengruppe"
+                  },
+                  "artikel_ohne_name": {
+                    "mapping_id": "m_hc_ohne_name",
+                    "title": "Artikel ohne Bezeichnung"
+                  },
+                  "artikel_ohne_taric": {
+                    "mapping_id": "m_hc_ohne_taric",
+                    "title": "Artikel ohne Warentarifnummer"
+                  },
+                  "artikel_ohne_herkunftsland": {
+                    "mapping_id": "m_hc_ohne_herkunftsland",
+                    "title": "Artikel ohne Herkunftsland"
+                  },
+                  "ean_doppelt": {
+                    "mapping_id": "m_hc_ean_doppelt",
+                    "title": "Mehrfach vergebene EAN"
+                  },
+                  "kunden_ohne_mail": {
+                    "mapping_id": "m_hc_kunden_ohne_mail",
+                    "title": "Kunden ohne E-Mail"
+                  },
+                  "kunden_dubletten": {
+                    "mapping_id": "m_hc_kunden_dubletten",
+                    "title": "Mögliche Kundendubletten"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "id": "w_hc_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Datenqualität",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Stammdatenqualität. Priorisiere nach Geschäftsnutzen: fehlende Einkaufspreise und VK unter EK verfälschen die Marge, fehlende Warentarifnummer und Herkunftsland blockieren Intrastat/Zoll, fehlende EAN behindern Marktplätze. Nenne eine konkrete Reihenfolge zum Abarbeiten.",
+              "extra_sections": [
+                {
+                  "action_id": "act_hc_luecken",
+                  "label": "Lücken je Feld",
+                  "kind": "kpi"
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_hc_bar_luecken",
+            "type": "bar",
+            "label": "Fehlende Angaben je Feld (Anteil der aktiven Artikel)",
+            "action_id": "act_hc_luecken",
+            "config": {
+              "width": 12,
+              "x_column": "Feld",
+              "y_columns": [
+                "Anteil"
+              ]
+            }
+          },
+          {
+            "id": "w_hc_tbl_ean",
+            "type": "table",
+            "label": "Artikel ohne EAN/Barcode",
+            "action_id": "act_hc_ohne_ean",
+            "config": {
+              "width": 6,
+              "info": "Ohne EAN sind Marktplätze (Amazon, eBay) und viele Logistikprozesse nicht bedienbar.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_gew",
+            "type": "table",
+            "label": "Artikel ohne Gewicht",
+            "action_id": "act_hc_ohne_gewicht",
+            "config": {
+              "width": 6,
+              "info": "Fehlende Gewichte verhindern korrekte Versandkosten und Intrastat-Meldungen.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_wg",
+            "type": "table",
+            "label": "Artikel ohne Warengruppe",
+            "action_id": "act_hc_ohne_warengruppe",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_name",
+            "type": "table",
+            "label": "Artikel ohne Bezeichnung",
+            "action_id": "act_hc_ohne_name",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_dopp",
+            "type": "table",
+            "label": "Mehrfach vergebene EAN",
+            "action_id": "act_hc_ean_doppelt",
+            "config": {
+              "width": 12,
+              "info": "Dieselbe EAN an mehreren Artikeln führt bei Marktplätzen zu Ablehnungen und Fehlzuordnungen im Wareneingang.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_ek",
+            "type": "table",
+            "label": "Artikel ohne Einkaufspreis",
+            "action_id": "act_hc_ohne_ek",
+            "config": {
+              "width": 6,
+              "info": "Ohne EK ist keine Marge und kein Deckungsbeitrag rechenbar – betrifft alle Ertragsauswertungen. Der letzte tatsächliche EK steht daneben.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_vkek",
+            "type": "table",
+            "label": "Artikel mit VK unter EK",
+            "action_id": "act_hc_vk_unter_ek",
+            "config": {
+              "width": 6,
+              "info": "Jeder Verkauf dieser Artikel erzeugt Verlust. Sortiert nach größtem Minus.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_taric",
+            "type": "table",
+            "label": "Artikel ohne Warentarifnummer",
+            "action_id": "act_hc_ohne_taric",
+            "config": {
+              "width": 6,
+              "info": "Warentarifnummer (Taric) ist Pflicht für Intrastat-Meldungen und Zollanmeldungen.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_herk",
+            "type": "table",
+            "label": "Artikel ohne Herkunftsland",
+            "action_id": "act_hc_ohne_herkunftsland",
+            "config": {
+              "width": 6,
+              "info": "Herkunftsland ist Pflichtfeld der Intrastat-Ausfuhrmeldung.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_mail",
+            "type": "table",
+            "label": "Kunden ohne E-Mail-Adresse",
+            "action_id": "act_hc_kunden_ohne_mail",
+            "config": {
+              "width": 6,
+              "info": "Ohne E-Mail keine Versandbenachrichtigung, kein Newsletter, keine digitale Rechnung.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_hc_tbl_dub",
+            "type": "table",
+            "label": "Mögliche Kundendubletten",
+            "action_id": "act_hc_kunden_dubletten",
+            "config": {
+              "width": 6,
+              "info": "Gleiche Firma und PLZ mehrfach angelegt. Vor dem Zusammenführen prüfen – Filialen können legitime Mehrfachanlagen sein.",
+              "full_rows": true
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_hc_uebersicht",
+            "label": "Übersicht",
+            "action_ids": [
+              "act_hc_kpi",
+              "act_hc_summary",
+              "act_hc_luecken"
+            ]
+          },
+          {
+            "id": "tab_hc_artikel",
+            "label": "Artikelstamm",
+            "action_ids": [
+              "act_hc_ohne_ean",
+              "act_hc_ohne_gewicht",
+              "act_hc_ohne_warengruppe",
+              "act_hc_ohne_name",
+              "act_hc_ean_doppelt"
+            ]
+          },
+          {
+            "id": "tab_hc_preise",
+            "label": "Preise & Marge",
+            "action_ids": [
+              "act_hc_ohne_ek",
+              "act_hc_vk_unter_ek"
+            ]
+          },
+          {
+            "id": "tab_hc_aussenhandel",
+            "label": "Außenhandel",
+            "action_ids": [
+              "act_hc_ohne_taric",
+              "act_hc_ohne_herkunftsland"
+            ]
+          },
+          {
+            "id": "tab_hc_kunden",
+            "label": "Kunden",
+            "action_ids": [
+              "act_hc_kunden_ohne_mail",
+              "act_hc_kunden_dubletten"
+            ]
+          }
+        ],
+        "show_ai_assistant": true
+      },
+      "portal_config": {}
+    }
+  ]
+}
