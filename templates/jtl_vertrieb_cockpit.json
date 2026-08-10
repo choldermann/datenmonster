@@ -1,0 +1,2709 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_vertrieb_cockpit",
+  "template_name": "JTL – Vertriebs-Cockpit",
+  "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
+    "Der Reiter „Auftragsbestand\" ist eine Momentaufnahme und ignoriert den Zeitraumfilter.",
+    "JTL verknüpft Angebot und Auftrag nicht (getrennte Nummernkreise). Die Conversion ist deshalb eine Heuristik: Angebot gilt als gewonnen, wenn derselbe Kunde binnen 60 Tagen einen Auftrag erhalten hat.",
+    "Mitarbeiter = Erfasser des Belegs (kBenutzerErstellt). Im Backoffice erfasste Aufträge laufen auf die erfassende Person; die Angebotstabelle bildet den aktiven Vertrieb besser ab.",
+    "Sechs Auswertungen werden mit dem GF-Cockpit geteilt (gleiche Mappingnamen) – bei einer Installation im selben Projekt werden sie wiederverwendet statt doppelt angelegt."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "mappings": [
+    {
+      "id": "m_ve_kpi",
+      "name": "Vertrieb – Auftragseingang KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Auftragseingang",
+            "AuftragseingangVJ",
+            "Auftraege",
+            "AuftraegeVJ",
+            "AvgAuftrag",
+            "AvgAuftragVJ",
+            "StornoQuote",
+            "StornoQuoteVJ"
+          ],
+          "sql": "WITH auf AS (\n    SELECT A.nStorno, E.fWertNetto,\n        CASE WHEN A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN A.dErstellt >= DATEADD(YEAR, -1, :von)\n              AND A.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1\n      AND A.dErstellt >= DATEADD(YEAR, -1, :von) AND A.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n)\nSELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nStorno = 0 THEN fWertNetto END), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nStorno = 0 THEN fWertNetto END), 0) AS DECIMAL(18,2)) AS AuftragseingangVJ,\n    SUM(CASE WHEN cur = 1 AND nStorno = 0 THEN 1 ELSE 0 END) AS Auftraege,\n    SUM(CASE WHEN vj = 1 AND nStorno = 0 THEN 1 ELSE 0 END) AS AuftraegeVJ,\n    CAST(CASE WHEN SUM(CASE WHEN cur = 1 AND nStorno = 0 THEN 1 ELSE 0 END) > 0\n        THEN SUM(CASE WHEN cur = 1 AND nStorno = 0 THEN fWertNetto END)\n           / SUM(CASE WHEN cur = 1 AND nStorno = 0 THEN 1 ELSE 0 END) END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN SUM(CASE WHEN vj = 1 AND nStorno = 0 THEN 1 ELSE 0 END) > 0\n        THEN SUM(CASE WHEN vj = 1 AND nStorno = 0 THEN fWertNetto END)\n           / SUM(CASE WHEN vj = 1 AND nStorno = 0 THEN 1 ELSE 0 END) END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN SUM(CASE WHEN cur = 1 THEN 1 ELSE 0 END) > 0\n        THEN 100.0 * SUM(CASE WHEN cur = 1 AND nStorno = 1 THEN 1 ELSE 0 END)\n           / SUM(CASE WHEN cur = 1 THEN 1 ELSE 0 END) END AS DECIMAL(18,1)) AS StornoQuote,\n    CAST(CASE WHEN SUM(CASE WHEN vj = 1 THEN 1 ELSE 0 END) > 0\n        THEN 100.0 * SUM(CASE WHEN vj = 1 AND nStorno = 1 THEN 1 ELSE 0 END)\n           / SUM(CASE WHEN vj = 1 THEN 1 ELSE 0 END) END AS DECIMAL(18,1)) AS StornoQuoteVJ\nFROM auf"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "AuftragseingangVJ",
+              "target_field": "AuftragseingangVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AuftragseingangVJ"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "AuftraegeVJ",
+              "target_field": "AuftraegeVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AuftraegeVJ"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            },
+            {
+              "source_field": "AvgAuftragVJ",
+              "target_field": "AvgAuftragVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftragVJ"
+              }
+            },
+            {
+              "source_field": "StornoQuote",
+              "target_field": "StornoQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StornoQuote"
+              }
+            },
+            {
+              "source_field": "StornoQuoteVJ",
+              "target_field": "StornoQuoteVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StornoQuoteVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_monat",
+      "name": "Vertrieb – Auftragseingang je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Auftragseingang",
+            "Vorjahr"
+          ],
+          "sql": "WITH cur AS (\n    SELECT CONVERT(char(7), A.dErstellt, 120) AS Monat, SUM(E.fWertNetto) AS Wert\n    FROM Verkauf.tAuftrag A JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0\n      AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n    GROUP BY CONVERT(char(7), A.dErstellt, 120)\n), vj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, A.dErstellt), 120) AS Monat, SUM(E.fWertNetto) AS Wert\n    FROM Verkauf.tAuftrag A JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0\n      AND A.dErstellt >= DATEADD(YEAR, -1, :von)\n      AND A.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n      AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, A.dErstellt), 120)\n)\nSELECT cur.Monat AS Monat,\n    CAST(ISNULL(cur.Wert, 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(ISNULL(vj.Wert, 0) AS DECIMAL(18,2)) AS Vorjahr\nFROM cur LEFT JOIN vj ON vj.Monat = cur.Monat\nORDER BY cur.Monat"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_plattform",
+      "name": "Vertrieb – Auftragseingang je Plattform",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Plattform",
+            "Auftraege",
+            "Auftragseingang",
+            "AvgAuftrag"
+          ],
+          "sql": "SELECT ISNULL(P.cName, 'Unbekannt') AS Plattform,\n    COUNT(*) AS Auftraege,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(ISNULL(AVG(E.fWertNetto), 0) AS DECIMAL(18,2)) AS AvgAuftrag\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tPlattform P ON P.nPlattform = A.kPlattform\nWHERE A.nType = 1 AND A.nStorno = 0\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY ISNULL(P.cName, 'Unbekannt')\nORDER BY SUM(E.fWertNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang je Plattform",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Plattform",
+              "target_field": "Plattform",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Plattform"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_kunden",
+      "name": "Vertrieb – Auftragseingang je Kunde",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Auftraege",
+            "Auftragseingang",
+            "AvgAuftrag",
+            "LetzterAuftrag"
+          ],
+          "sql": "SELECT TOP 25\n    LTRIM(RTRIM(ISNULL(NULLIF(MAX(RA.cFirma), ''),\n        ISNULL(MAX(RA.cVorname), '') + ' ' + ISNULL(MAX(RA.cName), '')))) AS Kunde,\n    COUNT(*) AS Auftraege,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(ISNULL(AVG(E.fWertNetto), 0) AS DECIMAL(18,2)) AS AvgAuftrag,\n    CONVERT(char(10), MAX(A.dErstellt), 104) AS LetzterAuftrag\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY A.kKunde\nORDER BY SUM(E.fWertNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang je Kunde",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            },
+            {
+              "source_field": "LetzterAuftrag",
+              "target_field": "LetzterAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterAuftrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_artikel",
+      "name": "Vertrieb – Auftragseingang je Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Auftragseingang",
+            "Auftraege"
+          ],
+          "sql": "SELECT TOP 25\n    POS.cArtNr AS ArtNr,\n    MAX(ISNULL(AB.cName, POS.cName)) AS Artikel,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Auftragseingang,\n    COUNT(DISTINCT A.kAuftrag) AS Auftraege\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragPosition POS ON POS.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = POS.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.nType = 1 AND A.nStorno = 0 AND POS.nType = 1 AND ISNULL(POS.cArtNr, '') <> ''\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY POS.cArtNr\nORDER BY SUM(POS.fAnzahl * POS.fVkNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Auftragseingang je Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_storno",
+      "name": "Vertrieb – Stornierte Aufträge",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Auftragsnr",
+            "Datum",
+            "Kunde",
+            "Wert",
+            "Stornogrund",
+            "Erfasser"
+          ],
+          "sql": "SELECT TOP 100\n    A.cAuftragsNr AS Auftragsnr,\n    CONVERT(char(10), A.dErstellt, 104) AS Datum,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CAST(ISNULL(E.fWertNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    ISNULL(V.cStornogrund, '') AS Stornogrund,\n    ISNULL(B.cName, '') AS Erfasser\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.lvAuftragsverwaltung V ON V.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = A.kBenutzerErstellt\nWHERE A.nType = 1 AND A.nStorno = 1\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nORDER BY E.fWertNetto DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Stornierte Aufträge",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Stornogrund",
+              "target_field": "Stornogrund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stornogrund"
+              }
+            },
+            {
+              "source_field": "Erfasser",
+              "target_field": "Erfasser",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erfasser"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_backlog_kpi",
+      "name": "Vertrieb – Backlog KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "OffeneAuftraege",
+            "Auftragsbestand",
+            "AvgAlterTage",
+            "Ueberfaellig",
+            "WertAelter30"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS OffeneAuftraege,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragsbestand,\n    CAST(ISNULL(AVG(CAST(DATEDIFF(DAY, A.dErstellt, GETDATE()) AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgAlterTage,\n    SUM(CASE WHEN A.dVoraussichtlichesLieferdatum IS NOT NULL\n              AND A.dVoraussichtlichesLieferdatum < GETDATE() THEN 1 ELSE 0 END) AS Ueberfaellig,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 30\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS WertAelter30\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Backlog KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "OffeneAuftraege",
+              "target_field": "OffeneAuftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneAuftraege"
+              }
+            },
+            {
+              "source_field": "Auftragsbestand",
+              "target_field": "Auftragsbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsbestand"
+              }
+            },
+            {
+              "source_field": "AvgAlterTage",
+              "target_field": "AvgAlterTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAlterTage"
+              }
+            },
+            {
+              "source_field": "Ueberfaellig",
+              "target_field": "Ueberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberfaellig"
+              }
+            },
+            {
+              "source_field": "WertAelter30",
+              "target_field": "WertAelter30",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertAelter30"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_backlog_liste",
+      "name": "Vertrieb – Offene Aufträge",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Auftragsnr",
+            "Datum",
+            "AlterTage",
+            "Kunde",
+            "Wert",
+            "OffenerWert",
+            "Lieferstatus",
+            "Liefertermin"
+          ],
+          "sql": "SELECT TOP 500\n    A.cAuftragsNr AS Auftragsnr,\n    CONVERT(char(10), A.dErstellt, 104) AS Datum,\n    DATEDIFF(DAY, A.dErstellt, GETDATE()) AS AlterTage,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CAST(ISNULL(E.fWertNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    CAST(ISNULL(E.fOffenerWert, 0) AS DECIMAL(18,2)) AS OffenerWert,\n    CASE E.nLieferstatus WHEN 5 THEN 'komplett geliefert' WHEN 3 THEN 'teilgeliefert'\n         WHEN 0 THEN 'offen' ELSE 'in Bearbeitung' END AS Lieferstatus,\n    ISNULL(CONVERT(char(10), A.dVoraussichtlichesLieferdatum, 104), '') AS Liefertermin\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0\nORDER BY E.fWertNetto DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Offene Aufträge",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "AlterTage",
+              "target_field": "AlterTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AlterTage"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Lieferstatus",
+              "target_field": "Lieferstatus",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferstatus"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_backlog_alter",
+      "name": "Vertrieb – Backlog nach Alter",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Altersklasse",
+            "Auftraege",
+            "Wert",
+            "sort"
+          ],
+          "sql": "SELECT Altersklasse, COUNT(*) AS Auftraege,\n    CAST(ISNULL(SUM(fWertNetto), 0) AS DECIMAL(18,2)) AS Wert, MIN(sort) AS sort\nFROM (\n    SELECT E.fWertNetto,\n        CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 7  THEN 'bis 7 Tage'\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 14 THEN '8-14 Tage'\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 30 THEN '15-30 Tage'\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 60 THEN '31-60 Tage'\n             ELSE 'über 60 Tage' END AS Altersklasse,\n        CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 7  THEN 1\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 14 THEN 2\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 30 THEN 3\n             WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 60 THEN 4 ELSE 5 END AS sort\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0\n) X\nGROUP BY Altersklasse\nORDER BY MIN(sort)"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Backlog nach Alter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Altersklasse",
+              "target_field": "Altersklasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Altersklasse"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_angebot_kpi",
+      "name": "Vertrieb – Angebote KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Angebote",
+            "Angebotsvolumen",
+            "AvgAngebot",
+            "Gewonnen",
+            "ConversionQuote"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS Angebote,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Angebotsvolumen,\n    CAST(ISNULL(AVG(Wert), 0) AS DECIMAL(18,2)) AS AvgAngebot,\n    SUM(Gewonnen) AS Gewonnen,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(Gewonnen) / COUNT(*) END AS DECIMAL(18,1)) AS ConversionQuote\nFROM (\n    SELECT E.fWertNetto AS Wert,\n        CASE WHEN EXISTS (SELECT 1 FROM Verkauf.tAuftrag B WHERE B.nType = 1 AND B.nStorno = 0 AND B.kKunde = ANG.kKunde AND B.dErstellt >= ANG.dErstellt AND B.dErstellt < DATEADD(DAY, 60, ANG.dErstellt)) THEN 1 ELSE 0 END AS Gewonnen\n    FROM Verkauf.tAuftrag ANG\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = ANG.kAuftrag\n    WHERE ANG.nType = 0\n      AND ANG.dErstellt >= :von AND ANG.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:plattform_empty = 1 OR ANG.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Angebote KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Angebote",
+              "target_field": "Angebote",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebote"
+              }
+            },
+            {
+              "source_field": "Angebotsvolumen",
+              "target_field": "Angebotsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebotsvolumen"
+              }
+            },
+            {
+              "source_field": "AvgAngebot",
+              "target_field": "AvgAngebot",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAngebot"
+              }
+            },
+            {
+              "source_field": "Gewonnen",
+              "target_field": "Gewonnen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewonnen"
+              }
+            },
+            {
+              "source_field": "ConversionQuote",
+              "target_field": "ConversionQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ConversionQuote"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_angebot_monat",
+      "name": "Vertrieb – Angebote je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Angebote",
+            "Angebotsvolumen",
+            "Gewonnen"
+          ],
+          "sql": "SELECT Monat,\n    COUNT(*) AS Angebote,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Angebotsvolumen,\n    SUM(Gewonnen) AS Gewonnen\nFROM (\n    SELECT CONVERT(char(7), ANG.dErstellt, 120) AS Monat, E.fWertNetto AS Wert,\n        CASE WHEN EXISTS (SELECT 1 FROM Verkauf.tAuftrag B WHERE B.nType = 1 AND B.nStorno = 0 AND B.kKunde = ANG.kKunde AND B.dErstellt >= ANG.dErstellt AND B.dErstellt < DATEADD(DAY, 60, ANG.dErstellt)) THEN 1 ELSE 0 END AS Gewonnen\n    FROM Verkauf.tAuftrag ANG\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = ANG.kAuftrag\n    WHERE ANG.nType = 0\n      AND ANG.dErstellt >= :von AND ANG.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:plattform_empty = 1 OR ANG.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\nGROUP BY Monat\nORDER BY 1"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Angebote je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Angebote",
+              "target_field": "Angebote",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebote"
+              }
+            },
+            {
+              "source_field": "Angebotsvolumen",
+              "target_field": "Angebotsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebotsvolumen"
+              }
+            },
+            {
+              "source_field": "Gewonnen",
+              "target_field": "Gewonnen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewonnen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_angebot_offen",
+      "name": "Vertrieb – Angebote zum Nachfassen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Angebotsnr",
+            "Datum",
+            "AlterTage",
+            "Kunde",
+            "Wert",
+            "Erfasser"
+          ],
+          "sql": "SELECT TOP 500\n    ANG.cAuftragsNr AS Angebotsnr,\n    CONVERT(char(10), ANG.dErstellt, 104) AS Datum,\n    DATEDIFF(DAY, ANG.dErstellt, GETDATE()) AS AlterTage,\n    LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CAST(ISNULL(E.fWertNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    ISNULL(B.cName, '') AS Erfasser\nFROM Verkauf.tAuftrag ANG\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = ANG.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = ANG.kAuftrag\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = ANG.kBenutzerErstellt\nWHERE ANG.nType = 0\n  AND ANG.dErstellt >= DATEADD(DAY, -180, GETDATE())\n  AND NOT EXISTS (SELECT 1 FROM Verkauf.tAuftrag B WHERE B.nType = 1 AND B.nStorno = 0 AND B.kKunde = ANG.kKunde AND B.dErstellt >= ANG.dErstellt AND B.dErstellt < DATEADD(DAY, 60, ANG.dErstellt))\n  AND (:plattform_empty = 1 OR ANG.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nORDER BY E.fWertNetto DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Angebote zum Nachfassen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Angebotsnr",
+              "target_field": "Angebotsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebotsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "AlterTage",
+              "target_field": "AlterTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AlterTage"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Erfasser",
+              "target_field": "Erfasser",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erfasser"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_mitarbeiter_auf",
+      "name": "Vertrieb – Mitarbeiter Aufträge",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Mitarbeiter",
+            "Auftraege",
+            "Auftragseingang",
+            "AvgAuftrag",
+            "Stornos"
+          ],
+          "sql": "SELECT ISNULL(NULLIF(B.cName, ''), 'unbekannt') AS Mitarbeiter,\n    SUM(CASE WHEN A.nStorno = 0 THEN 1 ELSE 0 END) AS Auftraege,\n    CAST(ISNULL(SUM(CASE WHEN A.nStorno = 0 THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(ISNULL(AVG(CASE WHEN A.nStorno = 0 THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS AvgAuftrag,\n    SUM(CASE WHEN A.nStorno = 1 THEN 1 ELSE 0 END) AS Stornos\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = A.kBenutzerErstellt\nWHERE A.nType = 1\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY ISNULL(NULLIF(B.cName, ''), 'unbekannt')\nORDER BY SUM(CASE WHEN A.nStorno = 0 THEN E.fWertNetto END) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Mitarbeiter Aufträge",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Mitarbeiter",
+              "target_field": "Mitarbeiter",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mitarbeiter"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            },
+            {
+              "source_field": "Stornos",
+              "target_field": "Stornos",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stornos"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_mitarbeiter_ang",
+      "name": "Vertrieb – Mitarbeiter Angebote",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Mitarbeiter",
+            "Angebote",
+            "Angebotsvolumen",
+            "Gewonnen",
+            "ConversionQuote"
+          ],
+          "sql": "SELECT Mitarbeiter,\n    COUNT(*) AS Angebote,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Angebotsvolumen,\n    SUM(Gewonnen) AS Gewonnen,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(Gewonnen) / COUNT(*) END AS DECIMAL(18,1)) AS ConversionQuote\nFROM (\n    SELECT ISNULL(NULLIF(B.cName, ''), 'unbekannt') AS Mitarbeiter, E.fWertNetto AS Wert,\n        CASE WHEN EXISTS (SELECT 1 FROM Verkauf.tAuftrag B WHERE B.nType = 1 AND B.nStorno = 0 AND B.kKunde = ANG.kKunde AND B.dErstellt >= ANG.dErstellt AND B.dErstellt < DATEADD(DAY, 60, ANG.dErstellt)) THEN 1 ELSE 0 END AS Gewonnen\n    FROM Verkauf.tAuftrag ANG\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = ANG.kAuftrag\n    LEFT JOIN dbo.tBenutzer B ON B.kBenutzer = ANG.kBenutzerErstellt\n    WHERE ANG.nType = 0\n      AND ANG.dErstellt >= :von AND ANG.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:plattform_empty = 1 OR ANG.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n) X\nGROUP BY Mitarbeiter\nORDER BY SUM(Wert) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Mitarbeiter Angebote",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Mitarbeiter",
+              "target_field": "Mitarbeiter",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mitarbeiter"
+              }
+            },
+            {
+              "source_field": "Angebote",
+              "target_field": "Angebote",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebote"
+              }
+            },
+            {
+              "source_field": "Angebotsvolumen",
+              "target_field": "Angebotsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Angebotsvolumen"
+              }
+            },
+            {
+              "source_field": "Gewonnen",
+              "target_field": "Gewonnen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewonnen"
+              }
+            },
+            {
+              "source_field": "ConversionQuote",
+              "target_field": "ConversionQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ConversionQuote"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_neukunden",
+      "name": "Vertrieb – Neukunden (Auftragsbasis)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "ErsterAuftrag",
+            "Auftraege",
+            "Auftragseingang",
+            "Erfasser"
+          ],
+          "sql": "WITH ersteJe AS (\n    SELECT A.kKunde, MIN(A.dErstellt) AS ErsterAuftrag\n    FROM Verkauf.tAuftrag A\n    WHERE A.nType = 1 AND A.nStorno = 0\n    GROUP BY A.kKunde\n)\nSELECT TOP 100\n    LTRIM(RTRIM(ISNULL(NULLIF(MAX(RA.cFirma), ''),\n        ISNULL(MAX(RA.cVorname), '') + ' ' + ISNULL(MAX(RA.cName), '')))) AS Kunde,\n    CONVERT(char(10), MIN(E1.ErsterAuftrag), 104) AS ErsterAuftrag,\n    COUNT(*) AS Auftraege,\n    CAST(ISNULL(SUM(EK.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    MAX(ISNULL(B.cName, '')) AS Erfasser\nFROM ersteJe E1\nJOIN Verkauf.tAuftrag A ON A.kKunde = E1.kKunde AND A.nType = 1 AND A.nStorno = 0\nJOIN Verkauf.tAuftragEckdaten EK ON EK.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = A.kBenutzerErstellt\nWHERE E1.ErsterAuftrag >= :von AND E1.ErsterAuftrag < DATEADD(DAY, 1, :bis)\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY E1.kKunde\nORDER BY SUM(EK.fWertNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Neukunden (Auftragsbasis)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "ErsterAuftrag",
+              "target_field": "ErsterAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ErsterAuftrag"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "Erfasser",
+              "target_field": "Erfasser",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erfasser"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_cockpit_top_kunden",
+      "name": "Cockpit – Top-Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kunde",
+            "Umsatz",
+            "UmsatzVJ",
+            "Veraenderung",
+            "DB I",
+            "DB II",
+            "DB-Marge %"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Veraenderung",
+              "target_field": "Veraenderung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veraenderung"
+              }
+            },
+            {
+              "source_field": "DB I",
+              "target_field": "DB I",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB I"
+              }
+            },
+            {
+              "source_field": "DB II",
+              "target_field": "DB II",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB II"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_cockpit_kunden_rueckgang",
+      "name": "Cockpit – Kunden mit Rückgang",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 10 kKunde, Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(UmsatzVJ, 0) - ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Rueckgang\nFROM (\n    SELECT X.kKunde AS kKunde, MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n) g ORDER BY Rueckgang DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "Umsatz",
+            "UmsatzVJ",
+            "Rueckgang"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kunden mit Rückgang",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rueckgang",
+              "target_field": "Rueckgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rueckgang"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_cockpit_churn",
+      "name": "Cockpit – Churn / Schlafende Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH base AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt, POS.fAnzahl*POS.fVkNetto AS Netto\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  WHERE RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n    AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')\n),\nagg AS (\n  SELECT kKunde,\n    COUNT(DISTINCT kRechnung) AS Bestellungen,\n    MIN(dErstellt) AS ErsterKauf,\n    MAX(dErstellt) AS LetzterKauf,\n    SUM(Netto) AS Umsatz\n  FROM base GROUP BY kKunde\n  HAVING COUNT(DISTINCT kRechnung) >= 2 AND SUM(Netto) > 0\n),\ncalc AS (\n  SELECT a.*,\n    DATEDIFF(DAY, LetzterKauf, :bis) AS TageInaktiv,\n    CAST(DATEDIFF(DAY, ErsterKauf, LetzterKauf)*1.0/NULLIF(Bestellungen-1,0) AS DECIMAL(18,0)) AS IntervallTage\n  FROM agg a\n)\nSELECT TOP 25\n  c.kKunde,\n  (SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))))\n     FROM Rechnung.vRechnungRechnungsadresse RA WHERE RA.kKunde=c.kKunde) AS Kunde,\n  CONVERT(VARCHAR(10), c.LetzterKauf, 104) AS [Letzter Kauf],\n  c.TageInaktiv AS [Tage inaktiv],\n  c.Bestellungen,\n  c.IntervallTage AS [Ø Intervall Tage],\n  CAST(c.Umsatz AS DECIMAL(18,2)) AS [Umsatz 24M]\nFROM calc c\nWHERE c.TageInaktiv > 90 AND c.TageInaktiv > 2 * c.IntervallTage\nORDER BY c.Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "Letzter Kauf",
+            "Tage inaktiv",
+            "Bestellungen",
+            "Ø Intervall Tage",
+            "Umsatz 24M"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Churn / Schlafende Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Letzter Kauf",
+              "target_field": "Letzter Kauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letzter Kauf"
+              }
+            },
+            {
+              "source_field": "Tage inaktiv",
+              "target_field": "Tage inaktiv",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tage inaktiv"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "Ø Intervall Tage",
+              "target_field": "Ø Intervall Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Intervall Tage"
+              }
+            },
+            {
+              "source_field": "Umsatz 24M",
+              "target_field": "Umsatz 24M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz 24M"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_cockpit_top_artikel",
+      "name": "Cockpit – Top-Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Menge",
+            "Umsatz",
+            "Rohertrag",
+            "DB-Marge %"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Top-Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "DB-Marge %",
+              "target_field": "DB-Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB-Marge %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_cockpit_abc_kunden",
+      "name": "Cockpit – ABC-Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH k AS (\n  SELECT X.kKunde,\n    MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma,''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,''))))) AS Kunde,\n    SUM(X.Netto) AS Umsatz\n  FROM (SELECT RE.kRechnung, RE.kKunde, POS.fAnzahl*POS.fVkNetto AS Netto\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n        WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY,1,:bis)\n          AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')) X\n  LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung=X.kRechnung\n  GROUP BY X.kKunde HAVING SUM(X.Netto) > 0),\nr AS (SELECT Kunde, Umsatz, SUM(Umsatz) OVER () AS Gesamt,\n        SUM(Umsatz) OVER (ORDER BY Umsatz DESC ROWS UNBOUNDED PRECEDING) AS Kum,\n        ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS Rang FROM k)\nSELECT TOP 50 Rang, Kunde, CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n  CAST(100.0*Umsatz/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Anteil %],\n  CAST(100.0*Kum/NULLIF(Gesamt,0) AS DECIMAL(18,1)) AS [Kumuliert %],\n  CASE WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 80 THEN 'A' WHEN 100.0*Kum/NULLIF(Gesamt,0) <= 95 THEN 'B' ELSE 'C' END AS ABC\nFROM r ORDER BY Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Rang",
+            "Kunde",
+            "Umsatz",
+            "Anteil %",
+            "Kumuliert %",
+            "ABC"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – ABC-Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rang",
+              "target_field": "Rang",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rang"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            },
+            {
+              "source_field": "Kumuliert %",
+              "target_field": "Kumuliert %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kumuliert %"
+              }
+            },
+            {
+              "source_field": "ABC",
+              "target_field": "ABC",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ABC"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Vertriebs-Cockpit",
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 12,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": false
+            }
+          },
+          {
+            "id": "f_plattform",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Plattform",
+            "name": "plattform",
+            "action_ids": [],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "plattform",
+              "multiple": true,
+              "auto_run": false,
+              "placeholder": "Alle Plattformen"
+            }
+          }
+        ],
+        "layout": "grid",
+        "actions": [
+          {
+            "id": "act_ve_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_kpi",
+            "pipeline_id": null,
+            "label": "Auftragseingang – Kennzahlen"
+          },
+          {
+            "id": "act_ve_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_monat",
+            "pipeline_id": null,
+            "label": "Auftragseingang je Monat"
+          },
+          {
+            "id": "act_ve_plattform",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_plattform",
+            "pipeline_id": null,
+            "label": "Auftragseingang je Plattform"
+          },
+          {
+            "id": "act_ve_storno",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_storno",
+            "pipeline_id": null,
+            "label": "Stornierte Aufträge"
+          },
+          {
+            "id": "act_ve_backlog_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_backlog_kpi",
+            "pipeline_id": null,
+            "label": "Auftragsbestand – Kennzahlen"
+          },
+          {
+            "id": "act_ve_backlog_alter",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_backlog_alter",
+            "pipeline_id": null,
+            "label": "Backlog nach Alter"
+          },
+          {
+            "id": "act_ve_backlog_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_backlog_liste",
+            "pipeline_id": null,
+            "label": "Offene Aufträge"
+          },
+          {
+            "id": "act_ve_angebot_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_angebot_kpi",
+            "pipeline_id": null,
+            "label": "Angebote – Kennzahlen"
+          },
+          {
+            "id": "act_ve_angebot_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_angebot_monat",
+            "pipeline_id": null,
+            "label": "Angebote je Monat"
+          },
+          {
+            "id": "act_ve_angebot_offen",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_angebot_offen",
+            "pipeline_id": null,
+            "label": "Angebote zum Nachfassen"
+          },
+          {
+            "id": "act_ve_kunden",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_kunden",
+            "pipeline_id": null,
+            "label": "Auftragseingang je Kunde"
+          },
+          {
+            "id": "act_ve_neukunden",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_neukunden",
+            "pipeline_id": null,
+            "label": "Neukunden"
+          },
+          {
+            "id": "act_ve_top_kunden",
+            "type": "run_mapping",
+            "mapping_id": "m_cockpit_top_kunden",
+            "pipeline_id": null,
+            "label": "Top-Kunden (Umsatz)"
+          },
+          {
+            "id": "act_ve_rueckgang",
+            "type": "run_mapping",
+            "mapping_id": "m_cockpit_kunden_rueckgang",
+            "pipeline_id": null,
+            "label": "Kunden mit Rückgang"
+          },
+          {
+            "id": "act_ve_churn",
+            "type": "run_mapping",
+            "mapping_id": "m_cockpit_churn",
+            "pipeline_id": null,
+            "label": "Schlafende Kunden"
+          },
+          {
+            "id": "act_ve_abc",
+            "type": "run_mapping",
+            "mapping_id": "m_cockpit_abc_kunden",
+            "pipeline_id": null,
+            "label": "ABC-Kunden"
+          },
+          {
+            "id": "act_ve_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_artikel",
+            "pipeline_id": null,
+            "label": "Auftragseingang je Artikel"
+          },
+          {
+            "id": "act_ve_top_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_cockpit_top_artikel",
+            "pipeline_id": null,
+            "label": "Top-Artikel (Umsatz)"
+          },
+          {
+            "id": "act_ve_mitarbeiter_auf",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_mitarbeiter_auf",
+            "pipeline_id": null,
+            "label": "Mitarbeiter – Aufträge"
+          },
+          {
+            "id": "act_ve_mitarbeiter_ang",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_mitarbeiter_ang",
+            "pipeline_id": null,
+            "label": "Mitarbeiter – Angebote"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_ve_kpi_wert",
+            "type": "kpi",
+            "label": "Auftragseingang netto",
+            "action_id": "act_ve_kpi",
+            "config": {
+              "width": 3,
+              "column": "Auftragseingang",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AuftragseingangVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ve_kpi_anzahl",
+            "type": "kpi",
+            "label": "Aufträge",
+            "action_id": "act_ve_kpi",
+            "config": {
+              "width": 3,
+              "column": "Auftraege",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "AuftraegeVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ve_kpi_avg",
+            "type": "kpi",
+            "label": "Ø Auftragswert",
+            "action_id": "act_ve_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgAuftrag",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AvgAuftragVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_ve_kpi_storno",
+            "type": "kpi",
+            "label": "Storno-Quote",
+            "action_id": "act_ve_kpi",
+            "config": {
+              "width": 3,
+              "column": "StornoQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1,
+              "compare_column": "StornoQuoteVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_ve_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Vertrieb",
+            "action_id": "act_ve_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Vertriebslage: Auftragseingang gegenüber Vorjahr, Auftragsbestand (Backlog) und Angebotslage inklusive Conversion. Nenne konkreten Handlungsbedarf.",
+              "extra_sections": [
+                {
+                  "action_id": "act_ve_backlog_kpi",
+                  "label": "Auftragsbestand",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ve_angebot_kpi",
+                  "label": "Angebote",
+                  "kind": "kpi"
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_ve_line_monat",
+            "type": "line",
+            "label": "Auftragseingang je Monat (aktuell vs. Vorjahr)",
+            "action_id": "act_ve_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Auftragseingang",
+                "Vorjahr"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_plattform",
+            "type": "table",
+            "label": "Auftragseingang je Plattform",
+            "action_id": "act_ve_plattform",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_ve_tbl_storno",
+            "type": "table",
+            "label": "Stornierte Aufträge im Zeitraum",
+            "action_id": "act_ve_storno",
+            "config": {
+              "width": 6,
+              "info": "Stornoquote als Frühwarnung: häufige Stornos je Kunde oder Mitarbeiter prüfen."
+            }
+          },
+          {
+            "id": "w_ve_b_wert",
+            "type": "kpi",
+            "label": "Auftragsbestand netto",
+            "action_id": "act_ve_backlog_kpi",
+            "config": {
+              "width": 3,
+              "column": "Auftragsbestand",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_ve_b_anzahl",
+            "type": "kpi",
+            "label": "Offene Aufträge",
+            "action_id": "act_ve_backlog_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffeneAuftraege",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ve_b_alter",
+            "type": "kpi",
+            "label": "Ø Alter",
+            "action_id": "act_ve_backlog_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgAlterTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ve_b_ueberf",
+            "type": "kpi",
+            "label": "Liefertermin überschritten",
+            "action_id": "act_ve_backlog_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ueberfaellig",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ve_bar_alter",
+            "type": "bar",
+            "label": "Auftragsbestand nach Alter",
+            "action_id": "act_ve_backlog_alter",
+            "config": {
+              "width": 12,
+              "x_column": "Altersklasse",
+              "y_columns": [
+                "Wert"
+              ]
+            }
+          },
+          {
+            "id": "w_ve_tbl_backlog",
+            "type": "table",
+            "label": "Offene Aufträge (nach Wert)",
+            "action_id": "act_ve_backlog_liste",
+            "config": {
+              "width": 12,
+              "info": "Momentaufnahme – unabhängig vom gewählten Zeitraum. Zeigt alle nicht komplett ausgelieferten, nicht stornierten Aufträge.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_a_anzahl",
+            "type": "kpi",
+            "label": "Angebote",
+            "action_id": "act_ve_angebot_kpi",
+            "config": {
+              "width": 3,
+              "column": "Angebote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_ve_a_wert",
+            "type": "kpi",
+            "label": "Angebotsvolumen",
+            "action_id": "act_ve_angebot_kpi",
+            "config": {
+              "width": 3,
+              "column": "Angebotsvolumen",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_ve_a_avg",
+            "type": "kpi",
+            "label": "Ø Angebotswert",
+            "action_id": "act_ve_angebot_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgAngebot",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_ve_a_conv",
+            "type": "kpi",
+            "label": "Conversion",
+            "action_id": "act_ve_angebot_kpi",
+            "config": {
+              "width": 3,
+              "column": "ConversionQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_ve_line_angebot",
+            "type": "line",
+            "label": "Angebote je Monat (gestellt vs. gewonnen)",
+            "action_id": "act_ve_angebot_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Angebote",
+                "Gewonnen"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_nachfassen",
+            "type": "table",
+            "label": "Angebote zum Nachfassen (letzte 180 Tage)",
+            "action_id": "act_ve_angebot_offen",
+            "config": {
+              "width": 12,
+              "info": "Heuristik: Ein Angebot gilt als gewonnen, wenn derselbe Kunde binnen 60 Tagen einen Auftrag erhalten hat. JTL verknüpft Angebot und Auftrag nicht, deshalb ist die Conversion eine Näherung – hier stehen die Angebote OHNE Folgeauftrag.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_kunden",
+            "type": "table",
+            "label": "Auftragseingang je Kunde",
+            "action_id": "act_ve_kunden",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_neu",
+            "type": "table",
+            "label": "Neukunden im Zeitraum",
+            "action_id": "act_ve_neukunden",
+            "config": {
+              "width": 6,
+              "info": "Kunden, deren allererster Auftrag im gewählten Zeitraum liegt.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_topk",
+            "type": "table",
+            "label": "Top-Kunden nach Rechnungsumsatz",
+            "action_id": "act_ve_top_kunden",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_ve_tbl_rueck",
+            "type": "table",
+            "label": "Kunden mit Umsatzrückgang",
+            "action_id": "act_ve_rueckgang",
+            "config": {
+              "width": 6,
+              "hidden_columns": [
+                "kKunde"
+              ]
+            }
+          },
+          {
+            "id": "w_ve_tbl_churn",
+            "type": "table",
+            "label": "Schlafende Kunden (Wiedergewinnung)",
+            "action_id": "act_ve_churn",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_abc",
+            "type": "table",
+            "label": "ABC-Analyse Kunden",
+            "action_id": "act_ve_abc",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_ve_tbl_artikel",
+            "type": "table",
+            "label": "Auftragseingang je Artikel",
+            "action_id": "act_ve_artikel",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ve_tbl_topa",
+            "type": "table",
+            "label": "Top-Artikel nach Rechnungsumsatz",
+            "action_id": "act_ve_top_artikel",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_ve_tbl_mauf",
+            "type": "table",
+            "label": "Aufträge je Mitarbeiter",
+            "action_id": "act_ve_mitarbeiter_auf",
+            "config": {
+              "width": 6,
+              "info": "Zugeordnet wird der Erfasser des Auftrags (kBenutzerErstellt) – im Backoffice erfasste Aufträge laufen daher auf die erfassende Person."
+            }
+          },
+          {
+            "id": "w_ve_tbl_mang",
+            "type": "table",
+            "label": "Angebote je Mitarbeiter (mit Conversion)",
+            "action_id": "act_ve_mitarbeiter_ang",
+            "config": {
+              "width": 6,
+              "info": "Angebote bilden die aktive Vertriebsarbeit besser ab als Aufträge."
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_ve_eingang",
+            "label": "Auftragseingang",
+            "action_ids": [
+              "act_ve_kpi",
+              "act_ve_monat",
+              "act_ve_plattform",
+              "act_ve_storno"
+            ]
+          },
+          {
+            "id": "tab_ve_backlog",
+            "label": "Auftragsbestand",
+            "action_ids": [
+              "act_ve_backlog_kpi",
+              "act_ve_backlog_alter",
+              "act_ve_backlog_liste"
+            ]
+          },
+          {
+            "id": "tab_ve_angebote",
+            "label": "Angebote",
+            "action_ids": [
+              "act_ve_angebot_kpi",
+              "act_ve_angebot_monat",
+              "act_ve_angebot_offen"
+            ]
+          },
+          {
+            "id": "tab_ve_kunden",
+            "label": "Kunden",
+            "action_ids": [
+              "act_ve_kunden",
+              "act_ve_neukunden",
+              "act_ve_top_kunden",
+              "act_ve_rueckgang",
+              "act_ve_churn",
+              "act_ve_abc"
+            ]
+          },
+          {
+            "id": "tab_ve_artikel",
+            "label": "Artikel",
+            "action_ids": [
+              "act_ve_artikel",
+              "act_ve_top_artikel"
+            ]
+          },
+          {
+            "id": "tab_ve_mitarbeiter",
+            "label": "Mitarbeiter",
+            "action_ids": [
+              "act_ve_mitarbeiter_auf",
+              "act_ve_mitarbeiter_ang"
+            ]
+          }
+        ],
+        "show_ai_assistant": true
+      },
+      "portal_config": {}
+    }
+  ]
+}
