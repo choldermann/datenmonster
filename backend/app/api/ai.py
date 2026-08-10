@@ -683,6 +683,25 @@ def _winback_facts(row: dict) -> dict:
             "recency": round(recency, 2), "value": round(value, 2), "freq": round(freq, 2)}
 
 
+def _description_facts(row: dict) -> dict:
+    """Welche Stammdaten stehen für die Beschreibung zur Verfügung?
+
+    Rein beschreibend – die Oberfläche zeigt daraus die Fakten-Kacheln und macht
+    sichtbar, worauf die KI sich stützen kann. Je weniger Quellen, desto dünner
+    fällt die Beschreibung aus; das soll der Anwender vorher sehen.
+    """
+    quellen = [name for name, key in (
+        ("Hersteller", "Hersteller"), ("EAN", "EAN"), ("HAN", "HAN"),
+        ("Warengruppe", "Warengruppe"), ("Kurzbeschreibung", "Kurzbeschreibung"),
+    ) if str(row.get(key) or "").strip()]
+    vorhanden = str(row.get("Beschreibung") or "").strip()
+    return {
+        "quellen":        quellen,
+        "quellen_anzahl": len(quellen),
+        "zeichen_vorher": len(vorhanden),
+    }
+
+
 def _liquidation_facts(row: dict) -> dict:
     """Rabatt- und Kapitalfreisetzungs-Heuristik für Ladenhüter."""
     bestand = _ra_num(row.get("Bestand")) or 0
@@ -836,6 +855,43 @@ async def recommend_action(
             "Erfinde keine Firmennamen, die nicht in der Liste stehen. Reiner Fließtext, keine "
             "Aufzählung, keine Einleitungsfloskel."
         )
+    elif body.kind == "article_description":
+        facts = _description_facts(row)
+        lines = [
+            f"Artikelname: {row.get('Artikel') or body.label or ''}",
+            f"Artikelnummer: {row.get('ArtNr', '')}",
+            f"Hersteller: {row.get('Hersteller') or '– nicht hinterlegt –'}",
+            f"EAN: {row.get('EAN') or '– nicht hinterlegt –'}",
+            f"Hersteller-Artikelnummer: {row.get('HAN') or '– nicht hinterlegt –'}",
+            f"Warengruppe: {row.get('Warengruppe') or '– nicht hinterlegt –'}",
+        ]
+        if row.get("Kurzbeschreibung"):
+            lines.append("Technische Daten aus dem Artikelstamm (WÖRTLICH übernehmen, nichts umrechnen):\n"
+                         f"{row['Kurzbeschreibung']}")
+        if row.get("Beschreibung"):
+            lines.append(f"Vorhandene (zu knappe) Beschreibung:\n{row['Beschreibung']}")
+        system = (
+            "Du schreibst Produktbeschreibungen für den Onlineshop eines Großhändlers. "
+            "Du bekommst die Stammdaten EINES Artikels. Schreibe eine deutsche Beschreibung von "
+            "3 bis 5 Sätzen, sachlich, in ganzen Sätzen und ohne Aufzählung.\n"
+            "REGEL 1 – nichts erfinden: Verwende ausschließlich Angaben aus den Fakten. Maße, Material, "
+            "Farbe, Größe, Inhalt, Stärke und Verpackungseinheiten nur, wenn sie dort stehen (Artikelname "
+            "und technische Daten enthalten sie oft). Keine erfundenen Zertifikate, Normen, Herkunfts- "
+            "oder Haltbarkeitsangaben.\n"
+            "REGEL 2 – keine Eigenschaftsbehauptungen: Schreibe NICHTS über Weichheit, Qualität, Komfort, "
+            "Reißfestigkeit, Ergiebigkeit, Hygiene, Umweltfreundlichkeit oder Eignung, solange das nicht "
+            "wörtlich in den Fakten steht. Keine Superlative, keine Preisangaben, keine Versprechen.\n"
+            "REGEL 3 – Zahlen wörtlich: Übernimm jede Zahlenangabe genau so, wie sie dasteht, samt "
+            "ihrer Bezugsgröße. Rechne nichts um, teile nichts und ordne keine Zahl einer anderen "
+            "Einheit zu. JEDE ZEILE der technischen Daten ist eine eigenständige Angabe — verbinde "
+            "niemals zwei Zeilen zu einer Aussage. Steht in einer Zeile nur eine Zahl mit Kürzel "
+            "(z. B. '30 my' für die Materialstärke in Mikrometer), dann übernimm sie als eigene "
+            "Angabe oder lass sie weg; hänge sie nie an eine andere Angabe an.\n"
+            "REGEL 4 – Länge: Liegen wenige Angaben vor, schreibe lieber nur zwei kurze Sätze mit dem "
+            "Gesicherten. Fülle nie mit allgemeinen Aussagen auf und hänge keinen Schlusssatz über "
+            "fehlende Angaben an.\n"
+            "Gib nur die Beschreibung aus, keine Überschrift, keine Einleitungsfloskel."
+        )
     else:
         raise HTTPException(400, f"Unbekannte Aktion: {body.kind}")
 
@@ -846,7 +902,11 @@ async def recommend_action(
     # Textmodell passend zum aktiven Provider (beim Gateway gilt `ai_dm_model`).
     from app.services.ai_service import resolve_prose_model
     chosen = await resolve_prose_model(db, svc)
-    params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=360, num_ctx=4096)
+    # Produktbeschreibungen brauchen mehr Raum als eine Handlungsempfehlung – und
+    # weniger Temperatur: erfundene Produkteigenschaften sind hier ein echtes Risiko.
+    beschreibung = body.kind == "article_description"
+    params = AIParams(think=False, temperature=0.15 if beschreibung else 0.35, top_p=0.9,
+                      max_tokens=500 if beschreibung else 360, num_ctx=4096)
 
     async def generate():
         # Berechnete Kennzahlen zuerst – die Oberfläche rendert sie als Chips.

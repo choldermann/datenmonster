@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { X, Sparkles, Loader2, AlertCircle, TrendingDown } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw } from "lucide-react";
 import api from "../../api/client";
 import { streamRequest } from "../../services/aiService";
 
@@ -40,6 +40,17 @@ function factChips(kind, row, meta) {
     if (meta?.bewertung) chips.push(["Bewertung", meta.bewertung]);
     return chips;
   }
+  if (kind === "article_description") {
+    return [
+      ["Hersteller", row.Hersteller || "fehlt"],
+      ["EAN", row.EAN || "fehlt"],
+      ["Hersteller-ArtNr", row.HAN || "fehlt"],
+      ["Warengruppe", row.Warengruppe || "fehlt"],
+      ["Bestand", fmtNum(row.Bestand) + " Stk"],
+      ["Beschreibung bisher", (meta?.zeichen_vorher ?? 0) === 0
+        ? "leer" : fmtNum(meta.zeichen_vorher) + " Zeichen"],
+    ];
+  }
   // article_liquidation
   const chips = [
     ["Lagerbestand", fmtNum(row.Bestand) + " Stk"],
@@ -58,15 +69,41 @@ function factChips(kind, row, meta) {
  *    von /api/ai/recommend-action.
  */
 export default function AiActionModal({ kind, label, title, factsMapping, keyParam,
-  keyValue, baseParams = {}, onClose }) {
+  keyValue, baseParams = {}, manual = false, buttonLabel, onClose }) {
   const [row, setRow] = useState(null);
   const [meta, setMeta] = useState(null);
   const [text, setText] = useState("");
-  const [phase, setPhase] = useState("facts");   // facts | ai | done | error
+  // facts | ready (nur bei manual: wartet auf Knopfdruck) | ai | done | error
+  const [phase, setPhase] = useState("facts");
   const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
+  const abortRef = useRef(null);
+
+  /** Erzeugt den Text. Bei manual erst auf Knopfdruck – sonst direkt nach den Fakten. */
+  const runAi = async (factRow) => {
+    const data = factRow || row;
+    if (!data) return;
+    const ac = new AbortController();
+    abortRef.current?.abort();
+    abortRef.current = ac;
+    setText(""); setCopied(false); setError(null); setPhase("ai");
+    try {
+      await streamRequest(
+        "/recommend-action",
+        { kind, label: label || "", columns: Object.keys(data), rows: [data] },
+        (_tok, full) => { if (!ac.signal.aborted) setText(full); },
+        (m) => { if (!ac.signal.aborted) setMeta(m); },
+        ac.signal,
+      );
+      if (!ac.signal.aborted) setPhase("done");
+    } catch (e) {
+      if (ac.signal.aborted || e.message === "__ABORTED__") return;
+      setError(e.message); setPhase("error");
+    }
+  };
 
   useEffect(() => {
-    const ac = new AbortController();
+    let abgebrochen = false;
     (async () => {
       // 1) Fakten laden
       let factRow;
@@ -75,28 +112,26 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
         const { data } = await api.post("/api/forms/drilldown", { mapping_id: factsMapping, params });
         factRow = (data.rows || [])[0];
         if (!factRow) { setError("Keine Detaildaten für diese Auswahl gefunden."); setPhase("error"); return; }
-        setRow(factRow); setPhase("ai");
+        if (abgebrochen) return;
+        setRow(factRow);
       } catch (e) {
         setError(e.response?.data?.detail || e.message); setPhase("error"); return;
       }
-      // 2) KI-Empfehlung streamen
-      try {
-        await streamRequest(
-          "/recommend-action",
-          { kind, label: label || "", columns: Object.keys(factRow), rows: [factRow] },
-          (_tok, full) => { if (!ac.signal.aborted) setText(full); },
-          (m) => { if (!ac.signal.aborted) setMeta(m); },
-          ac.signal,
-        );
-        if (!ac.signal.aborted) setPhase("done");
-      } catch (e) {
-        if (ac.signal.aborted || e.message === "__ABORTED__") return;
-        setError(e.message); setPhase("error");
-      }
+      // 2) Text erzeugen – bei manual wartet das auf den Knopf
+      if (manual) { setPhase("ready"); return; }
+      await runAi(factRow);
     })();
-    return () => ac.abort();
+    return () => { abgebrochen = true; abortRef.current?.abort(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [factsMapping, keyValue, kind]);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* Zwischenablage nicht verfügbar – Text lässt sich markieren */ }
+  };
 
   // Hervorgehobene Kennzahl (rechts oben): Wahrscheinlichkeit bzw. Kapitalfreisetzung.
   const primary = kind === "customer_winback"
@@ -108,6 +143,8 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   const discount = kind === "article_liquidation" && meta?.discount != null ? meta.discount : null;
 
   const chips = row ? factChips(kind, row, meta) : [];
+  // Eine fehlende Beschreibung ist kein Alarm wie ein Ladenhüter – Punkt neutral einfärben.
+  const istBeschreibung = kind === "article_description";
 
   return (
     <div onClick={onClose}
@@ -121,7 +158,8 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${S.border}`,
           display: "flex", alignItems: "flex-start", gap: 12 }}>
-          <span style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: "#e05656",
+          <span style={{ width: 10, height: 10, borderRadius: "50%",
+            backgroundColor: istBeschreibung ? ACCENT : "#e05656",
             marginTop: 5, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
@@ -178,24 +216,59 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
             </div>
           )}
 
-          {/* KI-Empfehlung */}
+          {/* KI-Text: bei manual erst auf Knopfdruck */}
           {phase !== "facts" && (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8,
                 fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
                 color: S.accent }}>
-                <Sparkles size={12} /> KI-Empfehlung
+                <Sparkles size={12} /> {istBeschreibung ? "KI-Vorschlag" : "KI-Empfehlung"}
                 {phase === "ai" && <Loader2 size={11} style={{ animation: "spin 1s linear infinite", color: S.textDim }} />}
               </div>
               {phase === "error" ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#e07070", fontSize: 12.5 }}>
                   <AlertCircle size={14} /> {error}
                 </div>
+              ) : phase === "ready" ? (
+                <div>
+                  <button onClick={() => runAi()}
+                    style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
+                      borderRadius: 7, backgroundColor: ACCENT, border: "none", color: "#111",
+                      cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>
+                    <Sparkles size={14} /> {buttonLabel || "Beschreibung erzeugen"}
+                  </button>
+                  <p style={{ fontSize: 11, color: S.textDim, margin: "9px 0 0", lineHeight: 1.5 }}>
+                    Die KI nutzt ausschließlich die oben gezeigten Stammdaten. Fehlt vieles davon,
+                    wird auch der Vorschlag dünn — prüfe ihn vor der Übernahme.
+                  </p>
+                </div>
               ) : text ? (
-                <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>{text}</p>
+                <>
+                  <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>{text}</p>
+                  {phase === "done" && (
+                    <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                      <button onClick={copy}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
+                          borderRadius: 6, backgroundColor: copied ? "rgba(110,231,183,0.15)" : ACCENT,
+                          border: "none", color: copied ? "#6ee7b7" : "#111", cursor: "pointer",
+                          fontSize: 12, fontWeight: 700 }}>
+                        {copied ? <Check size={13} /> : <Copy size={13} />}
+                        {copied ? "Kopiert" : "Kopieren"}
+                      </button>
+                      <button onClick={() => runAi()}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
+                          borderRadius: 6, backgroundColor: "rgba(255,255,255,0.05)",
+                          border: `1px solid ${S.border}`, color: S.textDim, cursor: "pointer",
+                          fontSize: 12, fontWeight: 600 }}>
+                        <RefreshCw size={12} /> Neu erzeugen
+                      </button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>
-                  KI formuliert die Empfehlung … (kann beim ersten Mal einige Sekunden dauern)
+                  {istBeschreibung ? "KI formuliert die Beschreibung" : "KI formuliert die Empfehlung"}
+                  … (kann beim ersten Mal einige Sekunden dauern)
                 </p>
               )}
             </div>

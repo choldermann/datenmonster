@@ -83,6 +83,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
       keyParam: cfg.param || cfg.key_column,
       keyValue,
       baseParams: baseParams || {},
+      // manual: Text erst auf Knopfdruck erzeugen (z.B. Artikelbeschreibung),
+      // statt beim Öffnen automatisch loszulaufen.
+      manual: !!cfg.manual,
+      buttonLabel: cfg.button_label,
     });
   };
 

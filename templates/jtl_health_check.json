@@ -4,14 +4,15 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
     "Das Template hat bewusst KEINEN Zeitraumfilter – alle Prüfungen sind Momentaufnahmen. Ein Klick auf „Mappings ausführen\" startet die Prüfung.",
     "Ampel: grün = keine Treffer, gelb = Einzelfälle, rot = über dem Schwellwert. Die Schwellwerte sind bewusst einfach gehalten und können im Mapping „Health-Check – Übersicht (Ampel)\" angepasst werden.",
     "Ein Klick auf eine Ampel-Zeile öffnet die zugehörige Detailliste; dieselben Listen stehen als Reiter zur Verfügung und lassen sich per CSV exportieren.",
-    "Nicht jede Lücke ist ein Fehler: Dienstleistungs- und Freipositionen brauchen keine EAN, Filialen desselben Kunden sind legitime Mehrfachanlagen."
+    "Nicht jede Lücke ist ein Fehler: Dienstleistungs- und Freipositionen brauchen keine EAN, Filialen desselben Kunden sind legitime Mehrfachanlagen.",
+    "Der Reiter „Artikelstamm“ enthält eine KI-gestützte Artikelbeschreibung: Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell."
   ],
   "config_required": [
     {
@@ -19,6 +20,12 @@
       "label": "JTL-Datenbankverbindung (MS SQL Server)",
       "type": "connection",
       "default": ""
+    },
+    {
+      "key": "beschreibung_min_zeichen",
+      "label": "Beschreibung gilt als dürftig unter … Zeichen",
+      "type": "text",
+      "default": "120"
     }
   ],
   "datasets": [],
@@ -1314,6 +1321,84 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_hc_beschreibung_duerftig",
+      "name": "Health-Check – Artikel mit dürftiger Beschreibung",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "EAN",
+            "Warengruppe",
+            "Bestand",
+            "Zeichen"
+          ],
+          "sql": "SELECT TOP 500\n  A.kArtikel                                      AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(H.cName, '')                             AS Hersteller,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  ISNULL(WG.cName, '')                            AS Warengruppe,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(AB.cName, '') <> ''\n  AND LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) < {{beschreibung_min_zeichen}}\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
+        }
+      ],
+      "targets": []
+    },
+    {
+      "id": "m_hc_beschreibung_fakten",
+      "name": "Health-Check – Artikelbeschreibung Fakten",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "EAN",
+            "HAN",
+            "Warengruppe",
+            "Beschreibung",
+            "Kurzbeschreibung",
+            "VKNetto",
+            "Bestand"
+          ],
+          "sql": "SELECT TOP 1\n  A.cArtNr                                                   AS ArtNr,\n  ISNULL(AB.cName, '')                                       AS Artikel,\n  ISNULL(H.cName, '')                                        AS Hersteller,\n  ISNULL(A.cBarcode, '')                                     AS EAN,\n  ISNULL(A.cHAN, '')                                         AS HAN,\n  ISNULL(WG.cName, '')                                       AS Warengruppe,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))), 800)      AS Beschreibung,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cKurzBeschreibung, ''))), 400)  AS Kurzbeschreibung,\n  CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2))               AS VKNetto,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))               AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE A.kArtikel = :kArtikel"
+        }
+      ],
+      "targets": []
     }
   ],
   "pipelines": [],
@@ -1421,6 +1506,13 @@
             "mapping_id": "m_hc_kunden_dubletten",
             "pipeline_id": null,
             "label": "Kundendubletten"
+          },
+          {
+            "id": "act_hc_beschreibung",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_beschreibung_duerftig",
+            "pipeline_id": null,
+            "label": "Health-Check – Artikel mit dürftiger Beschreibung"
           }
         ],
         "widgets": [
@@ -1687,6 +1779,30 @@
               "info": "Gleiche Firma und PLZ mehrfach angelegt. Vor dem Zusammenführen prüfen – Filialen können legitime Mehrfachanlagen sein.",
               "full_rows": true
             }
+          },
+          {
+            "id": "w_hc_tbl_beschreibung",
+            "type": "table",
+            "label": "Artikel mit dürftiger Beschreibung",
+            "action_id": "act_hc_beschreibung",
+            "config": {
+              "width": 12,
+              "info": "Klick auf einen Artikel öffnet ein Fenster, in dem die KI aus Artikelname, Hersteller, EAN und den vorhandenen Stammdaten eine Beschreibung vorschlägt. Bestandsstärkste Artikel stehen oben.",
+              "full_rows": true,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "ai_action": {
+                "kind": "article_description",
+                "mapping_id": "m_hc_beschreibung_fakten",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "label_column": "Artikel",
+                "title": "Artikelbeschreibung – KI-Vorschlag",
+                "manual": true,
+                "button_label": "Beschreibung erzeugen"
+              }
+            }
           }
         ],
         "result_tabs": [
@@ -1707,7 +1823,8 @@
               "act_hc_ohne_gewicht",
               "act_hc_ohne_warengruppe",
               "act_hc_ohne_name",
-              "act_hc_ean_doppelt"
+              "act_hc_ean_doppelt",
+              "act_hc_beschreibung"
             ]
           },
           {
