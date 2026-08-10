@@ -95,6 +95,32 @@ EINTRAEGE = [
      "dbo.tArtikelBeschreibung. Kunden: dbo.tkunde + dbo.tAdresse (nStandard = 1), gesperrt via "
      "tkunde.cSperre."),
 
+    ("rule", "JTL – Bundesland aus PLZ herleiten (Vertriebsregionen)",
+     "JTL füllt cBundesland in den Adressen nicht – das Bundesland muss aus LEFT(cPLZ,2) über "
+     "eine CASE-Klassifikation hergeleitet werden (Referenz: Mappings 'Cockpit – Umsatz nach "
+     "Region' und 'Vertrieb – Auftragseingang je Bundesland', identische Zuordnung verwenden, "
+     "damit Auswertungen vergleichbar bleiben). Vorher auf Inland prüfen "
+     "(UPPER(cLand) IN ('','DE','D','DEU','DEUTSCHLAND','GERMANY')), sonst '(Ausland)'. "
+     "Adressquelle: Verkauf.vAuftragRechnungsadresse bzw. Rechnung.vRechnungRechnungsadresse."),
+
+    ("rule", "Vertrieb – Marktdurchdringung je Bundesland",
+     "Schwachstellen in Regionen erkennt man über den Vergleich Umsatzanteil zu "
+     "Bevölkerungsanteil des Bundeslands (Einwohneranteile fest hinterlegt, Destatis 2024). "
+     "Marktdurchdringung = Umsatzanteil / Bevölkerungsanteil: 1,0 = so stark vertreten wie die "
+     "Region groß ist, unter 0,8 unterrepräsentiert, unter 0,5 deutlich unterrepräsentiert. "
+     "Zusatzpotenzial = (Bevölkerungsanteil − Umsatzanteil)/100 × Inlandsumsatz. WICHTIG: Das "
+     "ist ein FAKTOR, kein Prozentwert – in KI-Prompts ausdrücklich erklären, sonst formulieren "
+     "Modelle '0,2 Prozent Marktdurchdringung'. Die Kennzahl ist eine Orientierung, kein echter "
+     "Marktanteil (Branchenschwerpunkte weichen regional ab)."),
+
+    ("rule", "KI-Handlungsempfehlung: Kandidaten aus dem SQL vorgeben",
+     "Bei KI-Empfehlungen zu Regionen/Kunden immer die konkreten Namen (Betrieb, Ort, "
+     "Rückgangsbetrag) als fertige Liste aus dem SQL mitgeben – z. B. per FOR XML PATH "
+     "aggregiert – und dem Modell verbieten, Namen zu erfinden. Alle Kennzahlen werden "
+     "serverseitig deterministisch berechnet (/api/ai/recommend-action, Arten "
+     "customer_winback / article_liquidation / region_potential) und als meta-Event "
+     "vorab gesendet; das Modell formuliert nur die Prosa."),
+
     # ── T-SQL-Fallen ────────────────────────────────────────────────────────
     ("rule", "T-SQL – Kein Aggregat über Unterabfrage oder Fensterfunktion",
      "SQL Server lehnt SUM/AVG über einen Ausdruck ab, der eine Unterabfrage oder eine "
