@@ -1910,9 +1910,11 @@
             "Herkunftsland",
             "Gewicht",
             "Zeichen",
+            "Beschreibung",
+            "Kurzbeschreibung",
             "Bestand"
           ],
-          "sql": "SELECT TOP 1000\n  A.kArtikel                                      AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  CASE WHEN A.cHAN = A.cArtNr THEN '' ELSE ISNULL(A.cHAN, '') END AS HAN,\n  ISNULL(A.cTaric, '')                            AS Warennummer,\n  ISNULL(A.cHerkunftsland, '')                    AS Herkunftsland,\n  CAST(CASE WHEN ISNULL(A.fGewicht, 0) > 0 THEN A.fGewicht\n            ELSE ISNULL(A.fArtGewicht, 0) END AS DECIMAL(18,3)) AS Gewicht,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kHersteller, 0) = :kHersteller\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
+          "sql": "SELECT TOP 1000\n  A.kArtikel                                      AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  CASE WHEN A.cHAN = A.cArtNr THEN '' ELSE ISNULL(A.cHAN, '') END AS HAN,\n  ISNULL(A.cTaric, '')                            AS Warennummer,\n  ISNULL(A.cHerkunftsland, '')                    AS Herkunftsland,\n  CAST(CASE WHEN ISNULL(A.fGewicht, 0) > 0 THEN A.fGewicht\n            ELSE ISNULL(A.fArtGewicht, 0) END AS DECIMAL(18,3)) AS Gewicht,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS Zeichen,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))), 1200)    AS Beschreibung,\n  LEFT(LTRIM(RTRIM(ISNULL(AB.cKurzBeschreibung, ''))), 400) AS Kurzbeschreibung,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kHersteller, 0) = :kHersteller\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
         }
       ],
       "targets": [
@@ -2013,6 +2015,26 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Zeichen"
+              }
+            },
+            {
+              "source_field": "Beschreibung",
+              "target_field": "Beschreibung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Beschreibung"
+              }
+            },
+            {
+              "source_field": "Kurzbeschreibung",
+              "target_field": "Kurzbeschreibung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kurzbeschreibung"
               }
             },
             {

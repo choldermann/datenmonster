@@ -161,11 +161,13 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     if not ctx.targets:
         return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
 
-    # preview_rows <= 500 hält die Engine im Lese-/Vorschaumodus (kein Ziel-Write)
+    # preview_rows <= 500 hält die Engine im Lese-/Vorschaumodus (kein Ziel-Write).
+    # row_cap muss mit: ohne ihn deckelt die Engine jeden Vorschaulauf hart auf 50
+    # Zeilen und max_rows bliebe wirkungslos.
     rows_cap = min(max(body.max_rows or 200, 1), 500)
     t_fields = ctx.targets[0].get("fields") or []
     try:
-        result = execute_mapping(**ctx.to_execute_kwargs(t_fields, rows_cap))
+        result = execute_mapping(row_cap=rows_cap, **ctx.to_execute_kwargs(t_fields, rows_cap))
     except Exception as e:
         import traceback as _tb
         try:

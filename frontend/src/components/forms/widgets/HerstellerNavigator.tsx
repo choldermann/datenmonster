@@ -1,7 +1,9 @@
-import { useState, useEffect, useMemo } from "react";
-import { ChevronLeft, Globe, GlobeLock, Loader2, AlertTriangle, Sparkles, Barcode } from "lucide-react";
+import { Fragment, useState, useEffect, useMemo } from "react";
+import { ChevronLeft, ChevronDown, ChevronRight, Globe, GlobeLock, Loader2,
+  AlertTriangle, Sparkles, Barcode } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../../dashboard/constants";
+import { alsText } from "../../../utils/html";
 import AiActionModal from "../AiActionModal";
 
 const ACCENT = "#fce499";
@@ -17,6 +19,40 @@ const fehltChip = () => (
 
 const zahl = (v) => (typeof v === "number" ? v : parseFloat(v) || 0)
   .toLocaleString("de-DE", { maximumFractionDigits: 0 });
+
+const Abschnitt = ({ titel, text }) => (
+  <div>
+    <p style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: "0.05em",
+      textTransform: "uppercase", color: S.textDim, margin: "0 0 3px" }}>{titel}</p>
+    <p style={{ fontSize: 12, lineHeight: 1.6, color: S.textMain, margin: 0,
+      whiteSpace: "pre-wrap", maxHeight: 220, overflowY: "auto" }}>{text}</p>
+  </div>
+);
+
+/** Der in der Wawi hinterlegte Text. Die Kurzbeschreibung steht oben, weil dort
+ *  meist die echten technischen Daten stehen. */
+function HinterlegterText({ artikel }) {
+  const kurz = alsText(artikel.Kurzbeschreibung);
+  const lang = alsText(artikel.Beschreibung);
+  if (!kurz && !lang) {
+    return (
+      <p style={{ fontSize: 12, color: ROT, margin: 0 }}>
+        Kein Text hinterlegt — hier lohnt der Beschreibungsvorschlag.
+      </p>
+    );
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {kurz && <Abschnitt titel="Kurzbeschreibung" text={kurz} />}
+      {lang && <Abschnitt titel="Beschreibung" text={lang} />}
+      {(artikel.Zeichen || 0) > 1200 && (
+        <p style={{ fontSize: 10.5, color: S.textDim, margin: 0 }}>
+          Anzeige nach 1.200 Zeichen gekürzt — vollständig steht der Text in der Wawi.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Einstieg in den Artikelstamm über den Hersteller:
@@ -35,6 +71,7 @@ export default function HerstellerNavigator({ widget, result }) {
   const [laedt, setLaedt] = useState(false);
   const [fehler, setFehler] = useState("");
   const [aiZeile, setAiZeile] = useState(null);
+  const [textOffen, setTextOffen] = useState(null);   // kArtikel des aufgeklappten Textes
 
   const zeilen = result?.rows || [];
 
@@ -48,11 +85,12 @@ export default function HerstellerNavigator({ widget, result }) {
   }, [zeilen.length]);
 
   const oeffne = async (h) => {
-    setGewaehlt(h); setArtikel([]); setFehler(""); setLaedt(true);
+    setGewaehlt(h); setArtikel([]); setFehler(""); setLaedt(true); setTextOffen(null);
     try {
       const { data } = await api.post("/api/forms/drilldown", {
         mapping_id: cfg.artikel_mapping_id,
         params: { kHersteller: h.kHersteller },
+        max_rows: 500,          // Hersteller mit vielen Artikeln nicht abschneiden
       });
       setArtikel(data.rows || []);
     } catch (e) {
@@ -102,7 +140,9 @@ export default function HerstellerNavigator({ widget, result }) {
         </div>
         <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 12px" }}>
           {laedt ? "Artikel werden geladen…"
-            : `${artikel.length} Artikel · Klick öffnet den Beschreibungsvorschlag`}
+            : `${artikel.length === 500 ? "die ersten 500" : artikel.length} Artikel `
+              + "· Klick auf die Zeile öffnet den Beschreibungsvorschlag, "
+              + "Klick auf die Spalte „Text“ zeigt den hinterlegten Text"}
         </p>
 
         {fehler && <p style={{ fontSize: 12, color: ROT }}>{fehler}</p>}
@@ -116,6 +156,7 @@ export default function HerstellerNavigator({ widget, result }) {
             </tr></thead>
             <tbody>
               {artikel.map(a => {
+                const offen = textOffen === a.kArtikel;
                 const ohneEan = !String(a.EAN || "").trim();
                 const ohneHan = !String(a.HAN || "").trim();
                 const ohneWn = !String(a.Warennummer || "").trim();
@@ -123,7 +164,8 @@ export default function HerstellerNavigator({ widget, result }) {
                 const ohneGew = !(Number(a.Gewicht) > 0);
                 const duenn = (a.Zeichen || 0) < 120;
                 return (
-                  <tr key={a.kArtikel} onClick={() => setAiZeile(a)}
+                  <Fragment key={a.kArtikel}>
+                  <tr onClick={() => setAiZeile(a)}
                     style={{ cursor: "pointer" }}
                     onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"}
                     onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
@@ -153,11 +195,26 @@ export default function HerstellerNavigator({ widget, result }) {
                       {ohneGew ? "fehlt" : `${Number(a.Gewicht).toLocaleString("de-DE",
                         { maximumFractionDigits: 3 })} kg`}
                     </td>
-                    <td style={{ ...num, color: duenn ? ROT : S.textDim }}>
-                      {a.Zeichen === 0 ? "leer" : `${zahl(a.Zeichen)} Z.`}
+                    <td style={{ ...num, padding: 0, color: duenn ? ROT : S.textDim }}
+                      title="hinterlegten Text anzeigen"
+                      onClick={e => { e.stopPropagation(); setTextOffen(offen ? null : a.kArtikel); }}>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 3,
+                        padding: "8px 10px" }}>
+                        {offen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        {a.Zeichen === 0 ? "leer" : `${zahl(a.Zeichen)} Z.`}
+                      </span>
                     </td>
                     <td style={num}>{zahl(a.Bestand)}</td>
                   </tr>
+                  {offen && (
+                    <tr>
+                      <td colSpan={9} style={{ ...td, padding: "10px 14px 14px",
+                        backgroundColor: "rgba(255,255,255,0.02)" }}>
+                        <HinterlegterText artikel={a} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>

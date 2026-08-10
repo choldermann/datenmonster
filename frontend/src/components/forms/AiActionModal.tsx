@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw, Globe } from "lucide-react";
+import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw, Globe,
+  FileText } from "lucide-react";
 import api from "../../api/client";
 import { streamRequest } from "../../services/aiService";
+import { alsText } from "../../utils/html";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -147,6 +149,11 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   const discount = kind === "article_liquidation" && meta?.discount != null ? meta.discount : null;
 
   const chips = row ? factChips(kind, row, meta) : [];
+  // Der bereits hinterlegte Text – man soll sehen, was der Vorschlag ersetzen würde.
+  const bisher = kind === "article_description" && row
+    ? [["Kurzbeschreibung", alsText(row.Kurzbeschreibung)],
+       ["Beschreibung", alsText(row.Beschreibung)]].filter(([, t]) => t)
+    : [];
   // Eine fehlende Beschreibung ist kein Alarm wie ein Ladenhüter – Punkt neutral einfärben.
   const istBeschreibung = kind === "article_description";
   // Nachschlagen geht nur mit Hersteller UND dessen Artikelnummer – ob es für den
@@ -220,6 +227,30 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
               <TrendingDown size={15} style={{ color: ACCENT, flexShrink: 0, transform: "rotate(180deg)" }} />
               Rechnerisches Zusatzpotenzial bei durchschnittlicher Erschließung:&nbsp;
               <strong style={{ color: ACCENT }}>{fmtNum(meta.potenzial)} €</strong>
+            </div>
+          )}
+
+          {/* Was in der Wawi steht – Vergleichsmaßstab für den Vorschlag */}
+          {istBeschreibung && phase !== "facts" && (
+            <div style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`,
+              borderRadius: 8, padding: "11px 13px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7,
+                fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase",
+                color: S.textDim }}>
+                <FileText size={12} /> Bisher hinterlegt
+              </div>
+              {bisher.length === 0 ? (
+                <p style={{ fontSize: 12.5, color: S.textDim, margin: 0 }}>
+                  Für diesen Artikel ist noch kein Text hinterlegt.
+                </p>
+              ) : bisher.map(([titel, text], i) => (
+                <div key={titel} style={{ marginTop: i ? 10 : 0 }}>
+                  <p style={{ fontSize: 9.5, color: S.textDim, textTransform: "uppercase",
+                    letterSpacing: "0.04em", margin: "0 0 3px" }}>{titel}</p>
+                  <p style={{ fontSize: 12.5, lineHeight: 1.6, color: S.textMain, margin: 0,
+                    whiteSpace: "pre-wrap", maxHeight: 170, overflowY: "auto" }}>{text}</p>
+                </div>
+              ))}
             </div>
           )}
 
