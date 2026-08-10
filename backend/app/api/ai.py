@@ -380,6 +380,12 @@ class SummarizeDataRequest(BaseModel):
     # (Bereich | Status | Kommentar) mit gut/verbesserungswürdig. Nur sinnvoll, wenn
     # viele Zusatz-Sektionen mitgegeben werden (z.B. alle KPIs des Cockpits).
     layout: Optional[str] = "prose"
+    # Detailgrad: "knapp" (Standard) oder "ausfuehrlich". Knapp ist auf kleine lokale
+    # Modelle zugeschnitten – harte Satzdeckel, vorverdichtete Daten. Ausführlich löst
+    # diese Fesseln: mehr Rohzeilen, anderer Auftrag (Ursachen/Zusammenhänge statt
+    # Zahlen-Nacherzählung), mehr Tokens und request_type=DATA_ANALYSIS, damit die
+    # Auto-Modellwahl im Gateway auf das große Modell hochschaltet.
+    detail: Optional[str] = "knapp"
 
 # Kleiner In-Process-Cache: gleiche Daten (z.B. Dashboard mit gleichem Zeitraum
 # erneut geöffnet) liefern die Zusammenfassung sofort, statt das LLM neu laufen zu
@@ -397,7 +403,11 @@ async def summarize_data(
     deutsche Management-Zusammenfassung. Nutzt das konfigurierte Ollama-Modell.
     Bewusst generisch, damit beliebige Dashboards das Widget wiederverwenden können."""
     svc = _require_ai(db)
-    rows = (body.rows or [])[:30]  # Prompt kompakt halten
+    is_deep = (body.detail or "knapp").lower().startswith("ausf")
+    # Knapp: Prompt kompakt halten (kleine lokale Modelle). Ausführlich: mehr Rohzeilen –
+    # große Modelle glänzen beim Mustererkennen über viele Zeilen, nicht beim Nacherzählen
+    # von Summen (das ist der wirksamste Hebel für Qualität, noch vor dem Modellwechsel).
+    rows = (body.rows or [])[:120 if is_deep else 30]
     cols = body.columns or (list(rows[0].keys()) if rows else [])
 
     def _fmt(v):
@@ -439,7 +449,50 @@ async def summarize_data(
     )
 
     is_report = (body.layout or "prose").lower() == "report" and bool(sections)
-    if is_report:
+
+    # Einheiten-Hinweis, in allen Varianten identisch.
+    _UNITS = ("Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
+              "'Tage' sind Tage.")
+
+    if is_deep and is_report:
+        system = (
+            "Du bist ein erfahrener Business-Analyst und schreibst einem Geschäftsführer eine ausführliche "
+            "Lagebeurteilung des gesamten Cockpits. Du erhältst die Kennzahlen aller Bereiche (Ertragslage, "
+            "Kunden, Zahlungsmoral, Offene Posten/Liquidität, Kapitalbindung/Lager, Klumpenrisiko, "
+            "Ausblick/Prognose, schlafende Kunden, Retouren) sowie Detailzeilen dazu. Alle Werte sind bereits "
+            "fertig berechnet – inkl. Vorjahr und prozentualer Veränderung in Klammern. Rechne NICHTS nach und "
+            "ändere keine Zahlen; nutze sie exakt so. Erfinde nichts zu Bereichen, zu denen keine Daten "
+            "geliefert wurden.\n\n"
+            "Gliedere in Themenblöcke mit fettem Vorspann-Label, in dieser Reihenfolge (Blöcke ohne Daten "
+            "überspringen): **Ertragslage:**, **Kunden:**, **Liquidität:**, **Kapital & Lager:**, **Risiko:**, "
+            "**Ausblick:**, **Retouren:**.\n"
+            "Pro Block drei bis sechs Sätze: erst die Lage mit den wichtigsten Zahlen, dann was dahinter steckt – "
+            "welche Kunden, Artikel, Plattformen oder Zeiträume den Wert treiben – und was das fürs Geschäft "
+            "bedeutet. Nenne konkrete Namen und Beträge aus den gelieferten Zeilen statt allgemeiner Floskeln. "
+            "Stelle Zusammenhänge zwischen den Bereichen her (z.B. Kundenrückgang und Prognose, Ladenhüter und "
+            "Kapitalbindung, Zahlungsmoral und offene Posten). Wo du eine Ursache vermutest, die die Daten nicht "
+            "belegen, kennzeichne sie ausdrücklich als Vermutung.\n"
+            "Schließe mit **Handlungsbedarf:** – drei bis fünf priorisierte Maßnahmen, jede mit Begründung aus "
+            "den Zahlen und, wo möglich, dem betroffenen Betrag.\n\n"
+            "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung. Keine Tabelle, keine "
+            "nummerierten Listen, keine vollständigen Ranglisten nacherzählen. " + _UNITS
+        )
+    elif is_deep:
+        system = (
+            "Du bist ein erfahrener Business-Analyst, der einem Geschäftsführer zuarbeitet. Alle Werte sind "
+            "bereits fertig berechnet (inkl. Vorjahr und prozentualer Veränderung in Klammern). Rechne selbst "
+            "NICHTS nach und ändere keine Zahlen; nutze die Werte exakt so und erfinde nichts hinzu.\n\n"
+            "Schreibe eine ausführliche Analyse in drei Blöcken mit fettem Vorspann-Label:\n"
+            "**Lage:** die wichtigsten Kennzahlen und ihre Entwicklung zum Vorjahr – eingeordnet, nicht nur "
+            "aufgezählt: was ist gut, was nicht und wie deutlich.\n"
+            "**Auffälligkeiten:** Muster in den Detailzeilen (Ausreißer, Konzentrationen, Trends, "
+            "Größenverhältnisse) mit konkreten Namen und Beträgen; erklärend statt aufzählend. Vermutete "
+            "Ursachen ausdrücklich als Vermutung kennzeichnen.\n"
+            "**Handlungsbedarf:** zwei bis vier priorisierte Maßnahmen, jede mit Begründung aus den Zahlen.\n\n"
+            "Keine vollständigen Ranglisten nacherzählen, keine Einleitungsfloskel, keine Tabelle, keine "
+            "nummerierten Listen. " + _UNITS
+        )
+    elif is_report:
         system = (
             "Du bist ein nüchterner Business-Analyst, der einem Geschäftsführer eine kompakte Lagebeurteilung "
             "des gesamten Cockpits schreibt. Du erhältst die Kennzahlen aller Bereiche (Ertragslage, Kunden, "
@@ -505,14 +558,23 @@ async def summarize_data(
     # Provider + Modell gehören ZWINGEND in den Key: sonst liefert ein Modellwechsel
     # innerhalb der TTL den Text des vorherigen Modells zurück (sieht aus, als würden
     # alle Modelle dasselbe schreiben).
-    _PROMPT_VERSION = "2"
+    _PROMPT_VERSION = "3"
     ckey = hashlib.md5(
         f"{_PROMPT_VERSION}|{provider}|{chosen or svc.model}|{body.label}|{body.instruction}"
-        f"|{data_text}|{sections_text}|{body.layout}".encode("utf-8")
+        f"|{data_text}|{sections_text}|{body.layout}|{'deep' if is_deep else 'short'}".encode("utf-8")
     ).hexdigest()
 
     # Mit Zusatz-Sektionen mehr Platz für Text und Kontext.
-    if is_report:
+    if is_deep:
+        # Ausführlich: die Längenfesseln fallen weg, entsprechend mehr Tokens und
+        # Kontextfenster (die zusätzlichen Rohzeilen müssen hineinpassen).
+        if is_report:
+            params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=2400, num_ctx=24576)
+        elif sections:
+            params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=1600, num_ctx=16384)
+        else:
+            params = AIParams(think=False, temperature=0.35, top_p=0.9, max_tokens=1200, num_ctx=8192)
+    elif is_report:
         # Report: Themenblöcke über alle Bereiche (Bewertungstabelle baut der Client
         # deterministisch) → mehr Platz für Text und Kontext.
         params = AIParams(think=False, temperature=0.3, top_p=0.9, max_tokens=900, num_ctx=12288)
@@ -535,7 +597,12 @@ async def summarize_data(
             return
         parts = []
         try:
-            async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
+            # request_type nur bei "ausführlich" auf DATA_ANALYSIS: nur damit schaltet die
+            # Auto-Modellwahl im Gateway (_pick_model) vom Mini- auf das große Modell hoch.
+            async for tok in svc.stream_with_context(
+                user_msg, system, params=params, model=chosen,
+                request_type="DATA_ANALYSIS" if is_deep else "OTHER",
+            ):
                 parts.append(tok)
                 yield f"data: {json.dumps({'token': tok})}\n\n"
         except Exception as e:

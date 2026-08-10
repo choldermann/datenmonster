@@ -670,7 +670,9 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             f'Management-Summary</h2>')
         if summary:
             # Report-Prosa als Absätze (mit **fett**); sonst einfacher Fließtext.
-            body.append(_summary_to_html(summary) if is_report
+            # Der ausführliche Detailgrad liefert auch ohne report_layout **fette Labels** –
+            # daher am Text erkennen statt nur an der Widget-Konfiguration.
+            body.append(_summary_to_html(summary) if (is_report or "**" in summary)
                         else f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">{_esc(summary)}</p>')
         if want_assessment:
             body.append(_assessment_html(_assessment_rows(results)))

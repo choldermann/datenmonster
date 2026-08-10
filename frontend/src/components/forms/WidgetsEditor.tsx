@@ -241,14 +241,28 @@ function WidgetConfig({ widget, actions, onUpdate }) {
       )}
 
       {widget.type === "ai_summary" && (
-        <LabelRow label="Zusätzliche Anweisung (optional)">
-          <textarea value={cfg.instruction || ""} onChange={e => set({ instruction: e.target.value })}
-            rows={3} placeholder="z.B. Fokus auf Rentabilität und Handlungsempfehlungen"
-            style={{ ...inp, resize: "vertical" }} />
-          <p style={{ fontSize: 10, color: S.textDim, margin: "6px 0 0", lineHeight: 1.5 }}>
-            Nutzt das Ergebnis der verknüpften Action (KI muss unter Systemeinstellungen aktiv sein).
-          </p>
-        </LabelRow>
+        <>
+          <LabelRow label="Detailgrad (Vorgabe)">
+            <select value={cfg.detail_level || "knapp"}
+              onChange={e => set({ detail_level: e.target.value })}
+              style={{ ...inp, cursor: "pointer" }}>
+              <option value="knapp">knapp – wenige Sätze, schnell</option>
+              <option value="ausfuehrlich">ausführlich – Ursachen, Zusammenhänge, Maßnahmen</option>
+            </select>
+            <p style={{ fontSize: 10, color: S.textDim, margin: "6px 0 0", lineHeight: 1.5 }}>
+              Startwert; im Formular selbst lässt sich der Detailgrad jederzeit umschalten.
+              Ausführlich schickt mehr Detailzeilen an die KI und dauert entsprechend länger.
+            </p>
+          </LabelRow>
+          <LabelRow label="Zusätzliche Anweisung (optional)">
+            <textarea value={cfg.instruction || ""} onChange={e => set({ instruction: e.target.value })}
+              rows={3} placeholder="z.B. Fokus auf Rentabilität und Handlungsempfehlungen"
+              style={{ ...inp, resize: "vertical" }} />
+            <p style={{ fontSize: 10, color: S.textDim, margin: "6px 0 0", lineHeight: 1.5 }}>
+              Nutzt das Ergebnis der verknüpften Action (KI muss unter Systemeinstellungen aktiv sein).
+            </p>
+          </LabelRow>
+        </>
       )}
 
       {["bar", "line", "pie", "table"].includes(widget.type) && (

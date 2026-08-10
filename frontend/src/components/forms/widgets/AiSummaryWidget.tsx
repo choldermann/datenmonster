@@ -138,14 +138,17 @@ function buildKpiText(rows) {
 
 // Baut aus einem Action-Ergebnis (rows) einen kompakten, vorformatierten Kurztext.
 // Die KI rechnet nichts nach – sie webt diese Texte nur in die Lagebeurteilung ein.
-function buildSectionText(kind, rows) {
+// `deep` (Detailgrad "ausführlich") gibt mehr Beispielzeilen mit: das große Modell
+// erkennt Muster über viele Zeilen, statt nur Summen nachzuerzählen.
+function buildSectionText(kind, rows, deep = false) {
   if (!Array.isArray(rows) || rows.length === 0) return "";
+  const EX = deep ? 8 : 2;      // Beispiele je Themenblock
 
   if (kind === "kpi") return buildKpiText(rows);
 
   if (kind === "churn") {
     const sum = rows.reduce((a, r) => a + (parseFloat(r["Umsatz 24M"]) || 0), 0);
-    const ex = rows.slice(0, 2).map(r => {
+    const ex = rows.slice(0, EX).map(r => {
       const tage = parseFloat(r["Tage inaktiv"]);
       const t = isFinite(tage) ? `, ${deNum(tage)} Tage inaktiv` : "";
       return `${r.Kunde} (${deNum(r["Umsatz 24M"], true)}${t})`;
@@ -156,7 +159,7 @@ function buildSectionText(kind, rows) {
 
   if (kind === "platform") {
     // Nur Plattformen mit Umsatz im Zeitraum; Entwicklung ggü. Vorjahr.
-    const withRev = rows.filter(r => parseFloat(r.Umsatz) > 0).slice(0, 6);
+    const withRev = rows.filter(r => parseFloat(r.Umsatz) > 0).slice(0, deep ? 15 : 6);
     if (!withRev.length) return "";
     return withRev.map(r => {
       const chg = pctChange(r.Umsatz, r.UmsatzVJ);
@@ -171,7 +174,7 @@ function buildSectionText(kind, rows) {
   if (kind === "decline") {
     // Kunden mit rückläufigem Umsatz (Rueckgang = UmsatzVJ − Umsatz, absteigend).
     const sum = rows.reduce((a, r) => a + (parseFloat(r.Rueckgang) || 0), 0);
-    const ex = rows.slice(0, 2)
+    const ex = rows.slice(0, EX)
       .map(r => `${r.Kunde} (−${deNum(r.Rueckgang, true)})`).join(", ");
     return `${rows.length} Kunden mit rückläufigem Umsatz, zusammen −${deNum(sum, true)} gegenüber dem Vorjahr.`
       + (ex ? ` Beispiele: ${ex}.` : "");
@@ -179,7 +182,7 @@ function buildSectionText(kind, rows) {
 
   if (kind === "ladenhueter") {
     const sum = rows.reduce((a, r) => a + (parseFloat(r.Kapitalbindung) || 0), 0);
-    const ex = rows.slice(0, 2).map(r => {
+    const ex = rows.slice(0, EX).map(r => {
       const tage = parseFloat(r.TageOhneVerkauf);
       const t = isFinite(tage) && tage < 9999 ? `, ${deNum(tage)} Tage ohne Verkauf` : ", kein Verkauf erfasst";
       return `${r.Artikel} (${deNum(r.Kapitalbindung, true)}${t})`;
@@ -304,6 +307,32 @@ function AssessmentTable({ rows }) {
   );
 }
 
+// Detailgrad-Umschalter (knapp | ausführlich) – rechts in der Widget-Kopfzeile.
+// Während der Text streamt gesperrt, sonst würde ein Klick den halben Lauf verwerfen.
+function DetailSwitch({ value, onChange, disabled }) {
+  const opts = [{ v: "knapp", l: "knapp" }, { v: "ausfuehrlich", l: "ausführlich" }];
+  return (
+    <div style={{ marginLeft: "auto", display: "flex", border: "1px solid var(--border)",
+      borderRadius: 5, overflow: "hidden" }}
+      title="Ausführlich: mehr Detailzeilen, längere Analyse mit Ursachen und Zusammenhängen (dauert länger)">
+      {opts.map(o => {
+        const on = value === o.v;
+        return (
+          <button key={o.v} type="button" disabled={disabled}
+            onClick={() => !disabled && onChange(o.v)}
+            style={{ border: "none", padding: "2px 8px", fontSize: 10, fontWeight: 600,
+              letterSpacing: 0, textTransform: "none",
+              cursor: disabled ? "default" : "pointer", opacity: disabled && !on ? 0.5 : 1,
+              backgroundColor: on ? "var(--accent)" : "transparent",
+              color: on ? "var(--bg-main)" : S.textDim }}>
+            {o.l}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Widget "ai_summary": erzeugt aus dem Ergebnis der verknüpften Action (z.B. der
  * KPI-Zeile) eine kurze KI-Management-Zusammenfassung über /api/ai/summarize-data.
@@ -314,12 +343,19 @@ function AssessmentTable({ rows }) {
  * Kundenrückgang, Ladenhüter). Sie werden hier vorformatiert und als »sections«
  * mitgeschickt, damit die KI eine reichere Lagebeurteilung schreibt.
  *
- * config: { width, instruction?, extra_sections?: [{action_id, label, kind}] }
+ * Der Detailgrad ist zur Laufzeit umschaltbar (knapp | ausführlich). "Ausführlich"
+ * schickt mehr Rohzeilen mit und löst serverseitig die Längenfesseln im Prompt –
+ * dort liegt der eigentliche Engpass, nicht beim Modell.
+ *
+ * config: { width, instruction?, detail_level?, extra_sections?: [{action_id, label, kind}] }
  */
 export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const cfg = widget.config || {};
   const rows = result?.rows || [];
   const columns = result?.columns || [];
+  const [detail, setDetail] = useState(
+    String(cfg.detail_level || "knapp").startsWith("ausf") ? "ausfuehrlich" : "knapp");
+  const deep = detail === "ausfuehrlich";
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState(null);
@@ -338,9 +374,10 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const sections = useMemo(() => {
     const defs = Array.isArray(cfg.extra_sections) ? cfg.extra_sections : [];
     return defs
-      .map(s => ({ label: s.label || "", text: buildSectionText(s.kind, (results?.[s.action_id]?.rows) || []) }))
+      .map(s => ({ label: s.label || "",
+                   text: buildSectionText(s.kind, (results?.[s.action_id]?.rows) || [], deep) }))
       .filter(s => s.text);
-  }, [cfg.extra_sections, results]);
+  }, [cfg.extra_sections, results, deep]);
 
   // Bewertungstabelle (nur im Report-Layout) – rein aus den Daten, unabhängig vom LLM.
   const assessment = useMemo(
@@ -348,8 +385,9 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
     [cfg.report_layout, results],
   );
 
-  // Nur (neu) generieren, wenn sich die zugrunde liegenden Daten ändern.
-  const dataKey = JSON.stringify(rows) + "|" + JSON.stringify(sections) + "|" + (cfg.instruction || "");
+  // Nur (neu) generieren, wenn sich die zugrunde liegenden Daten (oder der Detailgrad) ändern.
+  const dataKey = JSON.stringify(rows) + "|" + JSON.stringify(sections) + "|" + (cfg.instruction || "")
+    + "|" + detail;
 
   useEffect(() => {
     if (!rows.length) { setText(""); setErr(null); setMeta(null); return; }
@@ -368,7 +406,8 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
             "/summarize-data",
             { label: widget.label || "", columns, rows, sections,
               instruction: cfg.instruction || "",
-              layout: cfg.report_layout ? "report" : "prose" },
+              layout: cfg.report_layout ? "report" : "prose",
+              detail },
             (_tok, full) => { if (!ac.signal.aborted) setText(full); },
             m => { if (!ac.signal.aborted) setMeta(m); },
             ac.signal,
@@ -404,6 +443,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
             · {meta.model}{meta.cached ? " (zwischengespeichert)" : ""}
           </span>
         )}
+        <DetailSwitch value={detail} onChange={setDetail} disabled={loading} />
       </div>
       {!rows.length ? (
         <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Warten auf Kennzahlen …</p>
@@ -412,7 +452,9 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
           <AlertCircle size={13} /> {err}
         </div>
       ) : text ? (
-        cfg.report_layout ? (
+        // Der ausführliche Prompt gliedert mit **fetten Labels** – der muss durch den
+        // Markdown-Renderer, sonst stehen die Sternchen im Text.
+        (cfg.report_layout || deep) ? (
           <>
             <MiniMarkdown text={text} />
             <AssessmentTable rows={assessment} />
