@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw } from "lucide-react";
+import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw, Globe } from "lucide-react";
 import api from "../../api/client";
 import { streamRequest } from "../../services/aiService";
 
@@ -77,20 +77,24 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   const [phase, setPhase] = useState("facts");
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [recherche, setRecherche] = useState(false);
   const abortRef = useRef(null);
 
-  /** Erzeugt den Text. Bei manual erst auf Knopfdruck – sonst direkt nach den Fakten. */
-  const runAi = async (factRow) => {
+  /** Erzeugt den Text. Bei manual erst auf Knopfdruck – sonst direkt nach den Fakten.
+   *  mitRecherche schlägt zusätzlich die offiziellen Herstellerdaten nach. */
+  const runAi = async (factRow, mitRecherche = false) => {
     const data = factRow || row;
     if (!data) return;
     const ac = new AbortController();
     abortRef.current?.abort();
     abortRef.current = ac;
     setText(""); setCopied(false); setError(null); setPhase("ai");
+    setRecherche(mitRecherche);
     try {
       await streamRequest(
         "/recommend-action",
-        { kind, label: label || "", columns: Object.keys(data), rows: [data] },
+        { kind, label: label || "", columns: Object.keys(data), rows: [data],
+          use_research: mitRecherche },
         (_tok, full) => { if (!ac.signal.aborted) setText(full); },
         (m) => { if (!ac.signal.aborted) setMeta(m); },
         ac.signal,
@@ -145,6 +149,9 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   const chips = row ? factChips(kind, row, meta) : [];
   // Eine fehlende Beschreibung ist kein Alarm wie ein Ladenhüter – Punkt neutral einfärben.
   const istBeschreibung = kind === "article_description";
+  // Nachschlagen geht nur mit Hersteller UND dessen Artikelnummer – ob es für den
+  // Hersteller einen Adapter gibt, entscheidet der Server und meldet es zurück.
+  const kannRecherchieren = istBeschreibung && !!row?.Hersteller && !!row?.HAN;
 
   return (
     <div onClick={onClose}
@@ -231,20 +238,43 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                 </div>
               ) : phase === "ready" ? (
                 <div>
-                  <button onClick={() => runAi()}
-                    style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
-                      borderRadius: 7, backgroundColor: ACCENT, border: "none", color: "#111",
-                      cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>
-                    <Sparkles size={14} /> {buttonLabel || "Beschreibung erzeugen"}
-                  </button>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={() => runAi(null, false)}
+                      style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
+                        borderRadius: 7, backgroundColor: ACCENT, border: "none", color: "#111",
+                        cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>
+                      <Sparkles size={14} /> {buttonLabel || "Beschreibung erzeugen"}
+                    </button>
+                    {kannRecherchieren && (
+                      <button onClick={() => runAi(null, true)}
+                        style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
+                          borderRadius: 7, backgroundColor: "rgba(255,255,255,0.05)",
+                          border: `1px solid ${S.border}`, color: S.textMain, cursor: "pointer",
+                          fontSize: 12.5, fontWeight: 600 }}>
+                        <Globe size={14} /> Mit Herstellerdaten
+                      </button>
+                    )}
+                  </div>
                   <p style={{ fontSize: 11, color: S.textDim, margin: "9px 0 0", lineHeight: 1.5 }}>
                     Die KI nutzt ausschließlich die oben gezeigten Stammdaten. Fehlt vieles davon,
                     wird auch der Vorschlag dünn — prüfe ihn vor der Übernahme.
+                    {kannRecherchieren && " „Mit Herstellerdaten“ schlägt den Artikel zusätzlich "
+                      + "über die Hersteller-Artikelnummer beim Hersteller nach."}
                   </p>
                 </div>
               ) : text ? (
                 <>
                   <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>{text}</p>
+                  {phase === "done" && recherche && (
+                    <p style={{ fontSize: 11, color: S.textDim, margin: "10px 0 0" }}>
+                      {meta?.research ? (
+                        <>Quelle: <a href={meta.research.url} target="_blank" rel="noopener"
+                          style={{ color: ACCENT }}>{meta.research.hersteller}</a>
+                          {" — bitte gegenprüfen, bevor du den Text übernimmst."}</>
+                      ) : "Beim Hersteller wurde nichts zu dieser Artikelnummer gefunden — "
+                        + "der Text stammt allein aus den Stammdaten."}
+                    </p>
+                  )}
                   {phase === "done" && (
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                       <button onClick={copy}

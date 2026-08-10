@@ -620,11 +620,12 @@ async def summarize_data(
 # ── KI-Handlungsempfehlung (Klick auf Widget-Zeile) ─────────────────────────────
 
 class RecommendActionRequest(BaseModel):
-    kind: str                        # "customer_winback" | "article_liquidation"
+    kind: str                        # "customer_winback" | "article_liquidation" | "article_description"
     label: str = ""
     columns: list = []
     rows: list = []                  # Fakten aus dem Analyse-Mapping (i.d.R. 1 Zeile)
     instruction: Optional[str] = ""
+    use_research: bool = False       # Herstellerdaten nachschlagen (article_description)
 
 
 def _ra_num(v):
@@ -870,10 +871,33 @@ async def recommend_action(
                          f"{row['Kurzbeschreibung']}")
         if row.get("Beschreibung"):
             lines.append(f"Vorhandene (zu knappe) Beschreibung:\n{row['Beschreibung']}")
+
+        # Herstellerdaten: exakt über die Hersteller-Artikelnummer nachgeschlagen,
+        # deshalb belastbarer als alles andere im Faktenblock.
+        if body.use_research:
+            from app.services.product_research import recherchiere
+            try:
+                gefunden = recherchiere(row.get("Hersteller", ""), row.get("HAN", ""))
+            except Exception as e:
+                logger.warning("Herstellerrecherche fehlgeschlagen: %s", e)
+                gefunden = None
+            facts["research"] = gefunden
+            if gefunden:
+                daten = "\n".join(f"{k}: {v}" for k, v in gefunden["daten"].items())
+                if gefunden.get("angaben"):
+                    daten += "\n" + "\n".join(gefunden["angaben"])
+                lines.append(
+                    f"Offizielle Angaben des Herstellers ({gefunden['hersteller']}, "
+                    f"nachgeschlagen über die Hersteller-Artikelnummer):\n{daten}")
         system = (
             "Du schreibst Produktbeschreibungen für den Onlineshop eines Großhändlers. "
             "Du bekommst die Stammdaten EINES Artikels. Schreibe eine deutsche Beschreibung von "
             "3 bis 5 Sätzen, sachlich, in ganzen Sätzen und ohne Aufzählung.\n"
+            "Stehen offizielle Herstellerangaben in den Fakten, sind sie die verlässlichste Quelle. "
+            "Nutze sie vorrangig und nimm daraus auf jeden Fall auf, was dort steht: Material, "
+            "Rezyklat-/Regeneratanteil, Marke bzw. Produktlinie und Zertifizierungen (z. B. Blauer "
+            "Engel). Genau diese Angaben fehlen im Artikelstamm und sind der Mehrwert der Recherche — "
+            "widersprechen sie dem Artikelstamm, gilt die Herstellerangabe.\n"
             "REGEL 1 – nichts erfinden: Verwende ausschließlich Angaben aus den Fakten. Maße, Material, "
             "Farbe, Größe, Inhalt, Stärke und Verpackungseinheiten nur, wenn sie dort stehen (Artikelname "
             "und technische Daten enthalten sie oft). Keine erfundenen Zertifikate, Normen, Herkunfts- "
