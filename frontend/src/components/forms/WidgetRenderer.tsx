@@ -9,6 +9,7 @@ import BarWidget   from "./widgets/BarWidget";
 import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
+import EanResearchWidget from "./widgets/EanResearchWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
 
@@ -26,11 +27,12 @@ const WIDGET_LABELS = {
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
-export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung"]);
+export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
+  if (widget.type === "ean_research") return <EanResearchWidget widget={widget} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",

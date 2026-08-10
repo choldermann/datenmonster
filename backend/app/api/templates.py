@@ -700,6 +700,12 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 amid = ai.get("mapping_id")
                 if isinstance(amid, str) and amid in mapping_id_map:
                     ai["mapping_id"] = mapping_id_map[amid]
+            # EAN-Recherche: config.ean_research.mapping_id (Kandidaten-Mapping).
+            er = (w.get("config") or {}).get("ean_research")
+            if isinstance(er, dict):
+                emid = er.get("mapping_id")
+                if isinstance(emid, str) and emid in mapping_id_map:
+                    er["mapping_id"] = mapping_id_map[emid]
             # Aufgabenliste: config.row_detail.map[<key>].mapping_id (Detail-Mappings).
             rd = (w.get("config") or {}).get("row_detail")
             if isinstance(rd, dict) and isinstance(rd.get("map"), dict):

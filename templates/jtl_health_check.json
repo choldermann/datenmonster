@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.1",
+  "version": "1.2",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -12,7 +12,8 @@
     "Ampel: grün = keine Treffer, gelb = Einzelfälle, rot = über dem Schwellwert. Die Schwellwerte sind bewusst einfach gehalten und können im Mapping „Health-Check – Übersicht (Ampel)\" angepasst werden.",
     "Ein Klick auf eine Ampel-Zeile öffnet die zugehörige Detailliste; dieselben Listen stehen als Reiter zur Verfügung und lassen sich per CSV exportieren.",
     "Nicht jede Lücke ist ein Fehler: Dienstleistungs- und Freipositionen brauchen keine EAN, Filialen desselben Kunden sind legitime Mehrfachanlagen.",
-    "Der Reiter „Artikelstamm“ enthält eine KI-gestützte Artikelbeschreibung: Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell."
+    "Der Reiter „Artikelstamm“ enthält eine KI-gestützte Artikelbeschreibung: Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell.",
+    "Ganz oben im Reiter „Artikelstamm“ steht „Fehlende EANs beim Hersteller holen“: Für Artikel ohne EAN wird die offizielle Nummer über die Hersteller-Artikelnummer auf der Produktseite des Herstellers nachgeschlagen (derzeit Deiss und Denios). Die Vorschläge lassen sich als CSV ausgeben; geschrieben wird nichts."
   ],
   "config_required": [
     {
@@ -1399,6 +1400,42 @@
         }
       ],
       "targets": []
+    },
+    {
+      "id": "m_hc_ean_kandidaten",
+      "name": "Health-Check – EAN-Kandidaten (Hersteller bekannt)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "HAN",
+            "Bestand"
+          ],
+          "sql": "SELECT TOP 2000\n  A.kArtikel                                   AS kArtikel,\n  A.cArtNr                                     AS ArtNr,\n  ISNULL(AB.cName, '')                         AS Artikel,\n  ISNULL(H.cName, '')                          AS Hersteller,\n  A.cHAN                                       AS HAN,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cBarcode, '') = ''\n  AND ISNULL(A.cHAN, '') <> ''\n  AND A.cHAN <> A.cArtNr\n  AND ISNULL(H.cName, '') <> ''\nORDER BY CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) DESC, A.cArtNr"
+        }
+      ],
+      "targets": []
     }
   ],
   "pipelines": [],
@@ -1513,6 +1550,13 @@
             "mapping_id": "m_hc_beschreibung_duerftig",
             "pipeline_id": null,
             "label": "Health-Check – Artikel mit dürftiger Beschreibung"
+          },
+          {
+            "id": "act_hc_ean_kandidaten",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ean_kandidaten",
+            "pipeline_id": null,
+            "label": "Health-Check – EAN-Kandidaten"
           }
         ],
         "widgets": [
@@ -1803,6 +1847,19 @@
                 "button_label": "Beschreibung erzeugen"
               }
             }
+          },
+          {
+            "id": "w_hc_ean_research",
+            "type": "ean_research",
+            "label": "Fehlende EANs beim Hersteller holen",
+            "action_id": "act_hc_ean_kandidaten",
+            "config": {
+              "width": 12,
+              "ean_research": {
+                "mapping_id": "m_hc_ean_kandidaten",
+                "batch": 20
+              }
+            }
           }
         ],
         "result_tabs": [
@@ -1819,6 +1876,7 @@
             "id": "tab_hc_artikel",
             "label": "Artikelstamm",
             "action_ids": [
+              "act_hc_ean_kandidaten",
               "act_hc_ohne_ean",
               "act_hc_ohne_gewicht",
               "act_hc_ohne_warengruppe",

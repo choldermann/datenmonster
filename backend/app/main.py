@@ -414,6 +414,8 @@ from app.api import insights as insights_api
 app.include_router(insights_api.router)
 from app.api import license as license_api
 app.include_router(license_api.router)
+from app.api import research as research_api
+app.include_router(research_api.router)
 
 
 @app.get("/api/health")
