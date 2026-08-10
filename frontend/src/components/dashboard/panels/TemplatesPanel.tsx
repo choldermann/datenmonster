@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Package, Play, Plus, Upload, Download, Trash2, ChevronDown, ChevronRight, Check, X, Loader2, AlertCircle } from "lucide-react";
+import { Package, Play, Plus, Upload, Download, Trash2, ChevronDown, ChevronRight, Check, X, Loader2, AlertCircle, ShoppingBag } from "lucide-react";
 import TemplateCreatorModal from "../modals/TemplateCreatorModal";
 import api from "../../../api/client";
 import { S } from "../constants";
@@ -198,6 +198,114 @@ function TemplateCard({ template, projectId, onInstalled }) {
   );
 }
 
+/** Template-Store: was über monstersuite erhältlich ist, aber lokal noch fehlt. */
+function StoreSection({ onInstalled }) {
+  const [store, setStore] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get("/api/templates/store");
+      setStore(data);
+    } catch (e) { setStore({ templates: [], error: "unreachable" }); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const fetchTemplate = async (t) => {
+    setBusy(t.template_id);
+    setError("");
+    try {
+      await api.post(`/api/templates/store/${t.template_id}/install`);
+      await load();
+      onInstalled();
+    } catch (e) {
+      setError(e.response?.data?.detail || e.message);
+    } finally { setBusy(""); }
+  };
+
+  if (loading) return null;
+
+  const shopUrl = store?.shop_url || "https://monstersuite.de";
+  // Nur zeigen, was noch fehlt oder veraltet ist – Installiertes steht unten.
+  const offen = (store?.templates || []).filter(t => !t.installed || t.update_available);
+  const noLicense = store?.error === "no_license";
+  if (!noLicense && offen.length === 0) return null;
+
+  const box = {
+    borderRadius: 8, border: `1px solid ${S.border}`, backgroundColor: S.bgCard,
+    padding: 16, marginBottom: 20,
+  };
+
+  return (
+    <div style={box}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <ShoppingBag size={14} style={{ color: ACCENT_HEX }} />
+        <p style={{ fontSize: 12, fontWeight: 700, color: S.textBright, margin: 0 }}>Template-Store</p>
+      </div>
+      <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 12px" }}>
+        Fertige Cockpits und Auswertungen aus dem MonsterSuite-Shop – gekaufte Templates holst du hier direkt in deinen Katalog.
+      </p>
+
+      {noLicense && (
+        <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>
+          Kein Lizenzschlüssel hinterlegt. Trage ihn unter Systemeinstellungen → Lizenz ein, dann erscheinen hier deine gekauften Templates.{" "}
+          <a href={shopUrl} target="_blank" rel="noopener" style={{ color: ACCENT_HEX }}>Zum Shop</a>
+        </p>
+      )}
+
+      {store?.error && !noLicense && (
+        <p style={{ fontSize: 11, color: "#e0a070", margin: "0 0 10px" }}>
+          Store nicht erreichbar ({store.error}) – gekaufte Templates lassen sich weiterhin manuell hochladen.
+        </p>
+      )}
+
+      {error && (
+        <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
+          <p style={{ fontSize: 11, color: "#e07070", margin: 0 }}>✗ {error}</p>
+        </div>
+      )}
+
+      {offen.map(t => {
+        const preis = t.offers?.[0]?.price_yearly;
+        return (
+          <div key={t.template_id}
+            style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderTop: `1px solid ${S.border}` }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>{t.name}</p>
+                <span style={{ fontSize: 9, color: S.textDim }}>v{t.version}</span>
+                {t.update_available && (
+                  <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, backgroundColor: `${ACCENT_HEX}15`, color: ACCENT_HEX, fontWeight: 700 }}>
+                    Update
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: 11, color: S.textDim, margin: "3px 0 0" }}>{t.description}</p>
+            </div>
+            {t.entitled ? (
+              <button onClick={() => fetchTemplate(t)} disabled={busy === t.template_id}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: ACCENT_HEX, border: "none", color: "#111", cursor: busy ? "default" : "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                {busy === t.template_id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+                {t.update_available ? "Aktualisieren" : "Holen"}
+              </button>
+            ) : (
+              <a href={`${shopUrl}/shop`} target="_blank" rel="noopener"
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.05)", border: `1px solid ${S.border}`, color: S.textDim, fontSize: 12, fontWeight: 600, textDecoration: "none", flexShrink: 0 }}>
+                {preis ? `ab ${preis} €/Jahr` : "Im Shop ansehen"}
+              </a>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function TemplatesPanel({ projectId, canEdit }) {
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -255,6 +363,8 @@ export default function TemplatesPanel({ projectId, canEdit }) {
           </div>
         )}
       </div>
+
+      <StoreSection onInstalled={load} />
 
       {loading && <p style={{ color: S.textDim, fontSize: 12 }}>Lade Templates...</p>}
 

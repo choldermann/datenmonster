@@ -785,6 +785,112 @@ async def upload_template(file: UploadFile = File(...), db: Session = Depends(ge
     return {"ok": True, "action": "created", "id": t.id}
 
 
+# ── Template-Store (lizenzgeprüfte Auslieferung über monstersuite) ────────────
+
+def _store_catalog(db: Session) -> dict:
+    """
+    Holt den Template-Katalog von monstersuite (Lizenz als Credential) und markiert
+    je Template, ob es lokal schon vorhanden ist. Wirft nie — bei fehlender Lizenz
+    oder unerreichbarem Server kommt "error" zurück.
+    """
+    import httpx
+    from app.models.template import Template
+    from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER
+
+    key, _ = get_license_credentials(db)
+    if not key:
+        return {"licensed": False, "templates": [], "error": "no_license"}
+
+    try:
+        with httpx.Client(timeout=15) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/templates/catalog", json=license_auth_body(db))
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:
+        return {"licensed": True, "templates": [], "error": f"catalog_unreachable: {e}"}
+
+    templates = data.get("templates") or []
+    local = {t.template_id: t for t in db.query(Template).all()}
+    for t in templates:
+        existing = local.get(t.get("template_id"))
+        t["installed"] = existing is not None
+        t["local_version"] = existing.version if existing else None
+        t["update_available"] = bool(existing and str(existing.version or "") != str(t.get("version") or ""))
+    return {
+        "licensed": True,
+        "templates": templates,
+        "error": data.get("error"),
+        "message": data.get("message"),
+        "shop_url": LICENSE_SERVER,
+    }
+
+
+@router.get("/store")
+def template_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Katalog der über monstersuite erhältlichen Templates (mit Berechtigungs-Flag)."""
+    return _store_catalog(db)
+
+
+@router.post("/store/{template_id}/install")
+def install_from_store(template_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """
+    Holt ein gekauftes Template lizenzgeprüft von monstersuite in den lokalen Katalog.
+    Danach wird es wie jedes andere Template über /install in ein Projekt installiert.
+    """
+    import httpx
+    from app.models.template import Template
+    from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER
+
+    key, _ = get_license_credentials(db)
+    if not key:
+        raise HTTPException(402, "Keine Lizenz aktiviert — der Template-Store erfordert eine gültige Lizenz.")
+
+    try:
+        with httpx.Client(timeout=60) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/templates/download",
+                       json={**license_auth_body(db), "template_id": template_id})
+    except Exception as e:
+        raise HTTPException(502, f"Template-Download von monstersuite fehlgeschlagen: {e}")
+    if r.status_code >= 400:
+        try:
+            detail = r.json().get("message") or r.text[:300]
+        except Exception:
+            detail = r.text[:300]
+        raise HTTPException(r.status_code, f"Download abgelehnt: {detail}")
+
+    try:
+        data = r.json()
+    except Exception:
+        raise HTTPException(502, "Antwort von monstersuite ist kein gültiges Template-JSON")
+    tid = data.get("template_id")
+    if not tid:
+        raise HTTPException(502, "Template-JSON ohne template_id")
+
+    existing = db.query(Template).filter(Template.template_id == tid).first()
+    if existing:
+        existing.content = data
+        existing.name = data.get("template_name", tid)
+        existing.description = data.get("description", "")
+        existing.version = data.get("version", existing.version)
+        flag_modified(existing, "content")
+        db.commit()
+        return {"ok": True, "action": "updated", "id": existing.id, "template_id": tid}
+
+    t = Template(
+        template_id=tid,
+        name=data.get("template_name", tid),
+        description=data.get("description", ""),
+        category=data.get("category", "general"),
+        version=data.get("version", "1.0"),
+        author=data.get("author", ""),
+        content=data,
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"ok": True, "action": "created", "id": t.id, "template_id": tid}
+
+
 class CreateTemplateBody(BaseModel):
     name: str
     description: Optional[str] = ""
