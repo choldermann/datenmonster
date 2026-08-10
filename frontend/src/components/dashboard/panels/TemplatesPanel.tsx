@@ -245,10 +245,15 @@ function StoreSection({ onInstalled }) {
   if (loading) return null;
 
   const shopUrl = store?.shop_url || "https://monstersuite.de";
-  // Nur zeigen, was noch fehlt oder veraltet ist – Installiertes steht unten.
-  const offen = (store?.templates || []).filter(t => !t.installed || t.update_available);
+  // Auch Installiertes bleibt gelistet: der Store ist die Übersicht, was es
+  // überhaupt gibt – samt Vorschau, wofür man sonst in den Shop wechseln müsste.
+  // Offenes zuerst, damit Handlungsbedarf oben steht.
+  const alle = [...(store?.templates || [])].sort((a, b) => {
+    const rang = t => (t.update_available ? 0 : !t.installed ? 1 : 2);
+    return rang(a) - rang(b) || (a.name || "").localeCompare(b.name || "");
+  });
   const noLicense = store?.error === "no_license";
-  if (!noLicense && offen.length === 0) return null;
+  if (!noLicense && alle.length === 0) return null;
 
   const box = {
     borderRadius: 8, border: `1px solid ${S.border}`, backgroundColor: S.bgCard,
@@ -284,7 +289,7 @@ function StoreSection({ onInstalled }) {
         </div>
       )}
 
-      {offen.map(t => {
+      {alle.map(t => {
         const preis = t.offers?.[0]?.price_yearly;
         const p = t.preview || {};
         const c = p.counts || {};
@@ -307,7 +312,11 @@ function StoreSection({ onInstalled }) {
               </div>
               <p style={{ fontSize: 11, color: S.textDim, margin: "3px 0 0" }}>{t.description}</p>
             </div>
-            {t.entitled ? (
+            {t.installed && !t.update_available ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6ee7b7", flexShrink: 0 }}>
+                <Check size={12} /> Installiert
+              </span>
+            ) : t.entitled ? (
               <button onClick={() => fetchTemplate(t)} disabled={busy === t.template_id}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: ACCENT_HEX, border: "none", color: "#111", cursor: busy ? "default" : "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                 {busy === t.template_id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
