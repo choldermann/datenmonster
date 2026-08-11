@@ -43,6 +43,20 @@ LOOKUP_QUERIES = {
                    "FROM dbo.tVersandArt "
                    "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cName, '') <> '' "
                    "ORDER BY cName",
+    # Artikel mit EK-Historie (Preisverlauf). Bewusst nur Artikel, für die es
+    # überhaupt gebuchte Einkaufspreise gibt – sonst stünden Tausende Einträge
+    # zur Auswahl, die nichts anzuzeigen hätten. Die Artikelnummer steht vorn,
+    # damit die Tippsuche der Auswahlliste darauf greift.
+    "artikel":     "SELECT A.kArtikel AS value, "
+                   "  A.cArtNr + ISNULL(' – ' + NULLIF(AB.cName, ''), '') AS label "
+                   "FROM dbo.tArtikel A "
+                   "LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel "
+                   "     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0 "
+                   "WHERE A.cAktiv = 'Y' AND A.kVaterArtikel = 0 "
+                   "  AND EXISTS (SELECT 1 FROM dbo.vArtikelHistorie H "
+                   "              WHERE H.kArtikel = A.kArtikel AND H.cTyp = 'Eingang' "
+                   "                AND ISNULL(H.fEKNetto, 0) > 0) "
+                   "ORDER BY A.cArtNr",
 }
 
 

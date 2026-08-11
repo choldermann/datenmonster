@@ -1,0 +1,3738 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_lager_cockpit",
+  "template_name": "JTL – Lager-Cockpit",
+  "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
+  "category": "jtl-reporting",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
+    "Bewertet wird zum HISTORISCHEN Einkaufspreis: Bestände mit dem EK der letzten Eingangsbuchung bis zum Stichtag, Bewegungen mit dem EK, der auf der Buchungszeile selbst steht. Damit verändert eine spätere EK-Pflege die Vergangenheit nicht mehr. Nur wenn für einen Artikel nie ein EK gebucht wurde, greift tArtikel.fEKNetto ersatzweise – die Kennzahl „davon ohne gebuchten EK\" zeigt, wie oft das vorkommt.",
+    "Der Reiter „Disposition\" ist eine Momentaufnahme aus dbo.tlagerbestand und ignoriert den Zeitraumfilter: Reservierungen und Zulauf führt die Wawi nur als aktuellen Stand, nicht in der Historie.",
+    "Umschlag = Abgang der letzten 12 Monate geteilt durch den mittleren Bestand (Mittel aus Bestand vor 12 Monaten und am Stichtag). Das ist bewusst eine einfache Näherung; sie ist aus der Historie belegt und stabiler als eine Rechnung gegen den Tagesbestand.",
+    "Im Reiter „Preishistorie\" wählt das Auswahlfeld den Artikel. Es zeigt nur Artikel, für die überhaupt Einkaufspreise gebucht sind. Der VK ist der mittlere Netto-Verkaufspreis der im jeweiligen Monat berechneten Positionen; Monate ohne Verkauf bleiben leer.",
+    "Korrekturbuchungen und Inventurdifferenzbuchungen sind in JTL getrennte Buchungsarten. Beide zusammen ergeben den Reiter „Inventur & Schwund\"; ein dauerhaft negativer Wert ist ein Hinweis auf Schwund oder Pflegefehler, keine Buchungsgröße für die Buchhaltung."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "pipelines": [],
+  "mappings": [
+    {
+      "id": "m_lg_kpi",
+      "name": "Lager – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), bestand_vj AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek_vj AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n)\nSELECT\n    (SELECT COUNT(*) FROM bestand) AS ArtikelMitBestand,\n    (SELECT CAST(SUM(Menge) AS DECIMAL(18,2)) FROM bestand) AS StueckGesamt,\n    (SELECT CAST(SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2)) FROM bestand b\n       JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\n       LEFT JOIN ek ON ek.kArtikel = b.kArtikel) AS Lagerwert,\n    (SELECT CAST(SUM(b.Menge * COALESCE(ek_vj.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2))\n       FROM bestand_vj b JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\n       LEFT JOIN ek_vj ON ek_vj.kArtikel = b.kArtikel) AS LagerwertVJ,\n    (SELECT COUNT(*) FROM bestand b LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n       WHERE ek.fEKNetto IS NULL) AS OhneHistorischenEK",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtikelMitBestand",
+            "StueckGesamt",
+            "Lagerwert",
+            "LagerwertVJ",
+            "OhneHistorischenEK"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtikelMitBestand",
+              "target_field": "ArtikelMitBestand",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelMitBestand"
+              }
+            },
+            {
+              "source_field": "StueckGesamt",
+              "target_field": "StueckGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StueckGesamt"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "LagerwertVJ",
+              "target_field": "LagerwertVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LagerwertVJ"
+              }
+            },
+            {
+              "source_field": "OhneHistorischenEK",
+              "target_field": "OhneHistorischenEK",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneHistorischenEK"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_verlauf",
+      "name": "Lager – Lagerwert je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH monate AS (\n    SELECT CAST(DATEADD(MONTH, -n, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1)) AS DATE) AS Monat\n    FROM (SELECT TOP 12 ROW_NUMBER() OVER (ORDER BY object_id) - 1 AS n FROM sys.objects) z\n)\nSELECT CONVERT(varchar(7), m.Monat, 126) AS Monat,\n    CAST(SUM(CASE WHEN b.Menge > 0 THEN b.Menge * COALESCE(e.fEKNetto, A.fEKNetto, 0) END)\n        AS DECIMAL(18,2)) AS Lagerwert,\n    COUNT(CASE WHEN b.Menge > 0 THEN 1 END) AS ArtikelMitBestand\nFROM monate m\nCROSS APPLY (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < m.Monat GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n) b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nOUTER APPLY (\n    SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = b.kArtikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n      AND H.dGebucht < m.Monat ORDER BY H.dGebucht DESC\n) e\nGROUP BY m.Monat ORDER BY m.Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Lagerwert",
+            "ArtikelMitBestand"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Lagerwert je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "ArtikelMitBestand",
+              "target_field": "ArtikelMitBestand",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelMitBestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_warengruppe",
+      "name": "Lager – Lagerwert je Warengruppe",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n)\nSELECT TOP 50 ISNULL(NULLIF(W.cName, ''), '(ohne Warengruppe)') AS Warengruppe,\n    COUNT(*) AS Artikel,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Stueck,\n    CAST(SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Lagerwert,\n    CAST(100.0 * SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) / NULLIF(SUM(SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0))) OVER (), 0) AS DECIMAL(18,1)) AS [Anteil %]\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN ek ON ek.kArtikel = b.kArtikel\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nGROUP BY ISNULL(NULLIF(W.cName, ''), '(ohne Warengruppe)')\nORDER BY SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warengruppe",
+            "Artikel",
+            "Stueck",
+            "Lagerwert",
+            "Anteil %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Lagerwert je Warengruppe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Stueck",
+              "target_field": "Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stueck"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_hersteller",
+      "name": "Lager – Lagerwert je Hersteller",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n)\nSELECT TOP 50 ISNULL(NULLIF(H.cName, ''), '(ohne Hersteller)') AS Hersteller,\n    COUNT(*) AS Artikel,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Stueck,\n    CAST(SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Lagerwert,\n    CAST(100.0 * SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) / NULLIF(SUM(SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0))) OVER (), 0) AS DECIMAL(18,1)) AS [Anteil %]\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN ek ON ek.kArtikel = b.kArtikel\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nGROUP BY ISNULL(NULLIF(H.cName, ''), '(ohne Hersteller)')\nORDER BY SUM(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Hersteller",
+            "Artikel",
+            "Stueck",
+            "Lagerwert",
+            "Anteil %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Lagerwert je Hersteller",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Stueck",
+              "target_field": "Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stueck"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_top_artikel",
+      "name": "Lager – Artikel nach gebundenem Kapital",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), abgang AS (\n    SELECT H.kArtikel, MAX(H.dGebucht) AS LetzterAbgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n)\nSELECT TOP 200 A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '') AS Artikel,\n    ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Bestand,\n    CAST(COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,4)) AS EKNetto,\n    CAST(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,2)) AS Lagerwert,\n    ISNULL(CONVERT(varchar(10), ab2.LetzterAbgang, 104), '') AS LetzterAbgang,\n    DATEDIFF(DAY, ab2.LetzterAbgang, :bis) AS TageOhneAbgang,\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN ek ON ek.kArtikel = b.kArtikel\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nLEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel\nORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EKNetto",
+            "Lagerwert",
+            "LetzterAbgang",
+            "TageOhneAbgang",
+            "kArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Artikel nach gebundenem Kapital",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "LetzterAbgang",
+              "target_field": "LetzterAbgang",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterAbgang"
+              }
+            },
+            {
+              "source_field": "TageOhneAbgang",
+              "target_field": "TageOhneAbgang",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageOhneAbgang"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_dispo_kpi",
+      "name": "Lager – Dispo-Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    SUM(CASE WHEN LB.fInAuftraegen > LB.fLagerbestand THEN 1 ELSE 0 END) AS ArtikelFehlmenge,\n    CAST(SUM(CASE WHEN LB.fInAuftraegen > LB.fLagerbestand\n        THEN (LB.fInAuftraegen - LB.fLagerbestand) * A.fEKNetto END) AS DECIMAL(18,2)) AS WertFehlmenge,\n    SUM(CASE WHEN LB.fVerfuegbar < 0 THEN 1 ELSE 0 END) AS Ueberreserviert,\n    SUM(CASE WHEN LB.fZulauf > 0 THEN 1 ELSE 0 END) AS MitZulauf,\n    SUM(CASE WHEN LB.fLagerbestand < 0 THEN 1 ELSE 0 END) AS NegativerBestand\nFROM dbo.tlagerbestand LB\nJOIN dbo.tArtikel A ON A.kArtikel = LB.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtikelFehlmenge",
+            "WertFehlmenge",
+            "Ueberreserviert",
+            "MitZulauf",
+            "NegativerBestand"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Dispo-Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtikelFehlmenge",
+              "target_field": "ArtikelFehlmenge",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtikelFehlmenge"
+              }
+            },
+            {
+              "source_field": "WertFehlmenge",
+              "target_field": "WertFehlmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertFehlmenge"
+              }
+            },
+            {
+              "source_field": "Ueberreserviert",
+              "target_field": "Ueberreserviert",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberreserviert"
+              }
+            },
+            {
+              "source_field": "MitZulauf",
+              "target_field": "MitZulauf",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MitZulauf"
+              }
+            },
+            {
+              "source_field": "NegativerBestand",
+              "target_field": "NegativerBestand",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "NegativerBestand"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_fehlmengen",
+      "name": "Lager – Fehlmengen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200 A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '') AS Artikel,\n    CAST(LB.fLagerbestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(LB.fInAuftraegen AS DECIMAL(18,2)) AS InAuftraegen,\n    CAST(LB.fInAuftraegen - LB.fLagerbestand AS DECIMAL(18,2)) AS Fehlmenge,\n    CAST(LB.fZulauf AS DECIMAL(18,2)) AS Zulauf,\n    ISNULL(CONVERT(varchar(10), LB.dLieferdatum, 104), '') AS ErwarteteLieferung,\n    CASE WHEN LB.fZulauf >= LB.fInAuftraegen - LB.fLagerbestand THEN 'durch Zulauf gedeckt'\n         WHEN LB.fZulauf > 0 THEN 'Zulauf reicht nicht'\n         ELSE 'nichts bestellt' END AS Status,\n    ISNULL(A.nMidestbestand, 0) AS Mindestbestand,\n    CAST((LB.fInAuftraegen - LB.fLagerbestand) * A.fEKNetto AS DECIMAL(18,2)) AS WertFehlmenge\nFROM dbo.tlagerbestand LB\nJOIN dbo.tArtikel A ON A.kArtikel = LB.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE LB.fInAuftraegen > LB.fLagerbestand\nORDER BY (LB.fInAuftraegen - LB.fLagerbestand) * A.fEKNetto DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Bestand",
+            "InAuftraegen",
+            "Fehlmenge",
+            "Zulauf",
+            "ErwarteteLieferung",
+            "Status",
+            "Mindestbestand",
+            "WertFehlmenge"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Fehlmengen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "InAuftraegen",
+              "target_field": "InAuftraegen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "InAuftraegen"
+              }
+            },
+            {
+              "source_field": "Fehlmenge",
+              "target_field": "Fehlmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fehlmenge"
+              }
+            },
+            {
+              "source_field": "Zulauf",
+              "target_field": "Zulauf",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zulauf"
+              }
+            },
+            {
+              "source_field": "ErwarteteLieferung",
+              "target_field": "ErwarteteLieferung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ErwarteteLieferung"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
+              }
+            },
+            {
+              "source_field": "Mindestbestand",
+              "target_field": "Mindestbestand",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mindestbestand"
+              }
+            },
+            {
+              "source_field": "WertFehlmenge",
+              "target_field": "WertFehlmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertFehlmenge"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_zulauf",
+      "name": "Lager – Erwarteter Zulauf",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    ISNULL(CONVERT(varchar(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    DATEDIFF(DAY, GETDATE(), B.dLieferdatum) AS TageBisTermin,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(P.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), P.cName) AS Artikel,\n    CAST(P.fAnzahlOffen AS DECIMAL(18,2)) AS OffeneMenge,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fAnzahlOffen * P.fEKNetto AS DECIMAL(18,2)) AS OffenerWert,\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = P.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\nORDER BY B.dLieferdatum",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Liefertermin",
+            "TageBisTermin",
+            "Lieferant",
+            "Bestellnummer",
+            "ArtNr",
+            "Artikel",
+            "OffeneMenge",
+            "EKNetto",
+            "OffenerWert",
+            "kLieferantenBestellung"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Erwarteter Zulauf",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "TageBisTermin",
+              "target_field": "TageBisTermin",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageBisTermin"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "OffeneMenge",
+              "target_field": "OffeneMenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneMenge"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_umschlag_kpi",
+      "name": "Lager – Umschlag Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), bestand_start AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(MONTH, -12, :bis) GROUP BY H.kArtikel\n), abgang AS (\n    SELECT H.kArtikel, SUM(-H.fAnzahl) AS Menge12M\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht >= DATEADD(MONTH, -12, :bis) AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        b.Menge AS Bestand,\n        ISNULL(ab12.Menge12M, 0) AS Abgang12M,\n        (b.Menge + CASE WHEN ISNULL(bs.Menge, 0) > 0 THEN bs.Menge ELSE 0 END) / 2.0 AS DurchschnittBestand,\n        COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN bestand_start bs ON bs.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab12 ON ab12.kArtikel = b.kArtikel\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n)\nSELECT\n    CAST(AVG(CASE WHEN DurchschnittBestand > 0 THEN Abgang12M / DurchschnittBestand END)\n        AS DECIMAL(18,2)) AS UmschlagDurchschnitt,\n    CAST(AVG(CASE WHEN Abgang12M > 0 THEN Bestand / (Abgang12M / 365.0) END)\n        AS DECIMAL(18,1)) AS ReichweiteTage,\n    SUM(CASE WHEN Abgang12M = 0 THEN 1 ELSE 0 END) AS OhneAbgang12M,\n    CAST(SUM(CASE WHEN Abgang12M = 0 THEN Bestand * EK END) AS DECIMAL(18,2)) AS KapitalOhneAbgang\nFROM je_artikel",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "UmschlagDurchschnitt",
+            "ReichweiteTage",
+            "OhneAbgang12M",
+            "KapitalOhneAbgang"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Umschlag Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "UmschlagDurchschnitt",
+              "target_field": "UmschlagDurchschnitt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmschlagDurchschnitt"
+              }
+            },
+            {
+              "source_field": "ReichweiteTage",
+              "target_field": "ReichweiteTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ReichweiteTage"
+              }
+            },
+            {
+              "source_field": "OhneAbgang12M",
+              "target_field": "OhneAbgang12M",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneAbgang12M"
+              }
+            },
+            {
+              "source_field": "KapitalOhneAbgang",
+              "target_field": "KapitalOhneAbgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KapitalOhneAbgang"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_umschlag",
+      "name": "Lager – Umschlag und Reichweite je Artikel",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), bestand_start AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(MONTH, -12, :bis) GROUP BY H.kArtikel\n), abgang AS (\n    SELECT H.kArtikel, SUM(-H.fAnzahl) AS Menge12M\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht >= DATEADD(MONTH, -12, :bis) AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        b.Menge AS Bestand,\n        ISNULL(ab12.Menge12M, 0) AS Abgang12M,\n        (b.Menge + CASE WHEN ISNULL(bs.Menge, 0) > 0 THEN bs.Menge ELSE 0 END) / 2.0 AS DurchschnittBestand,\n        COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN bestand_start bs ON bs.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab12 ON ab12.kArtikel = b.kArtikel\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n)\nSELECT TOP 300 cArtNr AS ArtNr, Artikel,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(Abgang12M AS DECIMAL(18,2)) AS Abgang12M,\n    CAST(DurchschnittBestand AS DECIMAL(18,2)) AS AvgBestand,\n    CAST(CASE WHEN DurchschnittBestand > 0 THEN Abgang12M / DurchschnittBestand END\n        AS DECIMAL(18,2)) AS UmschlagProJahr,\n    CAST(CASE WHEN Abgang12M > 0 THEN Bestand / (Abgang12M / 365.0) END\n        AS DECIMAL(18,1)) AS ReichweiteTage,\n    CAST(Bestand * EK AS DECIMAL(18,2)) AS Lagerwert,\n    CAST(kArtikel AS VARCHAR(20)) AS kArtikel\nFROM je_artikel\nORDER BY Bestand * EK DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Bestand",
+            "Abgang12M",
+            "AvgBestand",
+            "UmschlagProJahr",
+            "ReichweiteTage",
+            "Lagerwert",
+            "kArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Umschlag und Reichweite je Artikel",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Abgang12M",
+              "target_field": "Abgang12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Abgang12M"
+              }
+            },
+            {
+              "source_field": "AvgBestand",
+              "target_field": "AvgBestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestand"
+              }
+            },
+            {
+              "source_field": "UmschlagProJahr",
+              "target_field": "UmschlagProJahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmschlagProJahr"
+              }
+            },
+            {
+              "source_field": "ReichweiteTage",
+              "target_field": "ReichweiteTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ReichweiteTage"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_reichweite_klassen",
+      "name": "Lager – Reichweite-Klassen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), bestand_start AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(MONTH, -12, :bis) GROUP BY H.kArtikel\n), abgang AS (\n    SELECT H.kArtikel, SUM(-H.fAnzahl) AS Menge12M\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht >= DATEADD(MONTH, -12, :bis) AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        b.Menge AS Bestand,\n        ISNULL(ab12.Menge12M, 0) AS Abgang12M,\n        (b.Menge + CASE WHEN ISNULL(bs.Menge, 0) > 0 THEN bs.Menge ELSE 0 END) / 2.0 AS DurchschnittBestand,\n        COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN bestand_start bs ON bs.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab12 ON ab12.kArtikel = b.kArtikel\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n)\n, klassen AS (\n    SELECT CASE\n            WHEN Abgang12M = 0 THEN '5 – kein Abgang'\n            WHEN Bestand / (Abgang12M / 365.0) < 30 THEN '1 – unter 30 Tage'\n            WHEN Bestand / (Abgang12M / 365.0) < 90 THEN '2 – 30 bis 90 Tage'\n            WHEN Bestand / (Abgang12M / 365.0) < 180 THEN '3 – 90 bis 180 Tage'\n            ELSE '4 – über 180 Tage' END AS Klasse,\n        Bestand * EK AS Wert\n    FROM je_artikel\n)\nSELECT Klasse, COUNT(*) AS Artikel, CAST(SUM(Wert) AS DECIMAL(18,2)) AS Lagerwert\nFROM klassen GROUP BY Klasse ORDER BY Klasse",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Klasse",
+            "Artikel",
+            "Lagerwert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Reichweite-Klassen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Klasse",
+              "target_field": "Klasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Klasse"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ladenhueter_kpi",
+      "name": "Lager – Ladenhüter Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), abgang AS (\n    SELECT H.kArtikel, MAX(H.dGebucht) AS LetzterAbgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,\n        b.Menge AS Bestand, COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK,\n        ab2.LetzterAbgang,\n        COALESCE(DATEDIFF(DAY, ab2.LetzterAbgang, :bis), 9999) AS TageOhneAbgang\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel\n)\nSELECT\n    SUM(CASE WHEN TageOhneAbgang > 180 THEN 1 ELSE 0 END) AS Ladenhueter,\n    CAST(SUM(CASE WHEN TageOhneAbgang > 180 THEN Bestand * EK END) AS DECIMAL(18,2)) AS GebundenesKapital,\n    SUM(CASE WHEN TageOhneAbgang > 365 THEN 1 ELSE 0 END) AS UeberEinJahr,\n    CAST(SUM(CASE WHEN TageOhneAbgang > 365 THEN Bestand * EK END) AS DECIMAL(18,2)) AS KapitalUeberEinJahr,\n    CAST(100.0 * SUM(CASE WHEN TageOhneAbgang > 180 THEN Bestand * EK END)\n        / NULLIF(SUM(Bestand * EK), 0) AS DECIMAL(18,1)) AS [Anteil am Lagerwert %]\nFROM je_artikel",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Ladenhueter",
+            "GebundenesKapital",
+            "UeberEinJahr",
+            "KapitalUeberEinJahr",
+            "Anteil am Lagerwert %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Ladenhüter Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Ladenhueter",
+              "target_field": "Ladenhueter",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ladenhueter"
+              }
+            },
+            {
+              "source_field": "GebundenesKapital",
+              "target_field": "GebundenesKapital",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GebundenesKapital"
+              }
+            },
+            {
+              "source_field": "UeberEinJahr",
+              "target_field": "UeberEinJahr",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UeberEinJahr"
+              }
+            },
+            {
+              "source_field": "KapitalUeberEinJahr",
+              "target_field": "KapitalUeberEinJahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KapitalUeberEinJahr"
+              }
+            },
+            {
+              "source_field": "Anteil am Lagerwert %",
+              "target_field": "Anteil am Lagerwert %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil am Lagerwert %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ladenhueter",
+      "name": "Lager – Ladenhüter",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), abgang AS (\n    SELECT H.kArtikel, MAX(H.dGebucht) AS LetzterAbgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,\n        b.Menge AS Bestand, COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK,\n        ab2.LetzterAbgang,\n        COALESCE(DATEDIFF(DAY, ab2.LetzterAbgang, :bis), 9999) AS TageOhneAbgang\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel\n)\nSELECT TOP 300 cArtNr AS ArtNr, Artikel, Warengruppe,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(EK AS DECIMAL(18,4)) AS EKNetto,\n    CAST(Bestand * EK AS DECIMAL(18,2)) AS GebundenesKapital,\n    ISNULL(CONVERT(varchar(10), LetzterAbgang, 104), 'nie') AS LetzterAbgang,\n    CASE WHEN TageOhneAbgang = 9999 THEN NULL ELSE TageOhneAbgang END AS TageOhneAbgang,\n    CAST(kArtikel AS VARCHAR(20)) AS kArtikel\nFROM je_artikel\nWHERE TageOhneAbgang > 180\nORDER BY Bestand * EK DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Warengruppe",
+            "Bestand",
+            "EKNetto",
+            "GebundenesKapital",
+            "LetzterAbgang",
+            "TageOhneAbgang",
+            "kArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Ladenhüter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "GebundenesKapital",
+              "target_field": "GebundenesKapital",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GebundenesKapital"
+              }
+            },
+            {
+              "source_field": "LetzterAbgang",
+              "target_field": "LetzterAbgang",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterAbgang"
+              }
+            },
+            {
+              "source_field": "TageOhneAbgang",
+              "target_field": "TageOhneAbgang",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageOhneAbgang"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ladenhueter_klassen",
+      "name": "Lager – Kapital nach Zeit ohne Abgang",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH bestand AS (\n    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n), abgang AS (\n    SELECT H.kArtikel, MAX(H.dGebucht) AS LetzterAbgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'\n      AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel\n), je_artikel AS (\n    SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,\n        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,\n        b.Menge AS Bestand, COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK,\n        ab2.LetzterAbgang,\n        COALESCE(DATEDIFF(DAY, ab2.LetzterAbgang, :bis), 9999) AS TageOhneAbgang\n    FROM bestand b\n    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\n    LEFT JOIN ek ON ek.kArtikel = b.kArtikel\n    LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel\n)\n, klassen AS (\n    SELECT CASE\n            WHEN TageOhneAbgang = 9999 THEN '6 – nie verkauft'\n            WHEN TageOhneAbgang <= 90 THEN '1 – bis 90 Tage'\n            WHEN TageOhneAbgang <= 180 THEN '2 – 90 bis 180 Tage'\n            WHEN TageOhneAbgang <= 365 THEN '3 – 180 Tage bis 1 Jahr'\n            WHEN TageOhneAbgang <= 730 THEN '4 – 1 bis 2 Jahre'\n            ELSE '5 – über 2 Jahre' END AS Klasse,\n        Bestand * EK AS Wert\n    FROM je_artikel\n)\nSELECT Klasse, COUNT(*) AS Artikel, CAST(SUM(Wert) AS DECIMAL(18,2)) AS GebundenesKapital\nFROM klassen GROUP BY Klasse ORDER BY Klasse",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Klasse",
+            "Artikel",
+            "GebundenesKapital"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Kapital nach Zeit ohne Abgang",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Klasse",
+              "target_field": "Klasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Klasse"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "GebundenesKapital",
+              "target_field": "GebundenesKapital",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GebundenesKapital"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_schwund_kpi",
+      "name": "Lager – Korrekturen Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    COUNT(*) AS Buchungen,\n    CAST(SUM(H.fAnzahl) AS DECIMAL(18,2)) AS MengeNetto,\n    CAST(SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS WertNetto,\n    CAST(SUM(CASE WHEN H.fAnzahl < 0 THEN H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) END) AS DECIMAL(18,2)) AS WertAbgang,\n    SUM(CASE WHEN H.cBuchungsart = 'Inventurdifferenzbuchung' THEN 1 ELSE 0 END) AS Inventurdifferenzen,\n    COUNT(DISTINCT H.kArtikel) AS BetroffeneArtikel\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nWHERE H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Buchungen",
+            "MengeNetto",
+            "WertNetto",
+            "WertAbgang",
+            "Inventurdifferenzen",
+            "BetroffeneArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Korrekturen Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            },
+            {
+              "source_field": "MengeNetto",
+              "target_field": "MengeNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeNetto"
+              }
+            },
+            {
+              "source_field": "WertNetto",
+              "target_field": "WertNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertNetto"
+              }
+            },
+            {
+              "source_field": "WertAbgang",
+              "target_field": "WertAbgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertAbgang"
+              }
+            },
+            {
+              "source_field": "Inventurdifferenzen",
+              "target_field": "Inventurdifferenzen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Inventurdifferenzen"
+              }
+            },
+            {
+              "source_field": "BetroffeneArtikel",
+              "target_field": "BetroffeneArtikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BetroffeneArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_schwund_monat",
+      "name": "Lager – Korrekturwert je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CONVERT(varchar(7), DATEFROMPARTS(YEAR(H.dGebucht), MONTH(H.dGebucht), 1), 126) AS Monat,\n    CAST(SUM(CASE WHEN H.cBuchungsart = 'Korrekturbuchung' THEN H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) END)\n        AS DECIMAL(18,2)) AS Korrekturen,\n    CAST(SUM(CASE WHEN H.cBuchungsart = 'Inventurdifferenzbuchung' THEN H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) END)\n        AS DECIMAL(18,2)) AS Inventurdifferenzen,\n    COUNT(*) AS Buchungen\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nWHERE H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\nGROUP BY DATEFROMPARTS(YEAR(H.dGebucht), MONTH(H.dGebucht), 1)\nORDER BY 1",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Korrekturen",
+            "Inventurdifferenzen",
+            "Buchungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Korrekturwert je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Korrekturen",
+              "target_field": "Korrekturen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Korrekturen"
+              }
+            },
+            {
+              "source_field": "Inventurdifferenzen",
+              "target_field": "Inventurdifferenzen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Inventurdifferenzen"
+              }
+            },
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_schwund_artikel",
+      "name": "Lager – Artikel mit den größten Korrekturen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel,\n    COUNT(*) AS Buchungen,\n    CAST(SUM(H.fAnzahl) AS DECIMAL(18,2)) AS MengeNetto,\n    CAST(SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS WertNetto,\n    CAST(SUM(CASE WHEN H.fAnzahl < 0 THEN -H.fAnzahl END) AS DECIMAL(18,2)) AS MengeAbgang,\n    CAST(SUM(CASE WHEN H.fAnzahl > 0 THEN H.fAnzahl END) AS DECIMAL(18,2)) AS MengeZugang,\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName\nORDER BY SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Artikel",
+            "Buchungen",
+            "MengeNetto",
+            "WertNetto",
+            "MengeAbgang",
+            "MengeZugang",
+            "kArtikel"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Artikel mit den größten Korrekturen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            },
+            {
+              "source_field": "MengeNetto",
+              "target_field": "MengeNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeNetto"
+              }
+            },
+            {
+              "source_field": "WertNetto",
+              "target_field": "WertNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertNetto"
+              }
+            },
+            {
+              "source_field": "MengeAbgang",
+              "target_field": "MengeAbgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeAbgang"
+              }
+            },
+            {
+              "source_field": "MengeZugang",
+              "target_field": "MengeZugang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeZugang"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_schwund_benutzer",
+      "name": "Lager – Korrekturen je Benutzer",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    ISNULL(NULLIF(B.cName, ''), 'unbekannt') AS Benutzer,\n    COUNT(*) AS Buchungen,\n    COUNT(DISTINCT H.kArtikel) AS Artikel,\n    CAST(SUM(H.fAnzahl) AS DECIMAL(18,2)) AS MengeNetto,\n    CAST(SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS WertNetto\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer\nWHERE H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\nGROUP BY ISNULL(NULLIF(B.cName, ''), 'unbekannt')\nORDER BY SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0))",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Benutzer",
+            "Buchungen",
+            "Artikel",
+            "MengeNetto",
+            "WertNetto"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Korrekturen je Benutzer",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Benutzer",
+              "target_field": "Benutzer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Benutzer"
+              }
+            },
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "MengeNetto",
+              "target_field": "MengeNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeNetto"
+              }
+            },
+            {
+              "source_field": "WertNetto",
+              "target_field": "WertNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertNetto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_preis_kpi",
+      "name": "Lager – Preis-Kennzahlen des Artikels",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC) AS DECIMAL(18,4)) AS EKAktuell,\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht) AS DECIMAL(18,4)) AS EKErster,\n    CAST((SELECT MIN(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMinimum,\n    CAST((SELECT MAX(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMaximum,\n    (SELECT COUNT(DISTINCT fEKNetto) FROM eing) AS Preisstufen,\n    CAST(100.0 * ((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC)\n        - (SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht))\n        / NULLIF((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht), 0)\n        AS DECIMAL(18,1)) AS [Veränderung %]",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "EKAktuell",
+            "EKErster",
+            "EKMinimum",
+            "EKMaximum",
+            "Preisstufen",
+            "Veränderung %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Preis-Kennzahlen des Artikels",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "EKAktuell",
+              "target_field": "EKAktuell",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKAktuell"
+              }
+            },
+            {
+              "source_field": "EKErster",
+              "target_field": "EKErster",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKErster"
+              }
+            },
+            {
+              "source_field": "EKMinimum",
+              "target_field": "EKMinimum",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKMinimum"
+              }
+            },
+            {
+              "source_field": "EKMaximum",
+              "target_field": "EKMaximum",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKMaximum"
+              }
+            },
+            {
+              "source_field": "Preisstufen",
+              "target_field": "Preisstufen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Preisstufen"
+              }
+            },
+            {
+              "source_field": "Veränderung %",
+              "target_field": "Veränderung %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_preis_verlauf",
+      "name": "Lager – Preisverlauf des Artikels",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH monate AS (\n    SELECT CAST(DATEADD(MONTH, -n, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1)) AS DATE) AS Monat\n    FROM (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY object_id) - 1 AS n FROM sys.objects) z\n)\nSELECT CONVERT(varchar(7), m.Monat, 126) AS Monat,\n    CAST((SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n          WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n            AND H.dGebucht < DATEADD(MONTH, 1, m.Monat)\n          ORDER BY H.dGebucht DESC) AS DECIMAL(18,4)) AS EKNetto,\n    CAST((SELECT AVG(POS.fVkNetto) FROM Rechnung.vRechnung RE\n          JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n          WHERE POS.kArtikel = :artikel AND RE.nStorno = 0 AND POS.fVkNetto > 0\n            AND RE.dErstellt >= m.Monat AND RE.dErstellt < DATEADD(MONTH, 1, m.Monat))\n        AS DECIMAL(18,4)) AS VKNetto\nFROM monate m ORDER BY m.Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "EKNetto",
+            "VKNetto"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Preisverlauf des Artikels",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_preis_aenderungen",
+      "name": "Lager – EK-Änderungen des Artikels",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto, H.fAnzahl, H.kLieferantenBestellungPos,\n        LAG(H.fEKNetto) OVER (ORDER BY H.dGebucht) AS EKVorher\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT TOP 200 CONVERT(varchar(10), e.dGebucht, 104) AS Datum,\n    CAST(e.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(e.EKVorher AS DECIMAL(18,4)) AS EKVorher,\n    CAST(e.fEKNetto - e.EKVorher AS DECIMAL(18,4)) AS Differenz,\n    CAST(100.0 * (e.fEKNetto - e.EKVorher) / NULLIF(e.EKVorher, 0) AS DECIMAL(18,1)) AS [Veränderung %],\n    CAST(e.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    ISNULL(NULLIF(L.cFirma, ''), '') AS Lieferant\nFROM eing e\nLEFT JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellungPos = e.kLieferantenBestellungPos\nLEFT JOIN dbo.tLieferantenBestellung B ON B.kLieferantenBestellung = P.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE e.EKVorher IS NULL OR ABS(e.fEKNetto - e.EKVorher) > 0.0001\nORDER BY e.dGebucht DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Datum",
+            "EKNetto",
+            "EKVorher",
+            "Differenz",
+            "Veränderung %",
+            "Menge",
+            "Lieferant"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – EK-Änderungen des Artikels",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "EKVorher",
+              "target_field": "EKVorher",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKVorher"
+              }
+            },
+            {
+              "source_field": "Differenz",
+              "target_field": "Differenz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Differenz"
+              }
+            },
+            {
+              "source_field": "Veränderung %",
+              "target_field": "Veränderung %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung %"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_lager",
+      "name": "Lager – Bestand je Warenlager",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH je_lager AS (\n    SELECT WL.cName AS Lager, H.kArtikel, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY WL.cName, H.kArtikel HAVING SUM(H.fAnzahl) > 0\n), ek AS (\n    SELECT kArtikel, fEKNetto FROM (\n        SELECT H.kArtikel, H.fEKNetto,\n            ROW_NUMBER() OVER (PARTITION BY H.kArtikel ORDER BY H.dGebucht DESC) AS rn\n        FROM dbo.vArtikelHistorie H\n        WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n          AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n    ) x WHERE rn = 1\n)\nSELECT j.Lager, COUNT(*) AS Artikel,\n    CAST(SUM(j.Menge) AS DECIMAL(18,2)) AS Stueck,\n    CAST(SUM(j.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2)) AS Lagerwert\nFROM je_lager j\nJOIN dbo.tArtikel A ON A.kArtikel = j.kArtikel\nLEFT JOIN ek ON ek.kArtikel = j.kArtikel\nGROUP BY j.Lager ORDER BY 4 DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lager",
+            "Artikel",
+            "Stueck",
+            "Lagerwert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Bestand je Warenlager",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lager",
+              "target_field": "Lager",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lager"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Stueck",
+              "target_field": "Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stueck"
+              }
+            },
+            {
+              "source_field": "Lagerwert",
+              "target_field": "Lagerwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerwert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_buchungsarten",
+      "name": "Lager – Buchungsarten im Zeitraum",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    H.cBuchungsart AS Buchungsart, H.cTyp AS Typ,\n    COUNT(*) AS Buchungen,\n    CAST(SUM(H.fAnzahl) AS DECIMAL(18,2)) AS MengeNetto,\n    CAST(SUM(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS WertNetto\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nWHERE H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\nGROUP BY H.cBuchungsart, H.cTyp\nORDER BY COUNT(*) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Buchungsart",
+            "Typ",
+            "Buchungen",
+            "MengeNetto",
+            "WertNetto"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Buchungsarten im Zeitraum",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Buchungsart",
+              "target_field": "Buchungsart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungsart"
+              }
+            },
+            {
+              "source_field": "Typ",
+              "target_field": "Typ",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Typ"
+              }
+            },
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            },
+            {
+              "source_field": "MengeNetto",
+              "target_field": "MengeNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeNetto"
+              }
+            },
+            {
+              "source_field": "WertNetto",
+              "target_field": "WertNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertNetto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_artikel_historie",
+      "name": "Lager – Buchungshistorie des Artikels (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 500\n    CONVERT(varchar(10), H.dGebucht, 104) AS Datum,\n    H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,\n    CAST(H.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    CAST(H.fLagerBestandGesamt AS DECIMAL(18,2)) AS BestandDanach,\n    CAST(H.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    ISNULL(NULLIF(B.cName, ''), '') AS Benutzer,\n    ISNULL(H.cLieferscheinNr, '') AS Lieferschein\nFROM dbo.vArtikelHistorie H\nJOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer\nWHERE H.kArtikel = :kArtikel\nORDER BY H.dGebucht DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Datum",
+            "Typ",
+            "Buchungsart",
+            "Menge",
+            "BestandDanach",
+            "EKNetto",
+            "Wert",
+            "Benutzer",
+            "Lieferschein"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Buchungshistorie des Artikels (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Typ",
+              "target_field": "Typ",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Typ"
+              }
+            },
+            {
+              "source_field": "Buchungsart",
+              "target_field": "Buchungsart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungsart"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "BestandDanach",
+              "target_field": "BestandDanach",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandDanach"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Benutzer",
+              "target_field": "Benutzer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Benutzer"
+              }
+            },
+            {
+              "source_field": "Lieferschein",
+              "target_field": "Lieferschein",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferschein"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_pos_detail",
+      "name": "Einkauf – Bestellpositionen (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(P.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(P.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), P.cName) AS Bezeichnung,\n    CAST(P.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(P.fMengeGeliefert AS DECIMAL(18,2)) AS Geliefert,\n    CAST(P.fAnzahlOffen AS DECIMAL(18,2)) AS Offen,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fMenge * P.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tLieferantenBestellungPos P\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = P.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE P.kLieferantenBestellung = :kLieferantenBestellung\nORDER BY P.nSort",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Geliefert",
+            "Offen",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellpositionen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Geliefert",
+              "target_field": "Geliefert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Geliefert"
+              }
+            },
+            {
+              "source_field": "Offen",
+              "target_field": "Offen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Offen"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_artikel_hist_detail",
+      "name": "Einkauf – Bestellhistorie des Artikels (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    CONVERT(varchar(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    CAST(P.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fMenge * P.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND P.cArtNr = :artnr\nORDER BY B.dErstellt DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestelldatum",
+            "Lieferant",
+            "Bestellnummer",
+            "Menge",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellhistorie des Artikels (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "forms": [
+    {
+      "name": "Lager-Cockpit",
+      "portal_config": {},
+      "schema": {
+        "fields": [
+          {
+            "id": "f_zeitraum",
+            "type": "daterange",
+            "row": 0,
+            "colSpan": 12,
+            "label": "Zeitraum",
+            "name": "zeitraum",
+            "action_ids": [],
+            "config": {
+              "param_from": "von",
+              "param_to": "bis",
+              "default": "this_year",
+              "auto_run": false
+            }
+          },
+          {
+            "id": "f_artikel",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Artikel für die Preishistorie",
+            "name": "artikel",
+            "action_ids": [
+              "act_lg_preis_kpi",
+              "act_lg_preis_verlauf",
+              "act_lg_preis_aenderungen"
+            ],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "artikel",
+              "multiple": false,
+              "auto_run": true,
+              "placeholder": "Artikel wählen …"
+            }
+          }
+        ],
+        "layout": "grid",
+        "show_ai_assistant": true,
+        "actions": [
+          {
+            "id": "act_lg_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Kennzahlen"
+          },
+          {
+            "id": "act_lg_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_verlauf",
+            "pipeline_id": null,
+            "label": "Lager – Lagerwert je Monat"
+          },
+          {
+            "id": "act_lg_warengruppe",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_warengruppe",
+            "pipeline_id": null,
+            "label": "Lager – Lagerwert je Warengruppe"
+          },
+          {
+            "id": "act_lg_hersteller",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_hersteller",
+            "pipeline_id": null,
+            "label": "Lager – Lagerwert je Hersteller"
+          },
+          {
+            "id": "act_lg_top",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_top_artikel",
+            "pipeline_id": null,
+            "label": "Lager – Artikel nach gebundenem Kapital"
+          },
+          {
+            "id": "act_lg_dispo_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_dispo_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Dispo-Kennzahlen"
+          },
+          {
+            "id": "act_lg_fehlmengen",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_fehlmengen",
+            "pipeline_id": null,
+            "label": "Lager – Fehlmengen"
+          },
+          {
+            "id": "act_lg_zulauf",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_zulauf",
+            "pipeline_id": null,
+            "label": "Lager – Erwarteter Zulauf"
+          },
+          {
+            "id": "act_lg_umschlag_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_umschlag_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Umschlag Kennzahlen"
+          },
+          {
+            "id": "act_lg_reichweite",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_reichweite_klassen",
+            "pipeline_id": null,
+            "label": "Lager – Reichweite-Klassen"
+          },
+          {
+            "id": "act_lg_umschlag",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_umschlag",
+            "pipeline_id": null,
+            "label": "Lager – Umschlag und Reichweite je Artikel"
+          },
+          {
+            "id": "act_lg_lh_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ladenhueter_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Ladenhüter Kennzahlen"
+          },
+          {
+            "id": "act_lg_lh_klassen",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ladenhueter_klassen",
+            "pipeline_id": null,
+            "label": "Lager – Kapital nach Zeit ohne Abgang"
+          },
+          {
+            "id": "act_lg_lh",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ladenhueter",
+            "pipeline_id": null,
+            "label": "Lager – Ladenhüter"
+          },
+          {
+            "id": "act_lg_schwund_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_schwund_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Korrekturen Kennzahlen"
+          },
+          {
+            "id": "act_lg_schwund_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_schwund_monat",
+            "pipeline_id": null,
+            "label": "Lager – Korrekturwert je Monat"
+          },
+          {
+            "id": "act_lg_schwund_artikel",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_schwund_artikel",
+            "pipeline_id": null,
+            "label": "Lager – Artikel mit den größten Korrekturen"
+          },
+          {
+            "id": "act_lg_schwund_benutzer",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_schwund_benutzer",
+            "pipeline_id": null,
+            "label": "Lager – Korrekturen je Benutzer"
+          },
+          {
+            "id": "act_lg_preis_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_preis_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Preis-Kennzahlen des Artikels"
+          },
+          {
+            "id": "act_lg_preis_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_preis_verlauf",
+            "pipeline_id": null,
+            "label": "Lager – Preisverlauf des Artikels"
+          },
+          {
+            "id": "act_lg_preis_aenderungen",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_preis_aenderungen",
+            "pipeline_id": null,
+            "label": "Lager – EK-Änderungen des Artikels"
+          },
+          {
+            "id": "act_lg_lager",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_lager",
+            "pipeline_id": null,
+            "label": "Lager – Bestand je Warenlager"
+          },
+          {
+            "id": "act_lg_buchungsarten",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_buchungsarten",
+            "pipeline_id": null,
+            "label": "Lager – Buchungsarten im Zeitraum"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_lg_kpi_wert",
+            "type": "kpi",
+            "label": "Lagerwert (historischer EK)",
+            "action_id": "act_lg_kpi",
+            "config": {
+              "width": 3,
+              "column": "Lagerwert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "LagerwertVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_lg_kpi_artikel",
+            "type": "kpi",
+            "label": "Artikel mit Bestand",
+            "action_id": "act_lg_kpi",
+            "config": {
+              "width": 3,
+              "column": "ArtikelMitBestand",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_kpi_stueck",
+            "type": "kpi",
+            "label": "Stück im Lager",
+            "action_id": "act_lg_kpi",
+            "config": {
+              "width": 3,
+              "column": "StueckGesamt",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_kpi_ohne_ek",
+            "type": "kpi",
+            "label": "davon ohne gebuchten EK",
+            "action_id": "act_lg_kpi",
+            "config": {
+              "width": 3,
+              "column": "OhneHistorischenEK",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Lager",
+            "action_id": "act_lg_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Lagerlage: Höhe und Entwicklung des Lagerwerts gegenüber dem Vorjahr, Kapitalbindung in Ladenhütern, Umschlag und Reichweite sowie Fehlmengen gegen offene Aufträge. Nenne konkreten Handlungsbedarf – welche Bestände abgebaut und welche Artikel dringend nachbestellt werden sollten. Gehe auch auf Korrekturbuchungen ein, wenn sie auffällig sind.",
+              "extra_sections": [
+                {
+                  "action_id": "act_lg_dispo_kpi",
+                  "label": "Disposition",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_lg_umschlag_kpi",
+                  "label": "Umschlag",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_lg_lh_kpi",
+                  "label": "Ladenhüter",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_lg_schwund_kpi",
+                  "label": "Korrekturen",
+                  "kind": "kpi"
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_lg_line_verlauf",
+            "type": "line",
+            "label": "Lagerwert je Monat (12 Monatsstichtage)",
+            "action_id": "act_lg_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Lagerwert"
+              ],
+              "curved": true,
+              "info": "Jeder Punkt ist der aus der Buchungshistorie rekonstruierte Bestand zum Monatsersten, bewertet mit dem damals zuletzt gebuchten EK."
+            }
+          },
+          {
+            "id": "w_lg_tbl_warengruppe",
+            "type": "table",
+            "label": "Lagerwert je Warengruppe",
+            "action_id": "act_lg_warengruppe",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_hersteller",
+            "type": "table",
+            "label": "Lagerwert je Hersteller",
+            "action_id": "act_lg_hersteller",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_top",
+            "type": "table",
+            "label": "Artikel nach gebundenem Kapital (Klick → Buchungen)",
+            "action_id": "act_lg_top",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_artikel_historie",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Buchungshistorie des Artikels"
+              },
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_dispo_fehl",
+            "type": "kpi",
+            "label": "Artikel mit Fehlmenge",
+            "action_id": "act_lg_dispo_kpi",
+            "config": {
+              "width": 3,
+              "column": "ArtikelFehlmenge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_dispo_wert",
+            "type": "kpi",
+            "label": "Wert der Fehlmenge",
+            "action_id": "act_lg_dispo_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertFehlmenge",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_dispo_ueber",
+            "type": "kpi",
+            "label": "Überreserviert",
+            "action_id": "act_lg_dispo_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ueberreserviert",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_dispo_zulauf",
+            "type": "kpi",
+            "label": "Artikel mit Zulauf",
+            "action_id": "act_lg_dispo_kpi",
+            "config": {
+              "width": 3,
+              "column": "MitZulauf",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_tbl_fehlmengen",
+            "type": "table",
+            "label": "Fehlmengen gegen offene Aufträge (Klick → Bestellhistorie)",
+            "action_id": "act_lg_fehlmengen",
+            "config": {
+              "width": 12,
+              "drilldown": {
+                "mapping_id": "m_ek_artikel_hist_detail",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Bestellhistorie des Artikels"
+              },
+              "info": "Momentaufnahme aus dbo.tlagerbestand – Reservierungen und Zulauf stehen nur als aktueller Stand zur Verfügung, nicht in der Historie. Der Zeitraumfilter wirkt hier nicht.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_zulauf",
+            "type": "table",
+            "label": "Erwarteter Zulauf aus offenen Bestellungen (Klick → Positionen)",
+            "action_id": "act_lg_zulauf",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kLieferantenBestellung"
+              ],
+              "drilldown": {
+                "mapping_id": "m_ek_pos_detail",
+                "key_column": "kLieferantenBestellung",
+                "param": "kLieferantenBestellung",
+                "title": "Positionen der Bestellung",
+                "hidden_columns": [
+                  "kArtikel"
+                ]
+              },
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_umschlag",
+            "type": "kpi",
+            "label": "Ø Umschlag pro Jahr",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 3,
+              "column": "UmschlagDurchschnitt",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_reichweite",
+            "type": "kpi",
+            "label": "Ø Reichweite",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 3,
+              "column": "ReichweiteTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_ohne",
+            "type": "kpi",
+            "label": "Artikel ohne Abgang (12 M)",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 3,
+              "column": "OhneAbgang12M",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_kapital",
+            "type": "kpi",
+            "label": "Kapital ohne Abgang",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 3,
+              "column": "KapitalOhneAbgang",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_bar_reichweite",
+            "type": "bar",
+            "label": "Lagerwert nach Reichweite",
+            "action_id": "act_lg_reichweite",
+            "config": {
+              "width": 12,
+              "x_column": "Klasse",
+              "y_columns": [
+                "Lagerwert"
+              ]
+            }
+          },
+          {
+            "id": "w_lg_tbl_umschlag",
+            "type": "table",
+            "label": "Umschlag und Reichweite je Artikel (Klick → Buchungen)",
+            "action_id": "act_lg_umschlag",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_artikel_historie",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Buchungshistorie des Artikels"
+              },
+              "info": "Umschlag = Abgang der letzten 12 Monate geteilt durch den mittleren Bestand (Mittel aus Bestand vor 12 Monaten und am Stichtag). Reichweite = aktueller Bestand geteilt durch den Tagesabgang.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_lh_kpi_anzahl",
+            "type": "kpi",
+            "label": "Ladenhüter (über 180 Tage)",
+            "action_id": "act_lg_lh_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ladenhueter",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_lh_kpi_kapital",
+            "type": "kpi",
+            "label": "Gebundenes Kapital",
+            "action_id": "act_lg_lh_kpi",
+            "config": {
+              "width": 3,
+              "column": "GebundenesKapital",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_lh_kpi_jahr",
+            "type": "kpi",
+            "label": "Über ein Jahr ohne Abgang",
+            "action_id": "act_lg_lh_kpi",
+            "config": {
+              "width": 3,
+              "column": "UeberEinJahr",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_lh_kpi_anteil",
+            "type": "kpi",
+            "label": "Anteil am Lagerwert",
+            "action_id": "act_lg_lh_kpi",
+            "config": {
+              "width": 3,
+              "column": "Anteil am Lagerwert %",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_lg_bar_lh",
+            "type": "bar",
+            "label": "Gebundenes Kapital nach Zeit ohne Abgang",
+            "action_id": "act_lg_lh_klassen",
+            "config": {
+              "width": 12,
+              "x_column": "Klasse",
+              "y_columns": [
+                "GebundenesKapital"
+              ]
+            }
+          },
+          {
+            "id": "w_lg_tbl_lh",
+            "type": "table",
+            "label": "Ladenhüter (Klick → Buchungen)",
+            "action_id": "act_lg_lh",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_artikel_historie",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Buchungshistorie des Artikels"
+              },
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_sw_kpi_buchungen",
+            "type": "kpi",
+            "label": "Korrekturbuchungen",
+            "action_id": "act_lg_schwund_kpi",
+            "config": {
+              "width": 3,
+              "column": "Buchungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_sw_kpi_wert",
+            "type": "kpi",
+            "label": "Wert netto",
+            "action_id": "act_lg_schwund_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertNetto",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_sw_kpi_menge",
+            "type": "kpi",
+            "label": "Menge netto",
+            "action_id": "act_lg_schwund_kpi",
+            "config": {
+              "width": 3,
+              "column": "MengeNetto",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_sw_kpi_inventur",
+            "type": "kpi",
+            "label": "davon Inventurdifferenzen",
+            "action_id": "act_lg_schwund_kpi",
+            "config": {
+              "width": 3,
+              "column": "Inventurdifferenzen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_line_schwund",
+            "type": "line",
+            "label": "Korrekturwert je Monat",
+            "action_id": "act_lg_schwund_monat",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Korrekturen",
+                "Inventurdifferenzen"
+              ],
+              "curved": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_schwund_artikel",
+            "type": "table",
+            "label": "Artikel mit den größten Korrekturen (Klick → Buchungen)",
+            "action_id": "act_lg_schwund_artikel",
+            "config": {
+              "width": 7,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_artikel_historie",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Buchungshistorie des Artikels"
+              },
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_schwund_benutzer",
+            "type": "table",
+            "label": "Korrekturen je Benutzer",
+            "action_id": "act_lg_schwund_benutzer",
+            "config": {
+              "width": 5,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_pr_kpi_aktuell",
+            "type": "kpi",
+            "label": "EK aktuell",
+            "action_id": "act_lg_preis_kpi",
+            "config": {
+              "width": 3,
+              "column": "EKAktuell",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4,
+              "compare_column": "EKErster",
+              "compare_label": "erster EK",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_lg_pr_kpi_min",
+            "type": "kpi",
+            "label": "Tiefster EK",
+            "action_id": "act_lg_preis_kpi",
+            "config": {
+              "width": 3,
+              "column": "EKMinimum",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4
+            }
+          },
+          {
+            "id": "w_lg_pr_kpi_max",
+            "type": "kpi",
+            "label": "Höchster EK",
+            "action_id": "act_lg_preis_kpi",
+            "config": {
+              "width": 3,
+              "column": "EKMaximum",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4
+            }
+          },
+          {
+            "id": "w_lg_pr_kpi_stufen",
+            "type": "kpi",
+            "label": "Verschiedene Preise",
+            "action_id": "act_lg_preis_kpi",
+            "config": {
+              "width": 3,
+              "column": "Preisstufen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_line_preis",
+            "type": "line",
+            "label": "Preisverlauf: Einkauf gegen Verkauf (24 Monate)",
+            "action_id": "act_lg_preis_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "EKNetto",
+                "VKNetto"
+              ],
+              "curved": true,
+              "info": "EK = zuletzt gebuchter Einkaufspreis des Monats, fortgeschrieben bis zum nächsten Wareneingang. VK = mittlerer Netto-Verkaufspreis der in diesem Monat berechneten Positionen. Monate ohne Verkauf bleiben beim VK leer."
+            }
+          },
+          {
+            "id": "w_lg_tbl_preis",
+            "type": "table",
+            "label": "Jede EK-Änderung mit Lieferant",
+            "action_id": "act_lg_preis_aenderungen",
+            "config": {
+              "width": 12,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_lager",
+            "type": "table",
+            "label": "Bestand und Wert je Warenlager",
+            "action_id": "act_lg_lager",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_buchungsarten",
+            "type": "table",
+            "label": "Buchungsarten im Zeitraum",
+            "action_id": "act_lg_buchungsarten",
+            "config": {
+              "width": 6,
+              "full_rows": true
+            }
+          }
+        ],
+        "result_tabs": [
+          {
+            "id": "tab_lg_wert",
+            "label": "Lagerwert",
+            "action_ids": [
+              "act_lg_kpi",
+              "act_lg_verlauf",
+              "act_lg_warengruppe",
+              "act_lg_hersteller",
+              "act_lg_top"
+            ]
+          },
+          {
+            "id": "tab_lg_dispo",
+            "label": "Disposition",
+            "action_ids": [
+              "act_lg_dispo_kpi",
+              "act_lg_fehlmengen",
+              "act_lg_zulauf"
+            ]
+          },
+          {
+            "id": "tab_lg_umschlag",
+            "label": "Umschlag & Reichweite",
+            "action_ids": [
+              "act_lg_umschlag_kpi",
+              "act_lg_reichweite",
+              "act_lg_umschlag"
+            ]
+          },
+          {
+            "id": "tab_lg_ladenhueter",
+            "label": "Ladenhüter",
+            "action_ids": [
+              "act_lg_lh_kpi",
+              "act_lg_lh_klassen",
+              "act_lg_lh"
+            ]
+          },
+          {
+            "id": "tab_lg_schwund",
+            "label": "Inventur & Schwund",
+            "action_ids": [
+              "act_lg_schwund_kpi",
+              "act_lg_schwund_monat",
+              "act_lg_schwund_artikel",
+              "act_lg_schwund_benutzer"
+            ]
+          },
+          {
+            "id": "tab_lg_preise",
+            "label": "Preishistorie",
+            "action_ids": [
+              "act_lg_preis_kpi",
+              "act_lg_preis_verlauf",
+              "act_lg_preis_aenderungen"
+            ]
+          },
+          {
+            "id": "tab_lg_lager",
+            "label": "Lager & Buchungen",
+            "action_ids": [
+              "act_lg_lager",
+              "act_lg_buchungsarten"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
