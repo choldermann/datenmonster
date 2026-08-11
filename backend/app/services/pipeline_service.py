@@ -272,9 +272,13 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                             class _Patched:
                                 pass
                             patched = _Patched()
+                            # collection_id/environment_id MÜSSEN mit: sonst verliert der
+                            # Request beim Einsetzen von Werten aus dem Vorgänger-Node die
+                            # Basis-URL, die geerbte Auth und seine Umgebungs-Variablen.
                             for attr in ["url", "method", "headers", "query_params", "body_type",
                                          "body_content", "auth_type", "auth_config", "data_path",
-                                         "flatten", "pagination", "dataset_id", "dataset_mode"]:
+                                         "flatten", "pagination", "dataset_id", "dataset_mode",
+                                         "collection_id", "environment_id"]:
                                 val = getattr(src, attr, None)
                                 if isinstance(val, str):
                                     val = _inject(val)

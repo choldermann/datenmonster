@@ -12,6 +12,7 @@ Ein gespeicherter Request ist damit sofort ein planbarer Connector – ohne Expo
 """
 
 import json
+import re
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -841,3 +842,248 @@ def suggest_variables(
     """
     _check_read(payload.project_id, user, db)
     return {"vorschlaege": variablen_vorschlaege(payload.model_dump())}
+
+
+# ══ Integration: vom Request zum laufenden Datenfluss ═════════════════════════
+#
+# Hier entsteht nichts Neues – es werden nur vorhandene Bausteine verdrahtet:
+# der Import aus rest_sources legt das Dataset an, das Mapping ist ein ganz
+# normales Mapping mit Dataset-Quelle und Dataset-Ziel, und die Pipeline
+# benutzt den bestehenden rest_fetch-Node.
+
+_TYP_ZU_MAPPING = {
+    "ganzzahl": "integer", "kommazahl": "float", "ja/nein": "boolean",
+    "datum": "date", "datumzeit": "datetime", "email": "string",
+    "url": "string", "uuid": "string", "text": "string",
+    "liste": "string", "objekt": "string", "leer": "string",
+}
+
+
+def _feldname(pfad: str) -> str:
+    """
+    Aus einem Antwort-Pfad einen brauchbaren Spaltennamen machen:
+    `customer.first_name` → `customer_first_name`, `items[].sku` → `items_sku`.
+    """
+    name = re.sub(r"\[\]", "", pfad or "")
+    name = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name)
+    name = re.sub(r"[^A-Za-z0-9]+", "_", name).strip("_").lower()
+    return name or "feld"
+
+
+class IntegrationPreviewIn(BaseModel):
+    rest_source_id: Optional[int] = None
+    body: Any = None
+    url: Optional[str] = None
+    method: Optional[str] = "GET"
+    data_path: Optional[str] = None
+    name: Optional[str] = None
+    project_id: Optional[int] = None
+    mit_ki: bool = False
+
+
+class IntegrationFeld(BaseModel):
+    quelle: str
+    ziel: str
+    typ: str = "string"
+    uebernehmen: bool = True
+
+
+class IntegrationCreateIn(BaseModel):
+    rest_source_id: int
+    dataset_name: str
+    felder: List[IntegrationFeld] = []
+    mit_mapping: bool = False
+    mit_pipeline: bool = False
+    cron: Optional[str] = None
+    environment_id: Optional[int] = None
+    project_id: Optional[int] = None
+
+
+@router.post("/integration/preview")
+async def integration_preview(
+    payload: IntegrationPreviewIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Vorschlag, wie aus dieser Antwort ein Datenfluss wird: Dataset-Name und
+    Spaltenliste. Namen werden deterministisch abgeleitet; `mit_ki=true` lässt
+    zusätzlich sprechende deutsche Spaltennamen vorschlagen.
+    """
+    _check_read(payload.project_id, user, db)
+    if payload.body is None:
+        raise HTTPException(400, "Keine Antwort übergeben – bitte zuerst senden")
+
+    a = analysiere(payload.body, None, payload.data_path, "sicher")
+    if not a["inventar"]:
+        raise HTTPException(400, "In dieser Antwort sind keine Felder erkennbar")
+
+    basis = payload.name or (payload.url or "").rstrip("/").split("/")[-1].split("?")[0] or "API-Daten"
+    felder = [{
+        "quelle": f["pfad"],
+        "ziel": _feldname(f["pfad"]),
+        "typ": _TYP_ZU_MAPPING.get(f["typ"], "string"),
+        # Felder, die fast nie gefüllt sind, standardmäßig weglassen –
+        # sie blähen das Ziel nur auf.
+        "uebernehmen": f["anteil_gefuellt"] >= 0.1,
+        "anteil_gefuellt": f["anteil_gefuellt"],
+        "wirkt_wie_schluessel": f["wirkt_wie_schluessel"],
+        "hinweis": "",
+    } for f in a["inventar"]]
+
+    ergebnis = {
+        "dataset_name": basis,
+        "pipeline_name": f"{basis} abrufen",
+        "mapping_name": f"{basis} aufbereiten",
+        "datenpfad": a["datenpfad"],
+        "zeilen": a["zeilen"],
+        "paginierung": a["paginierung"],
+        "felder": felder,
+    }
+
+    if not payload.mit_ki:
+        return ergebnis
+
+    svc = build_ai_service(db)
+    if svc is None:
+        ergebnis["ki_fehler"] = "KI-Integration ist nicht aktiviert"
+        return ergebnis
+
+    liste = "\n".join(f"- {f['quelle']} ({f['typ']})" for f in felder[:60])
+    schema = {
+        "type": "object",
+        "properties": {
+            "dataset_name": {"type": "string"},
+            "felder": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "quelle": {"type": "string"},
+                        "ziel": {"type": "string"},
+                    },
+                    "required": ["quelle", "ziel"],
+                },
+            },
+        },
+        "required": ["dataset_name", "felder"],
+    }
+    auftrag = (
+        f"Endpunkt: {payload.method} {(payload.url or '').split('?')[0]}\n"
+        f"Felder der Antwort:\n{liste}\n\n"
+        "Schlage deutsche Spaltennamen vor: kleingeschrieben, Wörter mit Unterstrich "
+        "getrennt, ohne Umlaute-Ersatz-Zirkus (ae/oe/ue ist in Ordnung), keine Leerzeichen. "
+        "Übernimm `quelle` exakt. Schlage außerdem einen kurzen deutschen Namen für das "
+        "Dataset vor."
+    )
+    try:
+        ki = await svc.complete_json(
+            [{"role": "system", "content": "Du benennst Datenfelder klar und knapp auf Deutsch."},
+             {"role": "user", "content": auftrag}],
+            schema, temperature=0.2, request_type="TRANSFORMATION")
+        umbenennung = {f["quelle"]: _feldname(f["ziel"]) for f in ki.get("felder", [])}
+        for f in ergebnis["felder"]:
+            if umbenennung.get(f["quelle"]):
+                f["hinweis"] = f"deterministisch wäre: {f['ziel']}"
+                f["ziel"] = umbenennung[f["quelle"]]
+        if ki.get("dataset_name"):
+            ergebnis["dataset_name"] = ki["dataset_name"]
+            ergebnis["pipeline_name"] = f"{ki['dataset_name']} abrufen"
+            ergebnis["mapping_name"] = f"{ki['dataset_name']} aufbereiten"
+    except Exception as e:
+        ergebnis["ki_fehler"] = f"KI-Vorschlag fehlgeschlagen: {str(e)[:200]}"
+    return ergebnis
+
+
+@router.post("/integration/create")
+def integration_create(
+    payload: IntegrationCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Legt den Datenfluss an: Dataset immer, Mapping und Pipeline auf Wunsch.
+
+    Das Dataset entsteht über den bestehenden Import aus rest_sources – inklusive
+    Paginierung, Auth und Sammlungs-Vorgaben. Es wird also mit echten Daten
+    gefüllt, nicht mit einem geratenen Schema.
+    """
+    from app.api.rest_sources import import_rest_source, ImportRequest
+    from app.models.mapping import Mapping
+    from app.models.pipeline import Pipeline
+
+    quelle = db.query(RestSource).filter(RestSource.id == payload.rest_source_id).first()
+    if not quelle:
+        raise HTTPException(404, "Request nicht gefunden")
+    project_id = payload.project_id if payload.project_id is not None else quelle.project_id
+    _check_write(project_id, user, db)
+
+    # Umgebung am Request festhalten, damit geplante Läufe dieselben Variablen sehen.
+    if payload.environment_id is not None and quelle.environment_id != payload.environment_id:
+        quelle.environment_id = payload.environment_id
+        db.commit()
+
+    angelegt = {"dataset": None, "mapping": None, "pipeline": None}
+
+    # ── 1. Dataset (echte Daten über den vorhandenen Import) ──
+    try:
+        ds = import_rest_source(
+            quelle.id,
+            ImportRequest(dataset_name=payload.dataset_name, project_id=project_id,
+                          dataset_mode="replace", dataset_id=None),
+            db, user)
+    except HTTPException as e:
+        if e.status_code == 204:
+            raise HTTPException(400, "Die API lieferte keine Daten – Integration nicht angelegt")
+        raise
+    angelegt["dataset"] = {"id": ds["id"], "name": ds["name"], "zeilen": ds["row_count"]}
+
+    felder = [f for f in payload.felder if f.uebernehmen]
+
+    # ── 2. Mapping (Rohdataset → aufbereitetes Dataset) ──
+    if payload.mit_mapping and felder:
+        ziel_name = f"{payload.dataset_name} aufbereitet"
+        m = Mapping(
+            name=f"{payload.dataset_name} aufbereiten",
+            project_id=project_id,
+            canvas_nodes=[{"id": f"ds{ds['id']}", "dataset_id": ds["id"],
+                           "dataset_name": ds["name"], "x": 80, "y": 80}],
+            targets=[{
+                "id": "t1", "name": ziel_name, "target_type": "dataset",
+                "target_connection_id": None, "target_table": "",
+                "target_write_mode": "replace",
+                "target_options": {"dataset_write_mode": "replace"},
+                "fields": [{
+                    "source_field": f.quelle,
+                    "target_field": f.ziel,
+                    "target_type": f.typ,
+                    "source_dataset_id": ds["id"],
+                    "transformer": {"type": "direct", "source_field": f.quelle},
+                } for f in felder],
+            }],
+        )
+        db.add(m); db.commit(); db.refresh(m)
+        angelegt["mapping"] = {"id": m.id, "name": m.name, "ziel_dataset": ziel_name}
+
+    # ── 3. Pipeline (Auslöser → REST holen → Mapping) ──
+    if payload.mit_pipeline:
+        nodes = [
+            {"id": "trg", "type": "trigger", "x": 100, "y": 140,
+             "config": ({"trigger_mode": "schedule", "cron": payload.cron}
+                        if payload.cron else {"trigger_mode": "manual"})},
+            {"id": "rest", "type": "rest_fetch", "x": 400, "y": 140,
+             "config": {"rest_source_id": quelle.id, "dataset_name": quelle.name}},
+        ]
+        verbindungen = [{"from_node": "trg", "from_port": "out",
+                         "to_node": "rest", "to_port": "in"}]
+        if angelegt["mapping"]:
+            nodes.append({"id": "map", "type": "mapping", "x": 700, "y": 140,
+                          "config": {"mapping_id": angelegt["mapping"]["id"], "on_error": "stop"}})
+            verbindungen.append({"from_node": "rest", "from_port": "out",
+                                 "to_node": "map", "to_port": "in"})
+        p = Pipeline(name=f"{payload.dataset_name} abrufen", project_id=project_id,
+                     active=True, nodes=nodes, connections=verbindungen)
+        db.add(p); db.commit(); db.refresh(p)
+        angelegt["pipeline"] = {"id": p.id, "name": p.name, "cron": payload.cron}
+
+    return angelegt

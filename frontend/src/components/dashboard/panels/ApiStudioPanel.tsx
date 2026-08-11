@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Send, Plus, Trash2, Pencil, Loader2, X, FolderOpen, Save, History,
   Globe, ChevronRight, ChevronDown, Layers, Check, AlertTriangle, Table2,
-  Sparkles, Bug, ShieldCheck, KeyRound,
+  Sparkles, Bug, ShieldCheck, KeyRound, Workflow,
 } from "lucide-react";
 import api from "../../../api/client";
 import {
@@ -24,7 +24,7 @@ const LEER_REQUEST = {
   body_type: "none", body_content: "",
   auth_type: "inherit", auth_config: {},
   data_path: "", flatten: 1,
-  collection_id: null, description: "", store_response: 0,
+  collection_id: null, environment_id: null, description: "", store_response: 0,
   pagination: { type: "none" }, dataset_mode: "replace", cron_expr: "", active: 1,
 };
 
@@ -92,7 +92,7 @@ function Schalter({ an, onChange, label, hinweis }) {
  * fest – ganz ohne Sprachmodell. Die KI-Deutung ist ein bewusster zweiter Schritt,
  * weil dabei (maskierte) Auszüge die Maschine verlassen können.
  */
-function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung }) {
+function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufIntegration }) {
   const [daten, setDaten] = useState(null);
   const [laedt, setLaedt] = useState(false);
   const [kiLaedt, setKiLaedt] = useState(false);
@@ -205,6 +205,21 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung }) {
       </div>
 
       {fehler && <p style={{ fontSize: 11, color: "#fbbf24" }}>{fehler}</p>}
+
+      {/* Weiterverarbeiten */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 12, borderRadius: 8, backgroundColor: `${C}0a`, border: `1px solid ${C}2a`, flexWrap: "wrap" }}>
+        <Workflow size={15} style={{ color: C, flexShrink: 0 }} />
+        <span style={{ fontSize: 11, color: "#94a3b8", flex: 1, minWidth: 200 }}>
+          {kontext.restSourceId
+            ? "Aus dieser Antwort einen Datenfluss machen: Dataset, wahlweise Mapping und Pipeline."
+            : "Request zuerst speichern – danach lässt sich daraus ein Datenfluss anlegen."}
+        </span>
+        <button onClick={aufIntegration} disabled={!kontext.restSourceId}
+          style={{ ...btnPrimary, opacity: kontext.restSourceId ? 1 : 0.4,
+                   cursor: kontext.restSourceId ? "pointer" : "not-allowed" }}>
+          Integration erstellen
+        </button>
+      </div>
 
       {/* Feld-Inventar */}
       <div>
@@ -420,9 +435,192 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
   );
 }
 
+// ── Integration ───────────────────────────────────────────────────────────────
+
+const ZIEL_TYPEN = ["string", "integer", "float", "boolean", "date", "datetime"];
+
+/**
+ * Vom getesteten Request zum laufenden Datenfluss. Es entsteht nichts Exotisches:
+ * ein ganz normales Dataset, ein ganz normales Mapping und eine ganz normale
+ * Pipeline – nur eben ohne dass man sie einzeln zusammenklicken muss.
+ */
+function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, projectId, onFertig, onClose }) {
+  const [vs, setVs] = useState(null);
+  const [laedt, setLaedt] = useState(true);
+  const [kiLaedt, setKiLaedt] = useState(false);
+  const [mitMapping, setMitMapping] = useState(false);
+  const [mitPipeline, setMitPipeline] = useState(false);
+  const [cron, setCron] = useState("");
+  const [umgebung, setUmgebung] = useState(envId ?? "");
+  const [erg, setErg] = useState(null);
+  const [legtAn, setLegtAn] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  const vorschau = async (mitKi) => {
+    (mitKi ? setKiLaedt : setLaedt)(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/integration/preview`, {
+        rest_source_id: restSourceId, body: antwort.json, url: kontext.url,
+        method: kontext.method, data_path: kontext.data_path || null,
+        name: kontext.name || null, project_id: projectId ?? null, mit_ki: mitKi,
+      });
+      setVs(data);
+      if (data.ki_fehler) setFehler(data.ki_fehler);
+    } catch (e) { setFehler(e.response?.data?.detail || "Vorschau fehlgeschlagen"); }
+    finally { (mitKi ? setKiLaedt : setLaedt)(false); }
+  };
+
+  useEffect(() => { vorschau(false); }, []);
+
+  const setFeld = (i, k, v) => setVs(p => ({ ...p, felder: p.felder.map((f, j) => j === i ? { ...f, [k]: v } : f) }));
+
+  const anlegen = async () => {
+    setLegtAn(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/integration/create`, {
+        rest_source_id: restSourceId, dataset_name: vs.dataset_name,
+        project_id: projectId ?? null,
+        environment_id: umgebung === "" ? null : umgebung,
+        felder: vs.felder.map(f => ({ quelle: f.quelle, ziel: f.ziel, typ: f.typ, uebernehmen: f.uebernehmen })),
+        mit_mapping: mitMapping, mit_pipeline: mitPipeline,
+        cron: cron || null,
+      });
+      setErg(data);
+      onFertig();
+    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    finally { setLegtAn(false); }
+  };
+
+  const gewaehlt = (vs?.felder || []).filter(f => f.uebernehmen).length;
+
+  if (erg) return (
+    <Dialog titel="Integration angelegt" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {[["Dataset", erg.dataset && `${erg.dataset.name} · ${erg.dataset.zeilen} Zeilen`],
+          ["Mapping", erg.mapping && `${erg.mapping.name} → ${erg.mapping.ziel_dataset}`],
+          ["Pipeline", erg.pipeline && `${erg.pipeline.name}${erg.pipeline.cron ? ` · ${erg.pipeline.cron}` : " · manuell"}`],
+        ].filter(([, w]) => w).map(([l, w]) => (
+          <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
+            <Check size={13} style={{ color: "#6ee7b7", flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: "#64748b", width: 60 }}>{l}</span>
+            <span style={{ fontSize: 12, color: "#e2e8f0" }}>{w}</span>
+          </div>
+        ))}
+        <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+          Zu finden unter Datasets{erg.mapping ? ", Mappings" : ""}{erg.pipeline ? " und Pipelines" : ""}.
+        </p>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btnPrimary} onClick={onClose}>Schließen</button>
+      </div>
+    </Dialog>
+  );
+
+  return (
+    <Dialog titel="Integration erstellen" onClose={onClose} breit>
+      {laedt && !vs ? (
+        <p style={{ fontSize: 12, color: "#64748b" }}>{fehler || "Vorschlag wird erstellt…"}</p>
+      ) : !vs ? (
+        <p style={{ fontSize: 12, color: "#f87171" }}>{fehler}</p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={lS}>Name des Datasets</label>
+              <input style={iS} value={vs.dataset_name} onChange={e => setVs(p => ({ ...p, dataset_name: e.target.value }))} />
+            </div>
+            <button onClick={() => vorschau(true)} disabled={kiLaedt}
+              style={{ ...btn, display: "flex", alignItems: "center", gap: 6, opacity: kiLaedt ? 0.5 : 1 }}>
+              {kiLaedt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Namen von der KI
+            </button>
+          </div>
+
+          <div>
+            <p style={{ ...lS, marginBottom: 6 }}>Spalten ({gewaehlt} von {vs.felder.length} übernommen)</p>
+            <div style={{ maxHeight: 260, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
+              <table style={{ fontSize: 11, borderCollapse: "collapse", width: "100%" }}>
+                <tbody>
+                  {vs.felder.map((f, i) => (
+                    <tr key={f.quelle} style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", opacity: f.uebernehmen ? 1 : 0.45 }}>
+                      <td style={{ padding: "4px 8px", width: 26 }}>
+                        <input type="checkbox" checked={f.uebernehmen} onChange={e => setFeld(i, "uebernehmen", e.target.checked)} />
+                      </td>
+                      <td style={{ padding: "4px 8px", fontFamily: "monospace", color: "#64748b", whiteSpace: "nowrap" }}>
+                        {f.quelle}
+                        {f.anteil_gefuellt < 0.5 && (
+                          <span title="Nur selten gefüllt" style={{ marginLeft: 5, fontSize: 9, color: "#fbbf24" }}>
+                            {Math.round(f.anteil_gefuellt * 100)}%
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ padding: "4px 4px", color: "#475569" }}>→</td>
+                      <td style={{ padding: "4px 8px" }}>
+                        <input style={{ ...iS, fontSize: 11, padding: "3px 6px" }} value={f.ziel}
+                          title={f.hinweis || undefined}
+                          onChange={e => setFeld(i, "ziel", e.target.value)} />
+                      </td>
+                      <td style={{ padding: "4px 8px", width: 110 }}>
+                        <select style={{ ...iS, fontSize: 11, padding: "3px 6px" }} value={f.typ}
+                          onChange={e => setFeld(i, "typ", e.target.value)}>
+                          {ZIEL_TYPEN.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+              Das Dataset wird immer angelegt und sofort mit echten Daten gefüllt
+              {vs.paginierung?.config ? " (inklusive aller Seiten)" : ""}.
+            </p>
+            <Schalter an={mitMapping} onChange={setMitMapping}
+              label="Mapping anlegen"
+              hinweis="Benennt die Spalten wie oben um und schreibt in ein aufbereitetes Dataset." />
+            <Schalter an={mitPipeline} onChange={setMitPipeline}
+              label="Pipeline anlegen"
+              hinweis="Holt die Daten künftig automatisch – wahlweise nach Zeitplan." />
+            {mitPipeline && (
+              <div style={{ display: "flex", gap: 10, paddingLeft: 24 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={lS}>Zeitplan (leer = nur manuell)</label>
+                  <input style={iS} value={cron} onChange={e => setCron(e.target.value)} placeholder='z.B. "0 6 * * *" = täglich 6 Uhr' />
+                </div>
+              </div>
+            )}
+            <div>
+              <label style={lS}>Umgebung für geplante Läufe</label>
+              <select style={iS} value={umgebung} onChange={e => setUmgebung(e.target.value ? parseInt(e.target.value) : "")}>
+                <option value="">Ohne Umgebung</option>
+                {umgebungen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select>
+              <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                Wird am Request hinterlegt – sonst stünden Platzhalter wie <code style={{ fontFamily: "monospace" }}>{"{{basis_url}}"}</code> beim
+                geplanten Lauf wörtlich in der URL.
+              </p>
+            </div>
+          </div>
+
+          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btn} onClick={onClose}>Abbrechen</button>
+        <button style={{ ...btnPrimary, opacity: !vs || !gewaehlt || legtAn ? 0.5 : 1 }}
+          disabled={!vs || !gewaehlt || legtAn} onClick={anlegen}>
+          {legtAn ? "Wird angelegt…" : "Anlegen"}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 // ── Antwort-Ansicht ───────────────────────────────────────────────────────────
 
-function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebernehmen }) {
+function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebernehmen, aufIntegration }) {
   const [reiter, setReiter] = useState("pretty");
 
   if (!antwort) return (
@@ -548,7 +746,8 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
         )}
         {aktiv === "analyse" && (
           <AnalysePanel antwort={antwort} kontext={kontext}
-            aufDatenpfad={aufDatenpfad} aufPaginierung={aufPaginierung} />
+            aufDatenpfad={aufDatenpfad} aufPaginierung={aufPaginierung}
+            aufIntegration={aufIntegration} />
         )}
       </div>
     </div>
@@ -1116,6 +1315,18 @@ function ApiStudioPanel({ projectId, canEdit }) {
                     Standardmäßig merkt sich der Verlauf nur Status, Dauer und Größe – Antworten können personenbezogene Daten enthalten.
                   </p>
                   <div style={{ paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                    <label style={lS}>Umgebung für geplante Läufe</label>
+                    <select style={iS} value={f.environment_id ?? ""}
+                      onChange={e => set("environment_id", e.target.value ? parseInt(e.target.value) : null)}>
+                      <option value="">Ohne Umgebung</option>
+                      {umgebungen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                      Die Auswahl oben rechts gilt nur fürs Ausprobieren. Für Scheduler, Pipeline und Import
+                      zählt die hier hinterlegte Umgebung.
+                    </p>
+                  </div>
+                  <div style={{ paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
                     <label style={{ ...lS, marginBottom: 8 }}>Weitere Seiten holen</label>
                     <PaginationEditor value={f.pagination} onChange={v => set("pagination", v)} />
                   </div>
@@ -1134,10 +1345,11 @@ function ApiStudioPanel({ projectId, canEdit }) {
               antwort={antwort}
               kontext={{ url: f.url, method: f.method, headers: f.headers, query_params: f.query_params,
                          body_type: f.body_type, auth_type: f.auth_type, data_path: f.data_path,
-                         projectId }}
+                         name: f.name, restSourceId: aktiveId, projectId }}
               aufDatenpfad={(pfad) => { set("data_path", pfad); setReiter("daten"); }}
               aufPaginierung={(cfg) => { set("pagination", cfg); setReiter("daten"); }}
               onUebernehmen={vorschlagUebernehmen}
+              aufIntegration={() => setDialog("integration")}
             />
           </div>
         </div>
@@ -1151,6 +1363,13 @@ function ApiStudioPanel({ projectId, canEdit }) {
       {dialog === "umgebung" && (
         <UmgebungsDialog umgebungen={umgebungen} projectId={projectId}
           onChanged={laden} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "integration" && antwort && (
+        <IntegrationDialog
+          antwort={antwort}
+          kontext={{ url: f.url, method: f.method, data_path: f.data_path, name: f.name }}
+          restSourceId={aktiveId} umgebungen={umgebungen} envId={envId} projectId={projectId}
+          onFertig={laden} onClose={() => setDialog(null)} />
       )}
       {dialog === "variablen" && (
         <VariablenDialog

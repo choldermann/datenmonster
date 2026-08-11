@@ -511,6 +511,35 @@ def sammlungs_vorgaben(collection_id) -> dict:
         db.close()
 
 
+def umgebungs_variablen(environment_id) -> dict:
+    """
+    Variablen der am Request hinterlegten Umgebung, Secrets entschlüsselt.
+
+    Nötig für alles, was ohne Oberfläche läuft: Scheduler, Pipeline, Import.
+    Ohne das liefe ein Request mit {{basis_url}} dort gegen eine URL, in der
+    der Platzhalter wörtlich stehen bleibt.
+    """
+    if not environment_id:
+        return {}
+    from app.core.database import SessionLocal
+    from app.models.api_studio import ApiEnvironment
+    db = SessionLocal()
+    try:
+        e = db.query(ApiEnvironment).filter(ApiEnvironment.id == environment_id).first()
+        if not e:
+            return {}
+        out = {}
+        for v in (e.variables or []):
+            key = v.get("key")
+            if not key:
+                continue
+            wert = v.get("value", "")
+            out[key] = decrypt_credential(wert) if v.get("secret") and wert else wert
+        return out
+    finally:
+        db.close()
+
+
 def aufgeloeste_config(source) -> dict:
     """
     Request-Konfiguration inklusive der Vorgaben seiner Sammlung.
@@ -539,8 +568,11 @@ def fetch_rest_source(source, variables: Optional[dict] = None) -> pd.DataFrame:
     """
     Holt Daten von einem REST-Endpoint und gibt einen DataFrame zurück.
     `source` ist ein RestSource-ORM-Objekt.
-    `variables` sind optionale Umgebungs-Variablen aus dem API Studio.
+    `variables` sind optionale Umgebungs-Variablen aus dem API Studio; ohne sie
+    greift die am Request hinterlegte Umgebung (geplante Läufe, Pipeline, Import).
     """
+    if variables is None:
+        variables = umgebungs_variablen(getattr(source, "environment_id", None))
     cfg = aufgeloeste_config(source)
 
     # Templates in URL auflösen

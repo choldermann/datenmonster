@@ -80,6 +80,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE rest_sources ADD COLUMN description TEXT",
             "ALTER TABLE rest_sources ADD COLUMN sort_order INTEGER DEFAULT 0",
             "ALTER TABLE rest_sources ADD COLUMN store_response INTEGER DEFAULT 0",
+            "ALTER TABLE rest_sources ADD COLUMN environment_id INTEGER",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,

@@ -24,6 +24,7 @@ class RestSource(Base):
 
     # ── API Studio ───────────────────────────────────────────────────────────
     collection_id  = Column(Integer, nullable=True)           # Zugehörige ApiCollection
+    environment_id = Column(Integer, nullable=True)           # Umgebung für geplante Läufe
     description    = Column(Text,    nullable=True)
     sort_order     = Column(Integer, default=0)               # Reihenfolge in der Sammlung
     store_response = Column(Integer, default=0)               # Antwortkörper im Verlauf ablegen

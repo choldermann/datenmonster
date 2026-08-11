@@ -63,6 +63,7 @@ class RestSourceCreate(BaseModel):
     name: str
     project_id: Optional[int] = None
     collection_id: Optional[int] = None
+    environment_id: Optional[int] = None
     description: Optional[str] = None
     sort_order: int = 0
     store_response: int = 0
@@ -116,6 +117,7 @@ def source_out(s: RestSource) -> dict:
         "name": s.name,
         "project_id": s.project_id,
         "collection_id": s.collection_id,
+        "environment_id": s.environment_id,
         "description": s.description,
         "sort_order": s.sort_order or 0,
         "store_response": s.store_response or 0,
