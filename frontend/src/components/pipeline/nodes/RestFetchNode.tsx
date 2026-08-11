@@ -64,6 +64,48 @@ export default function RestFetchNode({
           </div>
         )}
 
+        {/*
+          Für jede Zeile: kommt der Node hinter einem anderen, der Daten
+          liefert, wird der Request einmal pro Zeile ausgeführt und {{spalte}}
+          jeweils mit deren Werten gefüllt. Ohne das gilt nur die erste Zeile –
+          womit "Liste holen, dann Details je Element" nicht ginge.
+        */}
+        <div>
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 5, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!config.for_each}
+              onChange={e => onUpdate({
+                ...node,
+                config: e.target.checked
+                  ? { ...config, for_each: true, for_each_max: config.for_each_max || 100 }
+                  : { ...config, for_each: false },
+              })}
+              style={{ marginTop: 1 }}
+            />
+            <span style={{ fontSize: 9, color: S.textBright, lineHeight: 1.4 }}>
+              Für jede Zeile des Vorgängers
+              <span style={{ color: S.textDim, display: "block" }}>
+                {"{{spalte}}"} wird je Zeile eingesetzt
+              </span>
+            </span>
+          </label>
+        </div>
+
+        {config.for_each && (
+          <div>
+            <label style={lS}>Höchstens Zeilen</label>
+            <input
+              style={iS} type="number" min={1}
+              value={config.for_each_max ?? 100}
+              onChange={e => set("for_each_max", parseInt(e.target.value) || 1)}
+            />
+            <span style={{ fontSize: 8, color: S.textDim, display: "block", marginTop: 2 }}>
+              So viele Aufrufe entstehen höchstens.
+            </span>
+          </div>
+        )}
+
         <div>
           <label style={lS}>Fehler-Handling</label>
           <select style={iS} value={config.on_error || "stop"} onChange={e => set("on_error", e.target.value)}>
