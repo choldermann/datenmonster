@@ -11,6 +11,7 @@ const REST_AUTH_TYPES = [
   { v: "bearer",    l: "Bearer Token" },
   { v: "apikey",    l: "API Key" },
   { v: "oauth2_cc", l: "OAuth2 Client Credentials" },
+  { v: "oauth2_refresh", l: "OAuth2 Refresh Token" },
 ];
 const REST_PAG_TYPES = [
   { v: "none",        l: "Keine Paginierung" },
@@ -19,12 +20,14 @@ const REST_PAG_TYPES = [
   { v: "cursor",      l: "Cursor-basiert" },
   { v: "link_header", l: "Link-Header (RFC 5988)" },
 ];
-const METHODS = ["GET","POST","PUT","PATCH"];
+const METHODS = ["GET","POST","PUT","PATCH","DELETE","HEAD","OPTIONS"];
 const BODY_TYPES = [
-  { v: "none", l: "Kein Body" },
-  { v: "json", l: "JSON" },
-  { v: "form", l: "Form-Data" },
-  { v: "raw",  l: "Raw" },
+  { v: "none",      l: "Kein Body" },
+  { v: "json",      l: "JSON" },
+  { v: "form",      l: "Form-Data" },
+  { v: "multipart", l: "Multipart" },
+  { v: "xml",       l: "XML" },
+  { v: "raw",       l: "Raw" },
 ];
 const TEMPLATE_VARS = ["{{heute}}","{{gestern}}","{{morgen}}","{{timestamp}}","{{iso_heute}}","{{monat}}","{{jahr}}","{{epoch_ms}}"];
 const EMPTY_SOURCE = {
@@ -136,6 +139,17 @@ function AuthEditor({ authType, authConfig, onChange }) {
           <option value="header">Header</option><option value="query">Query-Param</option>
         </select>
       </div>
+    </div>
+  );
+  if (authType === "oauth2_refresh") return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+      <div style={{ gridColumn: "1/-1" }}><label style={lS2}>Token-URL</label><input style={iS2} value={authConfig.token_url || ""} onChange={e => set("token_url", e.target.value)} placeholder="https://auth.example.com/oauth/token" /></div>
+      <div><label style={lS2}>Client ID</label><input style={iS2} value={authConfig.client_id || ""} onChange={e => set("client_id", e.target.value)} /></div>
+      <div><label style={lS2}>Client Secret (optional)</label><input style={iS2} type="password" value={authConfig.client_secret || ""} onChange={e => set("client_secret", e.target.value)} /></div>
+      <div style={{ gridColumn: "1/-1" }}><label style={lS2}>Refresh Token</label><input style={iS2} type="password" value={authConfig.refresh_token || ""} onChange={e => set("refresh_token", e.target.value)} /></div>
+      <p style={{ gridColumn: "1/-1", fontSize: 10, color: "#475569", margin: 0 }}>
+        Refresh-Token einmalig beim Anbieter holen. Access-Tokens werden automatisch erneuert; gibt der Anbieter dabei ein neues Refresh-Token aus, wird es hier gespeichert.
+      </p>
     </div>
   );
   if (authType === "oauth2_cc") return (
@@ -532,4 +546,5 @@ function RestApiPanel({ projectId, datasets, canEdit }) {
 const ACCESS_COLOR = "#f59e0b";
 
 
-export { RestApiPanel, RestSourceForm };
+export { RestApiPanel, RestSourceForm, KvEditor, AuthEditor, PaginationEditor,
+         REST_AUTH_TYPES, REST_PAG_TYPES, METHODS, BODY_TYPES, TEMPLATE_VARS };

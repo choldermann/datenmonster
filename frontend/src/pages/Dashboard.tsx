@@ -7,7 +7,7 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, Table, Trash2, Users, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -23,6 +23,7 @@ import NewTile from "../components/dashboard/shared/NewTile";
 import ExportsPanel from "../components/dashboard/panels/ExportsPanel";
 import { FtpPanel, FtpFormModal } from "../components/dashboard/panels/FtpPanel";
 import { RestApiPanel } from "../components/dashboard/panels/RestApiPanel";
+import ApiStudioPanel from "../components/dashboard/panels/ApiStudioPanel";
 import AccessImportPanel from "../components/dashboard/panels/AccessImportPanel";
 import PipelinesPanel from "../components/dashboard/panels/PipelinesPanel";
 import TemplatesPanel from "../components/dashboard/panels/TemplatesPanel";
@@ -235,6 +236,7 @@ export default function Dashboard() {
     { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasetsCount },
     { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: ftpCount },
     { id: "rest",        label: "REST API",        icon: Wifi,        badge: restCount },
+    { id: "api_studio",  label: "API Studio",      icon: Globe,       badge: 0 },
     { id: "templates",   label: "Templates",       icon: Package,     badge: templatesCount, dividerAfter: true },
     { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappingsCount },
     { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: pipelinesCount },
@@ -671,6 +673,9 @@ export default function Dashboard() {
         )}
         {tab === "ftp" && (
           <FtpPanel projectId={activeProject?.id ?? null} datasets={datasets} canEdit={canEdit} />
+        )}
+        {tab === "api_studio" && (
+          <ApiStudioPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
         )}
         {tab === "rest" && (
           <RestApiPanel projectId={activeProject?.id ?? null} datasets={datasets} canEdit={canEdit} />

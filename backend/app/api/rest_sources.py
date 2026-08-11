@@ -62,6 +62,10 @@ def _mask_auth(auth_config: dict) -> dict:
 class RestSourceCreate(BaseModel):
     name: str
     project_id: Optional[int] = None
+    collection_id: Optional[int] = None
+    description: Optional[str] = None
+    sort_order: int = 0
+    store_response: int = 0
     url: str
     method: str = "GET"
     headers: Optional[dict] = {}
@@ -111,6 +115,10 @@ def source_out(s: RestSource) -> dict:
         "id": s.id,
         "name": s.name,
         "project_id": s.project_id,
+        "collection_id": s.collection_id,
+        "description": s.description,
+        "sort_order": s.sort_order or 0,
+        "store_response": s.store_response or 0,
         "url": s.url,
         "method": s.method,
         "headers": s.headers or {},

@@ -22,12 +22,18 @@ class RestSource(Base):
     name         = Column(String,  nullable=False)
     project_id   = Column(Integer, nullable=True)
 
+    # ── API Studio ───────────────────────────────────────────────────────────
+    collection_id  = Column(Integer, nullable=True)           # Zugehörige ApiCollection
+    description    = Column(Text,    nullable=True)
+    sort_order     = Column(Integer, default=0)               # Reihenfolge in der Sammlung
+    store_response = Column(Integer, default=0)               # Antwortkörper im Verlauf ablegen
+
     # ── Request ──────────────────────────────────────────────────────────────
     url          = Column(String,  nullable=False)            # https://api.example.com/v1/orders
-    method       = Column(String,  default="GET")             # GET POST PUT PATCH
+    method       = Column(String,  default="GET")             # GET POST PUT PATCH DELETE HEAD OPTIONS
     headers      = Column(JSON,    default=dict)              # {"Authorization": "Bearer x", ...}
     query_params = Column(JSON,    default=dict)              # {"api_key": "x", "format": "json"}
-    body_type    = Column(String,  default="none")            # none | json | form | raw
+    body_type    = Column(String,  default="none")            # none | json | form | multipart | xml | raw
     body_content = Column(Text,    nullable=True)             # JSON-String oder Raw-Text
 
     # ── Auth ─────────────────────────────────────────────────────────────────

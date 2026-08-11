@@ -14,6 +14,7 @@ from app.models.scheduled_job import ScheduledJob, JobRun
 from app.models.export_file import ExportFile
 from app.models.ftp_source import FtpSource
 from app.models.rest_source import RestSource
+from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHistory
 from app.models.form import Form, FormSubmission
 from app.models.article_exclusion import ArticleExclusion
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
@@ -27,6 +28,7 @@ from app.api import events as events_api
 from app.api import db_write as db_write_api
 from app.api import eingangsrechnung as eingangsrechnung_api
 from app.api import intrastat as intrastat_api
+from app.api import api_studio as api_studio_api
 
 
 @asynccontextmanager
@@ -73,6 +75,11 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",
             "ALTER TABLE templates ADD COLUMN installations JSON DEFAULT '[]'",
+            # API Studio: Requests sind erweiterte rest_sources
+            "ALTER TABLE rest_sources ADD COLUMN collection_id INTEGER",
+            "ALTER TABLE rest_sources ADD COLUMN description TEXT",
+            "ALTER TABLE rest_sources ADD COLUMN sort_order INTEGER DEFAULT 0",
+            "ALTER TABLE rest_sources ADD COLUMN store_response INTEGER DEFAULT 0",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -394,6 +401,7 @@ app.include_router(events_api.router)
 app.include_router(db_write_api.router)
 app.include_router(eingangsrechnung_api.router)
 app.include_router(intrastat_api.router)
+app.include_router(api_studio_api.router)
 from app.api import forms as forms_api
 from app.api import portal as portal_api
 from app.api import web_proxy as web_proxy_api
