@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Send, Plus, Trash2, Pencil, Loader2, X, FolderOpen, Save, History,
   Globe, ChevronRight, ChevronDown, Layers, Check, AlertTriangle, Table2,
-  Sparkles, Bug, ShieldCheck, KeyRound, Workflow,
+  Sparkles, Bug, ShieldCheck, KeyRound, Workflow, FileJson,
 } from "lucide-react";
 import api from "../../../api/client";
 import {
@@ -430,6 +430,260 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
           disabled={!anzahl || speichert} onClick={uebernehmen}>
           {speichert ? "Übernehme…" : `${anzahl || ""} übernehmen`}
         </button>
+      </div>
+    </Dialog>
+  );
+}
+
+// ── OpenAPI-Import ────────────────────────────────────────────────────────────
+
+/**
+ * Aus einer OpenAPI-/Swagger-Beschreibung wird eine fertige Sammlung. Der
+ * Nutzer sieht erst alle Endpunkte und wählt aus – importiert wird nichts,
+ * was er nicht angekreuzt hat.
+ */
+function OpenApiDialog({ projectId, onFertig, onClose }) {
+  const [quelle, setQuelle] = useState("url");     // "url" | "text"
+  const [url, setUrl] = useState("");
+  const [text, setText] = useState("");
+  const [spec, setSpec] = useState(null);
+  const [laedt, setLaedt] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  const [gewaehlt, setGewaehlt] = useState({});
+  const [suche, setSuche] = useState("");
+  const [name, setName] = useState("");
+  const [mitUmgebung, setMitUmgebung] = useState(false);
+  const [werte, setWerte] = useState({});          // eingetragene Platzhalter-Werte
+  const [legtAn, setLegtAn] = useState(false);
+  const [erg, setErg] = useState(null);
+
+  const einlesen = async () => {
+    setLaedt(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/openapi/import`, {
+        url: quelle === "url" ? url : null,
+        inhalt: quelle === "text" ? text : null,
+        project_id: projectId ?? null,
+      });
+      setSpec(data);
+      setName(data.titel || "API");
+      setWerte({});
+      setGewaehlt({});
+    } catch (e) { setFehler(e.response?.data?.detail || "Einlesen fehlgeschlagen"); }
+    finally { setLaedt(false); }
+  };
+
+  const anlegen = async () => {
+    setLegtAn(true); setFehler("");
+    try {
+      const endpunkte = spec.endpunkte.filter(e => gewaehlt[e.id]);
+      const { data } = await api.post(`${BASE}/openapi/create-collection`, {
+        project_id: projectId ?? null, name,
+        basis_url: spec.basis_url, beschreibung: spec.beschreibung?.slice(0, 500),
+        auth_type: spec.auth_type, auth_config: spec.auth_config,
+        endpunkte, umgebung_anlegen: mitUmgebung,
+        umgebung_name: `${name} – Standard`, variablen,
+      });
+      setErg(data);
+      onFertig();
+    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    finally { setLegtAn(false); }
+  };
+
+  // Nach Tag gruppieren – so ist auch eine Datei mit 300 Endpunkten benutzbar.
+  const gruppen = useMemo(() => {
+    if (!spec) return [];
+    const suchbegriff = suche.trim().toLowerCase();
+    const gefiltert = spec.endpunkte.filter(e =>
+      !suchbegriff ||
+      e.pfad.toLowerCase().includes(suchbegriff) ||
+      (e.titel || "").toLowerCase().includes(suchbegriff));
+    const nach = {};
+    gefiltert.forEach(e => { (nach[e.tags?.[0] || "Allgemein"] ||= []).push(e); });
+    return Object.entries(nach).sort(([a], [b]) => a.localeCompare(b));
+  }, [spec, suche]);
+
+  /**
+   * Die vorgeschlagenen Platzhalter richten sich nach der Auswahl – eine Datei
+   * mit 300 Endpunkten brächte sonst Dutzende Variablen mit, die keiner der
+   * gewählten Requests je benutzt. Regel wie `platzhalter_sammeln` im Backend:
+   * Pfad-Parameter immer, Query/Header nur, wenn Pflicht und ohne Beispielwert.
+   */
+  const variablen = useMemo(() => {
+    if (!spec) return [];
+    const namen = new Map();
+    const merken = (p) => { if (!namen.has(p.name)) namen.set(p.name, p.beschreibung || ""); };
+    spec.endpunkte.filter(e => gewaehlt[e.id]).forEach(e => {
+      (e.pfad_parameter || []).forEach(merken);
+      [...(e.query_parameter || []), ...(e.header_parameter || [])]
+        .forEach(p => { if (p.pflicht && !p.beispiel) merken(p); });
+    });
+    return [...namen.entries()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, beschreibung]) => ({ key, value: werte[key] || "", secret: false, beschreibung }));
+  }, [spec, gewaehlt, werte]);
+
+  const anzahl = Object.values(gewaehlt).filter(Boolean).length;
+  const alleUmschalten = (an) => {
+    const neu = { ...gewaehlt };
+    gruppen.forEach(([, eps]) => eps.forEach(e => { neu[e.id] = an; }));
+    setGewaehlt(neu);
+  };
+
+  if (erg) return (
+    <Dialog titel="Import abgeschlossen" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
+          <Check size={13} style={{ color: "#6ee7b7" }} />
+          <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+            Sammlung <strong>{erg.sammlung.name}</strong> mit {erg.requests} Requests
+            {erg.umgebung ? ` und Umgebung „${erg.umgebung.name}"` : ""}
+          </span>
+        </div>
+        {erg.umgebung && (
+          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            Die Platzhalter in der Umgebung sind noch leer – dort die passenden Werte eintragen,
+            dann laufen die Requests.
+          </p>
+        )}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btnPrimary} onClick={onClose}>Schließen</button>
+      </div>
+    </Dialog>
+  );
+
+  return (
+    <Dialog titel="OpenAPI importieren" onClose={onClose} breit>
+      {!spec ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["url", "Von URL"], ["text", "Datei einfügen"]].map(([v, l]) => (
+              <button key={v} onClick={() => setQuelle(v)}
+                style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
+                  border: `1px solid ${quelle === v ? C : "rgba(255,255,255,0.1)"}`,
+                  backgroundColor: quelle === v ? `${C}18` : "transparent",
+                  color: quelle === v ? C : "#64748b" }}>{l}</button>
+            ))}
+          </div>
+          {quelle === "url" ? (
+            <div>
+              <label style={lS}>Adresse der Beschreibung</label>
+              <input style={iS} value={url} onChange={e => setUrl(e.target.value)} autoFocus
+                placeholder="https://api.example.com/openapi.json"
+                onKeyDown={e => { if (e.key === "Enter" && url) einlesen(); }} />
+              <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                Wird über denselben Netz-Schutz geladen wie jeder andere Request. JSON oder YAML, OpenAPI 3.x oder Swagger 2.0.
+              </p>
+            </div>
+          ) : (
+            <div>
+              <label style={lS}>Inhalt der Datei</label>
+              <textarea style={{ ...iS, minHeight: 200, fontFamily: "monospace", resize: "vertical" }}
+                value={text} onChange={e => setText(e.target.value)}
+                placeholder='{ "openapi": "3.0.0", … }  oder  openapi: 3.0.0' />
+            </div>
+          )}
+          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {/* Kopf der Beschreibung */}
+          <div style={{ padding: 10, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.03)" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 12, color: "#e2e8f0" }}>{spec.titel}</strong>
+              {spec.api_version && <span style={{ fontSize: 10, color: "#64748b" }}>v{spec.api_version}</span>}
+              <span style={{ fontSize: 9, color: "#64748b", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 3 }}>Spec {spec.version}</span>
+              {spec.auth_type !== "none" && (
+                <span style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.1)", padding: "1px 6px", borderRadius: 3 }}>{spec.auth_type}</span>
+              )}
+            </div>
+            <p style={{ fontSize: 10, color: "#64748b", margin: "4px 0 0", fontFamily: "monospace" }}>
+              {spec.basis_url || "— keine Basis-URL in der Datei —"}
+            </p>
+            {spec.abgeschnitten && (
+              <p style={{ fontSize: 10, color: "#fbbf24", margin: "4px 0 0" }}>
+                Sehr viele Endpunkte – es werden die ersten {spec.endpunkte.length} angezeigt.
+              </p>
+            )}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={lS}>Name der Sammlung</label>
+              <input style={iS} value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <input style={{ ...iS, width: 190 }} placeholder="Endpunkte durchsuchen…"
+              value={suche} onChange={e => setSuche(e.target.value)} />
+          </div>
+
+          {/* Endpunkte */}
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ ...lS, marginBottom: 0 }}>Endpunkte ({anzahl} gewählt)</span>
+              <button style={{ ...btn, padding: "2px 8px", fontSize: 10 }} onClick={() => alleUmschalten(true)}>alle</button>
+              <button style={{ ...btn, padding: "2px 8px", fontSize: 10 }} onClick={() => alleUmschalten(false)}>keine</button>
+            </div>
+            <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
+              {gruppen.length === 0 && <p style={{ fontSize: 11, color: "#475569", padding: 12, margin: 0 }}>Nichts gefunden.</p>}
+              {gruppen.map(([tag, eps]) => (
+                <div key={tag}>
+                  <div style={{ padding: "5px 10px", backgroundColor: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", position: "sticky", top: 0 }}>
+                    {tag}
+                  </div>
+                  {eps.map(e => (
+                    <label key={e.id} title={e.beschreibung || undefined}
+                      style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                      <input type="checkbox" checked={!!gewaehlt[e.id]}
+                        onChange={ev => setGewaehlt(g => ({ ...g, [e.id]: ev.target.checked }))} />
+                      <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "#94a3b8" }}>{e.methode}</span>
+                      <span style={{ fontSize: 11, fontFamily: "monospace", color: "#94a3b8", flexShrink: 0 }}>{e.pfad}</span>
+                      <span style={{ fontSize: 10, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
+                      {e.veraltet && <span style={{ fontSize: 9, color: "#f87171", flexShrink: 0, marginLeft: "auto" }}>veraltet</span>}
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Platzhalter */}
+          {variablen.length > 0 && (
+            <div style={{ padding: 12, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <Schalter an={mitUmgebung} onChange={setMitUmgebung}
+                label={`Umgebung mit ${variablen.length} Platzhaltern anlegen`}
+                hinweis="Pfad- und Pflichtparameter stehen in den Requests als {{name}} – hier lassen sich die Werte einmal zentral hinterlegen." />
+              {mitUmgebung && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10 }}>
+                  {variablen.map(v => (
+                    <div key={v.key} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <code style={{ fontSize: 10, fontFamily: "monospace", color: C, width: 130, flexShrink: 0 }}>{`{{${v.key}}}`}</code>
+                      <input style={{ ...iS, fontSize: 11, padding: "3px 6px" }} placeholder={v.beschreibung || "Wert"}
+                        value={v.value} onChange={e => setWerte(p => ({ ...p, [v.key]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btn} onClick={onClose}>Abbrechen</button>
+        {!spec ? (
+          <button style={{ ...btnPrimary, opacity: laedt || (quelle === "url" ? !url : !text) ? 0.5 : 1 }}
+            disabled={laedt || (quelle === "url" ? !url : !text)} onClick={einlesen}>
+            {laedt ? "Wird gelesen…" : "Einlesen"}
+          </button>
+        ) : (
+          <button style={{ ...btnPrimary, opacity: !anzahl || !name || legtAn ? 0.5 : 1 }}
+            disabled={!anzahl || !name || legtAn} onClick={anlegen}>
+            {legtAn ? "Wird angelegt…" : `${anzahl} übernehmen`}
+          </button>
+        )}
       </div>
     </Dialog>
   );
@@ -1007,6 +1261,12 @@ function ApiStudioPanel({ projectId, canEdit }) {
     setAktiveId(r.id);
     setF({ ...LEER_REQUEST, ...r, auth_config: r.auth_config || {}, body_content: r.body_content || "" });
     setAntwort(null); setFehler("");
+    // Hat der Request eine Umgebung hinterlegt, gilt sie auch hier. Sonst legt
+    // etwa der OpenAPI-Import eine Umgebung an, und der Nutzer sähe trotzdem
+    // „Ohne Umgebung" – seine {{platzhalter}} blieben beim Senden stehen.
+    if (r.environment_id && umgebungen.some(u => u.id === r.environment_id)) {
+      setEnvId(r.environment_id);
+    }
   };
 
   const neuerRequest = (collectionId = null) => {
@@ -1094,6 +1354,30 @@ function ApiStudioPanel({ projectId, canEdit }) {
   const envVars = umgebungen.find(u => u.id === envId)?.variables || [];
   const alleVars = [...envVars.map(v => `{{${v.key}}}`), ...TEMPLATE_VARS];
 
+  /**
+   * Platzhalter, für die es keinen Wert gibt. Ohne diesen Hinweis geht die
+   * Anfrage mit dem Platzhalter im Klartext hinaus, und die API antwortet mit
+   * einer Fehlermeldung, die nach einem Fehler der API aussieht – tatsächlich
+   * fehlt nur eine Umgebung. Eine leer gelassene Variable zählt mit: sie würde
+   * gegen einen leeren Text ersetzt und die URL genauso unbrauchbar machen.
+   */
+  const offenePlatzhalter = useMemo(() => {
+    const bekannt = new Set([
+      ...TEMPLATE_VARS.map(v => v.replace(/[{}]/g, "")),
+      ...envVars.filter(v => v.value !== "" && v.value != null).map(v => v.key),
+    ]);
+    const texte = [f.url, f.body_content,
+      ...Object.values(f.query_params || {}), ...Object.values(f.headers || {})];
+    const offen = new Set();
+    texte.forEach(t => {
+      String(t || "").replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_, name) => {
+        if (!bekannt.has(name)) offen.add(name);
+        return "";
+      });
+    });
+    return [...offen];
+  }, [f.url, f.body_content, f.query_params, f.headers, envVars]);
+
   const REITER = [
     { id: "params", l: `Params${Object.keys(f.query_params || {}).length ? ` (${Object.keys(f.query_params).length})` : ""}` },
     { id: "headers", l: `Headers${Object.keys(f.headers || {}).length ? ` (${Object.keys(f.headers).length})` : ""}` },
@@ -1141,6 +1425,13 @@ function ApiStudioPanel({ projectId, canEdit }) {
                 <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Request
               </button>
             </div>
+          )}
+          {canEdit && (
+            <button style={{ ...btn, width: "100%", padding: "5px 8px", fontSize: 11, marginBottom: 10,
+                             display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
+              onClick={() => setDialog("openapi")}>
+              <FileJson size={11} /> OpenAPI importieren
+            </button>
           )}
 
           {sammlungen.length === 0 && requests.length === 0 && (
@@ -1238,6 +1529,29 @@ function ApiStudioPanel({ projectId, canEdit }) {
                 </button>
               )}
             </div>
+
+            {offenePlatzhalter.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8, padding: "6px 10px", borderRadius: 6, backgroundColor: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.2)" }}>
+                <AlertTriangle size={12} style={{ color: "#fbbf24", flexShrink: 0 }} />
+                <span style={{ fontSize: 11, color: "#e2e8f0" }}>
+                  Ohne Wert: {offenePlatzhalter.map(n => (
+                    <code key={n} style={{ fontFamily: "monospace", color: "#fbbf24", marginRight: 6 }}>{`{{${n}}}`}</code>
+                  ))}
+                  <span style={{ color: "#64748b" }}>
+                    – so geht der Platzhalter wörtlich an die API.
+                    {umgebungen.length === 0
+                      ? " Dafür braucht es eine Umgebung."
+                      : envId === null ? " Oben rechts eine Umgebung wählen." : ""}
+                  </span>
+                </span>
+                {canEdit && (
+                  <button onClick={() => setDialog(umgebungen.length === 0 ? "umgebung" : "variablen")}
+                    style={{ ...btn, marginLeft: "auto", padding: "3px 10px", fontSize: 10, flexShrink: 0 }}>
+                    {umgebungen.length === 0 ? "Umgebung anlegen" : "Werte hinterlegen"}
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Reiter */}
             <div style={{ display: "flex", gap: 2, marginTop: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
@@ -1363,6 +1677,10 @@ function ApiStudioPanel({ projectId, canEdit }) {
       {dialog === "umgebung" && (
         <UmgebungsDialog umgebungen={umgebungen} projectId={projectId}
           onChanged={laden} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "openapi" && (
+        <OpenApiDialog projectId={projectId}
+          onFertig={laden} onClose={() => setDialog(null)} />
       )}
       {dialog === "integration" && antwort && (
         <IntegrationDialog

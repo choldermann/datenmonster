@@ -28,6 +28,10 @@ from app.api.projects import require_editor, can_read_project, get_accessible_pr
 from app.services.rest_service import (
     execute_request, join_url, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
 )
+from app.core.net_guard import guarded_request
+from app.services.openapi_import import (
+    lade_spec, parse_spec, request_aus_endpunkt, platzhalter_sammeln,
+)
 from app.services.api_studio_analyse import analysiere, redigiere, variablen_vorschlaege
 from app.services.ai_service import build_ai_service
 
@@ -1087,3 +1091,128 @@ def integration_create(
         angelegt["pipeline"] = {"id": p.id, "name": p.name, "cron": payload.cron}
 
     return angelegt
+
+
+# ══ OpenAPI-Import ════════════════════════════════════════════════════════════
+#
+# Aus einer Beschreibungsdatei wird eine Sammlung mit fertigen Requests. Die
+# Datei wird über den Egress-Guard geholt (keine Umgehung des SSRF-Schutzes),
+# und $ref-Verweise werden nur innerhalb des Dokuments aufgelöst.
+
+MAX_SPEC_BYTES = 8 * 1024 * 1024
+
+
+class OpenApiImportIn(BaseModel):
+    url: Optional[str] = None
+    inhalt: Optional[str] = None       # eingefügte oder hochgeladene Datei
+    project_id: Optional[int] = None
+
+
+class OpenApiCollectionIn(BaseModel):
+    project_id: Optional[int] = None
+    name: str
+    basis_url: Optional[str] = None
+    beschreibung: Optional[str] = None
+    auth_type: str = "none"
+    auth_config: Optional[dict] = {}
+    endpunkte: List[dict] = []          # die vom Nutzer gewählten Endpunkte
+    umgebung_anlegen: bool = False
+    umgebung_name: Optional[str] = None
+    variablen: List[dict] = []
+
+
+@router.post("/openapi/import")
+def openapi_import(
+    payload: OpenApiImportIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Eine OpenAPI-/Swagger-Datei einlesen und als Sammlungs-Vorschlag zurückgeben.
+    Es wird noch nichts gespeichert – der Nutzer wählt erst die Endpunkte aus.
+    """
+    _check_read(payload.project_id, user, db)
+
+    inhalt = payload.inhalt
+    if not inhalt:
+        if not payload.url:
+            raise HTTPException(400, "Weder URL noch Dateiinhalt übergeben")
+        try:
+            import requests as _requests
+            sitzung = _requests.Session()
+            resp = guarded_request(sitzung, "GET", payload.url, timeout=30)
+            resp.raise_for_status()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(502, f"Datei konnte nicht geladen werden: {str(e)[:250]}")
+        if len(resp.content or b"") > MAX_SPEC_BYTES:
+            raise HTTPException(413, "Die Beschreibung ist größer als 8 MB")
+        inhalt = resp.text
+
+    if len(inhalt) > MAX_SPEC_BYTES:
+        raise HTTPException(413, "Die Beschreibung ist größer als 8 MB")
+
+    try:
+        ergebnis = parse_spec(lade_spec(inhalt), payload.url)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    ergebnis["variablen_vorschlag"] = platzhalter_sammeln(ergebnis["endpunkte"])
+    return ergebnis
+
+
+@router.post("/openapi/create-collection")
+def openapi_create_collection(
+    payload: OpenApiCollectionIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Sammlung, Requests und optional eine Umgebung aus dem Import anlegen."""
+    _check_write(payload.project_id, user, db)
+    if not payload.endpunkte:
+        raise HTTPException(400, "Keine Endpunkte ausgewählt")
+
+    sammlung = ApiCollection(
+        name=payload.name,
+        project_id=payload.project_id,
+        description=payload.beschreibung,
+        base_url=payload.basis_url,
+        default_headers={"Accept": "application/json"},
+        auth_type=payload.auth_type or "none",
+        auth_config=_encrypt_auth(payload.auth_config or {}),
+    )
+    db.add(sammlung); db.commit(); db.refresh(sammlung)
+
+    umgebung = None
+    if payload.umgebung_anlegen and payload.variablen:
+        umgebung = ApiEnvironment(
+            name=payload.umgebung_name or "Standard",
+            project_id=payload.project_id,
+            collection_id=sammlung.id,
+            variables=_encrypt_variables(payload.variablen),
+        )
+        db.add(umgebung); db.commit(); db.refresh(umgebung)
+
+    angelegt = []
+    for i, ep in enumerate(payload.endpunkte):
+        felder = request_aus_endpunkt(ep)
+        s = RestSource(
+            project_id=payload.project_id,
+            collection_id=sammlung.id,
+            environment_id=umgebung.id if umgebung else None,
+            sort_order=i,
+            pagination={"type": "none"},
+            dataset_mode="replace",
+            active=1,
+            **felder,
+        )
+        db.add(s)
+        angelegt.append(s)
+    db.commit()
+
+    return {
+        "sammlung": collection_out(sammlung),
+        "umgebung": environment_out(umgebung) if umgebung else None,
+        "requests": len(angelegt),
+    }
