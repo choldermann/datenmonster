@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw, Globe,
-  FileText } from "lucide-react";
+  FileText, Upload } from "lucide-react";
 import api from "../../api/client";
 import { streamRequest } from "../../services/aiService";
 import { alsText } from "../../utils/html";
@@ -139,6 +139,42 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
     } catch { /* Zwischenablage nicht verfügbar – Text lässt sich markieren */ }
   };
 
+  // ── Übernahme in die Wawi (nur Beschreibung) ──────────────────────────────
+  // Zwei Schritte: erst Vorschau (was würde ersetzt), dann ausdrücklich schreiben.
+  const [uebernahme, setUebernahme] = useState(null);   // {plan} | {fertig, plan}
+  const [uebernahmeLaeuft, setUebernahmeLaeuft] = useState(false);
+  const [uebernahmeFehler, setUebernahmeFehler] = useState("");
+
+  const aenderung = () => [{
+    kArtikel: keyValue, feld: "Beschreibung", wert: text,
+    // Der vorhandene Text ist ja gerade der dürftige – Ersetzen ist hier der Zweck.
+    ersetzen: true,
+    quelle: meta?.research?.url ? `KI + ${meta.research.url}` : "KI-Vorschlag",
+  }];
+
+  const uebernahmeVorschau = async () => {
+    setUebernahmeLaeuft(true); setUebernahmeFehler(""); setUebernahme(null);
+    try {
+      const { data } = await api.post("/api/stammdaten/plan",
+        { mapping_id: factsMapping, aenderungen: aenderung() });
+      setUebernahme({ plan: data });
+    } catch (e) {
+      setUebernahmeFehler(e.response?.data?.detail || e.message);
+    } finally { setUebernahmeLaeuft(false); }
+  };
+
+  const uebernahmeSchreiben = async () => {
+    setUebernahmeLaeuft(true); setUebernahmeFehler("");
+    try {
+      const { data } = await api.post("/api/stammdaten/write", {
+        mapping_id: factsMapping, aenderungen: aenderung(), bestaetigt: true,
+      });
+      setUebernahme({ plan: data, fertig: true });
+    } catch (e) {
+      setUebernahmeFehler(e.response?.data?.detail || e.message);
+    } finally { setUebernahmeLaeuft(false); }
+  };
+
   // Hervorgehobene Kennzahl (rechts oben): Wahrscheinlichkeit bzw. Kapitalfreisetzung.
   const primary = kind === "customer_winback"
     ? (meta?.probability != null ? { val: `${meta.probability} %`, cap: "Rückgewinnung" } : null)
@@ -159,6 +195,10 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
   // Nachschlagen geht nur mit Hersteller UND dessen Artikelnummer – ob es für den
   // Hersteller einen Adapter gibt, entscheidet der Server und meldet es zurück.
   const kannRecherchieren = istBeschreibung && !!row?.Hersteller && !!row?.HAN;
+  // Zurückschreiben geht nur, wenn der Schlüssel wirklich ein Artikel ist und ein
+  // Mapping vorliegt, aus dem sich die Wawi-Verbindung ableiten lässt.
+  const kannUebernehmen = istBeschreibung && keyParam === "kArtikel"
+    && !!factsMapping && !!keyValue;
 
   return (
     <div onClick={onClose}
@@ -323,8 +363,80 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                           fontSize: 12, fontWeight: 600 }}>
                         <RefreshCw size={12} /> Neu erzeugen
                       </button>
+                      {kannUebernehmen && !uebernahme?.fertig && (
+                        <button onClick={uebernahmeVorschau} disabled={uebernahmeLaeuft}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
+                            borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
+                            border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                            cursor: uebernahmeLaeuft ? "wait" : "pointer",
+                            fontSize: 12, fontWeight: 700 }}>
+                          {uebernahmeLaeuft ? <Loader2 size={12} className="animate-spin" />
+                            : <Upload size={12} />}
+                          In die Wawi übernehmen
+                        </button>
+                      )}
                     </div>
                   )}
+
+                  {uebernahmeFehler && (
+                    <p style={{ fontSize: 11.5, color: "#e07070", margin: "10px 0 0" }}>
+                      {uebernahmeFehler}
+                    </p>
+                  )}
+
+                  {uebernahme && (() => {
+                    const z = (uebernahme.plan.aenderungen || [])[0] || {};
+                    const alt = String(z.alt ?? "").trim();
+                    if (uebernahme.fertig) {
+                      const ok = z.status === "geschrieben";
+                      return (
+                        <p style={{ fontSize: 12, margin: "10px 0 0", lineHeight: 1.6,
+                          color: ok ? "#6ee7b7" : "#e07070" }}>
+                          {ok ? "✓ Beschreibung wurde in die Wawi geschrieben. "
+                              + "Die Wawi-Oberfläche zeigt sie nach dem nächsten Öffnen des Artikels."
+                            : `Nicht geschrieben: ${z.hinweis || uebernahme.plan.errors?.join(" · ")
+                              || "unbekannter Grund"}`}
+                        </p>
+                      );
+                    }
+                    return (
+                      <div style={{ marginTop: 10, padding: "10px 12px", borderRadius: 7,
+                        backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+                        <p style={{ fontSize: 12, color: S.textMain, margin: 0, lineHeight: 1.6 }}>
+                          {z.status === "bereit"
+                            ? <>Geschrieben wird in <code style={{ color: S.textBright }}>
+                                {z.tabelle}.{z.spalte}</code> des Artikels{" "}
+                                <strong style={{ color: S.textBright }}>{z.ArtNr}</strong>.{" "}
+                                {alt ? <>Der bisherige Text ({alt.length} Zeichen) wird{" "}
+                                  <strong style={{ color: S.textBright }}>ersetzt</strong>.</>
+                                     : "Bisher ist dort nichts hinterlegt."}</>
+                            : <span style={{ color: "#e07070" }}>
+                                {z.hinweis || uebernahme.plan.errors?.join(" · ")
+                                  || "Der Wert lässt sich nicht schreiben."}</span>}
+                        </p>
+                        {z.status === "bereit" && (
+                          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                            <button onClick={uebernahmeSchreiben} disabled={uebernahmeLaeuft}
+                              style={{ display: "flex", alignItems: "center", gap: 6,
+                                padding: "7px 13px", borderRadius: 6, backgroundColor: "#6ee7b7",
+                                border: "none", color: "#111",
+                                cursor: uebernahmeLaeuft ? "wait" : "pointer",
+                                fontSize: 12, fontWeight: 700 }}>
+                              {uebernahmeLaeuft ? <Loader2 size={12} className="animate-spin" />
+                                : <Check size={12} />}
+                              Jetzt schreiben
+                            </button>
+                            <button onClick={() => setUebernahme(null)}
+                              style={{ padding: "7px 13px", borderRadius: 6,
+                                backgroundColor: "transparent", border: `1px solid ${S.border}`,
+                                color: S.textDim, cursor: "pointer", fontSize: 12 }}>
+                              Abbrechen
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               ) : (
                 <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>

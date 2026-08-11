@@ -293,8 +293,13 @@ class ArtikelWriter:
     def build_plan(self, aenderungen: list[dict], dry_run: bool = True,
                    ersetzen: bool = False) -> ArtikelWritePlan:
         """
-        aenderungen: [{kArtikel, feld, wert, quelle}]
+        aenderungen: [{kArtikel, feld, wert, quelle, ersetzen?}]
         ersetzen=False (Grundfall): bereits gefüllte Felder werden NICHT überschrieben.
+
+        Je Änderung darf `ersetzen` den Grundfall aufheben. Das ist nötig, weil die
+        Felder verschieden gemeint sind: eine vorhandene EAN überschreibt man nie
+        versehentlich, ein dürftiger Beschreibungstext soll dagegen genau ersetzt
+        werden. Ein Stapel darf deshalb beides enthalten.
         """
         plan = ArtikelWritePlan(dry_run=dry_run)
 
@@ -381,10 +386,14 @@ class ArtikelWriter:
                     eintrag["status"] = "unveraendert"
                     eintrag["hinweis"] = "steht schon so in der Wawi"
                     continue
-                if belegt and not ersetzen:
+                darf_ersetzen = ersetzen if a.get("ersetzen") is None else bool(a["ersetzen"])
+                if belegt and not darf_ersetzen:
                     eintrag["status"] = "belegt"
                     eintrag["hinweis"] = f"steht bereits auf '{alt}' – nicht überschrieben"
                     continue
+                if belegt:
+                    eintrag["hinweis"] = (eintrag["hinweis"] + " · " if eintrag["hinweis"] else "") \
+                        + f"überschreibt '{str(alt)[:60]}'"
 
                 if feld == "EAN":
                     if wert in doppelt_im_stapel:

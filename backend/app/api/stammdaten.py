@@ -41,6 +41,9 @@ class Aenderung(BaseModel):
     feld: str
     wert: Any = None
     quelle: Optional[str] = None
+    # Hebt `ersetzen` des Stapels für genau diesen Wert auf (None = Stapel gilt).
+    # Gedacht für die Beschreibung: dort ist Überschreiben der Zweck der Übung.
+    ersetzen: Optional[bool] = None
 
 
 class PlanRequest(BaseModel):

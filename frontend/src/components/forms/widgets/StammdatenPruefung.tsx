@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Loader2, Search, ExternalLink, AlertCircle, ShieldCheck, ShieldAlert,
-  ShieldX, Eye, ChevronDown, ChevronRight } from "lucide-react";
+  ShieldX, Eye, ChevronDown, ChevronRight, Check, Upload, AlertTriangle } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
@@ -41,9 +41,11 @@ const STATUS_TEXT = {
   kollision:     ["übersprungen (zwischenzeitlich geändert)", ROT],
 };
 
-/** Ergebnis eines Dry-Runs: was würde in der Wawi passieren. */
-function PlanVorschau({ plan }) {
+/** Ergebnis eines Dry-Runs bzw. eines Schreibvorgangs. */
+function PlanVorschau({ plan, onSchreiben, schreibt }) {
   const [sqlOffen, setSqlOffen] = useState(false);
+  const [bestaetigen, setBestaetigen] = useState(false);
+  const geschrieben = plan.dry_run === false;
   const th = { textAlign: "left", padding: "6px 9px", fontSize: 10, fontWeight: 700,
     color: S.textDim, textTransform: "uppercase", borderBottom: `1px solid ${S.border}` };
   const td = { padding: "6px 9px", fontSize: 12, color: S.textMain,
@@ -53,16 +55,29 @@ function PlanVorschau({ plan }) {
     <div style={{ marginTop: 14, borderRadius: 9, border: `1px solid ${S.border}`,
       backgroundColor: S.bgEl, padding: 14 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
-        <Eye size={15} style={{ color: ACCENT }} />
+        {geschrieben ? <Check size={15} style={{ color: GRUEN }} />
+                     : <Eye size={15} style={{ color: ACCENT }} />}
         <p style={{ fontSize: 13.5, fontWeight: 800, color: S.textBright, margin: 0 }}>
-          Vorschau — es wurde nichts geschrieben
+          {geschrieben ? "In die Wawi geschrieben"
+                       : "Vorschau — es wurde nichts geschrieben"}
         </p>
       </div>
       <p style={{ fontSize: 12, color: S.textMain, margin: "0 0 10px", lineHeight: 1.6 }}>
-        <strong style={{ color: S.textBright }}>{plan.anzahl_bereit}</strong> Werte in{" "}
-        <strong style={{ color: S.textBright }}>{plan.anzahl_artikel}</strong> Artikeln wären
-        schreibbar. Die Vorschau liest die aktuellen Werte direkt aus der Wawi — schon gefüllte
-        Felder werden nicht überschrieben.
+        {geschrieben ? (
+          <>
+            <strong style={{ color: GRUEN }}>{plan.geschrieben}</strong> Werte wurden
+            geschrieben{plan.uebersprungen ? <>, <strong style={{ color: S.textBright }}>
+              {plan.uebersprungen}</strong> übersprungen</> : null}. Die Wawi-Oberfläche zeigt
+            die Änderung, sobald der Artikel neu geöffnet wird.
+          </>
+        ) : (
+          <>
+            <strong style={{ color: S.textBright }}>{plan.anzahl_bereit}</strong> Werte in{" "}
+            <strong style={{ color: S.textBright }}>{plan.anzahl_artikel}</strong> Artikeln wären
+            schreibbar. Die Vorschau liest die aktuellen Werte direkt aus der Wawi — schon gefüllte
+            Felder werden nicht überschrieben.
+          </>
+        )}
       </p>
 
       {plan.errors?.map((e, i) => (
@@ -101,6 +116,55 @@ function PlanVorschau({ plan }) {
         </table>
       </div>
 
+      {/* Schreiben ist der einzige Schritt, der die Wawi verändert – deshalb
+          zweistufig und mit klarer Ansage, was gleich passiert. */}
+      {!geschrieben && plan.anzahl_bereit > 0 && onSchreiben && (
+        <div style={{ marginTop: 12 }}>
+          {!bestaetigen ? (
+            <button onClick={() => setBestaetigen(true)}
+              style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px",
+                borderRadius: 7, backgroundColor: "rgba(110,231,183,0.12)",
+                border: `1px solid ${GRUEN}66`, color: GRUEN, cursor: "pointer",
+                fontSize: 12.5, fontWeight: 700 }}>
+              <Upload size={14} /> {plan.anzahl_bereit} Werte in die Wawi schreiben
+            </button>
+          ) : (
+            <div style={{ padding: "12px 14px", borderRadius: 8,
+              backgroundColor: "rgba(224,112,112,0.07)", border: `1px solid ${ROT}55` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <AlertTriangle size={15} style={{ color: ROT }} />
+                <p style={{ fontSize: 13, fontWeight: 800, color: S.textBright, margin: 0 }}>
+                  Wirklich in die Wawi schreiben?
+                </p>
+              </div>
+              <p style={{ fontSize: 12, color: S.textMain, margin: "0 0 10px", lineHeight: 1.6 }}>
+                {plan.anzahl_bereit} Werte in {plan.anzahl_artikel} Artikeln werden in der
+                Warenwirtschaft gespeichert. Vor dem Schreiben wird die Vorschau noch einmal
+                frisch gebaut; Artikel, die inzwischen jemand anders geändert hat, werden
+                übersprungen statt überschrieben. <strong style={{ color: S.textBright }}>
+                Rückgängig machen lässt sich das nicht.</strong>
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={onSchreiben} disabled={schreibt}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
+                    borderRadius: 6, backgroundColor: GRUEN, border: "none", color: "#111",
+                    cursor: schreibt ? "wait" : "pointer", fontSize: 12, fontWeight: 700 }}>
+                  {schreibt ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} />
+                    : <Check size={13} />}
+                  Ja, jetzt schreiben
+                </button>
+                <button onClick={() => setBestaetigen(false)}
+                  style={{ padding: "8px 14px", borderRadius: 6, backgroundColor: "transparent",
+                    border: `1px solid ${S.border}`, color: S.textDim, cursor: "pointer",
+                    fontSize: 12 }}>
+                  Abbrechen
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {plan.statements?.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <button onClick={() => setSqlOffen(o => !o)}
@@ -124,9 +188,10 @@ function PlanVorschau({ plan }) {
  * Fehlende Stammdaten eines Herstellers stapelweise beim Hersteller nachschlagen
  * und je Wert einen Sicherheitsgrad anzeigen (Quelle: services/stammdaten_research.py).
  *
- * Zwei Stufen, absichtlich getrennt: erst prüfen und auswählen, dann Vorschau.
- * Geschrieben wird an dieser Stelle nichts — der Schreibweg (/api/stammdaten/write)
- * ist bewusst noch nicht verdrahtet.
+ * Drei Stufen, absichtlich getrennt: prüfen und auswählen → Vorschau (nichts
+ * passiert) → ausdrücklich schreiben. Der Schreibvorgang baut serverseitig noch
+ * einmal eine frische Vorschau; zwischenzeitlich geänderte Artikel werden
+ * übersprungen statt überschrieben (bRowversion).
  */
 export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
   const [laeuft, setLaeuft] = useState(false);
@@ -138,6 +203,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
   const [gewaehlt, setGewaehlt] = useState({});   // "kArtikel|Feld" → gewählter Wert
   const [plan, setPlan] = useState(null);
   const [planLaeuft, setPlanLaeuft] = useState(false);
+  const [schreibt, setSchreibt] = useState(false);
 
   const schluessel = (z) => `${z.kArtikel}|${z.feld}`;
   const istGewaehlt = (z) => gewaehlt[schluessel(z)] === z.wert;
@@ -190,6 +256,31 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
     } finally { setPlanLaeuft(false); }
+  };
+
+  const schreiben = async () => {
+    setSchreibt(true); setFehler("");
+    try {
+      const { data } = await api.post("/api/stammdaten/write", {
+        mapping_id: mappingId,
+        aenderungen: auswahl.map(z => ({ kArtikel: z.kArtikel, feld: z.feld,
+          wert: z.wert, quelle: z.quelle })),
+        bestaetigt: true,
+        // Ein einzelner ungültiger Wert soll den Rest des Stapels nicht aufhalten;
+        // die übersprungenen Zeilen stehen samt Grund im Ergebnis.
+        ueberspringe_fehler: true,
+      });
+      setPlan(data);
+      // Geschriebene Werte nicht erneut anbieten – sonst schreibt man sie zweimal.
+      const fertig = new Set((data.aenderungen || [])
+        .filter(a => a.status === "geschrieben")
+        .map(a => `${a.kArtikel}|${a.feld}`));
+      setZeilen(z => z.filter(x => !fertig.has(schluessel(x))));
+      setGewaehlt(g => Object.fromEntries(
+        Object.entries(g).filter(([k]) => !fertig.has(k))));
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally { setSchreibt(false); }
   };
 
   const th = { textAlign: "left", padding: "7px 9px", fontSize: 10, fontWeight: 700,
@@ -340,7 +431,8 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
         </div>
       )}
 
-      {plan && <PlanVorschau plan={plan} />}
+      {plan && <PlanVorschau plan={plan} schreibt={schreibt}
+        onSchreiben={plan.dry_run === false ? null : schreiben} />}
     </div>
   );
 }
