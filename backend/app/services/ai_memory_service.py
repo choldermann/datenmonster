@@ -15,8 +15,16 @@ from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCo
 
 log = logging.getLogger("datenmonster")
 
-# Maximale Kontext-Einträge pro Kategorie (klein halten für lokale Modelle)
-MAX_KNOWLEDGE   = 20
+# Maximale Kontext-Einträge pro Kategorie (klein halten für lokale Modelle).
+#
+# ACHTUNG beim Verkleinern: Die Auswahl sortiert nach use_count, und der ist bei
+# gepflegtem Wissen fast immer 0 – es gewinnen dann faktisch die ältesten
+# Einträge. Ein zu niedriges Limit wirft neu eingepflegtes Wissen also still
+# weg, ohne dass es irgendwo auffällt. Der Wert muss zur Größe der kuratierten
+# Wissensdatenbank passen (derzeit 41 globale Einträge, ~4.700 Tokens); wer
+# Kontext sparen will, schaltet einzelne Einträge über `enabled` ab, statt hier
+# zu kürzen.
+MAX_KNOWLEDGE   = 60
 MAX_SOLUTIONS   = 5
 MAX_CORRECTIONS = 3
 

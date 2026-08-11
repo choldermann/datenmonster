@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Trägt die beim Bau der Template-Serie (Vertrieb, Einkauf, Versand, Health-Check)
-gegen die echte JTL-DB verifizierten Erkenntnisse in die KI-Wissensdatenbank ein.
-Upsert nach Titel – wiederholter Lauf aktualisiert, statt zu doppeln."""
+"""Trägt die beim Bau der Template-Serie (Vertrieb, Einkauf, Versand, Health-Check,
+Lager) gegen die echte JTL-DB verifizierten Erkenntnisse in die KI-Wissensdatenbank
+ein. Upsert nach Titel – wiederholter Lauf aktualisiert, statt zu doppeln."""
 import sys
 sys.path.insert(0, "/app")
 from app.core.database import SessionLocal
@@ -165,6 +165,104 @@ EINTRAEGE = [
      "'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer "
      "{'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe "
      "hart auf 50 Zeilen — für vollständige Listen row_cap übergeben."),
+
+    # ── Lager: Bestandshistorie ─────────────────────────────────────────────
+    ("table", "JTL – Bestandshistorie liegt in dbo.vArtikelHistorie",
+     "Die Lagerbewegungen stehen in der View dbo.vArtikelHistorie. Eine Tabelle "
+     "dbo.tLagerbewegung gibt es NICHT – wer danach sucht, hält die Bestandshistorie "
+     "fälschlich für nicht vorhanden. Spalten: dGebucht, cTyp (Eingang/Ausgang), kArtikel, "
+     "fAnzahl (VORZEICHENBEHAFTET, Ausgang negativ), cBuchungsart/kBuchungsart, "
+     "fLagerBestandGesamt (laufender Bestand nach der Buchung), fLagerBestandPlatz, "
+     "kWarenLagerPlatz, fEKNetto (EK zum Buchungszeitpunkt), kBenutzer, cChargenNr, dMHD "
+     "sowie die Verknüpfungen kAuftragPos, kLieferscheinPos, kLieferantenBestellungPos, "
+     "kWarenLagerEingang, cLieferscheinNr."),
+
+    ("rule", "JTL – Bestand zu einem Stichtag rekonstruieren",
+     "Bestand(Stichtag) = SUM(fAnzahl) aus dbo.vArtikelHistorie WHERE dGebucht < "
+     "DATEADD(DAY,1,:stichtag), gruppiert je kArtikel. Gegen die echte DB geprüft: das "
+     "Ergebnis deckt sich bei 2817 von 2817 aktiven Artikeln exakt mit "
+     "dbo.tlagerbestand.fLagerbestand (Toleranz 0,01). Damit sind Stichtagsbewertung, "
+     "Lagerwertverlauf und Umschlag aus echten Warenausgängen möglich. Für eine Monatskurve "
+     "die Stichtage als kleine Monats-CTE erzeugen und per CROSS APPLY je Stichtag "
+     "aggregieren – 12 Stichtage laufen in rund zwei Sekunden."),
+
+    ("rule", "JTL – Lagerbewertung zum historischen Einkaufspreis",
+     "Für stichtagsfeste Zahlen NICHT mit tArtikel.fEKNetto rechnen (der ändert rückwirkend "
+     "die Vergangenheit), sondern mit dem historischen EK: für BESTÄNDE der fEKNetto der "
+     "letzten Eingangsbuchung bis zum Stichtag (ROW_NUMBER() OVER (PARTITION BY kArtikel "
+     "ORDER BY dGebucht DESC) über cTyp='Eingang' AND fEKNetto>0), für BEWEGUNGEN der "
+     "fEKNetto der Buchungszeile selbst. Fallback nur, wenn nie ein EK gebucht wurde: "
+     "COALESCE(hist.fEKNetto, A.fEKNetto, 0) – und die Zahl der Fallback-Fälle als eigene "
+     "Kennzahl ausweisen. fEKNetto ist auf 98–99 % der Zeilen gefüllt. Größenordnung des "
+     "Unterschieds an der Prüf-DB: 862 T€ historisch gegen 840 T€ mit heutigem EK."),
+
+    ("fact", "JTL – Buchungsarten der Bestandshistorie",
+     "cBuchungsart in dbo.vArtikelHistorie: Warenausgang und Wareneingang (die Masse), "
+     "Korrekturbuchung, Lagerumbuchung, 'JTL-Ameise Import', Inventurdifferenzbuchung, "
+     "Retouren, Sonstige. Korrekturbuchung und Inventurdifferenzbuchung sind GETRENNTE "
+     "Arten – für Schwund/Inventur beide zusammen auswerten. Lagerumbuchungen erzeugen je "
+     "eine Ein- und eine Ausgangszeile, die sich in der Summe exakt aufheben; sie "
+     "verfälschen den Bestand also nicht, sind aber aus Bewegungsanalysen auszuschließen. "
+     "Ein dauerhaft negativer Korrektursaldo ist ein Hinweis auf Schwund oder Pflegefehler, "
+     "keine Buchungsgröße für die Buchhaltung."),
+
+    ("field_mapping", "JTL – Bestand je Warenlager",
+     "Ein Lagerbezug fehlt in dbo.tlagerbestand (dort steht der Bestand nur je Artikel). Je "
+     "Lager geht es über die Historie: dbo.vArtikelHistorie.kWarenLagerPlatz → "
+     "dbo.tWarenLagerPlatz.kWarenLager → dbo.tWarenLager.cName. In der Praxis liegt fast "
+     "alles im 'Standardlager', daneben existieren kleine Außen-/Kommissionslager."),
+
+    ("table", "JTL – Dispositionsdaten in dbo.tlagerbestand",
+     "dbo.tlagerbestand führt je Artikel nicht nur fLagerbestand, sondern die ganze "
+     "Dispositionssicht: fVerfuegbar (frei verfügbar), fInAuftraegen (reserviert), fZulauf "
+     "(aus offenen Bestellungen erwartet), fAufEinkaufsliste, dLieferdatum (erwarteter "
+     "Zulauftermin), fLagerbestandEigen. Fehlmenge = fInAuftraegen > fLagerbestand, "
+     "überreserviert = fVerfuegbar < 0. WICHTIG: Diese Felder gibt es NUR als aktuellen "
+     "Stand, nicht in der Historie – Dispo-Auswertungen sind damit immer Momentaufnahmen "
+     "und dürfen keinen Zeitraumfilter vortäuschen."),
+
+    ("fact", "JTL – Stolperfelder im Artikelstamm (Lager)",
+     "dbo.tArtikel.nMidestbestand ist im JTL-Schema FALSCH GESCHRIEBEN (kein 'n' nach 'Mi') "
+     "– 'nMindestbestand' gibt es nicht. Zudem ist das Feld meist kaum gepflegt (an der "
+     "Prüf-DB 149 von 2817 Artikeln), taugt also als Zusatzspalte, nicht als tragende "
+     "Auswertung. cLagerArtikel = 'Y' trifft dort 0 Artikel und ist als Filter für "
+     "'Lagerartikel' unbrauchbar."),
+
+    ("rule", "JTL – EK-Preisverlauf eines Artikels gegen den VK",
+     "Preisverlauf je Artikel aus den Eingangsbuchungen: je Monatsstichtag den zuletzt "
+     "gebuchten fEKNetto per TOP 1 ... ORDER BY dGebucht DESC fortschreiben (sonst entstehen "
+     "Lücken in Monaten ohne Wareneingang). Den Verkaufspreis daneben als AVG(POS.fVkNetto) "
+     "der im selben Monat berechneten Rechnungspositionen; Monate ohne Verkauf bleiben leer. "
+     "Beide Reihen in einem Liniendiagramm zeigen die Margenentwicklung. Den Lieferanten zu "
+     "einer Eingangsbuchung über kLieferantenBestellungPos → tLieferantenBestellung → "
+     "tlieferant auflösen."),
+
+    # ── Datenmonster: Drilldown-Bau ─────────────────────────────────────────
+    ("rule", "Dashboard – Drilldown verdrahten (Schlüsselspalte, Fallen)",
+     "Ein Tabellen-Drilldown braucht config.drilldown = {mapping_id, key_column, param, title, "
+     "hidden_columns?, levels?[]} und eine SCHLÜSSELSPALTE in der Liste (kKunde, kAuftrag, "
+     "kLieferant …), die per config.hidden_columns ausgeblendet wird – sie bleibt in den "
+     "Zeilendaten erhalten und taucht in CSV/E-Mail/PDF nicht auf. Drei Fallen: (1) Die "
+     "Schlüsselspalte IMMER hinten anhängen, weil manche Listen über Spaltennummern sortieren "
+     "(ORDER BY 7 DESC). (2) Bei Unterabfragen/CTEs muss der Schlüssel von innen nach außen "
+     "durchgereicht werden – zwei Stellen. (3) Ist am selben Widget config.ai_action gesetzt, "
+     "schluckt die KI-Aktion den Zeilenklick; ein zusätzlicher Drilldown wäre tote "
+     "Konfiguration."),
+
+    ("rule", "Mapping – row_cap hebt hartkodierte TOP-Werte an",
+     "_apply_row_cap deckelt nicht nur, es HEBT ein TOP N im SQL auf row_cap AN. Ein 'SELECT "
+     "TOP 50' in einem Detail-Mapping ist deshalb nur beratend – der Drilldown-Endpunkt ruft "
+     "mit row_cap 200 auf und bekommt bis zu 200 Zeilen. Wer wirklich begrenzen will, muss im "
+     "SQL filtern (WHERE/HAVING), nicht über TOP."),
+
+    ("rule", "Datenmonster – Formulare beim Template-Install nicht überschrieben",
+     "Der Template-Installer gleicht MAPPINGS über den Namen ab und bringt sie auf den Stand "
+     "des Templates. Gleichnamige FORMULARE lässt er dagegen unangetastet, damit im Betrieb "
+     "ergänzte Reiter und Widgets nicht verloren gehen. Folge: Änderungen an der Verdrahtung "
+     "eines bereits installierten Dashboards (neue Drilldowns, neue Widgets) müssen direkt am "
+     "Formular gepatcht werden – ein erneuter Template-Install genügt nicht. Deshalb "
+     "Mappings, die sich mehrere Cockpits teilen, neutral benennen (z. B. 'Cockpit – "
+     "Auftragspositionen (Detail)' statt 'Vertrieb – …'), sonst legt der Installer Doppel an."),
 ]
 
 db = SessionLocal()
