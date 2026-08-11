@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.2",
+  "version": "1.3",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -2631,7 +2631,7 @@
     },
     {
       "id": "m_ve_pos_detail",
-      "name": "Vertrieb – Auftragspositionen (Detail)",
+      "name": "Cockpit – Auftragspositionen (Detail)",
       "canvas_nodes": [],
       "joins": [],
       "sql_nodes": [
@@ -2668,7 +2668,7 @@
       "targets": [
         {
           "id": "t1",
-          "name": "Vertrieb – Auftragspositionen (Detail)",
+          "name": "Cockpit – Auftragspositionen (Detail)",
           "target_type": "dataset",
           "target_connection_id": null,
           "target_table": "",
