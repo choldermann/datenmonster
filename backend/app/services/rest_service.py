@@ -11,15 +11,19 @@ Features:
 - Paginierung: none, page, offset, cursor, link_header
 - JSONPath-Extraktion verschachtelter Daten
 - Automatisches Flach-Machen von Nested-Objects
-- Timeout & Retry-Logik
+- Timeout; Wiederholung bei 429/502/503/504 und Netzaussetzern (nur im
+  unbeaufsichtigten Weg, nicht beim Ausprobieren im Studio)
 - execute_request(): Einzel-Request mit vollständiger Antwort (für den API-Tester)
 """
 
 import re
 import json
 import time
+import random
+import logging
 import hashlib
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Optional
 import pandas as pd
 import requests
@@ -27,6 +31,46 @@ from requests.auth import HTTPBasicAuth
 
 from app.core.net_guard import assert_url_allowed, guarded_request
 from app.core.security import decrypt_credential
+
+logger = logging.getLogger(__name__)
+
+# ── Wiederholen bei vorübergehenden Störungen ─────────────────────────────────
+#
+# Nur Zustände, die von selbst vorbeigehen: Drosselung und Zwischenschichten,
+# die gerade nicht können. 500 gehört bewusst NICHT dazu – der kommt meist von
+# der eigenen Anfrage, und dagegen dreimal anzurennen hilft niemandem.
+_RETRY_STATUS = {429, 502, 503, 504}
+_RETRY_VERSUCHE = 3            # Gesamtzahl, also höchstens zwei Wiederholungen
+_RETRY_BASIS = 1.0             # Sekunden, verdoppelt sich je Versuch
+_RETRY_DECKEL = 60.0           # Länger als das wird nicht gewartet
+
+
+def _wartezeit_aus_header(resp) -> Optional[float]:
+    """
+    `Retry-After` auswerten – erlaubt sind Sekunden oder ein HTTP-Datum.
+
+    Nennt die Gegenstelle eine Wartezeit, hat sie Vorrang vor jeder eigenen
+    Schätzung: sie weiß, wann ihr Kontingent wieder freigegeben wird.
+    """
+    wert = (resp.headers.get("Retry-After") or "").strip()
+    if not wert:
+        return None
+    if wert.isdigit():
+        return float(wert)
+    try:
+        ziel = parsedate_to_datetime(wert)
+        if ziel.tzinfo is None:
+            ziel = ziel.replace(tzinfo=timezone.utc)
+        return max(0.0, (ziel - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def _backoff(versuch: int) -> float:
+    """Wachsende Wartezeit mit Streuung – bei vielen Aufrufen hintereinander
+    kämen sonst alle Wiederholungen im selben Moment zurück."""
+    return _RETRY_BASIS * (2 ** (versuch - 1)) * (1 + random.uniform(0, 0.3))
+
 
 # Sensible Felder in auth_config, die verschlüsselt gespeichert werden.
 _SENSITIVE_AUTH_KEYS = ("password", "token", "value", "client_secret", "refresh_token")
@@ -325,11 +369,53 @@ def _do_request(
     timeout: int = 30,
     variables: Optional[dict] = None,
 ) -> dict:
-    """Führt einen einzelnen HTTP-Request aus und gibt den Response-Body zurück."""
+    """
+    Führt einen einzelnen HTTP-Request aus und gibt den Response-Body zurück.
+
+    Vorübergehende Störungen werden wiederholt (Drosselung, Netzaussetzer).
+    Das gilt für den unbeaufsichtigten Weg – Pipeline, Zeitplan, Import –, wo
+    ein einzelner Aussetzer sonst den ganzen Lauf scheitern ließe. Beim
+    Ausprobieren im Studio wird NICHT wiederholt: dort ist die 429 die
+    Information, auf die es ankommt, und ein stiller zweiter Versuch würde die
+    Fehlersuche verfälschen.
+    """
     kwargs = dict(headers=headers, params=params, timeout=timeout)
     _apply_body(kwargs, _body_kwargs(body_type, body_content, headers, variables))
 
-    resp = guarded_request(session, method, url, **kwargs)  # SSRF-geprüft (inkl. Redirects)
+    for versuch in range(1, _RETRY_VERSUCHE + 1):
+        letzter = versuch == _RETRY_VERSUCHE
+        try:
+            resp = guarded_request(session, method, url, **kwargs)  # SSRF-geprüft (inkl. Redirects)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if letzter:
+                raise
+            warten = _backoff(versuch)
+            logger.warning("REST %s %s: %s – Wiederholung %d/%d in %.1fs",
+                           method, url, type(e).__name__, versuch + 1,
+                           _RETRY_VERSUCHE, warten)
+            time.sleep(warten)
+            continue
+
+        if resp.status_code in _RETRY_STATUS and not letzter:
+            warten = _wartezeit_aus_header(resp)
+            gefordert = warten is not None
+            if warten is None:
+                warten = _backoff(versuch)
+            if warten <= _RETRY_DECKEL:
+                logger.warning(
+                    "REST %s %s: Status %d%s – Wiederholung %d/%d in %.1fs",
+                    method, url, resp.status_code,
+                    " (Retry-After)" if gefordert else "",
+                    versuch + 1, _RETRY_VERSUCHE, warten)
+                time.sleep(warten)
+                continue
+            # Verlangt die Gegenstelle eine sehr lange Pause, ist sie ernst
+            # gemeint – dann lieber jetzt mit klarer Meldung abbrechen, als
+            # einen Pipeline-Lauf minutenlang stillstehen zu lassen.
+            logger.warning("REST %s %s: Status %d, gefordert %.0fs Pause – abgebrochen",
+                           method, url, resp.status_code, warten)
+        break
+
     resp.raise_for_status()
 
     content_type = resp.headers.get("Content-Type", "")
