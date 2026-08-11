@@ -81,6 +81,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE rest_sources ADD COLUMN sort_order INTEGER DEFAULT 0",
             "ALTER TABLE rest_sources ADD COLUMN store_response INTEGER DEFAULT 0",
             "ALTER TABLE rest_sources ADD COLUMN environment_id INTEGER",
+            # Importierte OpenAPI-Doku – Grundlage des Doku-Assistenten
+            "ALTER TABLE api_collections ADD COLUMN openapi_doc JSON",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,

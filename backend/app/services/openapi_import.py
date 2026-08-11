@@ -373,6 +373,129 @@ def request_aus_endpunkt(ep: dict, name_praefix: str = "") -> dict:
     }
 
 
+def doku_ablegen(endpunkte: list, titel: str = "", beschreibung: str = "",
+                 basis_url: str = "", auth_type: str = "") -> dict:
+    """
+    Die Beschreibung der importierten Endpunkte für den Doku-Assistenten
+    aufbewahren – in Textform, wie sie in der Datei stand.
+
+    Abgelegt wird nur, was tatsächlich importiert wurde. Über Endpunkte, die
+    der Nutzer abgewählt hat, soll der Assistent auch nichts erzählen: sie
+    stehen in keiner Sammlung, ein Hinweis auf sie ginge ins Leere.
+
+    Bewusst keine Antwortdaten und keine Auth-Werte – das hier ist Doku und
+    wird als solche später an ein Sprachmodell gegeben.
+    """
+    def _param(p: dict) -> dict:
+        return {"name": p.get("name"), "pflicht": bool(p.get("pflicht")),
+                "typ": p.get("typ"), "beschreibung": (p.get("beschreibung") or "")[:300]}
+
+    return {
+        "titel": titel, "beschreibung": (beschreibung or "")[:1200],
+        "basis_url": basis_url, "auth_type": auth_type,
+        "endpunkte": [{
+            "methode": e.get("methode"), "pfad": e.get("pfad"),
+            "titel": e.get("titel"), "beschreibung": (e.get("beschreibung") or "")[:600],
+            "tags": e.get("tags") or [],
+            "veraltet": bool(e.get("veraltet")),
+            "pfad_parameter": [_param(p) for p in (e.get("pfad_parameter") or [])],
+            "query_parameter": [_param(p) for p in (e.get("query_parameter") or [])],
+            "header_parameter": [_param(p) for p in (e.get("header_parameter") or [])],
+            "body": (e.get("body_inhalt") or "")[:800],
+            "antwort": e.get("antwort") or "",
+        } for e in endpunkte],
+    }
+
+
+# Wörter, die in fast jeder Frage und fast jedem Beschreibungstext vorkommen.
+# Ohne diese Liste gewinnt das Rauschen: „Wie funktioniert die Bierbestellung?"
+# fand über „funktioniert" zwölf beliebige Endpunkte und meldete Erfolg.
+# Englische Fachwörter (get, list, all, …) stehen bewusst NICHT hier – die
+# tragen in einer API-Beschreibung Bedeutung.
+_FUELLWOERTER = {
+    "wie", "was", "wer", "wem", "wen", "wo", "warum", "wieso", "welche", "welcher",
+    "welches", "kann", "kannst", "könnte", "muss", "soll", "will", "möchte",
+    "ich", "man", "mir", "mich", "sich", "der", "die", "das", "den", "dem", "des",
+    "ein", "eine", "einen", "einem", "einer", "eines", "und", "oder", "aber",
+    "für", "mit", "von", "vom", "zum", "zur", "aus", "bei", "auf", "über", "unter",
+    "ist", "sind", "war", "wird", "werden", "wurde", "haben", "habe", "hat",
+    "gibt", "geht", "macht", "machen", "mache", "funktioniert", "bekomme",
+    "bekommen", "lege", "legt", "legen", "alle", "alles", "mehr", "auch", "noch",
+    "nur", "dann", "damit", "dass", "nicht", "kein", "keine", "etwas", "bitte",
+    "brauche", "benötige", "möglich", "richtig", "sowie", "beim", "einfach",
+}
+
+
+def doku_suchen(doku: dict, frage: str, grenze: int = 12) -> tuple:
+    """
+    Die zur Frage passenden Endpunkte heraussuchen.
+
+    Nötig, weil eine Beschreibung mit hunderten Endpunkten jeden Prompt
+    sprengt. Gewertet wird schlicht nach Treffern in Pfad, Titel, Beschreibung
+    und Parameternamen – kein Modell, damit die Auswahl nachvollziehbar bleibt
+    und auch ohne KI funktioniert.
+
+    Gibt (endpunkte, getroffen) zurück. Findet sich nichts, gehen die ersten
+    Endpunkte als Auszug hinaus, aber `getroffen` ist dann False – das gehört
+    in den Prompt, sonst hält das Modell einen beliebigen Auszug für die
+    Antwort auf die Frage.
+    """
+    endpunkte = (doku or {}).get("endpunkte") or []
+    woerter = [w for w in re.split(r"[^\wäöüß]+", (frage or "").lower())
+               if len(w) > 2 and w not in _FUELLWOERTER]
+    if not woerter:
+        return endpunkte[:grenze], False
+
+    bewertet = []
+    for e in endpunkte:
+        pfad = (e.get("pfad") or "").lower()
+        titel = (e.get("titel") or "").lower()
+        text = (e.get("beschreibung") or "").lower()
+        params = " ".join(p.get("name") or "" for art in
+                          ("pfad_parameter", "query_parameter", "header_parameter")
+                          for p in (e.get(art) or [])).lower()
+        tags = " ".join(e.get("tags") or []).lower()
+        punkte = 0
+        for w in woerter:
+            if w in pfad:   punkte += 3      # der Pfad ist das aussagekräftigste Merkmal
+            if w in titel:  punkte += 2
+            if w in tags:   punkte += 2
+            if w in params: punkte += 1
+            if w in text:   punkte += 1
+        # Ein einzelner Treffer irgendwo im Fließtext ist noch kein Fund –
+        # sonst zieht jedes Allerweltswort zwölf beliebige Endpunkte herbei.
+        if punkte >= 2:
+            bewertet.append((punkte, e))
+    if not bewertet:
+        return endpunkte[:grenze], False
+    bewertet.sort(key=lambda x: x[0], reverse=True)
+    return [e for _, e in bewertet[:grenze]], True
+
+
+def doku_als_text(endpunkte: list) -> str:
+    """Endpunkt-Doku als Klartext für den Prompt."""
+    teile = []
+    for e in endpunkte:
+        zeilen = [f"{e.get('methode')} {e.get('pfad')} — {e.get('titel') or ''}"]
+        if e.get("veraltet"):
+            zeilen.append("  (als veraltet gekennzeichnet)")
+        if e.get("beschreibung"):
+            zeilen.append(f"  {e['beschreibung']}")
+        for art, bezeichnung in (("pfad_parameter", "Pfad"),
+                                 ("query_parameter", "Query"),
+                                 ("header_parameter", "Header")):
+            for p in (e.get(art) or []):
+                pflicht = "Pflicht" if p.get("pflicht") else "optional"
+                beschr = f" – {p['beschreibung']}" if p.get("beschreibung") else ""
+                zeilen.append(f"  [{bezeichnung}] {p.get('name')} ({p.get('typ')}, {pflicht}){beschr}")
+        if e.get("body"):
+            zeilen.append(f"  Body: {e['body'][:400]}")
+        if e.get("antwort"):
+            zeilen.append(f"  Antwort: {e['antwort']}")
+        teile.append("\n".join(zeilen))
+    return "\n\n".join(teile)
+
+
 def platzhalter_sammeln(endpunkte: list) -> list:
     """
     Alle {{platzhalter}} aus den gewählten Endpunkten – daraus lässt sich eine

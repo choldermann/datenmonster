@@ -260,35 +260,54 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                     else:
                         prev = _get_prev_data(nid, connections, results)
                         prev_df = prev.get("df")
-                        src_to_use = src
-                        if prev_df is not None and not prev_df.empty:
-                            row = prev_df.iloc[0].to_dict()
-                            def _inject(text):
-                                if not isinstance(text, str):
-                                    return text
-                                for k, v in row.items():
-                                    text = text.replace("{{" + str(k) + "}}", str(v))
-                                return text
-                            class _Patched:
-                                pass
-                            patched = _Patched()
-                            # collection_id/environment_id MÜSSEN mit: sonst verliert der
-                            # Request beim Einsetzen von Werten aus dem Vorgänger-Node die
-                            # Basis-URL, die geerbte Auth und seine Umgebungs-Variablen.
-                            for attr in ["url", "method", "headers", "query_params", "body_type",
-                                         "body_content", "auth_type", "auth_config", "data_path",
-                                         "flatten", "pagination", "dataset_id", "dataset_mode",
-                                         "collection_id", "environment_id"]:
-                                val = getattr(src, attr, None)
-                                if isinstance(val, str):
-                                    val = _inject(val)
-                                elif isinstance(val, dict):
-                                    val = {k: _inject(v) for k, v in val.items()}
-                                setattr(patched, attr, val)
-                            src_to_use = patched
                         import pandas as _pd
+
+                        # „Für jede Zeile": bei einer Kette Liste → Detail wird der
+                        # Request einmal pro Zeile des Vorgängers ausgeführt. Ohne das
+                        # bliebe es bei der ersten Zeile – für den häufigsten Fall
+                        # (Liste holen, dann Details je Element) unbrauchbar.
+                        for_each = bool(config.get("for_each"))
+                        max_zeilen = int(config.get("for_each_max") or 100)
+
                         try:
-                            df = fetch_rest_source(src_to_use)
+                            if for_each and prev_df is not None and not prev_df.empty:
+                                zeilen = prev_df.head(max_zeilen).to_dict("records")
+                                teile, fehler_zeilen = [], []
+                                for i, row in enumerate(zeilen):
+                                    patched, benutzt = _mit_zeilenwerten(src, row)
+                                    try:
+                                        teil = fetch_rest_source(patched)
+                                    except Exception as e:
+                                        # Ein einzelner Ausreißer darf den Lauf nicht
+                                        # beenden – bei 100 Aufrufen ist einer, der
+                                        # scheitert, der Normalfall und kein Abbruch.
+                                        fehler_zeilen.append(f"Zeile {i + 1}: {str(e)[:120]}")
+                                        continue
+                                    # Die eingesetzten Werte als Spalten mitführen, sonst
+                                    # lässt sich hinterher nicht sagen, zu welchem Element
+                                    # der Liste ein Detailsatz gehört.
+                                    for k in benutzt:
+                                        if k not in teil.columns:
+                                            teil[k] = row.get(k)
+                                    teile.append(teil)
+                                df = _pd.concat(teile, ignore_index=True) if teile else _pd.DataFrame()
+                                if fehler_zeilen:
+                                    log(db, "warning", "pipeline_service", "node_rest_fetch",
+                                        f"REST-Fetch '{src.name}': {len(fehler_zeilen)} von "
+                                        f"{len(zeilen)} Aufrufen fehlgeschlagen",
+                                        entity_id=pipeline.id, entity_name=pipeline.name,
+                                        project_id=getattr(pipeline, "project_id", None),
+                                        details={"fehler": fehler_zeilen[:20]})
+                                if not teile:
+                                    raise RuntimeError(
+                                        "Kein einziger Aufruf war erfolgreich: "
+                                        + "; ".join(fehler_zeilen[:3]))
+                            else:
+                                src_to_use = src
+                                if prev_df is not None and not prev_df.empty:
+                                    src_to_use, _ = _mit_zeilenwerten(
+                                        src, prev_df.iloc[0].to_dict())
+                                df = fetch_rest_source(src_to_use)
                         except Exception as e:
                             results[nid] = {"status": "error", "message": str(e)[:200]}
                             log(db, "error", "pipeline_service", "node_rest_fetch",
@@ -296,10 +315,12 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                                 entity_id=pipeline.id, entity_name=pipeline.name,
                                 project_id=getattr(pipeline, "project_id", None),
                                 details={"rest_source": src.name, "url": getattr(src, "url", ""),
+                                         "for_each": for_each,
                                          "exception_type": type(e).__name__,
                                          "exception_message": str(e),
                                          "traceback": traceback.format_exc()})
                             continue
+                        src_to_use = src
                         rows = len(df)
                         if getattr(src_to_use, "dataset_id", None) and not df.empty:
                             try:
@@ -453,6 +474,51 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
         # Unerwarteter Fehler ausserhalb der Node-Schleife
         log_pipeline_end(db, pipeline, {}, start_time, exc=e)
         raise
+
+
+# Attribute, die eine Ersatz-Quelle mitbringen MUSS. collection_id und
+# environment_id gehören zwingend dazu: ohne sie verliert der Request die
+# Basis-URL der Sammlung, die geerbte Auth und seine Umgebungs-Variablen.
+_QUELL_ATTRIBUTE = [
+    "id", "name", "url", "method", "headers", "query_params", "body_type",
+    "body_content", "auth_type", "auth_config", "data_path", "flatten",
+    "pagination", "dataset_id", "dataset_mode", "collection_id", "environment_id",
+]
+
+
+class _ErsatzQuelle:
+    """Eine RestSource-Kopie mit eingesetzten Werten – das Original bleibt unberührt."""
+    pass
+
+
+def _mit_zeilenwerten(src, row: dict):
+    """
+    Kopie der Quelle, in der {{spalte}} durch die Werte einer Zeile des
+    Vorgänger-Nodes ersetzt ist. Gibt (kopie, benutzte_spalten) zurück –
+    welche Spalten wirklich eingesetzt wurden, weiß nur diese Stelle, und der
+    Aufrufer braucht es, um die Herkunft einer Zeile festhalten zu können.
+    """
+    benutzt = set()
+
+    def _inject(text):
+        if not isinstance(text, str):
+            return text
+        for k, v in row.items():
+            marke = "{{" + str(k) + "}}"
+            if marke in text:
+                benutzt.add(k)
+                text = text.replace(marke, str(v))
+        return text
+
+    kopie = _ErsatzQuelle()
+    for attr in _QUELL_ATTRIBUTE:
+        val = getattr(src, attr, None)
+        if isinstance(val, str):
+            val = _inject(val)
+        elif isinstance(val, dict):
+            val = {k: _inject(v) for k, v in val.items()}
+        setattr(kopie, attr, val)
+    return kopie, benutzt
 
 
 def _get_prev_data(node_id, connections, results):

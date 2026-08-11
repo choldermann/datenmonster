@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Send, Plus, Trash2, Pencil, Loader2, X, FolderOpen, Save, History,
   Globe, ChevronRight, ChevronDown, Layers, Check, AlertTriangle, Table2,
-  Sparkles, Bug, ShieldCheck, KeyRound, Workflow, FileJson,
+  Sparkles, Bug, ShieldCheck, KeyRound, Workflow, FileJson, BookOpen,
 } from "lucide-react";
 import api from "../../../api/client";
 import {
@@ -689,6 +689,345 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
   );
 }
 
+// ── Request Chains ────────────────────────────────────────────────────────────
+
+/**
+ * Mehrere Requests hintereinander: der zweite verwendet Werte aus der Antwort
+ * des ersten. Daraus entsteht eine gewöhnliche Pipeline – keine zweite Stelle,
+ * die Abläufe ausführt.
+ *
+ * Die Vorschau führt Schritt 1 wirklich aus. Nur so lässt sich zeigen, welche
+ * Felder für die {{platzhalter}} der folgenden Schritte zur Verfügung stehen;
+ * aus der Beschreibung einer API geht das nicht verlässlich hervor.
+ */
+function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
+  const [kette, setKette] = useState([]);        // rest_source-Objekte in Reihenfolge
+  const [forEach, setForEach] = useState({});    // index -> bool
+  const [name, setName] = useState("");
+  const [cron, setCron] = useState("");
+  const [max, setMax] = useState(100);
+  const [vorschau, setVorschau] = useState(null);
+  const [laedt, setLaedt] = useState(false);
+  const [legtAn, setLegtAn] = useState(false);
+  const [fehler, setFehler] = useState("");
+  const [erg, setErg] = useState(null);
+
+  const frei = requests.filter(r => !kette.some(k => k.id === r.id));
+
+  const hinzu = (r) => { setKette(k => [...k, r]); setVorschau(null); };
+  const weg = (i) => {
+    setKette(k => k.filter((_, j) => j !== i));
+    setForEach({}); setVorschau(null);
+  };
+  const schieben = (i, d) => {
+    setKette(k => {
+      const n = [...k]; const [x] = n.splice(i, 1); n.splice(i + d, 0, x); return n;
+    });
+    setForEach({}); setVorschau(null);
+  };
+
+  const pruefen = async () => {
+    setLaedt(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/chain/preview`, {
+        rest_source_ids: kette.map(r => r.id),
+        project_id: projectId ?? null, environment_id: envId ?? null,
+      });
+      setVorschau(data);
+      if (!name) setName(`${kette[0].name} – Kette`);
+    } catch (e) { setFehler(e.response?.data?.detail || "Vorschau fehlgeschlagen"); }
+    finally { setLaedt(false); }
+  };
+
+  const anlegen = async () => {
+    setLegtAn(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/chain/create`, {
+        rest_source_ids: kette.map(r => r.id),
+        project_id: projectId ?? null, environment_id: envId ?? null,
+        name, cron: cron || null,
+        for_each: Object.entries(forEach).filter(([, an]) => an).map(([i]) => parseInt(i)),
+        for_each_max: max,
+      });
+      setErg(data); onFertig();
+    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    finally { setLegtAn(false); }
+  };
+
+  if (erg) return (
+    <Dialog titel="Kette angelegt" onClose={onClose}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
+        <Check size={13} style={{ color: "#6ee7b7" }} />
+        <span style={{ fontSize: 12, color: "#e2e8f0" }}>
+          Pipeline <strong>{erg.name}</strong> mit {erg.schritte} Schritten
+          {erg.cron ? ` (Zeitplan ${erg.cron})` : ""}
+        </span>
+      </div>
+      <p style={{ fontSize: 11, color: "#64748b", margin: "10px 0 0" }}>
+        Sie steht ab jetzt unter Pipelines und lässt sich dort wie jede andere
+        starten, bearbeiten und überwachen.
+      </p>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btnPrimary} onClick={onClose}>Schließen</button>
+      </div>
+    </Dialog>
+  );
+
+  const offeneGesamt = (vorschau?.schritte || []).reduce((n, s) => n + s.offen.length, 0);
+
+  return (
+    <Dialog titel="Kette aus Requests bauen" onClose={onClose} breit>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* Die Kette */}
+        <div>
+          <span style={{ ...lS, display: "block", marginBottom: 6 }}>
+            Reihenfolge {kette.length > 0 && `(${kette.length} Schritte)`}
+          </span>
+          {kette.length === 0 && (
+            <p style={{ fontSize: 11, color: "#475569", padding: "10px 0", margin: 0 }}>
+              Unten Requests anklicken. Der erste holt die Liste, die folgenden
+              verwenden deren Werte als <code style={{ fontFamily: "monospace", color: C }}>{"{{feld}}"}</code>.
+            </p>
+          )}
+          {kette.map((r, i) => {
+            const s = vorschau?.schritte?.[i];
+            return (
+              <div key={r.id} style={{ padding: "6px 10px", marginBottom: 4, borderRadius: 6,
+                backgroundColor: "rgba(255,255,255,0.03)",
+                border: `1px solid ${s?.offen?.length ? "rgba(251,191,36,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 10, color: "#64748b", width: 14 }}>{i + 1}.</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "#94a3b8" }}>{r.method}</span>
+                  <span style={{ fontSize: 11, color: "#e2e8f0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.name} <span style={{ color: "#475569", fontFamily: "monospace" }}>{r.url}</span>
+                  </span>
+                  <button title="nach oben" disabled={i === 0} onClick={() => schieben(i, -1)}
+                    style={{ background: "none", border: "none", color: i === 0 ? "#334155" : "#64748b", cursor: i === 0 ? "default" : "pointer", padding: 2 }}>↑</button>
+                  <button title="nach unten" disabled={i === kette.length - 1} onClick={() => schieben(i, 1)}
+                    style={{ background: "none", border: "none", color: i === kette.length - 1 ? "#334155" : "#64748b", cursor: i === kette.length - 1 ? "default" : "pointer", padding: 2 }}>↓</button>
+                  <button title="entfernen" onClick={() => weg(i)}
+                    style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 2 }}><X size={11} /></button>
+                </div>
+                {s && (
+                  <div style={{ marginLeft: 22, marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    {s.gedeckt.map(g => (
+                      <span key={g.name} style={{ fontSize: 9, color: "#6ee7b7", backgroundColor: "rgba(110,231,183,0.1)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
+                        {`{{${g.name}}}`} ← {g.quelle}
+                      </span>
+                    ))}
+                    {s.offen.map(n => (
+                      <span key={n} style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.1)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
+                        {`{{${n}}}`} ohne Wert
+                      </span>
+                    ))}
+                    {!s.platzhalter.length && (
+                      <span style={{ fontSize: 9, color: "#475569" }}>keine Platzhalter</span>
+                    )}
+                  </div>
+                )}
+                {i > 0 && (
+                  <div style={{ marginLeft: 22, marginTop: 4 }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!forEach[i]}
+                        onChange={e => setForEach(f => ({ ...f, [i]: e.target.checked }))} />
+                      <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                        für <strong>jede</strong> Zeile des Vorgängers aufrufen
+                        <span style={{ color: "#475569" }}> – sonst nur für die erste</span>
+                      </span>
+                    </label>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Auswahl */}
+        {frei.length > 0 && (
+          <div>
+            <span style={{ ...lS, display: "block", marginBottom: 6 }}>Requests hinzufügen</span>
+            <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
+              {frei.map(r => (
+                <button key={r.id} onClick={() => hinzu(r)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 10px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.03)", cursor: "pointer", textAlign: "left" }}>
+                  <Plus size={10} style={{ color: "#64748b", flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "#94a3b8" }}>{r.method}</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.name} <span style={{ color: "#475569", fontFamily: "monospace" }}>{r.url}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Ergebnis der Vorschau */}
+        {vorschau && (
+          <div style={{ padding: 10, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+            {vorschau.erster_schritt.fehler ? (
+              <p style={{ fontSize: 11, color: "#f87171", margin: 0 }}>
+                Schritt 1 lief nicht durch: {vorschau.erster_schritt.fehler}
+              </p>
+            ) : (
+              <>
+                <p style={{ fontSize: 11, color: "#e2e8f0", margin: 0 }}>
+                  Schritt 1 liefert <strong>{vorschau.erster_schritt.zeilen}</strong> Zeilen mit diesen Feldern:
+                </p>
+                <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
+                  {vorschau.erster_schritt.spalten.slice(0, 24).map(s => (
+                    <code key={s} style={{ fontSize: 9, fontFamily: "monospace", color: "#94a3b8", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 3 }}>{s}</code>
+                  ))}
+                </div>
+              </>
+            )}
+            {offeneGesamt > 0 && (
+              <p style={{ fontSize: 11, color: "#fbbf24", margin: "8px 0 0" }}>
+                {offeneGesamt} Platzhalter ohne Wert – die Kette läuft so nicht durch.
+                Entweder liefert Schritt 1 das Feld nicht, oder es fehlt in der Umgebung.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Anlegen */}
+        {vorschau && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <div style={{ flex: 1 }}>
+              <label style={lS}>Name der Pipeline</label>
+              <input style={iS} value={name} onChange={e => setName(e.target.value)} />
+            </div>
+            <div style={{ width: 130 }}>
+              <label style={lS}>Zeitplan (cron)</label>
+              <input style={iS} value={cron} onChange={e => setCron(e.target.value)} placeholder="leer = manuell" />
+            </div>
+            <div style={{ width: 90 }}>
+              <label style={lS}>max. Zeilen</label>
+              <input style={iS} type="number" min={1} value={max}
+                onChange={e => setMax(parseInt(e.target.value) || 1)} />
+            </div>
+          </div>
+        )}
+
+        {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+      </div>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btn} onClick={onClose}>Abbrechen</button>
+        <button style={{ ...btn, opacity: kette.length < 2 || laedt ? 0.5 : 1 }}
+          disabled={kette.length < 2 || laedt} onClick={pruefen}>
+          {laedt ? "Schritt 1 läuft…" : "Prüfen"}
+        </button>
+        <button style={{ ...btnPrimary, opacity: !vorschau || !name || legtAn ? 0.5 : 1 }}
+          disabled={!vorschau || !name || legtAn} onClick={anlegen}>
+          {legtAn ? "Wird angelegt…" : "Pipeline anlegen"}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+// ── Doku-Assistent ────────────────────────────────────────────────────────────
+
+/**
+ * Fragen zur importierten API-Beschreibung. Der Assistent stützt sich nur auf
+ * das, was beim Import mitkam – deshalb stehen die herangezogenen Endpunkte
+ * immer sichtbar unter der Antwort. Kommt keiner, war die Frage nicht durch
+ * die Beschreibung gedeckt, und genau das soll man sehen.
+ */
+function DokuDialog({ sammlung, onClose }) {
+  const [frage, setFrage] = useState("");
+  const [laedt, setLaedt] = useState(false);
+  const [erg, setErg] = useState(null);
+  const [fehler, setFehler] = useState("");
+
+  const fragen = async () => {
+    if (!frage.trim()) return;
+    setLaedt(true); setFehler(""); setErg(null);
+    try {
+      const { data } = await api.post(`${BASE}/collections/${sammlung.id}/ask`, { frage });
+      setErg(data);
+    } catch (e) { setFehler(e.response?.data?.detail || "Frage fehlgeschlagen"); }
+    finally { setLaedt(false); }
+  };
+
+  const ki = erg?.ki;
+  return (
+    <Dialog titel={`API-Beschreibung: ${sammlung.name}`} onClose={onClose} breit>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div>
+          <label style={lS}>Frage zur Schnittstelle</label>
+          <div style={{ display: "flex", gap: 6 }}>
+            <input style={iS} value={frage} onChange={e => setFrage(e.target.value)} autoFocus
+              placeholder="z.B. Wie hole ich einzelne Datensätze?"
+              onKeyDown={e => { if (e.key === "Enter" && !laedt) fragen(); }} />
+            <button style={{ ...btnPrimary, opacity: laedt || !frage.trim() ? 0.5 : 1, flexShrink: 0 }}
+              disabled={laedt || !frage.trim()} onClick={fragen}>
+              {laedt ? <Loader2 size={12} className="animate-spin" /> : "Fragen"}
+            </button>
+          </div>
+          <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+            Beantwortet wird nur, was beim Import mitkam – {sammlung.doku_endpunkte} Endpunkte.
+            Allgemeinwissen über die API fließt bewusst nicht ein.
+          </p>
+        </div>
+
+        {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+
+        {erg && (
+          <>
+            {ki && (
+              <div style={{ padding: 12, borderRadius: 8,
+                backgroundColor: ki.in_der_doku ? "rgba(255,255,255,0.03)" : "rgba(251,191,36,0.07)",
+                border: `1px solid ${ki.in_der_doku ? "rgba(255,255,255,0.07)" : "rgba(251,191,36,0.2)"}` }}>
+                {!ki.in_der_doku && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <AlertTriangle size={12} style={{ color: "#fbbf24" }} />
+                    <span style={{ fontSize: 11, color: "#fbbf24" }}>
+                      Dazu steht nichts in der importierten Beschreibung.
+                    </span>
+                  </div>
+                )}
+                <p style={{ fontSize: 12, color: "#e2e8f0", margin: 0, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                  {ki.antwort}
+                </p>
+                {ki.endpunkte?.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                    {ki.endpunkte.map(e => (
+                      <code key={e} style={{ fontSize: 10, fontFamily: "monospace", color: C,
+                        backgroundColor: `${C}12`, padding: "2px 6px", borderRadius: 3 }}>{e}</code>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {erg.hinweis && <p style={{ fontSize: 11, color: "#fbbf24", margin: 0 }}>{erg.hinweis}</p>}
+
+            <div>
+              <span style={{ ...lS, display: "block", marginBottom: 6 }}>
+                {erg.getroffen
+                  ? `Passende Endpunkte (aus ${erg.durchsucht} durchsucht)`
+                  : `Kein Endpunkt passt zu den Stichworten – Auszug aus ${erg.durchsucht}`}
+              </span>
+              <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
+                {erg.endpunkte.map((e, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "#94a3b8" }}>{e.methode}</span>
+                    <span style={{ fontSize: 11, fontFamily: "monospace", color: "#94a3b8", flexShrink: 0 }}>{e.pfad}</span>
+                    <span style={{ fontSize: 10, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btn} onClick={onClose}>Schließen</button>
+      </div>
+    </Dialog>
+  );
+}
+
 // ── Integration ───────────────────────────────────────────────────────────────
 
 const ZIEL_TYPEN = ["string", "integer", "float", "boolean", "date", "datetime"];
@@ -1228,6 +1567,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
   const [fehler, setFehler] = useState("");
   const [dialog, setDialog] = useState(null);       // "sammlung" | "umgebung" | "verlauf"
   const [sammlungEdit, setSammlungEdit] = useState(null);
+  const [dokuSammlung, setDokuSammlung] = useState(null);
 
   const p = projectId ? { project_id: projectId } : {};
 
@@ -1427,11 +1767,20 @@ function ApiStudioPanel({ projectId, canEdit }) {
             </div>
           )}
           {canEdit && (
-            <button style={{ ...btn, width: "100%", padding: "5px 8px", fontSize: 11, marginBottom: 10,
-                             display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
-              onClick={() => setDialog("openapi")}>
-              <FileJson size={11} /> OpenAPI importieren
-            </button>
+            <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
+              <button style={{ ...btn, flex: 1, padding: "5px 6px", fontSize: 10,
+                               display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                onClick={() => setDialog("openapi")}>
+                <FileJson size={11} /> OpenAPI
+              </button>
+              <button style={{ ...btn, flex: 1, padding: "5px 6px", fontSize: 10,
+                               display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
+                title="Mehrere Requests hintereinander ausführen – wird zu einer Pipeline"
+                disabled={requests.length < 2}
+                onClick={() => setDialog("kette")}>
+                <Workflow size={11} /> Kette
+              </button>
+            </div>
           )}
 
           {sammlungen.length === 0 && requests.length === 0 && (
@@ -1452,6 +1801,11 @@ function ApiStudioPanel({ projectId, canEdit }) {
                     <FolderOpen size={12} style={{ color: C, flexShrink: 0 }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                   </button>
+                  {c.doku_endpunkte > 0 && (
+                    <button title={`API-Beschreibung fragen (${c.doku_endpunkte} Endpunkte)`}
+                      onClick={() => { setDokuSammlung(c); setDialog("doku"); }}
+                      style={{ color: C, background: "none", border: "none", cursor: "pointer", padding: 2 }}><BookOpen size={11} /></button>
+                  )}
                   {canEdit && (
                     <>
                       <button title="Request in dieser Sammlung" onClick={() => neuerRequest(c.id)}
@@ -1680,6 +2034,14 @@ function ApiStudioPanel({ projectId, canEdit }) {
       )}
       {dialog === "openapi" && (
         <OpenApiDialog projectId={projectId}
+          onFertig={laden} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "doku" && dokuSammlung && (
+        <DokuDialog sammlung={dokuSammlung}
+          onClose={() => { setDialog(null); setDokuSammlung(null); }} />
+      )}
+      {dialog === "kette" && (
+        <KettenDialog requests={requests} projectId={projectId} envId={envId}
           onFertig={laden} onClose={() => setDialog(null)} />
       )}
       {dialog === "integration" && antwort && (

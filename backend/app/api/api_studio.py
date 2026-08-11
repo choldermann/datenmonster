@@ -27,10 +27,12 @@ from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHisto
 from app.api.projects import require_editor, can_read_project, get_accessible_project_ids
 from app.services.rest_service import (
     execute_request, join_url, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
+    fetch_rest_source, umgebungs_variablen, _builtin_vars,
 )
 from app.core.net_guard import guarded_request
 from app.services.openapi_import import (
     lade_spec, parse_spec, request_aus_endpunkt, platzhalter_sammeln,
+    doku_ablegen, doku_suchen, doku_als_text,
 )
 from app.services.api_studio_analyse import analysiere, redigiere, variablen_vorschlaege
 from app.services.ai_service import build_ai_service
@@ -164,6 +166,9 @@ def collection_out(c: ApiCollection) -> dict:
         "default_headers": c.default_headers or {},
         "auth_type": c.auth_type or "none",
         "auth_config": _mask_auth(c.auth_config or {}),
+        # Nur die Anzahl: die Doku selbst kann groß sein und wird erst beim
+        # Fragen gebraucht. Das Frontend blendet den Assistenten danach ein.
+        "doku_endpunkte": len(((c.openapi_doc or {}).get("endpunkte")) or []),
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
@@ -1181,6 +1186,12 @@ def openapi_create_collection(
         default_headers={"Accept": "application/json"},
         auth_type=payload.auth_type or "none",
         auth_config=_encrypt_auth(payload.auth_config or {}),
+        # Die Beschreibung der importierten Endpunkte aufheben: sie ist später
+        # die einzige Grundlage, auf die sich der Doku-Assistent stützen darf.
+        openapi_doc=doku_ablegen(payload.endpunkte, titel=payload.name,
+                                 beschreibung=payload.beschreibung or "",
+                                 basis_url=payload.basis_url or "",
+                                 auth_type=payload.auth_type or "none"),
     )
     db.add(sammlung); db.commit(); db.refresh(sammlung)
 
@@ -1216,3 +1227,252 @@ def openapi_create_collection(
         "umgebung": environment_out(umgebung) if umgebung else None,
         "requests": len(angelegt),
     }
+
+
+# ══ Request Chains ════════════════════════════════════════════════════════════
+#
+# Mehrere Requests hintereinander: der zweite verwendet Werte aus der Antwort
+# des ersten. Das läuft NICHT in einer eigenen Ablauf-Steuerung, sondern wird zu
+# einer ganz normalen Pipeline aus rest_fetch-Nodes – dieselbe, die auch von
+# Hand entstehen könnte. So gibt es weiterhin nur eine Stelle, die Abläufe
+# ausführt, mit Zeitplan, Verlauf und Fehlerbehandlung wie überall sonst.
+
+_PLATZHALTER = re.compile(r"\{\{\s*([^{}]+?)\s*\}\}")
+
+
+def _platzhalter_im_request(s: RestSource) -> list:
+    """Alle {{namen}} eines Requests – aus URL, Query, Headern und Body."""
+    texte = [s.url or "", s.body_content or ""]
+    texte += [str(v) for v in (s.query_params or {}).values()]
+    texte += [str(v) for v in (s.headers or {}).values()]
+    namen = []
+    for t in texte:
+        for n in _PLATZHALTER.findall(t):
+            if n not in namen:
+                namen.append(n)
+    return namen
+
+
+class ChainIn(BaseModel):
+    rest_source_ids: List[int] = []      # in der gewünschten Reihenfolge
+    project_id: Optional[int] = None
+    environment_id: Optional[int] = None
+
+
+class ChainCreateIn(ChainIn):
+    name: str
+    cron: Optional[str] = None
+    for_each: List[int] = []             # Indizes der Schritte mit „für jede Zeile"
+    for_each_max: int = 100
+
+
+@router.post("/chain/preview")
+def chain_preview(
+    payload: ChainIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Was braucht jeder Schritt der Kette, und was liefert der erste?
+
+    Der erste Schritt wird wirklich ausgeführt – nur so lässt sich zeigen,
+    welche Felder für die {{platzhalter}} der folgenden Schritte überhaupt zur
+    Verfügung stehen. Geraten wäre hier wertlos: welche Spalten eine Antwort
+    hergibt, steht in keiner Beschreibung verlässlich drin.
+    """
+    _check_read(payload.project_id, user, db)
+    if len(payload.rest_source_ids) < 2:
+        raise HTTPException(400, "Eine Kette braucht mindestens zwei Requests")
+
+    quellen = []
+    for sid in payload.rest_source_ids:
+        s = db.query(RestSource).filter(RestSource.id == sid).first()
+        if not s:
+            raise HTTPException(404, f"Request {sid} nicht gefunden")
+        quellen.append(s)
+
+    # Was die Umgebung oder eine eingebaute Variable abdeckt, muss nicht aus
+    # dem Vorgänger kommen.
+    env_id = payload.environment_id or quellen[0].environment_id
+    variablen = umgebungs_variablen(env_id)
+    aus_umgebung = set(variablen.keys()) | set(_builtin_vars().keys())
+
+    # Schritt 1 ausführen, um die verfügbaren Felder zu kennen.
+    spalten, zeilen, fehler = [], 0, None
+    try:
+        df = fetch_rest_source(quellen[0], variables=umgebungs_variablen(env_id) or None)
+        spalten = [str(c) for c in df.columns]
+        zeilen = len(df)
+    except Exception as e:
+        fehler = str(e)[:250]
+
+    schritte = []
+    for i, s in enumerate(quellen):
+        gebraucht = _platzhalter_im_request(s)
+        offen, gedeckt = [], []
+        for n in gebraucht:
+            if n in aus_umgebung:
+                gedeckt.append({"name": n, "quelle": "Umgebung"})
+            elif i > 0 and n in spalten:
+                gedeckt.append({"name": n, "quelle": "Schritt 1"})
+            else:
+                offen.append(n)
+        schritte.append({
+            "id": s.id, "name": s.name, "method": s.method, "url": s.url,
+            "platzhalter": gebraucht, "gedeckt": gedeckt, "offen": offen,
+        })
+
+    return {
+        "schritte": schritte,
+        "erster_schritt": {"spalten": spalten, "zeilen": zeilen, "fehler": fehler},
+    }
+
+
+@router.post("/chain/create")
+def chain_create(
+    payload: ChainCreateIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Aus der Kette eine gewöhnliche Pipeline bauen."""
+    from app.models.pipeline import Pipeline
+
+    _check_write(payload.project_id, user, db)
+    if len(payload.rest_source_ids) < 2:
+        raise HTTPException(400, "Eine Kette braucht mindestens zwei Requests")
+
+    quellen = []
+    for sid in payload.rest_source_ids:
+        s = db.query(RestSource).filter(RestSource.id == sid).first()
+        if not s:
+            raise HTTPException(404, f"Request {sid} nicht gefunden")
+        quellen.append(s)
+
+    # Die Umgebung an jedem Schritt festhalten: die Pipeline läuft ohne
+    # Oberfläche, dort gibt es keine ausgewählte Umgebung mehr.
+    if payload.environment_id:
+        for s in quellen:
+            if s.environment_id != payload.environment_id:
+                s.environment_id = payload.environment_id
+        db.commit()
+
+    nodes = [{"id": "trg", "type": "trigger", "x": 100, "y": 160,
+              "config": ({"trigger_mode": "schedule", "cron": payload.cron}
+                         if payload.cron else {"trigger_mode": "manual"})}]
+    verbindungen = []
+    vorher = "trg"
+    for i, s in enumerate(quellen):
+        nid = f"rest{i + 1}"
+        config = {"rest_source_id": s.id, "dataset_name": s.name}
+        if i in payload.for_each:
+            config["for_each"] = True
+            config["for_each_max"] = payload.for_each_max
+        nodes.append({"id": nid, "type": "rest_fetch",
+                      "x": 100 + (i + 1) * 260, "y": 160, "config": config})
+        verbindungen.append({"from_node": vorher, "from_port": "out",
+                             "to_node": nid, "to_port": "in"})
+        vorher = nid
+
+    p = Pipeline(name=payload.name, project_id=payload.project_id,
+                 active=True, nodes=nodes, connections=verbindungen)
+    db.add(p); db.commit(); db.refresh(p)
+    return {"id": p.id, "name": p.name, "schritte": len(quellen), "cron": payload.cron}
+
+
+# ══ Doku-Assistent ════════════════════════════════════════════════════════════
+
+
+class DokuFrageIn(BaseModel):
+    frage: str
+    mit_ki: bool = True
+
+
+@router.post("/collections/{collection_id}/ask")
+async def collection_ask(
+    collection_id: int,
+    payload: DokuFrageIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Eine Frage zur importierten API-Beschreibung beantworten.
+
+    Grundlage ist ausschließlich die beim Import abgelegte Doku – nicht das
+    Allgemeinwissen des Modells. Eine erfundene, plausibel klingende Antwort
+    über einen Endpunkt, den es nicht gibt, wäre hier schädlicher als ein
+    ehrliches „steht nicht in der Beschreibung": man merkt sie erst, wenn der
+    gebaute Request ins Leere läuft.
+
+    Die Vorauswahl der Endpunkte ist deterministisch (Stichworttreffer) und
+    wird mit zurückgegeben. Ohne KI bleibt sie als Suche für sich brauchbar.
+    """
+    c = db.query(ApiCollection).filter(ApiCollection.id == collection_id).first()
+    if not c:
+        raise HTTPException(404, "Sammlung nicht gefunden")
+    _check_read(c.project_id, user, db)
+
+    doku = c.openapi_doc or {}
+    if not doku.get("endpunkte"):
+        raise HTTPException(400, "Zu dieser Sammlung ist keine API-Beschreibung "
+                                 "hinterlegt – sie wurde nicht per OpenAPI importiert")
+
+    treffer, getroffen = doku_suchen(doku, payload.frage)
+    ergebnis = {
+        "endpunkte": [{"methode": e.get("methode"), "pfad": e.get("pfad"),
+                       "titel": e.get("titel")} for e in treffer],
+        "durchsucht": len(doku["endpunkte"]),
+        "getroffen": getroffen,
+        "ki": None,
+    }
+    if not payload.mit_ki:
+        return ergebnis
+
+    svc = build_ai_service(db)
+    if svc is None:
+        ergebnis["hinweis"] = ("KI-Integration ist nicht aktiviert – "
+                               "unten stehen die Endpunkte, die zur Frage passen.")
+        return ergebnis
+
+    system = (
+        "Du beantwortest Fragen zu einer REST-Schnittstelle AUSSCHLIESSLICH anhand "
+        "der mitgelieferten Beschreibung. Was dort nicht steht, weißt du nicht – "
+        "auch wenn dir die API bekannt vorkommt. Erfinde keine Endpunkte, keine "
+        "Parameter und keine Feldnamen. Antworte auf Deutsch, sachlich und knapp."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "antwort": {"type": "string"},
+            "endpunkte": {"type": "array", "items": {"type": "string"}},
+            "in_der_doku": {"type": "boolean"},
+        },
+        "required": ["antwort", "endpunkte", "in_der_doku"],
+    }
+    auswahl_hinweis = (
+        "Endpunkte (nach Stichworten der Frage ausgewählt):"
+        if getroffen else
+        "ACHTUNG: Zu den Stichworten der Frage passte KEIN Endpunkt. Es folgt ein "
+        "beliebiger Auszug der Beschreibung – gehe nicht davon aus, dass er die "
+        "Frage beantwortet:")
+    auftrag = (
+        f"Beschreibung der API {doku.get('titel') or c.name}:\n"
+        f"{(doku.get('beschreibung') or '(keine allgemeine Beschreibung)')[:800]}\n\n"
+        f"{auswahl_hinweis}\n"
+        f"{doku_als_text(treffer)}\n\n"
+        f"Frage: {payload.frage}\n\n"
+        "Aufgaben:\n"
+        "1. antwort: die Frage anhand der Beschreibung beantworten. Geht sie daraus "
+        "nicht hervor, sage das deutlich und nenne, was stattdessen beschrieben ist.\n"
+        "2. endpunkte: die herangezogenen Endpunkte als \"METHODE /pfad\", nur solche "
+        "aus dem Auszug oben. Beantwortet keiner die Frage: leere Liste.\n"
+        "3. in_der_doku: true, wenn du die Frage aus der Beschreibung beantworten "
+        "konntest – also immer dann, wenn du unter 2. mindestens einen Endpunkt "
+        "nennst. false nur, wenn die Beschreibung zur Frage nichts hergibt."
+    )
+    try:
+        ergebnis["ki"] = await svc.complete_json(
+            [{"role": "system", "content": system}, {"role": "user", "content": auftrag}],
+            schema, temperature=0.1, request_type="OTHER")
+    except Exception as e:
+        raise HTTPException(502, f"KI-Fehler: {str(e)[:200]}")
+    return ergebnis

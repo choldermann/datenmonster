@@ -22,6 +22,11 @@ class ApiCollection(Base):
     auth_type       = Column(String, default="none")  # wie RestSource.auth_type
     auth_config     = Column(JSON,   default=dict)    # Secrets verschlüsselt (Fernet)
 
+    # Beim OpenAPI-Import abgelegte Beschreibung: {"titel", "beschreibung",
+    # "endpunkte": [...]}. Nur Doku, keine Daten und keine Secrets – sie ist die
+    # einzige Quelle, auf die sich der Doku-Assistent stützen darf.
+    openapi_doc     = Column(JSON,   nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
