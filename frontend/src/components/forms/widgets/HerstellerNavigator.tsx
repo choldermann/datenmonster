@@ -5,6 +5,7 @@ import api from "../../../api/client";
 import { S } from "../../dashboard/constants";
 import { alsText } from "../../../utils/html";
 import AiActionModal from "../AiActionModal";
+import StammdatenPruefung from "./StammdatenPruefung";
 
 const ACCENT = "#fce499";
 const GRUEN = "#6ee7b7";
@@ -220,6 +221,13 @@ export default function HerstellerNavigator({ widget, result }) {
             </tbody>
           </table>
         </div>
+
+        {/* Sammelprüfung des ganzen Herstellers – nur sinnvoll, wenn es für ihn
+            überhaupt einen Adapter gibt. */}
+        {st.auswertbar && artikel.length > 0 && (
+          <StammdatenPruefung hersteller={gewaehlt.Hersteller} artikel={artikel}
+            mappingId={cfg.artikel_mapping_id} />
+        )}
 
         {aiZeile && (
           <AiActionModal

@@ -127,3 +127,76 @@ def ean_research(body: EanResearchRequest, db: Session = Depends(get_db),
         "fertig":             body.offset + len(stapel) >= len(machbar),
         "vorschlaege":        vorschlaege,
     }
+
+
+# ── Mehrere Felder auf einmal (EAN, Warennummer, Herkunftsland) ─────────────────
+
+class StammdatenRequest(BaseModel):
+    hersteller: str                       # Herstellername aus der Wawi
+    artikel: list[dict]                   # kArtikel, ArtNr, Artikel, HAN + aktuelle Werte
+    felder: list[str] = ["EAN", "Warennummer", "Herkunftsland", "Gewicht"]
+    limit: int = 20
+    offset: int = 0
+    nur_fehlende: bool = True             # nur Felder vorschlagen, die in der Wawi leer sind
+
+
+def _fehlt(artikel: dict, feld: str) -> bool:
+    return not str(artikel.get(feld) or "").strip()
+
+
+@router.post("/stammdaten")
+def stammdaten_research(body: StammdatenRequest, user: User = Depends(get_current_user)):
+    """Eine Artikelliste beim Hersteller prüfen und fehlende Angaben vorschlagen.
+
+    Anders als /ean holt das nicht nur die EAN, sondern auch Warennummer und
+    Ursprungsland — und liefert je Wert einen Sicherheitsgrad mit Begründung
+    (siehe services/stammdaten_research.py). Geschrieben wird hier nichts.
+    """
+    from app.services.product_research import unterstuetzt
+    from app.services.stammdaten_research import FELDER, pruefe_artikel
+
+    if not unterstuetzt(body.hersteller or ""):
+        raise HTTPException(400, f"Für „{body.hersteller}“ gibt es keinen Adapter – "
+                                 "die Produktseiten lassen sich nicht auswerten")
+    felder = tuple(f for f in body.felder if f in FELDER)
+    if not felder:
+        raise HTTPException(400, "Keine gültigen Felder angefragt")
+
+    # Nachschlagbar ist nur, was eine eigenständige Herstellernummer hat und
+    # überhaupt eine Lücke aufweist – alles andere kostet nur einen Seitenabruf.
+    machbar = [a for a in body.artikel
+               if str(a.get("HAN") or "").strip()
+               and (not body.nur_fehlende or any(_fehlt(a, f) for f in felder))]
+
+    stapel = machbar[body.offset: body.offset + max(1, min(body.limit, 50))]
+    vorschlaege, ohne_treffer = [], 0
+    for a in stapel:
+        try:
+            res = pruefe_artikel(body.hersteller, str(a.get("HAN") or ""), felder)
+        except Exception as e:
+            logger.warning("Stammdaten-Recherche fehlgeschlagen (%s): %s", a.get("ArtNr"), e)
+            res = None
+        gefunden = [v for v in ((res or {}).get("vorschlaege") or [])
+                    if not body.nur_fehlende or _fehlt(a, v["feld"])]
+        if not gefunden:
+            ohne_treffer += 1
+            continue
+        vorschlaege.append({
+            "kArtikel":   a.get("kArtikel"),
+            "ArtNr":      a.get("ArtNr"),
+            "Artikel":    a.get("Artikel"),
+            "HAN":        a.get("HAN"),
+            "Bestand":    a.get("Bestand"),
+            "quelle":     res.get("quelle"),
+            "werte":      gefunden,
+        })
+
+    return {
+        "kandidaten_gesamt":  len(body.artikel),
+        "kandidaten_machbar": len(machbar),
+        "geprueft":           len(stapel),
+        "ohne_treffer":       ohne_treffer,
+        "naechster_offset":   body.offset + len(stapel),
+        "fertig":             body.offset + len(stapel) >= len(machbar),
+        "vorschlaege":        vorschlaege,
+    }

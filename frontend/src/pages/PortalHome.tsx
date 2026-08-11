@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Play, LogOut, LayoutGrid } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -35,7 +36,9 @@ export default function PortalHome() {
             <LayoutGrid size={20} style={{ color: S.accent }} />
             <span style={{ fontSize: 16, fontWeight: 700, color: S.textBright }}>Datenportal</span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <KiCredits />
+            <ThemeUmschalter />
             <span style={{ fontSize: 12, color: S.textDim }}>{user?.username}</span>
             {!user?.is_portal_only && (
               <button onClick={() => navigate("/dashboard")}

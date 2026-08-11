@@ -9,6 +9,7 @@ import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/Wid
 import EmailTableButton from "../components/forms/EmailTableButton";
 import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
+import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -262,11 +263,15 @@ export default function PortalRunner() {
               {form?.name || slug}
             </span>
           </div>
-          <button onClick={handleLogout}
-            style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12,
-              color: S.textDim, background: "none", border: "none", cursor: "pointer" }}>
-            <LogOut size={13} /> Abmelden
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <KiCredits />
+            <ThemeUmschalter />
+            <button onClick={handleLogout}
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12,
+                color: S.textDim, background: "none", border: "none", cursor: "pointer" }}>
+              <LogOut size={13} /> Abmelden
+            </button>
+          </div>
         </div>
       </header>
 
