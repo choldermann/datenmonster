@@ -127,6 +127,40 @@ def felder(user: User = Depends(get_current_user)):
             for name, f in FELDER.items()]
 
 
+class AbleitenRequest(BaseModel):
+    kArtikel: list[int]
+    connection_id: Optional[int] = None
+    mapping_id: Optional[int] = None
+    felder: list[str] = ["Warennummer", "Herkunftsland"]
+    nur_fehlende: bool = True
+
+
+@router.post("/ableiten")
+def ableiten(req: AbleitenRequest, user: User = Depends(get_current_user),
+             db: Session = Depends(get_db)):
+    """Warennummer und Ursprungsland aus den eigenen gepflegten Artikeln ableiten.
+
+    Zweite Quelle neben der Herstellerseite und für diese beiden Felder meist die
+    einzige, die überhaupt etwas liefert. Liest nur, schreibt nichts.
+    """
+    from app.services.stammdaten_ableitung import FELDER, Ableitung
+
+    # Für die Zugriffsprüfung dieselbe Mechanik wie beim Schreiben verwenden.
+    connection_id, _ = _aufloesen(
+        PlanRequest(aenderungen=[], connection_id=req.connection_id,
+                    mapping_id=req.mapping_id), user, db)
+    felder = tuple(f for f in req.felder if f in FELDER)
+    if not felder:
+        raise HTTPException(400, "Keine gültigen Felder angefragt")
+    try:
+        werke = Ableitung(connection_id).vorschlaege(
+            req.kArtikel, felder, nur_fehlende=req.nur_fehlende)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"geprueft": len(req.kArtikel), "vorschlaege": werke,
+            "connection_id": connection_id}
+
+
 @router.post("/plan")
 def plan(req: PlanRequest, user: User = Depends(get_current_user),
          db: Session = Depends(get_db)):

@@ -222,11 +222,11 @@ export default function HerstellerNavigator({ widget, result }) {
           </table>
         </div>
 
-        {/* Sammelprüfung des ganzen Herstellers – nur sinnvoll, wenn es für ihn
-            überhaupt einen Adapter gibt. */}
-        {st.auswertbar && artikel.length > 0 && (
+        {/* Sammelprüfung des ganzen Herstellers. Auch ohne Adapter sinnvoll: die
+            Ableitung aus dem eigenen Stamm braucht keine Produktseite. */}
+        {artikel.length > 0 && (
           <StammdatenPruefung hersteller={gewaehlt.Hersteller} artikel={artikel}
-            mappingId={cfg.artikel_mapping_id} />
+            mappingId={cfg.artikel_mapping_id} auswertbar={!!st.auswertbar} />
         )}
 
         {aiZeile && (

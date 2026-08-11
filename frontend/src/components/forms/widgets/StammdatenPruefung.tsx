@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Loader2, Search, ExternalLink, AlertCircle, ShieldCheck, ShieldAlert,
-  ShieldX, Eye, ChevronDown, ChevronRight, Check, Upload, AlertTriangle } from "lucide-react";
+  ShieldX, Eye, ChevronDown, ChevronRight, Check, Upload, AlertTriangle,
+  Boxes } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
@@ -193,8 +194,11 @@ function PlanVorschau({ plan, onSchreiben, schreibt }) {
  * einmal eine frische Vorschau; zwischenzeitlich geänderte Artikel werden
  * übersprungen statt überschrieben (bRowversion).
  */
-export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
+export default function StammdatenPruefung({ hersteller, artikel, mappingId,
+  auswertbar = true }) {
   const [laeuft, setLaeuft] = useState(false);
+  const [ableitLaeuft, setAbleitLaeuft] = useState(false);
+  const [abgeleitet, setAbgeleitet] = useState(null);   // Anzahl Vorschläge des letzten Laufs
   const [fehler, setFehler] = useState("");
   const [stand, setStand] = useState(null);
   const [offset, setOffset] = useState(0);
@@ -225,13 +229,33 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
       setStand(data);
       const neu = data.vorschlaege.flatMap(v =>
         v.werte.map(w => ({ ...w, kArtikel: v.kArtikel, ArtNr: v.ArtNr,
-          Artikel: v.Artikel, HAN: v.HAN, quelle: v.quelle })));
-      setZeilen(z => start === 0 ? neu : [...z, ...neu]);
+          Artikel: v.Artikel, HAN: v.HAN, quelle: v.quelle,
+          quelleTyp: "hersteller" })));
+      setZeilen(z => start === 0 ? [...z.filter(x => x.quelleTyp !== "hersteller"), ...neu]
+                                 : [...z, ...neu]);
       setOhneTreffer(n => start === 0 ? data.ohne_treffer : n + data.ohne_treffer);
       setOffset(data.naechster_offset);
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
     } finally { setLaeuft(false); }
+  };
+
+  // Zweite Quelle: die eigenen gepflegten Artikel. Braucht keinen Adapter und ist
+  // für Warennummer und Ursprungsland meist die einzige, die etwas hergibt.
+  const ableiten = async () => {
+    setAbleitLaeuft(true); setFehler(""); setPlan(null);
+    try {
+      const { data } = await api.post("/api/stammdaten/ableiten", {
+        mapping_id: mappingId, kArtikel: knapp.map(a => a.kArtikel),
+      });
+      const neu = data.vorschlaege.flatMap(v =>
+        v.werte.map(w => ({ ...w, kArtikel: v.kArtikel, ArtNr: v.ArtNr,
+          Artikel: v.Artikel, quelle: null, quelleTyp: "stamm" })));
+      setZeilen(z => [...z.filter(x => x.quelleTyp !== "stamm"), ...neu]);
+      setAbgeleitet(neu.length);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally { setAbleitLaeuft(false); }
   };
 
   // Je Artikel und Feld gilt genau ein Wert – eine zweite Auswahl ersetzt die erste.
@@ -300,23 +324,26 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
         </p>
       </div>
       <p style={{ fontSize: 12, color: S.textMain, margin: "0 0 12px", lineHeight: 1.6 }}>
-        Geprüft werden EAN, Warennummer, Ursprungsland und Gewicht — aber nur bei Artikeln,
-        bei denen das Feld in der Wawi leer ist und eine Hersteller-Artikelnummer vorliegt.
-        Jeder Fund bekommt einen Sicherheitsgrad:{" "}
+        Zwei Quellen: die <strong style={{ color: S.textBright }}>Produktseite des Herstellers</strong>{" "}
+        (liefert vor allem EAN und Gewicht) und dein{" "}
+        <strong style={{ color: S.textBright }}>eigener Artikelstamm</strong> — wo Geschwisterartikel
+        gepflegt sind, lassen sich Warennummer und Ursprungsland daraus ableiten. Vorgeschlagen wird
+        nur, was in der Wawi leer ist. Jeder Fund bekommt einen Sicherheitsgrad:{" "}
         <span style={{ color: GRUEN, fontWeight: 700 }}>100 % = eindeutig</span>,{" "}
         <span style={{ color: ACCENT, fontWeight: 700 }}>über 50 % = vermutlich richtig, prüfen</span>,{" "}
         <span style={{ color: ROT, fontWeight: 700 }}>bis 50 % = ungesichert</span>. Der Grund
         steht in jeder Zeile.
       </p>
 
-      {stand && (
+      {(stand || abgeleitet !== null) && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-          {[["Artikel des Herstellers", stand.kandidaten_gesamt],
-            ["davon nachschlagbar", stand.kandidaten_machbar],
-            ["geprüft", offset],
+          {[...(stand ? [["Artikel des Herstellers", stand.kandidaten_gesamt],
+                         ["davon nachschlagbar", stand.kandidaten_machbar],
+                         ["beim Hersteller geprüft", offset],
+                         ["dort nichts hinterlegt", ohneTreffer]] : []),
+            ...(abgeleitet !== null ? [["aus eigenem Stamm", abgeleitet]] : []),
             ["Werte gefunden", zeilen.length],
-            ["ausgewählt", auswahl.length],
-            ["nichts hinterlegt", ohneTreffer]].map(([k, v]) => (
+            ["ausgewählt", auswahl.length]].map(([k, v]) => (
             <div key={k} style={{ backgroundColor: S.bgEl, border: `1px solid ${S.border}`,
               borderRadius: 7, padding: "6px 11px" }}>
               <div style={{ fontSize: 9.5, color: S.textDim, textTransform: "uppercase" }}>{k}</div>
@@ -336,18 +363,31 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-        <button onClick={() => stapel(stand ? offset : 0)} disabled={laeuft || stand?.fertig}
+        {auswertbar && (
+          <button onClick={() => stapel(stand ? offset : 0)} disabled={laeuft || stand?.fertig}
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px",
+              borderRadius: 7, border: "none",
+              backgroundColor: stand?.fertig ? "rgba(110,231,183,0.15)" : ACCENT,
+              color: stand?.fertig ? GRUEN : "#111",
+              cursor: laeuft || stand?.fertig ? "default" : "pointer",
+              fontSize: 12.5, fontWeight: 700 }}>
+            {laeuft ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+              : <Search size={14} />}
+            {laeuft ? "Wird beim Hersteller nachgeschlagen…"
+              : stand?.fertig ? "Alle geprüft"
+              : stand ? "Weitere 20 prüfen" : "Beim Hersteller prüfen"}
+          </button>
+        )}
+
+        <button onClick={ableiten} disabled={ableitLaeuft}
           style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px",
-            borderRadius: 7, border: "none",
-            backgroundColor: stand?.fertig ? "rgba(110,231,183,0.15)" : ACCENT,
-            color: stand?.fertig ? GRUEN : "#111",
-            cursor: laeuft || stand?.fertig ? "default" : "pointer",
-            fontSize: 12.5, fontWeight: 700 }}>
-          {laeuft ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
-            : <Search size={14} />}
-          {laeuft ? "Wird beim Hersteller nachgeschlagen…"
-            : stand?.fertig ? "Alle geprüft"
-            : stand ? "Weitere 20 prüfen" : "Artikel prüfen"}
+            borderRadius: 7, border: `1px solid ${S.border}`,
+            backgroundColor: auswertbar ? "rgba(255,255,255,0.05)" : ACCENT,
+            color: auswertbar ? S.textMain : "#111",
+            cursor: ableitLaeuft ? "wait" : "pointer", fontSize: 12.5, fontWeight: 700 }}>
+          {ableitLaeuft ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />
+            : <Boxes size={14} />}
+          Aus eigenen Daten ableiten
         </button>
 
         {zeilen.length > 0 && (
@@ -418,11 +458,18 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId }) {
                         + "eindeutige Beschriftung, Wert formal gültig"}
                   </td>
                   <td style={td}>
-                    <a href={z.quelle} target="_blank" rel="noopener"
-                      style={{ color: S.textDim, display: "inline-flex", alignItems: "center",
-                        gap: 4 }}>
-                      <ExternalLink size={11} /> Seite
-                    </a>
+                    {z.quelle ? (
+                      <a href={z.quelle} target="_blank" rel="noopener"
+                        style={{ color: S.textDim, display: "inline-flex", alignItems: "center",
+                          gap: 4 }}>
+                        <ExternalLink size={11} /> Herstellerseite
+                      </a>
+                    ) : (
+                      <span style={{ color: S.textDim, display: "inline-flex",
+                        alignItems: "center", gap: 4, fontSize: 11 }}>
+                        <Boxes size={11} /> eigener Stamm
+                      </span>
+                    )}
                   </td>
                 </tr>
               ))}
