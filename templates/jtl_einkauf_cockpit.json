@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
   "category": "jtl-reporting",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -256,9 +256,10 @@
             "Bestellungen",
             "Bestellvolumen",
             "AvgBestellung",
-            "LetzteBestellung"
+            "LetzteBestellung",
+            "kLieferant"
           ],
-          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(DISTINCT B.kLieferantenBestellung) AS Bestellungen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto), 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto) / NULLIF(COUNT(DISTINCT B.kLieferantenBestellung), 0), 0)\n        AS DECIMAL(18,2)) AS AvgBestellung,\n    CONVERT(char(10), MAX(B.dErstellt), 104) AS LetzteBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0\n  AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nORDER BY SUM(P.fMenge * P.fEKNetto) DESC"
+          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(DISTINCT B.kLieferantenBestellung) AS Bestellungen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto), 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto) / NULLIF(COUNT(DISTINCT B.kLieferantenBestellung), 0), 0)\n        AS DECIMAL(18,2)) AS AvgBestellung,\n    CONVERT(char(10), MAX(B.dErstellt), 104) AS LetzteBestellung,\n    CAST(B.kLieferant AS VARCHAR(20)) AS kLieferant\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0\n  AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nORDER BY SUM(P.fMenge * P.fEKNetto) DESC"
         }
       ],
       "targets": [
@@ -319,6 +320,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "LetzteBestellung"
+              }
+            },
+            {
+              "source_field": "kLieferant",
+              "target_field": "kLieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferant"
               }
             }
           ]
@@ -441,9 +452,10 @@
             "Liefertermin",
             "VerzugTage",
             "OffenerWert",
-            "OffenePositionen"
+            "OffenePositionen",
+            "kLieferantenBestellung"
           ],
-          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
+          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen,\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n  AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
         }
       ],
       "targets": [
@@ -524,6 +536,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "OffenePositionen"
+              }
+            },
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
               }
             }
           ]
@@ -730,9 +752,10 @@
             "Lieferungen",
             "PuenktlichQuote",
             "AvgVerzugTage",
-            "AvgLieferzeitTage"
+            "AvgLieferzeitTage",
+            "kLieferant"
           ],
-          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(*) AS Lieferungen,\n    CAST(100.0 * SUM(CASE WHEN X.VerzugTage <= 0 THEN 1 ELSE 0 END) / COUNT(*)\n        AS DECIMAL(18,1)) AS PuenktlichQuote,\n    CAST(ISNULL(AVG(CASE WHEN X.VerzugTage > 0 THEN CAST(X.VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    CAST(ISNULL(AVG(CAST(X.LieferzeitTage AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgLieferzeitTage\nFROM (\n    SELECT kLieferant, DATEDIFF(DAY, SollTermin, IstTermin) AS VerzugTage,\n           DATEDIFF(DAY, Bestelldatum, IstTermin) AS LieferzeitTage\n    FROM (\n    SELECT B.kLieferant, B.kLieferantenBestellung, B.dErstellt AS Bestelldatum,\n        B.dLieferdatum AS SollTermin,\n        MIN(ISNULL(W.dGeliefertAM, W.dErstellt)) AS IstTermin\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n    GROUP BY B.kLieferant, B.kLieferantenBestellung, B.dErstellt, B.dLieferdatum\n) W1\n) X\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = X.kLieferant\nGROUP BY X.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nHAVING COUNT(*) >= 3\nORDER BY COUNT(*) DESC"
+          "sql": "SELECT TOP 50\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    COUNT(*) AS Lieferungen,\n    CAST(100.0 * SUM(CASE WHEN X.VerzugTage <= 0 THEN 1 ELSE 0 END) / COUNT(*)\n        AS DECIMAL(18,1)) AS PuenktlichQuote,\n    CAST(ISNULL(AVG(CASE WHEN X.VerzugTage > 0 THEN CAST(X.VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    CAST(ISNULL(AVG(CAST(X.LieferzeitTage AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgLieferzeitTage,\n    CAST(X.kLieferant AS VARCHAR(20)) AS kLieferant\nFROM (\n    SELECT kLieferant, DATEDIFF(DAY, SollTermin, IstTermin) AS VerzugTage,\n           DATEDIFF(DAY, Bestelldatum, IstTermin) AS LieferzeitTage\n    FROM (\n    SELECT B.kLieferant, B.kLieferantenBestellung, B.dErstellt AS Bestelldatum,\n        B.dLieferdatum AS SollTermin,\n        MIN(ISNULL(W.dGeliefertAM, W.dErstellt)) AS IstTermin\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n    GROUP BY B.kLieferant, B.kLieferantenBestellung, B.dErstellt, B.dLieferdatum\n) W1\n) X\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = X.kLieferant\nGROUP BY X.kLieferant, ISNULL(NULLIF(L.cFirma, ''), 'unbekannt')\nHAVING COUNT(*) >= 3\nORDER BY COUNT(*) DESC"
         }
       ],
       "targets": [
@@ -794,6 +817,16 @@
                 "type": "direct",
                 "source_field": "AvgLieferzeitTage"
               }
+            },
+            {
+              "source_field": "kLieferant",
+              "target_field": "kLieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferant"
+              }
             }
           ]
         }
@@ -829,9 +862,10 @@
             "ZahlungszielTage",
             "SkontoProzent",
             "Mindestbestellwert",
-            "Volumen12M"
+            "Volumen12M",
+            "kLieferant"
           ],
-          "sql": "SELECT TOP 200\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(L.cISO, ISNULL(L.cLand, '')) AS Land,\n    ISNULL(L.nLieferzeit, 0) AS LieferzeitTage,\n    ISNULL(L.nZahlungsziel, 0) AS ZahlungszielTage,\n    CAST(ISNULL(L.fSkonto, 0) AS DECIMAL(18,2)) AS SkontoProzent,\n    CAST(ISNULL(L.fMindestbestellwert, 0) AS DECIMAL(18,2)) AS Mindestbestellwert,\n    CAST(ISNULL((SELECT SUM(P.fMenge * P.fEKNetto)\n        FROM dbo.tLieferantenBestellung B\n        JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n        WHERE B.kLieferant = L.kLieferant AND ISNULL(B.nDeleted, 0) = 0\n          AND B.dErstellt >= DATEADD(MONTH, -12, GETDATE())), 0) AS DECIMAL(18,2)) AS Volumen12M\nFROM dbo.tlieferant L\nWHERE ISNULL(L.cAktiv, 'Y') <> 'N'\nORDER BY 7 DESC"
+          "sql": "SELECT TOP 200\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(L.cISO, ISNULL(L.cLand, '')) AS Land,\n    ISNULL(L.nLieferzeit, 0) AS LieferzeitTage,\n    ISNULL(L.nZahlungsziel, 0) AS ZahlungszielTage,\n    CAST(ISNULL(L.fSkonto, 0) AS DECIMAL(18,2)) AS SkontoProzent,\n    CAST(ISNULL(L.fMindestbestellwert, 0) AS DECIMAL(18,2)) AS Mindestbestellwert,\n    CAST(ISNULL((SELECT SUM(P.fMenge * P.fEKNetto)\n        FROM dbo.tLieferantenBestellung B\n        JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n        WHERE B.kLieferant = L.kLieferant AND ISNULL(B.nDeleted, 0) = 0\n          AND B.dErstellt >= DATEADD(MONTH, -12, GETDATE())), 0) AS DECIMAL(18,2)) AS Volumen12M,\n    CAST(L.kLieferant AS VARCHAR(20)) AS kLieferant\nFROM dbo.tlieferant L\nWHERE ISNULL(L.cAktiv, 'Y') <> 'N'\nORDER BY 7 DESC"
         }
       ],
       "targets": [
@@ -912,6 +946,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Volumen12M"
+              }
+            },
+            {
+              "source_field": "kLieferant",
+              "target_field": "kLieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferant"
               }
             }
           ]
@@ -1055,9 +1099,10 @@
             "Belegdatum",
             "Zahlungsziel",
             "TageUeberfaellig",
-            "Betrag"
+            "Betrag",
+            "kEingangsrechnung"
           ],
-          "sql": "SELECT TOP 500\n    ISNULL(NULLIF(R.cLieferant, ''), ISNULL(L.cFirma, 'unbekannt')) AS Lieferant,\n    ISNULL(NULLIF(R.cFremdbelegnummer, ''), R.cEigeneRechnungsnummer) AS Rechnungsnummer,\n    ISNULL(CONVERT(char(10), R.dBelegdatum, 104), '') AS Belegdatum,\n    ISNULL(CONVERT(char(10), R.dZahlungsziel, 104), '') AS Zahlungsziel,\n    ISNULL(CASE WHEN R.dZahlungsziel < GETDATE()\n        THEN DATEDIFF(DAY, R.dZahlungsziel, GETDATE()) END, 0) AS TageUeberfaellig,\n    CAST((SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS DECIMAL(18,2)) AS Betrag\nFROM dbo.tEingangsrechnung R\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\nWHERE ISNULL(R.nDeleted, 0) = 0 AND R.dBezahlt IS NULL AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\nORDER BY 5 DESC, 6 DESC"
+          "sql": "SELECT TOP 500\n    ISNULL(NULLIF(R.cLieferant, ''), ISNULL(L.cFirma, 'unbekannt')) AS Lieferant,\n    ISNULL(NULLIF(R.cFremdbelegnummer, ''), R.cEigeneRechnungsnummer) AS Rechnungsnummer,\n    ISNULL(CONVERT(char(10), R.dBelegdatum, 104), '') AS Belegdatum,\n    ISNULL(CONVERT(char(10), R.dZahlungsziel, 104), '') AS Zahlungsziel,\n    ISNULL(CASE WHEN R.dZahlungsziel < GETDATE()\n        THEN DATEDIFF(DAY, R.dZahlungsziel, GETDATE()) END, 0) AS TageUeberfaellig,\n    CAST((SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS DECIMAL(18,2)) AS Betrag,\n    CAST(R.kEingangsrechnung AS VARCHAR(20)) AS kEingangsrechnung\nFROM dbo.tEingangsrechnung R\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\nWHERE ISNULL(R.nDeleted, 0) = 0 AND R.dBezahlt IS NULL AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\nORDER BY 5 DESC, 6 DESC"
         }
       ],
       "targets": [
@@ -1129,6 +1174,16 @@
                 "type": "direct",
                 "source_field": "Betrag"
               }
+            },
+            {
+              "source_field": "kEingangsrechnung",
+              "target_field": "kEingangsrechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kEingangsrechnung"
+              }
             }
           ]
         }
@@ -1161,9 +1216,10 @@
             "Lieferant",
             "Rechnungen",
             "Rechnungsvolumen",
-            "AvgRechnung"
+            "AvgRechnung",
+            "kLieferant"
           ],
-          "sql": "SELECT TOP 50 Lieferant,\n    COUNT(*) AS Rechnungen,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Rechnungsvolumen,\n    CAST(ISNULL(AVG(Wert), 0) AS DECIMAL(18,2)) AS AvgRechnung\nFROM (\n    SELECT R.kLieferant,\n        ISNULL(NULLIF(L.cFirma, ''), ISNULL(NULLIF(R.cLieferant, ''), 'unbekannt')) AS Lieferant,\n        (SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS Wert\n    FROM dbo.tEingangsrechnung R\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\n    WHERE ISNULL(R.nDeleted, 0) = 0\n      AND R.dBelegdatum >= :von AND R.dBelegdatum < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\n) X\nGROUP BY kLieferant, Lieferant\nORDER BY 3 DESC"
+          "sql": "SELECT TOP 50 Lieferant,\n    COUNT(*) AS Rechnungen,\n    CAST(ISNULL(SUM(Wert), 0) AS DECIMAL(18,2)) AS Rechnungsvolumen,\n    CAST(ISNULL(AVG(Wert), 0) AS DECIMAL(18,2)) AS AvgRechnung,\n    CAST(kLieferant AS VARCHAR(20)) AS kLieferant\nFROM (\n    SELECT R.kLieferant,\n        ISNULL(NULLIF(L.cFirma, ''), ISNULL(NULLIF(R.cLieferant, ''), 'unbekannt')) AS Lieferant,\n        (SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS Wert\n    FROM dbo.tEingangsrechnung R\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\n    WHERE ISNULL(R.nDeleted, 0) = 0\n      AND R.dBelegdatum >= :von AND R.dBelegdatum < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR R.kLieferant IN (:lieferant))\n) X\nGROUP BY kLieferant, Lieferant\nORDER BY 3 DESC"
         }
       ],
       "targets": [
@@ -1214,6 +1270,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "AvgRechnung"
+              }
+            },
+            {
+              "source_field": "kLieferant",
+              "target_field": "kLieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferant"
               }
             }
           ]
@@ -1452,6 +1518,806 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Mehrkosten"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_pos_detail",
+      "name": "Einkauf – Bestellpositionen (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(P.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(P.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), P.cName) AS Bezeichnung,\n    CAST(P.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(P.fMengeGeliefert AS DECIMAL(18,2)) AS Geliefert,\n    CAST(P.fAnzahlOffen AS DECIMAL(18,2)) AS Offen,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fMenge * P.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tLieferantenBestellungPos P\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = P.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE P.kLieferantenBestellung = :kLieferantenBestellung\nORDER BY P.nSort",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Geliefert",
+            "Offen",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellpositionen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Geliefert",
+              "target_field": "Geliefert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Geliefert"
+              }
+            },
+            {
+              "source_field": "Offen",
+              "target_field": "Offen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Offen"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_bestellungen_detail",
+      "name": "Einkauf – Bestellungen des Lieferanten (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung,\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    CONVERT(varchar(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(varchar(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    CAST(ISNULL(SUM(P.fMenge * P.fEKNetto), 0) AS DECIMAL(18,2)) AS Bestellwert,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS Positionen\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nWHERE ISNULL(B.nDeleted, 0) = 0 AND B.kLieferant = :kLieferant\n  AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fMenge * P.fEKNetto) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kLieferantenBestellung",
+            "Bestellnummer",
+            "Bestelldatum",
+            "Liefertermin",
+            "Bestellwert",
+            "OffenerWert",
+            "Positionen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellungen des Lieferanten (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
+              }
+            },
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "Bestellwert",
+              "target_field": "Bestellwert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellwert"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_lieferungen_detail",
+      "name": "Einkauf – Lieferungen des Lieferanten (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    CONVERT(varchar(10), B.dErstellt, 104) AS Bestelldatum,\n    CONVERT(varchar(10), B.dLieferdatum, 104) AS SollTermin,\n    CONVERT(varchar(10), MIN(ISNULL(W.dGeliefertAM, W.dErstellt)), 104) AS IstTermin,\n    DATEDIFF(DAY, B.dLieferdatum, MIN(ISNULL(W.dGeliefertAM, W.dErstellt))) AS VerzugTage,\n    DATEDIFF(DAY, B.dErstellt, MIN(ISNULL(W.dGeliefertAM, W.dErstellt))) AS LieferzeitTage\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nJOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\nWHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL AND B.kLieferant = :kLieferant\n  AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, B.dErstellt, B.dLieferdatum\nORDER BY DATEDIFF(DAY, B.dLieferdatum, MIN(ISNULL(W.dGeliefertAM, W.dErstellt))) DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestellnummer",
+            "Bestelldatum",
+            "SollTermin",
+            "IstTermin",
+            "VerzugTage",
+            "LieferzeitTage"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Lieferungen des Lieferanten (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "SollTermin",
+              "target_field": "SollTermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "SollTermin"
+              }
+            },
+            {
+              "source_field": "IstTermin",
+              "target_field": "IstTermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "IstTermin"
+              }
+            },
+            {
+              "source_field": "VerzugTage",
+              "target_field": "VerzugTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerzugTage"
+              }
+            },
+            {
+              "source_field": "LieferzeitTage",
+              "target_field": "LieferzeitTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LieferzeitTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_er_pos_detail",
+      "name": "Einkauf – Positionen der Eingangsrechnung (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(EP.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(EP.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), EP.cName) AS Bezeichnung,\n    CAST(EP.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(EP.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(EP.fMenge * EP.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tEingangsrechnungPos EP\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = EP.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE EP.kEingangsrechnung = :kEingangsrechnung\nORDER BY EP.kEingangsrechnungPos",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Positionen der Eingangsrechnung (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_er_lieferant_detail",
+      "name": "Einkauf – Eingangsrechnungen des Lieferanten (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 300\n    CAST(R.kEingangsrechnung AS VARCHAR(20)) AS kEingangsrechnung,\n    ISNULL(NULLIF(R.cFremdbelegnummer, ''), R.cEigeneRechnungsnummer) AS Rechnungsnummer,\n    ISNULL(CONVERT(varchar(10), R.dBelegdatum, 104), '') AS Belegdatum,\n    ISNULL(CONVERT(varchar(10), R.dZahlungsziel, 104), '') AS Zahlungsziel,\n    ISNULL(CONVERT(varchar(10), R.dBezahlt, 104), 'offen') AS Bezahlt,\n    CAST((SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP\n          WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS DECIMAL(18,2)) AS Betrag\nFROM dbo.tEingangsrechnung R\nWHERE ISNULL(R.nDeleted, 0) = 0 AND R.kLieferant = :kLieferant\nORDER BY R.dBelegdatum DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kEingangsrechnung",
+            "Rechnungsnummer",
+            "Belegdatum",
+            "Zahlungsziel",
+            "Bezahlt",
+            "Betrag"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Eingangsrechnungen des Lieferanten (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kEingangsrechnung",
+              "target_field": "kEingangsrechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kEingangsrechnung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnummer",
+              "target_field": "Rechnungsnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnummer"
+              }
+            },
+            {
+              "source_field": "Belegdatum",
+              "target_field": "Belegdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Belegdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "Bezahlt",
+              "target_field": "Bezahlt",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezahlt"
+              }
+            },
+            {
+              "source_field": "Betrag",
+              "target_field": "Betrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Betrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_artikel_hist_detail",
+      "name": "Einkauf – Bestellhistorie des Artikels (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT TOP 200\n    CONVERT(varchar(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    CAST(P.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fMenge * P.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND P.cArtNr = :artnr\nORDER BY B.dErstellt DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestelldatum",
+            "Lieferant",
+            "Bestellnummer",
+            "Menge",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellhistorie des Artikels (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_artikel_detail",
+      "name": "Cockpit – Artikel-Detail",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Bezeichnung",
+            "EAN",
+            "HAN",
+            "VKNetto",
+            "EKNetto",
+            "Herkunftsland"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikel-Detail",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
               }
             }
           ]
@@ -1717,7 +2583,36 @@
             "config": {
               "width": 12,
               "info": "Bestellwert = Summe der Bestellpositionen (inkl. Fracht-/Zuschlagspositionen), netto in EUR.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_bestellungen_detail",
+                "key_column": "kLieferant",
+                "param": "kLieferant",
+                "title": "Bestellungen des Lieferanten",
+                "hidden_columns": [
+                  "kLieferantenBestellung"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ek_pos_detail",
+                    "key_column": "kLieferantenBestellung",
+                    "param": "kLieferantenBestellung",
+                    "title": "Bestellpositionen",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
+                  },
+                  {
+                    "mapping_id": "m_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kLieferant"
+              ]
             }
           },
           {
@@ -1797,7 +2692,27 @@
             "config": {
               "width": 12,
               "info": "Momentaufnahme, unabhängig vom Zeitraum: Bestellungen mit Restmenge, weder gelöscht noch manuell abgeschlossen. Sehr alte Einträge sind meist Karteileichen – manuell abschließen bereinigt die Liste.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_pos_detail",
+                "key_column": "kLieferantenBestellung",
+                "param": "kLieferantenBestellung",
+                "title": "Positionen der Bestellung",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kLieferantenBestellung"
+              ]
             }
           },
           {
@@ -1863,7 +2778,16 @@
             "action_id": "act_ek_termintreue_lieferant",
             "config": {
               "width": 6,
-              "info": "Ist-Termin aus dem echten Wareneingang (tWarenLagerEingang), Soll-Termin aus der Bestellung. Pünktlich = Wareneingang nicht nach dem Soll-Termin."
+              "info": "Ist-Termin aus dem echten Wareneingang (tWarenLagerEingang), Soll-Termin aus der Bestellung. Pünktlich = Wareneingang nicht nach dem Soll-Termin.",
+              "drilldown": {
+                "mapping_id": "m_ek_lieferungen_detail",
+                "key_column": "kLieferant",
+                "param": "kLieferant",
+                "title": "Lieferungen des Lieferanten"
+              },
+              "hidden_columns": [
+                "kLieferant"
+              ]
             }
           },
           {
@@ -1873,7 +2797,36 @@
             "action_id": "act_ek_lieferantenstamm",
             "config": {
               "width": 6,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_bestellungen_detail",
+                "key_column": "kLieferant",
+                "param": "kLieferant",
+                "title": "Bestellungen des Lieferanten",
+                "hidden_columns": [
+                  "kLieferantenBestellung"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ek_pos_detail",
+                    "key_column": "kLieferantenBestellung",
+                    "param": "kLieferantenBestellung",
+                    "title": "Bestellpositionen",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
+                  },
+                  {
+                    "mapping_id": "m_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kLieferant"
+              ]
             }
           },
           {
@@ -1957,7 +2910,27 @@
             "config": {
               "width": 12,
               "info": "Offen = kein Bezahldatum gesetzt. Betrag = Summe der Rechnungspositionen netto.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_er_pos_detail",
+                "key_column": "kEingangsrechnung",
+                "param": "kEingangsrechnung",
+                "title": "Positionen der Eingangsrechnung",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kEingangsrechnung"
+              ]
             }
           },
           {
@@ -1967,7 +2940,36 @@
             "action_id": "act_ek_er_lieferant",
             "config": {
               "width": 12,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_er_lieferant_detail",
+                "key_column": "kLieferant",
+                "param": "kLieferant",
+                "title": "Eingangsrechnungen des Lieferanten",
+                "hidden_columns": [
+                  "kEingangsrechnung"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ek_er_pos_detail",
+                    "key_column": "kEingangsrechnung",
+                    "param": "kEingangsrechnung",
+                    "title": "Positionen der Eingangsrechnung",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
+                  },
+                  {
+                    "mapping_id": "m_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kLieferant"
+              ]
             }
           },
           {
@@ -1978,7 +2980,13 @@
             "config": {
               "width": 12,
               "info": "Ø EK = Einkaufswert / Menge im Zeitraum, letzter EK = Preis der jüngsten Bestellung.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_artikel_hist_detail",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Bestellhistorie des Artikels"
+              }
             }
           },
           {
@@ -1989,7 +2997,13 @@
             "config": {
               "width": 12,
               "info": "Vergleich erste vs. letzte Bestellung je Artikel in den letzten 12 Monaten. „Mehrkosten\" = Preisdifferenz × bestellte Menge – sortiert nach größter Ergebniswirkung. Ignoriert den Zeitraumfilter.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_ek_artikel_hist_detail",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Bestellhistorie des Artikels"
+              }
             }
           }
         ],
