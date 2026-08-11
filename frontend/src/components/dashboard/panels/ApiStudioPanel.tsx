@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Send, Plus, Trash2, Pencil, Loader2, X, FolderOpen, Save, History,
   Globe, ChevronRight, ChevronDown, Layers, Check, AlertTriangle, Table2,
+  Sparkles, Bug, ShieldCheck, KeyRound,
 } from "lucide-react";
 import api from "../../../api/client";
 import {
-  KvEditor, AuthEditor, REST_AUTH_TYPES, METHODS, BODY_TYPES, TEMPLATE_VARS,
+  KvEditor, AuthEditor, PaginationEditor, REST_AUTH_TYPES, METHODS, BODY_TYPES, TEMPLATE_VARS,
 } from "./RestApiPanel";
 
 const C = "#22d3ee";                       // Akzentfarbe des API Studios
@@ -70,9 +71,358 @@ function JsonAnsicht({ text }) {
   );
 }
 
+// ── Schalter ──────────────────────────────────────────────────────────────────
+
+function Schalter({ an, onChange, label, hinweis }) {
+  return (
+    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+      <input type="checkbox" checked={an} onChange={e => onChange(e.target.checked)} style={{ marginTop: 2 }} />
+      <span>
+        <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
+        {hinweis && <span style={{ display: "block", fontSize: 10, color: "#475569", marginTop: 1 }}>{hinweis}</span>}
+      </span>
+    </label>
+  );
+}
+
+// ── Analyse ───────────────────────────────────────────────────────────────────
+
+/**
+ * Erst rechnen, dann fragen: Struktur, Datenpfad und Paginierung stehen sofort
+ * fest – ganz ohne Sprachmodell. Die KI-Deutung ist ein bewusster zweiter Schritt,
+ * weil dabei (maskierte) Auszüge die Maschine verlassen können.
+ */
+function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung }) {
+  const [daten, setDaten] = useState(null);
+  const [laedt, setLaedt] = useState(false);
+  const [kiLaedt, setKiLaedt] = useState(false);
+  const [echteWerte, setEchteWerte] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  const analysieren = async (mitKi) => {
+    const setzeLaden = mitKi ? setKiLaedt : setLaedt;
+    setzeLaden(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/analyze`, {
+        body: antwort.json, response_headers: antwort.response_headers,
+        status_code: antwort.status_code, url: kontext.url, method: kontext.method,
+        data_path: kontext.data_path || null, project_id: kontext.projectId ?? null,
+        mit_ki: mitKi, echte_werte: mitKi && echteWerte,
+      });
+      setDaten(data);
+      if (data.ki_fehler) setFehler(data.ki_fehler);
+    } catch (e) { setFehler(e.response?.data?.detail || "Analyse fehlgeschlagen"); }
+    finally { setzeLaden(false); }
+  };
+
+  // Der rechnende Teil kostet nichts und ist sofort da – der läuft von selbst.
+  useEffect(() => { setDaten(null); setFehler(""); analysieren(false); }, [antwort]);
+
+  if (laedt && !daten) return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748b", fontSize: 12 }}>
+      <Loader2 size={14} className="animate-spin" /> Antwort wird untersucht…
+    </div>
+  );
+  if (!daten) return <p style={{ fontSize: 12, color: "#f87171" }}>{fehler || "Keine Analyse verfügbar."}</p>;
+
+  const bedeutungen = {};
+  (daten.ki?.felder || []).forEach(f => { bedeutungen[f.pfad] = f.bedeutung; });
+  const pag = daten.paginierung || {};
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Datenpfad */}
+      <div>
+        <p style={{ ...lS, marginBottom: 6 }}>Wo die Daten liegen</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+          {(daten.datenpfad_kandidaten || []).length === 0 && (
+            <span style={{ fontSize: 11, color: "#475569" }}>Keine Liste gefunden – die Antwort ist ein Einzelobjekt.</span>
+          )}
+          {(daten.datenpfad_kandidaten || []).map(k => (
+            <button key={k.pfad} onClick={() => aufDatenpfad(k.pfad)}
+              title="Als Datenpfad übernehmen"
+              style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, cursor: "pointer", fontFamily: "monospace",
+                border: `1px solid ${daten.datenpfad === k.pfad ? C : "rgba(255,255,255,0.12)"}`,
+                backgroundColor: daten.datenpfad === k.pfad ? `${C}18` : "transparent",
+                color: daten.datenpfad === k.pfad ? C : "#94a3b8" }}>
+              {k.pfad || "(Wurzel)"} <span style={{ color: "#475569" }}>· {k.zeilen}×{k.spalten}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Paginierung */}
+      <div>
+        <p style={{ ...lS, marginBottom: 6 }}>Weitere Seiten</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11, color: pag.config ? "#6ee7b7" : "#64748b" }}>{pag.begruendung}</span>
+          {pag.config && (
+            <button onClick={() => aufPaginierung(pag.config)}
+              style={{ ...btn, padding: "3px 10px", fontSize: 11, color: C, borderColor: `${C}55` }}>
+              Paginierung übernehmen ({pag.typ})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* KI-Deutung */}
+      <div style={{ padding: 12, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+        {!daten.ki ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ShieldCheck size={14} style={{ color: "#6ee7b7", flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: "#64748b" }}>
+                Bisher blieb alles auf dieser Maschine. Für die Deutung geht das Feld-Inventar an die KI –
+                Beispielwerte maskiert (<code style={{ fontFamily: "monospace" }}>&lt;email&gt;</code>,
+                <code style={{ fontFamily: "monospace" }}> &lt;text:12&gt;</code>), nie die vollständige Antwort.
+              </span>
+            </div>
+            <Schalter an={echteWerte} onChange={setEchteWerte}
+              label="Echte Beispielwerte mitsenden"
+              hinweis="Zugangsdaten und klar personenbezogene Felder bleiben auch dann maskiert." />
+            <button onClick={() => analysieren(true)} disabled={kiLaedt}
+              style={{ ...btnPrimary, alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6, opacity: kiLaedt ? 0.5 : 1 }}>
+              {kiLaedt ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} Mit KI erklären
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <p style={{ fontSize: 12, color: "#e2e8f0", margin: 0, lineHeight: 1.6 }}>{daten.ki.zusammenfassung}</p>
+            {daten.ki.vorgeschlagener_dataset_name && (
+              <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+                Vorgeschlagener Name: <strong style={{ color: C }}>{daten.ki.vorgeschlagener_dataset_name}</strong>
+              </p>
+            )}
+            {(daten.ki.hinweise || []).length > 0 && (
+              <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                {daten.ki.hinweise.map((h, i) => (
+                  <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{h}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
+      {fehler && <p style={{ fontSize: 11, color: "#fbbf24" }}>{fehler}</p>}
+
+      {/* Feld-Inventar */}
+      <div>
+        <p style={{ ...lS, marginBottom: 6 }}>Felder ({daten.inventar.length}) · {daten.zeilen} Datensätze untersucht</p>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ fontSize: 11, borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>{["Feld", "Typ", "Gefüllt", "Beispiel", ...(daten.ki ? ["Bedeutung"] : [])].map(h => (
+                <th key={h} style={{ textAlign: "left", padding: "4px 10px 6px 0", color: "#64748b", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>{h}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {daten.inventar.map(f => (
+                <tr key={f.pfad}>
+                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#e2e8f0", whiteSpace: "nowrap" }}>
+                    {f.pfad}
+                    {f.wirkt_wie_schluessel && <span title="Wert ist in allen Datensätzen eindeutig" style={{ marginLeft: 6, fontSize: 9, color: "#fbbf24" }}>◆</span>}
+                  </td>
+                  <td style={{ padding: "4px 10px 4px 0", color: "#94a3b8", whiteSpace: "nowrap" }}>{f.typ}</td>
+                  <td style={{ padding: "4px 10px 4px 0", whiteSpace: "nowrap" }}>
+                    <span style={{ display: "inline-block", width: 42, height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.08)", verticalAlign: "middle", overflow: "hidden" }}>
+                      <span style={{ display: "block", width: `${f.anteil_gefuellt * 100}%`, height: "100%", backgroundColor: f.anteil_gefuellt < 0.5 ? "#fbbf24" : "#6ee7b7" }} />
+                    </span>
+                    <span style={{ fontSize: 10, color: "#64748b", marginLeft: 6 }}>{Math.round(f.anteil_gefuellt * 100)}%</span>
+                  </td>
+                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#64748b", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.beispiel === null || f.beispiel === undefined ? "–" : String(f.beispiel)}
+                  </td>
+                  {daten.ki && <td style={{ padding: "4px 0", color: "#94a3b8" }}>{bedeutungen[f.pfad] || ""}</td>}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Fehler-Debugger ───────────────────────────────────────────────────────────
+
+function DebugKasten({ antwort, kontext, onUebernehmen }) {
+  const [d, setD] = useState(null);
+  const [laedt, setLaedt] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  useEffect(() => { setD(null); setFehler(""); }, [antwort]);
+
+  const untersuchen = async () => {
+    setLaedt(true); setFehler("");
+    try {
+      const { data } = await api.post(`${BASE}/debug`, {
+        url: kontext.url, method: kontext.method, headers: kontext.headers,
+        query_params: kontext.query_params, body_type: kontext.body_type,
+        auth_type: kontext.auth_type, project_id: kontext.projectId ?? null,
+        status_code: antwort.status_code, reason: antwort.reason,
+        response_body: (antwort.body_text || "").slice(0, 4000),
+        error: antwort.error,
+      });
+      setD(data);
+    } catch (e) { setFehler(e.response?.data?.detail || "KI-Analyse fehlgeschlagen"); }
+    finally { setLaedt(false); }
+  };
+
+  return (
+    <div style={{ margin: "12px 16px 0", padding: 12, borderRadius: 8, backgroundColor: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)" }}>
+      {!d ? (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <Bug size={14} style={{ color: "#fbbf24", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "#94a3b8", flex: 1 }}>
+            Die Anfrage kam nicht durch. Die KI kann Anfrage und Fehlermeldung durchsehen –
+            Zugangsdaten werden dabei maskiert.
+          </span>
+          <button onClick={untersuchen} disabled={laedt}
+            style={{ ...btn, padding: "4px 12px", fontSize: 11, color: "#fbbf24", borderColor: "rgba(251,191,36,0.35)", display: "flex", alignItems: "center", gap: 6 }}>
+            {laedt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Fehler untersuchen
+          </button>
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <p style={{ fontSize: 12, color: "#e2e8f0", margin: 0, lineHeight: 1.6 }}>{d.diagnose}</p>
+          {(d.pruefpunkte || []).length > 0 && (
+            <ol style={{ margin: 0, paddingLeft: 18 }}>
+              {d.pruefpunkte.map((p, i) => <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.7 }}>{p}</li>)}
+            </ol>
+          )}
+          {(d.vorschlaege || []).length > 0 && (
+            <div>
+              <p style={{ ...lS, marginBottom: 6 }}>Vorschläge</p>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {d.vorschlaege.map((v, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.03)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <code style={{ fontSize: 11, fontFamily: "monospace", color: C }}>{v.feld} = {v.neuer_wert}</code>
+                      <p style={{ fontSize: 10, color: "#64748b", margin: "2px 0 0" }}>{v.begruendung}</p>
+                    </div>
+                    <button onClick={() => onUebernehmen(v.feld, v.neuer_wert)}
+                      style={{ ...btn, padding: "3px 10px", fontSize: 11, flexShrink: 0 }}>Übernehmen</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {fehler && <p style={{ fontSize: 11, color: "#f87171", margin: "8px 0 0" }}>{fehler}</p>}
+    </div>
+  );
+}
+
+// ── Variablen-Vorschläge ──────────────────────────────────────────────────────
+
+/**
+ * Was aus der Anfrage gehört in eine Umgebung? Der Vorschlag ist rein
+ * deterministisch (Host + alles, was nach Zugangsdaten aussieht). Übernommen
+ * wird nur, was der Nutzer ankreuzt – Vorauswahl gibt es bewusst keine.
+ */
+function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) {
+  const [vorschlaege, setVorschlaege] = useState(null);
+  const [gewaehlt, setGewaehlt] = useState({});
+  const [zielId, setZielId] = useState(umgebungen[0]?.id ?? "");
+  const [neuName, setNeuName] = useState("");
+  const [speichert, setSpeichert] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  useEffect(() => {
+    api.post(`${BASE}/suggest-variables`, {
+      url: kontext.url, headers: kontext.headers,
+      query_params: kontext.query_params, project_id: projectId ?? null,
+    }).then(({ data }) => setVorschlaege(data.vorschlaege))
+      .catch(e => setFehler(e.response?.data?.detail || "Vorschläge konnten nicht geholt werden"));
+  }, []);
+
+  const uebernehmen = async () => {
+    const auswahl = (vorschlaege || []).filter((_, i) => gewaehlt[i]);
+    if (!auswahl.length) return;
+    setSpeichert(true); setFehler("");
+    try {
+      const ziel = umgebungen.find(u => u.id === zielId);
+      // Bestehende Variablen unverändert mitschicken: die Maske *** bedeutet
+      // serverseitig „Wert behalten", sonst würden Geheimnisse überschrieben.
+      const bestehend = ziel ? [...(ziel.variables || [])] : [];
+      const namen = new Set(bestehend.map(v => v.key));
+      auswahl.forEach(v => {
+        if (!namen.has(v.key)) bestehend.push({ key: v.key, value: v.wert, secret: v.secret });
+      });
+      const payload = { name: ziel ? ziel.name : (neuName || "Standard"),
+                        project_id: projectId ?? null, variables: bestehend };
+      const { data } = ziel
+        ? await api.put(`${BASE}/environments/${ziel.id}`, payload)
+        : await api.post(`${BASE}/environments`, payload);
+      onFertig(data, auswahl.map(v => ({ ersetzt: v.ersetzt, key: v.key })));
+    } catch (e) { setFehler(e.response?.data?.detail || "Übernehmen fehlgeschlagen"); }
+    finally { setSpeichert(false); }
+  };
+
+  const anzahl = Object.values(gewaehlt).filter(Boolean).length;
+
+  return (
+    <Dialog titel="Variablen vorschlagen" onClose={onClose}>
+      {!vorschlaege ? (
+        <p style={{ fontSize: 12, color: "#64748b" }}>{fehler || "Wird geprüft…"}</p>
+      ) : vorschlaege.length === 0 ? (
+        <p style={{ fontSize: 12, color: "#64748b" }}>
+          In dieser Anfrage steckt nichts, was sich offensichtlich in eine Umgebung auslagern ließe.
+        </p>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            Ausgelagerte Werte stehen danach als <code style={{ fontFamily: "monospace" }}>{"{{name}}"}</code> in
+            der Anfrage – so lässt sich zwischen Test und Produktion umschalten, ohne den Request anzufassen.
+          </p>
+          {vorschlaege.map((v, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, padding: 10, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.03)" }}>
+              <input type="checkbox" checked={!!gewaehlt[i]} style={{ marginTop: 2 }}
+                onChange={e => setGewaehlt(g => ({ ...g, [i]: e.target.checked }))} />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <code style={{ fontSize: 11, fontFamily: "monospace", color: C }}>{`{{${v.key}}}`}</code>
+                  {v.secret && <span style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.12)", padding: "1px 5px", borderRadius: 3 }}>geheim</span>}
+                  <span style={{ fontSize: 10, color: "#475569" }}>aus {v.quelle}</span>
+                </div>
+                <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0" }}>{v.begruendung}</p>
+                <p style={{ fontSize: 10, color: "#475569", margin: "2px 0 0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {v.secret ? "•".repeat(Math.min(v.wert.length, 24)) : v.wert}
+                </p>
+              </div>
+            </div>
+          ))}
+
+          <div>
+            <label style={lS}>Ziel-Umgebung</label>
+            <select style={iS} value={zielId} onChange={e => setZielId(e.target.value ? parseInt(e.target.value) : "")}>
+              {umgebungen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              <option value="">Neue Umgebung anlegen…</option>
+            </select>
+            {zielId === "" && (
+              <input style={{ ...iS, marginTop: 6 }} placeholder="Name der neuen Umgebung, z.B. Produktion"
+                value={neuName} onChange={e => setNeuName(e.target.value)} />
+            )}
+          </div>
+          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+        <button style={btn} onClick={onClose}>Abbrechen</button>
+        <button style={{ ...btnPrimary, opacity: !anzahl || speichert ? 0.5 : 1 }}
+          disabled={!anzahl || speichert} onClick={uebernehmen}>
+          {speichert ? "Übernehme…" : `${anzahl || ""} übernehmen`}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
 // ── Antwort-Ansicht ───────────────────────────────────────────────────────────
 
-function AntwortAnsicht({ antwort, aufDatenpfad }) {
+function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebernehmen }) {
   const [reiter, setReiter] = useState("pretty");
 
   if (!antwort) return (
@@ -83,14 +433,15 @@ function AntwortAnsicht({ antwort, aufDatenpfad }) {
   );
 
   if (!antwort.success) return (
-    <div style={{ padding: 16 }}>
-      <div style={{ display: "flex", gap: 10, padding: 14, borderRadius: 8, backgroundColor: "rgba(248,113,113,0.07)", border: "1px solid rgba(248,113,113,0.25)" }}>
+    <div style={{ paddingBottom: 16 }}>
+      <div style={{ display: "flex", gap: 10, padding: 14, margin: 16, marginBottom: 0, borderRadius: 8, backgroundColor: "rgba(248,113,113,0.07)", border: "1px solid rgba(248,113,113,0.25)" }}>
         <AlertTriangle size={16} style={{ color: "#f87171", flexShrink: 0, marginTop: 1 }} />
         <div>
           <p style={{ fontSize: 12, color: "#f87171", fontWeight: 700, margin: 0 }}>Request nicht zustande gekommen</p>
           <p style={{ fontSize: 11, color: "#fca5a5", fontFamily: "monospace", margin: "6px 0 0", wordBreak: "break-word" }}>{antwort.error}</p>
         </div>
       </div>
+      <DebugKasten antwort={antwort} kontext={kontext} onUebernehmen={onUebernehmen} />
     </div>
   );
 
@@ -100,6 +451,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad }) {
     { id: "raw", l: "Roh" },
     { id: "headers", l: `Header (${Object.keys(antwort.response_headers || {}).length})` },
     { id: "tabelle", l: `Tabelle${antwort.rows ? ` (${antwort.rows})` : ""}`, aus: !antwort.rows },
+    { id: "analyse", l: "Analyse", aus: antwort.json == null },
   ].filter(r => !r.aus);
   const aktiv = REITER.some(r => r.id === reiter) ? reiter : REITER[0]?.id;
 
@@ -121,6 +473,9 @@ function AntwortAnsicht({ antwort, aufDatenpfad }) {
           <span style={{ fontSize: 10, color: "#fbbf24" }}>Antwort gekürzt angezeigt</span>
         )}
       </div>
+
+      {/* Bei einem Fehlerstatus gleich Hilfe anbieten */}
+      {!antwort.ok && <DebugKasten antwort={antwort} kontext={kontext} onUebernehmen={onUebernehmen} />}
 
       {/* Hinweis, wo die Daten stecken */}
       {antwort.table_hint && (
@@ -190,6 +545,10 @@ function AntwortAnsicht({ antwort, aufDatenpfad }) {
               </p>
             )}
           </div>
+        )}
+        {aktiv === "analyse" && (
+          <AnalysePanel antwort={antwort} kontext={kontext}
+            aufDatenpfad={aufDatenpfad} aufPaginierung={aufPaginierung} />
         )}
       </div>
     </div>
@@ -491,6 +850,25 @@ function ApiStudioPanel({ projectId, canEdit }) {
     finally { setSpeichere(false); }
   };
 
+  /**
+   * Einen KI-Vorschlag in das Formular übernehmen. Bewusst nur auf Klick –
+   * die KI ändert nie selbst etwas an der Anfrage.
+   */
+  const vorschlagUebernehmen = (feld, wert) => {
+    const AUTH_ALIAS = { api_key: "apikey", apikey: "apikey", bearer: "bearer", basic: "basic",
+                         none: "none", oauth2: "oauth2_cc", oauth2_cc: "oauth2_cc",
+                         client_credentials: "oauth2_cc", refresh_token: "oauth2_refresh" };
+    if (feld === "url") set("url", wert);
+    else if (feld === "method") set("method", String(wert).toUpperCase());
+    else if (feld === "auth_type") set("auth_type", AUTH_ALIAS[String(wert).toLowerCase()] || wert);
+    else if (feld === "body_type") set("body_type", wert);
+    else if (feld === "body_content") set("body_content", wert);
+    else if (feld.startsWith("header:")) set("headers", { ...f.headers, [feld.slice(7)]: wert });
+    else if (feld.startsWith("query:")) set("query_params", { ...f.query_params, [feld.slice(6)]: wert });
+    else return;
+    setFehler("");
+  };
+
   const requestLoeschen = async (r) => {
     if (!window.confirm(`Request „${r.name}" löschen?`)) return;
     await api.delete(`/api/rest-sources/${r.id}`);
@@ -648,12 +1026,18 @@ function ApiStudioPanel({ projectId, canEdit }) {
             </div>
 
             {/* Verfügbare Variablen */}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 10, alignItems: "center" }}>
               {alleVars.map(v => (
                 <code key={v} title="In die URL einfügen"
                   onClick={() => set("url", (f.url || "") + v)}
                   style={{ fontSize: 10, backgroundColor: `${C}12`, color: C, padding: "2px 6px", borderRadius: 3, cursor: "pointer", fontFamily: "monospace" }}>{v}</code>
               ))}
+              {canEdit && f.url && (
+                <button onClick={() => setDialog("variablen")}
+                  style={{ ...btn, marginLeft: "auto", padding: "3px 10px", fontSize: 10, display: "flex", alignItems: "center", gap: 5 }}>
+                  <KeyRound size={11} /> Variablen vorschlagen
+                </button>
+              )}
             </div>
 
             {/* Reiter */}
@@ -731,6 +1115,10 @@ function ApiStudioPanel({ projectId, canEdit }) {
                   <p style={{ fontSize: 10, color: "#475569", margin: 0 }}>
                     Standardmäßig merkt sich der Verlauf nur Status, Dauer und Größe – Antworten können personenbezogene Daten enthalten.
                   </p>
+                  <div style={{ paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                    <label style={{ ...lS, marginBottom: 8 }}>Weitere Seiten holen</label>
+                    <PaginationEditor value={f.pagination} onChange={v => set("pagination", v)} />
+                  </div>
                 </div>
               )}
             </div>
@@ -742,7 +1130,15 @@ function ApiStudioPanel({ projectId, canEdit }) {
 
           {/* Antwort */}
           <div style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, overflow: "hidden" }}>
-            <AntwortAnsicht antwort={antwort} aufDatenpfad={(pfad) => { set("data_path", pfad); setReiter("daten"); }} />
+            <AntwortAnsicht
+              antwort={antwort}
+              kontext={{ url: f.url, method: f.method, headers: f.headers, query_params: f.query_params,
+                         body_type: f.body_type, auth_type: f.auth_type, data_path: f.data_path,
+                         projectId }}
+              aufDatenpfad={(pfad) => { set("data_path", pfad); setReiter("daten"); }}
+              aufPaginierung={(cfg) => { set("pagination", cfg); setReiter("daten"); }}
+              onUebernehmen={vorschlagUebernehmen}
+            />
           </div>
         </div>
       </div>
@@ -755,6 +1151,35 @@ function ApiStudioPanel({ projectId, canEdit }) {
       {dialog === "umgebung" && (
         <UmgebungsDialog umgebungen={umgebungen} projectId={projectId}
           onChanged={laden} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "variablen" && (
+        <VariablenDialog
+          kontext={{ url: f.url, headers: f.headers, query_params: f.query_params }}
+          umgebungen={umgebungen} projectId={projectId}
+          onClose={() => setDialog(null)}
+          onFertig={(umgebung, ersetzungen) => {
+            // Die ausgelagerten Werte im Request durch ihren Platzhalter ersetzen,
+            // damit die Anfrage sofort über die Umgebung läuft.
+            setF(prev => {
+              let url = prev.url || "";
+              const headers = { ...prev.headers };
+              const params = { ...prev.query_params };
+              ersetzungen.forEach(({ ersetzt, key }) => {
+                const platzhalter = `{{${key}}}`;
+                if (ersetzt && url.includes(ersetzt)) url = url.split(ersetzt).join(platzhalter);
+                Object.keys(headers).forEach(k => {
+                  if (String(headers[k]) === ersetzt) headers[k] = platzhalter;
+                });
+                Object.keys(params).forEach(k => {
+                  if (String(params[k]) === ersetzt) params[k] = platzhalter;
+                });
+              });
+              return { ...prev, url, headers, query_params: params };
+            });
+            setEnvId(umgebung.id);
+            setDialog(null);
+            laden();
+          }} />
       )}
       {dialog === "verlauf" && (
         <Dialog titel="Verlauf" onClose={() => setDialog(null)} breit>

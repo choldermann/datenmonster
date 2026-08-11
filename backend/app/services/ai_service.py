@@ -312,16 +312,20 @@ class AIService:
 
     async def complete_json(self, messages: list[dict], json_schema: dict, model: str | None = None,
                             temperature: float = 0.2, request_type: str = "TRANSFORMATION") -> dict:
-        """Single-shot strukturierte JSON-Ausgabe via Ollamas json_schema-Format."""
-        async with httpx.AsyncClient(timeout=60) as client:
+        """Single-shot strukturierte JSON-Ausgabe via Ollamas format-Feld.
+
+        Ollama erwartet in `format` das JSON-Schema DIREKT. Der OpenAI-Umschlag
+        ({"type": "json_schema", "json_schema": {...}}) wird mit HTTP 400
+        abgelehnt – daran scheiterte bisher jeder strukturierte Aufruf.
+        """
+        async with httpx.AsyncClient(timeout=90) as client:
             r = await client.post(
                 f"{self.base_url}/api/chat",
                 json={
                     "model":    model or self.model,
                     "messages": messages,
                     "stream":   False,
-                    "format":   {"type": "json_schema",
-                                 "json_schema": {"name": "result", "strict": True, "schema": json_schema}},
+                    "format":   json_schema,
                     "options":  {"temperature": temperature},
                 },
             )

@@ -11,10 +11,12 @@ dazukommt, sind nur die Klammern drumherum:
 Ein gespeicherter Request ist damit sofort ein planbarer Connector – ohne Export.
 """
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Any
 
 from app.core.database import get_db
 from app.core.security import get_current_user, encrypt_credential, decrypt_credential
@@ -25,6 +27,8 @@ from app.api.projects import require_editor, can_read_project, get_accessible_pr
 from app.services.rest_service import (
     execute_request, join_url, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
 )
+from app.services.api_studio_analyse import analysiere, redigiere, variablen_vorschlaege
+from app.services.ai_service import build_ai_service
 
 router = APIRouter(prefix="/api/api-studio", tags=["api-studio"])
 
@@ -605,3 +609,235 @@ def clear_history(
                    .delete(synchronize_session=False))
     db.commit()
     return {"ok": True, "geloescht": geloescht}
+
+
+# ══ KI-Assistent ══════════════════════════════════════════════════════════════
+#
+# Aufteilung nach dem Grundsatz „erst rechnen, dann fragen":
+# Struktur, Datenpfade und Paginierung kommen aus der deterministischen Analyse –
+# exakt, sofort und kostenlos. Das Sprachmodell bekommt nur das verdichtete,
+# maskierte Inventar und beantwortet die Fragen, die Rechnen nicht beantwortet:
+# Was ist das fachlich? Wie heißen die Felder auf Deutsch? Warum klemmt es?
+
+class AnalyseIn(BaseModel):
+    body: Any = None                      # geparste Antwort (aus dem Response-Viewer)
+    response_headers: Optional[dict] = {}
+    status_code: Optional[int] = None
+    url: Optional[str] = None
+    method: Optional[str] = "GET"
+    data_path: Optional[str] = None
+    mit_ki: bool = False                  # Standard aus: erst rechnen, KI auf Wunsch
+    echte_werte: bool = False             # Beispielwerte unmaskiert an die KI geben
+    project_id: Optional[int] = None
+
+
+class DebugIn(BaseModel):
+    url: Optional[str] = None
+    method: Optional[str] = "GET"
+    headers: Optional[dict] = {}
+    query_params: Optional[dict] = {}
+    body_type: Optional[str] = None
+    body_content: Optional[str] = None
+    auth_type: Optional[str] = None
+    status_code: Optional[int] = None
+    reason: Optional[str] = None
+    response_body: Optional[str] = None
+    error: Optional[str] = None
+    project_id: Optional[int] = None
+
+
+class VariablenIn(BaseModel):
+    url: Optional[str] = None
+    headers: Optional[dict] = {}
+    query_params: Optional[dict] = {}
+    project_id: Optional[int] = None
+
+
+def _modus(echte_werte: bool) -> str:
+    return "vollstaendig" if echte_werte else "sicher"
+
+
+@router.post("/analyze")
+async def analyze_response(
+    payload: AnalyseIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Antwort untersuchen: Felder, Typen, Füllgrade, Datenpfad und Paginierung.
+
+    Der deterministische Teil läuft immer. `mit_ki=true` legt eine fachliche
+    Einordnung darüber – dann verlässt das (maskierte) Inventar diese Maschine,
+    falls der Gateway-Provider aktiv ist.
+    """
+    _check_read(payload.project_id, user, db)
+    if payload.body is None:
+        raise HTTPException(400, "Keine Antwort zum Analysieren übergeben")
+
+    modus = _modus(payload.echte_werte)
+    ergebnis = analysiere(payload.body, payload.response_headers,
+                          payload.data_path, modus)
+    ergebnis["ki"] = None
+
+    if not payload.mit_ki:
+        return ergebnis
+
+    svc = build_ai_service(db)
+    if svc is None:
+        ergebnis["ki_fehler"] = "KI-Integration ist nicht aktiviert"
+        return ergebnis
+
+    # Nur das Inventar geht raus – nie die rohe Antwort.
+    felder = "\n".join(
+        f"- {f['pfad']} ({f['typ']}, gefüllt {int(f['anteil_gefuellt'] * 100)}%"
+        + (", eindeutig" if f["wirkt_wie_schluessel"] else "")
+        + f", Beispiel: {f['beispiel']})"
+        for f in ergebnis["inventar"][:60]
+    )
+    frage = (
+        f"Endpunkt: {payload.method} {(payload.url or '').split('?')[0]}\n"
+        f"Datenpfad zur Liste: {ergebnis['datenpfad'] or '(Antwort ist direkt die Liste)'}\n"
+        f"Datensätze in dieser Antwort: {ergebnis['zeilen']}\n\n"
+        f"Felder:\n{felder}\n"
+    )
+    system = (
+        "Du hilfst dabei, eine unbekannte REST-Schnittstelle zu verstehen. "
+        "Du bekommst ein Feld-Inventar, keine echten Daten – Beispielwerte in "
+        "spitzen Klammern wie <email> oder <text:12> sind absichtlich maskiert; "
+        "kommentiere die Maskierung nicht. "
+        "Antworte auf Deutsch, sachlich und knapp. Erfinde keine Felder, die "
+        "nicht in der Liste stehen."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "zusammenfassung": {"type": "string"},
+            "vorgeschlagener_dataset_name": {"type": "string"},
+            "felder": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "pfad": {"type": "string"},
+                        "bedeutung": {"type": "string"},
+                    },
+                    "required": ["pfad", "bedeutung"],
+                },
+            },
+            "hinweise": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["zusammenfassung", "vorgeschlagener_dataset_name", "felder", "hinweise"],
+    }
+    auftrag = (
+        frage
+        + "\nAufgaben:\n"
+        "1. zusammenfassung: 2-3 Sätze, was dieser Endpunkt fachlich liefert.\n"
+        "2. vorgeschlagener_dataset_name: kurzer deutscher Name für ein Dataset.\n"
+        "3. felder: für die maximal 12 wichtigsten Felder je eine kurze deutsche "
+        "Bedeutung (Pfad exakt übernehmen).\n"
+        "4. hinweise: auffällige Punkte, z.B. schlecht gefüllte Felder, "
+        "vermutliche Schlüssel oder Datumsfelder für einen Zeitfilter."
+    )
+    try:
+        ergebnis["ki"] = await svc.complete_json(
+            [{"role": "system", "content": system}, {"role": "user", "content": auftrag}],
+            schema, temperature=0.2, request_type="DATA_ANALYSIS")
+    except Exception as e:
+        ergebnis["ki_fehler"] = f"KI-Analyse fehlgeschlagen: {str(e)[:200]}"
+    return ergebnis
+
+
+@router.post("/debug")
+async def debug_request(
+    payload: DebugIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Fehler-Debugger: warum antwortet die API nicht so wie erwartet?
+
+    Bekommt die Anfrage (Header maskiert) und den Fehler bzw. Statuscode und
+    schlägt konkrete Änderungen vor, die das Frontend zur Bestätigung anbietet –
+    nie automatisch anwendet.
+    """
+    _check_read(payload.project_id, user, db)
+    svc = build_ai_service(db)
+    if svc is None:
+        raise HTTPException(400, "KI-Integration ist nicht aktiviert")
+
+    # Auch der Fehlertext der Gegenstelle kann Daten enthalten → maskieren.
+    antwort_auszug = payload.response_body or ""
+    if antwort_auszug:
+        try:
+            antwort_auszug = json.dumps(
+                redigiere(json.loads(antwort_auszug), "sicher"), ensure_ascii=False)[:1500]
+        except (json.JSONDecodeError, ValueError):
+            antwort_auszug = antwort_auszug[:800]
+
+    beschreibung = (
+        f"Anfrage: {payload.method} {(payload.url or '').split('?')[0]}\n"
+        f"Auth-Verfahren: {payload.auth_type or 'keines'}\n"
+        f"Header: {', '.join(_mask_headers(payload.headers or {}).keys()) or '(keine)'}\n"
+        f"Query-Parameter: {', '.join((payload.query_params or {}).keys()) or '(keine)'}\n"
+        f"Body-Typ: {payload.body_type or 'keiner'}\n"
+        f"Status: {payload.status_code or '–'} {payload.reason or ''}\n"
+        f"Transportfehler: {payload.error or '(keiner)'}\n"
+        f"Antwort (maskiert): {antwort_auszug or '(leer)'}"
+    )
+    system = (
+        "Du bist erfahren im Debuggen von REST-Schnittstellen. Werte sind teils "
+        "maskiert (***, <email>); das ist Absicht und kein Fehler. "
+        "Antworte auf Deutsch. Nenne die wahrscheinlichste Ursache zuerst und "
+        "bleibe bei dem, was aus den Angaben hervorgeht – rate nicht ins Blaue."
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "diagnose": {"type": "string"},
+            "pruefpunkte": {"type": "array", "items": {"type": "string"}},
+            "vorschlaege": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "feld": {"type": "string"},
+                        "neuer_wert": {"type": "string"},
+                        "begruendung": {"type": "string"},
+                    },
+                    "required": ["feld", "neuer_wert", "begruendung"],
+                },
+            },
+        },
+        "required": ["diagnose", "pruefpunkte", "vorschlaege"],
+    }
+    auftrag = (
+        beschreibung
+        + "\n\nAufgaben:\n"
+        "1. diagnose: 2-3 Sätze zur wahrscheinlichsten Ursache.\n"
+        "2. pruefpunkte: 2-5 konkrete Dinge zum Nachsehen, absteigend nach Wahrscheinlichkeit.\n"
+        "3. vorschlaege: konkrete Änderungen an der Anfrage. `feld` ist einer von "
+        "url, method, auth_type, header:<Name>, query:<Name>, body_type, body_content. "
+        "Nennt die Antwort der Gegenstelle einen bestimmten Header, Parameter oder "
+        "Auth-Typ, MUSS dazu ein Vorschlag entstehen. Sonst nur Vorschläge, bei denen "
+        "du dir sicher bist – im Zweifel eine leere Liste."
+    )
+    try:
+        return await svc.complete_json(
+            [{"role": "system", "content": system}, {"role": "user", "content": auftrag}],
+            schema, temperature=0.2, request_type="TRANSFORMATION")
+    except Exception as e:
+        raise HTTPException(502, f"KI-Fehler: {str(e)[:200]}")
+
+
+@router.post("/suggest-variables")
+def suggest_variables(
+    payload: VariablenIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Was aus dieser Anfrage gehört in eine Umgebung? Rein deterministisch –
+    Host und alles, was nach Zugangsdaten aussieht.
+    """
+    _check_read(payload.project_id, user, db)
+    return {"vorschlaege": variablen_vorschlaege(payload.model_dump())}
