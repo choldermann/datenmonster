@@ -1333,11 +1333,35 @@ async def chat(
             _conns = db.query(DbConnection).filter(DbConnection.id.in_(_conn_ids)).all()
             _ds_names = [c.name for c in _conns if c.name]
 
+        # Woran die Auswahl das passende Wissen erkennt: die Frage selbst plus
+        # das, was auf der Seite gerade offen ist. Ohne diese Hinweise landet
+        # bei „welche Spalte nehme ich hier?" nichts Passendes im Kontext.
+        _hinweis_teile: list[str] = [_page, body.page_context.get("description", "")]
+        if isinstance(_cd, dict):
+            _an = _cd.get("activeNode")
+            if isinstance(_an, dict):
+                _hinweis_teile += [str(_an.get(k)) for k in
+                                   ("label", "type", "table", "tableName", "query", "sql")
+                                   if _an.get(k)]
+            for _n in (_cd.get("canvasNodes") or [])[:25]:
+                if isinstance(_n, dict):
+                    _hinweis_teile += [str(_n.get("label") or ""), str(_n.get("type") or "")]
+            for _r in (_cd.get("tableRelationships") or [])[:25]:
+                _hinweis_teile.append(str(_r)[:200])
+            _sc = _cd.get("schemaContext")
+            if isinstance(_sc, str) and _sc:
+                # Der Schema-Kontext kann zehntausende Zeichen haben — für die
+                # Stichwortsuche reicht der Anfang (dort stehen die Tabellen).
+                _hinweis_teile.append(_sc[:1500])
+        _hinweise = " ".join(t for t in _hinweis_teile if t)[:3000]
+
         memory_context = build_memory_context(
             db,
             project_id=project_id,
             datasource_ids=_ds_names or None,
             category_hint=_category_hint,
+            frage=body.message,
+            hinweise=_hinweise,
         )
     except Exception as _me:
         log.warning(f"[AI Memory] Kontext-Build fehlgeschlagen: {_me}")

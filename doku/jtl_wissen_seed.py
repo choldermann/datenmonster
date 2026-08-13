@@ -267,14 +267,21 @@ EINTRAEGE = [
 
 db = SessionLocal()
 neu = akt = 0
-for kategorie, titel, inhalt in EINTRAEGE:
+for eintrag in EINTRAEGE:
+    # Optionales viertes Feld: Grundregel (geht in JEDEN KI-Kontext). Fehlt es,
+    # bleibt eine in der Oberfläche gesetzte Markierung erhalten — der Seeder
+    # darf sie nicht stillschweigend zurücknehmen.
+    kategorie, titel, inhalt = eintrag[0], eintrag[1], eintrag[2]
+    immer = eintrag[3] if len(eintrag) > 3 else None
     row = db.query(K).filter(K.title == titel).first()
     if row:
         row.content, row.category, row.enabled = inhalt, kategorie, True
+        if immer is not None:
+            row.always_include = immer
         akt += 1
     else:
         db.add(K(scope="global", scope_id=None, category=kategorie, title=titel,
-                 content=inhalt, enabled=True))
+                 content=inhalt, enabled=True, always_include=bool(immer)))
         neu += 1
 db.commit()
 print(f"Wissensdatenbank: {neu} neu, {akt} aktualisiert, gesamt {db.query(K).count()} Einträge")

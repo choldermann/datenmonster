@@ -21,6 +21,7 @@ class KnowledgeBody(BaseModel):
     title:    str
     content:  str
     enabled:  bool = True
+    always_include: bool = False   # Grundregel: überspringt die Relevanzauswahl
 
 
 @router.get("/knowledge")
@@ -280,6 +281,9 @@ class ContextPreviewRequest(BaseModel):
     project_id:      Optional[int] = None
     datasource_ids:  list[str] = []
     category_hint:   Optional[str] = None
+    frage:           str = ""      # wie im Chat: bestimmt die Auswahl
+    hinweise:        str = ""      # Seitenkontext (Tabellen, Node …)
+    budget:          Optional[int] = None
 
 
 @router.post("/context-preview")
@@ -288,13 +292,27 @@ def context_preview(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ctx = svc.build_memory_context(
+    """
+    Zeigt, was bei dieser Frage tatsächlich in den Prompt geht — inklusive der
+    Einträge, die nicht mehr ins Budget passten. Ohne diese Zahlen lässt sich
+    nicht beurteilen, ob die Wissensdatenbank den Assistenten überlädt.
+    """
+    ctx, stats = svc.build_memory_context_details(
         db,
         project_id=body.project_id,
         datasource_ids=body.datasource_ids or None,
         category_hint=body.category_hint,
+        frage=body.frage,
+        hinweise=body.hinweise,
+        budget=body.budget,
     )
-    return {"context": ctx, "length": len(ctx)}
+    return {
+        "context": ctx,
+        "length":  len(ctx),
+        # Faustregel für Deutsch, reicht zum Vergleichen von vorher/nachher.
+        "tokens_geschaetzt": round(len(ctx) / 4),
+        "stats":   stats,
+    }
 
 
 # ── Serializer ────────────────────────────────────────────────────────────────
@@ -308,6 +326,7 @@ def _serialize_knowledge(r) -> dict:
         "title":      r.title,
         "content":    r.content,
         "enabled":    r.enabled,
+        "always_include": bool(r.always_include),
         "use_count":  r.use_count,
         "created_at": r.created_at.isoformat() if r.created_at else None,
         "updated_at": r.updated_at.isoformat() if r.updated_at else None,

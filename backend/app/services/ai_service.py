@@ -1,8 +1,11 @@
 import httpx
 import json
+import logging
 import time
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
+
+log = logging.getLogger("datenmonster")
 
 
 PRESET_MODELS = [
@@ -230,6 +233,9 @@ class AIService:
         self.base_url = base_url.rstrip("/")
         self.model    = model
         self.timeout  = timeout
+        # Kennzahlen des letzten Laufs (siehe _stream) — für die Frage, was ein
+        # großer Prompt auf dieser Maschine tatsächlich kostet.
+        self.last_usage: dict = {}
 
     # ── low-level ────────────────────────────────────────────────────────────
 
@@ -279,12 +285,51 @@ class AIService:
                     try:
                         chunk = json.loads(line)
                         if chunk.get("done"):
+                            self._usage_merken(chunk, model or self.model, len(system))
                             break
                         content = chunk.get("message", {}).get("content", "")
                         if content:
                             yield content
                     except Exception:
                         continue
+
+    def _usage_merken(self, chunk: dict, model: str, system_zeichen: int) -> None:
+        """
+        Die Abschlussmeldung von Ollama trägt die einzigen belastbaren Zahlen zur
+        Prompt-Größe: prompt_eval_count sind die Tokens, die VOR der ersten
+        Antwort durchgerechnet werden mussten — genau der Preis, den ein großer
+        Systemprompt (Projektwissen, Schema-Kontext) kostet. Bisher fiel die
+        Meldung ungelesen weg, wir haben also nur geschätzt.
+
+        prompt_eval_count kann fehlen, wenn Ollama den Prompt-Prefix aus seinem
+        Cache wiederverwenden konnte — das ist selbst die Information, dass der
+        Prompt stabil geblieben ist.
+        """
+        prompt_tokens = chunk.get("prompt_eval_count") or 0
+        prompt_ms     = (chunk.get("prompt_eval_duration") or 0) / 1e6
+        antwort_token = chunk.get("eval_count") or 0
+        antwort_ms    = (chunk.get("eval_duration") or 0) / 1e6
+        self.last_usage = {
+            "model":            model,
+            "prompt_tokens":    prompt_tokens,
+            "prompt_ms":        round(prompt_ms),
+            "antwort_tokens":   antwort_token,
+            "antwort_ms":       round(antwort_ms),
+            "system_zeichen":   system_zeichen,
+            "prefix_cache":     prompt_tokens == 0,
+            "token_pro_sek":    round(antwort_token / (antwort_ms / 1000), 1) if antwort_ms else None,
+        }
+        # print statt log.info: die Anwendung konfiguriert kein Logging, der
+        # Logger „datenmonster" hat keinen Handler — log.info landet nirgends.
+        # Die übrigen KI-Diagnosen in api/ai.py schreiben aus demselben Grund
+        # direkt nach stdout (docker logs datenmonster-backend).
+        print(
+            f"[AI] {model} — Prompt {prompt_tokens} Token in {round(prompt_ms)} ms "
+            f"(System {system_zeichen} Zeichen"
+            f"{', aus Prefix-Cache' if prompt_tokens == 0 else ''}), "
+            f"Antwort {antwort_token} Token in {round(antwort_ms)} ms",
+            flush=True,
+        )
 
     async def _complete(self, messages: list[dict], system: str = "", json_mode: bool = False,
                         params: "AIParams | None" = None, model: str | None = None) -> str:

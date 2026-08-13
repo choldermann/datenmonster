@@ -40,6 +40,7 @@ function KnowledgeForm({ item, onSave, onCancel }: {
   const [category, setCategory] = useState<string>(item?.category ?? "rule");
   const [title, setTitle]     = useState<string>(item?.title ?? "");
   const [content, setContent] = useState<string>(item?.content ?? "");
+  const [immer, setImmer]     = useState<boolean>(item?.always_include ?? false);
 
   const inp = (style?: object) => ({
     background: "rgba(255,255,255,0.06)", border: `1px solid ${S.border}`,
@@ -51,7 +52,8 @@ function KnowledgeForm({ item, onSave, onCancel }: {
     if (!title.trim() || !content.trim()) return;
     const effectiveScopeId =
       scope === "project" && !scopeId && activeProject ? String(activeProject.id) : scopeId;
-    onSave({ scope, scope_id: effectiveScopeId || null, category, title: title.trim(), content: content.trim() });
+    onSave({ scope, scope_id: effectiveScopeId || null, category, title: title.trim(),
+             content: content.trim(), always_include: immer });
   };
 
   return (
@@ -99,6 +101,17 @@ function KnowledgeForm({ item, onSave, onCancel }: {
           style={{ ...inp(), resize: "vertical" } as any}
           placeholder="z.B. 'Umsatz = fVKNetto' oder 'Datum immer als dd.MM.yyyy'" />
       </div>
+      <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+        <input type="checkbox" checked={immer} onChange={e => setImmer(e.target.checked)}
+          style={{ marginTop: 2, cursor: "pointer" }} />
+        <span style={{ fontSize: 12, color: S.textMain }}>
+          Grundregel — immer mitgeben
+          <span style={{ display: "block", fontSize: 11, color: S.textDim, marginTop: 2 }}>
+            Normalerweise setzt die KI nur das Wissen ein, das zur Frage passt. Grundregeln
+            stehen in jedem Kontext — sparsam vergeben, jede kostet Rechenzeit bei jeder Anfrage.
+          </span>
+        </span>
+      </label>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <button onClick={onCancel}
           style={{ padding: "6px 14px", borderRadius: 6, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
@@ -361,6 +374,13 @@ function KnowledgeTab() {
                           <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 10, background: "rgba(255,255,255,0.08)", color: S.textDim }}>
                             {CAT_LABELS[item.category] || item.category}
                           </span>
+                          {item.always_include && (
+                            <span title="Grundregel — steht in jedem KI-Kontext"
+                              style={{ fontSize: 10, padding: "1px 6px", borderRadius: 10,
+                                background: "rgba(245,158,11,0.16)", color: "#f59e0b", fontWeight: 600 }}>
+                              immer
+                            </span>
+                          )}
                           {item.use_count > 0 && <span style={{ fontSize: 10, color: S.textDim }}>{item.use_count}× verwendet</span>}
                         </div>
                         <p style={{ fontSize: 12, color: S.textDim, margin: 0, whiteSpace: "pre-wrap" }}>{item.content}</p>

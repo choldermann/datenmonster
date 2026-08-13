@@ -13,6 +13,9 @@ class AiMemoryKnowledge(Base):
     title      = Column(Text, nullable=False)
     content    = Column(Text, nullable=False)
     enabled    = Column(Boolean, default=True)
+    # Grundregeln, die in JEDEN Kontext gehören — sie überstehen die
+    # Relevanzauswahl auch dann, wenn die Frage sie nicht erwähnt.
+    always_include = Column(Boolean, default=False)
     use_count  = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

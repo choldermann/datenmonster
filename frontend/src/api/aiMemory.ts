@@ -8,6 +8,8 @@ export interface Knowledge {
   title: string;
   content: string;
   enabled: boolean;
+  /** Grundregel — geht in jeden KI-Kontext, auch wenn die Frage sie nicht trifft. */
+  always_include: boolean;
   use_count: number;
   created_at: string | null;
   updated_at: string | null;

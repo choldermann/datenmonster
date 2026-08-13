@@ -12,77 +12,223 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
+from app.services.stichworte import stichworte
 
 log = logging.getLogger("datenmonster")
 
-# Maximale Kontext-Einträge pro Kategorie (klein halten für lokale Modelle).
+# Der Wissensblock steht vor JEDEM LLM-Aufruf im Prompt. Auf einem lokalen
+# CPU-Modell kostet jedes Zeichen Rechenzeit, über den Gateway kostet es Credits
+# — deshalb wird nicht die ganze Wissensdatenbank eingesetzt, sondern nur das,
+# was zur Frage passt (siehe _auswaehlen).
 #
-# ACHTUNG beim Verkleinern: Die Auswahl sortiert nach use_count, und der ist bei
-# gepflegtem Wissen fast immer 0 – es gewinnen dann faktisch die ältesten
-# Einträge. Ein zu niedriges Limit wirft neu eingepflegtes Wissen also still
-# weg, ohne dass es irgendwo auffällt. Der Wert muss zur Größe der kuratierten
-# Wissensdatenbank passen (derzeit 41 globale Einträge, ~4.700 Tokens); wer
-# Kontext sparen will, schaltet einzelne Einträge über `enabled` ab, statt hier
-# zu kürzen.
-MAX_KNOWLEDGE   = 60
+# Gedeckelt wird in ZEICHEN, nicht in Einträgen: 40 kurze und 40 lange Regeln
+# kosten völlig unterschiedlich viel, eine Obergrenze in Zeilen sagt über den
+# tatsächlichen Prompt also nichts aus. Grobe Umrechnung für Deutsch: ~4 Zeichen
+# je Token, 6.000 Zeichen ≈ 1.500 Token.
+KONTEXT_BUDGET  = 6000
 MAX_SOLUTIONS   = 5
 MAX_CORRECTIONS = 3
 
+# Sicherheitsnetz beim Laden — bewertet wird im Speicher, nicht in SQL.
+_HARTE_GRENZE   = 500
+
+# Ab wie vielen Punkten ein Eintrag als passend gilt. Ein einzelner Treffer
+# irgendwo im Fließtext ist noch keiner: sonst zieht jedes Allerweltswort die
+# halbe Wissensdatenbank herbei (dieselbe Erfahrung wie beim Doku-Assistenten,
+# siehe openapi_import.doku_suchen).
+_MINDESTPUNKTE  = 3
+
+# Wörter, die in einer Frage an ein Datenwerkzeug immer vorkommen und deshalb
+# nichts unterscheiden — „welche Tabelle liefert …" trifft sonst jeden Eintrag,
+# weil jeder von Tabellen und Feldern handelt.
+_META_WOERTER = {
+    "tabelle", "tabellen", "spalte", "spalten", "feld", "felder", "wert", "werte",
+    "daten", "datenbank", "abfrage", "query", "liefert", "liefern", "zeige",
+    "zeigen", "brauche", "nehme", "nutze", "verwende", "finde", "suche",
+}
+
+# Wissen zum eigenen Projekt schlägt bei gleicher Punktzahl das globale.
+# Der Bonus wird erst NACH der Mindestpunktzahl vergeben, damit er nichts
+# Unpassendes über die Schwelle hebt.
+_SCOPE_BONUS = {"project": 2, "datasource": 1, "global": 0}
+
 
 # ── Kontext-Builder ───────────────────────────────────────────────────────────
+
+def _kandidaten(
+    db: Session,
+    project_id: int | None,
+    datasource_ids: list[str] | None,
+) -> list[AiMemoryKnowledge]:
+    """Alles, was für diesen Aufruf überhaupt in Frage kommt — in EINER Abfrage."""
+    from sqlalchemy import and_, or_
+
+    bedingungen = [AiMemoryKnowledge.scope == "global"]
+    if datasource_ids:
+        bedingungen.append(and_(
+            AiMemoryKnowledge.scope == "datasource",
+            AiMemoryKnowledge.scope_id.in_(datasource_ids),
+        ))
+    if project_id:
+        bedingungen.append(and_(
+            AiMemoryKnowledge.scope == "project",
+            AiMemoryKnowledge.scope_id == str(project_id),
+        ))
+    return (
+        db.query(AiMemoryKnowledge)
+        .filter(AiMemoryKnowledge.enabled == True, or_(*bedingungen))
+        .order_by(AiMemoryKnowledge.id)          # stabil, nicht zufällig
+        .limit(_HARTE_GRENZE)
+        .all()
+    )
+
+
+def _trefferart(wort: str, text: str) -> int:
+    """
+    0 = kein Treffer, 1 = irgendwo im Wort, 2 = am Wortanfang.
+
+    Der Unterschied ist im Deutschen wichtig: „Lagerbestand" soll „Lagerbestände"
+    finden (Wortanfang, echter Treffer), aber „liefert" soll nicht über
+    „geliefert" jede Einkaufsregel herbeiziehen (mitten im Wort, meist nur eine
+    Verbform). Deshalb zählt der Wortanfang voll und der Rest nur halb.
+    """
+    stelle = text.find(wort)
+    if stelle < 0:
+        return 0
+    while stelle >= 0:
+        if stelle == 0 or not text[stelle - 1].isalnum():
+            return 2
+        stelle = text.find(wort, stelle + 1)
+    return 1
+
+
+def _punkte(row: AiMemoryKnowledge, woerter: list[str]) -> int:
+    """Wie gut passt der Eintrag zu den Stichwörtern? Titel wiegt am schwersten."""
+    titel     = (row.title or "").lower()
+    inhalt    = (row.content or "").lower()
+    kategorie = (row.category or "").lower()
+    p = 0
+    for w in woerter:
+        p += 2 * _trefferart(w, titel)          # Wortanfang 4, sonst 2
+        p += _trefferart(w, inhalt)             # Wortanfang 2, sonst 1
+        if w in kategorie: p += 2
+    return p
+
+
+def _auswaehlen(
+    rows: list[AiMemoryKnowledge],
+    woerter: list[str],
+    budget: int,
+) -> tuple[list[AiMemoryKnowledge], dict]:
+    """
+    Die passenden Einträge heraussuchen, bis das Zeichenbudget voll ist.
+
+    Immer dabei sind Einträge mit `always_include` (die Grundregeln, ohne die
+    jede Antwort falsch wird). Der Rest kommt nach Punktzahl. Ohne verwertbare
+    Stichwörter — etwa wenn ein Aufrufer keine Frage mitgibt — wird der Reihe
+    nach aufgefüllt; `getroffen` ist dann False.
+    """
+    def _laenge(r) -> int:
+        return len(r.title or "") + len(r.content or "") + 6   # „  • : \n"
+
+    immer   = [r for r in rows if getattr(r, "always_include", False)]
+    uebrige = [r for r in rows if not getattr(r, "always_include", False)]
+
+    verbraucht = sum(_laenge(r) for r in immer)
+    gewaehlt   = list(immer)
+
+    if woerter:
+        bewertet = []
+        for r in uebrige:
+            p = _punkte(r, woerter)
+            if p >= _MINDESTPUNKTE:
+                bewertet.append((p + _SCOPE_BONUS.get(r.scope, 0), r))
+        # Punktzahl absteigend, bei Gleichstand die ältere ID zuerst — die
+        # Auswahl muss reproduzierbar sein, sonst ist sie nicht nachvollziehbar.
+        bewertet.sort(key=lambda x: (-x[0], x[1].id))
+        rangliste = [r for _, r in bewertet]
+        getroffen = bool(rangliste)
+    else:
+        rangliste = uebrige
+        getroffen = False
+
+    verworfen = 0
+    for r in rangliste:
+        if verbraucht + _laenge(r) > budget:
+            verworfen += 1           # weitersuchen: kürzere Einträge passen evtl. noch
+            continue
+        gewaehlt.append(r)
+        verbraucht += _laenge(r)
+
+    stats = {
+        "kandidaten": len(rows),
+        "immer":      len(immer),
+        "passend":    len(rangliste),
+        "gewaehlt":   len(gewaehlt),
+        "verworfen":  verworfen,
+        "zeichen":    verbraucht,
+        "budget":     budget,
+        "getroffen":  getroffen,
+    }
+    return gewaehlt, stats
+
 
 def build_memory_context(
     db: Session,
     project_id: int | None = None,
     datasource_ids: list[str] | None = None,
     category_hint: str | None = None,
+    frage: str = "",
+    hinweise: str = "",
+    budget: int | None = None,
 ) -> str:
     """
     Assembles memory context for injection into the system prompt.
     Returns an empty string if no relevant memory exists.
-    """
-    sections: list[str] = []
 
-    # 1. Globales Wissen
-    global_rows = (
-        db.query(AiMemoryKnowledge)
-        .filter(AiMemoryKnowledge.scope == "global", AiMemoryKnowledge.enabled == True)
-        .order_by(desc(AiMemoryKnowledge.use_count))
-        .limit(MAX_KNOWLEDGE)
-        .all()
+    `frage` ist die Nutzereingabe, `hinweise` alles, was die Seite an Kontext
+    liefert (Tabellennamen, angeklickter Node …). Beides zusammen bestimmt,
+    welches Wissen eingesetzt wird — ohne beides bleibt es beim Auffüllen nach
+    Reihenfolge.
+    """
+    text, _ = build_memory_context_details(
+        db, project_id=project_id, datasource_ids=datasource_ids,
+        category_hint=category_hint, frage=frage, hinweise=hinweise, budget=budget,
+    )
+    return text
+
+
+def build_memory_context_details(
+    db: Session,
+    project_id: int | None = None,
+    datasource_ids: list[str] | None = None,
+    category_hint: str | None = None,
+    frage: str = "",
+    hinweise: str = "",
+    budget: int | None = None,
+) -> tuple[str, dict]:
+    """Wie build_memory_context, gibt zusätzlich die Auswahl-Kennzahlen zurück."""
+    sections: list[str] = []
+    budget = budget or KONTEXT_BUDGET
+
+    woerter = stichworte(f"{frage}\n{hinweise}", zusatz_fuellwoerter=_META_WOERTER)
+    rows = _kandidaten(db, project_id, datasource_ids)
+    all_knowledge, stats = _auswaehlen(rows, woerter, budget)
+    stats["stichworte"] = woerter[:20]
+
+    # Sichtbar machen, was eingesetzt wurde und was wegfällt. Genau das war der
+    # alte Fehler: der Deckel warf still Wissen weg, und niemand konnte es
+    # merken. print statt log.info, weil die Anwendung kein Logging
+    # konfiguriert (siehe ai_service._usage_merken).
+    hinweis = (f" — {stats['verworfen']} passende Einträge haben nicht mehr ins Budget gepasst"
+               if stats["verworfen"] else "")
+    print(
+        f"[AI Memory] {stats['gewaehlt']}/{stats['kandidaten']} Einträge eingesetzt "
+        f"({stats['zeichen']} von {budget} Zeichen), Stichwörter: "
+        f"{', '.join(woerter[:8]) or '—'}{hinweis}",
+        flush=True,
     )
 
-    # 2. Datasource-spezifisches Wissen
-    ds_rows: list[AiMemoryKnowledge] = []
-    if datasource_ids:
-        ds_rows = (
-            db.query(AiMemoryKnowledge)
-            .filter(
-                AiMemoryKnowledge.scope == "datasource",
-                AiMemoryKnowledge.scope_id.in_(datasource_ids),
-                AiMemoryKnowledge.enabled == True,
-            )
-            .order_by(desc(AiMemoryKnowledge.use_count))
-            .limit(MAX_KNOWLEDGE)
-            .all()
-        )
-
-    # 3. Projekt-spezifisches Wissen
-    proj_rows: list[AiMemoryKnowledge] = []
-    if project_id:
-        proj_rows = (
-            db.query(AiMemoryKnowledge)
-            .filter(
-                AiMemoryKnowledge.scope == "project",
-                AiMemoryKnowledge.scope_id == str(project_id),
-                AiMemoryKnowledge.enabled == True,
-            )
-            .order_by(desc(AiMemoryKnowledge.use_count))
-            .limit(MAX_KNOWLEDGE)
-            .all()
-        )
-
-    all_knowledge = global_rows + ds_rows + proj_rows
     if all_knowledge:
         lines = ["Projektwissen (projektspezifische Regeln und Definitionen):"]
         for r in all_knowledge:
@@ -133,11 +279,14 @@ def build_memory_context(
         sections.append("\n".join(lines))
 
     if not sections:
-        return ""
+        stats["gesamt_zeichen"] = 0
+        return "", stats
 
     header = "─── AI Memory (Projektwissen) ───"
     footer = "─── Ende AI Memory ───"
-    return f"\n{header}\n" + "\n\n".join(sections) + f"\n{footer}\n"
+    text = f"\n{header}\n" + "\n\n".join(sections) + f"\n{footer}\n"
+    stats["gesamt_zeichen"] = len(text)          # inkl. Lösungen und Korrekturen
+    return text, stats
 
 
 # ── Prompt Cache ──────────────────────────────────────────────────────────────
