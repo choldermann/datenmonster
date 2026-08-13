@@ -7,6 +7,7 @@ Wissen wird als Kontext vor jedem LLM-Aufruf eingefügt.
 
 import hashlib
 import logging
+import re
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -26,8 +27,19 @@ log = logging.getLogger("datenmonster")
 # tatsächlichen Prompt also nichts aus. Grobe Umrechnung für Deutsch: ~4 Zeichen
 # je Token, 6.000 Zeichen ≈ 1.500 Token.
 KONTEXT_BUDGET  = 6000
+
+# Knapperes Budget für Aufrufe, die schon einen großen Prompt mitbringen
+# (SQL-Generierung mit Schema, Kennzahlen-Analyse mit Datenzeilen). Dort ist das
+# Wissen Beiwerk und darf die eigentliche Aufgabe nicht verdrängen.
+KONTEXT_BUDGET_KNAPP = 3500
+
 MAX_SOLUTIONS   = 5
 MAX_CORRECTIONS = 3
+
+# Wieviel des Kontextfensters Ollama tatsächlich mit Prompt füllt, bevor es
+# abschneidet — gemessen am 2026-08-13 (siehe budget_nach_platz).
+_FENSTER_ANTEIL = 0.5
+_ZEICHEN_JE_TOKEN = 4          # grobe Faustregel für Deutsch
 
 # Sicherheitsnetz beim Laden — bewertet wird im Speicher, nicht in SQL.
 _HARTE_GRENZE   = 500
@@ -35,7 +47,8 @@ _HARTE_GRENZE   = 500
 # Ab wie vielen Punkten ein Eintrag als passend gilt. Ein einzelner Treffer
 # irgendwo im Fließtext ist noch keiner: sonst zieht jedes Allerweltswort die
 # halbe Wissensdatenbank herbei (dieselbe Erfahrung wie beim Doku-Assistenten,
-# siehe openapi_import.doku_suchen).
+# siehe openapi_import.doku_suchen). Es reicht: ein Wort im Titel, zwei im Text,
+# oder ein Schema-Bezeichner (_bezeichner) irgendwo.
 _MINDESTPUNKTE  = 3
 
 # Wörter, die in einer Frage an ein Datenwerkzeug immer vorkommen und deshalb
@@ -54,6 +67,20 @@ _SCOPE_BONUS = {"project": 2, "datasource": 1, "global": 0}
 
 
 # ── Kontext-Builder ───────────────────────────────────────────────────────────
+
+def budget_nach_platz(vorhandene_zeichen: int, num_ctx: int, standard: int = KONTEXT_BUDGET) -> int:
+    """
+    Wieviel Wissen passt noch, ohne dass das Modell den Prompt abschneidet?
+
+    Ollama kürzt einen zu langen Prompt still auf etwa das halbe Kontextfenster
+    — gemessen: 6.208 Token kamen bei num_ctx 2048 als 1.026 an. Was dabei
+    wegfällt, ist willkürlich; im Zweifel die eigentliche Aufgabe. Deshalb wird
+    Wissen nur bis zum freien Rest eingesetzt, notfalls gar keines: lieber ohne
+    Projektwissen antworten als mit halbierter Frage.
+    """
+    platz = int(num_ctx * _FENSTER_ANTEIL * _ZEICHEN_JE_TOKEN)
+    return max(0, min(standard, platz - vorhandene_zeichen))
+
 
 def _kandidaten(
     db: Session,
@@ -102,15 +129,39 @@ def _trefferart(wort: str, text: str) -> int:
     return 1
 
 
-def _punkte(row: AiMemoryKnowledge, woerter: list[str]) -> int:
+_CAMEL = re.compile(r"[A-Za-zÄÖÜäöüß_]*[a-zß][A-ZÄÖÜ][A-Za-z0-9_]*")
+
+
+def _bezeichner(text: str) -> set[str]:
+    """
+    Schema-Bezeichner im Fragetext: cName, tArtikel, fVKNetto, vRechnung …
+
+    Solche Wörter benennen genau eine Sache und wiegen deshalb schwerer als
+    Fließtext. Erkannt am Großbuchstaben INNERHALB des Wortes — „Lagerbestand"
+    ist damit ein normales Substantiv, „tArtikelBeschreibung" ein Bezeichner.
+
+    Der naheliegendere Weg (seltene Wörter höher gewichten) fiel im Test durch:
+    in einer Wissensdatenbank mit 41 Einträgen ist auch „hänge" selten und zog
+    über „hängen an" beliebige Regeln herbei.
+    """
+    return {t.lower() for t in _CAMEL.findall(text or "")}
+
+
+def _punkte(row: AiMemoryKnowledge, woerter: list[str], bezeichner: set[str]) -> int:
     """Wie gut passt der Eintrag zu den Stichwörtern? Titel wiegt am schwersten."""
     titel     = (row.title or "").lower()
     inhalt    = (row.content or "").lower()
     kategorie = (row.category or "").lower()
+    def _wert(art: int, g: int) -> int:
+        # Das Mehrgewicht zählt NUR am Wortanfang. Ein Treffer mitten in einem
+        # Wort ist meist Zufall und darf nichts über die Schwelle heben.
+        return art * g if art == 2 else art
+
     p = 0
     for w in woerter:
-        p += 2 * _trefferart(w, titel)          # Wortanfang 4, sonst 2
-        p += _trefferart(w, inhalt)             # Wortanfang 2, sonst 1
+        g = 3 if w in bezeichner else 1
+        p += 2 * _wert(_trefferart(w, titel), g)     # Wortanfang 4 (×Seltenheit), sonst 2
+        p += _wert(_trefferart(w, inhalt), g)        # Wortanfang 2 (×Seltenheit), sonst 1
         if w in kategorie: p += 2
     return p
 
@@ -119,6 +170,7 @@ def _auswaehlen(
     rows: list[AiMemoryKnowledge],
     woerter: list[str],
     budget: int,
+    bezeichner: set[str] | None = None,
 ) -> tuple[list[AiMemoryKnowledge], dict]:
     """
     Die passenden Einträge heraussuchen, bis das Zeichenbudget voll ist.
@@ -131,6 +183,7 @@ def _auswaehlen(
     def _laenge(r) -> int:
         return len(r.title or "") + len(r.content or "") + 6   # „  • : \n"
 
+    bezeichner = bezeichner or set()
     immer   = [r for r in rows if getattr(r, "always_include", False)]
     uebrige = [r for r in rows if not getattr(r, "always_include", False)]
 
@@ -140,7 +193,7 @@ def _auswaehlen(
     if woerter:
         bewertet = []
         for r in uebrige:
-            p = _punkte(r, woerter)
+            p = _punkte(r, woerter, bezeichner)
             if p >= _MINDESTPUNKTE:
                 bewertet.append((p + _SCOPE_BONUS.get(r.scope, 0), r))
         # Punktzahl absteigend, bei Gleichstand die ältere ID zuerst — die
@@ -209,11 +262,17 @@ def build_memory_context_details(
 ) -> tuple[str, dict]:
     """Wie build_memory_context, gibt zusätzlich die Auswahl-Kennzahlen zurück."""
     sections: list[str] = []
-    budget = budget or KONTEXT_BUDGET
+    # Nicht `budget or KONTEXT_BUDGET`: 0 ist eine gültige Antwort von
+    # budget_nach_platz („kein Platz mehr") und darf nicht zum Standard werden.
+    budget = KONTEXT_BUDGET if budget is None else budget
+    if budget <= 0:
+        return "", {"kandidaten": 0, "immer": 0, "passend": 0, "gewaehlt": 0,
+                    "verworfen": 0, "zeichen": 0, "budget": 0, "getroffen": False,
+                    "stichworte": [], "gesamt_zeichen": 0, "kein_platz": True}
 
     woerter = stichworte(f"{frage}\n{hinweise}", zusatz_fuellwoerter=_META_WOERTER)
     rows = _kandidaten(db, project_id, datasource_ids)
-    all_knowledge, stats = _auswaehlen(rows, woerter, budget)
+    all_knowledge, stats = _auswaehlen(rows, woerter, budget, _bezeichner(f"{frage}\n{hinweise}"))
     stats["stichworte"] = woerter[:20]
 
     # Sichtbar machen, was eingesetzt wurde und was wegfällt. Genau das war der

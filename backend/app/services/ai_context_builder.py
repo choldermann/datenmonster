@@ -207,6 +207,23 @@ def _schema_for_sql(conn, sql: str) -> str:
     return "\n".join(result_lines) if len(result_lines) > 1 else full_schema
 
 
+# Obergrenze für den Schemablock. Der Tabellenfilter in _schema_for_sql greift
+# nur grob (er nimmt jede Tabelle, deren Name den gesuchten enthält — bei
+# „tArtikel" also auch tArtikelBeschreibung, tArtikelBild …), und ohne
+# schema_cache liest er das ganze Schema live aus. Gemessen: 33.000 Zeichen für
+# eine Abfrage über eine einzige Tabelle. Das sind ~8.300 Token, die auf dieser
+# CPU rund dreieinhalb Minuten Vorlauf kosten — der Aufruf lief in den Timeout.
+_MAX_SCHEMA_ZEICHEN = 12000
+
+
+def _kuerzen(text: str, grenze: int, was: str) -> str:
+    """Lange Kontextblöcke kappen — mit sichtbarem Hinweis statt stiller Kürzung."""
+    if len(text) <= grenze:
+        return text
+    return (text[:grenze].rsplit("\n", 1)[0]
+            + f"\n… (gekürzt: {was} umfasst {len(text)} Zeichen, hier stehen die ersten {grenze})")
+
+
 def _get_mapping_datasets(db: Session, mapping_id: int) -> list[dict]:
     """Return info about datasets already on the mapping canvas: name, source_table, columns."""
     from app.models.mapping import Mapping
@@ -379,6 +396,64 @@ class AIContextBuilder:
         from app.models.dataset import DbConnection
         return self.db.query(DbConnection).filter(DbConnection.id == connection_id).first()
 
+    # ── Projektwissen ────────────────────────────────────────────────────────
+
+    def wissen(
+        self,
+        frage: str,
+        hinweise: str = "",
+        mapping_id: Optional[int] = None,
+        connection_id: Optional[int] = None,
+        num_ctx: int = 4096,        # Ollamas Vorgabe, wenn der Aufrufer keine
+        budget: Optional[int] = None,   # AIParams mitgibt — bei diesen Endpunkten der Fall
+    ) -> str:
+        """
+        Das zur Aufgabe passende Projektwissen — dieselbe Auswahl wie im Chat.
+
+        Bis 2026-08-13 bekam NUR der Chat das AI-Memory. Ausgerechnet die
+        Endpunkte, die Code schreiben, wussten also nichts von den mühsam
+        gepflegten Regeln (dass der Artikelname in tArtikelBeschreibung steht,
+        dass Umsatz netto gerechnet wird …) und erzeugten SQL dagegen.
+
+        `hinweise` sind die bereits gesammelten Kontextteile — dort stehen die
+        Tabellen- und Feldnamen, an denen die Auswahl das Thema erkennt.
+        Fehler werden geschluckt: ohne Wissen ist die Antwort schlechter, ohne
+        Antwort ist sie unbrauchbar.
+        """
+        try:
+            from app.services.ai_memory_service import (
+                build_memory_context, budget_nach_platz, KONTEXT_BUDGET_KNAPP,
+            )
+
+            project_id = None
+            ds_namen: list[str] = []
+
+            if mapping_id:
+                from app.models.mapping import Mapping
+                m = self.db.query(Mapping).filter(Mapping.id == mapping_id).first()
+                if m:
+                    project_id = m.project_id
+            if connection_id:
+                conn = self._get_conn(connection_id)
+                if conn:
+                    if conn.name:
+                        ds_namen.append(conn.name)
+                    project_id = project_id or getattr(conn, "project_id", None)
+
+            # Das Wissen ist hier Beiwerk neben Schema und Aufgabe — es darf den
+            # Prompt nicht über das Kontextfenster treiben (siehe budget_nach_platz).
+            platz = budget_nach_platz(
+                len(frage) + len(hinweise), num_ctx,
+                standard=budget or KONTEXT_BUDGET_KNAPP,
+            )
+            return build_memory_context(
+                self.db, project_id=project_id, datasource_ids=ds_namen or None,
+                frage=frage, hinweise=hinweise, budget=platz,
+            )
+        except Exception as e:
+            log.warning(f"[AI Memory] Wissen für Kontext nicht ermittelbar: {e}")
+            return ""
+
     # ── SQL ──────────────────────────────────────────────────────────────────
 
     def sql_explain_context(self, sql: str, connection_id: Optional[int], mapping_id: Optional[int] = None) -> tuple[str, str]:
@@ -403,7 +478,13 @@ class AIContextBuilder:
                     lines.append(line)
                 context_parts.append("\n".join(lines))
         if schema_text:
-            context_parts.append(f"Datenbankschema:\n{schema_text}")
+            context_parts.append("Datenbankschema:\n"
+                                 + _kuerzen(schema_text, _MAX_SCHEMA_ZEICHEN, "das Schema"))
+        # Der Endpunkt wählt das Kontextfenster passend zum Prompt
+        # (ai_service.params_fuer_prompt) — hier darf deshalb die Obergrenze gelten.
+        wissen = self.wissen(sql, "\n\n".join(context_parts), mapping_id, connection_id, num_ctx=24576)
+        if wissen:
+            context_parts.append(wissen)
         context_parts.append(f"SQL-Abfrage:\n{sql}")
         return _SQL_SYSTEM, "\n\n".join(context_parts)
 
@@ -450,11 +531,19 @@ class AIContextBuilder:
                     )
                     context_parts.append(compact)
 
+        # Projektwissen zuletzt, direkt vor der Aufgabe: die Regeln zu Feldern und
+        # Tabellen entscheiden hier über richtiges oder falsches SQL.
+        wissen = self.wissen(description, "\n\n".join(context_parts), mapping_id, connection_id,
+                             num_ctx=24576)
+        if wissen:
+            context_parts.append(wissen)
+
         return _SQL_SYSTEM, "\n\n".join(context_parts)
 
     # ── Python ───────────────────────────────────────────────────────────────
 
-    def python_generate_context(self, mapping_id: Optional[int], node_id: Optional[str], current_script: str = "") -> tuple[str, str]:
+    def python_generate_context(self, mapping_id: Optional[int], node_id: Optional[str], current_script: str = "",
+                                description: str = "") -> tuple[str, str]:
         """Context for generating Python code in a Python node."""
         fields = _get_mapping_fields(self.db, mapping_id) if mapping_id else []
 
@@ -464,11 +553,16 @@ class AIContextBuilder:
         if current_script and current_script.strip():
             context_parts.append(f"Vorhandener Code:\n{current_script}")
 
+        wissen = self.wissen(description, "\n\n".join(context_parts), mapping_id)
+        if wissen:
+            context_parts.append(wissen)
+
         return _PYTHON_SYSTEM, "\n\n".join(context_parts)
 
     # ── Expression ───────────────────────────────────────────────────────────
 
-    def expression_generate_context(self, mapping_id: Optional[int], node_id: Optional[str], field_name: str = "") -> tuple[str, str]:
+    def expression_generate_context(self, mapping_id: Optional[int], node_id: Optional[str], field_name: str = "",
+                                    description: str = "") -> tuple[str, str]:
         """Context for generating an expression in an Expression node."""
         fields = _get_mapping_fields(self.db, mapping_id) if mapping_id else []
 
@@ -477,6 +571,10 @@ class AIContextBuilder:
             context_parts.append(f"Zielfeld: {field_name}")
         if fields:
             context_parts.append(f"Verfügbare Felder im Mapping:\n{', '.join(fields)}")
+
+        wissen = self.wissen(f"{description} {field_name}", "\n\n".join(context_parts), mapping_id)
+        if wissen:
+            context_parts.append(wissen)
 
         return _EXPR_SYSTEM, "\n\n".join(context_parts)
 
@@ -491,6 +589,12 @@ class AIContextBuilder:
         if code and code.strip():
             label = "SQL" if node_type == "sql" else "Python-Code" if node_type == "python" else "Ausdruck"
             context_parts.append(f"{label}:\n{code}")
+
+        # Viele Laufzeitfehler sind in Wahrheit Schemafehler („ungültiger
+        # Spaltenname cName") — genau dazu steht die Antwort im Projektwissen.
+        wissen = self.wissen(f"{error}\n{code}", "\n\n".join(context_parts), mapping_id)
+        if wissen:
+            context_parts.append(wissen)
 
         return _ERROR_SYSTEM, "\n\n".join(context_parts)
 

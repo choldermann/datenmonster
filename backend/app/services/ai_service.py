@@ -31,10 +31,52 @@ class AIParams:
 
 
 MODE_PARAMS: dict[str, AIParams] = {
-    "schnell": AIParams(think=False, temperature=0.2, top_p=0.90, max_tokens=300,  num_ctx=2048),
+    # num_ctx war hier 2048 — zu klein: Ollama kürzt einen längeren Prompt still
+    # auf das halbe Fenster (gemessen 2026-08-13: von 6.208 Token kamen 1.026 an).
+    # Der Modus soll die ANTWORT kurz halten (max_tokens), nicht die Frage
+    # abschneiden. Ein größeres Fenster kostet für sich genommen keine Zeit —
+    # Rechenzeit kosten nur die Token, die tatsächlich darin stehen.
+    "schnell": AIParams(think=False, temperature=0.2, top_p=0.90, max_tokens=300,  num_ctx=8192),
     "auto":    AIParams(think=False, temperature=0.4, top_p=0.95, max_tokens=1000, num_ctx=8192),
     "analyse": AIParams(think=True,  temperature=0.5, top_p=0.95, max_tokens=4000, num_ctx=16384),
 }
+
+def params_fuer_prompt(prompt_zeichen: int, max_tokens: int = 1000,
+                       temperature: float = 0.3) -> AIParams:
+    """
+    Kontextfenster passend zum Prompt wählen.
+
+    Ohne AIParams schickt der Aufrufer gar keine `options` — dann gilt Ollamas
+    Vorgabe von 4.096 Token, und alles darüber wird still abgeschnitten. Das traf
+    ausgerechnet die Endpunkte mit dem größten Kontext: eine SQL-Erklärung mit
+    Schema kommt leicht auf 33.000 Zeichen (~8.300 Token), von denen dann rund
+    ein Viertel ankam. Da ein Prompt höchstens das halbe Fenster füllen darf
+    (gemessen, siehe ai_memory_service.budget_nach_platz), wird auf die doppelte
+    Prompt-Größe aufgerundet.
+    """
+    noetig = int(prompt_zeichen / 4) * 2 + max_tokens
+    for stufe in (4096, 8192, 16384, 24576):
+        if noetig <= stufe:
+            return AIParams(think=False, temperature=temperature, top_p=0.95,
+                            max_tokens=max_tokens, num_ctx=stufe)
+    return AIParams(think=False, temperature=temperature, top_p=0.95,
+                    max_tokens=max_tokens, num_ctx=24576)
+
+
+def timeout_fuer_prompt(prompt_zeichen: int, basis: int = DEFAULT_TIMEOUT) -> int:
+    """
+    Wie lange ein Aufruf mit großem Prompt dauern darf.
+
+    Auf dieser CPU verarbeitet qwen2.5-coder:3b rund 43 Token/s Prompt-Vorlauf
+    (gemessen 2026-08-13 an 13.812 neuen Token: 321 s). Wiederholt sich ein
+    Prompt wörtlich, sind es 173 ms — auf diesen Prefix-Cache darf man sich aber
+    nicht verlassen. Mit 20 Token/s gerechnet bleibt Luft für langsamere Modelle.
+    """
+    return max(basis, int(prompt_zeichen / _ZEICHEN_JE_TOKEN_SCHAETZUNG / 20) + 60)
+
+
+_ZEICHEN_JE_TOKEN_SCHAETZUNG = 4
+
 
 # Modelle die think-Modus unterstützen (Basis-Name ohne Tag)
 _THINKING_MODELS = {

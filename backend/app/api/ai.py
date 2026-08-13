@@ -298,7 +298,10 @@ async def explain_sql(
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.sql_explain_context(body.sql, body.connection_id, body.mapping_id)
-    return _sse_stream(svc.stream_with_context(context, system))
+    from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
+    params = params_fuer_prompt(len(system) + len(context))
+    svc.timeout = timeout_fuer_prompt(len(system) + len(context), svc.timeout)
+    return _sse_stream(svc.stream_with_context(context, system, params=params))
 
 
 class GenerateSqlRequest(BaseModel):
@@ -318,7 +321,10 @@ async def generate_sql(
     full_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
     print(f"[AI generate-sql] mapping_id={body.mapping_id} conn_id={body.connection_id} context_len={len(context)}", flush=True)
     print(f"[AI generate-sql] MSG:\n{full_msg[:600]}", flush=True)
-    return _sse_stream(svc.stream_with_context(full_msg, system))
+    from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
+    params = params_fuer_prompt(len(system) + len(full_msg))
+    svc.timeout = timeout_fuer_prompt(len(system) + len(full_msg), svc.timeout)
+    return _sse_stream(svc.stream_with_context(full_msg, system, params=params))
 
 
 # ── Python ────────────────────────────────────────────────────────────────────
@@ -337,7 +343,8 @@ async def generate_python(
 ):
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
-    system, context = ctx.python_generate_context(body.mapping_id, body.node_id, body.current_script)
+    system, context = ctx.python_generate_context(body.mapping_id, body.node_id, body.current_script,
+                                                  description=body.description)
     user_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
     return _sse_stream(svc.stream_with_context(user_msg, system))
 
@@ -961,7 +968,8 @@ async def generate_expression(
 ):
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
-    system, context = ctx.expression_generate_context(body.mapping_id, body.node_id, body.field_name)
+    system, context = ctx.expression_generate_context(body.mapping_id, body.node_id, body.field_name,
+                                                      description=body.description)
     user_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
     return _sse_stream(svc.stream_with_context(user_msg, system))
 
@@ -1355,6 +1363,14 @@ async def chat(
                 _hinweis_teile.append(_sc[:1500])
         _hinweise = " ".join(t for t in _hinweis_teile if t)[:3000]
 
+        # Nur so viel Wissen, wie neben Systemprompt, Seitendaten und Verlauf noch
+        # ins Kontextfenster passt — sonst schneidet Ollama still ab, und zwar
+        # nicht zwingend am Wissen.
+        from app.services.ai_memory_service import budget_nach_platz
+        _belegt = (len(_BASE_SYSTEM) + len(_PAGE_SYSTEM_PROMPTS.get(_page, ""))
+                   + len(str(_cd)) + len(body.message)
+                   + sum(len(m.content or "") for m in body.history))
+
         memory_context = build_memory_context(
             db,
             project_id=project_id,
@@ -1362,6 +1378,7 @@ async def chat(
             category_hint=_category_hint,
             frage=body.message,
             hinweise=_hinweise,
+            budget=budget_nach_platz(_belegt, params.num_ctx),
         )
     except Exception as _me:
         log.warning(f"[AI Memory] Kontext-Build fehlgeschlagen: {_me}")
