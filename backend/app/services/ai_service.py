@@ -442,17 +442,21 @@ class AIService:
             return {"ollama_reachable": False, "model_loaded": False, "available_models": [], "error": str(e)}
 
 
-def build_ai_service(db):
+def build_ai_service(db, provider: str | None = None):
     """Baut den aktiven KI-Provider. `ai_provider`:
        - "ollama"       → lokales Ollama (Default, kostenlos)
        - "datenmonster" → zentraler monstersuite-Gateway (Credit-Abrechnung)
-    Beide Provider teilen dieselbe öffentliche Oberfläche → ai.py bleibt unverändert."""
+    Beide Provider teilen dieselbe öffentliche Oberfläche → ai.py bleibt unverändert.
+
+    `provider` übersteuert die Einstellung für EINEN Aufruf — für Oberflächen,
+    die die Wahl direkt anbieten (z.B. der Schema-Katalog: viele Tabellen auf
+    einmal beschreiben lohnt das große Modell, der Rest läuft lokal weiter)."""
     from app.api.settings import get_setting
     enabled = get_setting(db, "ai_enabled", "false")
     if enabled != "true":
         return None
     timeout = int(get_setting(db, "ai_timeout", str(DEFAULT_TIMEOUT)))
-    provider = get_setting(db, "ai_provider", "ollama")
+    provider = provider or get_setting(db, "ai_provider", "ollama")
     if provider == "datenmonster":
         from app.services.ai_gateway import DatamonsterAIService
         model = get_setting(db, "ai_dm_model", "auto")

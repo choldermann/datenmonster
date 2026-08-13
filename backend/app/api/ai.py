@@ -1,5 +1,6 @@
 import logging
 import httpx
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -197,24 +198,42 @@ async def ai_status(db: Session = Depends(get_db), user: User = Depends(get_curr
 
 # ── Datenmonster AI: Guthaben & Pakete (Proxy zum monstersuite-Gateway) ────────
 
+# Guthaben kurz zwischenspeichern: die Auskunft wird an mehreren Stellen
+# gebraucht (Portalkopf, Einstellungen, Schema-Katalog) und geht jedes Mal über
+# das Netz zum Gateway.
+_CREDITS_CACHE: dict = {"zeit": 0.0, "daten": None}
+_CREDITS_TTL = 60
+
+
 @router.get("/credits")
 def ai_credits(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Aktuelles Guthaben + Monatsverbrauch der Lizenz. Nur bei provider=datenmonster."""
+    """
+    Aktuelles Guthaben + Monatsverbrauch der Lizenz.
+
+    Wird AUCH beantwortet, wenn global Ollama eingestellt ist: nur so kann eine
+    Oberfläche entscheiden, ob sie die Wahl „Datenmonster AI" überhaupt anbietet.
+    `enabled` sagt weiterhin, ob der Gateway der eingestellte Anbieter ist —
+    Portalkopf und Einstellungen hängen daran.
+    """
     from app.api.settings import get_setting
     provider = get_setting(db, "ai_provider", "ollama")
-    if provider != "datenmonster":
-        return {"provider": provider, "enabled": False}
+    ist_gateway = provider == "datenmonster"
+
+    if _CREDITS_CACHE["daten"] is not None and time.time() - _CREDITS_CACHE["zeit"] < _CREDITS_TTL:
+        return {**_CREDITS_CACHE["daten"], "provider": provider, "enabled": ist_gateway}
+
     from app.api.license import license_auth_body, LICENSE_SERVER
     try:
         with httpx.Client(timeout=10) as c:
             r = c.post(f"{LICENSE_SERVER}/api/v1/ai/balance", json=license_auth_body(db))
             r.raise_for_status()
             data = r.json()
-        return {"provider": "datenmonster", "enabled": True, **data}
     except Exception as e:
         from app.services.ai_gateway import describe_gateway_error
-        return {"provider": "datenmonster", "enabled": True,
-                "error": describe_gateway_error(e)}
+        data = {"error": describe_gateway_error(e)}
+
+    _CREDITS_CACHE.update(zeit=time.time(), daten=data)
+    return {**data, "provider": provider, "enabled": ist_gateway}
 
 
 @router.get("/credit-packages")

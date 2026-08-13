@@ -53,6 +53,10 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const [dirty, setDirty]         = useState<Record<string, TableMeta>>({});
   const [importing, setImporting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
+  // Anbieterwahl: nur sichtbar, wenn die Lizenz Guthaben hat. Vorbelegt ist der
+  // eingestellte Anbieter — der Schalter gilt nur für diesen Katalog.
+  const [guthaben, setGuthaben] = useState<number | null>(null);
+  const [provider, setProvider] = useState<"ollama" | "datenmonster">("ollama");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +76,15 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   }, [connectionId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.get("/api/ai/credits")
+      .then(({ data }) => {
+        if (typeof data?.balance === "number") setGuthaben(data.balance);
+        if (data?.enabled) setProvider("datenmonster");
+      })
+      .catch(() => {});   // ohne Lizenz bleibt der Schalter einfach weg
+  }, []);
 
   const save = async (tbl: TableMeta) => {
     await api.put(`/api/schema-catalog/${connectionId}/table`, {
@@ -105,7 +118,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       const resp  = await fetch(`/api/schema-catalog/${connectionId}/ai-suggest`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ table_full_names: tableNames }),
+        body: JSON.stringify({ table_full_names: tableNames, provider }),
       });
       const reader  = resp.body!.getReader();
       const decoder = new TextDecoder();
@@ -248,6 +261,20 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
             {importing ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
             Import
           </button>
+          {guthaben !== null && guthaben > 0 && (
+            <div title={`Datenmonster AI: ${guthaben} Credits übrig`}
+              style={{ display: "flex", alignItems: "center", gap: 0, border: `1px solid ${S.border}`,
+                borderRadius: 6, overflow: "hidden" }}>
+              {([["ollama", "Ollama"], ["datenmonster", `Datenmonster AI · ${guthaben}`]] as const).map(([wert, text]) => (
+                <button key={wert} onClick={() => setProvider(wert as any)} disabled={suggesting}
+                  style={{ border: "none", padding: "5px 9px", fontSize: 10, cursor: suggesting ? "not-allowed" : "pointer",
+                    backgroundColor: provider === wert ? "rgba(252,228,153,0.14)" : "transparent",
+                    color: provider === wert ? S.textBright : S.textDim }}>
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
           <button
             onClick={() => handleAiSuggest()}
             disabled={suggesting || undescribed === 0}

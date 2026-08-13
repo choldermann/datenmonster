@@ -45,6 +45,11 @@ class RelationIn(BaseModel):
 class AiSuggestRequest(BaseModel):
     table_full_names: list[str] = []   # leer = alle Tabellen ohne Beschreibung
     limit: int = 100                   # max. Tabellen pro Durchlauf
+    # Anbieter nur für diesen Lauf: "ollama" | "datenmonster". Ohne Angabe gilt
+    # die Einstellung. Der Katalog bietet die Wahl an, weil hier hunderte
+    # Tabellen am Stück beschrieben werden — das ist der Fall, für den sich das
+    # große Modell lohnt.
+    provider: Optional[str] = None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -524,7 +529,7 @@ async def ai_suggest(
             yield f"data: {json.dumps({'done': True, 'count': 0})}\n\n"
         return StreamingResponse(empty(), media_type="text/event-stream")
 
-    svc = build_ai_service(db)
+    svc = build_ai_service(db, provider=body.provider)
     if not svc:
         async def _no_ai():
             yield f"data: {json.dumps({'error': 'KI nicht aktiviert. Bitte unter Einstellungen → KI aktivieren und ein Modell auswählen.'})}\n\n"
