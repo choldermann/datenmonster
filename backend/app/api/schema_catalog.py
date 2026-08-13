@@ -226,6 +226,89 @@ def add_relation(
     return {"id": rel.id}
 
 
+class DeriveIn(BaseModel):
+    tables: list[str] = []      # leer = wichtige Tabellen, sonst alle (gedeckelt)
+
+
+@router.post("/api/schema-catalog/{conn_id}/relations/derive")
+def derive_relations(
+    conn_id: int,
+    body: DeriveIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    Beziehungsvorschläge aus den Schlüsseln — schreibt nichts, schlägt nur vor.
+
+    Ohne Tabellenauswahl werden die als wichtig markierten genommen; gibt es
+    keine, alle (gedeckelt). Bei 1.158 Tabellen kämen sonst ~1.250 Vorschläge
+    heraus, die niemand durchsieht.
+    """
+    conn = _get_conn(conn_id, db, user)
+    if not conn.schema_cache:
+        raise HTTPException(400, "Kein Schema-Cache — bitte erst den Schema-Cache aufbauen.")
+
+    from app.services.schema_cache_service import beziehungen_ableiten
+
+    tabellen = body.tables
+    quelle_auswahl = "auswahl"
+    if not tabellen:
+        wichtige = [t.table_full_name for t in
+                    db.query(SchemaTableMeta).filter_by(connection_id=conn_id, is_important=True).all()]
+        if wichtige:
+            tabellen, quelle_auswahl = wichtige, "wichtige"
+        else:
+            quelle_auswahl = "alle"
+
+    kandidaten = beziehungen_ableiten(json.loads(conn.schema_cache), tabellen or None)
+
+    # Schon vorhandene nicht noch einmal vorschlagen
+    vorhanden = {
+        (r.from_table, r.from_col, r.to_table, r.to_col)
+        for r in db.query(SchemaRelationMeta).filter_by(connection_id=conn_id).all()
+    }
+    neu = [k for k in kandidaten
+           if (k["from_table"], k["from_col"], k["to_table"], k["to_col"]) not in vorhanden]
+
+    return {
+        "kandidaten": neu,
+        "geprueft_tabellen": len(tabellen) if tabellen else "alle",
+        "auswahl": quelle_auswahl,
+        "schon_vorhanden": len(kandidaten) - len(neu),
+    }
+
+
+class BulkRelationsIn(BaseModel):
+    relations: list[RelationIn]
+
+
+@router.post("/api/schema-catalog/{conn_id}/relations/bulk")
+def add_relations_bulk(
+    conn_id: int,
+    body: BulkRelationsIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Mehrere Beziehungen auf einmal übernehmen (Dubletten werden übersprungen)."""
+    _get_conn(conn_id, db, user)
+    vorhanden = {
+        (r.from_table, r.from_col, r.to_table, r.to_col)
+        for r in db.query(SchemaRelationMeta).filter_by(connection_id=conn_id).all()
+    }
+    angelegt = 0
+    for r in body.relations:
+        if (r.from_table, r.from_col, r.to_table, r.to_col) in vorhanden:
+            continue
+        db.add(SchemaRelationMeta(
+            connection_id=conn_id, from_table=r.from_table, from_col=r.from_col,
+            to_table=r.to_table, to_col=r.to_col, description=r.description,
+        ))
+        vorhanden.add((r.from_table, r.from_col, r.to_table, r.to_col))
+        angelegt += 1
+    db.commit()
+    return {"angelegt": angelegt, "uebersprungen": len(body.relations) - angelegt}
+
+
 @router.delete("/api/schema-catalog/{conn_id}/relations/{rel_id}")
 def delete_relation(
     conn_id: int,

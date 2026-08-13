@@ -203,6 +203,103 @@ def _build_fk_graph(tables: list[dict]) -> tuple[dict, dict]:
     return outgoing, incoming
 
 
+# Nur Zahlenschlüssel taugen als Join-Ziel. Ohne diese Prüfung entstehen
+# Beziehungen über cName oder dErstellt — die sind in irgendeiner Protokoll-
+# tabelle tatsächlich Primärschlüssel, als Join aber Unsinn.
+_SCHLUESSEL_TYPEN = {"int", "bigint", "smallint", "tinyint", "integer"}
+
+
+def _pk_index(tables: list[dict]) -> dict[str, list[str]]:
+    """Spaltenname des (einzigen, numerischen) Primärschlüssels → Tabellen."""
+    index: dict[str, list[str]] = {}
+    for t in tables:
+        pks = [c for c in t.get("columns", []) if c.get("pk")]
+        if len(pks) != 1:                      # zusammengesetzte PKs taugen nicht als Join-Ziel
+            continue
+        if (pks[0].get("type") or "").lower() not in _SCHLUESSEL_TYPEN:
+            continue
+        index.setdefault(pks[0]["name"], []).append(t["full_name"])
+    return index
+
+
+def _namensgleich(schluessel: str, voll_name: str) -> bool:
+    """kArtikel ↔ dbo.tArtikel — die JTL-Namenskonvention, k weg, t weg, Rest vergleichen."""
+    return voll_name.split(".")[-1].lower().lstrip("t") == schluessel.lower().lstrip("k")
+
+
+def beziehungen_ableiten(schema_json: dict, von_tabellen: list[str] | None = None,
+                         grenze: int = 400) -> list[dict]:
+    """
+    Beziehungen aus den Schlüsseln ableiten — dieselbe Regel, nach der der
+    Mapping-Editor seine Joins vorschlägt, nur für den Schema-Katalog.
+
+    Zwei Quellen:
+    - `fk`: echte Fremdschlüssel aus der Datenbank. Zuverlässig, aber die
+      JTL-Wawi setzt kaum welche (557 von 1.158 Tabellen).
+    - `schluessel`: eine Spalte heißt genauso wie der Primärschlüssel einer
+      anderen Tabelle (kArtikel in tRechnungPosition → dbo.tArtikel).
+
+    Die Falle dabei: ein Schlüsselname ist oft NICHT eindeutig — `kArtikel` ist
+    Primärschlüssel in sechs Tabellen (auch in tlagerbestand und
+    tLagerbestandBackup). Wer da auf Eindeutigkeit besteht, verliert
+    ausgerechnet den wichtigsten Join. Deshalb entscheidet bei mehreren
+    Kandidaten der Name (_namensgleich); bleibt es uneindeutig, wird die
+    Beziehung als „unsicher" samt Alternativen zurückgegeben statt geraten.
+
+    Gibt Kandidaten zurück, schreibt nichts.
+    """
+    tables = schema_json.get("tables", [])
+    pk_index = _pk_index(tables)
+    auswahl = [t for t in tables if not von_tabellen or t["full_name"] in set(von_tabellen)]
+
+    kandidaten: list[dict] = []
+    gesehen: set[tuple] = set()
+
+    def merken(von_t, von_c, zu_t, zu_c, quelle, alternativen=None):
+        schluessel = (von_t, von_c, zu_t, zu_c)
+        if schluessel in gesehen or von_t == zu_t:
+            return
+        gesehen.add(schluessel)
+        kandidaten.append({
+            "from_table": von_t, "from_col": von_c,
+            "to_table": zu_t, "to_col": zu_c,
+            "quelle": quelle,
+            "alternativen": alternativen or [],
+        })
+
+    for tbl in auswahl:
+        voll = tbl["full_name"]
+        eigene_pks = {c["name"] for c in tbl.get("columns", []) if c.get("pk")}
+        for col in tbl.get("columns", []):
+            name = col["name"]
+
+            fk = col.get("fk")
+            if fk:
+                teile = fk.rsplit(".", 1)
+                if len(teile) == 2:
+                    merken(voll, name, teile[0], teile[1], "fk")
+                continue
+
+            if name in eigene_pks or name not in pk_index:
+                continue
+            ziele = [z for z in pk_index[name] if z != voll]
+            if not ziele:
+                continue
+            if len(ziele) == 1:
+                merken(voll, name, ziele[0], name, "schluessel")
+            else:
+                treffer = [z for z in ziele if _namensgleich(name, z)]
+                if len(treffer) == 1:
+                    merken(voll, name, treffer[0], name, "schluessel")
+                else:
+                    merken(voll, name, ziele[0], name, "unsicher", alternativen=ziele[1:])
+
+            if len(kandidaten) >= grenze:
+                return kandidaten
+
+    return kandidaten
+
+
 def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
     """
     Score keyword against table full_name + column names.

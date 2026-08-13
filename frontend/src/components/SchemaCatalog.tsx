@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Download, Loader2, Sparkles, Plus, Trash2, Search, Star, StarOff, Upload } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, Download, Link2, Loader2, Sparkles, Plus, Trash2, Search, Star, StarOff, Upload } from "lucide-react";
 import { useRef } from "react";
 import api from "../api/client";
 import { S } from "./dashboard/constants";
@@ -23,6 +23,16 @@ interface TableMeta {
   columns: ColumnMeta[];
 }
 interface Relation { id: number; from_table: string; from_col: string; to_table: string; to_col: string; description: string | null; }
+interface Kandidat {
+  from_table: string; from_col: string; to_table: string; to_col: string;
+  quelle: "fk" | "schluessel" | "unsicher";
+  alternativen: string[];
+}
+const QUELLE_LABEL: Record<string, { text: string; farbe: string; titel: string }> = {
+  fk:         { text: "FK",        farbe: "#34d399", titel: "Echter Fremdschlüssel in der Datenbank" },
+  schluessel: { text: "Schlüssel", farbe: "#60a5fa", titel: "Spalte heißt wie der Primärschlüssel der Zieltabelle" },
+  unsicher:   { text: "unsicher",  farbe: "#fbbf24", titel: "Mehrere Tabellen kommen als Ziel in Frage" },
+};
 
 export default function SchemaCatalog({ connectionId }: { connectionId: number }) {
   const [tables, setTables]       = useState<TableMeta[]>([]);
@@ -35,6 +45,11 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const [activeTab, setActiveTab] = useState<"tables" | "relations">("tables");
   const [newRel, setNewRel]       = useState({ from_table: "", from_col: "", to_table: "", to_col: "", description: "" });
   const [addingRel, setAddingRel] = useState(false);
+  const [deriving, setDeriving]   = useState(false);
+  const [kandidaten, setKandidaten] = useState<Kandidat[] | null>(null);
+  const [deriveInfo, setDeriveInfo] = useState<{ auswahl: string; schon_vorhanden: number } | null>(null);
+  // Vorschläge starten IMMER unausgewählt — der Anwender entscheidet, was gilt.
+  const [gewaehlt, setGewaehlt]   = useState<Set<number>>(new Set());
   const [dirty, setDirty]         = useState<Record<string, TableMeta>>({});
   const [importing, setImporting] = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
@@ -121,6 +136,34 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       setNewRel({ from_table: "", from_col: "", to_table: "", to_col: "", description: "" });
       await load();
     } finally { setAddingRel(false); }
+  };
+
+  const ableiten = async () => {
+    setDeriving(true);
+    try {
+      // Ohne Tabellenauswahl entscheidet der Server: markierte Tabellen, sonst alle.
+      const { data } = await api.post(`/api/schema-catalog/${connectionId}/relations/derive`, { tables: [] });
+      setKandidaten(data.kandidaten || []);
+      setDeriveInfo({ auswahl: data.auswahl, schon_vorhanden: data.schon_vorhanden });
+      setGewaehlt(new Set());
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Ableiten fehlgeschlagen");
+    } finally { setDeriving(false); }
+  };
+
+  const uebernehmen = async () => {
+    if (!kandidaten || gewaehlt.size === 0) return;
+    const auswahl = [...gewaehlt].map(i => {
+      const k = kandidaten[i];
+      return {
+        from_table: k.from_table, from_col: k.from_col,
+        to_table: k.to_table, to_col: k.to_col,
+        description: k.quelle === "fk" ? "aus DB-Fremdschlüssel" : "aus Schlüsselnamen abgeleitet",
+      };
+    });
+    await api.post(`/api/schema-catalog/${connectionId}/relations/bulk`, { relations: auswahl });
+    setKandidaten(null); setGewaehlt(new Set()); setDeriveInfo(null);
+    await load();
   };
 
   const handleExport = async () => {
@@ -361,6 +404,98 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
 
       {activeTab === "relations" && (
         <div>
+          {/* Aus Schlüsseln ableiten */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+            <button onClick={ableiten} disabled={deriving}
+              style={{ display: "flex", alignItems: "center", gap: 5, backgroundColor: S.bgEl,
+                color: S.textBright, border: `1px solid ${S.border}`, borderRadius: 4,
+                padding: "5px 10px", cursor: deriving ? "wait" : "pointer", fontSize: 11 }}>
+              {deriving ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
+              Aus Schlüsseln ableiten
+            </button>
+            <span style={{ fontSize: 10, color: S.textDim }}>
+              Fremdschlüssel der Datenbank plus Spalten, die wie der Primärschlüssel einer
+              anderen Tabelle heißen — dieselbe Regel wie beim Auto-Join im Mapping.
+            </span>
+          </div>
+
+          {kandidaten && (
+            <div style={{ backgroundColor: S.bgEl, borderRadius: 6, padding: 12, marginBottom: 12,
+              border: `1px solid ${S.border}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, color: S.textBright }}>
+                  {kandidaten.length} Vorschläge
+                  {deriveInfo?.auswahl === "wichtige" && " aus den mit ★ markierten Tabellen"}
+                  {deriveInfo?.auswahl === "alle" && " aus allen Tabellen"}
+                  {!!deriveInfo?.schon_vorhanden && ` · ${deriveInfo.schon_vorhanden} bereits vorhanden`}
+                </span>
+                {deriveInfo?.auswahl === "alle" && (
+                  <span style={{ fontSize: 10, color: S.textDim }}>
+                    Tipp: Tabellen im Reiter „Tabellen" mit ★ markieren, dann werden nur deren
+                    Beziehungen vorgeschlagen.
+                  </span>
+                )}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                  <button onClick={() => setGewaehlt(g =>
+                      g.size === kandidaten.length ? new Set() : new Set(kandidaten.map((_, i) => i)))}
+                    style={{ background: "none", border: `1px solid ${S.border}`, borderRadius: 4,
+                      color: S.textDim, fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
+                    {gewaehlt.size === kandidaten.length ? "Keine" : "Alle"}
+                  </button>
+                  <button onClick={() => { setKandidaten(null); setDeriveInfo(null); }}
+                    style={{ background: "none", border: `1px solid ${S.border}`, borderRadius: 4,
+                      color: S.textDim, fontSize: 10, padding: "3px 8px", cursor: "pointer" }}>
+                    Verwerfen
+                  </button>
+                  <button onClick={uebernehmen} disabled={gewaehlt.size === 0}
+                    style={{ backgroundColor: gewaehlt.size ? S.accent : S.bgEl, color: gewaehlt.size ? "#fff" : S.textDim,
+                      border: "none", borderRadius: 4, fontSize: 10, padding: "3px 10px",
+                      cursor: gewaehlt.size ? "pointer" : "default" }}>
+                    {gewaehlt.size} übernehmen
+                  </button>
+                </div>
+              </div>
+
+              {kandidaten.length === 0 ? (
+                <div style={{ fontSize: 11, color: S.textDim }}>
+                  Keine neuen Beziehungen gefunden — entweder sind sie schon erfasst, oder in
+                  diesen Tabellen führen keine Schlüssel weiter.
+                </div>
+              ) : (
+                <div style={{ maxHeight: 320, overflowY: "auto", display: "flex",
+                  flexDirection: "column", gap: 3 }}>
+                  {kandidaten.map((k, i) => (
+                    <label key={i} style={{ display: "flex", alignItems: "center", gap: 8,
+                      padding: "4px 6px", borderRadius: 4, cursor: "pointer",
+                      backgroundColor: gewaehlt.has(i) ? "rgba(255,255,255,0.05)" : "transparent" }}>
+                      <input type="checkbox" checked={gewaehlt.has(i)} style={{ cursor: "pointer" }}
+                        onChange={() => setGewaehlt(g => {
+                          const n = new Set(g); n.has(i) ? n.delete(i) : n.add(i); return n;
+                        })} />
+                      <span title={QUELLE_LABEL[k.quelle].titel}
+                        style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8, flexShrink: 0,
+                          color: QUELLE_LABEL[k.quelle].farbe,
+                          backgroundColor: "rgba(255,255,255,0.06)" }}>
+                        {QUELLE_LABEL[k.quelle].text}
+                      </span>
+                      <span style={{ fontFamily: "monospace", fontSize: 11, color: S.textBright }}>
+                        {k.from_table}.<span style={{ color: "#fbbf24" }}>{k.from_col}</span>
+                        {" → "}
+                        {k.to_table}.<span style={{ color: "#fbbf24" }}>{k.to_col}</span>
+                      </span>
+                      {k.quelle === "unsicher" && k.alternativen.length > 0 && (
+                        <span style={{ fontSize: 10, color: S.textDim }}>
+                          auch möglich: {k.alternativen.slice(0, 2).join(", ")}
+                          {k.alternativen.length > 2 && ` (+${k.alternativen.length - 2})`}
+                        </span>
+                      )}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Neue Relation */}
           <div style={{ backgroundColor: S.bgEl, borderRadius: 6, padding: 12, marginBottom: 12, border: `1px solid ${S.border}` }}>
             <div style={{ fontSize: 10, color: S.textDim, marginBottom: 8 }}>NEUE FK-BEZIEHUNG</div>
@@ -394,7 +529,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
           {/* Relation List */}
           {relations.length === 0 ? (
             <div style={{ color: S.textDim, fontSize: 11, padding: "12px 0" }}>
-              Noch keine manuellen Beziehungen definiert.
+              Noch keine Beziehungen erfasst — „Aus Schlüsseln ableiten" schlägt welche vor.
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

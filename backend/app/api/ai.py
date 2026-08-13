@@ -1837,9 +1837,15 @@ def schema_search(
             lines.append(_render_table(tbl, tag))
 
         # Manuelle FK-Relationen
-        if manual_rels:
-            lines.append(""); lines.append("## Manuelle FK-Beziehungen")
-            for r in manual_rels:
+        # Nur Beziehungen, die eine der ausgewählten Tabellen berühren. Seit sie
+        # sich aus den Schlüsseln ableiten lassen, können es hunderte sein — alle
+        # in jeden Prompt zu schreiben wäre genau die Aufblähung, gegen die die
+        # Kontext-Auswahl gebaut wurde.
+        rels_relevant = [r for r in manual_rels
+                         if r.from_table in selected_names or r.to_table in selected_names]
+        if rels_relevant:
+            lines.append(""); lines.append("## Bekannte FK-Beziehungen")
+            for r in rels_relevant:
                 rd = f" ({r.description})" if r.description else ""
                 lines.append(f"  {r.from_table}.{r.from_col} → {r.to_table}.{r.to_col}{rd}")
 
