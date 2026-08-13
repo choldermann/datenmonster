@@ -549,13 +549,19 @@ async def ai_suggest(
                     cols = ", ".join(c["name"] for c in tbl.get("columns", [])[:15])
                     table_lines.append(f'- {tbl["full_name"]}: {cols}')
 
+                # Ein OBJEKT mit "tables" verlangen, kein nacktes Array: bei
+                # erzwungenem JSON (format=json) antwortet das lokale Modell sonst
+                # mit einem einzelnen Objekt — also nur der ersten Tabelle — und der
+                # Parser verwarf das Ganze. Gemessen am 2026-08-13: 0 von 5
+                # Tabellen über Ollama, 5 von 5 mit dieser Formulierung.
                 prompt = (
-                    "Analysiere diese Datenbanktabellen und gib ein JSON-Array zurück.\n"
-                    "Format: [{\"table\":\"tabellenname\",\"business_name\":\"Kurzname\","
+                    "Analysiere diese Datenbanktabellen. Antworte mit EINEM JSON-Objekt, das "
+                    "unter \"tables\" für JEDE genannte Tabelle einen Eintrag enthält.\n"
+                    "Format: {\"tables\":[{\"table\":\"tabellenname\",\"business_name\":\"Kurzname\","
                     "\"description\":\"Ein Satz auf Deutsch\","
-                    "\"category\":\"Stammdaten\"}]\n\n"
+                    "\"category\":\"Stammdaten\"}]}\n\n"
                     "Kategorien: Stammdaten, Bewegungsdaten, Konfiguration, Lookup, System, Sonstige\n\n"
-                    "Tabellen:\n" + "\n".join(table_lines)
+                    f"Tabellen ({len(batch)} Stück, alle beschreiben):\n" + "\n".join(table_lines)
                 )
 
                 result_text = ""
@@ -592,6 +598,10 @@ async def ai_suggest(
                             if isinstance(parsed.get(key), list):
                                 suggestions = parsed[key]
                                 break
+                        # Einzelnes Objekt statt Liste: lieber eine Tabelle
+                        # übernehmen als den ganzen Stapel wegwerfen.
+                        if not suggestions and parsed.get("table"):
+                            suggestions = [parsed]
                 except Exception as parse_err:
                     yield f"data: {json.dumps({'warning': f'JSON-Parsing fehlgeschlagen: {str(parse_err)[:100]}', 'raw': result_text[:200]})}\n\n"
 
