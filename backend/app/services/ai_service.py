@@ -358,7 +358,10 @@ class AIService:
             "antwort_tokens":   antwort_token,
             "antwort_ms":       round(antwort_ms),
             "system_zeichen":   system_zeichen,
-            "prefix_cache":     prompt_tokens == 0,
+            # Ein Cache-Treffer meldet die volle Token-Zahl, aber eine unmögliche
+            # Rate (gemessen: 13.812 Token in 173 ms). Daran ist er zu erkennen —
+            # nicht an prompt_eval_count, der bleibt stehen.
+            "prefix_cache":     bool(prompt_ms and prompt_tokens / (prompt_ms / 1000) > 1000),
             "token_pro_sek":    round(antwort_token / (antwort_ms / 1000), 1) if antwort_ms else None,
         }
         # print statt log.info: die Anwendung konfiguriert kein Logging, der
