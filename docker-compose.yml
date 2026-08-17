@@ -59,6 +59,15 @@ services:
     container_name: datenmonster-ollama
     volumes:
       - ollama-data:/root/.ollama
+    # Andere Dienste auf diesem Rechner – etwa SEO Monster – dürfen das Modell
+    # mitbenutzen. Beide Bindungen sind lokal, aus dem Netz ist Ollama nicht
+    # erreichbar.
+    ports:
+      # für Programme direkt auf dem Rechner
+      - "${OLLAMA_BIND:-127.0.0.1}:${OLLAMA_PORT:-11434}:11434"
+      # für Container anderer Stacks: host.docker.internal zeigt auf docker0.
+      # Existiert die Bridge unter einer anderen Adresse, hier überschreiben.
+      - "${OLLAMA_DOCKER_BIND:-172.17.0.1}:${OLLAMA_PORT:-11434}:11434"
     networks:
       - datenmonster
     restart: unless-stopped
