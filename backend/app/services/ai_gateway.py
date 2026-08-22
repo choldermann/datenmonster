@@ -62,6 +62,11 @@ def describe_gateway_error(exc: Exception) -> str:
 
 
 class DatamonsterAIService:
+    # Kennzeichen für Aufrufer, die je nach Anbieter anders entscheiden müssen
+    # (Modellwahl!). Bewusst am Objekt und nicht an der globalen Einstellung: die
+    # kann für einen einzelnen Aufruf übersteuert sein (Portal, Schema-Katalog).
+    is_gateway = True
+
     def __init__(self, db, model: str = "auto", timeout: int = GATEWAY_TIMEOUT):
         # `base_url` zeigt bewusst auf den Gateway-Namespace: Ollama-spezifische
         # Helfer (get_installed_models(svc.base_url)) laufen dann ins Leere und

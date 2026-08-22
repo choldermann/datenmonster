@@ -626,6 +626,12 @@ async def summarize_data(
     # "Network Error" bei langsamem Kaltstart), Text erscheint fortlaufend.
     # Vorab ein »meta«-Event mit dem tatsächlich verwendeten Modell – sonst ist von
     # außen nicht erkennbar, wer den Text geschrieben hat (bzw. ob er aus dem Cache kam).
+    # Wählt der Aufrufer bewusst einen Anbieter (Portal-Umschalter), festhalten –
+    # sonst lässt sich hinterher nicht klären, womit eine Analyse erzeugt wurde.
+    if body.provider:
+        print(f"[AI] summarize-data: Anbieterwahl des Aufrufers = {body.provider} "
+              f"(effektiv {provider}, Modell {chosen or svc.model})", flush=True)
+
     async def gen():
         hit = _SUMMARY_CACHE.get(ckey)
         cached = bool(hit and hit[0] + _SUMMARY_TTL > _t.time())
@@ -1354,6 +1360,12 @@ async def chat(
     else:
         params = MODE_PARAMS.get(body.mode, MODE_PARAMS["auto"])
 
+    # Beim Gateway zählt dessen eigenes Modell – ein Ollama-Name (qwen…, gemma…) liefe
+    # an der Whitelist des Gateways vorbei. Die Fähigkeiten-Einschätzung unten bleibt am
+    # zuvor gewählten Modell, sie steuert nur Kontextgröße und Parameter.
+    if getattr(svc, "is_gateway", False):
+        model_used = getattr(svc, "model", None) or "auto"
+
     caps = get_model_caps(model_used)
 
     # Memory-Kontext aufbauen
@@ -1955,6 +1967,12 @@ async def suggest_tables(
     default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
     model_used, _ = await select_auto_model("komplex schema analyse", base_url, default_model)
     params = MODE_PARAMS["analyse"]
+    # Beim Gateway zählt dessen eigenes Modell – ein Ollama-Name (qwen…, gemma…) liefe
+    # an der Whitelist des Gateways vorbei. Die Fähigkeiten-Einschätzung unten bleibt am
+    # zuvor gewählten Modell, sie steuert nur Kontextgröße und Parameter.
+    if getattr(svc, "is_gateway", False):
+        model_used = getattr(svc, "model", None) or "auto"
+
     caps = get_model_caps(model_used)
 
     # Schema für alle Connections aufbauen

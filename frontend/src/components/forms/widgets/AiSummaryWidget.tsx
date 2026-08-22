@@ -491,8 +491,13 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
         <Sparkles size={12} /> KI-Analyse
         {loading && <Loader2 size={11} style={{ animation: "spin 1s linear infinite", color: S.textDim }} />}
         {meta?.model && (
+          // Anbieter mit ausweisen: "auto" allein sagt nicht, dass gerade Datenmonster AI
+          // gerechnet hat – und genau das will man beim Umschalten sehen.
           <span style={{ color: S.textDim, fontWeight: 500, letterSpacing: 0, textTransform: "none" }}>
-            · {meta.model}{meta.cached ? " (zwischengespeichert)" : ""}
+            · {meta.provider === "datenmonster"
+                 ? `Datenmonster AI${meta.model && meta.model !== "auto" ? ` (${meta.model})` : ""}`
+                 : `${meta.model} (lokal)`}
+            {meta.cached ? " (zwischengespeichert)" : ""}
           </span>
         )}
         <DetailSwitch value={detail} onChange={setDetail} disabled={loading} />

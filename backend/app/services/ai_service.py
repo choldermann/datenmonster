@@ -217,7 +217,10 @@ async def resolve_prose_model(db, svc) -> Optional[str]:
     trotzdem mitgeschickt – die Anfrage lief also nicht am gewählten Gateway-Modell.
     Deshalb hier `ai_dm_model` (bzw. "auto") durchreichen."""
     from app.api.settings import get_setting
-    if get_setting(db, "ai_provider", "ollama") == "datenmonster":
+    # WICHTIG: am übergebenen Service entscheiden, nicht an der globalen Einstellung –
+    # sonst bekommt ein per Aufruf gewählter Gateway (Portal) einen Ollama-Modellnamen
+    # untergeschoben und die Analyse läuft am gewählten Modell vorbei.
+    if getattr(svc, "is_gateway", False):
         return getattr(svc, "model", None) or None
     try:
         installed = await get_installed_models(svc.base_url)
@@ -271,6 +274,8 @@ async def select_auto_model(message: str, base_url: str, default_model: str) -> 
 
 
 class AIService:
+    is_gateway = False   # Gegenstück zu DatamonsterAIService.is_gateway
+
     def __init__(self, base_url: str, model: str, timeout: int = DEFAULT_TIMEOUT):
         self.base_url = base_url.rstrip("/")
         self.model    = model
