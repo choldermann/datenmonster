@@ -546,12 +546,32 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
 
 # ── Report-Layout: Summary-Prosa + deterministische Bewertungstabelle ───────────
 
-def _inline_html(s: str) -> str:
-    """**fett** → <strong>, Rest escapen."""
+# Bewertungsmarker der KI: {+ erfreulich +} / {- kritisch -} (siehe Prompt in ai.py).
+_MARKER_RE = re.compile(r"(\{[+-][\s\S]*?[+-]\})")
+_MARKER_REST_RE = re.compile(r"\{[+-]|[+-]\}")
+GUT_FARBE, SCHLECHT_FARBE = "#3f8f45", "#c0392b"
+
+
+def _fett_html(s: str) -> str:
     out = []
     for p in re.split(r"(\*\*[^*]+\*\*)", s):
         m = re.match(r"^\*\*([^*]+)\*\*$", p)
-        out.append(f"<strong>{_esc(m.group(1))}</strong>" if m else _esc(p))
+        out.append(f"<strong>{_esc(m.group(1))}</strong>"
+                   if m else _esc(_MARKER_REST_RE.sub("", p)))
+    return "".join(out)
+
+
+def _inline_html(s: str) -> str:
+    """**fett** → <strong>, {+…+}/{-…-} → grün/rot, Rest escapen. Halb geschriebene
+    Marker werden entfernt statt als Text ausgegeben."""
+    out = []
+    for teil in _MARKER_RE.split(s):
+        m = re.match(r"^\{([+-])([\s\S]*?)[+-]\}$", teil)
+        if m:
+            farbe = GUT_FARBE if m.group(1) == "+" else SCHLECHT_FARBE
+            out.append(f'<span style="color:{farbe};font-weight:bold">{_fett_html(m.group(2))}</span>')
+        else:
+            out.append(_fett_html(teil))
     return "".join(out)
 
 
@@ -936,7 +956,8 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             # Der ausführliche Detailgrad liefert auch ohne report_layout **fette Labels** –
             # daher am Text erkennen statt nur an der Widget-Konfiguration.
             body.append(_summary_to_html(summary) if (is_report or "**" in summary)
-                        else f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">{_esc(summary)}</p>')
+                        else f'<p style="font-size:10pt;line-height:1.5;color:{DARK}">'
+                             f'{_inline_html(summary)}</p>')
         if want_assessment:
             body.append(_assessment_html(_assessment_rows(results)))
     for tab in tabs:

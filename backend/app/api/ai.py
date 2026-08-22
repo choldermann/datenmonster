@@ -512,6 +512,11 @@ async def summarize_data(
             "EIGENEN Zeile, die mit \"- \" beginnt.\n\n"
             "FORMAT: Jeder Themenblock ist ein eigener Absatz – zwischen den Blöcken eine LEERZEILE. Setze "
             "niemals mehrere Blöcke oder Maßnahmen in dieselbe Zeile.\n"
+            "BEWERTUNG MARKIEREN: Setze Aussagen, die erfreulich sind, in {+ … +} und Aussagen, die "
+            "kritisch sind oder Handlungsbedarf zeigen, in {- … -}. Markiere nur den knappen Teilsatz "
+            "mit der Aussage (samt Zahl), nie einen ganzen Absatz, und nur dort, wo die Einordnung "
+            "eindeutig ist – neutrale Feststellungen bleiben unmarkiert. Ein Plus ist nicht automatisch "
+            "gut: steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. ""\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung. Keine Tabelle, keine "
             "vollständigen Ranglisten nacherzählen. " + _UNITS
         )
@@ -530,6 +535,11 @@ async def summarize_data(
             "mit \"- \" beginnt.\n\n"
             "FORMAT: Jeder Block ist ein eigener Absatz, zwischen den Blöcken eine LEERZEILE. Nie mehrere "
             "Blöcke oder Maßnahmen in derselben Zeile.\n"
+            "BEWERTUNG MARKIEREN: Setze Aussagen, die erfreulich sind, in {+ … +} und Aussagen, die "
+            "kritisch sind oder Handlungsbedarf zeigen, in {- … -}. Markiere nur den knappen Teilsatz "
+            "mit der Aussage (samt Zahl), nie einen ganzen Absatz, und nur dort, wo die Einordnung "
+            "eindeutig ist – neutrale Feststellungen bleiben unmarkiert. Ein Plus ist nicht automatisch "
+            "gut: steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. ""\n"
             "Keine vollständigen Ranglisten nacherzählen, keine Einleitungsfloskel, keine Tabelle. " + _UNITS
         )
     elif is_report:
@@ -555,6 +565,11 @@ async def summarize_data(
             "eine sehr niedrige Quote ausdrücklich als gut einordnen.\n"
             "**Handlungsbedarf:** die zwei bis drei wichtigsten Maßnahmen in EINEM Satz.\n\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung, kein Text danach. "
+            "BEWERTUNG MARKIEREN: Setze Aussagen, die erfreulich sind, in {+ … +} und Aussagen, die "
+            "kritisch sind oder Handlungsbedarf zeigen, in {- … -}. Markiere nur den knappen Teilsatz "
+            "mit der Aussage (samt Zahl), nie einen ganzen Absatz, und nur dort, wo die Einordnung "
+            "eindeutig ist – neutrale Feststellungen bleiben unmarkiert. Ein Plus ist nicht automatisch "
+            "gut: steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
             "'Tage' sind Tage."
         )

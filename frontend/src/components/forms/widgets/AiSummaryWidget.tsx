@@ -323,12 +323,33 @@ function buildSectionText(kind, rows, deep = false) {
 }
 
 // Fettschrift **…** inline auflösen.
+// Bewertungsmarker der KI: {+ erfreulich +} / {- kritisch -}. Bewusst keine reine
+// Vorzeichenlogik – ein Plus ist nicht immer gut (Retourenquote, Lagerwert), das
+// weiß nur das Modell aus dem Zusammenhang.
+const MARKER_RE = /(\{[+-][\s\S]*?[+-]\})/g;
+const GUT = "#3f9d5a", SCHLECHT = "#c9524a";
+
+/** Marker, die halb geschrieben wurden, dürfen nicht als Text stehen bleiben. */
+function markerBereinigen(s) {
+  return String(s).replace(/\{[+-]|[+-]\}/g, "");
+}
+
 function renderInline(s, keyBase) {
-  return String(s).split(/(\*\*[^*]+\*\*)/g).map((p, i) => {
-    const m = /^\*\*([^*]+)\*\*$/.exec(p);
-    return m
-      ? <strong key={`${keyBase}-${i}`} style={{ color: S.textMain }}>{m[1]}</strong>
-      : <span key={`${keyBase}-${i}`}>{p}</span>;
+  const teile = String(s).split(MARKER_RE);
+  return teile.flatMap((teil, i) => {
+    const bewertet = /^\{([+-])([\s\S]*?)[+-]\}$/.exec(teil);
+    if (bewertet) {
+      const farbe = bewertet[1] === "+" ? GUT : SCHLECHT;
+      return [<span key={`${keyBase}-m${i}`} style={{ color: farbe, fontWeight: 600 }}>
+        {renderInline(bewertet[2], `${keyBase}-m${i}i`)}
+      </span>];
+    }
+    return markerBereinigen(teil).split(/(\*\*[^*]+\*\*)/g).map((p, j) => {
+      const m = /^\*\*([^*]+)\*\*$/.exec(p);
+      return m
+        ? <strong key={`${keyBase}-${i}-${j}`} style={{ color: S.textMain }}>{m[1]}</strong>
+        : <span key={`${keyBase}-${i}-${j}`}>{p}</span>;
+    });
   });
 }
 
@@ -648,8 +669,10 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
             <AssessmentTable rows={assessment} />
           </>
         ) : (
+          // Auch ohne Report-Layout durch renderInline: sonst stünden die
+          // Bewertungsmarker {+ … +} als Rohtext in der Analyse.
           <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>
-            {text}
+            {renderInline(text, "plain")}
           </p>
         )
       ) : (
