@@ -261,6 +261,35 @@ def _kpi_cell(widget: dict, result: dict) -> str:
             f'<div style="font-size:14pt;font-weight:bold;color:{DARK}">{_esc(txt)}</div>{delta}</td>')
 
 
+def _spaltenkopf(c: str) -> str:
+    """CamelCase-Spaltennamen umbruchfähig machen: "TageOhneAbgang" → "Tage Ohne Abgang".
+    Reportlab bricht nur an Leerzeichen – ein langer Kopf zwingt die Spalte sonst so
+    breit, dass die ganze Tabelle über den Seitenrand läuft."""
+    c = str(c)
+    c = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", c)      # Tage|Ohne|Abgang
+    c = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", c)    # EK|Netto
+    # Bleibt ein einzelnes langes Wort übrig (Mindestbestand, Bestellnummer), passt es
+    # in keine schmale Spalte und läuft über den Nachbarn. \u00AD markiert die Stelle,
+    # an der die Kopfzelle später "-<br/>" einsetzt.
+    teile = []
+    for w in c.split(" "):
+        if len(w) > 11:
+            mitte = len(w) // 2
+            # Möglichst an einer Konsonantengrenze trennen ("Bestell-nummer" statt
+            # "Bestel-lnummer"); sonst schlicht in der Mitte.
+            vokale = set("aeiouäöüAEIOUÄÖÜ")
+            def ist_silbengrenze(i):
+                # Konsonant | Konsonant + Vokal → dort beginnt eine neue Silbe.
+                return (w[i - 1] not in vokale and w[i] not in vokale
+                        and i + 1 < len(w) and w[i + 1] in vokale)
+            kandidaten = [i for i in range(max(1, mitte - 3), min(len(w) - 1, mitte + 5))
+                          if ist_silbengrenze(i)]
+            stelle = min(kandidaten, key=lambda i: abs(i - mitte)) if kandidaten else mitte
+            w = w[:stelle] + "\u00AD" + w[stelle:]
+        teile.append(w)
+    return " ".join(teile)
+
+
 def _table_html(widget: dict, result: dict) -> str:
     cfg = widget.get("config", {})
     hidden = set(cfg.get("hidden_columns", []))
@@ -269,9 +298,18 @@ def _table_html(widget: dict, result: dict) -> str:
     if not cols or not rows:
         return '<p style="font-size:9pt;color:#999">Keine Daten.</p>'
     info = cfg.get("info")
-    head = "".join(f'<th style="padding:4px 6px;border:1px solid #ddd;background:#eee;'
-                   f'font-size:8pt;text-align:{"right" if any(_is_num(r.get(c)) for r in rows) else "left"}">'
-                   f'{_esc(c)}</th>' for c in cols)
+    # Spaltenbreiten selbst vorgeben: xhtml2pdf richtet sich sonst nach dem Inhalt und
+    # schiebt breite Tabellen (Artikel-Listen mit 8 Spalten) über den Seitenrand hinaus.
+    # Zahlenspalten brauchen wenig Platz, Textspalten viel – daraus die Prozentbreiten.
+    num_cols = {c for c in cols if any(_is_num(r.get(c)) for r in rows)}
+    gewicht = {c: (1.0 if c in num_cols else 2.2) for c in cols}
+    summe = sum(gewicht.values()) or 1
+    breite = {c: max(6, round(100 * gewicht[c] / summe)) for c in cols}
+    # Ab 6 Spalten kleiner setzen, sonst wird jede Zelle zur Buchstabensäule.
+    fs = 8 if len(cols) <= 5 else 7 if len(cols) <= 8 else 6
+    head = "".join(f'<th width="{breite[c]}%" style="padding:4px 5px;border:1px solid #ddd;background:#eee;'
+                   f'font-size:{fs}pt;text-align:{"right" if c in num_cols else "left"}">'
+                   f'{_esc(_spaltenkopf(c)).replace(chr(0xAD), "-<br/>")}</th>' for c in cols)
     # Report bewusst gekürzt: max. 25 Zeilen, Rest als Hinweis-Fußzeile (die volle
     # Tabelle steckt im Cockpit / im E-Mail- und CSV-Export).
     REPORT_MAX = 25
@@ -281,13 +319,13 @@ def _table_html(widget: dict, result: dict) -> str:
         for c in cols:
             v = r.get(c)
             num = _is_num(v)
-            tds += (f'<td style="padding:3px 6px;border:1px solid #eee;font-size:8pt;'
+            tds += (f'<td width="{breite[c]}%" style="padding:3px 5px;border:1px solid #eee;font-size:{fs}pt;'
                     f'text-align:{"right" if num else "left"}">{_esc(_fmt(v) if num else v)}</td>')
         body += f"<tr>{tds}</tr>"
     if len(rows) > REPORT_MAX:
         rest = len(rows) - REPORT_MAX
         body += (f'<tr><td colspan="{len(cols)}" style="padding:4px 6px;border:1px solid #eee;'
-                 f'font-size:8pt;font-style:italic;color:{MUTED};text-align:center">'
+                 f'font-size:{fs}pt;font-style:italic;color:{MUTED};text-align:center">'
                  f'… und {rest} weitere Zeilen (gesamt {len(rows)}) – vollständig im Cockpit / CSV-Export</td></tr>')
     info_html = (f'<div style="font-size:8pt;color:{MUTED};margin:2px 0 4px">{_esc(info)}</div>' if info else "")
     return (info_html + '<table style="width:100%;border-collapse:collapse;margin-bottom:6px">'
@@ -368,7 +406,11 @@ def _cover_filters(schema: dict, params: dict, conn_id: Optional[int]) -> str:
             vals = params.get(f.get("name")) or []
             if not isinstance(vals, list):
                 vals = [vals] if vals else []
-            labels = _lookup_labels(conn_id, cfg.get("kind", ""), vals) if vals else []
+            # Ohne Auswahl gar nicht aufführen – ein Feld, das nur einen Reiter steuert
+            # (config.visible_tabs), gehört sonst als "alle" auf jedes Deckblatt.
+            if not vals:
+                continue
+            labels = _lookup_labels(conn_id, cfg.get("kind", ""), vals)
             lines.append((_esc(f.get("label", f.get("name"))), ", ".join(labels) if labels else "alle"))
         elif t == "dropdown":
             v = params.get(f.get("name"))
@@ -377,6 +419,16 @@ def _cover_filters(schema: dict, params: dict, conn_id: Optional[int]) -> str:
     rows = "".join(f'<tr><td style="padding:2px 8px 2px 0;color:{MUTED}">{k}</td>'
                    f'<td style="padding:2px 0;color:{DARK}"><b>{val}</b></td></tr>' for k, val in lines)
     return f'<table style="margin-top:10px">{rows}</table>'
+
+
+def _report_kicker(form_name: str) -> str:
+    """Zeile über dem Firmennamen: aus dem Formularnamen, damit im Lager-Report nicht
+    "GESCHÄFTSFÜHRER-REPORT" steht. "Lager-Cockpit" → "LAGER-REPORT"."""
+    name = (form_name or "").strip()
+    if not name:
+        return "REPORT"
+    basis = re.sub(r"[-\s]*cockpit\s*$", "", name, flags=re.I).strip(" -–")
+    return (basis or name).upper() + "-REPORT"
 
 
 def _cover_html(company: dict, schema: dict, params: dict, conn_id: Optional[int], form_name: str) -> str:
@@ -396,7 +448,7 @@ def _cover_html(company: dict, schema: dict, params: dict, conn_id: Optional[int
     ]))
     return (
         f'<div style="margin-top:120px;text-align:center">'
-        f'<div style="font-size:11pt;color:{MUTED};letter-spacing:2px">GESCHÄFTSFÜHRER-REPORT</div>'
+        f'<div style="font-size:11pt;color:{MUTED};letter-spacing:2px">{_esc(_report_kicker(form_name))}</div>'
         f'<div style="font-size:24pt;font-weight:bold;color:{DARK};margin:8px 0">{_esc(c.get("cName") or form_name)}</div>'
         f'<div style="font-size:10pt;color:{MUTED}">{addr}</div>'
         f'<div style="font-size:9pt;color:{MUTED};margin-top:6px">{contact}</div>'
@@ -428,6 +480,10 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
                   "DB2Marge": ("DB-II-Marge", "%"), "Rechnungen": ("Rechnungen", ""),
                   "AktiveKunden": ("Aktive Kunden", ""), "AvgAuftrag": ("Ø Auftragswert", "€")}
         lines = []
+        # Andere Cockpits (Lager, Einkauf …) haben ganz andere Kennzahlen – dort die
+        # Zeile generisch aufbereiten statt eine leere Liste zu schicken.
+        if not any(k in row for k in LABELS):
+            LABELS = {k: (k, "") for k in row.keys() if not k.upper().endswith("VJ")}
         for key, (label, unit) in LABELS.items():
             if key not in row or row.get(key) is None:
                 continue
@@ -441,6 +497,9 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
             except (TypeError, ValueError):
                 pass
             lines.append(line)
+        # Die fachliche Vorgabe des Widgets (config.instruction) mitgeben – sie sagt,
+        # worauf es im jeweiligen Cockpit ankommt (Lagerlage, Einkauf, …).
+        anweisung = ((ai_widget.get("config") or {}).get("instruction") or "").strip()
         system = ("Du bist ein nüchterner Business-Analyst für einen Geschäftsführer. Schreibe eine "
                   "zusammenhängende Analyse in 3-4 vollständigen deutschen Sätzen (KEINE Aufzählung, "
                   "KEINE bloße Wiederholung der Zahlenliste): interpretiere die wichtigsten Werte, die "
@@ -448,6 +507,8 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
                   "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
                   "Anrede, KEINE Briefformel, keine Grußformel.")
+        if anweisung:
+            system += " Fachlicher Auftrag: " + anweisung
         # Textmodell wählen: beim lokalen Ollama das gewählte `ai_prose_model` (bzw. ein
         # bewährtes Instruct-Modell, aber IMMER installiert – sonst still Fehler), beim
         # Gateway-Provider dessen eigenes Modell.
@@ -511,9 +572,13 @@ def _pctval(v):
 # Action-IDs, die die Bewertungstabelle auswertet. Wird die Bewertung angefordert,
 # müssen diese Abfragen auch dann laufen, wenn ihr Reiter abgewählt wurde.
 _ASSESSMENT_ACTION_IDS = {
+    # GF-Cockpit
     "act_overview_kpi", "act_kunden_kpi", "act_kunden_rueckgang", "act_zm_kpi",
     "act_op_kpi", "act_kapital_kpi", "act_klumpen_kpi", "act_forecast",
     "act_churn", "act_retouren_kpi",
+    # Lager-Cockpit
+    "act_lg_kpi", "act_lg_dispo_kpi", "act_lg_umschlag_kpi", "act_lg_lh_kpi",
+    "act_lg_schwund_kpi",
 }
 
 
@@ -574,6 +639,48 @@ def _assessment_rows(results: dict) -> list:
         pv = _asnum(fc.get("Prognose vs VJ %"))
         out.append(("Ausblick", pv is None or pv >= 0,
                     f"Prognose {_spct(pv)} ggü. Vorjahr" + (f", {churn_n} schlafende Kunden" if churn_n else "")))
+    # ── Lager-Cockpit ──────────────────────────────────────────────────────────
+    # Schwellen identisch zu buildAssessment in AiSummaryWidget.tsx.
+    lg = one("act_lg_kpi")
+    if lg:
+        p = _apct(lg.get("Lagerwert"), lg.get("LagerwertVJ"))
+        ohne_ek = _asnum(lg.get("OhneHistorischenEK")) or 0
+        out.append(("Lagerbestand", p is None or p <= 10,
+                    f"{_eur(lg.get('Lagerwert'))} zum historischen EK ({_spct(p)} ggü. Vorjahr)"
+                    + (f", {_fmt(ohne_ek, 0)} Artikel ohne gebuchten EK" if ohne_ek else "")))
+    dp = one("act_lg_dispo_kpi")
+    if dp:
+        fehl = _asnum(dp.get("ArtikelFehlmenge")) or 0
+        basis = _asnum(lg.get("ArtikelMitBestand")) if lg else None
+        quote = (100.0 * fehl / basis) if basis else None
+        neg = _asnum(dp.get("NegativerBestand")) or 0
+        good = neg == 0 and (quote is None or quote < 5)
+        out.append(("Disposition", good,
+                    f"{_fmt(fehl, 0)} Artikel mit Fehlmenge ({_eur(dp.get('WertFehlmenge'))})"
+                    + (f", {_fmt(neg, 0)} mit negativem Bestand" if neg else "")))
+    um = one("act_lg_umschlag_kpi")
+    if um:
+        rw = _asnum(um.get("ReichweiteTage"))
+        out.append(("Umschlag", rw is None or rw <= 180,
+                    f"Ø {_fmt(um.get('UmschlagDurchschnitt'), 1)} Umschläge/Jahr, "
+                    f"Reichweite {_fmt(um.get('ReichweiteTage'), 0)} Tage, "
+                    f"{_fmt(um.get('OhneAbgang12M'), 0)} Artikel ohne Abgang ({_eur(um.get('KapitalOhneAbgang'))})"))
+    lh = one("act_lg_lh_kpi")
+    if lh:
+        anteil = _asnum(lh.get("Anteil am Lagerwert %"))
+        out.append(("Ladenhüter", anteil is None or anteil < 15,
+                    f"{_fmt(lh.get('Ladenhueter'), 0)} Ladenhüter, {_eur(lh.get('GebundenesKapital'))} gebunden "
+                    f"({_pctval(lh.get('Anteil am Lagerwert %'))} des Lagerwerts)"))
+    sw = one("act_lg_schwund_kpi")
+    if sw:
+        wert = abs(_asnum(sw.get("WertNetto")) or 0)
+        basis = _asnum(lg.get("Lagerwert")) if lg else None
+        good = (not basis) or (wert / basis < 0.01)
+        betroffen = _asnum(sw.get("BetroffeneArtikel")) or 0
+        out.append(("Inventur & Schwund", good,
+                    f"{_fmt(sw.get('Buchungen'), 0)} Korrekturbuchungen, netto {_eur(sw.get('WertNetto'))}"
+                    + (f", {_fmt(betroffen, 0)} Artikel betroffen" if betroffen else "")))
+
     rt = one("act_retouren_kpi")
     if rt:
         q, qvj = _asnum(rt.get("Quote")), _asnum(rt.get("QuoteVJ"))

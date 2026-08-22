@@ -3142,7 +3142,8 @@
                   "label": "Korrekturen",
                   "kind": "kpi"
                 }
-              ]
+              ],
+              "report_layout": true
             }
           },
           {

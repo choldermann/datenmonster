@@ -99,6 +99,54 @@ function buildAssessment(results) {
     out.push({ bereich: "Ausblick", good: (pv == null || pv >= 0),
       kommentar: `Prognose ${signPct(pv)} ggü. Vorjahr${churnN ? `, ${churnN} schlafende Kunden` : ""}` });
   }
+  // ── Lager-Cockpit ──────────────────────────────────────────────────────────
+  // Greift nur, wenn die Lager-Actions Ergebnisse geliefert haben; die Schwellen
+  // stehen bewusst hier (nicht im LLM), damit die Tabelle stabil und nachvollziehbar
+  // bleibt. Spiegelbild in cockpit_report._assessment_rows (PDF).
+  const lg = one("act_lg_kpi");
+  if (lg) {
+    const p = pctNum(lg.Lagerwert, lg.LagerwertVJ);
+    // Bestandsaufbau bis 10 % ggü. Vorjahr gilt als normal, darüber bindet er Kapital.
+    out.push({ bereich: "Lagerbestand", good: (p == null || p <= 10),
+      kommentar: `${deNum(lg.Lagerwert, true)} zum historischen EK (${signPct(p)} ggü. Vorjahr)`
+        + (num(lg.OhneHistorischenEK) ? `, ${deNum(lg.OhneHistorischenEK)} Artikel ohne gebuchten EK` : "") });
+  }
+  const dp = one("act_lg_dispo_kpi");
+  if (dp) {
+    const fehl = num(dp.ArtikelFehlmenge) || 0;
+    const basis = lg ? num(lg.ArtikelMitBestand) : null;
+    const quote = basis ? (100 * fehl) / basis : null;
+    const good = (num(dp.NegativerBestand) || 0) === 0 && (quote == null || quote < 5);
+    out.push({ bereich: "Disposition", good,
+      kommentar: `${deNum(dp.ArtikelFehlmenge)} Artikel mit Fehlmenge (${deNum(dp.WertFehlmenge, true)})`
+        + (num(dp.NegativerBestand) ? `, ${deNum(dp.NegativerBestand)} mit negativem Bestand` : "") });
+  }
+  const um = one("act_lg_umschlag_kpi");
+  if (um) {
+    const rw = num(um.ReichweiteTage);
+    // Reichweite über einem halben Jahr = träges Lager.
+    out.push({ bereich: "Umschlag", good: (rw == null || rw <= 180),
+      kommentar: `Ø ${deNum(um.UmschlagDurchschnitt)} Umschläge/Jahr, Reichweite ${deNum(um.ReichweiteTage)} Tage, `
+        + `${deNum(um.OhneAbgang12M)} Artikel ohne Abgang (${deNum(um.KapitalOhneAbgang, true)})` });
+  }
+  const lh = one("act_lg_lh_kpi");
+  if (lh) {
+    const anteil = num(lh["Anteil am Lagerwert %"]);
+    out.push({ bereich: "Ladenhüter", good: (anteil == null || anteil < 15),
+      kommentar: `${deNum(lh.Ladenhueter)} Ladenhüter, ${deNum(lh.GebundenesKapital, true)} gebunden `
+        + `(${deNum(lh["Anteil am Lagerwert %"])} % des Lagerwerts)` });
+  }
+  const sw = one("act_lg_schwund_kpi");
+  if (sw) {
+    const wert = Math.abs(num(sw.WertNetto) || 0);
+    const basis = lg ? num(lg.Lagerwert) : null;
+    // Korrekturen über 1 % des Lagerwerts deuten auf Bestandsführungsprobleme.
+    const good = !basis || wert / basis < 0.01;
+    out.push({ bereich: "Inventur & Schwund", good,
+      kommentar: `${deNum(sw.Buchungen)} Korrekturbuchungen, netto ${deNum(sw.WertNetto, true)}`
+        + (num(sw.BetroffeneArtikel) ? `, ${deNum(sw.BetroffeneArtikel)} Artikel betroffen` : "") });
+  }
+
   const rt = one("act_retouren_kpi");
   if (rt) {
     const q = num(rt.Quote), qvj = num(rt.QuoteVJ);
