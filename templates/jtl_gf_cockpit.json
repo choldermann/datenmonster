@@ -6084,6 +6084,1022 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_gf_ek_kpi",
+      "name": "Cockpit – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestellvolumen",
+            "BestellvolumenVJ",
+            "Bestellungen",
+            "BestellungenVJ",
+            "AvgBestellung",
+            "AvgBestellungVJ",
+            "Lieferanten",
+            "LieferantenVJ"
+          ],
+          "sql": "WITH best AS (\n    SELECT B.kLieferantenBestellung, B.kLieferant,\n        CASE WHEN B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN B.dErstellt >= DATEADD(YEAR, -1, :von)\n              AND B.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0\n      AND B.dErstellt >= DATEADD(YEAR, -1, :von) AND B.dErstellt < DATEADD(DAY, 1, :bis)\n\n)\nSELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS Bestellvolumen,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS BestellvolumenVJ,\n    SUM(cur) AS Bestellungen,\n    SUM(vj) AS BestellungenVJ,\n    CAST(CASE WHEN SUM(cur) > 0 THEN SUM(CASE WHEN cur = 1 THEN Wert END) / SUM(cur) END\n        AS DECIMAL(18,2)) AS AvgBestellung,\n    CAST(CASE WHEN SUM(vj) > 0 THEN SUM(CASE WHEN vj = 1 THEN Wert END) / SUM(vj) END\n        AS DECIMAL(18,2)) AS AvgBestellungVJ,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kLieferant END) AS Lieferanten,\n    COUNT(DISTINCT CASE WHEN vj = 1 THEN kLieferant END) AS LieferantenVJ\nFROM best"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestellvolumen",
+              "target_field": "Bestellvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellvolumen"
+              }
+            },
+            {
+              "source_field": "BestellvolumenVJ",
+              "target_field": "BestellvolumenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellvolumenVJ"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "BestellungenVJ",
+              "target_field": "BestellungenVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellungenVJ"
+              }
+            },
+            {
+              "source_field": "AvgBestellung",
+              "target_field": "AvgBestellung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestellung"
+              }
+            },
+            {
+              "source_field": "AvgBestellungVJ",
+              "target_field": "AvgBestellungVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgBestellungVJ"
+              }
+            },
+            {
+              "source_field": "Lieferanten",
+              "target_field": "Lieferanten",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferanten"
+              }
+            },
+            {
+              "source_field": "LieferantenVJ",
+              "target_field": "LieferantenVJ",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LieferantenVJ"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_offen_kpi",
+      "name": "Cockpit – Offene Bestellungen KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "OffeneBestellungen",
+            "OffenerWert",
+            "Ueberfaellig",
+            "AvgVerzugTage"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS OffeneBestellungen,\n    CAST(ISNULL(SUM(OffenerWert), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    SUM(CASE WHEN VerzugTage > 0 THEN 1 ELSE 0 END) AS Ueberfaellig,\n    CAST(ISNULL(AVG(CASE WHEN VerzugTage > 0 THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage\nFROM (\n    SELECT B.kLieferantenBestellung,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN B.dLieferdatum IS NOT NULL THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END AS VerzugTage\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2 WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung AND P2.fAnzahlOffen > 0)\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "OffeneBestellungen",
+              "target_field": "OffeneBestellungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneBestellungen"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Ueberfaellig",
+              "target_field": "Ueberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberfaellig"
+              }
+            },
+            {
+              "source_field": "AvgVerzugTage",
+              "target_field": "AvgVerzugTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgVerzugTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_er_kpi",
+      "name": "Cockpit – Eingangsrechnungen KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Rechnungsvolumen",
+            "RechnungsvolumenVJ",
+            "Rechnungen",
+            "OffeneVerbindlichkeiten",
+            "OffeneRechnungen",
+            "Ueberfaellig"
+          ],
+          "sql": "SELECT\n    CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS Rechnungsvolumen,\n    CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS RechnungsvolumenVJ,\n    SUM(cur) AS Rechnungen,\n    CAST(ISNULL(SUM(CASE WHEN offen = 1 THEN Wert END), 0) AS DECIMAL(18,2)) AS OffeneVerbindlichkeiten,\n    SUM(offen) AS OffeneRechnungen,\n    SUM(CASE WHEN offen = 1 AND ueberf = 1 THEN 1 ELSE 0 END) AS Ueberfaellig\nFROM (\n    SELECT (SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS Wert,\n        CASE WHEN R.dBelegdatum >= :von AND R.dBelegdatum < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN R.dBelegdatum >= DATEADD(YEAR, -1, :von)\n              AND R.dBelegdatum < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        CASE WHEN R.dBezahlt IS NULL THEN 1 ELSE 0 END AS offen,\n        CASE WHEN R.dZahlungsziel IS NOT NULL AND R.dZahlungsziel < GETDATE() THEN 1 ELSE 0 END AS ueberf\n    FROM dbo.tEingangsrechnung R\n    WHERE ISNULL(R.nDeleted, 0) = 0\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Eingangsrechnungen KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Rechnungsvolumen",
+              "target_field": "Rechnungsvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsvolumen"
+              }
+            },
+            {
+              "source_field": "RechnungsvolumenVJ",
+              "target_field": "RechnungsvolumenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RechnungsvolumenVJ"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "OffeneVerbindlichkeiten",
+              "target_field": "OffeneVerbindlichkeiten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneVerbindlichkeiten"
+              }
+            },
+            {
+              "source_field": "OffeneRechnungen",
+              "target_field": "OffeneRechnungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffeneRechnungen"
+              }
+            },
+            {
+              "source_field": "Ueberfaellig",
+              "target_field": "Ueberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ueberfaellig"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_termintreue_kpi",
+      "name": "Cockpit – Termintreue KPI",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferungen",
+            "TermintreueQuote",
+            "AvgVerzugTage",
+            "AvgLieferzeitTage"
+          ],
+          "sql": "SELECT\n    COUNT(*) AS Lieferungen,\n    CAST(CASE WHEN COUNT(*) > 0 THEN 100.0 * SUM(CASE WHEN VerzugTage <= 0 THEN 1 ELSE 0 END)\n        / COUNT(*) END AS DECIMAL(18,1)) AS TermintreueQuote,\n    CAST(ISNULL(AVG(CASE WHEN VerzugTage > 0 THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    CAST(ISNULL(AVG(CAST(LieferzeitTage AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgLieferzeitTage\nFROM (\n    SELECT DATEDIFF(DAY, SollTermin, IstTermin) AS VerzugTage,\n           DATEDIFF(DAY, Bestelldatum, IstTermin) AS LieferzeitTage\n    FROM (\n    SELECT B.kLieferant, B.kLieferantenBestellung, B.dErstellt AS Bestelldatum,\n        B.dLieferdatum AS SollTermin,\n        MIN(ISNULL(W.dGeliefertAM, W.dErstellt)) AS IstTermin\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tWarenLagerEingang W ON W.kLieferantenBestellungPos = P.kLieferantenBestellungPos\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dLieferdatum IS NOT NULL\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n\n    GROUP BY B.kLieferant, B.kLieferantenBestellung, B.dErstellt, B.dLieferdatum\n) W1\n) X"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Termintreue KPI",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferungen",
+              "target_field": "Lieferungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferungen"
+              }
+            },
+            {
+              "source_field": "TermintreueQuote",
+              "target_field": "TermintreueQuote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TermintreueQuote"
+              }
+            },
+            {
+              "source_field": "AvgVerzugTage",
+              "target_field": "AvgVerzugTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgVerzugTage"
+              }
+            },
+            {
+              "source_field": "AvgLieferzeitTage",
+              "target_field": "AvgLieferzeitTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgLieferzeitTage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_offen_liste",
+      "name": "Cockpit – Offene Bestellungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bestellnummer",
+            "Lieferant",
+            "Bestelldatum",
+            "Liefertermin",
+            "VerzugTage",
+            "OffenerWert",
+            "OffenePositionen",
+            "kLieferantenBestellung"
+          ],
+          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen,\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bestellnummer",
+              "target_field": "Bestellnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnummer"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Bestelldatum",
+              "target_field": "Bestelldatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestelldatum"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "VerzugTage",
+              "target_field": "VerzugTage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VerzugTage"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "OffenePositionen",
+              "target_field": "OffenePositionen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenePositionen"
+              }
+            },
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_er_offen",
+      "name": "Cockpit – Offene Eingangsrechnungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Lieferant",
+            "Rechnungsnummer",
+            "Belegdatum",
+            "Zahlungsziel",
+            "TageUeberfaellig",
+            "Betrag",
+            "kEingangsrechnung"
+          ],
+          "sql": "SELECT TOP 500\n    ISNULL(NULLIF(R.cLieferant, ''), ISNULL(L.cFirma, 'unbekannt')) AS Lieferant,\n    ISNULL(NULLIF(R.cFremdbelegnummer, ''), R.cEigeneRechnungsnummer) AS Rechnungsnummer,\n    ISNULL(CONVERT(char(10), R.dBelegdatum, 104), '') AS Belegdatum,\n    ISNULL(CONVERT(char(10), R.dZahlungsziel, 104), '') AS Zahlungsziel,\n    ISNULL(CASE WHEN R.dZahlungsziel < GETDATE()\n        THEN DATEDIFF(DAY, R.dZahlungsziel, GETDATE()) END, 0) AS TageUeberfaellig,\n    CAST((SELECT ISNULL(SUM(EP.fMenge * EP.fEKNetto), 0) FROM dbo.tEingangsrechnungPos EP WHERE EP.kEingangsrechnung = R.kEingangsrechnung) AS DECIMAL(18,2)) AS Betrag,\n    CAST(R.kEingangsrechnung AS VARCHAR(20)) AS kEingangsrechnung\nFROM dbo.tEingangsrechnung R\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = R.kLieferant\nWHERE ISNULL(R.nDeleted, 0) = 0 AND R.dBezahlt IS NULL\nORDER BY 5 DESC, 6 DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Eingangsrechnungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Rechnungsnummer",
+              "target_field": "Rechnungsnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnummer"
+              }
+            },
+            {
+              "source_field": "Belegdatum",
+              "target_field": "Belegdatum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Belegdatum"
+              }
+            },
+            {
+              "source_field": "Zahlungsziel",
+              "target_field": "Zahlungsziel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsziel"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
+              }
+            },
+            {
+              "source_field": "Betrag",
+              "target_field": "Betrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Betrag"
+              }
+            },
+            {
+              "source_field": "kEingangsrechnung",
+              "target_field": "kEingangsrechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kEingangsrechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_pos_detail",
+      "name": "Cockpit – Bestellpositionen (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(P.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(P.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), P.cName) AS Bezeichnung,\n    CAST(P.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(P.fMengeGeliefert AS DECIMAL(18,2)) AS Geliefert,\n    CAST(P.fAnzahlOffen AS DECIMAL(18,2)) AS Offen,\n    CAST(P.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(P.fMenge * P.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tLieferantenBestellungPos P\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = P.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE P.kLieferantenBestellung = :kLieferantenBestellung\nORDER BY P.nSort",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Geliefert",
+            "Offen",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellpositionen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Geliefert",
+              "target_field": "Geliefert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Geliefert"
+              }
+            },
+            {
+              "source_field": "Offen",
+              "target_field": "Offen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Offen"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_er_pos_detail",
+      "name": "Cockpit – Positionen der Eingangsrechnung (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(EP.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(EP.cArtNr, '') AS ArtNr,\n    ISNULL(NULLIF(AB.cName, ''), EP.cName) AS Bezeichnung,\n    CAST(EP.fMenge AS DECIMAL(18,2)) AS Menge,\n    CAST(EP.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(EP.fMenge * EP.fEKNetto AS DECIMAL(18,2)) AS Positionswert\nFROM dbo.tEingangsrechnungPos EP\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = EP.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE EP.kEingangsrechnung = :kEingangsrechnung\nORDER BY EP.kEingangsrechnungPos",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "EKNetto",
+            "Positionswert"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Positionen der Eingangsrechnung (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ek_artikel_detail",
+      "name": "Cockpit – Artikel-Detail",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ArtNr",
+            "Bezeichnung",
+            "EAN",
+            "HAN",
+            "VKNetto",
+            "EKNetto",
+            "Herkunftsland"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Artikel-Detail",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -6488,6 +7504,48 @@
             "mapping_id": "m_retouren_trend",
             "pipeline_id": null,
             "label": "Cockpit – Retouren-Trend (13 Monate)"
+          },
+          {
+            "id": "act_ek_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kennzahlen"
+          },
+          {
+            "id": "act_ek_offen_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_offen_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kennzahlen"
+          },
+          {
+            "id": "act_ek_termintreue_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_termintreue_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kennzahlen"
+          },
+          {
+            "id": "act_ek_er_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_er_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Kennzahlen"
+          },
+          {
+            "id": "act_ek_offen_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_offen_liste",
+            "pipeline_id": null,
+            "label": "Cockpit – Offene Bestellungen"
+          },
+          {
+            "id": "act_ek_er_offen",
+            "type": "run_mapping",
+            "mapping_id": "m_gf_ek_er_offen",
+            "pipeline_id": null,
+            "label": "Cockpit – Offene Eingangsrechnungen"
           }
         ],
         "widgets": [
@@ -6770,6 +7828,21 @@
                 {
                   "action_id": "act_retouren_kpi",
                   "label": "Retouren",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ek_offen_kpi",
+                  "label": "Offene Bestellungen",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ek_er_kpi",
+                  "label": "Verbindlichkeiten",
+                  "kind": "kpi"
+                },
+                {
+                  "action_id": "act_ek_termintreue_kpi",
+                  "label": "Termintreue Lieferanten",
                   "kind": "kpi"
                 }
               ]
@@ -7712,6 +8785,279 @@
               "full_rows": true,
               "info": "Kunden mit dem höchsten Retouren-Wert im Zeitraum."
             }
+          },
+          {
+            "id": "w_gf_ek_kpi_vol",
+            "type": "kpi",
+            "label": "Bestellvolumen netto",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestellvolumen",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "BestellvolumenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_gf_ek_kpi_anz",
+            "type": "kpi",
+            "label": "Bestellungen",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestellungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "BestellungenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_gf_ek_kpi_avg",
+            "type": "kpi",
+            "label": "Ø Bestellwert",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgBestellung",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "AvgBestellungVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_gf_ek_kpi_lief",
+            "type": "kpi",
+            "label": "Aktive Lieferanten",
+            "action_id": "act_ek_kpi",
+            "config": {
+              "width": 3,
+              "column": "Lieferanten",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "LieferantenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_gf_ek_o_anz",
+            "type": "kpi",
+            "label": "Offene Bestellungen",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffeneBestellungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_gf_ek_o_wert",
+            "type": "kpi",
+            "label": "Offener Bestellwert",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "OffenerWert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_gf_ek_o_ueberf",
+            "type": "kpi",
+            "label": "Liefertermin überschritten",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ueberfaellig",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_gf_ek_o_verzug",
+            "type": "kpi",
+            "label": "Ø Verzug",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgVerzugTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_gf_ek_er_vol",
+            "type": "kpi",
+            "label": "Rechnungsvolumen",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rechnungsvolumen",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "RechnungsvolumenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_gf_ek_er_offen_wert",
+            "type": "kpi",
+            "label": "Offene Verbindlichkeiten",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "OffeneVerbindlichkeiten",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_gf_ek_er_offen_anz",
+            "type": "kpi",
+            "label": "Offene Rechnungen",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "OffeneRechnungen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_gf_ek_er_ueberf",
+            "type": "kpi",
+            "label": "Davon überfällig",
+            "action_id": "act_ek_er_kpi",
+            "config": {
+              "width": 4,
+              "column": "Ueberfaellig",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_gf_ek_t_quote",
+            "type": "kpi",
+            "label": "Termintreue",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "TermintreueQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_gf_ek_t_verzug",
+            "type": "kpi",
+            "label": "Ø Verzug (verspätet)",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 3,
+              "column": "AvgVerzugTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_gf_ek_tbl_eroffen",
+            "type": "table",
+            "label": "Offene Eingangsrechnungen (überfällige zuerst)",
+            "action_id": "act_ek_er_offen",
+            "config": {
+              "width": 12,
+              "info": "Offen = kein Bezahldatum gesetzt. Betrag = Summe der Rechnungspositionen netto.",
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_ek_er_pos_detail",
+                "key_column": "kEingangsrechnung",
+                "param": "kEingangsrechnung",
+                "title": "Positionen der Eingangsrechnung",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_gf_ek_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kEingangsrechnung"
+              ]
+            }
+          },
+          {
+            "id": "w_gf_ek_tbl_offen",
+            "type": "table",
+            "label": "Offene Bestellungen (nach offenem Wert)",
+            "action_id": "act_ek_offen_liste",
+            "config": {
+              "width": 12,
+              "info": "Momentaufnahme, unabhängig vom Zeitraum: Bestellungen mit Restmenge, weder gelöscht noch manuell abgeschlossen. Sehr alte Einträge sind meist Karteileichen – manuell abschließen bereinigt die Liste.",
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_ek_pos_detail",
+                "key_column": "kLieferantenBestellung",
+                "param": "kLieferantenBestellung",
+                "title": "Positionen der Bestellung",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_gf_ek_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kLieferantenBestellung"
+              ]
+            }
           }
         ],
         "result_tabs": [
@@ -7761,6 +9107,18 @@
               "act_op_aging",
               "act_op_debitoren",
               "act_op_top"
+            ]
+          },
+          {
+            "id": "tab_einkauf",
+            "label": "Einkauf & Verbindlichkeiten",
+            "action_ids": [
+              "act_ek_kpi",
+              "act_ek_offen_kpi",
+              "act_ek_termintreue_kpi",
+              "act_ek_er_kpi",
+              "act_ek_offen_liste",
+              "act_ek_er_offen"
             ]
           },
           {
