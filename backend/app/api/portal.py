@@ -175,7 +175,8 @@ async def portal_form_report(slug: str, data: FormRunRequest,
     try:
         pdf = await generate_report(f, data.params or {}, db,
                                     precomputed_summary=data.ai_summary,
-                                    sections=data.sections)
+                                    sections=data.sections,
+                                    provider=data.ai_provider)
     except Exception as e:
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}")
 

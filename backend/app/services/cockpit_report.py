@@ -19,7 +19,7 @@ from typing import Optional
 # Mappings trotzdem unter dem ~60 s-Proxy-Timeout). Ist das Modell kalt, reicht es
 # evtl. nicht → Summary wird übersprungen; deshalb Modelle in den Einstellungen
 # vorwärmen (Warmup, keep_alive) – dann ist sie zuverlässig dabei.
-_SUMMARY_TIMEOUT_S = 45
+_SUMMARY_TIMEOUT_S = 90
 
 # Cockpit-Reports lösen dieselben ~28 read-only Mapping-Abfragen aus wie der
 # Form-Run. Nacheinander summieren die sich zu >60 s und laufen in einen Timeout.
@@ -461,7 +461,7 @@ def _cover_html(company: dict, schema: dict, params: dict, conn_id: Optional[int
     )
 
 
-async def _ai_summary(schema: dict, results: dict, db) -> str:
+async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] = None) -> str:
     """Best-effort KI-Management-Summary aus dem Übersichts-KPI-Ergebnis."""
     try:
         ai_widget = next((w for w in schema.get("widgets", []) if w.get("type") == "ai_summary"), None)
@@ -471,7 +471,9 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
         if not res or not res.get("rows"):
             return ""
         from app.api.ai import _require_ai
-        svc = _require_ai(db)
+        # Anbieterwahl des Aufrufers durchreichen: über den Gateway ist die Analyse in
+        # Sekunden fertig, das lokale Modell braucht auf CPU eine gute Minute.
+        svc = _require_ai(db, provider)
         row = res["rows"][0]
         # Kennzahlen sauber mit Label, Einheit und Vorjahresvergleich aufbereiten,
         # damit die KID guten Fließtext schreibt (keine rohen Feldnamen).
@@ -497,16 +499,35 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
             except (TypeError, ValueError):
                 pass
             lines.append(line)
+
+        # Zusatzbereiche des Widgets (config.extra_sections) mitgeben – dieselben, die
+        # das Cockpit an die KI schickt. Ohne sie beurteilt der Report-Fallback nur die
+        # Haupt-KPI-Zeile und ließe z.B. Einkauf und Verbindlichkeiten unter den Tisch.
+        for sek in ((ai_widget.get("config") or {}).get("extra_sections") or []):
+            srows = (results.get(sek.get("action_id")) or {}).get("rows") or []
+            if not srows:
+                continue
+            if sek.get("kind") == "kpi":
+                inhalt = ", ".join(f"{k}: {_fmt(v, 1) if _is_num(v) else v}"
+                                   for k, v in srows[0].items() if v is not None)
+            else:
+                inhalt = f"{len(srows)} Einträge, größter: " + ", ".join(
+                    f"{k}: {_fmt(v, 1) if _is_num(v) else v}"
+                    for k, v in list(srows[0].items())[:4] if v is not None)
+            lines.append(f"{sek.get('label') or sek.get('action_id')} – {inhalt}")
+
         # Die fachliche Vorgabe des Widgets (config.instruction) mitgeben – sie sagt,
         # worauf es im jeweiligen Cockpit ankommt (Lagerlage, Einkauf, …).
         anweisung = ((ai_widget.get("config") or {}).get("instruction") or "").strip()
         system = ("Du bist ein nüchterner Business-Analyst für einen Geschäftsführer. Schreibe eine "
-                  "zusammenhängende Analyse in 3-4 vollständigen deutschen Sätzen (KEINE Aufzählung, "
+                  "zusammenhängende Analyse in 4-6 vollständigen deutschen Sätzen (KEINE Aufzählung, "
                   "KEINE bloße Wiederholung der Zahlenliste): interpretiere die wichtigsten Werte, die "
                   "Entwicklung zum Vorjahr (mit dem angegebenen Prozentwert), die Ertragslage inkl. "
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
                   "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
-                  "Anrede, KEINE Briefformel, keine Grußformel.")
+                  "Anrede, KEINE Briefformel, keine Grußformel. Gehe auf ALLE gelieferten Bereiche "
+                  "ein – auch Einkauf/Verbindlichkeiten, Lager und Retouren – und nenne zu jedem "
+                  "mindestens eine konkrete Zahl; überspringe nur Bereiche ohne Daten.")
         if anweisung:
             system += " Fachlicher Auftrag: " + anweisung
         # Textmodell wählen: beim lokalen Ollama das gewählte `ai_prose_model` (bzw. ein
@@ -516,7 +537,7 @@ async def _ai_summary(schema: dict, results: dict, db) -> str:
         chosen = await resolve_prose_model(db, svc)
         txt = await svc.complete_with_context(
             "Analysiere diese bereits berechneten Kennzahlen:\n" + "\n".join(lines), system,
-            params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=240, num_ctx=4096),
+            params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=420, num_ctx=8192),
             model=chosen)
         return (txt or "").strip()
     except Exception:
@@ -856,7 +877,8 @@ SECTION_ASSESSMENT = "__assessment__"
 
 
 async def generate_report(form, params: dict, db, precomputed_summary: str | None = None,
-                          sections: Optional[list] = None) -> bytes:
+                          sections: Optional[list] = None,
+                          provider: Optional[str] = None) -> bytes:
     """sections: Auswahl aus dem Report-Dialog – Reiter-IDs plus die Pseudo-IDs
     SECTION_SUMMARY / SECTION_ASSESSMENT. None = kompletter Report (wie bisher)."""
     schema = form.schema or {}
@@ -898,7 +920,8 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
         summary = precomputed_summary.strip()
     else:
         try:
-            summary = await asyncio.wait_for(_ai_summary(schema, results, db), timeout=_SUMMARY_TIMEOUT_S)
+            summary = await asyncio.wait_for(_ai_summary(schema, results, db, provider),
+                                             timeout=_SUMMARY_TIMEOUT_S)
         except Exception:
             summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
 

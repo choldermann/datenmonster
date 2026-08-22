@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check, FileText } from "lucide-react";
 import api from "../api/client";
+import { getAiProvider } from "../services/aiProvider";
 import { useAuth } from "../context/AuthContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
@@ -229,7 +230,7 @@ export default function PortalRunner() {
       const aiSummary = wantSummary
         ? (Object.values(aiSummaries).find(t => t && t.trim()) || null) : null;
       const resp = await api.post(`/api/portal/forms/${slug}/report`,
-        { params, ai_summary: aiSummary, sections: sections || null },
+        { params, ai_summary: aiSummary, sections: sections || null, ai_provider: getAiProvider() },
         { responseType: "blob", timeout: 180000 });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement("a");

@@ -42,6 +42,9 @@ class FormRunRequest(BaseModel):
     # Beim PDF-Report: Auswahl der Abschnitte (Reiter-IDs sowie die Pseudo-IDs
     # "__summary__" / "__assessment__"). None = alles wie bisher.
     sections: Optional[List[str]] = None
+    # Beim PDF-Report: Anbieterwahl des Aufrufers für die serverseitige KI-Analyse
+    # (nur nötig, wenn kein fertiger Text mitkommt). None = globale Einstellung.
+    ai_provider: Optional[str] = None
 
 
 class DrilldownRequest(BaseModel):
@@ -344,7 +347,8 @@ async def form_report(form_id: int, data: FormRunRequest,
     try:
         pdf = await generate_report(f, data.params or {}, db,
                                     precomputed_summary=data.ai_summary,
-                                    sections=data.sections)
+                                    sections=data.sections,
+                                    provider=data.ai_provider)
     except Exception as e:
         import traceback as _tb
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}\n{_tb.format_exc()[-400:]}")

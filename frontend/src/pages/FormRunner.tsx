@@ -4,6 +4,7 @@ import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText } from "lucide-react";
 import api from "../api/client";
+import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
@@ -164,7 +165,7 @@ export default function FormRunner() {
         ? (Object.values(aiSummaries).find(t => t && t.trim()) || null) : null;
       // Report-Erzeugung kann (KI/JTL) einige Sekunden dauern → großzügiges Timeout.
       const resp = await api.post(`/api/forms/${id}/report`,
-        { params, ai_summary: aiSummary, sections: sections || null },
+        { params, ai_summary: aiSummary, sections: sections || null, ai_provider: getAiProvider() },
         { responseType: "blob", timeout: 180000 });
       const url = URL.createObjectURL(resp.data);
       const a = document.createElement("a");
