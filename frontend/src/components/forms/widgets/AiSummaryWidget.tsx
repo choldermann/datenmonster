@@ -258,6 +258,29 @@ const SEP_RE = /^:?-{2,}:?$/;
 // Sehr schlanker Markdown-Renderer (nur was der Report-Prompt erzeugt):
 // ## Überschriften, Absätze mit **fett**, und eine Pipe-Tabelle. Wird laufend
 // beim Streamen neu geparst – halbe Tabellenzeilen erscheinen erst, wenn vollständig.
+// Listenzeile: "- ", "* ", "• ", "1. ", "2) " …
+const LIST_RE = /^\s*(?:[-*•]|\d+[.)])\s+/;
+// Aufzählung, die das Modell in EINE Zeile gepackt hat ("… 1. Erstens … 2. Zweitens …").
+const INLINE_NUM_RE = /(?:^|\s)(\d+)[.)]\s+/g;
+
+/** Zerlegt einen Absatz mit eingebetteter Nummerierung in Vorspann + Punkte.
+ *  Nur wenn mindestens zwei Nummern in Folge (1., 2., …) vorkommen – sonst bliebe
+ *  ein Satz wie "… um 13,1 % auf 835.799,30 € gestiegen" zerschossen. */
+function splitInlineList(text) {
+  const treffer = [...text.matchAll(INLINE_NUM_RE)];
+  const folge = treffer.filter((m, idx) => Number(m[1]) === idx + 1);
+  if (folge.length < 2) return null;
+  const start = folge[0].index + folge[0][0].length - folge[0][0].trimStart().length;
+  const vorspann = text.slice(0, start).trim();
+  const items = [];
+  folge.forEach((m, idx) => {
+    const von = m.index + m[0].length;
+    const bis = idx + 1 < folge.length ? folge[idx + 1].index : text.length;
+    items.push(text.slice(von, bis).trim());
+  });
+  return { vorspann, items };
+}
+
 function MiniMarkdown({ text }) {
   const lines = String(text).split("\n");
   const blocks = [];
@@ -276,11 +299,33 @@ function MiniMarkdown({ text }) {
       if (rows.length) blocks.push({ type: "table", rows });
       continue;
     }
-    const para = [];
-    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^##\s+/.test(lines[i]) && !/^\s*\|/.test(lines[i])) {
+    if (LIST_RE.test(line)) {
+      const items = [];
+      while (i < lines.length && LIST_RE.test(lines[i])) {
+        items.push(lines[i].replace(LIST_RE, "").trim()); i++;
+      }
+      blocks.push({ type: "ul", items });
+      continue;
+    }
+    const para = [lines[i]];
+    i++;
+    // Folgezeilen anhängen – aber ein neuer **Themenblock:** beginnt immer einen
+    // eigenen Absatz, auch ohne Leerzeile davor (Modelle setzen sie oft nicht).
+    while (i < lines.length && !/^\s*$/.test(lines[i]) && !/^##\s+/.test(lines[i])
+           && !/^\s*\|/.test(lines[i]) && !LIST_RE.test(lines[i])
+           && !/^\s*\*\*/.test(lines[i])) {
       para.push(lines[i]); i++;
     }
-    blocks.push({ type: "p", text: para.join(" ") });
+    const absatz = para.join(" ");
+    // Auch ohne Zeilenumbrüche im Modelltext als Liste zeigen – sonst steht der
+    // Handlungsbedarf als eine einzige Textwurst da.
+    const zerlegt = splitInlineList(absatz);
+    if (zerlegt) {
+      if (zerlegt.vorspann) blocks.push({ type: "p", text: zerlegt.vorspann });
+      blocks.push({ type: "ul", items: zerlegt.items });
+    } else {
+      blocks.push({ type: "p", text: absatz });
+    }
   }
 
   return (
@@ -293,7 +338,14 @@ function MiniMarkdown({ text }) {
           </div>
         );
         if (b.type === "p") return (
-          <p key={bi} style={{ margin: "0 0 6px" }}>{renderInline(b.text, `p${bi}`)}</p>
+          <p key={bi} style={{ margin: "0 0 10px" }}>{renderInline(b.text, `p${bi}`)}</p>
+        );
+        if (b.type === "ul") return (
+          <ul key={bi} style={{ margin: "0 0 10px", paddingLeft: 18 }}>
+            {b.items.map((it, ii) => (
+              <li key={ii} style={{ margin: "0 0 4px" }}>{renderInline(it, `l${bi}-${ii}`)}</li>
+            ))}
+          </ul>
         );
         // table
         const [head, ...body] = b.rows;

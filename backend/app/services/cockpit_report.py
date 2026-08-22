@@ -534,14 +534,60 @@ def _inline_html(s: str) -> str:
     return "".join(out)
 
 
+_LIST_RE = re.compile(r"^\s*(?:[-*•]|\d+[.)])\s+")
+_INLINE_NUM_RE = re.compile(r"(?:^|\s)(\d+)[.)]\s+")
+
+
+def _inline_liste(text: str):
+    """Aufzählung, die das Modell in EINEN Absatz gepackt hat, in Vorspann + Punkte
+    zerlegen ("… Handlungsbedarf: 1. Erstens … 2. Zweitens …"). Nur bei mindestens
+    zwei fortlaufenden Nummern, sonst zerfiele ein Satz mit Zahlenangaben."""
+    treffer = [m for i, m in enumerate(_INLINE_NUM_RE.finditer(text))]
+    folge = [m for idx, m in enumerate(t for t in treffer) if int(m.group(1)) == idx + 1]
+    if len(folge) < 2:
+        return None
+    vorspann = text[:folge[0].start()].strip()
+    punkte = []
+    for idx, m in enumerate(folge):
+        ende = folge[idx + 1].start() if idx + 1 < len(folge) else len(text)
+        punkte.append(text[m.end():ende].strip())
+    return vorspann, punkte
+
+
+def _absatz_html(text: str) -> str:
+    return (f'<p style="font-size:10pt;line-height:1.5;color:{DARK};margin:0 0 5pt">'
+            f'{_inline_html(text)}</p>')
+
+
+def _liste_html(punkte: list) -> str:
+    lis = "".join(f'<li style="margin:0 0 3pt">{_inline_html(p)}</li>' for p in punkte)
+    return (f'<ul style="font-size:10pt;line-height:1.5;color:{DARK};margin:0 0 6pt 12pt">'
+            f'{lis}</ul>')
+
+
 def _summary_to_html(summary: str) -> str:
-    """Report-Prosa in echte HTML-Absätze wandeln (Zeilenumbrüche + **fett** bleiben
-    erhalten – im PDF war zuvor alles zu einem Block zusammengelaufen)."""
-    paras = [ln.strip() for ln in re.split(r"\n+", summary or "") if ln.strip()]
-    return "".join(
-        f'<p style="font-size:10pt;line-height:1.5;color:{DARK};margin:0 0 5pt">{_inline_html(p)}</p>'
-        for p in paras
-    )
+    """Report-Prosa in echte HTML-Absätze und Listen wandeln (Zeilenumbrüche +
+    **fett** bleiben erhalten – im PDF war zuvor alles zu einem Block zusammengelaufen,
+    und Maßnahmenlisten standen als eine Textwurst da)."""
+    zeilen = [ln.strip() for ln in re.split(r"\n+", summary or "") if ln.strip()]
+    out, punkte = [], []
+    for ln in zeilen:
+        if _LIST_RE.match(ln):
+            punkte.append(_LIST_RE.sub("", ln).strip())
+            continue
+        if punkte:
+            out.append(_liste_html(punkte)); punkte = []
+        zerlegt = _inline_liste(ln)
+        if zerlegt:
+            vorspann, items = zerlegt
+            if vorspann:
+                out.append(_absatz_html(vorspann))
+            out.append(_liste_html(items))
+        else:
+            out.append(_absatz_html(ln))
+    if punkte:
+        out.append(_liste_html(punkte))
+    return "".join(out)
 
 
 def _asnum(v):

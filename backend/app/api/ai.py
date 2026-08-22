@@ -508,9 +508,12 @@ async def summarize_data(
             "Kapitalbindung, Zahlungsmoral und offene Posten). Wo du eine Ursache vermutest, die die Daten nicht "
             "belegen, kennzeichne sie ausdrücklich als Vermutung.\n"
             "Schließe mit **Handlungsbedarf:** – drei bis fünf priorisierte Maßnahmen, jede mit Begründung aus "
-            "den Zahlen und, wo möglich, dem betroffenen Betrag.\n\n"
+            "den Zahlen und, wo möglich, dem betroffenen Betrag. Die Maßnahmen als Liste: JEDE in einer "
+            "EIGENEN Zeile, die mit \"- \" beginnt.\n\n"
+            "FORMAT: Jeder Themenblock ist ein eigener Absatz – zwischen den Blöcken eine LEERZEILE. Setze "
+            "niemals mehrere Blöcke oder Maßnahmen in dieselbe Zeile.\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung. Keine Tabelle, keine "
-            "nummerierten Listen, keine vollständigen Ranglisten nacherzählen. " + _UNITS
+            "vollständigen Ranglisten nacherzählen. " + _UNITS
         )
     elif is_deep:
         system = (
@@ -523,9 +526,11 @@ async def summarize_data(
             "**Auffälligkeiten:** Muster in den Detailzeilen (Ausreißer, Konzentrationen, Trends, "
             "Größenverhältnisse) mit konkreten Namen und Beträgen; erklärend statt aufzählend. Vermutete "
             "Ursachen ausdrücklich als Vermutung kennzeichnen.\n"
-            "**Handlungsbedarf:** zwei bis vier priorisierte Maßnahmen, jede mit Begründung aus den Zahlen.\n\n"
-            "Keine vollständigen Ranglisten nacherzählen, keine Einleitungsfloskel, keine Tabelle, keine "
-            "nummerierten Listen. " + _UNITS
+            "**Handlungsbedarf:** zwei bis vier priorisierte Maßnahmen – JEDE in einer EIGENEN Zeile, die "
+            "mit \"- \" beginnt.\n\n"
+            "FORMAT: Jeder Block ist ein eigener Absatz, zwischen den Blöcken eine LEERZEILE. Nie mehrere "
+            "Blöcke oder Maßnahmen in derselben Zeile.\n"
+            "Keine vollständigen Ranglisten nacherzählen, keine Einleitungsfloskel, keine Tabelle. " + _UNITS
         )
     elif is_report:
         system = (
