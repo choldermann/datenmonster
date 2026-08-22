@@ -57,7 +57,7 @@ const DATE_PRESETS = [
   { id: "months_12",  label: "12 Monate" },
 ];
 
-export default function FieldProperties({ field, onChange, actions }) {
+export default function FieldProperties({ field, onChange, actions, resultTabs }) {
   if (!field) return (
     <div style={{ width: 240, flexShrink: 0, borderLeft: `1px solid ${S.border}`,
       backgroundColor: S.bgCard, display: "flex", alignItems: "center",
@@ -307,6 +307,35 @@ export default function FieldProperties({ field, onChange, actions }) {
             )}
             <p style={{ fontSize: 9, color: S.textDim, marginTop: 6, lineHeight: 1.4 }}>
               Mehrere Aktionen möglich — ein Klick führt alle aus. Ohne Auswahl laufen alle Aktionen.
+            </p>
+          </Section>
+        );
+      })()}
+
+      {/* Sichtbarkeit: Feld nur auf bestimmten Ergebnis-Reitern zeigen */}
+      {!IS_LAYOUT.has(field.type) && (resultTabs || []).length > 0 && (() => {
+        const sel = Array.isArray(cfg.visible_tabs) ? cfg.visible_tabs : [];
+        return (
+          <Section title="Sichtbarkeit">
+            <Label>Nur in diesen Reitern</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              {(resultTabs || []).map(t => {
+                const checked = sel.includes(t.id);
+                return (
+                  <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 6,
+                    fontSize: 11, color: S.textMain, cursor: "pointer" }}>
+                    <input type="checkbox" checked={checked}
+                      onChange={e => setCfg({ visible_tabs: e.target.checked
+                        ? [...sel, t.id] : sel.filter(x => x !== t.id) })}
+                      style={{ width: 13, height: 13 }} />
+                    {t.label || t.id}
+                  </label>
+                );
+              })}
+            </div>
+            <p style={{ fontSize: 9, color: S.textDim, marginTop: 6, lineHeight: 1.4 }}>
+              Ohne Auswahl steht das Feld über allen Reitern. Nützlich für Filter, die
+              nur eine Auswertung steuern (z.B. Artikelwahl für die Preishistorie).
             </p>
           </Section>
         );

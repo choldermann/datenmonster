@@ -5,7 +5,7 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText } from "lucide-react";
 import api from "../api/client";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
-import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 
@@ -183,7 +183,10 @@ export default function FormRunner() {
   const runForm = async (actionIds = null, paramsOverride = null) => {
     const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
     if (paramsOverride) setParams(effParams);
-    const miss = validateRequired(form?.schema?.fields || [], effParams);
+    // Nur sichtbare Felder prüfen – ein auf einem anderen Reiter ausgeblendetes
+    // Pflichtfeld darf den Lauf nicht blockieren.
+    const tabNow = activeTab || (form?.schema?.result_tabs || [])[0]?.id || null;
+    const miss = validateRequired(fieldsForTab(form?.schema?.fields || [], tabNow), effParams);
     if (miss.length) {
       setMissing(miss);
       setError("Bitte fülle die markierten Pflichtfelder aus.");
@@ -217,7 +220,6 @@ export default function FormRunner() {
   // Ausschlussartikel-Feld separat behandeln: es bekommt einen eigenen Eingabe-Reiter.
   const exclusionField = allFields.find(f => f.type === "article_exclusion") || null;
   const fields = exclusionField ? allFields.filter(f => f !== exclusionField) : allFields;
-  const hasButtonField = fields.some(f => f.type === "button");
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
   // Optionale Tab-Ansicht der Ergebnisse (aus schema.result_tabs). Jeder Tab
@@ -227,6 +229,9 @@ export default function FormRunner() {
   const tabActionIds = resultTabs.length
     ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
     : null;
+  // Felder, die nur zu einem Reiter gehören (config.visible_tabs), außerhalb ausblenden.
+  const visibleFields = fieldsForTab(fields, currentTab);
+  const hasButtonField = visibleFields.some(f => f.type === "button");
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -301,11 +306,11 @@ export default function FormRunner() {
 
         {(!exclusionField || inputTab === "main") && (<>
         {/* Form Fields */}
-        {fields.length > 0 ? (
+        {visibleFields.length > 0 ? (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
             padding: "20px 24px", marginBottom: 24 }}>
             <FormFields
-              fields={fields}
+              fields={visibleFields}
               params={params}
               setParam={setParam}
               onRunAction={runForm}

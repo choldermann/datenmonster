@@ -122,6 +122,20 @@ function DateRangeField({ field, params, setParam, onRunAction, running, inp }) 
   );
 }
 
+/**
+ * Filtert Eingabefelder auf den gerade sichtbaren Ergebnis-Reiter.
+ * `config.visible_tabs` (Liste von result_tab-IDs) blendet ein Feld überall sonst
+ * aus – z.B. die Artikelauswahl, die nur die Preishistorie steuert. Ohne die
+ * Angabe bleibt ein Feld wie bisher auf allen Reitern sichtbar.
+ */
+export function fieldsForTab(fields, currentTab) {
+  return (fields || []).filter(f => {
+    const vt = f.config?.visible_tabs;
+    if (!Array.isArray(vt) || vt.length === 0) return true;
+    return currentTab ? vt.includes(currentTab) : false;
+  });
+}
+
 /** Button-Feld → Liste der auszulösenden Action-IDs (mehrere via action_ids, sonst einzelne). */
 export function buttonActionIds(f) {
   if (f.action_ids && f.action_ids.length) return f.action_ids;

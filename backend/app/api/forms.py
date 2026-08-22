@@ -503,6 +503,17 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     if data.action_ids:
         actions = [a for a in actions if a.get("id") in data.action_ids]
 
+    # Actions, die ohne einen bestimmten Laufzeit-Parameter gar nicht sinnvoll sind
+    # (z.B. die Preishistorie ohne gewählten Artikel), werden übersprungen statt in
+    # einen SQL-Fehler zu laufen. Sie erscheinen dann einfach noch ohne Ergebnis.
+    def _hat_pflichtparameter(a) -> bool:
+        for pname in (a.get("requires_params") or []):
+            v = run_params.get(pname)
+            if v is None or v == "" or (isinstance(v, (list, tuple)) and not v):
+                return False
+        return True
+    actions = [a for a in actions if _hat_pflichtparameter(a)]
+
     preview_rows = data.preview_rows or 500
     results = {}
 

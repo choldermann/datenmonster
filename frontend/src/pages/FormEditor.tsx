@@ -115,6 +115,9 @@ export default function FormEditor() {
   const fields  = schema.fields  || [];
   const actions = schema.actions || [];
   const widgets = schema.widgets || [];
+  // Ergebnis-Reiter werden hier (noch) nicht bearbeitet, aber für die Feld-Sichtbarkeit
+  // gebraucht – das Schema wird beim Speichern vollständig zurückgeschrieben.
+  const resultTabs = schema.result_tabs || [];
   const selectedField = fields.find(f => f.id === selectedFieldId) || null;
 
   const setFields = useCallback((next) => {
@@ -450,6 +453,7 @@ export default function FormEditor() {
           <FieldProperties
             field={selectedField}
             actions={actions}
+            resultTabs={resultTabs}
             onChange={updateSelectedField}
           />
         )}

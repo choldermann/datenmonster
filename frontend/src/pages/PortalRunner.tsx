@@ -7,7 +7,7 @@ import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
-import FormFields, { validateRequired, PipelineResult } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
 
@@ -181,7 +181,10 @@ export default function PortalRunner() {
   const runAction = async (actionIds, paramsOverride) => {
     const effParams = paramsOverride ? { ...params, ...paramsOverride } : params;
     if (paramsOverride) setParams(effParams);
-    const miss = validateRequired(form?.fields || [], effParams);
+    // Nur sichtbare Felder prüfen – ein auf einem anderen Reiter ausgeblendetes
+    // Pflichtfeld darf den Lauf nicht blockieren.
+    const tabNow = activeTab || (form?.result_tabs || [])[0]?.id || null;
+    const miss = validateRequired(fieldsForTab(form?.fields || [], tabNow), effParams);
     if (miss.length) {
       setMissing(miss);
       setRunErr("Bitte fülle die markierten Pflichtfelder aus.");
@@ -230,7 +233,6 @@ export default function PortalRunner() {
   const fields  = exclusionField ? allFields.filter(f => f !== exclusionField) : allFields;
   const actions = form?.actions || [];
   const widgets = form?.widgets || [];
-  const hasButtonField = fields.some(f => f.type === "button");
   const allowDownload  = form?.allow_download || false;
   // Optionale Ergebnis-Register (aus schema.result_tabs). Jeder Tab bündelt Action-IDs.
   const resultTabs = form?.result_tabs || [];
@@ -238,6 +240,9 @@ export default function PortalRunner() {
   const tabActionIds = resultTabs.length
     ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
     : null;
+  // Felder, die nur zu einem Reiter gehören (config.visible_tabs), außerhalb ausblenden.
+  const visibleFields  = fieldsForTab(fields, currentTab);
+  const hasButtonField = visibleFields.some(f => f.type === "button");
   // Actions ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Register gefiltert)
   const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
   const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id)
@@ -324,12 +329,12 @@ export default function PortalRunner() {
 
         {(!exclusionField || inputTab === "main") && (<>
         {/* ── Form card ── */}
-        {fields.length > 0 && (
+        {visibleFields.length > 0 && (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
             borderRadius: 14, padding: "28px 32px", marginBottom: 32 }}>
 
             <FormFields
-              fields={fields}
+              fields={visibleFields}
               params={params}
               setParam={setParam}
               onRunAction={runAction}

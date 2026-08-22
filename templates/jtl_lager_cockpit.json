@@ -2852,7 +2852,7 @@
               "param_from": "von",
               "param_to": "bis",
               "default": "this_year",
-              "auto_run": false
+              "auto_run": true
             }
           },
           {
@@ -2872,7 +2872,10 @@
               "kind": "artikel",
               "multiple": false,
               "auto_run": true,
-              "placeholder": "Artikel wählen …"
+              "placeholder": "Artikel wählen …",
+              "visible_tabs": [
+                "tab_lg_preise"
+              ]
             }
           }
         ],
@@ -3010,21 +3013,30 @@
             "type": "run_mapping",
             "mapping_id": "m_lg_preis_kpi",
             "pipeline_id": null,
-            "label": "Lager – Preis-Kennzahlen des Artikels"
+            "label": "Lager – Preis-Kennzahlen des Artikels",
+            "requires_params": [
+              "artikel"
+            ]
           },
           {
             "id": "act_lg_preis_verlauf",
             "type": "run_mapping",
             "mapping_id": "m_lg_preis_verlauf",
             "pipeline_id": null,
-            "label": "Lager – Preisverlauf des Artikels"
+            "label": "Lager – Preisverlauf des Artikels",
+            "requires_params": [
+              "artikel"
+            ]
           },
           {
             "id": "act_lg_preis_aenderungen",
             "type": "run_mapping",
             "mapping_id": "m_lg_preis_aenderungen",
             "pipeline_id": null,
-            "label": "Lager – EK-Änderungen des Artikels"
+            "label": "Lager – EK-Änderungen des Artikels",
+            "requires_params": [
+              "artikel"
+            ]
           },
           {
             "id": "act_lg_lager",
