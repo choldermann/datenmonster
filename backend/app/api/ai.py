@@ -19,8 +19,15 @@ from app.services.ai_context_builder import AIContextBuilder
 router = APIRouter(prefix="/api/ai", tags=["ai"])
 
 
-def _require_ai(db):
-    svc = build_ai_service(db)
+# Anbieter, die eine Oberfläche pro Aufruf wählen darf (Schema-Katalog, Portal).
+_ERLAUBTE_PROVIDER = {"ollama", "datenmonster"}
+
+
+def _require_ai(db, provider: Optional[str] = None):
+    """`provider` übersteuert die globale Einstellung für DIESEN Aufruf – für
+    Oberflächen, die die Wahl selbst anbieten. Unbekannte Werte werden ignoriert,
+    damit ein Client die Einstellung nicht umgehen oder kaputtmachen kann."""
+    svc = build_ai_service(db, provider if provider in _ERLAUBTE_PROVIDER else None)
     if svc is None:
         raise HTTPException(400, "KI-Integration ist nicht aktiviert")
     return svc
@@ -392,6 +399,8 @@ async def explain_error(
 # ── Kennzahlen-Zusammenfassung (Dashboard-Widget "ai_summary") ──────────────────
 
 class SummarizeDataRequest(BaseModel):
+    # Anbieter nur für diesen Aufruf (Portal-/Katalogwahl); None = globale Einstellung.
+    provider: Optional[str] = None
     label: str = ""
     columns: list = []
     rows: list = []
@@ -428,7 +437,7 @@ async def summarize_data(
     """Formuliert aus einem Widget-/Mapping-Ergebnis (Spalten + Zeilen) eine kurze
     deutsche Management-Zusammenfassung. Nutzt das konfigurierte Ollama-Modell.
     Bewusst generisch, damit beliebige Dashboards das Widget wiederverwenden können."""
-    svc = _require_ai(db)
+    svc = _require_ai(db, body.provider)
     is_deep = (body.detail or "knapp").lower().startswith("ausf")
     # Knapp: Prompt kompakt halten (kleine lokale Modelle). Ausführlich: mehr Rohzeilen –
     # große Modelle glänzen beim Mustererkennen über viele Zeilen, nicht beim Nacherzählen
@@ -575,7 +584,11 @@ async def summarize_data(
     # Textmodell passend zum aktiven Provider (beim Gateway gilt `ai_dm_model`).
     from app.services.ai_service import resolve_prose_model
     from app.api.settings import get_setting
-    provider = get_setting(db, "ai_provider", "ollama")
+    # Effektiver Anbieter: die Wahl des Aufrufers schlägt die globale Einstellung.
+    # Muss stimmen, weil sie unten in den Cache-Key und ins meta-Event geht –
+    # sonst bekäme ein Gateway-Lauf den zwischengespeicherten Ollama-Text.
+    provider = (body.provider if body.provider in _ERLAUBTE_PROVIDER
+                else get_setting(db, "ai_provider", "ollama"))
     chosen = await resolve_prose_model(db, svc)
 
     import hashlib, time as _t
@@ -646,6 +659,7 @@ async def summarize_data(
 # ── KI-Handlungsempfehlung (Klick auf Widget-Zeile) ─────────────────────────────
 
 class RecommendActionRequest(BaseModel):
+    provider: Optional[str] = None
     kind: str                        # "customer_winback" | "article_liquidation" | "article_description"
     label: str = ""
     columns: list = []
@@ -793,7 +807,7 @@ async def recommend_action(
     Kennzahlen wie Rückgewinnungswahrscheinlichkeit oder Rabatt werden serverseitig
     DETERMINISTISCH aus den übergebenen SQL-Fakten berechnet (nicht vom Modell geraten)
     und als »meta«-Event vorab gesendet; das Modell formuliert nur die Prosa drumherum."""
-    svc = _require_ai(db)
+    svc = _require_ai(db, body.provider)
     row = (body.rows or [{}])[0] or {}
 
     if body.kind == "customer_winback":
@@ -1299,6 +1313,7 @@ class ChatMessage(BaseModel):
     content: str
 
 class ChatRequest(BaseModel):
+    provider: Optional[str] = None
     message: str
     history: list[ChatMessage] = []
     page_context: dict = {}
@@ -1315,7 +1330,7 @@ async def chat(
     from app.api.settings import get_setting
     from datetime import datetime
 
-    svc = _require_ai(db)
+    svc = _require_ai(db, body.provider)
     base_url = get_setting(db, "ai_base_url", "http://ollama:11434")
     default_model = get_setting(db, "ai_model", "qwen2.5-coder:3b")
     # Längerer Timeout wenn Schema-Kontext vorhanden (großer Prompt)

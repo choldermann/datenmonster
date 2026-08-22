@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { Sparkles, Loader2, AlertCircle } from "lucide-react";
 import { streamRequest } from "../../../services/aiService";
+import { onAiProviderChange } from "../../../services/aiProvider";
 
 const S = {
   textMain: "var(--text-main)", textDim: "var(--text-dim)", accent: "var(--accent)",
@@ -437,6 +438,9 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const dataKey = JSON.stringify(rows) + "|" + JSON.stringify(sections) + "|" + (cfg.instruction || "")
     + "|" + detail;
 
+  const [providerTick, setProviderTick] = useState(0);
+  useEffect(() => onAiProviderChange(() => setProviderTick(t => t + 1)), []);
+
   useEffect(() => {
     if (!rows.length) { setText(""); setErr(null); setMeta(null); return; }
     const ac = new AbortController();
@@ -477,7 +481,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
     run().finally(() => { if (!ac.signal.aborted) setLoading(false); });
     return () => ac.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataKey]);
+  }, [dataKey, providerTick]);
 
   return (
     <div style={{ padding: "14px 16px" }}>

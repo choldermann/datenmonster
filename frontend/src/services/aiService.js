@@ -1,3 +1,5 @@
+import { getAiProvider } from "./aiProvider";
+
 const BASE = "/api/ai";
 
 function getToken() {
@@ -24,7 +26,9 @@ export async function streamRequest(endpoint, body, onToken, onMeta = null, sign
         "Content-Type": "application/json",
         Authorization: `Bearer ${getToken()}`,
       },
-      body: JSON.stringify(body),
+      // Anbieterwahl des Benutzers mitgeben (null = globale Einstellung gilt).
+      // Endpunkte ohne provider-Feld ignorieren es.
+      body: JSON.stringify({ provider: getAiProvider() ?? undefined, ...body }),
       signal,
     });
   } catch (err) {
