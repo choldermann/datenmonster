@@ -633,7 +633,7 @@ async def summarize_data(
     # Provider + Modell gehören ZWINGEND in den Key: sonst liefert ein Modellwechsel
     # innerhalb der TTL den Text des vorherigen Modells zurück (sieht aus, als würden
     # alle Modelle dasselbe schreiben).
-    _PROMPT_VERSION = "3"
+    _PROMPT_VERSION = "4"   # 2026-08-22: Listen, Einkaufsblock, Zahlenmarker, Dezimalkomma
     ckey = hashlib.md5(
         f"{_PROMPT_VERSION}|{provider}|{chosen or svc.model}|{body.label}|{body.instruction}"
         f"|{data_text}|{sections_text}|{body.layout}|{'deep' if is_deep else 'short'}".encode("utf-8")
