@@ -351,6 +351,32 @@ def _tasklist_html(widget: dict, result: dict) -> str:
             f'<table style="width:100%;border-collapse:collapse;margin-bottom:8px">{"".join(items)}</table>')
 
 
+def _alerts_html(widget: dict, result: dict) -> str:
+    """Unternehmenswarnungen für den PDF-Report: Ampel, Titel, Fakten.
+    Die Fakten stehen bewusst mit im Bericht – eine Warnung ohne ihre Grundlage
+    ist im Papierausdruck nicht überprüfbar."""
+    AMPEL = {"rot": "#c0392b", "orange": "#d97b1f", "gelb": "#c9a71f", "gruen": "#3f8f45"}
+    rows = result.get("rows", []) or []
+    if not rows:
+        return ('<div style="font-size:9pt;color:#3f8f45;margin-bottom:6px">'
+                'Keine offenen Warnungen – alle Prüfungen im grünen Bereich.</div>')
+    items = []
+    for r in rows:
+        col = AMPEL.get(str(r.get("Ampel", "")).lower(), "#999999")
+        fakten = "; ".join(f'{f.get("label")}: {f.get("wert")}{(" " + f.get("einheit")) if f.get("einheit") else ""}'
+                           for f in (r.get("fakten") or []))
+        unter = r.get("untertitel") or ""
+        zusatz = " · ".join(x for x in (unter, fakten) if x)
+        items.append(
+            f'<tr><td style="width:14px;color:{col};font-size:12pt;vertical-align:top">&#9679;</td>'
+            f'<td style="font-size:9pt;color:{DARK};padding:2px 0">'
+            f'<b>{_esc(r.get("titel") or r.get("name", ""))}</b>'
+            + (f'<div style="font-size:8pt;color:{MUTED}">{_esc(zusatz)}</div>' if zusatz else "")
+            + '</td></tr>')
+    return (f'<div style="font-size:9pt;font-weight:bold;margin:4px 0 2px;color:{DARK}">{_esc(widget.get("label", ""))}</div>'
+            f'<table style="width:100%;border-collapse:collapse;margin-bottom:8px">{"".join(items)}</table>')
+
+
 def _widgets_for_tab(schema: dict, action_ids: set) -> list:
     return [w for w in schema.get("widgets", [])
             if not action_ids or w.get("action_id") in action_ids]
@@ -381,6 +407,8 @@ def _render_tab(schema: dict, tab: dict, results: dict) -> str:
         parts.append(flush_kpis())
         if wt == "tasklist":
             parts.append(_tasklist_html(w, res))
+        elif wt == "alerts":
+            parts.append(_alerts_html(w, res))
         elif wt == "table":
             parts.append(f'<div style="font-size:9pt;font-weight:bold;margin:4px 0 2px;color:{DARK}">{_esc(w.get("label",""))}</div>')
             parts.append(_table_html(w, res))
@@ -908,6 +936,11 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
     conn_id = _resolve_conn_id(schema, db)
     company = _fetch_company(conn_id)
 
+    # Projektbezogene Schwellwerte als :cfg_<key> mitgeben – sonst liefen Mappings,
+    # die einen Schwellwert referenzieren, im Report ohne gebundenen Parameter.
+    from app.services.business_config_service import apply_config as _apply_cfg
+    params = _apply_cfg(params or {}, getattr(form, "project_id", None), db)
+
     tabs = schema.get("result_tabs") or []
     if not tabs:  # ohne Reiter: ein einziger Block über alle Actions
         tabs = [{"id": "all", "label": form.name or "Bericht",
@@ -935,6 +968,22 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             only_ids.add(ai_widget["action_id"])
 
     results = _run_actions(schema, params, db, only_ids)
+
+    # Unternehmenswarnungen (Action-Typ run_alerts) laufen nicht über _run_actions,
+    # weil sie selbst mehrere Mappings auswerten. persist=False: ein Report soll den
+    # Verlauf der Warnungs-Läufe nicht verfälschen.
+    for _a in schema.get("actions", []):
+        if _a.get("type") != "run_alerts":
+            continue
+        if only_ids is not None and _a.get("id") not in only_ids:
+            continue
+        try:
+            from app.services import alert_service as _alert_service
+            _lauf = _alert_service.evaluate(db, getattr(form, "project_id", None),
+                                            params, persist=False)
+            results[_a["id"]] = {"columns": [], "rows": _lauf.get("alerts") or []}
+        except Exception:
+            results[_a["id"]] = {"columns": [], "rows": []}
     # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
     # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
     if not want_summary:

@@ -169,7 +169,9 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
 
     ctx = MappingContext.from_orm(m)
     from app.services.article_exclusion_service import apply_article_exclusions
-    ctx.run_params = apply_article_exclusions(body.params or {}, m.project_id, db)
+    from app.services.business_config_service import apply_config
+    ctx.run_params = apply_config(body.params or {}, m.project_id, db)
+    ctx.run_params = apply_article_exclusions(ctx.run_params, m.project_id, db)
     if not ctx.targets:
         return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
 
@@ -501,6 +503,10 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     _validate_required(schema, run_params)
 
     from app.services.article_exclusion_service import apply_article_exclusions
+    from app.services.business_config_service import apply_config
+    # Projektbezogene Schwellwerte als :cfg_<key> mitgeben. Für bestehende Mappings
+    # ein No-Op – gebunden wird nur, was das SQL auch referenziert.
+    run_params = apply_config(run_params, f.project_id, db)
     run_params = apply_article_exclusions(run_params, f.project_id, db)
 
     actions = schema.get("actions") or []
@@ -545,6 +551,27 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
 
         if action_type == "run_mapping":
             continue  # bereits parallel oben erledigt
+
+        elif action_type == "run_alerts":
+            # Unternehmenswarnungen: die Regeln laufen selbst gedrosselt parallel,
+            # deshalb hier sequenziell im Anschluss an die Mapping-Actions.
+            from app.services import alert_service
+            try:
+                lauf = alert_service.evaluate(
+                    db, f.project_id, run_params,
+                    include_ok=bool((action.get("options") or {}).get("include_ok")))
+                results[action_id] = {
+                    "kind": "alerts",
+                    "columns": ["severity", "titel", "Anzahl", "wert"],
+                    "rows": lauf.get("alerts") or [],
+                    "total": lauf.get("triggered", 0),
+                    "meta": {k: lauf.get(k) for k in
+                             ("checked", "triggered", "duration_ms", "started_at",
+                              "errors", "unavailable", "ok")},
+                }
+            except Exception as e:
+                results[action_id] = {"kind": "alerts", "columns": [], "rows": [],
+                                      "total": 0, "error": str(e)[:300]}
 
         elif action_type == "run_pipeline":
             pipeline_id = action.get("pipeline_id")

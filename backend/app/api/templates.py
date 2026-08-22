@@ -734,6 +734,47 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         db.add(fo); db.commit(); db.refresh(fo)
         created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
 
+    # ── Unternehmenswarnungen (alert_rules) anlegen ───────────────────────────
+    # Regeln sind Daten: sie verweisen per mapping_name auf Auswertungen, die aus
+    # DIESEM oder aus einem anderen Template stammen können (GF-, Lager-, Einkaufs-
+    # Cockpit). Deshalb wird der Name bevorzugt und nur eine Template-interne
+    # String-ID in eine echte Mapping-ID übersetzt. Fehlt das Ziel-Mapping, bleibt
+    # die Regel bestehen und meldet sich im Lauf als „nicht verfügbar".
+    if content.get("alert_rules"):
+        from app.models.alert import AlertRule
+        vorhandene = {r.rule_key: r for r in db.query(AlertRule)
+                      .filter(AlertRule.project_id == body.project_id).all()}
+        for a_def in content.get("alert_rules", []):
+            regel = _copy.deepcopy(a_def)
+            mid = regel.get("mapping_id")
+            if isinstance(mid, str):
+                regel["mapping_id"] = mapping_id_map.get(mid)
+            dd = regel.get("drilldown") or {}
+            if isinstance(dd, dict) and isinstance(dd.get("mapping_id"), str):
+                dd["mapping_id"] = mapping_id_map.get(dd["mapping_id"])
+                regel["drilldown"] = dd
+            regel = _apply_config_deep(regel, config)
+            rk = regel.get("rule_key")
+            if not rk:
+                continue
+            best = vorhandene.get(rk)
+            if best is not None:
+                # Aktualisieren, aber vom Anwender Eingestelltes respektieren:
+                # active/severity/sort bleiben, wie sie im Betrieb gesetzt wurden.
+                for k, v in regel.items():
+                    if k in ("rule_key", "active", "severity", "sort"):
+                        continue
+                    if hasattr(best, k):
+                        setattr(best, k, v)
+                created.setdefault("alert_rules", []).append(
+                    {"id": best.id, "name": best.name, "reused": True})
+                continue
+            neu = AlertRule(project_id=body.project_id,
+                            **{k: v for k, v in regel.items() if hasattr(AlertRule, k)})
+            db.add(neu); db.commit(); db.refresh(neu)
+            created.setdefault("alert_rules", []).append({"id": neu.id, "name": neu.name})
+        db.commit()
+
     # ── Installation protokollieren (erzeugte Objekt-IDs) ────────────────────
     # Damit delete_template gezielt per ID löschen kann statt fehleranfällig nach
     # Namen (Namensabgleich konnte gleichnamige Originale mitlöschen).
@@ -746,7 +787,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         "objects": {
             typ: [o["id"] for o in created.get(typ, [])
                   if isinstance(o, dict) and "id" in o and not o.get("reused")]
-            for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms", "reports")
+            for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms",
+                        "reports", "alert_rules")
         },
     }
     t.installations = (t.installations or []) + [inst_record]
@@ -1139,9 +1181,11 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
     # Gezielt nur die beim Install erzeugten Objekte per ID löschen (siehe
     # install_template → t.installations). KEIN Namensabgleich mehr: der konnte
     # gleichnamige Original-Objekte löschen, die nicht aus dem Template stammen.
+    from app.models.alert import AlertRule
     type_model = {
         "datasets": Dataset, "rest_sources": RestSource, "mappings": Mapping,
         "pipelines": Pipeline, "forms": Form, "reports": Report,
+        "alert_rules": AlertRule,
     }
     deleted = {k: 0 for k in type_model}
     installs = t.installations or []

@@ -1,0 +1,1635 @@
+{
+ "format_version": 1,
+ "template_id": "jtl_monitor",
+ "template_name": "Unternehmensmonitor (JTL)",
+ "description": "Operative Startseite: Was ist heute wichtig, wo besteht Handlungsbedarf? Die Warnungen werden deterministisch aus den vorhandenen Cockpit-Auswertungen abgeleitet – Schwellwerte sind je Projekt einstellbar.",
+ "category": "jtl-reporting",
+ "version": "1.0",
+ "author": "Datenmonster",
+ "hinweise": [
+  "Beim Installieren die JTL-Datenbankverbindung wählen – nur die eigene Kennzahlen-Auswertung des Monitors braucht sie.",
+  "Die Warnregeln greifen auf Auswertungen der übrigen Cockpits zu (GF, Vertrieb, Einkauf, Lager, Versand, Health-Check) und verweisen dafür auf deren NAMEN. Nicht installierte Auswertungen werden übersprungen und im Lauf als „nicht verfügbar\" gemeldet – es geht nichts kaputt.",
+  "Der Monitor verändert keine bestehenden Cockpits: er legt nur ein eigenes Formular, eine eigene Kennzahlen-Auswertung und die Regeln an.",
+  "Schwellwerte (Ladenhüter-Tage, Lieferverzug, Marge, Forderungen …) stehen unter Projekteinstellungen → Kennzahlen & Warnungen und wirken sofort auf alle Regeln.",
+  "Anzahl und Beträge stammen ausschließlich aus SQL. Die KI formuliert nur die Kurzanalyse.",
+  "Listen mit hartem TOP N im SQL werden für den Warnungs-Lauf angehoben; wird das Limit trotzdem erreicht, steht „mindestens N\" im Text statt einer zu kleinen Zahl."
+ ],
+ "config_required": [
+  {
+   "key": "connection_jtl",
+   "label": "JTL-Datenbankverbindung (MS SQL Server)",
+   "type": "connection",
+   "default": ""
+  }
+ ],
+ "datasets": [],
+ "mappings": [
+  {
+   "id": "m_monitor_kpi",
+   "name": "Monitor – Kennzahlen",
+   "canvas_nodes": [],
+   "joins": [],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_jtl}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Umsatz",
+      "UmsatzVJ",
+      "Rohertrag",
+      "RohertragVJ",
+      "DB2",
+      "DB2VJ",
+      "Rechnungen",
+      "Marge",
+      "MargeVJ",
+      "DB2Marge",
+      "DB2MargeVJ"
+     ],
+     "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ, Rechnungen,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen\n    FROM (\n        SELECT RE.kRechnung, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM Rechnung.vRechnung RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s"
+    }
+   ],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "Monitor – Kennzahlen",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "RohertragVJ",
+       "target_field": "RohertragVJ",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "RohertragVJ"
+       }
+      },
+      {
+       "source_field": "DB2",
+       "target_field": "DB2",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB2"
+       }
+      },
+      {
+       "source_field": "DB2VJ",
+       "target_field": "DB2VJ",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB2VJ"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "int",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "Marge",
+       "target_field": "Marge",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge"
+       }
+      },
+      {
+       "source_field": "MargeVJ",
+       "target_field": "MargeVJ",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "MargeVJ"
+       }
+      },
+      {
+       "source_field": "DB2Marge",
+       "target_field": "DB2Marge",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB2Marge"
+       }
+      },
+      {
+       "source_field": "DB2MargeVJ",
+       "target_field": "DB2MargeVJ",
+       "target_type": "float",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB2MargeVJ"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "pipelines": [],
+ "forms": [
+  {
+   "name": "Unternehmensmonitor",
+   "schema": {
+    "fields": [
+     {
+      "id": "f_zeitraum",
+      "type": "daterange",
+      "row": 0,
+      "colSpan": 12,
+      "label": "Zeitraum",
+      "name": "zeitraum",
+      "action_ids": [],
+      "config": {
+       "param_from": "von",
+       "param_to": "bis",
+       "default": "this_month",
+       "auto_run": true
+      }
+     }
+    ],
+    "layout": [],
+    "actions": [
+     {
+      "id": "act_monitor_alerts",
+      "type": "run_alerts",
+      "mapping_id": null,
+      "pipeline_id": null,
+      "label": "Monitor – Warnungen prüfen"
+     },
+     {
+      "id": "act_monitor_kpi",
+      "type": "run_mapping",
+      "mapping_id": "m_monitor_kpi",
+      "pipeline_id": null,
+      "label": "Monitor – Kennzahlen"
+     }
+    ],
+    "widgets": [
+     {
+      "id": "w_monitor_alerts",
+      "type": "alerts",
+      "label": "Heute zu tun",
+      "action_id": "act_monitor_alerts",
+      "config": {
+       "width": 12,
+       "info": "Jede Zeile stammt aus einer Prüfregel: Ampel, Anzahl und Betrag kommen aus der Auswertung, nicht aus einer Schätzung. Klick öffnet die Detailliste. Schwellwerte: Projekteinstellungen."
+      }
+     },
+     {
+      "id": "w_m_umsatz",
+      "type": "kpi",
+      "label": "Umsatz netto",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "Umsatz",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " €",
+       "decimals": 0,
+       "compare_column": "UmsatzVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_m_rohertrag",
+      "type": "kpi",
+      "label": "Rohertrag (DB I)",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "Rohertrag",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " €",
+       "decimals": 0,
+       "compare_column": "RohertragVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_m_db2",
+      "type": "kpi",
+      "label": "Deckungsbeitrag II",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "DB2",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " €",
+       "decimals": 0,
+       "compare_column": "DB2VJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_m_marge",
+      "type": "kpi",
+      "label": "Marge",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "Marge",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " %",
+       "decimals": 1,
+       "compare_column": "MargeVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_m_db2marge",
+      "type": "kpi",
+      "label": "DB II-Marge",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "DB2Marge",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " %",
+       "decimals": 1,
+       "compare_column": "DB2MargeVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_m_rechnungen",
+      "type": "kpi",
+      "label": "Rechnungen",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 4,
+       "column": "Rechnungen",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_monitor_ai",
+      "type": "ai_summary",
+      "label": "KI-Kurzanalyse",
+      "action_id": "act_monitor_kpi",
+      "config": {
+       "width": 12,
+       "instruction": "Fasse die Lage in wenigen Sätzen zusammen. Nenne nur die gelieferten Kennzahlen."
+      }
+     }
+    ],
+    "result_tabs": [
+     {
+      "id": "tab_heute",
+      "label": "Heute",
+      "action_ids": [
+       "act_monitor_alerts",
+       "act_monitor_kpi"
+      ]
+     }
+    ],
+    "show_ai_assistant": true
+   },
+   "portal_config": {
+    "description": "Was heute wichtig ist – Warnungen, Kennzahlen, Aufgaben.",
+    "icon": "shield-alert"
+   }
+  }
+ ],
+ "alert_rules": [
+  {
+   "rule_key": "gf_umsatz_rueckgang",
+   "name": "Umsatz unter Vorjahr",
+   "category": "Geschäftsführung",
+   "cockpit": "Monitor",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": "m_monitor_kpi",
+   "mapping_name": "Monitor – Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "Umsatz",
+    "op": "<",
+    "compare_column": "UmsatzVJ",
+    "factor_config": "umsatz_rueckgang_prozent",
+    "factor_mode": "minus_percent"
+   },
+   "facts": [
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Vorjahr",
+     "column": "UmsatzVJ",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Rohertrag",
+     "column": "Rohertrag",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "DB II-Marge",
+     "column": "DB2Marge",
+     "unit": "%",
+     "decimals": 1
+    }
+   ],
+   "title_template": "Umsatz liegt unter dem Vorjahreszeitraum",
+   "subtitle": "Ursachen im Cockpit prüfen: Kunden, Warengruppen, Auftragseingang.",
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 10
+  },
+  {
+   "rule_key": "gf_umsatz_plus",
+   "name": "Umsatz über Vorjahr",
+   "category": "Geschäftsführung",
+   "cockpit": "Monitor",
+   "description": null,
+   "severity": "positiv",
+   "severity_levels": [],
+   "mapping_id": "m_monitor_kpi",
+   "mapping_name": "Monitor – Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "Umsatz",
+    "op": ">",
+    "compare_column": "UmsatzVJ",
+    "factor_config": "umsatz_rueckgang_prozent",
+    "factor_mode": "plus_percent"
+   },
+   "facts": [
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Vorjahr",
+     "column": "UmsatzVJ",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "DB II",
+     "column": "DB2",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "Umsatz liegt über dem Vorjahreszeitraum",
+   "subtitle": null,
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 11
+  },
+  {
+   "rule_key": "gf_db_marge",
+   "name": "Deckungsbeitragsmarge gesunken",
+   "category": "Geschäftsführung",
+   "cockpit": "Monitor",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": "m_monitor_kpi",
+   "mapping_name": "Monitor – Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "DB2Marge",
+    "op": "<",
+    "compare_column": "DB2MargeVJ",
+    "offset": -2
+   },
+   "facts": [
+    {
+     "label": "DB II-Marge",
+     "column": "DB2Marge",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Vorjahr",
+     "column": "DB2MargeVJ",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Rohertragsmarge",
+     "column": "Marge",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "DB II-Marge mehr als 2 Punkte unter Vorjahr",
+   "subtitle": "Meist Einkaufspreise oder Rabatte – Artikel- und Warengruppenmarge prüfen.",
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 12
+  },
+  {
+   "rule_key": "op_ueberfaellig",
+   "name": "Überfällige Forderungen",
+   "category": "Liquidität",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [
+    {
+     "metric": "wert",
+     "op": ">=",
+     "value_config": "forderung_kritisch_betrag",
+     "severity": "kritisch"
+    }
+   ],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Offene Posten Kennzahlen",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "kpi",
+    "column": "OffenUeberfaellig",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Offen gesamt",
+     "column": "OffenGesamt",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Davon überfällig",
+     "column": "OffenUeberfaellig",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Überfälligkeitsquote",
+     "column": "UeberfaelligQuote",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "DSO",
+     "column": "DSO",
+     "unit": "Tage",
+     "decimals": 0
+    }
+   ],
+   "title_template": "Überfällige Forderungen: {wert} €",
+   "subtitle": "Mahnlauf bzw. Anruf bei den größten Positionen.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+    "title": "Größte überfällige Rechnungen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 20
+  },
+  {
+   "rule_key": "op_mahnkandidaten",
+   "name": "Deutlich überfällige Rechnungen",
+   "category": "Liquidität",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [
+    {
+     "metric": "summe",
+     "op": ">=",
+     "value_config": "forderung_kritisch_betrag",
+     "severity": "kritisch"
+    }
+   ],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "OffenerBetrag",
+    "row_filter": {
+     "column": "TageUeberfaellig",
+     "op": ">=",
+     "value_config": "forderung_kritisch_tage"
+    }
+   },
+   "facts": [
+    {
+     "label": "Größter Fall",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Tage überfällig",
+     "column": "TageUeberfaellig",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Offener Betrag",
+     "column": "OffenerBetrag",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Mahnstufe",
+     "column": "Mahnstufe",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Rechnungen deutlich überfällig – {summe} €",
+   "subtitle": "Größte Position zuerst anrufen.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+    "title": "Größte überfällige Rechnungen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 21
+  },
+  {
+   "rule_key": "kunden_zahlungsmoral",
+   "name": "Zahlungsmoral verschlechtert",
+   "category": "Liquidität",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Zahlungsmoral verschlechtert",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "row_filter": {
+     "column": "Verschlechterung",
+     "op": ">=",
+     "value_config": "zahldauer_verschlechterung_tage"
+    }
+   },
+   "facts": [
+    {
+     "label": "Auffälligster Kunde",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Zahldauer aktuell",
+     "column": "ZahldauerAkt",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Vorjahr",
+     "column": "ZahldauerVJ",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Verschlechterung",
+     "column": "Verschlechterung",
+     "unit": "Tage",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Kunden zahlen deutlich langsamer als im Vorjahr",
+   "subtitle": null,
+   "drilldown": {
+    "mapping_name": "Cockpit – Zahlungsmoral verschlechtert",
+    "title": "Kunden mit sich verschlechternder Zahlungsmoral",
+    "hidden_columns": [
+     "kKunde"
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 22
+  },
+  {
+   "rule_key": "kunden_rueckgang",
+   "name": "Kunden mit Umsatzrückgang",
+   "category": "Kunden",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Kunden mit Rückgang",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "Rueckgang",
+    "row_filter": {
+     "column": "Rueckgang",
+     "op": ">=",
+     "value_config": "kunde_rueckgang_betrag"
+    }
+   },
+   "facts": [
+    {
+     "label": "Größter Rückgang",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Vorjahr",
+     "column": "UmsatzVJ",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Rückgang",
+     "column": "Rueckgang",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Kunden mit deutlichem Umsatzrückgang – {summe} €",
+   "subtitle": "Zeile anklicken: Detailliste mit Kundenwerten.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Kunden mit Rückgang",
+    "title": "Kunden mit Umsatzrückgang",
+    "hidden_columns": [
+     "kKunde"
+    ]
+   },
+   "action_kind": "customer_winback",
+   "active": true,
+   "sort": 30
+  },
+  {
+   "rule_key": "kunden_churn",
+   "name": "Schlafende Kunden",
+   "category": "Kunden",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Churn / Schlafende Kunden",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "Umsatz 24M"
+   },
+   "facts": [
+    {
+     "label": "Größter Kunde",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Letzter Kauf",
+     "column": "Letzter Kauf",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Tage inaktiv",
+     "column": "Tage inaktiv",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Umsatz 24 M",
+     "column": "Umsatz 24M",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Kunden sind eingeschlafen – {summe} € Umsatz in 24 Monaten",
+   "subtitle": "Wiedergewinnung lohnt bei den umsatzstärksten zuerst.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Churn / Schlafende Kunden",
+    "title": "Schlafende Kunden",
+    "hidden_columns": [
+     "kKunde"
+    ]
+   },
+   "action_kind": "customer_winback",
+   "active": true,
+   "sort": 31
+  },
+  {
+   "rule_key": "vertrieb_auftragseingang",
+   "name": "Auftragseingang unter Vorjahr",
+   "category": "Vertrieb",
+   "cockpit": "Vertriebs-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Vertrieb – Auftragseingang KPI",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "kpi",
+    "column": "Auftragseingang",
+    "op": "<",
+    "compare_column": "AuftragseingangVJ",
+    "factor_config": "auftragseingang_rueckgang_prozent",
+    "factor_mode": "minus_percent"
+   },
+   "facts": [
+    {
+     "label": "Auftragseingang",
+     "column": "Auftragseingang",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Vorjahr",
+     "column": "AuftragseingangVJ",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Aufträge",
+     "column": "Auftraege",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Storno-Quote",
+     "column": "StornoQuote",
+     "unit": "%",
+     "decimals": 1
+    }
+   ],
+   "title_template": "Auftragseingang unter Vorjahr",
+   "subtitle": "Frühindikator – wirkt sich erst später auf den Umsatz aus.",
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 40
+  },
+  {
+   "rule_key": "vertrieb_backlog",
+   "name": "Überschrittene Liefertermine",
+   "category": "Vertrieb",
+   "cockpit": "Vertriebs-Cockpit",
+   "description": null,
+   "severity": "kritisch",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Vertrieb – Backlog KPI",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "Ueberfaellig",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Offene Aufträge",
+     "column": "OffeneAuftraege",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Auftragsbestand",
+     "column": "Auftragsbestand",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Ø Alter",
+     "column": "AvgAlterTage",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Wert älter 30 Tage",
+     "column": "WertAelter30",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{wert} offene Aufträge mit überschrittenem Liefertermin",
+   "subtitle": "Kunden informieren oder Termin nachziehen.",
+   "drilldown": {
+    "mapping_name": "Vertrieb – Offene Aufträge",
+    "title": "Offene Aufträge"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 41
+  },
+  {
+   "rule_key": "vertrieb_angebote",
+   "name": "Angebote zum Nachfassen",
+   "category": "Vertrieb",
+   "cockpit": "Vertriebs-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Vertrieb – Angebote zum Nachfassen",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "Wert",
+    "row_filter": {
+     "column": "AlterTage",
+     "op": ">=",
+     "value_config": "angebot_nachfass_tage"
+    }
+   },
+   "facts": [
+    {
+     "label": "Größtes Angebot",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Wert",
+     "column": "Wert",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Alter",
+     "column": "AlterTage",
+     "unit": "Tage",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Angebote warten auf Nachfassen – {summe} €",
+   "subtitle": null,
+   "drilldown": {
+    "mapping_name": "Vertrieb – Angebote zum Nachfassen",
+    "title": "Angebote zum Nachfassen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 42
+  },
+  {
+   "rule_key": "ek_bestellverzug",
+   "name": "Überfällige Bestellungen",
+   "category": "Einkauf",
+   "cockpit": "Einkaufs-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Einkauf – Offene Bestellungen",
+   "params": {
+    "lieferant": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "OffenerWert",
+    "row_filter": {
+     "column": "VerzugTage",
+     "op": ">=",
+     "value_config": "lieferverzug_tage"
+    }
+   },
+   "facts": [
+    {
+     "label": "Größte Position",
+     "column": "Lieferant",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Verzug",
+     "column": "VerzugTage",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Offener Wert",
+     "column": "OffenerWert",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Bestellungen überfällig – {summe} € offen",
+   "subtitle": "Beim Lieferanten nachhaken, betroffene Kundenaufträge prüfen.",
+   "drilldown": {
+    "mapping_name": "Einkauf – Offene Bestellungen",
+    "title": "Offene Bestellungen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 50
+  },
+  {
+   "rule_key": "ek_eingangsrechnungen",
+   "name": "Überfällige Eingangsrechnungen",
+   "category": "Einkauf",
+   "cockpit": "Einkaufs-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Einkauf – Offene Eingangsrechnungen",
+   "params": {
+    "lieferant": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "Betrag",
+    "row_filter": {
+     "column": "TageUeberfaellig",
+     "op": ">",
+     "value": 0
+    }
+   },
+   "facts": [
+    {
+     "label": "Größte Rechnung",
+     "column": "Lieferant",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Betrag",
+     "column": "Betrag",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Tage überfällig",
+     "column": "TageUeberfaellig",
+     "unit": "Tage",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Eingangsrechnungen überfällig – {summe} €",
+   "subtitle": "Zahlungsziel überschritten – Skonto ist hier meist schon verfallen.",
+   "drilldown": {
+    "mapping_name": "Einkauf – Offene Eingangsrechnungen",
+    "title": "Offene Eingangsrechnungen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 51
+  },
+  {
+   "rule_key": "ek_termintreue",
+   "name": "Lieferanten unter der Termintreue-Schwelle",
+   "category": "Lieferanten",
+   "cockpit": "Einkaufs-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Einkauf – Termintreue je Lieferant",
+   "params": {
+    "lieferant": []
+   },
+   "condition": {
+    "mode": "count",
+    "row_filter": [
+     {
+      "column": "PuenktlichQuote",
+      "op": "<",
+      "value_config": "termintreue_min_prozent"
+     },
+     {
+      "column": "Lieferungen",
+      "op": ">=",
+      "value": 5
+     }
+    ]
+   },
+   "facts": [
+    {
+     "label": "Auffälligster",
+     "column": "Lieferant",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Termintreue",
+     "column": "PuenktlichQuote",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Ø Verzug",
+     "column": "AvgVerzugTage",
+     "unit": "Tage",
+     "decimals": 1
+    },
+    {
+     "label": "Lieferungen",
+     "column": "Lieferungen",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Lieferanten liefern zu unpünktlich",
+   "subtitle": "Erst ab 5 ausgewerteten Lieferungen – darunter ist die Quote Zufall.",
+   "drilldown": {
+    "mapping_name": "Einkauf – Termintreue je Lieferant",
+    "title": "Termintreue je Lieferant",
+    "hidden_columns": [
+     "kLieferant"
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 52
+  },
+  {
+   "rule_key": "lager_fehlmengen",
+   "name": "Fehlmengen gegen offene Aufträge",
+   "category": "Lager",
+   "cockpit": "Lager-Cockpit",
+   "description": null,
+   "severity": "kritisch",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Lager – Fehlmengen",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "WertFehlmenge"
+   },
+   "facts": [
+    {
+     "label": "Größte Fehlmenge",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Fehlmenge",
+     "column": "Fehlmenge",
+     "unit": "Stk",
+     "decimals": 0
+    },
+    {
+     "label": "Zulauf",
+     "column": "Zulauf",
+     "unit": "Stk",
+     "decimals": 0
+    },
+    {
+     "label": "Erwartet",
+     "column": "ErwarteteLieferung",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Artikel reichen nicht für die offenen Aufträge – {summe} € betroffen",
+   "subtitle": "Zulauf prüfen; ohne Termin nachbestellen.",
+   "drilldown": {
+    "mapping_name": "Lager – Fehlmengen",
+    "title": "Fehlmengen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 60
+  },
+  {
+   "rule_key": "lager_ladenhueter",
+   "name": "Ladenhüter binden Kapital",
+   "category": "Lager",
+   "cockpit": "Lager-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Lager – Ladenhüter Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "Ladenhueter",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Gebundenes Kapital",
+     "column": "GebundenesKapital",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Über ein Jahr ohne Abgang",
+     "column": "UeberEinJahr",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Kapital über ein Jahr",
+     "column": "KapitalUeberEinJahr",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Anteil am Lagerwert",
+     "column": "Anteil am Lagerwert %",
+     "unit": "%",
+     "decimals": 1
+    }
+   ],
+   "title_template": "{wert} Ladenhüter im Lager",
+   "subtitle": "Abverkauf, Rabattaktion oder Abschreibung prüfen.",
+   "drilldown": {
+    "mapping_name": "Lager – Ladenhüter",
+    "title": "Ladenhüter",
+    "hidden_columns": [
+     "kArtikel"
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 61
+  },
+  {
+   "rule_key": "lager_negativbestand",
+   "name": "Negative Lagerbestände",
+   "category": "Lager",
+   "cockpit": "Lager-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Lager – Dispo-Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "NegativerBestand",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Artikel mit Fehlmenge",
+     "column": "ArtikelFehlmenge",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Wert der Fehlmenge",
+     "column": "WertFehlmenge",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Überreserviert",
+     "column": "Ueberreserviert",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{wert} Artikel mit negativem Lagerbestand",
+   "subtitle": "Buchungsfehler oder fehlende Wareneingänge – Bestand korrigieren.",
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 62
+  },
+  {
+   "rule_key": "lager_inventurdifferenz",
+   "name": "Inventurdifferenzen im Zeitraum",
+   "category": "Lager",
+   "cockpit": "Lager-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Lager – Korrekturen Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "Inventurdifferenzen",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Korrekturbuchungen",
+     "column": "Buchungen",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Wert netto",
+     "column": "WertNetto",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Betroffene Artikel",
+     "column": "BetroffeneArtikel",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{wert} Inventurdifferenzen gebucht",
+   "subtitle": null,
+   "drilldown": {},
+   "action_kind": null,
+   "active": true,
+   "sort": 63
+  },
+  {
+   "rule_key": "artikel_negative_marge",
+   "name": "Artikel mit negativer Marge",
+   "category": "Artikel",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "kritisch",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Warnung Marge",
+   "params": {},
+   "condition": {
+    "mode": "count"
+   },
+   "facts": [
+    {
+     "label": "Größter Verlust",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Rohertrag",
+     "column": "Rohertrag",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Marge",
+     "column": "MargeProzent",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Artikel wurden mit negativer Marge verkauft",
+   "subtitle": "Verkaufspreis oder Einkaufskonditionen prüfen.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Warnung Marge",
+    "title": "Artikel mit negativer Marge"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 70
+  },
+  {
+   "rule_key": "artikel_ohne_bestand",
+   "name": "Umsatzstarke Artikel ohne Bestand",
+   "category": "Artikel",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Warnung Bestand",
+   "params": {},
+   "condition": {
+    "mode": "count"
+   },
+   "facts": [
+    {
+     "label": "Meistverkaufter",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Verkauft (90 Tage)",
+     "column": "Verkauft90Tage",
+     "unit": "Stk",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} verkaufte Artikel haben keinen Bestand",
+   "subtitle": "Nachbestellung prüfen – hier geht Umsatz verloren.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Warnung Bestand",
+    "title": "Umsatzstarke Artikel ohne Bestand"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 71
+  },
+  {
+   "rule_key": "artikel_gesperrt_bestand",
+   "name": "Gesperrte Artikel mit Bestand",
+   "category": "Artikel",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Gesperrte Artikel mit Bestand",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Kapitalbindung"
+   },
+   "facts": [
+    {
+     "label": "Größte Position",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Bestand",
+     "column": "Bestand",
+     "unit": "Stk",
+     "decimals": 0
+    },
+    {
+     "label": "Kapitalbindung",
+     "column": "Kapitalbindung",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} gesperrte Artikel binden {summe} € Kapital",
+   "subtitle": null,
+   "drilldown": {
+    "mapping_name": "Cockpit – Gesperrte Artikel mit Bestand",
+    "title": "Gesperrte Artikel mit Bestand"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 72
+  },
+  {
+   "rule_key": "versand_rueckstand",
+   "name": "Lieferscheine ohne Versand",
+   "category": "Versand",
+   "cockpit": "Versand-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Versand – Lieferscheine ohne Versand",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "row_filter": {
+     "column": "AlterTage",
+     "op": ">=",
+     "value_config": "versandrueckstand_tage"
+    }
+   },
+   "facts": [
+    {
+     "label": "Ältester Vorgang",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Alter",
+     "column": "AlterTage",
+     "unit": "Tage",
+     "decimals": 0
+    },
+    {
+     "label": "Pakete",
+     "column": "Pakete",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Lieferscheine warten auf den Versand",
+   "subtitle": null,
+   "drilldown": {
+    "mapping_name": "Versand – Lieferscheine ohne Versand",
+    "title": "Lieferscheine ohne Versand"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 80
+  },
+  {
+   "rule_key": "health_vk_unter_ek",
+   "name": "Verkaufspreis unter Einkaufspreis",
+   "category": "Stammdaten",
+   "cockpit": "Health-Check",
+   "description": null,
+   "severity": "kritisch",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Health-Check – VK unter EK",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Verlust"
+   },
+   "facts": [
+    {
+     "label": "Größter Verlust",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "VK netto",
+     "column": "VKNetto",
+     "unit": "€",
+     "decimals": 2
+    },
+    {
+     "label": "EK netto",
+     "column": "EKNetto",
+     "unit": "€",
+     "decimals": 2
+    },
+    {
+     "label": "Verlust je Stück",
+     "column": "Verlust",
+     "unit": "€",
+     "decimals": 2
+    }
+   ],
+   "title_template": "{anzahl} Artikel werden unter Einkaufspreis angeboten",
+   "subtitle": "Jeder Verkauf kostet Geld – Preise sofort prüfen.",
+   "drilldown": {
+    "mapping_name": "Health-Check – VK unter EK",
+    "title": "Artikel mit VK unter EK"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 90
+  },
+  {
+   "rule_key": "health_stammdaten",
+   "name": "Unvollständige Artikelstammdaten",
+   "category": "Stammdaten",
+   "cockpit": "Health-Check",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Health-Check – Kennzahlen",
+   "params": {},
+   "condition": {
+    "mode": "kpi",
+    "column": "ArtikelMitLuecke",
+    "op": ">",
+    "value": 0
+   },
+   "facts": [
+    {
+     "label": "Aktive Artikel",
+     "column": "AktiveArtikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Mit Lücke",
+     "column": "ArtikelMitLuecke",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Vollständig gepflegt",
+     "column": "Vollstaendigkeit",
+     "unit": "%",
+     "decimals": 1
+    },
+    {
+     "label": "Kunden ohne E-Mail",
+     "column": "KundenOhneMail",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{wert} Artikel mit unvollständigen Stammdaten",
+   "subtitle": "Details je Prüfung im Stammdaten-Health-Check.",
+   "drilldown": {
+    "mapping_name": "Health-Check – Übersicht (Ampel)",
+    "title": "Stammdaten-Prüfungen"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 91
+  }
+ ]
+}

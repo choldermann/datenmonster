@@ -13,6 +13,7 @@ import EanResearchWidget from "./widgets/EanResearchWidget";
 import HerstellerNavigator from "./widgets/HerstellerNavigator";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
+import AlertsWidget from "./widgets/AlertsWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -23,7 +24,7 @@ const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
-  tasklist: "Aufgabenliste",
+  tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -59,6 +60,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} onAiText={onAiText} />;
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
+    case "alerts": return <AlertsWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
@@ -185,7 +187,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                   <div style={{ padding: "12px 16px", borderBottom: `1px solid ${S.border}`,
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{title}</span>
-                    {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && widget.type !== "tasklist" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
+                    {result.total !== undefined && widget.type !== "table" && widget.type !== "ai_summary" && widget.type !== "tasklist" && widget.type !== "alerts" && !STANDALONE_WIDGET_TYPES.has(widget.type) && (
                       <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
                     )}
                   </div>

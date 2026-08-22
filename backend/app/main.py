@@ -17,6 +17,8 @@ from app.models.rest_source import RestSource
 from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHistory
 from app.models.form import Form, FormSubmission
 from app.models.article_exclusion import ArticleExclusion
+from app.models.business_config import BusinessConfig
+from app.models.alert import AlertRule, AlertRun
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 from app import auth
@@ -438,6 +440,10 @@ from app.api import insights as insights_api
 app.include_router(insights_api.router)
 from app.api import license as license_api
 app.include_router(license_api.router)
+from app.api import business_config as business_config_api
+app.include_router(business_config_api.router)
+from app.api import alerts as alerts_api
+app.include_router(alerts_api.router)
 from app.api import research as research_api
 app.include_router(research_api.router)
 from app.api import stammdaten as stammdaten_api

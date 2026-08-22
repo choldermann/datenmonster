@@ -84,16 +84,26 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
                       textTransform: "uppercase", letterSpacing: "0.1em",
                       color: S.textDim, marginBottom: 4 }}>Aktionstyp</label>
                     <select value={action.type || "run_mapping"}
-                      onChange={e => updateAction(idx, e.target.value === "run_pipeline"
-                        ? { type: "run_pipeline", mapping_id: null }
-                        : { type: "run_mapping", pipeline_id: null })}
+                      onChange={e => {
+                        const t = e.target.value;
+                        if (t === "run_pipeline") updateAction(idx, { type: t, mapping_id: null });
+                        // Warnungen brauchen kein Ziel: sie werten die Regeln des Projekts aus.
+                        else if (t === "run_alerts") updateAction(idx, { type: t, mapping_id: null, pipeline_id: null });
+                        else updateAction(idx, { type: t, pipeline_id: null });
+                      }}
                       style={{ ...inp, width: "100%", boxSizing: "border-box", cursor: "pointer" }}>
                       <option value="run_mapping">Mapping</option>
                       <option value="run_pipeline">Pipeline</option>
+                      <option value="run_alerts">Warnungen</option>
                     </select>
                   </div>
-                  {/* Ziel: Mapping oder Pipeline */}
-                  {action.type === "run_pipeline" ? (
+                  {/* Ziel: Mapping, Pipeline – oder gar keins (Warnungen) */}
+                  {action.type === "run_alerts" ? (
+                    <div style={{ flex: 1, marginTop: 20, fontSize: 11, color: S.textDim }}>
+                      Wertet die Warnregeln dieses Projekts aus (Verwaltung unter
+                      Projekteinstellungen → Kennzahlen &amp; Warnungen).
+                    </div>
+                  ) : action.type === "run_pipeline" ? (
                     <div style={{ flex: 1 }}>
                       <label style={{ display: "block", fontSize: 9, fontWeight: 700,
                         textTransform: "uppercase", letterSpacing: "0.1em",
