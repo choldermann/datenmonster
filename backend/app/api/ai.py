@@ -487,7 +487,7 @@ async def summarize_data(
 
     # Einheiten-Hinweis, in allen Varianten identisch.
     _UNITS = ("Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
-              "'Tage' sind Tage.")
+              "'Tage' sind Tage. " + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). ')
 
     if is_deep and is_report:
         system = (
@@ -571,7 +571,7 @@ async def summarize_data(
             "eindeutig ist – neutrale Feststellungen bleiben unmarkiert. Ein Plus ist nicht automatisch "
             "gut: steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
-            "'Tage' sind Tage."
+            "'Tage' sind Tage. " + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
         )
     elif sections:
         system = (
@@ -585,7 +585,8 @@ async def summarize_data(
             "Größenordnung und – wo genannt – ein bis zwei markanten Beispielen, (4) klarer Handlungsbedarf. "
             "Zähle KEINE vollständigen Ranglisten auf und nenne höchstens die genannten Beispiele. "
             "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
-            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
+            + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
         )
     else:
         system = (
@@ -595,7 +596,8 @@ async def summarize_data(
             "Fasse in 2 bis 4 kurzen, konkreten deutschen Sätzen zusammen: die wichtigsten Werte, die Entwicklung "
             "zum Vorjahr (gestiegen/gesunken mit dem angegebenen Prozentwert) und – falls erkennbar – einen klaren "
             "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
-            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent."
+            "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
+            + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
         )
     user_msg = f"Kennzahlen »{body.label or 'Dashboard'}«:\n{data_text}"
     if sections_text:

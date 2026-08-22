@@ -524,7 +524,8 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
                   "KEINE bloße Wiederholung der Zahlenliste): interpretiere die wichtigsten Werte, die "
                   "Entwicklung zum Vorjahr (mit dem angegebenen Prozentwert), die Ertragslage inkl. "
                   "Deckungsbeitrag und – falls erkennbar – den Handlungsbedarf. Nutze die Werte exakt, "
-                  "rechne nichts neu. € = Euro, % = Prozent. Beginne direkt mit der Analyse – KEINE "
+                  "rechne nichts neu. € = Euro, % = Prozent. Schreibe Zahlen deutsch: Dezimaltrennzeichen "
+                  "ist das KOMMA, Tausender mit Punkt (6,6 %, nicht 6.6 %). Beginne direkt mit der Analyse – KEINE "
                   "Anrede, KEINE Briefformel, keine Grußformel. Gehe auf ALLE gelieferten Bereiche "
                   "ein – auch Einkauf/Verbindlichkeiten, Lager und Retouren – und nenne zu jedem "
                   "mindestens eine konkrete Zahl; überspringe nur Bereiche ohne Daten.")
