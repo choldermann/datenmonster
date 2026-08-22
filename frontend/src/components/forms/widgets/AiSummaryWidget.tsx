@@ -148,6 +148,85 @@ function buildAssessment(results) {
         + (num(sw.BetroffeneArtikel) ? `, ${deNum(sw.BetroffeneArtikel)} Artikel betroffen` : "") });
   }
 
+  // ── Vertriebs-Cockpit ──────────────────────────────────────────────────────
+  // Schwellen identisch zu _assessment_rows in cockpit_report.py (PDF).
+  const ve = one("act_ve_kpi");
+  if (ve) {
+    const p = pctNum(ve.Auftragseingang, ve.AuftragseingangVJ);
+    out.push({ bereich: "Auftragseingang", good: (p == null || p >= 0),
+      kommentar: `${deNum(ve.Auftragseingang, true)} (${signPct(p)} ggü. Vorjahr), Ø Auftrag ${deNum(ve.AvgAuftrag, true)}`
+        + (ve.StornoQuote != null ? `, Storno ${deNum(ve.StornoQuote)} %` : "") });
+  }
+  const ag = one("act_ve_angebot_kpi");
+  if (ag) {
+    const cq = num(ag.ConversionQuote);
+    // Unter einem Drittel gewonnener Angebote lohnt der Blick auf die Nachfassliste.
+    out.push({ bereich: "Angebote", good: (cq == null || cq >= 33),
+      kommentar: `${deNum(ag.Angebote)} Angebote über ${deNum(ag.Angebotsvolumen, true)}, Conversion ${deNum(ag.ConversionQuote)} %` });
+  }
+  const veDecl = rowsOf("act_ve_rueckgang");
+  const veChurn = rowsOf("act_ve_churn");
+  if (veDecl.length || veChurn.length) {
+    const summe = veDecl.reduce((a, r) => a + (num(r.Rueckgang) || 0), 0);
+    out.push({ bereich: "Kundenbindung", good: veDecl.length <= 5,
+      kommentar: `${veDecl.length} Kunden rückläufig (−${deNum(summe, true)})`
+        + (veChurn.length ? `, ${veChurn.length} schlafende Kunden` : "") });
+  }
+
+  // ── Einkaufs-Cockpit ───────────────────────────────────────────────────────
+  const ek = one("act_ek_kpi");
+  if (ek) {
+    const p = pctNum(ek.Bestellvolumen, ek.BestellvolumenVJ);
+    out.push({ bereich: "Einkaufsvolumen", good: (p == null || p <= 10),
+      kommentar: `${deNum(ek.Bestellvolumen, true)} (${signPct(p)} ggü. Vorjahr) bei ${deNum(ek.Lieferanten)} Lieferanten` });
+  }
+  const tt = one("act_ek_termintreue_kpi");
+  if (tt) {
+    const q = num(tt.TermintreueQuote);
+    out.push({ bereich: "Termintreue", good: (q == null || q >= 80),
+      kommentar: `${deNum(tt.TermintreueQuote)} % pünktlich bei ${deNum(tt.Lieferungen)} Lieferungen, `
+        + `Ø Verzug ${deNum(tt.AvgVerzugTage)} Tage` });
+  }
+  const eo = one("act_ek_offen_kpi");
+  if (eo) {
+    const offen = num(eo.OffeneBestellungen) || 0, ueber = num(eo.Ueberfaellig) || 0;
+    const anteil = offen ? (100 * ueber) / offen : null;
+    out.push({ bereich: "Offene Bestellungen", good: (anteil == null || anteil < 20),
+      kommentar: `${deNum(offen)} offen (${deNum(eo.OffenerWert, true)}), davon ${deNum(ueber)} überfällig` });
+  }
+  const er = one("act_ek_er_kpi");
+  if (er) {
+    const offenN = num(er.OffeneRechnungen) || 0, ueberN = num(er.Ueberfaellig) || 0;
+    const anteil = offenN ? (100 * ueberN) / offenN : null;
+    out.push({ bereich: "Verbindlichkeiten", good: (anteil == null || anteil < 10),
+      kommentar: `${deNum(er.OffeneVerbindlichkeiten, true)} offen (${deNum(offenN)} Rechnungen), davon ${deNum(ueberN)} überfällig` });
+  }
+
+  // ── Versand-Cockpit ────────────────────────────────────────────────────────
+  const vs = one("act_vs_kpi");
+  if (vs) {
+    const d = num(vs.AvgDauerStunden), dvj = num(vs.AvgDauerStundenVJ);
+    // Schneller als im Vorjahr oder unter zwei Tagen = in Ordnung.
+    const good = d == null || (dvj != null && d <= dvj) || d <= 48;
+    const p = pctNum(vs.Sendungen, vs.SendungenVJ);
+    out.push({ bereich: "Versandvolumen", good,
+      kommentar: `${deNum(vs.Sendungen)} Sendungen (${signPct(p)} ggü. Vorjahr), Ø Laufzeit ${deNum(d)} h`
+        + (dvj != null ? ` (VJ ${deNum(dvj)} h)` : "") });
+  }
+  const vd = one("act_vs_dauer_kpi");
+  if (vd) {
+    const q48 = num(vd.Bis48hQuote);
+    out.push({ bereich: "Lieferzeit", good: (q48 == null || q48 >= 80),
+      kommentar: `${deNum(vd.SelberTagQuote)} % am selben Tag, ${deNum(vd.Bis48hQuote)} % binnen 48 h, `
+        + `${deNum(vd.Ueber72h)} Sendungen über 72 h` });
+  }
+  const vt = one("act_vs_tracking_kpi");
+  if (vt) {
+    const q = num(vt.TrackingQuote);
+    out.push({ bereich: "Sendungsverfolgung", good: (q == null || q >= 90),
+      kommentar: `Tracking bei ${deNum(vt.TrackingQuote)} % der Sendungen, ${deNum(vt.OhneTracking)} ohne Nummer` });
+  }
+
   const rt = one("act_retouren_kpi");
   if (rt) {
     const q = num(rt.Quote), qvj = num(rt.QuoteVJ);

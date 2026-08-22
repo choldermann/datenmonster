@@ -6104,7 +6104,7 @@
               "param_from": "von",
               "param_to": "bis",
               "default": "this_year",
-              "auto_run": false
+              "auto_run": true
             }
           },
           {

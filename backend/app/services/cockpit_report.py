@@ -625,6 +625,12 @@ _ASSESSMENT_ACTION_IDS = {
     # Lager-Cockpit
     "act_lg_kpi", "act_lg_dispo_kpi", "act_lg_umschlag_kpi", "act_lg_lh_kpi",
     "act_lg_schwund_kpi",
+    # Vertriebs-Cockpit
+    "act_ve_kpi", "act_ve_angebot_kpi", "act_ve_rueckgang", "act_ve_churn",
+    # Einkaufs-Cockpit
+    "act_ek_kpi", "act_ek_termintreue_kpi", "act_ek_offen_kpi", "act_ek_er_kpi",
+    # Versand-Cockpit
+    "act_vs_kpi", "act_vs_dauer_kpi", "act_vs_tracking_kpi",
 }
 
 
@@ -726,6 +732,87 @@ def _assessment_rows(results: dict) -> list:
         out.append(("Inventur & Schwund", good,
                     f"{_fmt(sw.get('Buchungen'), 0)} Korrekturbuchungen, netto {_eur(sw.get('WertNetto'))}"
                     + (f", {_fmt(betroffen, 0)} Artikel betroffen" if betroffen else "")))
+
+    # ── Vertriebs-Cockpit ──────────────────────────────────────────────────────
+    ve = one("act_ve_kpi")
+    if ve:
+        p = _apct(ve.get("Auftragseingang"), ve.get("AuftragseingangVJ"))
+        st = _asnum(ve.get("StornoQuote"))
+        out.append(("Auftragseingang", p is None or p >= 0,
+                    f"{_eur(ve.get('Auftragseingang'))} ({_spct(p)} ggü. Vorjahr), "
+                    f"Ø Auftrag {_eur(ve.get('AvgAuftrag'))}"
+                    + (f", Storno {_pctval(st)}" if st is not None else "")))
+    ag = one("act_ve_angebot_kpi")
+    if ag:
+        cq = _asnum(ag.get("ConversionQuote"))
+        # Unter einem Drittel gewonnener Angebote lohnt der Blick auf die Nachfassliste.
+        out.append(("Angebote", cq is None or cq >= 33,
+                    f"{_fmt(ag.get('Angebote'), 0)} Angebote über {_eur(ag.get('Angebotsvolumen'))}, "
+                    f"Conversion {_pctval(ag.get('ConversionQuote'))}"))
+    ve_decl = rows_of("act_ve_rueckgang")
+    ve_churn = rows_of("act_ve_churn")
+    if ve_decl or ve_churn:
+        summe = sum((_asnum(r.get("Rueckgang")) or 0) for r in ve_decl)
+        out.append(("Kundenbindung", len(ve_decl) <= 5,
+                    f"{len(ve_decl)} Kunden rückläufig (−{_eur(summe)})"
+                    + (f", {len(ve_churn)} schlafende Kunden" if ve_churn else "")))
+
+    # ── Einkaufs-Cockpit ───────────────────────────────────────────────────────
+    ek = one("act_ek_kpi")
+    if ek:
+        p = _apct(ek.get("Bestellvolumen"), ek.get("BestellvolumenVJ"))
+        out.append(("Einkaufsvolumen", p is None or p <= 10,
+                    f"{_eur(ek.get('Bestellvolumen'))} ({_spct(p)} ggü. Vorjahr) bei "
+                    f"{_fmt(ek.get('Lieferanten'), 0)} Lieferanten"))
+    tt = one("act_ek_termintreue_kpi")
+    if tt:
+        q = _asnum(tt.get("TermintreueQuote"))
+        out.append(("Termintreue", q is None or q >= 80,
+                    f"{_pctval(tt.get('TermintreueQuote'))} pünktlich bei "
+                    f"{_fmt(tt.get('Lieferungen'), 0)} Lieferungen, Ø Verzug "
+                    f"{_fmt(tt.get('AvgVerzugTage'), 1)} Tage"))
+    eo = one("act_ek_offen_kpi")
+    if eo:
+        offen = _asnum(eo.get("OffeneBestellungen")) or 0
+        ueber = _asnum(eo.get("Ueberfaellig")) or 0
+        anteil = (100.0 * ueber / offen) if offen else None
+        out.append(("Offene Bestellungen", anteil is None or anteil < 20,
+                    f"{_fmt(offen, 0)} offen ({_eur(eo.get('OffenerWert'))}), davon "
+                    f"{_fmt(ueber, 0)} überfällig"))
+    er = one("act_ek_er_kpi")
+    if er:
+        offen_n = _asnum(er.get("OffeneRechnungen")) or 0
+        ueber_n = _asnum(er.get("Ueberfaellig")) or 0
+        anteil = (100.0 * ueber_n / offen_n) if offen_n else None
+        out.append(("Verbindlichkeiten", anteil is None or anteil < 10,
+                    f"{_eur(er.get('OffeneVerbindlichkeiten'))} offen "
+                    f"({_fmt(offen_n, 0)} Rechnungen), davon {_fmt(ueber_n, 0)} überfällig"))
+
+    # ── Versand-Cockpit ────────────────────────────────────────────────────────
+    vs = one("act_vs_kpi")
+    if vs:
+        d, dvj = _asnum(vs.get("AvgDauerStunden")), _asnum(vs.get("AvgDauerStundenVJ"))
+        # Schneller als im Vorjahr oder unter zwei Tagen = in Ordnung.
+        good = d is None or (dvj is not None and d <= dvj) or d <= 48
+        p = _apct(vs.get("Sendungen"), vs.get("SendungenVJ"))
+        out.append(("Versandvolumen", good,
+                    f"{_fmt(vs.get('Sendungen'), 0)} Sendungen ({_spct(p)} ggü. Vorjahr), "
+                    f"Ø Laufzeit {_fmt(d, 1)} h"
+                    + (f" (VJ {_fmt(dvj, 1)} h)" if dvj is not None else "")))
+    vd = one("act_vs_dauer_kpi")
+    if vd:
+        q48 = _asnum(vd.get("Bis48hQuote"))
+        ueber72 = _asnum(vd.get("Ueber72h")) or 0
+        out.append(("Lieferzeit", q48 is None or q48 >= 80,
+                    f"{_pctval(vd.get('SelberTagQuote'))} am selben Tag, "
+                    f"{_pctval(vd.get('Bis48hQuote'))} binnen 48 h, "
+                    f"{_fmt(ueber72, 0)} Sendungen über 72 h"))
+    vt = one("act_vs_tracking_kpi")
+    if vt:
+        q = _asnum(vt.get("TrackingQuote"))
+        out.append(("Sendungsverfolgung", q is None or q >= 90,
+                    f"Tracking bei {_pctval(vt.get('TrackingQuote'))} der Sendungen, "
+                    f"{_fmt(vt.get('OhneTracking'), 0)} ohne Nummer"))
 
     rt = one("act_retouren_kpi")
     if rt:
