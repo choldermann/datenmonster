@@ -337,20 +337,20 @@ export default function PortalRunner() {
               errors={missing}
             />
 
-            {/* Fallback-Buttons wenn kein Button-Feld im Schema */}
+            {/* Fallback-Button wenn kein Button-Feld im Schema. Wie im Editor-FormRunner
+                genau EIN Sammel-Lauf über alle Actions – bei Dashboards mit vielen
+                Actions wäre ein Button je Action eine Buttonwand statt eines Formulars. */}
             {!hasButtonField && actions.length > 0 && (
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                {actions.map(a => (
-                  <button key={a.id} onClick={() => runAction([a.id])} disabled={running}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 8,
-                      padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-                      backgroundColor: "rgba(110,231,183,0.12)",
-                      border: "1px solid rgba(110,231,183,0.4)",
-                      color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
-                    {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-                    {a.label || "Ausführen"}
-                  </button>
-                ))}
+                <button onClick={() => runAction(null)} disabled={running}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8,
+                    padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
+                    backgroundColor: "rgba(110,231,183,0.12)",
+                    border: "1px solid rgba(110,231,183,0.4)",
+                    color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+                  {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
+                  {actions.length === 1 ? (actions[0].label || "Ausführen") : "Ausführen"}
+                </button>
               </div>
             )}
 
