@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
@@ -138,6 +138,18 @@ export default function FormRunner() {
       setError("Download fehlgeschlagen: " + (e.response?.data?.detail || e.message));
     }
   };
+
+  // Wie im Portal: ein Formular ohne Eingabefelder hat keinen Auslöser und bliebe
+  // sonst leer, bis jemand den Knopf findet.
+  const autostart = useRef(null);
+  useEffect(() => {
+    if (!form || autostart.current === form.id) return;
+    const sch = form.schema || {};
+    if ((sch.fields || []).length > 0 || !(sch.actions || []).length) return;
+    autostart.current = form.id;
+    runForm(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
 
   const [reporting, setReporting] = useState(false);
   const [reportModal, setReportModal] = useState(false); // Abschnittsauswahl vor dem PDF

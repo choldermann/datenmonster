@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check, FileText } from "lucide-react";
 import api from "../api/client";
@@ -180,6 +180,18 @@ export default function PortalRunner() {
       })
       .catch(() => setLoadErr("Formular nicht gefunden oder kein Zugriff."));
   }, [slug]);
+
+  // Formulare ganz ohne Eingabefelder (z.B. Health-Check) haben keinen Auslöser:
+  // kein Datumsfilter, keine Auswahl. Sie würden dauerhaft leer dastehen – deshalb
+  // einmal automatisch laufen, sobald das Formular geladen ist.
+  const autostart = useRef(null);
+  useEffect(() => {
+    if (!form || autostart.current === form.slug) return;
+    if ((form.fields || []).length > 0 || !(form.actions || []).length) return;
+    autostart.current = form.slug;
+    runAction(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form]);
 
   const setParam = useCallback((name, value) => {
     setParams(prev => ({ ...prev, [name]: value }));
@@ -383,6 +395,22 @@ export default function PortalRunner() {
 
         {(!exclusionField || inputTab === "main") && (<>
         {/* ── Form card ── */}
+        {/* Dashboard ohne Eingabefelder: es gäbe sonst nichts zum Starten – der Lauf
+            beginnt automatisch (siehe unten), der Knopf bleibt zum Aktualisieren. */}
+        {visibleFields.length === 0 && actions.length > 0 && (
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
+            <button onClick={() => runAction(null)} disabled={running}
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px",
+                borderRadius: 8, fontSize: 14, fontWeight: 600,
+                backgroundColor: "rgba(110,231,183,0.12)",
+                border: "1px solid rgba(110,231,183,0.4)",
+                color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+              {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
+              {running ? "Wird ausgeführt …" : results ? "Aktualisieren" : "Ausführen"}
+            </button>
+          </div>
+        )}
+
         {visibleFields.length > 0 && (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
             borderRadius: 14, padding: "28px 32px", marginBottom: 32 }}>
