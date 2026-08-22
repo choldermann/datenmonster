@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check, FileText } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
@@ -8,6 +8,7 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
 import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
+import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
 
@@ -144,6 +145,12 @@ export default function PortalRunner() {
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTab] = useState(null);
   const [inputTab, setInputTab]   = useState("main");
+  const [reporting, setReporting] = useState(false);
+  const [reportModal, setReportModal] = useState(false); // Abschnittsauswahl vor dem PDF
+  // Vom ai_summary-Widget erzeugte Analyse einsammeln: sie wandert in den Report,
+  // damit dieser den langsamen KI-Aufruf überspringt (sonst droht ein Timeout).
+  const [aiSummaries, setAiSummaries] = useState({});
+  const [aiLoading, setAiLoading]     = useState({});
   const { setFormAiAllowed, setPageContext } = useAIAssistant();
 
   // KI-Assistent im Portal nur zeigen, wenn das Formular es erlaubt.
@@ -199,6 +206,39 @@ export default function PortalRunner() {
     } catch (e) {
       setRunErr(e.response?.data?.detail || e.message);
     } finally { setRunning(false); }
+  };
+
+  const aiBusy = Object.values(aiLoading).some(Boolean);
+
+  const downloadReport = async (sections) => {
+    setReporting(true);
+    try {
+      const wantSummary = !sections || sections.includes(SECTION_SUMMARY);
+      const aiSummary = wantSummary
+        ? (Object.values(aiSummaries).find(t => t && t.trim()) || null) : null;
+      const resp = await api.post(`/api/portal/forms/${slug}/report`,
+        { params, ai_summary: aiSummary, sections: sections || null },
+        { responseType: "blob", timeout: 180000 });
+      const url = URL.createObjectURL(resp.data);
+      const a = document.createElement("a");
+      a.href = url;
+      // Umlaute transliterieren (ä→ae …), sonst würden sie zu "_".
+      const nameSafe = (form?.name || "report")
+        .replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue")
+        .replace(/Ä/g, "Ae").replace(/Ö/g, "Oe").replace(/Ü/g, "Ue").replace(/ß/g, "ss")
+        .replace(/[^a-z0-9]+/gi, "_").replace(/^_+|_+$/g, "");
+      a.download = `${nameSafe}_${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // Fehlermeldung steckt bei Blob-Responses im Blob-Text
+      let msg = e.message;
+      try { msg = JSON.parse(await e.response?.data?.text())?.detail || msg; } catch { /* ignore */ }
+      setRunErr("PDF-Report fehlgeschlagen: " + msg);
+    } finally {
+      setReporting(false);
+      setReportModal(false);
+    }
   };
 
   const downloadExport = async (fileId, fileName) => {
@@ -269,6 +309,20 @@ export default function PortalRunner() {
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            {widgets.length > 0 && allowDownload && (
+              <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
+                title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
+                style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
+                  border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
+                  opacity: (reporting || aiBusy) ? 0.5 : 1,
+                  cursor: reporting ? "wait" : aiBusy ? "not-allowed" : "pointer",
+                  fontSize: 12, fontWeight: 600 }}>
+                {(reporting || aiBusy)
+                  ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
+                  : <FileText size={12} />}
+                {reporting ? "Erstelle PDF…" : aiBusy ? "KI-Analyse läuft…" : "PDF-Report"}
+              </button>
+            )}
             <KiCredits />
             <ThemeUmschalter />
             <button onClick={handleLogout}
@@ -408,6 +462,10 @@ export default function PortalRunner() {
             results={results || {}}
             allowDownload={allowDownload}
             baseParams={params}
+            onAiText={(aid, text, loading) => {
+              setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
+              setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
+            }}
           />
         )}
 
@@ -442,6 +500,15 @@ export default function PortalRunner() {
         })}
         </>)}
       </main>
+
+      {reportModal && (
+        // Das Portal liefert das Schema flach aus (_portal_form_out) – der Dialog
+        // braucht nur Widgets und Reiter.
+        <ReportOptionsModal formId={form?.id} busy={reporting}
+          schema={{ widgets, result_tabs: resultTabs }}
+          onClose={() => { if (!reporting) setReportModal(false); }}
+          onConfirm={downloadReport} />
+      )}
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

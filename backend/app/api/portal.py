@@ -16,7 +16,7 @@ from app.core.database import get_db
 from app.api.auth import get_current_user
 from app.models.user import User
 from app.models.form import Form
-from app.api.forms import _execute_form, FormRunRequest
+from app.api.forms import _execute_form, FormRunRequest, _slugify
 
 router = APIRouter(prefix="/api/portal", tags=["portal"])
 
@@ -147,3 +147,40 @@ def run_portal_form(slug: str, data: FormRunRequest,
                 r["download_disabled"] = True
 
     return result
+
+
+@router.post("/forms/{slug}/report")
+async def portal_form_report(slug: str, data: FormRunRequest,
+                             db: Session = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    """PDF-Report eines veröffentlichten Formulars – dasselbe Dokument wie im Editor.
+
+    Zugriff wie beim Ausführen (veröffentlicht + allowed_users); zusätzlich gilt das
+    Download-Recht des Formulars: wer die Daten nicht herunterladen darf, bekommt sie
+    auch nicht als PDF.
+    """
+    from fastapi.responses import Response
+    from datetime import datetime as _dt
+    from app.services.cockpit_report import generate_report
+
+    f = db.query(Form).filter(Form.slug == slug).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    _check_portal_access(f, user)
+
+    pc = f.portal_config or {}
+    if not pc.get("allow_download", False):
+        raise HTTPException(403, "Für dieses Formular ist kein Download freigegeben")
+
+    try:
+        pdf = await generate_report(f, data.params or {}, db,
+                                    precomputed_summary=data.ai_summary,
+                                    sections=data.sections)
+    except Exception as e:
+        raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}")
+
+    _umlaut = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe",
+                             "Ü": "Ue", "ß": "ss"})
+    fname = _slugify((f.name or "report").translate(_umlaut)) + "_" + _dt.now().strftime("%Y%m%d") + ".pdf"
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
