@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Sparkles, Loader2, AlertCircle } from "lucide-react";
+import { Sparkles, Loader2, AlertCircle, AlertTriangle } from "lucide-react";
 import api from "../../../api/client";
 import { streamRequest } from "../../../services/aiService";
 import { onAiProviderChange, getAiProvider } from "../../../services/aiProvider";
@@ -696,6 +696,24 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
         )}
         <DetailSwitch value={detail} onChange={setDetail} disabled={loading} nurKnapp={nurKnapp} />
       </div>
+
+      {/* Lokale Modelle sind klein und erfinden im Cockpit-Kontext nachweislich Zahlen.
+          Der Hinweis steht deshalb dauerhaft über der Analyse – nicht als feine Fußnote. */}
+      {nurKnapp && (rows.length > 0) && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 10,
+          padding: "9px 12px", borderRadius: 7, backgroundColor: "rgba(224,160,80,0.12)",
+          border: "1px solid rgba(224,160,80,0.45)" }}>
+          <AlertTriangle size={14} style={{ color: "#e0a050", flexShrink: 0, marginTop: 1 }} />
+          <span style={{ fontSize: 12, lineHeight: 1.45, color: S.textMain }}>
+            <b style={{ color: "#e0a050" }}>Lokales Modell – Zahlen bitte prüfen.</b>{" "}
+            Kleine Modelle formulieren flüssig, verwechseln oder erfinden aber Werte.
+            Verlässlich sind die Kennzahlen-Kacheln und die Bewertungstabelle darunter –
+            beide kommen direkt aus den Daten. Für belastbare Analysetexte oben auf
+            <b> Datenmonster AI</b> umschalten.
+          </span>
+        </div>
+      )}
+
       {!rows.length ? (
         <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Warten auf Kennzahlen …</p>
       ) : err ? (

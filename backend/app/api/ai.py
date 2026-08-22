@@ -484,15 +484,39 @@ async def summarize_data(
     # Zusatz-Sektionen (vom Client fertig aufbereitet) anhängen.
     sections = [s for s in (body.sections or [])
                 if isinstance(s, dict) and str(s.get("text", "")).strip()]
+    # Kleine lokale Modelle verlieren bei vielen Blöcken den Bezug und dichten Werte
+    # dazu (beobachtet bei gemma3:4b: erfundener Rohertrag, DB II und ein Kundenname).
+    # Weniger Blöcke und kürzere Texte = weniger Angriffsfläche.
+    if not getattr(svc, "is_gateway", False):
+        _LOKAL_MAX_BLOECKE, _LOKAL_MAX_ZEICHEN = 5, 600
+        sections = [{**s, "text": str(s["text"]).strip()[:_LOKAL_MAX_ZEICHEN]}
+                    for s in sections[:_LOKAL_MAX_BLOECKE]]
     sections_text = "\n\n".join(
         f"{s.get('label', 'Weitere Kennzahlen')}:\n{str(s['text']).strip()}" for s in sections
     )
 
     is_report = (body.layout or "prose").lower() == "report" and bool(sections)
 
+    # Markier-Regel nur für den Gateway: kleine lokale Modelle schreiben die Klammern
+    # unsauber ({++6,6 %} statt {++6,6 %+}), dann bliebe die Farbe ohnehin aus – der
+    # Prompt wäre nur länger und lenkte von der eigentlichen Aufgabe ab.
+    _MARKIER = ("ZAHLEN BEWERTEN: Hebe die KENNZAHL hervor, nicht deine Meinung dazu. Umschließe dafür "
+                "den Zahlenwert (mit Einheit und, wenn vorhanden, direkt davorstehendem Bezugswort) "
+                "mit {+ und +}, wenn er erfreulich ist, bzw. mit {- und -}, wenn er kritisch ist. "
+                "Beispiel: 'Der Umsatz stieg um {++6,6 %+} auf {+2.984.527 €+}, die Retourenquote "
+                "verschlechterte sich auf {-0,4 %-}.' Schreibe die Klammern GENAU so, ohne Leerzeichen "
+                "und ohne Auslassungspunkte dazwischen. Markiere nie ganze Sätze und hänge keine "
+                "Wertungsfloskeln wie 'dies ist erfreulich' an – die Farbe sagt das bereits. Zahlen ohne "
+                "klare Richtung bleiben unmarkiert. Ein Plus ist nicht automatisch gut: steigende "
+                "Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. "
+                ) if getattr(svc, "is_gateway", False) else ""
+
     # Einheiten-Hinweis, in allen Varianten identisch.
     _UNITS = ("Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
-              "'Tage' sind Tage. " + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). ')
+              "'Tage' sind Tage. " + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
+              "NUR GELIEFERTE ZAHLEN: Verwende ausschließlich Werte, die oben wörtlich stehen. Erfinde "
+              "keine Kennzahl, keinen Namen und keinen Vorjahreswert und rechne nichts aus, was nicht "
+              "dasteht. Fehlt eine Angabe, lass sie weg – schätze sie nicht. ")
 
     if is_deep and is_report:
         system = (
@@ -517,15 +541,7 @@ async def summarize_data(
             "EIGENEN Zeile, die mit \"- \" beginnt.\n\n"
             "FORMAT: Jeder Themenblock ist ein eigener Absatz – zwischen den Blöcken eine LEERZEILE. Setze "
             "niemals mehrere Blöcke oder Maßnahmen in dieselbe Zeile.\n"
-            "ZAHLEN BEWERTEN: Hebe die KENNZAHL hervor, nicht deine Meinung dazu. Umschließe dafür "
-            "den Zahlenwert (mit Einheit und, wenn vorhanden, direkt davorstehendem Bezugswort) "
-            "mit {+ und +}, wenn er erfreulich ist, bzw. mit {- und -}, wenn er kritisch ist. "
-            "Beispiel: 'Der Umsatz stieg um {++6,6 %+} auf {+2.984.527 €+}, die Retourenquote "
-            "verschlechterte sich auf {-0,4 %-}.' Schreibe die Klammern GENAU so, ohne Leerzeichen "
-            "und ohne Auslassungspunkte dazwischen. Markiere nie ganze Sätze und hänge keine "
-            "Wertungsfloskeln wie 'dies ist erfreulich' oder 'was kritisch ist' an – die Farbe sagt das "
-            "bereits. Zahlen ohne klare Richtung bleiben unmarkiert. Ein Plus ist nicht automatisch gut: "
-            "steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. ""\n"
+            + _MARKIER + "\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung. Keine Tabelle, keine "
             "vollständigen Ranglisten nacherzählen. " + _UNITS
         )
@@ -544,15 +560,7 @@ async def summarize_data(
             "mit \"- \" beginnt.\n\n"
             "FORMAT: Jeder Block ist ein eigener Absatz, zwischen den Blöcken eine LEERZEILE. Nie mehrere "
             "Blöcke oder Maßnahmen in derselben Zeile.\n"
-            "ZAHLEN BEWERTEN: Hebe die KENNZAHL hervor, nicht deine Meinung dazu. Umschließe dafür "
-            "den Zahlenwert (mit Einheit und, wenn vorhanden, direkt davorstehendem Bezugswort) "
-            "mit {+ und +}, wenn er erfreulich ist, bzw. mit {- und -}, wenn er kritisch ist. "
-            "Beispiel: 'Der Umsatz stieg um {++6,6 %+} auf {+2.984.527 €+}, die Retourenquote "
-            "verschlechterte sich auf {-0,4 %-}.' Schreibe die Klammern GENAU so, ohne Leerzeichen "
-            "und ohne Auslassungspunkte dazwischen. Markiere nie ganze Sätze und hänge keine "
-            "Wertungsfloskeln wie 'dies ist erfreulich' oder 'was kritisch ist' an – die Farbe sagt das "
-            "bereits. Zahlen ohne klare Richtung bleiben unmarkiert. Ein Plus ist nicht automatisch gut: "
-            "steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. ""\n"
+            + _MARKIER + "\n"
             "Keine vollständigen Ranglisten nacherzählen, keine Einleitungsfloskel, keine Tabelle. " + _UNITS
         )
     elif is_report:
@@ -578,17 +586,12 @@ async def summarize_data(
             "eine sehr niedrige Quote ausdrücklich als gut einordnen.\n"
             "**Handlungsbedarf:** die zwei bis drei wichtigsten Maßnahmen in EINEM Satz.\n\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung, kein Text danach. "
-            "ZAHLEN BEWERTEN: Hebe die KENNZAHL hervor, nicht deine Meinung dazu. Umschließe dafür "
-            "den Zahlenwert (mit Einheit und, wenn vorhanden, direkt davorstehendem Bezugswort) "
-            "mit {+ und +}, wenn er erfreulich ist, bzw. mit {- und -}, wenn er kritisch ist. "
-            "Beispiel: 'Der Umsatz stieg um {++6,6 %+} auf {+2.984.527 €+}, die Retourenquote "
-            "verschlechterte sich auf {-0,4 %-}.' Schreibe die Klammern GENAU so, ohne Leerzeichen "
-            "und ohne Auslassungspunkte dazwischen. Markiere nie ganze Sätze und hänge keine "
-            "Wertungsfloskeln wie 'dies ist erfreulich' oder 'was kritisch ist' an – die Farbe sagt das "
-            "bereits. Zahlen ohne klare Richtung bleiben unmarkiert. Ein Plus ist nicht automatisch gut: "
-            "steigende Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. "
+            + _MARKIER +
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent, "
             "'Tage' sind Tage. " + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
+              "NUR GELIEFERTE ZAHLEN: Verwende ausschließlich Werte, die oben wörtlich stehen. Erfinde "
+              "keine Kennzahl, keinen Namen und keinen Vorjahreswert und rechne nichts aus, was nicht "
+              "dasteht. Fehlt eine Angabe, lass sie weg – schätze sie nicht. "
         )
     elif sections:
         system = (
@@ -604,10 +607,10 @@ async def summarize_data(
             "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
             + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
-            "ZAHLEN BEWERTEN: Umschließe erfreuliche Zahlenwerte (mit Einheit) mit {+ und +}, "
-            "kritische mit {- und -}, z.B. 'stieg um {++6,6 %+}'. Keine Wertungsfloskeln "
-            "anhängen, keine ganzen Sätze markieren; ein Plus bei Retouren, Ladenhütern, Verzug "
-            "oder Verbindlichkeiten ist kritisch. "
+              "NUR GELIEFERTE ZAHLEN: Verwende ausschließlich Werte, die oben wörtlich stehen. Erfinde "
+              "keine Kennzahl, keinen Namen und keinen Vorjahreswert und rechne nichts aus, was nicht "
+              "dasteht. Fehlt eine Angabe, lass sie weg – schätze sie nicht. "
+            + _MARKIER
         )
     else:
         system = (
@@ -619,10 +622,10 @@ async def summarize_data(
             "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
             + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
-            "ZAHLEN BEWERTEN: Umschließe erfreuliche Zahlenwerte (mit Einheit) mit {+ und +}, "
-            "kritische mit {- und -}, z.B. 'stieg um {++6,6 %+}'. Keine Wertungsfloskeln "
-            "anhängen, keine ganzen Sätze markieren; ein Plus bei Retouren, Ladenhütern, Verzug "
-            "oder Verbindlichkeiten ist kritisch. "
+              "NUR GELIEFERTE ZAHLEN: Verwende ausschließlich Werte, die oben wörtlich stehen. Erfinde "
+              "keine Kennzahl, keinen Namen und keinen Vorjahreswert und rechne nichts aus, was nicht "
+              "dasteht. Fehlt eine Angabe, lass sie weg – schätze sie nicht. "
+            + _MARKIER
         )
     user_msg = f"Kennzahlen »{body.label or 'Dashboard'}«:\n{data_text}"
     if sections_text:
