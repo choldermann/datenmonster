@@ -294,6 +294,17 @@ async def lifespan(app: FastAPI):
                 _changed = True
             if _changed:
                 db.commit()
+        # Formulare ohne Slug nachziehen: im Portal wird /app/<slug> aufgerufen,
+        # ohne Slug landet der Benutzer auf "Formular nicht gefunden".
+        from app.models.form import Form as _Form
+        from app.api.forms import unique_slug as _unique_slug
+        _ohne_slug = db.query(_Form).filter((_Form.slug == None) | (_Form.slug == "")).all()
+        if _ohne_slug:
+            for _f in _ohne_slug:
+                _f.slug = _unique_slug(db, _f.name or "formular", exclude_id=_f.id)
+                db.flush()   # sonst sieht die nächste Prüfung den neuen Slug nicht
+            db.commit()
+            print(f"Slug für {len(_ohne_slug)} Formular(e) nachgetragen")
     finally:
         db.close()
     from app.services.scheduler_service import start_scheduler, reload_all_jobs, reload_all_dataset_jobs

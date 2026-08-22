@@ -95,6 +95,19 @@ def _slugify(text: str) -> str:
     return s or "formular"
 
 
+def unique_slug(db: Session, text: str, exclude_id: Optional[int] = None) -> str:
+    """Erzeugt aus einem Namen einen im Bestand eindeutigen Slug."""
+    base = _slugify(text)
+    slug, n = base, 1
+    while True:
+        q = db.query(Form).filter(Form.slug == slug)
+        if exclude_id is not None:
+            q = q.filter(Form.id != exclude_id)
+        if not q.first():
+            return slug
+        slug = f"{base}-{n}"; n += 1
+
+
 def _check_editor(user: User):
     if getattr(user, "is_portal_only", False):
         raise HTTPException(403, "Nur Admins und Editoren können Formulare bearbeiten")
@@ -116,11 +129,7 @@ def list_forms(project_id: Optional[int] = None, db: Session = Depends(get_db),
 def create_form(data: FormCreate, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
     _check_editor(user)
-    slug = _slugify(data.name)
-    # Eindeutigkeit sicherstellen
-    base, n = slug, 1
-    while db.query(Form).filter(Form.slug == slug).first():
-        slug = f"{base}-{n}"; n += 1
+    slug = unique_slug(db, data.name)
     f = Form(
         name=data.name,
         project_id=data.project_id,
@@ -283,6 +292,10 @@ def update_form(form_id: int, data: FormUpdate, db: Session = Depends(get_db),
         f.slug = slug
     if data.published is not None:
         f.published = data.published
+    # Ohne Slug ist das Formular im Portal nicht aufrufbar (/app/<slug>) – beim
+    # Veröffentlichen deshalb automatisch einen aus dem Namen erzeugen.
+    if f.published and not f.slug:
+        f.slug = unique_slug(db, f.name, exclude_id=f.id)
     if data.portal_config is not None:
         f.portal_config = data.portal_config
 

@@ -658,9 +658,11 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
 
     # ── Formulare anlegen ─────────────────────────────────────────────────
     # Template-String-IDs in Actions/Widgets → echte Integer-IDs zurückschreiben.
-    # slug/published werden nicht übernommen (Portal-Veröffentlichung ist bewusst
-    # ein manueller Schritt nach dem Import; slug hat zudem einen Unique-Constraint).
+    # published wird nicht übernommen (Portal-Veröffentlichung ist bewusst ein
+    # manueller Schritt nach dem Import); der Slug wird dagegen gleich vergeben,
+    # sonst wäre das Formular nach dem Veröffentlichen unter /app/<slug> tot.
     from app.models.form import Form
+    from app.api.forms import unique_slug
     import copy as _copy
     form_by_name = {f.name: f for f in db.query(Form)
                     .filter(Form.project_id == body.project_id).all() if f.name}
@@ -727,7 +729,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             schema=schema,
             portal_config=f_def.get("portal_config", {}) or {},
             published=False,
-            slug=None,
+            slug=unique_slug(db, _apply_config(f_def.get("name", "Formular"), config)),
         )
         db.add(fo); db.commit(); db.refresh(fo)
         created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
