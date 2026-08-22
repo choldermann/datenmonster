@@ -439,6 +439,11 @@ async def summarize_data(
     Bewusst generisch, damit beliebige Dashboards das Widget wiederverwenden können."""
     svc = _require_ai(db, body.provider)
     is_deep = (body.detail or "knapp").lower().startswith("ausf")
+    # Lokale Modelle sind für den ausführlichen Prompt zu langsam: gemessen ~290 s auf
+    # CPU (62 s Prompt + 223 s für 1.700 Token), der Proxy gibt nach 300 s auf. Deshalb
+    # gilt „ausführlich" nur über den Gateway; lokal fällt es still auf „knapp" zurück.
+    if is_deep and not getattr(svc, "is_gateway", False):
+        is_deep = False
     # Knapp: Prompt kompakt halten (kleine lokale Modelle). Ausführlich: mehr Rohzeilen –
     # große Modelle glänzen beim Mustererkennen über viele Zeilen, nicht beim Nacherzählen
     # von Summen (das ist der wirksamste Hebel für Qualität, noch vor dem Modellwechsel).
@@ -599,6 +604,10 @@ async def summarize_data(
             "Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
             + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
+            "ZAHLEN BEWERTEN: Umschließe erfreuliche Zahlenwerte (mit Einheit) mit {+ und +}, "
+            "kritische mit {- und -}, z.B. 'stieg um {++6,6 %+}'. Keine Wertungsfloskeln "
+            "anhängen, keine ganzen Sätze markieren; ein Plus bei Retouren, Ladenhütern, Verzug "
+            "oder Verbindlichkeiten ist kritisch. "
         )
     else:
         system = (
@@ -610,6 +619,10 @@ async def summarize_data(
             "Hinweis auf Handlungsbedarf. Reiner Fließtext, keine Aufzählung, keine Einleitungsfloskel. "
             "Beachte Einheiten: Werte mit '€' sind Euro-Beträge, '%'-Kennzahlen sind bereits Prozent. "
             + 'Schreibe Zahlen deutsch: Dezimaltrennzeichen ist das KOMMA, Tausender werden mit Punkt getrennt (6,6 %, nicht 6.6 %; 2.984.527 €). '
+            "ZAHLEN BEWERTEN: Umschließe erfreuliche Zahlenwerte (mit Einheit) mit {+ und +}, "
+            "kritische mit {- und -}, z.B. 'stieg um {++6,6 %+}'. Keine Wertungsfloskeln "
+            "anhängen, keine ganzen Sätze markieren; ein Plus bei Retouren, Ladenhütern, Verzug "
+            "oder Verbindlichkeiten ist kritisch. "
         )
     user_msg = f"Kennzahlen »{body.label or 'Dashboard'}«:\n{data_text}"
     if sections_text:

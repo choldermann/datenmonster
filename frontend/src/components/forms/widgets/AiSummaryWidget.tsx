@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { Sparkles, Loader2, AlertCircle } from "lucide-react";
+import api from "../../../api/client";
 import { streamRequest } from "../../../services/aiService";
-import { onAiProviderChange } from "../../../services/aiProvider";
+import { onAiProviderChange, getAiProvider } from "../../../services/aiProvider";
 
 const S = {
   textMain: "var(--text-main)", textDim: "var(--text-dim)", accent: "var(--accent)",
@@ -326,7 +327,10 @@ function buildSectionText(kind, rows, deep = false) {
 // Bewertungsmarker der KI: {+ erfreulich +} / {- kritisch -}. Bewusst keine reine
 // Vorzeichenlogik – ein Plus ist nicht immer gut (Retourenquote, Lagerwert), das
 // weiß nur das Modell aus dem Zusammenhang.
-const MARKER_RE = /(\{[+-][\s\S]*?[+-]\})/g;
+// Nur ein sauber geschlossenes Paar färbt: {+…+} bzw. {-…-}. Setzt das Modell
+// {+…-} (kommt bei kleinen Modellen vor), bliebe die Farbe geraten – dann lieber
+// nur die Klammern entfernen und den Text neutral zeigen.
+const MARKER_RE = /\{([+-])([\s\S]*?)\1\}/g;
 const GUT = "#3f9d5a", SCHLECHT = "#c9524a";
 
 /** Marker, die halb geschrieben wurden, dürfen nicht als Text stehen bleiben. */
@@ -334,23 +338,30 @@ function markerBereinigen(s) {
   return String(s).replace(/\{[+-]|[+-]\}/g, "");
 }
 
-function renderInline(s, keyBase) {
-  const teile = String(s).split(MARKER_RE);
-  return teile.flatMap((teil, i) => {
-    const bewertet = /^\{([+-])([\s\S]*?)[+-]\}$/.exec(teil);
-    if (bewertet) {
-      const farbe = bewertet[1] === "+" ? GUT : SCHLECHT;
-      return [<span key={`${keyBase}-m${i}`} style={{ color: farbe, fontWeight: 600 }}>
-        {renderInline(bewertet[2], `${keyBase}-m${i}i`)}
-      </span>];
-    }
-    return markerBereinigen(teil).split(/(\*\*[^*]+\*\*)/g).map((p, j) => {
-      const m = /^\*\*([^*]+)\*\*$/.exec(p);
-      return m
-        ? <strong key={`${keyBase}-${i}-${j}`} style={{ color: S.textMain }}>{m[1]}</strong>
-        : <span key={`${keyBase}-${i}-${j}`}>{p}</span>;
-    });
+/** **fett** im (bereits marker-freien) Textstück. */
+function renderFett(s, keyBase) {
+  return markerBereinigen(s).split(/(\*\*[^*]+\*\*)/g).map((p, j) => {
+    const m = /^\*\*([^*]+)\*\*$/.exec(p);
+    return m
+      ? <strong key={`${keyBase}-f${j}`} style={{ color: S.textMain }}>{m[1]}</strong>
+      : <span key={`${keyBase}-f${j}`}>{p}</span>;
   });
+}
+
+function renderInline(s, keyBase) {
+  const text = String(s);
+  const out = [];
+  let pos = 0;
+  for (const m of text.matchAll(MARKER_RE)) {
+    if (m.index > pos) out.push(...renderFett(text.slice(pos, m.index), `${keyBase}-${pos}`));
+    const farbe = m[1] === "+" ? GUT : SCHLECHT;
+    out.push(<span key={`${keyBase}-m${m.index}`} style={{ color: farbe, fontWeight: 600 }}>
+      {renderFett(m[2], `${keyBase}-m${m.index}i`)}
+    </span>);
+    pos = m.index + m[0].length;
+  }
+  if (pos < text.length) out.push(...renderFett(text.slice(pos), `${keyBase}-${pos}`));
+  return out;
 }
 
 const SEP_RE = /^:?-{2,}:?$/;
@@ -510,7 +521,16 @@ function AssessmentTable({ rows }) {
 
 // Detailgrad-Umschalter (knapp | ausführlich) – rechts in der Widget-Kopfzeile.
 // Während der Text streamt gesperrt, sonst würde ein Klick den halben Lauf verwerfen.
-function DetailSwitch({ value, onChange, disabled }) {
+function DetailSwitch({ value, onChange, disabled, nurKnapp }) {
+  // Ohne Gateway gibt es nichts zu wählen – der ausführliche Prompt braucht lokal
+  // Minuten und läuft in die Proxy-Grenze. Dann bleibt der Schalter weg.
+  if (nurKnapp) return (
+    <span style={{ marginLeft: "auto", fontSize: 10, fontWeight: 500, letterSpacing: 0,
+      textTransform: "none", color: S.textDim }}
+      title="Die ausführliche Analyse gibt es nur über Datenmonster AI – das lokale Modell braucht dafür mehrere Minuten.">
+      knapp
+    </span>
+  );
   const opts = [{ v: "knapp", l: "knapp" }, { v: "ausfuehrlich", l: "ausführlich" }];
   return (
     <div style={{ marginLeft: "auto", display: "flex", border: "1px solid var(--border)",
@@ -593,6 +613,28 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
   const [providerTick, setProviderTick] = useState(0);
   useEffect(() => onAiProviderChange(() => setProviderTick(t => t + 1)), []);
 
+  // Läuft die Analyse über den Gateway? Eigene Wahl schlägt die globale Einstellung
+  // (die steckt in /api/ai/credits als `enabled`). null = noch unbekannt.
+  const [globalGateway, setGlobalGateway] = useState(null);
+  useEffect(() => {
+    let aktiv = true;
+    api.get("/api/ai/credits")
+      .then(({ data }) => { if (aktiv) setGlobalGateway(!!data.enabled); })
+      .catch(() => { if (aktiv) setGlobalGateway(false); });
+    return () => { aktiv = false; };
+  }, []);
+  const gewaehlt = getAiProvider();
+  const ueberGateway = gewaehlt ? gewaehlt === "datenmonster" : globalGateway;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const nurKnapp = ueberGateway === false;
+
+  // Beim Wechsel auf das lokale Modell zurück auf „knapp" – der Server würde ohnehin
+  // darauf zurückfallen, so bleibt die Anzeige ehrlich.
+  useEffect(() => {
+    if (nurKnapp && detail !== "knapp") setDetail("knapp");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nurKnapp, providerTick]);
+
   useEffect(() => {
     if (!rows.length) { setText(""); setErr(null); setMeta(null); return; }
     const ac = new AbortController();
@@ -652,7 +694,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
             {meta.cached ? " (zwischengespeichert)" : ""}
           </span>
         )}
-        <DetailSwitch value={detail} onChange={setDetail} disabled={loading} />
+        <DetailSwitch value={detail} onChange={setDetail} disabled={loading} nurKnapp={nurKnapp} />
       </div>
       {!rows.length ? (
         <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Warten auf Kennzahlen …</p>

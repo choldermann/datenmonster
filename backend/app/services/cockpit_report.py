@@ -548,7 +548,9 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
 # ── Report-Layout: Summary-Prosa + deterministische Bewertungstabelle ───────────
 
 # Bewertungsmarker der KI: {+ erfreulich +} / {- kritisch -} (siehe Prompt in ai.py).
-_MARKER_RE = re.compile(r"(\{[+-][\s\S]*?[+-]\})")
+# Nur ein sauber geschlossenes Paar färbt ({+…+} / {-…-}); bei {+…-} wäre die Farbe
+# geraten – dann bleiben nur die Klammern weg.
+_MARKER_RE = re.compile(r"\{([+-])([\s\S]*?)\1\}")
 _MARKER_REST_RE = re.compile(r"\{[+-]|[+-]\}")
 GUT_FARBE, SCHLECHT_FARBE = "#3f8f45", "#c0392b"
 
@@ -565,14 +567,14 @@ def _fett_html(s: str) -> str:
 def _inline_html(s: str) -> str:
     """**fett** → <strong>, {+…+}/{-…-} → grün/rot, Rest escapen. Halb geschriebene
     Marker werden entfernt statt als Text ausgegeben."""
-    out = []
-    for teil in _MARKER_RE.split(s):
-        m = re.match(r"^\{([+-])([\s\S]*?)[+-]\}$", teil)
-        if m:
-            farbe = GUT_FARBE if m.group(1) == "+" else SCHLECHT_FARBE
-            out.append(f'<span style="color:{farbe};font-weight:bold">{_fett_html(m.group(2))}</span>')
-        else:
-            out.append(_fett_html(teil))
+    out, pos = [], 0
+    for m in _MARKER_RE.finditer(s):
+        if m.start() > pos:
+            out.append(_fett_html(s[pos:m.start()]))
+        farbe = GUT_FARBE if m.group(1) == "+" else SCHLECHT_FARBE
+        out.append(f'<span style="color:{farbe};font-weight:bold">{_fett_html(m.group(2))}</span>')
+        pos = m.end()
+    out.append(_fett_html(s[pos:]))
     return "".join(out)
 
 
