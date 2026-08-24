@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.2",
+  "version": "2.3",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -2184,7 +2184,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland,\n    CASE WHEN A.cAktiv = 'Y' THEN 'aktiv' ELSE 'inaktiv' END AS Status\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2284,6 +2284,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Herkunftsland"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
               }
             }
           ]
@@ -2875,7 +2885,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 200\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nWHERE A.cAktiv <> 'Y' AND NOT EXISTS (SELECT 1 FROM dbo.tStueckliste SL JOIN dbo.tArtikel K ON K.kArtikel = SL.kArtikel WHERE SL.kVaterArtikel = A.kArtikel AND K.cAktiv = 'Y')\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\nORDER BY Kapitalbindung DESC",
+          "sql": "SELECT TOP 200\n    A.kArtikel AS kArtikel,\n    A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '(ohne Bezeichnung)') AS Artikel,\n    ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(LB.fLagerbestand) AS DECIMAL(18,2)) AS Bestand,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EK,\n    CAST(SUM(LB.fLagerbestand) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n    CONVERT(char(10), MAX(LV.LetzterVerkauf), 104) AS LetzterVerkauf\nFROM dbo.tArtikel A\nJOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) LV ON LV.cArtNr = A.cArtNr\nWHERE A.cAktiv <> 'Y' AND NOT EXISTS (SELECT 1 FROM dbo.tStueckliste SL JOIN dbo.tArtikel K ON K.kArtikel = SL.kArtikel WHERE SL.kVaterArtikel = A.kArtikel AND K.cAktiv = 'Y')\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName, A.fEKNetto\nHAVING SUM(LB.fLagerbestand) > 0\nORDER BY Kapitalbindung DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2907,6 +2917,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -6899,7 +6919,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel AND A.cAktiv = 'Y'",
+          "sql": "SELECT\n    A.cArtNr AS ArtNr,\n    AB.cName AS Bezeichnung,\n    A.cBarcode AS EAN,\n    A.cHAN AS HAN,\n    CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto,\n    CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto,\n    A.cHerkunftsland AS Herkunftsland,\n    CASE WHEN A.cAktiv = 'Y' THEN 'aktiv' ELSE 'inaktiv' END AS Status\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB\n    ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE A.kArtikel = :kArtikel",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -6999,6 +7019,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Herkunftsland"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
               }
             }
           ]
@@ -8158,7 +8188,18 @@
             "config": {
               "width": 12,
               "info": "Inaktive Artikel (cAktiv=N), die noch Lagerbestand binden – sonst überall ausgeblendet. Abverkauf prüfen.",
-              "full_rows": true
+              "full_rows": true,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "type": "mapping",
+                "mapping_id": "m_artikel",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": []
+              }
             }
           },
           {
@@ -8819,7 +8860,7 @@
             "label": "Offene Bestellungen",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 3,
+              "width": 4,
               "column": "OffeneBestellungen",
               "aggregation": "first",
               "prefix": "",
@@ -8833,7 +8874,7 @@
             "label": "Offener Bestellwert",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 3,
+              "width": 4,
               "column": "OffenerWert",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8847,7 +8888,7 @@
             "label": "Liefertermin überschritten",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 3,
+              "width": 4,
               "column": "Ueberfaellig",
               "aggregation": "first",
               "prefix": "",
@@ -8858,10 +8899,38 @@
           {
             "id": "w_gf_ek_o_verzug",
             "type": "kpi",
-            "label": "Ø Verzug",
+            "label": "Ø Verzug offener Bestellungen",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 3,
+              "width": 4,
+              "column": "AvgVerzugTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_gf_ek_t_quote",
+            "type": "kpi",
+            "label": "Termintreue",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 4,
+              "column": "TermintreueQuote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1
+            }
+          },
+          {
+            "id": "w_gf_ek_t_verzug",
+            "type": "kpi",
+            "label": "Ø Verzug verspäteter Lieferungen",
+            "action_id": "act_ek_termintreue_kpi",
+            "config": {
+              "width": 4,
               "column": "AvgVerzugTage",
               "aggregation": "first",
               "prefix": "",
@@ -8875,7 +8944,7 @@
             "label": "Rechnungsvolumen",
             "action_id": "act_ek_er_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Rechnungsvolumen",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8892,7 +8961,7 @@
             "label": "Offene Verbindlichkeiten",
             "action_id": "act_ek_er_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "OffeneVerbindlichkeiten",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8906,7 +8975,7 @@
             "label": "Offene Rechnungen",
             "action_id": "act_ek_er_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "OffeneRechnungen",
               "aggregation": "first",
               "prefix": "",
@@ -8920,71 +8989,12 @@
             "label": "Davon überfällig",
             "action_id": "act_ek_er_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Ueberfaellig",
               "aggregation": "first",
               "prefix": "",
               "suffix": "",
               "decimals": 0
-            }
-          },
-          {
-            "id": "w_gf_ek_t_quote",
-            "type": "kpi",
-            "label": "Termintreue",
-            "action_id": "act_ek_termintreue_kpi",
-            "config": {
-              "width": 3,
-              "column": "TermintreueQuote",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " %",
-              "decimals": 1
-            }
-          },
-          {
-            "id": "w_gf_ek_t_verzug",
-            "type": "kpi",
-            "label": "Ø Verzug (verspätet)",
-            "action_id": "act_ek_termintreue_kpi",
-            "config": {
-              "width": 3,
-              "column": "AvgVerzugTage",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Tage",
-              "decimals": 1
-            }
-          },
-          {
-            "id": "w_gf_ek_tbl_eroffen",
-            "type": "table",
-            "label": "Offene Eingangsrechnungen (überfällige zuerst)",
-            "action_id": "act_ek_er_offen",
-            "config": {
-              "width": 12,
-              "info": "Offen = kein Bezahldatum gesetzt. Betrag = Summe der Rechnungspositionen netto.",
-              "full_rows": true,
-              "drilldown": {
-                "mapping_id": "m_gf_ek_er_pos_detail",
-                "key_column": "kEingangsrechnung",
-                "param": "kEingangsrechnung",
-                "title": "Positionen der Eingangsrechnung",
-                "hidden_columns": [
-                  "kArtikel"
-                ],
-                "levels": [
-                  {
-                    "mapping_id": "m_gf_ek_artikel_detail",
-                    "key_column": "kArtikel",
-                    "param": "kArtikel",
-                    "title": "Artikel-Detail"
-                  }
-                ]
-              },
-              "hidden_columns": [
-                "kEingangsrechnung"
-              ]
             }
           },
           {
@@ -9015,6 +9025,37 @@
               },
               "hidden_columns": [
                 "kLieferantenBestellung"
+              ]
+            }
+          },
+          {
+            "id": "w_gf_ek_tbl_eroffen",
+            "type": "table",
+            "label": "Offene Eingangsrechnungen (überfällige zuerst)",
+            "action_id": "act_ek_er_offen",
+            "config": {
+              "width": 12,
+              "info": "Offen = kein Bezahldatum gesetzt. Betrag = Summe der Rechnungspositionen netto.",
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_ek_er_pos_detail",
+                "key_column": "kEingangsrechnung",
+                "param": "kEingangsrechnung",
+                "title": "Positionen der Eingangsrechnung",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_gf_ek_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kEingangsrechnung"
               ]
             }
           }
