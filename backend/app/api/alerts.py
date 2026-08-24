@@ -175,8 +175,26 @@ class ScheduleIn(BaseModel):
     cockpits: Optional[list] = None
 
 
+def _naechster_lauf(schedule_id: int) -> Optional[str]:
+    """Nächster geplanter Lauf laut APScheduler – die einzige ehrliche Quelle.
+
+    Ein `active`-Häkchen in der Datenbank sagt nur, was gewollt ist; ob der Job
+    im laufenden Prozess wirklich registriert ist, steht allein hier.
+    """
+    try:
+        from app.services.scheduler_service import get_scheduler
+        sched = get_scheduler()
+        if not sched:
+            return None
+        job = sched.get_job(f"alerts_{schedule_id}")
+        return job.next_run_time.isoformat() if job and job.next_run_time else None
+    except Exception:
+        return None
+
+
 def _schedule_out(s) -> dict:
     return {
+        "next_run": _naechster_lauf(s.id),
         "id": s.id, "project_id": s.project_id, "cron_expr": s.cron_expr,
         "active": bool(s.active), "email_to": s.email_to or "",
         "min_severity": s.min_severity or "warnung", "only_new": bool(s.only_new),
@@ -206,7 +224,8 @@ def get_schedule(project_id: Optional[int] = None, db: Session = Depends(get_db)
         return {"id": None, "project_id": project_id, "cron_expr": "30 5 * * *",
                 "active": False, "email_to": "", "min_severity": "warnung",
                 "only_new": False, "params": {}, "rule_keys": [], "cockpits": [],
-                "last_run_at": None, "last_status": None, "last_message": None}
+                "last_run_at": None, "last_status": None, "last_message": None,
+                "next_run": None}
     return _schedule_out(s)
 
 

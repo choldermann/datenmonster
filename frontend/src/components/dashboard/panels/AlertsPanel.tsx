@@ -272,6 +272,14 @@ export default function AlertsPanel({ projectId, canEdit }) {
                 {plan.last_run_at
                   ? <>Zuletzt {new Date(plan.last_run_at).toLocaleString("de-DE")}: {plan.last_message}</>
                   : "Noch nie gelaufen."}
+                {/* next_run kommt aus APScheduler, nicht aus dem active-Haken:
+                    nur so sieht man, ob der Job wirklich registriert ist. */}
+                {plan.next_run && (
+                  <> · Nächster Lauf {new Date(plan.next_run).toLocaleString("de-DE")}</>
+                )}
+                {plan.active && !plan.next_run && (
+                  <b style={{ color: "#e07070" }}> · aktiv, aber kein Job registriert</b>
+                )}
               </span>
               {canEdit && (
                 <button onClick={planJetztLaufen} disabled={planLaeuft}
