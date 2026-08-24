@@ -215,7 +215,7 @@ Gut zu wissen:
   (Selbstabholer, Spedition): gezeigt werden nur Arten mit sonst mindestens 50 % Tracking-Quote.
 
 ### 3.6 Stammdaten-Health-Check
-*Template `jtl_health_check`, Version 1.6 – 24 Auswertungen (19 Prüfungen + 5 Detailansichten), 6 Reiter*
+*Template `jtl_health_check`, Version 1.7 – 26 Auswertungen (21 Prüfungen + 5 Detailansichten), 6 Reiter*
 
 Kein Zeitraum, keine Umsätze: Dieses Cockpit prüft die Datenqualität und liefert Arbeitslisten.
 
@@ -226,11 +226,19 @@ Kein Zeitraum, keine Umsätze: Dieses Cockpit prüft die Datenqualität und lief
 | **Datenpflege** | Artikel ohne EAN, mehrfach vergebene EAN, **EAN-Recherche beim Hersteller**, Artikel mit dürftiger Beschreibung (KI-Vorschlag), **Hersteller-Navigator** |
 | **Preise & Marge** | Artikel ohne Einkaufspreis, Artikel mit VK unter EK |
 | **Außenhandel** | Artikel ohne Warentarifnummer, Artikel ohne Herkunftsland (Intrastat-Pflichtfelder) |
-| **Kunden** | Kunden ohne E-Mail-Adresse, mögliche Kundendubletten |
+| **Kunden** | Kunden ohne E-Mail-Adresse, mögliche Kundendubletten (mit Befund „Dublettenverdacht" / „eigener Standort"), Kunden ohne Rechnungsadresse, Adressen ohne Kunden |
 
 Gut zu wissen:
 * Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine
-  EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.
+  EAN/Gewichte) sowie nicht gesperrte Kunden.
+* **Kundenprüfungen lesen ausschließlich die Rechnungsadresse** (`nTyp = 1` und `nStandard = 1`).
+  Diese Kombination ist je Kunde eindeutig; `nStandard = 1` allein ist es nicht, weil auch
+  Lieferadressen als Standard markiert sein können – Kunden mit beidem erschienen sonst doppelt
+  und meldeten sich als Dublette ihrer selbst.
+* Die Dublettenliste unterscheidet **Dublettenverdacht** (gleiche Firma, PLZ *und* Straße) von
+  **eigener Standort** (gleiche Firma und PLZ, andere Straße) – Filialen und Behörden gleichen
+  Namens sind keine Dubletten. Firma, PLZ und Straße werden vor dem Vergleich normalisiert
+  (Mehrfach-Leerzeichen), sonst rutschen echte Dubletten durch.
 * Ampel: grün = keine Treffer, gelb = Einzelfälle, rot = über dem Schwellwert. Die Schwellwerte
   stehen im Mapping „Health-Check – Übersicht (Ampel)" und sind anpassbar.
 * Die Schwelle für „dürftige Beschreibung" wird beim Installieren gesetzt (Standard 120 Zeichen).
@@ -266,4 +274,4 @@ Zeitraumauswahl, eine Pflege von Ausschlussartikeln und monatliche Pipelines.
 | Einkauf | 21 | 5 | Was kaufe ich wo ein, und liefern die Lieferanten pünktlich? |
 | Lager | 26 | 7 | Was ist mein Lager wert, und wo liegt totes Kapital? |
 | Versand | 11 | 4 | Wie schnell versende ich, und was hängt fest? |
-| Health-Check | 24 | 6 | Wo sind meine Stammdaten lückenhaft oder widersprüchlich? |
+| Health-Check | 26 | 6 | Wo sind meine Stammdaten lückenhaft oder widersprüchlich? |

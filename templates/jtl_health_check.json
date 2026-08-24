@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.6",
+  "version": "1.7",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -16,7 +16,8 @@
     "Im Reiter „Datenpflege“ steht „Fehlende EANs beim Hersteller holen“: Für Artikel ohne EAN wird die offizielle Nummer über die Hersteller-Artikelnummer auf der Produktseite des Herstellers nachgeschlagen (derzeit Deiss und Denios). Die Vorschläge lassen sich als CSV ausgeben; geschrieben wird nichts.",
     "Ebenfalls im Reiter „Datenpflege“: die KI-gestützte Artikelbeschreibung. Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell.",
     "Am Ende des Reiters „Datenpflege“ steht die Hersteller-Übersicht: je Hersteller die Lücken (ohne EAN, ohne Herstellernummer, dürftiger Text) und ob seine Produktseiten auswertbar sind. Klick auf einen Hersteller listet dessen Artikel, Klick auf einen Artikel öffnet den Beschreibungsvorschlag.",
-    "Alle Befundlisten sind anklickbar: Ein Klick auf eine Artikelzeile öffnet das Artikel-Detail mit allen Pflichtfeldern, den fehlenden Feldern und der Verkaufshistorie – so ist sofort sichtbar, ob sich die Pflege für diesen Artikel überhaupt lohnt. Kundenzeilen führen zum Kunden-Detail, doppelte EANs zu den betroffenen Artikeln."
+    "Alle Befundlisten sind anklickbar: Ein Klick auf eine Artikelzeile öffnet das Artikel-Detail mit allen Pflichtfeldern, den fehlenden Feldern und der Verkaufshistorie – so ist sofort sichtbar, ob sich die Pflege für diesen Artikel überhaupt lohnt. Kundenzeilen führen zum Kunden-Detail, doppelte EANs zu den betroffenen Artikeln.",
+    "Kundenprüfungen lesen ausschließlich die Rechnungsadresse (nTyp=1, nStandard=1) – sie ist je Kunde eindeutig. Ohne diesen Filter zählen Standard-Lieferadressen mit, und Kunden erscheinen als Dublette ihrer selbst. Die Dublettenliste unterscheidet „Dublettenverdacht“ (gleiche Straße) von „eigener Standort“ (gleiche Firma und PLZ, andere Straße); Firma, PLZ und Straße werden vor dem Vergleich normalisiert."
   ],
   "config_required": [
     {
@@ -982,7 +983,7 @@
             "Telefon",
             "Kunde_seit"
           ],
-          "sql": "SELECT TOP 500\n    CAST(K.kKunde AS VARCHAR(20)) AS kKunde,\n    ISNULL(K.cKundenNr, '') AS Kundennummer,\n    LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n        ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n    LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n    ISNULL(AD.cTel, '') AS Telefon,\n    ISNULL(CONVERT(char(10), K.dErstellt, 104), '') AS Kunde_seit\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y'\nORDER BY K.dErstellt DESC"
+          "sql": "SELECT TOP 500\n    CAST(K.kKunde AS VARCHAR(20)) AS kKunde,\n    ISNULL(K.cKundenNr, '') AS Kundennummer,\n    LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n        ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n    LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n    ISNULL(AD.cTel, '') AS Telefon,\n    ISNULL(CONVERT(char(10), K.dErstellt, 104), '') AS Kunde_seit\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\nWHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y'\nORDER BY K.dErstellt DESC"
         }
       ],
       "targets": [
@@ -1085,10 +1086,13 @@
           "output_fields": [
             "Kunde",
             "PLZ",
+            "Ort",
             "Anzahl",
+            "Adressen",
+            "Befund",
             "Kundennummern"
           ],
-          "sql": "SELECT TOP 500\n    AD.cFirma AS Kunde,\n    ISNULL(AD.cPLZ, '') AS PLZ,\n    COUNT(*) AS Anzahl,\n    STUFF((SELECT ', ' + ISNULL(K2.cKundenNr, '')\n            FROM dbo.tkunde K2 JOIN dbo.tAdresse A2 ON A2.kKunde = K2.kKunde AND A2.nStandard = 1\n            WHERE A2.cFirma = AD.cFirma AND ISNULL(A2.cPLZ, '') = ISNULL(AD.cPLZ, '')\n            FOR XML PATH('')), 1, 2, '') AS Kundennummern\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cFirma, '') <> ''\nGROUP BY AD.cFirma, AD.cPLZ\nHAVING COUNT(*) > 1\nORDER BY COUNT(*) DESC"
+          "sql": "-- Nur die Rechnungsadresse (nTyp=1, nStandard=1) ist je Kunde eindeutig; ohne\n-- nTyp erwischt der Vergleich auch Standard-LIEFERadressen und meldet Kunden als\n-- Dublette ihrer selbst. Firma/PLZ/Straße werden vor dem Vergleich normalisiert\n-- (Mehrfach-Leerzeichen), sonst rutschen echte Dubletten durch.\nWITH r AS (\n  SELECT K.kKunde,\n         LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(AD.cFirma, '  ', ' ' + CHAR(7)),\n              CHAR(7) + ' ', ''), CHAR(7), '')))                          AS Firma,\n         LTRIM(RTRIM(ISNULL(AD.cPLZ, '')))                                AS PLZ,\n         LTRIM(RTRIM(ISNULL(AD.cOrt, '')))                                AS Ort,\n         LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(ISNULL(AD.cStrasse, ''), '  ', ' ' + CHAR(7)),\n              CHAR(7) + ' ', ''), CHAR(7), '')))                          AS Strasse,\n         ISNULL(K.cKundenNr, '')                                          AS KundenNr\n  FROM dbo.tkunde K\n  JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n  WHERE ISNULL(AD.cFirma, '') <> '')\nSELECT TOP 500\n  r.Firma                    AS Kunde,\n  r.PLZ                      AS PLZ,\n  MAX(r.Ort)                 AS Ort,\n  COUNT(*)                   AS Anzahl,\n  COUNT(DISTINCT r.Strasse)  AS Adressen,\n  CASE WHEN COUNT(DISTINCT r.Strasse) = 1 THEN 'Dublettenverdacht'\n       ELSE 'eigener Standort' END AS Befund,\n  STUFF((SELECT ', ' + r2.KundenNr FROM r r2\n          WHERE r2.Firma = r.Firma AND r2.PLZ = r.PLZ\n          FOR XML PATH('')), 1, 2, '') AS Kundennummern\nFROM r\nGROUP BY r.Firma, r.PLZ\nHAVING COUNT(*) > 1\nORDER BY CASE WHEN COUNT(DISTINCT r.Strasse) = 1 THEN 0 ELSE 1 END, COUNT(*) DESC"
         }
       ],
       "targets": [
@@ -1122,13 +1126,43 @@
               }
             },
             {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
               "source_field": "Anzahl",
               "target_field": "Anzahl",
-              "target_type": "int",
+              "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
                 "source_field": "Anzahl"
+              }
+            },
+            {
+              "source_field": "Adressen",
+              "target_field": "Adressen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Adressen"
+              }
+            },
+            {
+              "source_field": "Befund",
+              "target_field": "Befund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Befund"
               }
             },
             {
@@ -1175,7 +1209,7 @@
             "check_key",
             "sort"
           ],
-          "sql": "SELECT\n    CASE WHEN Anzahl = 0 THEN 'gruen'\n         WHEN Anzahl >= Grenze THEN 'rot'\n         ELSE 'gelb' END AS Ampel,\n    Anzahl, Aufgabe, check_key, sort\nFROM (\n\n    SELECT 'artikel_ohne_ean' AS check_key, 'Artikel ohne EAN/Barcode' AS Aufgabe, 1 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_gewicht' AS check_key, 'Artikel ohne Gewicht' AS Aufgabe, 2 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0) AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_ek' AS check_key, 'Artikel ohne Einkaufspreis' AS Aufgabe, 3 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_vk_unter_ek' AS check_key, 'Artikel mit VK unter EK (Verlustgeschäft)' AS Aufgabe, 4 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_warengruppe' AS check_key, 'Artikel ohne Warengruppe' AS Aufgabe, 5 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_name' AS check_key, 'Artikel ohne Bezeichnung' AS Aufgabe, 6 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = '') AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_taric' AS check_key, 'Artikel ohne Warentarifnummer (Intrastat/Zoll)' AS Aufgabe, 7 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_herkunftsland' AS check_key, 'Artikel ohne Herkunftsland (Intrastat/Zoll)' AS Aufgabe, 8 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'ean_doppelt' AS check_key, 'Mehrfach vergebene EAN' AS Aufgabe, 20 AS sort,\n        (SELECT COUNT(*) FROM (SELECT A.cBarcode FROM dbo.tArtikel A\n            WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n              AND ISNULL(A.cBarcode, '') <> ''\n            GROUP BY A.cBarcode HAVING COUNT(*) > 1) X) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_mail' AS check_key, 'Kunden ohne E-Mail-Adresse' AS Aufgabe, 21 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n          WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'kunden_dubletten' AS check_key, 'Mögliche Kundendubletten' AS Aufgabe, 22 AS sort,\n        (SELECT COUNT(*) FROM (SELECT AD.cFirma, AD.cPLZ FROM dbo.tkunde K\n            JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n            WHERE ISNULL(AD.cFirma, '') <> ''\n            GROUP BY AD.cFirma, AD.cPLZ HAVING COUNT(*) > 1) X) AS Anzahl,\n        10 AS Grenze\n) X\nORDER BY CASE WHEN Anzahl = 0 THEN 3 WHEN Anzahl >= Grenze THEN 1 ELSE 2 END, sort"
+          "sql": "SELECT\n    CASE WHEN Anzahl = 0 THEN 'gruen'\n         WHEN Anzahl >= Grenze THEN 'rot'\n         ELSE 'gelb' END AS Ampel,\n    Anzahl, Aufgabe, check_key, sort\nFROM (\n\n    SELECT 'artikel_ohne_ean' AS check_key, 'Artikel ohne EAN/Barcode' AS Aufgabe, 1 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_gewicht' AS check_key, 'Artikel ohne Gewicht' AS Aufgabe, 2 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0) AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_ek' AS check_key, 'Artikel ohne Einkaufspreis' AS Aufgabe, 3 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_vk_unter_ek' AS check_key, 'Artikel mit VK unter EK (Verlustgeschäft)' AS Aufgabe, 4 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_warengruppe' AS check_key, 'Artikel ohne Warengruppe' AS Aufgabe, 5 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_name' AS check_key, 'Artikel ohne Bezeichnung' AS Aufgabe, 6 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = '') AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_taric' AS check_key, 'Artikel ohne Warentarifnummer (Intrastat/Zoll)' AS Aufgabe, 7 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_herkunftsland' AS check_key, 'Artikel ohne Herkunftsland (Intrastat/Zoll)' AS Aufgabe, 8 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'ean_doppelt' AS check_key, 'Mehrfach vergebene EAN' AS Aufgabe, 20 AS sort,\n        (SELECT COUNT(*) FROM (SELECT A.cBarcode FROM dbo.tArtikel A\n            WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n              AND ISNULL(A.cBarcode, '') <> ''\n            GROUP BY A.cBarcode HAVING COUNT(*) > 1) X) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_mail' AS check_key, 'Kunden ohne E-Mail-Adresse' AS Aufgabe, 21 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n          WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'kunden_dubletten' AS check_key, 'Mögliche Kundendubletten' AS Aufgabe, 22 AS sort,\n        (SELECT COUNT(*) FROM (\n            SELECT LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(AD.cFirma, '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))) AS Firma,\n                   LTRIM(RTRIM(ISNULL(AD.cPLZ, ''))) AS PLZ\n            FROM dbo.tkunde K\n            JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n            WHERE ISNULL(AD.cFirma, '') <> ''\n            GROUP BY LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(AD.cFirma, '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))), LTRIM(RTRIM(ISNULL(AD.cPLZ, '')))\n            HAVING COUNT(*) > 1) X) AS Anzahl,\n        10 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_adresse' AS check_key, 'Kunden ohne Rechnungsadresse' AS Aufgabe, 23 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          WHERE NOT EXISTS (SELECT 1 FROM dbo.tAdresse A\n                            WHERE A.kKunde = K.kKunde AND A.nTyp = 1 AND A.nStandard = 1)) AS Anzahl,\n        5 AS Grenze UNION ALL \n    SELECT 'adresse_ohne_kunde' AS check_key, 'Adressen ohne Kunden' AS Aufgabe, 24 AS sort,\n        (SELECT COUNT(*) FROM dbo.tAdresse A\n          WHERE A.kKunde > 0\n            AND NOT EXISTS (SELECT 1 FROM dbo.tkunde K WHERE K.kKunde = A.kKunde)) AS Anzahl,\n        5 AS Grenze\n) X\nORDER BY CASE WHEN Anzahl = 0 THEN 3 WHEN Anzahl >= Grenze THEN 1 ELSE 2 END, sort"
         }
       ],
       "targets": [
@@ -1272,7 +1306,7 @@
             "AktiveKunden",
             "KundenOhneMail"
           ],
-          "sql": "SELECT\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) AS AktiveArtikel,\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = '')) AS ArtikelMitLuecke,\n    CAST(100.0 * ((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) - (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = ''))) / NULLIF((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0), 0)\n        AS DECIMAL(18,1)) AS Vollstaendigkeit,\n    (SELECT COUNT(*) FROM dbo.tkunde K WHERE ISNULL(K.cSperre, 'N') <> 'Y') AS AktiveKunden,\n    (SELECT COUNT(*) FROM dbo.tkunde K\n      JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\n      WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS KundenOhneMail"
+          "sql": "SELECT\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) AS AktiveArtikel,\n    (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = '')) AS ArtikelMitLuecke,\n    CAST(100.0 * ((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0) - (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND (ISNULL(A.cBarcode, '') = ''\n        OR (ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0)\n        OR ISNULL(A.fEKNetto, 0) = 0 OR ISNULL(A.kWarengruppe, 0) = 0\n        OR ISNULL(A.cTaric, '') = '' OR ISNULL(A.cHerkunftsland, '') = ''\n        OR ISNULL(AB.cName, '') = ''))) / NULLIF((SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0), 0)\n        AS DECIMAL(18,1)) AS Vollstaendigkeit,\n    (SELECT COUNT(*) FROM dbo.tkunde K WHERE ISNULL(K.cSperre, 'N') <> 'Y') AS AktiveKunden,\n    (SELECT COUNT(*) FROM dbo.tkunde K\n      JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n      WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS KundenOhneMail"
         }
       ],
       "targets": [
@@ -2711,7 +2745,7 @@
             "LetzteBestellung",
             "Gesperrt"
           ],
-          "sql": "SELECT TOP 1\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n      ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cLand, '')                             AS Land,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  ISNULL(AD.cTel, '')                              AS Telefon,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung,\n  CASE WHEN ISNULL(K.cSperre, 'N') = 'Y' THEN 'ja' ELSE 'nein' END AS Gesperrt\nFROM dbo.tkunde K\n-- Es gibt Kunden mit mehreren als Standard markierten Adressen; OUTER APPLY hält\n-- das Ergebnis bei genau einer Zeile (ein äußeres TOP 1 reicht nicht: der\n-- Vorschaulauf hebt es über _apply_row_cap auf die Zeilenobergrenze an).\nOUTER APPLY (SELECT TOP 1 * FROM dbo.tAdresse A\n             WHERE A.kKunde = K.kKunde AND A.nStandard = 1\n             ORDER BY A.kAdresse) AD\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nWHERE K.kKunde = :kKunde"
+          "sql": "-- nTyp=1 + nStandard=1 ist je Kunde eindeutig (7.215 von 7.215 Kunden, keiner\n-- doppelt) – deshalb reicht ein LEFT JOIN, ein TOP 1 wäre im Vorschaulauf ohnehin\n-- wirkungslos (_apply_row_cap hebt es an).\nSELECT\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n      ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cLand, '')                             AS Land,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  ISNULL(AD.cTel, '')                              AS Telefon,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung,\n  CASE WHEN ISNULL(K.cSperre, 'N') = 'Y' THEN 'ja' ELSE 'nein' END AS Gesperrt\nFROM dbo.tkunde K\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nWHERE K.kKunde = :kKunde"
         }
       ],
       "targets": [
@@ -2884,7 +2918,7 @@
             "UmsatzGesamt",
             "LetzteBestellung"
           ],
-          "sql": "SELECT TOP 100\n  CAST(K.kKunde AS VARCHAR(20))                    AS kKunde,\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(AD.cFirma, '')))              AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))) AS Ansprechpartner,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung\nFROM dbo.tkunde K\n-- CROSS APPLY statt JOIN: Kunden mit mehreren Standardadressen würden sonst\n-- mehrfach in der Dublettenliste stehen.\nCROSS APPLY (SELECT TOP 1 * FROM dbo.tAdresse A\n             WHERE A.kKunde = K.kKunde AND A.nStandard = 1 AND A.cFirma = :firma\n             ORDER BY A.kAdresse) AD\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nORDER BY U.Umsatz DESC"
+          "sql": "-- Gegenstück zum Dublettencheck: gleicher Normalisierungs- und Adressfilter,\n-- sonst findet der Klick auf eine Dublettenzeile seine Kunden nicht wieder.\nSELECT TOP 100\n  CAST(K.kKunde AS VARCHAR(20))                    AS kKunde,\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(AD.cFirma, '')))              AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))) AS Ansprechpartner,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nWHERE LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(AD.cFirma, '  ', ' ' + CHAR(7)),\n      CHAR(7) + ' ', ''), CHAR(7), ''))) = :firma\nORDER BY U.Umsatz DESC"
         }
       ],
       "targets": [
@@ -3005,6 +3039,200 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "LetzteBestellung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kunde_ohne_adresse",
+      "name": "Health-Check – Kunden ohne Rechnungsadresse",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kundennummer",
+            "Kunde_seit",
+            "Adressen",
+            "Gesperrt"
+          ],
+          "sql": "-- Kunden ohne Rechnungs-Standardadresse: fallen aus jeder Adressauswertung heraus\n-- (Mailversand, Rechnungsstellung, Statistik) und werden sonst nirgends sichtbar.\nSELECT TOP 500\n  CAST(K.kKunde AS VARCHAR(20))                          AS kKunde,\n  ISNULL(K.cKundenNr, '')                                AS Kundennummer,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), '')) AS Kunde_seit,\n  (SELECT COUNT(*) FROM dbo.tAdresse A WHERE A.kKunde = K.kKunde) AS Adressen,\n  CASE WHEN ISNULL(K.cSperre, 'N') = 'Y' THEN 'ja' ELSE 'nein' END AS Gesperrt\nFROM dbo.tkunde K\nWHERE NOT EXISTS (SELECT 1 FROM dbo.tAdresse A\n                  WHERE A.kKunde = K.kKunde AND A.nTyp = 1 AND A.nStandard = 1)\nORDER BY K.dErstellt DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kunden ohne Rechnungsadresse",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kundennummer",
+              "target_field": "Kundennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennummer"
+              }
+            },
+            {
+              "source_field": "Kunde_seit",
+              "target_field": "Kunde_seit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde_seit"
+              }
+            },
+            {
+              "source_field": "Adressen",
+              "target_field": "Adressen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Adressen"
+              }
+            },
+            {
+              "source_field": "Gesperrt",
+              "target_field": "Gesperrt",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gesperrt"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_adresse_ohne_kunde",
+      "name": "Health-Check – Adressen ohne Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kAdresse",
+            "kKunde",
+            "Adresse",
+            "Ort",
+            "Adressart"
+          ],
+          "sql": "-- Verwaiste Adressen: verweisen auf einen Kunden, den es nicht mehr gibt.\nSELECT TOP 500\n  CAST(A.kAdresse AS VARCHAR(20))                        AS kAdresse,\n  CAST(A.kKunde AS VARCHAR(20))                          AS kKunde,\n  LTRIM(RTRIM(ISNULL(NULLIF(A.cFirma, ''),\n      ISNULL(A.cVorname, '') + ' ' + ISNULL(A.cName, '')))) AS Adresse,\n  LTRIM(ISNULL(A.cPLZ, '') + ' ' + ISNULL(A.cOrt, ''))   AS Ort,\n  CASE A.nTyp WHEN 1 THEN 'Rechnungsadresse' WHEN 0 THEN 'Lieferadresse'\n              ELSE 'Typ ' + CAST(A.nTyp AS VARCHAR(5)) END AS Adressart\nFROM dbo.tAdresse A\n-- kKunde = 0 sind freie Adressen (z.B. Abholadresse), kein Verweisfehler.\nWHERE A.kKunde > 0\n  AND NOT EXISTS (SELECT 1 FROM dbo.tkunde K WHERE K.kKunde = A.kKunde)\nORDER BY A.kAdresse"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Adressen ohne Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kAdresse",
+              "target_field": "kAdresse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kAdresse"
+              }
+            },
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Adresse",
+              "target_field": "Adresse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Adresse"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "Adressart",
+              "target_field": "Adressart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Adressart"
               }
             }
           ]
@@ -3138,6 +3366,20 @@
             "mapping_id": "m_hc_hersteller",
             "pipeline_id": null,
             "label": "Health-Check – Hersteller-Übersicht"
+          },
+          {
+            "id": "act_hc_kunden_ohne_adresse",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_kunde_ohne_adresse",
+            "pipeline_id": null,
+            "label": "Kunden ohne Rechnungsadresse"
+          },
+          {
+            "id": "act_hc_adresse_ohne_kunde",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_adresse_ohne_kunde",
+            "pipeline_id": null,
+            "label": "Adressen ohne Kunden"
           }
         ],
         "widgets": [
@@ -3251,6 +3493,21 @@
                   "kunden_dubletten": {
                     "mapping_id": "m_hc_kunden_dubletten",
                     "title": "Mögliche Kundendubletten"
+                  },
+                  "kunden_ohne_adresse": {
+                    "mapping_id": "m_hc_kunde_ohne_adresse",
+                    "title": "Kunden ohne Rechnungsadresse",
+                    "hidden_columns": [
+                      "kKunde"
+                    ]
+                  },
+                  "adresse_ohne_kunde": {
+                    "mapping_id": "m_hc_adresse_ohne_kunde",
+                    "title": "Adressen ohne Kunden",
+                    "hidden_columns": [
+                      "kAdresse",
+                      "kKunde"
+                    ]
                   }
                 }
               }
@@ -3669,6 +3926,41 @@
                 "fakten_mapping_id": "m_hc_beschreibung_fakten"
               }
             }
+          },
+          {
+            "id": "w_hc_kunde_ohne_adresse",
+            "type": "table",
+            "label": "Kunden ohne Rechnungsadresse",
+            "action_id": "act_hc_kunden_ohne_adresse",
+            "config": {
+              "width": 6,
+              "full_rows": true,
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "info": "Ohne Rechnungs-Standardadresse fällt ein Kunde aus jeder Adressauswertung heraus – Rechnung, Mailversand, Statistik.",
+              "drilldown": {
+                "mapping_id": "m_hc_kunden_detail",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Kunden-Detail"
+              }
+            }
+          },
+          {
+            "id": "w_hc_adresse_ohne_kunde",
+            "type": "table",
+            "label": "Adressen ohne Kunden",
+            "action_id": "act_hc_adresse_ohne_kunde",
+            "config": {
+              "width": 6,
+              "full_rows": true,
+              "hidden_columns": [
+                "kAdresse",
+                "kKunde"
+              ],
+              "info": "Adressen, deren Kunde nicht mehr existiert – Karteileichen aus gelöschten Kunden. Freie Adressen (ohne Kundenbezug) sind ausgenommen."
+            }
           }
         ],
         "result_tabs": [
@@ -3722,7 +4014,9 @@
             "label": "Kunden",
             "action_ids": [
               "act_hc_kunden_ohne_mail",
-              "act_hc_kunden_dubletten"
+              "act_hc_kunden_dubletten",
+              "act_hc_kunden_ohne_adresse",
+              "act_hc_adresse_ohne_kunde"
             ]
           }
         ],
