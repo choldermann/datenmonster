@@ -149,6 +149,38 @@ def create_form(data: FormCreate, db: Session = Depends(get_db),
     return form_out(f)
 
 
+def _sammle_mapping_ids(node, out: set) -> None:
+    """Alle Mapping-Verweise eines Formularschemas einsammeln – Actions, Drilldowns
+    samt levels[], row_detail, ai_action, ean_research, Hersteller-Navigator."""
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k.endswith("mapping_id") and isinstance(v, int):
+                out.add(v)
+            else:
+                _sammle_mapping_ids(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _sammle_mapping_ids(v, out)
+
+
+def _portal_darf_mapping(m: Mapping, user: User, db: Session) -> bool:
+    """Portal-Benutzer haben keinen Projekt-Mitgliedsstatus, sollen in einem
+    freigegebenen Dashboard aber klicken können (Drilldown, KI-Empfehlung – beides
+    lädt seine Daten über diesen Endpunkt). Erlaubt ist deshalb genau das, was in
+    einem für sie sichtbaren veröffentlichten Formular auch verdrahtet ist – NICHT
+    jedes Mapping des Projekts."""
+    from app.api.portal import _check_portal_access
+    erlaubt: set = set()
+    for f in (db.query(Form)
+              .filter(Form.published == True, Form.project_id == m.project_id).all()):
+        try:
+            _check_portal_access(f, user)
+        except HTTPException:
+            continue
+        _sammle_mapping_ids(f.schema or {}, erlaubt)
+    return m.id in erlaubt
+
+
 @router.post("/drilldown")
 def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
@@ -164,7 +196,8 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     m = db.query(Mapping).filter(Mapping.id == body.mapping_id).first()
     if not m:
         raise HTTPException(404, "Mapping nicht gefunden")
-    if not can_read_project(m.project_id, user, db):
+    if not (can_read_project(m.project_id, user, db)
+            or _portal_darf_mapping(m, user, db)):
         raise HTTPException(403, "Kein Zugriff auf dieses Mapping")
 
     ctx = MappingContext.from_orm(m)
