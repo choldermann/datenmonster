@@ -703,6 +703,8 @@ _ASSESSMENT_ACTION_IDS = {
     "act_ek_kpi", "act_ek_termintreue_kpi", "act_ek_offen_kpi", "act_ek_er_kpi",
     # Versand-Cockpit
     "act_vs_kpi", "act_vs_dauer_kpi", "act_vs_tracking_kpi",
+    # Stammdaten-Health-Check
+    "act_hc_kpi", "act_hc_summary", "act_hc_luecken",
 }
 
 
@@ -885,6 +887,65 @@ def _assessment_rows(results: dict) -> list:
         out.append(("Sendungsverfolgung", q is None or q >= 90,
                     f"Tracking bei {_pctval(vt.get('TrackingQuote'))} der Sendungen, "
                     f"{_fmt(vt.get('OhneTracking'), 0)} ohne Nummer"))
+
+    # ── Stammdaten-Health-Check ────────────────────────────────────────────────
+    # Momentaufnahme ohne Vorjahresvergleich: bewertet werden Lückenquoten, nicht
+    # Veränderungen. Schwellen identisch zu buildAssessment in AiSummaryWidget.tsx.
+    hc = one("act_hc_kpi")
+    if hc:
+        chk = {}                                     # check_key → Anzahl (Ampel-Übersicht)
+        for r in rows_of("act_hc_summary"):
+            chk[r.get("check_key")] = _asnum(r.get("Anzahl")) or 0
+        gap = {}                                     # Feld → Lückenanteil in %
+        for r in rows_of("act_hc_luecken"):
+            gap[r.get("Feld")] = _asnum(r.get("Anteil"))
+        LUECKE_OK = 5.0                              # bis 5 % fehlende Werte je Feld
+
+        voll = _asnum(hc.get("Vollstaendigkeit"))
+        out.append(("Vollständigkeit", voll is None or voll >= 90,
+                    f"{_pctval(hc.get('Vollstaendigkeit'))} der Artikel ohne Lücke "
+                    f"({_fmt(hc.get('ArtikelMitLuecke'), 0)} von "
+                    f"{_fmt(hc.get('AktiveArtikel'), 0)} unvollständig)"))
+
+        ean_anteil, ean_dop = gap.get("EAN/Barcode"), chk.get("ean_doppelt") or 0
+        out.append(("EAN & Eindeutigkeit",
+                    (ean_anteil is None or ean_anteil <= LUECKE_OK) and not ean_dop,
+                    f"{_fmt(chk.get('artikel_ohne_ean'), 0)} Artikel ohne EAN "
+                    f"({_pctval(ean_anteil)})"
+                    + (f", {_fmt(ean_dop, 0)} mehrfach vergebene EAN" if ean_dop else "")))
+
+        ek_anteil, verlust = gap.get("Einkaufspreis"), chk.get("artikel_vk_unter_ek") or 0
+        # VK unter EK ist kein Lückenproblem, sondern ein Verlustgeschäft – jeder Fall zählt.
+        out.append(("Preise & Marge",
+                    (ek_anteil is None or ek_anteil <= LUECKE_OK) and verlust == 0,
+                    f"{_fmt(chk.get('artikel_ohne_ek'), 0)} Artikel ohne Einkaufspreis "
+                    f"({_pctval(ek_anteil)}), {_fmt(verlust, 0)} mit VK unter EK"))
+
+        taric, herk = gap.get("Warentarifnummer"), gap.get("Herkunftsland")
+        out.append(("Außenhandel",
+                    (taric is None or taric <= LUECKE_OK) and (herk is None or herk <= LUECKE_OK),
+                    f"{_fmt(chk.get('artikel_ohne_taric'), 0)} ohne Warentarifnummer "
+                    f"({_pctval(taric)}), {_fmt(chk.get('artikel_ohne_herkunftsland'), 0)} "
+                    f"ohne Herkunftsland ({_pctval(herk)})"))
+
+        gew, ohne_name = gap.get("Gewicht"), chk.get("artikel_ohne_name") or 0
+        out.append(("Logistik & Struktur",
+                    (gew is None or gew <= LUECKE_OK) and ohne_name == 0,
+                    f"{_fmt(chk.get('artikel_ohne_gewicht'), 0)} Artikel ohne Gewicht "
+                    f"({_pctval(gew)}), {_fmt(chk.get('artikel_ohne_warengruppe'), 0)} "
+                    f"ohne Warengruppe"
+                    + (f", {_fmt(ohne_name, 0)} ohne Bezeichnung" if ohne_name else "")))
+
+        kunden = _asnum(hc.get("AktiveKunden"))
+        ohne_mail = _asnum(hc.get("KundenOhneMail")) or 0
+        mail_quote = (100.0 * ohne_mail / kunden) if kunden else None
+        # Ohne E-Mail keine Versandbenachrichtigung und keine digitale Rechnung –
+        # bis zu einem Fünftel der Kunden ist im B2B-Bestand aber üblich.
+        out.append(("Kundenstamm", mail_quote is None or mail_quote <= 20,
+                    f"{_fmt(ohne_mail, 0)} von {_fmt(kunden, 0)} Kunden ohne E-Mail "
+                    f"({_pctval(mail_quote)})"
+                    + (f", {_fmt(chk.get('kunden_dubletten'), 0)} mögliche Dubletten"
+                       if chk.get("kunden_dubletten") else "")))
 
     rt = one("act_retouren_kpi")
     if rt:

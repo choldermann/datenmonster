@@ -209,7 +209,7 @@ Gut zu wissen:
   (Selbstabholer, Spedition): gezeigt werden nur Arten mit sonst mindestens 50 % Tracking-Quote.
 
 ### 3.6 Stammdaten-Health-Check
-*Template `jtl_health_check`, Version 1.5 – 19 Prüfungen, 6 Reiter*
+*Template `jtl_health_check`, Version 1.6 – 24 Auswertungen (19 Prüfungen + 5 Detailansichten), 6 Reiter*
 
 Kein Zeitraum, keine Umsätze: Dieses Cockpit prüft die Datenqualität und liefert Arbeitslisten.
 
@@ -229,6 +229,17 @@ Gut zu wissen:
   stehen im Mapping „Health-Check – Übersicht (Ampel)" und sind anpassbar.
 * Die Schwelle für „dürftige Beschreibung" wird beim Installieren gesetzt (Standard 120 Zeichen).
 * Nicht jede Lücke ist ein Fehler – die Listen sind Arbeitsvorräte, keine Fehlermeldungen.
+* **Jede Befundliste ist anklickbar.** Eine Artikelzeile öffnet das Artikel-Detail mit allen
+  Pflichtfeldern, einer Spalte „FehlendeFelder" und der Verkaufshistorie (Bestand, letzter Verkauf,
+  Menge und Umsatz der letzten 12 Monate) – so ist vor dem Pflegen sichtbar, ob sich die Arbeit für
+  diesen Artikel lohnt; ein weiterer Klick zeigt die einzelnen Verkäufe. Eine mehrfach vergebene EAN
+  führt zu den betroffenen Artikeln, eine Kundenzeile zum Kunden-Detail, eine Dublettenzeile zu allen
+  Kunden dieser Firma (Adresse, Umsatz, letzte Bestellung – Filialen sind so von echten Dubletten
+  unterscheidbar).
+* Der PDF-Report enthält – wie bei den anderen Cockpits – die deterministische Bewertungstabelle:
+  Vollständigkeit, EAN & Eindeutigkeit, Preise & Marge, Außenhandel, Logistik & Struktur, Kundenstamm.
+  Als „gut" gilt eine Lückenquote bis 5 % je Feld (Kundenstamm: bis 20 % ohne E-Mail); VK unter EK und
+  mehrfach vergebene EANs zählen absolut.
 
 ---
 
@@ -249,4 +260,4 @@ Zeitraumauswahl, eine Pflege von Ausschlussartikeln und monatliche Pipelines.
 | Einkauf | 21 | 5 | Was kaufe ich wo ein, und liefern die Lieferanten pünktlich? |
 | Lager | 26 | 7 | Was ist mein Lager wert, und wo liegt totes Kapital? |
 | Versand | 11 | 4 | Wie schnell versende ich, und was hängt fest? |
-| Health-Check | 19 | 6 | Wo sind meine Stammdaten lückenhaft oder widersprüchlich? |
+| Health-Check | 24 | 6 | Wo sind meine Stammdaten lückenhaft oder widersprüchlich? |

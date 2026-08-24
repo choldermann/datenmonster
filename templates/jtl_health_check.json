@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.5",
+  "version": "1.6",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -15,7 +15,8 @@
     "Der Reiter „Artikelstamm“ enthält die reinen Befundlisten (Gewicht, Warengruppe, Bezeichnung). Alles, womit sich Lücken aktiv schließen lassen, steht im Reiter „Datenpflege“.",
     "Im Reiter „Datenpflege“ steht „Fehlende EANs beim Hersteller holen“: Für Artikel ohne EAN wird die offizielle Nummer über die Hersteller-Artikelnummer auf der Produktseite des Herstellers nachgeschlagen (derzeit Deiss und Denios). Die Vorschläge lassen sich als CSV ausgeben; geschrieben wird nichts.",
     "Ebenfalls im Reiter „Datenpflege“: die KI-gestützte Artikelbeschreibung. Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell.",
-    "Am Ende des Reiters „Datenpflege“ steht die Hersteller-Übersicht: je Hersteller die Lücken (ohne EAN, ohne Herstellernummer, dürftiger Text) und ob seine Produktseiten auswertbar sind. Klick auf einen Hersteller listet dessen Artikel, Klick auf einen Artikel öffnet den Beschreibungsvorschlag."
+    "Am Ende des Reiters „Datenpflege“ steht die Hersteller-Übersicht: je Hersteller die Lücken (ohne EAN, ohne Herstellernummer, dürftiger Text) und ob seine Produktseiten auswertbar sind. Klick auf einen Hersteller listet dessen Artikel, Klick auf einen Artikel öffnet den Beschreibungsvorschlag.",
+    "Alle Befundlisten sind anklickbar: Ein Klick auf eine Artikelzeile öffnet das Artikel-Detail mit allen Pflichtfeldern, den fehlenden Feldern und der Verkaufshistorie – so ist sofort sichtbar, ob sich die Pflege für diesen Artikel überhaupt lohnt. Kundenzeilen führen zum Kunden-Detail, doppelte EANs zu den betroffenen Artikeln."
   ],
   "config_required": [
     {
@@ -57,13 +58,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "HAN",
             "VKNetto"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHAN, '') AS HAN, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cBarcode, '') = ''\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHAN, '') AS HAN, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cBarcode, '') = ''\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -76,6 +78,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -154,13 +166,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "VKNetto",
             "Lagerbestand"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -173,6 +186,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -251,13 +274,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "VKNetto",
             "LetzterEK"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.fLetzterEK, 0) AS DECIMAL(18,2)) AS LetzterEK\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fEKNetto, 0) = 0\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto, CAST(ISNULL(A.fLetzterEK, 0) AS DECIMAL(18,2)) AS LetzterEK\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.fEKNetto, 0) = 0\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -270,6 +294,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -348,6 +382,7 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
@@ -355,7 +390,7 @@
             "EKNetto",
             "Verlust"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto, CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto, CAST(A.fVKNetto - A.fEKNetto AS DECIMAL(18,2)) AS Verlust\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto\nORDER BY A.fVKNetto - A.fEKNetto"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(A.fVKNetto AS DECIMAL(18,2)) AS VKNetto, CAST(A.fEKNetto AS DECIMAL(18,2)) AS EKNetto, CAST(A.fVKNetto - A.fEKNetto AS DECIMAL(18,2)) AS Verlust\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto\nORDER BY A.fVKNetto - A.fEKNetto"
         }
       ],
       "targets": [
@@ -368,6 +403,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -456,12 +501,13 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "Lagerbestand"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kWarengruppe, 0) = 0\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.kWarengruppe, 0) = 0\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -474,6 +520,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -542,11 +598,12 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(AB.cName, '') = ''\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(AB.cName, '') = ''\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -559,6 +616,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -617,13 +684,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "Herkunftsland",
             "Lagerbestand"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHerkunftsland, '') AS Herkunftsland, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cTaric, '') = ''\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cHerkunftsland, '') AS Herkunftsland, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cTaric, '') = ''\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -636,6 +704,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -714,13 +792,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kArtikel",
             "ArtNr",
             "Artikel",
             "Warengruppe",
             "Warentarifnummer",
             "Lagerbestand"
           ],
-          "sql": "SELECT TOP 500 A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cTaric, '') AS Warentarifnummer, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cHerkunftsland, '') = ''\nORDER BY A.cArtNr"
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel, ISNULL(WG.cName, '') AS Warengruppe, ISNULL(A.cTaric, '') AS Warentarifnummer, CAST(ISNULL(A.nLagerbestand, 0) AS DECIMAL(18,2)) AS Lagerbestand\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND ISNULL(A.cHerkunftsland, '') = ''\nORDER BY A.cArtNr"
         }
       ],
       "targets": [
@@ -733,6 +812,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
             {
               "source_field": "ArtNr",
               "target_field": "ArtNr",
@@ -886,13 +975,14 @@
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
+            "kKunde",
             "Kundennummer",
             "Kunde",
             "Ort",
             "Telefon",
             "Kunde_seit"
           ],
-          "sql": "SELECT TOP 500\n    ISNULL(K.cKundenNr, '') AS Kundennummer,\n    LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n        ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n    LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n    ISNULL(AD.cTel, '') AS Telefon,\n    ISNULL(CONVERT(char(10), K.dErstellt, 104), '') AS Kunde_seit\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y'\nORDER BY K.dErstellt DESC"
+          "sql": "SELECT TOP 500\n    CAST(K.kKunde AS VARCHAR(20)) AS kKunde,\n    ISNULL(K.cKundenNr, '') AS Kundennummer,\n    LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n        ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n    LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n    ISNULL(AD.cTel, '') AS Telefon,\n    ISNULL(CONVERT(char(10), K.dErstellt, 104), '') AS Kunde_seit\nFROM dbo.tkunde K\nJOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1\nWHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y'\nORDER BY K.dErstellt DESC"
         }
       ],
       "targets": [
@@ -905,6 +995,16 @@
           "target_write_mode": "replace",
           "target_options": {},
           "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
             {
               "source_field": "Kundennummer",
               "target_field": "Kundennummer",
@@ -2051,6 +2151,865 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_hc_artikel_detail",
+      "name": "Health-Check – Artikel-Detail (Drilldown)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "EAN",
+            "HAN",
+            "Warengruppe",
+            "Warennummer",
+            "Herkunftsland",
+            "Gewicht",
+            "EKNetto",
+            "VKNetto",
+            "MargeProzent",
+            "Bestand",
+            "Kapitalbindung",
+            "BeschreibungZeichen",
+            "LetzterVerkauf",
+            "Menge12M",
+            "Umsatz12M",
+            "FehlendeFelder"
+          ],
+          "sql": "SELECT TOP 1\n  CAST(A.kArtikel AS VARCHAR(20))                  AS kArtikel,\n  A.cArtNr                                        AS ArtNr,\n  ISNULL(AB.cName, '')                            AS Artikel,\n  ISNULL(H.cName, '')                             AS Hersteller,\n  ISNULL(A.cBarcode, '')                          AS EAN,\n  CASE WHEN A.cHAN = A.cArtNr THEN '' ELSE ISNULL(A.cHAN, '') END AS HAN,\n  ISNULL(WG.cName, '')                            AS Warengruppe,\n  ISNULL(A.cTaric, '')                            AS Warennummer,\n  ISNULL(A.cHerkunftsland, '')                    AS Herkunftsland,\n  CAST(CASE WHEN ISNULL(A.fGewicht, 0) > 0 THEN A.fGewicht\n            ELSE ISNULL(A.fArtGewicht, 0) END AS DECIMAL(18,3)) AS Gewicht,\n  CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2))    AS EKNetto,\n  CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2))    AS VKNetto,\n  CAST(CASE WHEN ISNULL(A.fVKNetto, 0) > 0\n       THEN 100.0 * (A.fVKNetto - ISNULL(A.fEKNetto, 0)) / A.fVKNetto END AS DECIMAL(18,1)) AS MargeProzent,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2))    AS Bestand,\n  CAST(ISNULL(LB.Bestand, 0) * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS Kapitalbindung,\n  LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, '')))) AS BeschreibungZeichen,\n  RTRIM(ISNULL(CONVERT(char(10), V.LetzterVerkauf, 104), '')) AS LetzterVerkauf,\n  CAST(ISNULL(V.Menge12M, 0) AS DECIMAL(18,2))    AS Menge12M,\n  CAST(ISNULL(V.Umsatz12M, 0) AS DECIMAL(18,2))   AS Umsatz12M,\n  LTRIM(STUFF(\n      CASE WHEN ISNULL(A.cBarcode, '') = '' THEN ', EAN' ELSE '' END +\n      CASE WHEN ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0 THEN ', Gewicht' ELSE '' END +\n      CASE WHEN ISNULL(A.fEKNetto, 0) = 0 THEN ', Einkaufspreis' ELSE '' END +\n      CASE WHEN ISNULL(A.kWarengruppe, 0) = 0 THEN ', Warengruppe' ELSE '' END +\n      CASE WHEN ISNULL(A.cTaric, '') = '' THEN ', Warennummer' ELSE '' END +\n      CASE WHEN ISNULL(A.cHerkunftsland, '') = '' THEN ', Herkunftsland' ELSE '' END +\n      CASE WHEN ISNULL(AB.cName, '') = '' THEN ', Bezeichnung' ELSE '' END, 1, 1, '')) AS FehlendeFelder\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nLEFT JOIN (SELECT P.kArtikel,\n                  MAX(R.dErstellt) AS LetzterVerkauf,\n                  SUM(CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, GETDATE()) THEN P.fAnzahl END) AS Menge12M,\n                  SUM(CASE WHEN R.dErstellt >= DATEADD(YEAR, -1, GETDATE()) THEN P.fAnzahl * P.fVkNetto END) AS Umsatz12M\n           FROM Rechnung.tRechnungPosition P\n           JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\n           WHERE P.nType = 1\n           GROUP BY P.kArtikel) V ON V.kArtikel = A.kArtikel\nWHERE A.kArtikel = :kArtikel"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel-Detail (Drilldown)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Warennummer",
+              "target_field": "Warennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warennummer"
+              }
+            },
+            {
+              "source_field": "Herkunftsland",
+              "target_field": "Herkunftsland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Herkunftsland"
+              }
+            },
+            {
+              "source_field": "Gewicht",
+              "target_field": "Gewicht",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gewicht"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "MargeProzent",
+              "target_field": "MargeProzent",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MargeProzent"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Kapitalbindung",
+              "target_field": "Kapitalbindung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kapitalbindung"
+              }
+            },
+            {
+              "source_field": "BeschreibungZeichen",
+              "target_field": "BeschreibungZeichen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BeschreibungZeichen"
+              }
+            },
+            {
+              "source_field": "LetzterVerkauf",
+              "target_field": "LetzterVerkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterVerkauf"
+              }
+            },
+            {
+              "source_field": "Menge12M",
+              "target_field": "Menge12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge12M"
+              }
+            },
+            {
+              "source_field": "Umsatz12M",
+              "target_field": "Umsatz12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz12M"
+              }
+            },
+            {
+              "source_field": "FehlendeFelder",
+              "target_field": "FehlendeFelder",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "FehlendeFelder"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_artikel_verkaeufe",
+      "name": "Health-Check – Verkäufe des Artikels (Drilldown)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Datum",
+            "RechnungNr",
+            "Kunde",
+            "Menge",
+            "EinzelNetto",
+            "Positionswert",
+            "DB"
+          ],
+          "sql": "SELECT TOP 100\n  CONVERT(char(10), R.dErstellt, 104) AS Datum,\n  ISNULL(R.cRechnungsNr, '')          AS RechnungNr,\n  LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),\n      ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n  CAST(P.fAnzahl AS DECIMAL(18,2))                    AS Menge,\n  CAST(P.fVkNetto AS DECIMAL(18,2))                   AS EinzelNetto,\n  CAST(P.fAnzahl * P.fVkNetto AS DECIMAL(18,2))       AS Positionswert,\n  CAST(P.fAnzahl * (P.fVkNetto - COALESCE(NULLIF(P.fEkNetto, 0), A.fEKNetto, 0))\n       AS DECIMAL(18,2))                              AS DB\nFROM Rechnung.tRechnungPosition P\nJOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung\nLEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = R.kRechnung\nLEFT JOIN dbo.tArtikel A ON A.kArtikel = P.kArtikel\nWHERE P.kArtikel = :kArtikel\nORDER BY R.dErstellt DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Verkäufe des Artikels (Drilldown)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "RechnungNr",
+              "target_field": "RechnungNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "RechnungNr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EinzelNetto",
+              "target_field": "EinzelNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EinzelNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            },
+            {
+              "source_field": "DB",
+              "target_field": "DB",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ean_artikel",
+      "name": "Health-Check – Artikel mit dieser EAN (Drilldown)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "Warengruppe",
+            "HAN",
+            "VKNetto",
+            "Bestand",
+            "Variante"
+          ],
+          "sql": "SELECT TOP 100\n  CAST(A.kArtikel AS VARCHAR(20))              AS kArtikel,\n  A.cArtNr                                     AS ArtNr,\n  ISNULL(AB.cName, '')                         AS Artikel,\n  ISNULL(H.cName, '')                          AS Hersteller,\n  ISNULL(WG.cName, '')                         AS Warengruppe,\n  CASE WHEN A.cHAN = A.cArtNr THEN '' ELSE ISNULL(A.cHAN, '') END AS HAN,\n  CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n  CAST(ISNULL(LB.Bestand, 0) AS DECIMAL(18,2)) AS Bestand,\n  CASE WHEN ISNULL(A.nIstVater, 0) = 1 THEN 'Vater' ELSE '' END AS Variante\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) LB\n     ON LB.kArtikel = A.kArtikel\nWHERE A.cBarcode = :ean\n  AND ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel mit dieser EAN (Drilldown)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Variante",
+              "target_field": "Variante",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Variante"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kunden_detail",
+      "name": "Health-Check – Kunden-Detail (Drilldown)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kundennummer",
+            "Kunde",
+            "Strasse",
+            "Ort",
+            "Land",
+            "EMail",
+            "Telefon",
+            "Kunde_seit",
+            "Bestellungen",
+            "UmsatzGesamt",
+            "LetzteBestellung",
+            "Gesperrt"
+          ],
+          "sql": "SELECT TOP 1\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(NULLIF(AD.cFirma, ''),\n      ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, '')))) AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cLand, '')                             AS Land,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  ISNULL(AD.cTel, '')                              AS Telefon,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung,\n  CASE WHEN ISNULL(K.cSperre, 'N') = 'Y' THEN 'ja' ELSE 'nein' END AS Gesperrt\nFROM dbo.tkunde K\n-- Es gibt Kunden mit mehreren als Standard markierten Adressen; OUTER APPLY hält\n-- das Ergebnis bei genau einer Zeile (ein äußeres TOP 1 reicht nicht: der\n-- Vorschaulauf hebt es über _apply_row_cap auf die Zeilenobergrenze an).\nOUTER APPLY (SELECT TOP 1 * FROM dbo.tAdresse A\n             WHERE A.kKunde = K.kKunde AND A.nStandard = 1\n             ORDER BY A.kAdresse) AD\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nWHERE K.kKunde = :kKunde"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kunden-Detail (Drilldown)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kundennummer",
+              "target_field": "Kundennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennummer"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Strasse",
+              "target_field": "Strasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Strasse"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "EMail",
+              "target_field": "EMail",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EMail"
+              }
+            },
+            {
+              "source_field": "Telefon",
+              "target_field": "Telefon",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Telefon"
+              }
+            },
+            {
+              "source_field": "Kunde_seit",
+              "target_field": "Kunde_seit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde_seit"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "UmsatzGesamt",
+              "target_field": "UmsatzGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzGesamt"
+              }
+            },
+            {
+              "source_field": "LetzteBestellung",
+              "target_field": "LetzteBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzteBestellung"
+              }
+            },
+            {
+              "source_field": "Gesperrt",
+              "target_field": "Gesperrt",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gesperrt"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_kunden_firma",
+      "name": "Health-Check – Kunden dieser Firma (Drilldown)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kKunde",
+            "Kundennummer",
+            "Kunde",
+            "Ansprechpartner",
+            "Strasse",
+            "Ort",
+            "EMail",
+            "Kunde_seit",
+            "Bestellungen",
+            "UmsatzGesamt",
+            "LetzteBestellung"
+          ],
+          "sql": "SELECT TOP 100\n  CAST(K.kKunde AS VARCHAR(20))                    AS kKunde,\n  ISNULL(K.cKundenNr, '')                          AS Kundennummer,\n  LTRIM(RTRIM(ISNULL(AD.cFirma, '')))              AS Kunde,\n  LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))) AS Ansprechpartner,\n  LTRIM(RTRIM(ISNULL(AD.cStrasse, '')))            AS Strasse,\n  LTRIM(ISNULL(AD.cPLZ, '') + ' ' + ISNULL(AD.cOrt, '')) AS Ort,\n  ISNULL(AD.cMail, '')                             AS EMail,\n  RTRIM(ISNULL(CONVERT(char(10), K.dErstellt, 104), ''))  AS Kunde_seit,\n  ISNULL(U.Bestellungen, 0)                        AS Bestellungen,\n  CAST(ISNULL(U.Umsatz, 0) AS DECIMAL(18,2))       AS UmsatzGesamt,\n  RTRIM(ISNULL(CONVERT(char(10), U.LetzteBestellung, 104), '')) AS LetzteBestellung\nFROM dbo.tkunde K\n-- CROSS APPLY statt JOIN: Kunden mit mehreren Standardadressen würden sonst\n-- mehrfach in der Dublettenliste stehen.\nCROSS APPLY (SELECT TOP 1 * FROM dbo.tAdresse A\n             WHERE A.kKunde = K.kKunde AND A.nStandard = 1 AND A.cFirma = :firma\n             ORDER BY A.kAdresse) AD\nLEFT JOIN (SELECT R.kKunde,\n                  COUNT(DISTINCT R.kRechnung) AS Bestellungen,\n                  SUM(P.fAnzahl * P.fVkNetto) AS Umsatz,\n                  MAX(R.dErstellt)            AS LetzteBestellung\n           FROM Rechnung.vRechnung R\n           JOIN Rechnung.tRechnungPosition P ON P.kRechnung = R.kRechnung\n           GROUP BY R.kKunde) U ON U.kKunde = K.kKunde\nORDER BY U.Umsatz DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Kunden dieser Firma (Drilldown)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kundennummer",
+              "target_field": "Kundennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennummer"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Ansprechpartner",
+              "target_field": "Ansprechpartner",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ansprechpartner"
+              }
+            },
+            {
+              "source_field": "Strasse",
+              "target_field": "Strasse",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Strasse"
+              }
+            },
+            {
+              "source_field": "Ort",
+              "target_field": "Ort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ort"
+              }
+            },
+            {
+              "source_field": "EMail",
+              "target_field": "EMail",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EMail"
+              }
+            },
+            {
+              "source_field": "Kunde_seit",
+              "target_field": "Kunde_seit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde_seit"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            },
+            {
+              "source_field": "UmsatzGesamt",
+              "target_field": "UmsatzGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzGesamt"
+              }
+            },
+            {
+              "source_field": "LetzteBestellung",
+              "target_field": "LetzteBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzteBestellung"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2311,7 +3270,8 @@
                   "label": "Lücken je Feld",
                   "kind": "kpi"
                 }
-              ]
+              ],
+              "report_layout": true
             }
           },
           {
@@ -2335,7 +3295,27 @@
             "config": {
               "width": 6,
               "info": "Ohne EAN sind Marktplätze (Amazon, eBay) und viele Logistikprozesse nicht bedienbar.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2346,7 +3326,27 @@
             "config": {
               "width": 6,
               "info": "Fehlende Gewichte verhindern korrekte Versandkosten und Intrastat-Meldungen.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2356,7 +3356,27 @@
             "action_id": "act_hc_ohne_warengruppe",
             "config": {
               "width": 6,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2366,7 +3386,27 @@
             "action_id": "act_hc_ohne_name",
             "config": {
               "width": 12,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2377,7 +3417,35 @@
             "config": {
               "width": 6,
               "info": "Dieselbe EAN an mehreren Artikeln führt bei Marktplätzen zu Ablehnungen und Fehlzuordnungen im Wareneingang.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_ean_artikel",
+                "key_column": "EAN",
+                "param": "ean",
+                "title": "Artikel mit dieser EAN",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_detail",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Artikel-Detail",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ],
+                    "levels": [
+                      {
+                        "mapping_id": "m_hc_artikel_verkaeufe",
+                        "key_column": "kArtikel",
+                        "param": "kArtikel",
+                        "title": "Verkäufe des Artikels"
+                      }
+                    ]
+                  }
+                ]
+              }
             }
           },
           {
@@ -2388,7 +3456,27 @@
             "config": {
               "width": 6,
               "info": "Ohne EK ist keine Marge und kein Deckungsbeitrag rechenbar – betrifft alle Ertragsauswertungen. Der letzte tatsächliche EK steht daneben.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2399,7 +3487,27 @@
             "config": {
               "width": 6,
               "info": "Jeder Verkauf dieser Artikel erzeugt Verlust. Sortiert nach größtem Minus.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2410,7 +3518,27 @@
             "config": {
               "width": 6,
               "info": "Warentarifnummer (Taric) ist Pflicht für Intrastat-Meldungen und Zollanmeldungen.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2421,7 +3549,27 @@
             "config": {
               "width": 6,
               "info": "Herkunftsland ist Pflichtfeld der Intrastat-Ausfuhrmeldung.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -2432,7 +3580,16 @@
             "config": {
               "width": 6,
               "info": "Ohne E-Mail keine Versandbenachrichtigung, kein Newsletter, keine digitale Rechnung.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_kunden_detail",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Kunden-Detail"
+              },
+              "hidden_columns": [
+                "kKunde"
+              ]
             }
           },
           {
@@ -2443,7 +3600,24 @@
             "config": {
               "width": 6,
               "info": "Gleiche Firma und PLZ mehrfach angelegt. Vor dem Zusammenführen prüfen – Filialen können legitime Mehrfachanlagen sein.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_kunden_firma",
+                "key_column": "Kunde",
+                "param": "firma",
+                "title": "Kunden dieser Firma",
+                "hidden_columns": [
+                  "kKunde"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_kunden_detail",
+                    "key_column": "kKunde",
+                    "param": "kKunde",
+                    "title": "Kunden-Detail"
+                  }
+                ]
+              }
             }
           },
           {

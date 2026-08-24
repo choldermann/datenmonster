@@ -228,6 +228,57 @@ function buildAssessment(results) {
       kommentar: `Tracking bei ${deNum(vt.TrackingQuote)} % der Sendungen, ${deNum(vt.OhneTracking)} ohne Nummer` });
   }
 
+  // ── Stammdaten-Health-Check ────────────────────────────────────────────────
+  // Momentaufnahme ohne Vorjahresvergleich: bewertet werden Lückenquoten, nicht
+  // Veränderungen. Schwellen identisch zu _assessment_rows in cockpit_report.py.
+  const hc = one("act_hc_kpi");
+  if (hc) {
+    const chk = {};                                  // check_key → Anzahl (Ampel-Übersicht)
+    rowsOf("act_hc_summary").forEach(r => { chk[r.check_key] = num(r.Anzahl) || 0; });
+    const gap = {};                                  // Feld → Lückenanteil in %
+    rowsOf("act_hc_luecken").forEach(r => { gap[r.Feld] = num(r.Anteil); });
+    const LUECKE_OK = 5;                             // bis 5 % fehlende Werte je Feld
+
+    const voll = num(hc.Vollstaendigkeit);
+    out.push({ bereich: "Vollständigkeit", good: (voll == null || voll >= 90),
+      kommentar: `${deNum(voll)} % der Artikel ohne Lücke `
+        + `(${deNum(hc.ArtikelMitLuecke)} von ${deNum(hc.AktiveArtikel)} unvollständig)` });
+
+    const eanAnteil = gap["EAN/Barcode"], eanDop = chk.ean_doppelt;
+    out.push({ bereich: "EAN & Eindeutigkeit",
+      good: (eanAnteil == null || eanAnteil <= LUECKE_OK) && !eanDop,
+      kommentar: `${deNum(chk.artikel_ohne_ean)} Artikel ohne EAN (${deNum(eanAnteil)} %)`
+        + (eanDop ? `, ${deNum(eanDop)} mehrfach vergebene EAN` : "") });
+
+    const ekAnteil = gap["Einkaufspreis"], verlust = chk.artikel_vk_unter_ek || 0;
+    // VK unter EK ist kein Lückenproblem, sondern ein Verlustgeschäft – jeder Fall zählt.
+    out.push({ bereich: "Preise & Marge",
+      good: (ekAnteil == null || ekAnteil <= LUECKE_OK) && verlust === 0,
+      kommentar: `${deNum(chk.artikel_ohne_ek)} Artikel ohne Einkaufspreis (${deNum(ekAnteil)} %)`
+        + `, ${deNum(verlust)} mit VK unter EK` });
+
+    const taric = gap["Warentarifnummer"], herk = gap["Herkunftsland"];
+    out.push({ bereich: "Außenhandel",
+      good: (taric == null || taric <= LUECKE_OK) && (herk == null || herk <= LUECKE_OK),
+      kommentar: `${deNum(chk.artikel_ohne_taric)} ohne Warentarifnummer (${deNum(taric)} %), `
+        + `${deNum(chk.artikel_ohne_herkunftsland)} ohne Herkunftsland (${deNum(herk)} %)` });
+
+    const gew = gap["Gewicht"], ohneName = chk.artikel_ohne_name || 0;
+    out.push({ bereich: "Logistik & Struktur",
+      good: (gew == null || gew <= LUECKE_OK) && ohneName === 0,
+      kommentar: `${deNum(chk.artikel_ohne_gewicht)} Artikel ohne Gewicht (${deNum(gew)} %), `
+        + `${deNum(chk.artikel_ohne_warengruppe)} ohne Warengruppe`
+        + (ohneName ? `, ${deNum(ohneName)} ohne Bezeichnung` : "") });
+
+    const kunden = num(hc.AktiveKunden), ohneMail = num(hc.KundenOhneMail) || 0;
+    const mailQuote = kunden ? (100 * ohneMail) / kunden : null;
+    // Ohne E-Mail keine Versandbenachrichtigung und keine digitale Rechnung –
+    // bis zu einem Fünftel der Kunden ist im B2B-Bestand aber üblich.
+    out.push({ bereich: "Kundenstamm", good: (mailQuote == null || mailQuote <= 20),
+      kommentar: `${deNum(ohneMail)} von ${deNum(kunden)} Kunden ohne E-Mail (${deNum(mailQuote)} %)`
+        + (chk.kunden_dubletten ? `, ${deNum(chk.kunden_dubletten)} mögliche Dubletten` : "") });
+  }
+
   const rt = one("act_retouren_kpi");
   if (rt) {
     const q = num(rt.Quote), qvj = num(rt.QuoteVJ);
