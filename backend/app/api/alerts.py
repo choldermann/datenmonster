@@ -129,6 +129,7 @@ class EvaluateIn(BaseModel):
     params: dict = {}
     include_ok: bool = False
     rule_keys: Optional[list] = None
+    cockpits: Optional[list] = None
 
 
 @router.post("/evaluate")
@@ -140,7 +141,8 @@ def evaluate(body: EvaluateIn, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     return alert_service.evaluate(db, body.project_id, body.params,
                                   include_ok=body.include_ok,
-                                  rule_keys=body.rule_keys)
+                                  rule_keys=body.rule_keys,
+                                  cockpits=body.cockpits)
 
 
 @router.get("/latest")

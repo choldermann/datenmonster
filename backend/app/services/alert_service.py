@@ -13,6 +13,7 @@ Kennzahlenzeile. Keine Hochrechnung, keine Schätzung, keine Heuristik.
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from sqlalchemy import or_
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -241,9 +242,20 @@ def _drilldown(rule, db, project_id) -> Optional[dict]:
     m = _resolve_mapping(db, project_id, dd.get("mapping_id"), dd.get("mapping_name"))
     if not m:
         return None
+    # Weitere Ebenen (z.B. Artikelliste → aktuelle Beschreibung) werden mit
+    # aufgelöst; nicht installierte Ziel-Mappings fallen still weg, die erste
+    # Ebene bleibt trotzdem klickbar.
+    levels = []
+    for lvl in dd.get("levels") or []:
+        lm = _resolve_mapping(db, project_id, lvl.get("mapping_id"), lvl.get("mapping_name"))
+        if not lm:
+            break
+        levels.append({"mapping_id": lm.id, "title": lvl.get("title") or lm.name,
+                       "key_column": lvl.get("key_column"), "param": lvl.get("param"),
+                       "hidden_columns": lvl.get("hidden_columns") or []})
     return {"mapping_id": m.id, "title": dd.get("title") or rule.name,
             "hidden_columns": dd.get("hidden_columns") or [],
-            "param": dd.get("param")}
+            "param": dd.get("param"), "levels": levels}
 
 
 # ── Auswertung einer Regel ───────────────────────────────────────────────────
@@ -298,7 +310,7 @@ def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict) -> dict
 
 def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
              include_ok: bool = False, rule_keys: Optional[list] = None,
-             persist: bool = True) -> dict:
+             persist: bool = True, cockpits: Optional[list] = None) -> dict:
     """Führt alle aktiven Regeln des Projekts aus und liefert die Warnungen.
 
     include_ok=True gibt zusätzlich die nicht ausgelösten und die nicht
@@ -312,8 +324,16 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
     q = db.query(AlertRule).filter(AlertRule.active.is_(True))
     q = q.filter(AlertRule.project_id == project_id) if project_id is not None \
         else q.filter(AlertRule.project_id.is_(None))
-    if rule_keys:
-        q = q.filter(AlertRule.rule_key.in_(rule_keys))
+    # rule_keys und cockpits wirken ODER-verknüpft: ein Cockpit zeigt „seine"
+    # Regeln (cockpits) und darf einzelne fremde dazunehmen (rule_keys), ohne dass
+    # eine Regel doppelt definiert werden muss. Ohne beides laufen alle Regeln.
+    if rule_keys or cockpits:
+        von_keys = AlertRule.rule_key.in_(rule_keys) if rule_keys else None
+        von_cock = AlertRule.cockpit.in_(cockpits) if cockpits else None
+        if von_keys is not None and von_cock is not None:
+            q = q.filter(or_(von_keys, von_cock))
+        else:
+            q = q.filter(von_keys if von_keys is not None else von_cock)
     rules = q.order_by(AlertRule.sort.asc(), AlertRule.id.asc()).all()
 
     base_params = apply_config(params or {}, project_id, db)

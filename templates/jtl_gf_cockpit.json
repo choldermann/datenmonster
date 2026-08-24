@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.1",
+  "version": "2.2",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12,7 +12,8 @@
     "Der Reiter 'Trends' zeigt feste rollierende Fenster (24 Monate bzw. letzte 12 vs. vorherige 12 Monate), unabhängig vom Zeitraumfilter.",
     "Ladenhüter/Warnungen: 'ladenhueter_tage' legt fest, ab wie vielen Tagen ohne Verkauf ein Artikel mit Bestand als Ladenhüter gilt (Standard 180).",
     "Rohertrag/Marge werden mit dem aktuellen Artikel-EK (dbo.tArtikel.fEKNetto) gerechnet – ein Näherungswert, kein historischer EK.",
-    "SCHEMA-PRÜFUNG: Die Abfragen nutzen Standard-JTL-Tabellen (Rechnung.vRechnung, Rechnung.tRechnungPosition, Rechnung.vRechnungRechnungsadresse, dbo.tArtikel, dbo.tArtikelBeschreibung, dbo.tlagerbestand, dbo.tWarengruppe). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen prüfen."
+    "SCHEMA-PRÜFUNG: Die Abfragen nutzen Standard-JTL-Tabellen (Rechnung.vRechnung, Rechnung.tRechnungPosition, Rechnung.vRechnungRechnungsadresse, dbo.tArtikel, dbo.tArtikelBeschreibung, dbo.tlagerbestand, dbo.tWarengruppe). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen prüfen.",
+    "Die Aufgabenliste oben im Reiter „Unternehmensübersicht“ kommt aus der Warnungs-Engine: Die Regeln sind Daten, die Schwellwerte stehen zentral unter Warnungen und gelten auch für den Unternehmensmonitor. Ist das Lager-Cockpit installiert, erscheint zusätzlich dessen Ladenhüter-Warnung."
   ],
   "config_required": [
     {
@@ -2747,103 +2748,6 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "BundleKandidat"
-              }
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "m_tagesaufgaben",
-      "name": "Cockpit – Aufgabenliste (Ampel)",
-      "canvas_nodes": [],
-      "joins": [],
-      "sql_nodes": [
-        {
-          "id": "sql1",
-          "x": 120,
-          "y": 40,
-          "width": 380,
-          "height": 260,
-          "connection_id": "{{connection_jtl}}",
-          "sql": "WITH C AS (\n    SELECT\n        (SELECT COUNT(*) FROM (\n            SELECT X.kKunde\n            FROM (\n                SELECT RE.kKunde, POS.fAnzahl * POS.fVkNetto AS Netto,\n                    CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n                    CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n            ) X\n            GROUP BY X.kKunde\n            HAVING SUM(CASE WHEN vj = 1 THEN Netto END) > 0 AND SUM(CASE WHEN vj = 1 THEN Netto END) > ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0)\n        ) k) AS n_kunden,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\n            LEFT JOIN (SELECT P.cArtNr, MAX(R.dErstellt) AS LetzterVerkauf FROM Rechnung.tRechnungPosition P JOIN Rechnung.vRechnung R ON R.kRechnung = P.kRechnung GROUP BY P.cArtNr) V ON V.cArtNr = A.cArtNr\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(V.LetzterVerkauf) IS NULL OR MAX(V.LetzterVerkauf) < DATEADD(DAY, -180, GETDATE()))\n        ) l) AS n_ladenhueter,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\n            LEFT JOIN (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel) B ON B.kArtikel = A.kArtikel\n            WHERE RE.dErstellt >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\n            GROUP BY A.kArtikel, B.Bestand\n            HAVING ISNULL(B.Bestand, 0) <= 0\n        ) b) AS n_nachbestellen,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM Rechnung.vRechnung RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n            JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\n            WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND ISNULL(A.fEKNetto, 0) > 0\n            GROUP BY A.kArtikel\n            HAVING SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) < 0\n        ) m) AS n_marge,\n        (SELECT COUNT(*) FROM (\n            SELECT A.kArtikel\n            FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel AND A.cAktiv = 'Y'\n            LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n            GROUP BY A.kArtikel\n            HAVING SUM(LB.fLagerbestand) > 0 AND (MAX(AB.cName) IS NULL OR MAX(LEN(LTRIM(RTRIM(ISNULL(AB.cBeschreibung, ''))))) < 20)\n        ) d) AS n_beschreibung,\n        (SELECT SUM(CASE WHEN Rohertrag < Vor THEN 1 ELSE 0 END)\n         FROM (\n            SELECT Rohertrag, LAG(Rohertrag) OVER (ORDER BY Monat) AS Vor, ROW_NUMBER() OVER (ORDER BY Monat DESC) AS rn\n            FROM (\n                SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n                       SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS Rohertrag\n                FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n                JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n                LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n                WHERE RE.dErstellt >= DATEADD(MONTH, -6, DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))\n                  AND RE.dErstellt < DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date))\n                GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n            ) mm\n         ) z WHERE rn <= 3) AS n_trend,\n        (SELECT COUNT(*) FROM (SELECT A.kArtikel FROM dbo.tArtikel A JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel WHERE A.cAktiv <> 'Y' AND NOT EXISTS (SELECT 1 FROM dbo.tStueckliste SL JOIN dbo.tArtikel K ON K.kArtikel = SL.kArtikel WHERE SL.kVaterArtikel = A.kArtikel AND K.cAktiv = 'Y') GROUP BY A.kArtikel HAVING SUM(LB.fLagerbestand) > 0) g) AS n_gesperrt\n)\nSELECT sort, Ampel, Anzahl, Aufgabe, check_key FROM (\n    SELECT 1 AS sort, CASE WHEN n_kunden > 15 THEN 'rot' WHEN n_kunden > 5 THEN 'orange' WHEN n_kunden > 0 THEN 'gelb' ELSE 'gruen' END AS Ampel, n_kunden AS Anzahl, 'Kunden mit Umsatzrückgang kontaktieren' AS Aufgabe, 'kunden_rueckgang' AS check_key FROM C\n    UNION ALL SELECT 2, CASE WHEN n_ladenhueter > 10 THEN 'rot' WHEN n_ladenhueter > 3 THEN 'orange' WHEN n_ladenhueter > 0 THEN 'gelb' ELSE 'gruen' END, n_ladenhueter, 'Ladenhüter abbauen', 'ladenhueter' FROM C\n    UNION ALL SELECT 3, CASE WHEN n_nachbestellen > 10 THEN 'rot' WHEN n_nachbestellen > 0 THEN 'orange' ELSE 'gruen' END, n_nachbestellen, 'Artikel nachbestellen (verkauft, kein Bestand)', 'nachbestellen' FROM C\n    UNION ALL SELECT 4, CASE WHEN n_marge > 10 THEN 'rot' WHEN n_marge > 0 THEN 'orange' ELSE 'gruen' END, n_marge, 'Artikel mit negativer Marge prüfen', 'marge' FROM C\n    UNION ALL SELECT 5, CASE WHEN n_trend >= 3 THEN 'rot' WHEN n_trend >= 2 THEN 'orange' ELSE 'gruen' END, n_trend, CASE WHEN n_trend >= 2 THEN 'Monate mit sinkendem Rohertrag' ELSE 'Rohertrag stabil oder steigend' END, 'trend' FROM C\n    UNION ALL SELECT 6, CASE WHEN n_beschreibung > 500 THEN 'gelb' ELSE 'gruen' END, n_beschreibung, 'Artikelbeschreibungen verbessern', 'beschreibung' FROM C\n    UNION ALL SELECT 7, CASE WHEN n_gesperrt > 0 THEN 'orange' ELSE 'gruen' END, n_gesperrt, 'Gesperrte Artikel mit Bestand abverkaufen', 'gesperrte_artikel' FROM C\n) q\nORDER BY CASE Ampel WHEN 'rot' THEN 0 WHEN 'orange' THEN 1 WHEN 'gelb' THEN 2 ELSE 3 END, sort",
-          "mode": "transform",
-          "output_field": "sql_1",
-          "output_fields": [
-            "sort",
-            "Ampel",
-            "Anzahl",
-            "Aufgabe",
-            "check_key"
-          ]
-        }
-      ],
-      "agg_nodes": [],
-      "transform_nodes": [],
-      "constant_nodes": [],
-      "rest_nodes": [],
-      "lookup_nodes": [],
-      "calc_nodes": [],
-      "switch_nodes": [],
-      "sort_nodes": [],
-      "targets": [
-        {
-          "id": "t1",
-          "name": "Cockpit – Aufgabenliste (Ampel)",
-          "target_type": "dataset",
-          "target_connection_id": null,
-          "target_table": "",
-          "target_write_mode": "replace",
-          "target_options": {},
-          "fields": [
-            {
-              "source_field": "sort",
-              "target_field": "sort",
-              "target_type": "integer",
-              "source_dataset_id": "__sql__sql1",
-              "transformer": {
-                "type": "direct",
-                "source_field": "sort"
-              }
-            },
-            {
-              "source_field": "Ampel",
-              "target_field": "Ampel",
-              "target_type": "string",
-              "source_dataset_id": "__sql__sql1",
-              "transformer": {
-                "type": "direct",
-                "source_field": "Ampel"
-              }
-            },
-            {
-              "source_field": "Anzahl",
-              "target_field": "Anzahl",
-              "target_type": "integer",
-              "source_dataset_id": "__sql__sql1",
-              "transformer": {
-                "type": "direct",
-                "source_field": "Anzahl"
-              }
-            },
-            {
-              "source_field": "Aufgabe",
-              "target_field": "Aufgabe",
-              "target_type": "string",
-              "source_dataset_id": "__sql__sql1",
-              "transformer": {
-                "type": "direct",
-                "source_field": "Aufgabe"
-              }
-            },
-            {
-              "source_field": "check_key",
-              "target_field": "check_key",
-              "target_type": "string",
-              "source_dataset_id": "__sql__sql1",
-              "transformer": {
-                "type": "direct",
-                "source_field": "check_key"
               }
             }
           ]
@@ -7100,6 +7004,103 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_rohertrag_rueckgang",
+      "name": "Cockpit – Monate mit sinkendem Rohertrag",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Monate der letzten drei abgeschlossenen Monate, in denen der Rohertrag unter\n-- dem Vormonat lag (Fenster: sechs volle Monate, damit LAG einen Vormonat hat).\nSELECT Monat,\n       CAST(Rohertrag AS DECIMAL(18,2))        AS Rohertrag,\n       CAST(Vormonat AS DECIMAL(18,2))         AS Vormonat,\n       CAST(Vormonat - Rohertrag AS DECIMAL(18,2)) AS Rueckgang,\n       CAST(CASE WHEN Vormonat > 0\n            THEN 100.0 * (Rohertrag - Vormonat) / Vormonat END AS DECIMAL(18,1)) AS [Veraenderung %]\nFROM (\n    SELECT Monat, Rohertrag,\n           LAG(Rohertrag) OVER (ORDER BY Monat) AS Vormonat,\n           ROW_NUMBER() OVER (ORDER BY Monat DESC) AS rn\n    FROM (\n        SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n               SUM(POS.fAnzahl * (POS.fVkNetto - ISNULL(A.fEKNetto, 0))) AS Rohertrag\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(MONTH, -6, DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date)))\n          AND RE.dErstellt < DATEADD(DAY, 1 - DAY(GETDATE()), CAST(GETDATE() AS date))\n        GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n    ) mm\n) z\nWHERE rn <= 3 AND Vormonat IS NOT NULL AND Rohertrag < Vormonat\nORDER BY Monat DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Rohertrag",
+            "Vormonat",
+            "Rueckgang",
+            "Veraenderung %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Monate mit sinkendem Rohertrag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Vormonat",
+              "target_field": "Vormonat",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vormonat"
+              }
+            },
+            {
+              "source_field": "Rueckgang",
+              "target_field": "Rueckgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rueckgang"
+              }
+            },
+            {
+              "source_field": "Veraenderung %",
+              "target_field": "Veraenderung %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veraenderung %"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -7198,11 +7199,19 @@
         "layout": [],
         "actions": [
           {
-            "id": "act_tagesaufgaben",
-            "type": "run_mapping",
-            "mapping_id": "m_tagesaufgaben",
+            "id": "act_gf_alerts",
+            "type": "run_alerts",
+            "mapping_id": null,
             "pipeline_id": null,
-            "label": "Cockpit – Aufgabenliste"
+            "label": "Cockpit – Warnungen prüfen",
+            "options": {
+              "cockpits": [
+                "GF-Cockpit"
+              ],
+              "rule_keys": [
+                "lager_ladenhueter"
+              ]
+            }
           },
           {
             "id": "act_overview_kpi",
@@ -7550,63 +7559,13 @@
         ],
         "widgets": [
           {
-            "id": "w_tasklist",
-            "type": "tasklist",
-            "label": "📋 Aufgabenliste des Tages",
-            "action_id": "act_tagesaufgaben",
+            "id": "w_gf_alerts",
+            "type": "alerts",
+            "label": "📋 Heute zu tun",
+            "action_id": "act_gf_alerts",
             "config": {
               "width": 12,
-              "info": "Heute empfohlen – klicken Sie eine Zeile für die Detailliste.",
-              "row_detail": {
-                "key_column": "check_key",
-                "map": {
-                  "kunden_rueckgang": {
-                    "mapping_id": "m_kunden_rueckgang",
-                    "title": "Kunden mit Umsatzrückgang",
-                    "hidden_columns": [
-                      "kKunde"
-                    ]
-                  },
-                  "ladenhueter": {
-                    "mapping_id": "m_warn_ladenhueter",
-                    "title": "Ladenhüter – Kapital ohne Verkauf",
-                    "hidden_columns": [
-                      "kArtikel"
-                    ]
-                  },
-                  "nachbestellen": {
-                    "mapping_id": "m_warn_bestand",
-                    "title": "Artikel nachbestellen (verkauft, kein Bestand)"
-                  },
-                  "marge": {
-                    "mapping_id": "m_warn_marge",
-                    "title": "Artikel mit negativer Marge"
-                  },
-                  "beschreibung": {
-                    "mapping_id": "m_beschreibung_todo",
-                    "title": "Artikelbeschreibungen verbessern",
-                    "hidden_columns": [
-                      "kArtikel"
-                    ],
-                    "levels": [
-                      {
-                        "mapping_id": "m_beschreibung_detail",
-                        "key_column": "kArtikel",
-                        "param": "kArtikel",
-                        "title": "Aktuelle Beschreibung"
-                      }
-                    ]
-                  },
-                  "trend": {
-                    "mapping_id": "m_trend",
-                    "title": "Umsatz- & Rohertrag-Trend (24 Monate)"
-                  },
-                  "gesperrte_artikel": {
-                    "mapping_id": "m_gesperrte_artikel",
-                    "title": "Gesperrte Artikel mit Bestand"
-                  }
-                }
-              }
+              "info": "Jede Zeile ist eine Prüfregel: Ampel, Anzahl und Betrag kommen aus der Auswertung, nicht aus einer Schätzung. Klick öffnet die Detailliste. Schwellwerte und Regeln stehen im Dashboard-Reiter „Warnungen“."
             }
           },
           {
@@ -9065,7 +9024,7 @@
             "id": "tab_uebersicht",
             "label": "Unternehmensübersicht",
             "action_ids": [
-              "act_tagesaufgaben",
+              "act_gf_alerts",
               "act_overview_kpi",
               "act_umsatz_verlauf"
             ]
@@ -9187,6 +9146,556 @@
         "show_ai_assistant": true
       },
       "portal_config": {}
+    }
+  ],
+  "alert_rules": [
+    {
+      "rule_key": "gf_rohertrag_trend",
+      "name": "Rohertrag rückläufig",
+      "category": "Geschäftsführung",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Monate mit sinkendem Rohertrag",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "count",
+        "value_column": "Rueckgang",
+        "min_count": 2
+      },
+      "facts": [
+        {
+          "label": "Letzter Monat",
+          "column": "Monat",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Rohertrag",
+          "column": "Rohertrag",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Vormonat",
+          "column": "Vormonat",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Rückgang",
+          "column": "Rueckgang",
+          "unit": "€",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} der letzten 3 Monate mit sinkendem Rohertrag – {summe} €",
+      "subtitle": "Zeile anklicken: die betroffenen Monate mit Vormonatsvergleich.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Monate mit sinkendem Rohertrag",
+        "title": "Monate mit sinkendem Rohertrag"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 13
+    },
+    {
+      "rule_key": "op_ueberfaellig",
+      "name": "Überfällige Forderungen",
+      "category": "Liquidität",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [
+        {
+          "metric": "wert",
+          "op": ">=",
+          "value_config": "forderung_kritisch_betrag",
+          "severity": "kritisch"
+        }
+      ],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Offene Posten Kennzahlen",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "kpi",
+        "column": "OffenUeberfaellig",
+        "op": ">",
+        "value": 0
+      },
+      "facts": [
+        {
+          "label": "Offen gesamt",
+          "column": "OffenGesamt",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Davon überfällig",
+          "column": "OffenUeberfaellig",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Überfälligkeitsquote",
+          "column": "UeberfaelligQuote",
+          "unit": "%",
+          "decimals": 1
+        },
+        {
+          "label": "DSO",
+          "column": "DSO",
+          "unit": "Tage",
+          "decimals": 0
+        }
+      ],
+      "title_template": "Überfällige Forderungen: {wert} €",
+      "subtitle": "Mahnlauf bzw. Anruf bei den größten Positionen.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+        "title": "Größte überfällige Rechnungen"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 20
+    },
+    {
+      "rule_key": "op_mahnkandidaten",
+      "name": "Deutlich überfällige Rechnungen",
+      "category": "Liquidität",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [
+        {
+          "metric": "summe",
+          "op": ">=",
+          "value_config": "forderung_kritisch_betrag",
+          "severity": "kritisch"
+        }
+      ],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "count",
+        "value_column": "OffenerBetrag",
+        "row_filter": {
+          "column": "TageUeberfaellig",
+          "op": ">=",
+          "value_config": "forderung_kritisch_tage"
+        }
+      },
+      "facts": [
+        {
+          "label": "Größter Fall",
+          "column": "Kunde",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Tage überfällig",
+          "column": "TageUeberfaellig",
+          "unit": "Tage",
+          "decimals": 0
+        },
+        {
+          "label": "Offener Betrag",
+          "column": "OffenerBetrag",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Mahnstufe",
+          "column": "Mahnstufe",
+          "unit": "",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Rechnungen deutlich überfällig – {summe} €",
+      "subtitle": "Größte Position zuerst anrufen.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Größte überfällige Rechnungen",
+        "title": "Größte überfällige Rechnungen"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 21
+    },
+    {
+      "rule_key": "kunden_zahlungsmoral",
+      "name": "Zahlungsmoral verschlechtert",
+      "category": "Liquidität",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Zahlungsmoral verschlechtert",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "count",
+        "row_filter": {
+          "column": "Verschlechterung",
+          "op": ">=",
+          "value_config": "zahldauer_verschlechterung_tage"
+        }
+      },
+      "facts": [
+        {
+          "label": "Auffälligster Kunde",
+          "column": "Kunde",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Zahldauer aktuell",
+          "column": "ZahldauerAkt",
+          "unit": "Tage",
+          "decimals": 0
+        },
+        {
+          "label": "Vorjahr",
+          "column": "ZahldauerVJ",
+          "unit": "Tage",
+          "decimals": 0
+        },
+        {
+          "label": "Verschlechterung",
+          "column": "Verschlechterung",
+          "unit": "Tage",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Kunden zahlen deutlich langsamer als im Vorjahr",
+      "subtitle": null,
+      "drilldown": {
+        "mapping_name": "Cockpit – Zahlungsmoral verschlechtert",
+        "title": "Kunden mit sich verschlechternder Zahlungsmoral",
+        "hidden_columns": [
+          "kKunde"
+        ]
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 22
+    },
+    {
+      "rule_key": "kunden_rueckgang",
+      "name": "Kunden mit Umsatzrückgang",
+      "category": "Kunden",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Kunden mit Rückgang",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "count",
+        "value_column": "Rueckgang",
+        "row_filter": {
+          "column": "Rueckgang",
+          "op": ">=",
+          "value_config": "kunde_rueckgang_betrag"
+        }
+      },
+      "facts": [
+        {
+          "label": "Größter Rückgang",
+          "column": "Kunde",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Umsatz",
+          "column": "Umsatz",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Vorjahr",
+          "column": "UmsatzVJ",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Rückgang",
+          "column": "Rueckgang",
+          "unit": "€",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Kunden mit deutlichem Umsatzrückgang – {summe} €",
+      "subtitle": "Zeile anklicken: Detailliste mit Kundenwerten.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Kunden mit Rückgang",
+        "title": "Kunden mit Umsatzrückgang",
+        "hidden_columns": [
+          "kKunde"
+        ]
+      },
+      "action_kind": "customer_winback",
+      "active": true,
+      "sort": 30
+    },
+    {
+      "rule_key": "kunden_churn",
+      "name": "Schlafende Kunden",
+      "category": "Kunden",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Churn / Schlafende Kunden",
+      "params": {
+        "plattform": []
+      },
+      "condition": {
+        "mode": "count",
+        "value_column": "Umsatz 24M"
+      },
+      "facts": [
+        {
+          "label": "Größter Kunde",
+          "column": "Kunde",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Letzter Kauf",
+          "column": "Letzter Kauf",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Tage inaktiv",
+          "column": "Tage inaktiv",
+          "unit": "Tage",
+          "decimals": 0
+        },
+        {
+          "label": "Umsatz 24 M",
+          "column": "Umsatz 24M",
+          "unit": "€",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Kunden sind eingeschlafen – {summe} € Umsatz in 24 Monaten",
+      "subtitle": "Wiedergewinnung lohnt bei den umsatzstärksten zuerst.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Churn / Schlafende Kunden",
+        "title": "Schlafende Kunden",
+        "hidden_columns": [
+          "kKunde"
+        ]
+      },
+      "action_kind": "customer_winback",
+      "active": true,
+      "sort": 31
+    },
+    {
+      "rule_key": "artikel_negative_marge",
+      "name": "Artikel mit negativer Marge",
+      "category": "Artikel",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "kritisch",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Warnung Marge",
+      "params": {},
+      "condition": {
+        "mode": "count"
+      },
+      "facts": [
+        {
+          "label": "Größter Verlust",
+          "column": "Artikel",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Rohertrag",
+          "column": "Rohertrag",
+          "unit": "€",
+          "decimals": 0
+        },
+        {
+          "label": "Marge",
+          "column": "MargeProzent",
+          "unit": "%",
+          "decimals": 1
+        },
+        {
+          "label": "Umsatz",
+          "column": "Umsatz",
+          "unit": "€",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Artikel wurden mit negativer Marge verkauft",
+      "subtitle": "Verkaufspreis oder Einkaufskonditionen prüfen.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Warnung Marge",
+        "title": "Artikel mit negativer Marge"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 70
+    },
+    {
+      "rule_key": "artikel_ohne_bestand",
+      "name": "Umsatzstarke Artikel ohne Bestand",
+      "category": "Artikel",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "warnung",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Warnung Bestand",
+      "params": {},
+      "condition": {
+        "mode": "count"
+      },
+      "facts": [
+        {
+          "label": "Meistverkaufter",
+          "column": "Artikel",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Verkauft (90 Tage)",
+          "column": "Verkauft90Tage",
+          "unit": "Stk",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} verkaufte Artikel haben keinen Bestand",
+      "subtitle": "Nachbestellung prüfen – hier geht Umsatz verloren.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Warnung Bestand",
+        "title": "Umsatzstarke Artikel ohne Bestand"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 71
+    },
+    {
+      "rule_key": "artikel_gesperrt_bestand",
+      "name": "Gesperrte Artikel mit Bestand",
+      "category": "Artikel",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "hinweis",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Gesperrte Artikel mit Bestand",
+      "params": {},
+      "condition": {
+        "mode": "count",
+        "value_column": "Kapitalbindung"
+      },
+      "facts": [
+        {
+          "label": "Größte Position",
+          "column": "Artikel",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Bestand",
+          "column": "Bestand",
+          "unit": "Stk",
+          "decimals": 0
+        },
+        {
+          "label": "Kapitalbindung",
+          "column": "Kapitalbindung",
+          "unit": "€",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} gesperrte Artikel binden {summe} € Kapital",
+      "subtitle": null,
+      "drilldown": {
+        "mapping_name": "Cockpit – Gesperrte Artikel mit Bestand",
+        "title": "Gesperrte Artikel mit Bestand"
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 72
+    },
+    {
+      "rule_key": "gf_beschreibungen",
+      "name": "Artikelbeschreibungen fehlen",
+      "category": "Stammdaten",
+      "cockpit": "GF-Cockpit",
+      "description": null,
+      "severity": "hinweis",
+      "severity_levels": [],
+      "mapping_id": null,
+      "mapping_name": "Cockpit – Artikelbeschreibungen offen",
+      "params": {},
+      "condition": {
+        "mode": "count",
+        "value_column": "Bestand",
+        "min_count": 1
+      },
+      "facts": [
+        {
+          "label": "Beispiel",
+          "column": "Artikel",
+          "unit": "",
+          "decimals": 0
+        },
+        {
+          "label": "Bestand",
+          "column": "Bestand",
+          "unit": "Stk",
+          "decimals": 0
+        },
+        {
+          "label": "Zeichen",
+          "column": "Beschreibungslaenge",
+          "unit": "",
+          "decimals": 0
+        }
+      ],
+      "title_template": "{anzahl} Artikel mit Bestand ohne brauchbare Beschreibung",
+      "subtitle": "Zeile anklicken: die Liste, ein weiterer Klick zeigt die aktuelle Beschreibung.",
+      "drilldown": {
+        "mapping_name": "Cockpit – Artikelbeschreibungen offen",
+        "title": "Artikelbeschreibungen verbessern",
+        "hidden_columns": [
+          "kArtikel"
+        ],
+        "levels": [
+          {
+            "mapping_name": "Cockpit – Artikelbeschreibung (Detail)",
+            "key_column": "kArtikel",
+            "param": "kArtikel",
+            "title": "Aktuelle Beschreibung"
+          }
+        ]
+      },
+      "action_kind": null,
+      "active": true,
+      "sort": 92
     }
   ]
 }

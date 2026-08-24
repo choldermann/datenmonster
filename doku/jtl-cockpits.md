@@ -101,14 +101,14 @@ sich Fragen an die hinterlegten Daten stellen lassen.
 ## 3. Die Cockpits im Einzelnen
 
 ### 3.1 Geschäftsführer-Cockpit
-*Template `jtl_gf_cockpit`, Version 2.1 – 64 Auswertungen, 12 Reiter*
+*Template `jtl_gf_cockpit`, Version 2.2 – 64 Auswertungen, 12 Reiter*
 
 Das Unternehmenscockpit: Ertragslage, Kunden, Liquidität, Kapital und Risiken auf einen Blick,
 durchgängig mit Vorjahresvergleich.
 
 | Reiter | Inhalt |
 |---|---|
-| **Unternehmensübersicht** | Aufgabenliste des Tages (Ampel mit Klick auf die Detailliste), Umsatz, Rohertrag (DB I), DB II, Marge, Rechnungen, Ø Auftragswert, aktive Kunden, KI-Kurzanalyse, Umsatzverlauf gegen Vorjahr |
+| **Unternehmensübersicht** | „Heute zu tun" aus der Warnungs-Engine (Ampel mit Klick auf die Detailliste), Umsatz, Rohertrag (DB I), DB II, Marge, Rechnungen, Ø Auftragswert, aktive Kunden, KI-Kurzanalyse, Umsatzverlauf gegen Vorjahr |
 | **Kundenentwicklung** | Aktive Kunden, Neukunden, Ø Umsatz je Kunde, Top-10-Kunden, Kunden mit Umsatzrückgang (KI-Empfehlung), Zahlungsmoral: Ø Zahlungsdauer, Anteil verspätet, langsamste Zahler, sich verschlechternde Zahler |
 | **Mitarbeiter** | Aufträge und Angebote je Mitarbeiter, Auftrags- und Angebotswert |
 | **Ausblick** | Umsatzprognose Jahresende (saisonal, plus linear als Gegenprobe), Ist YTD, Prognose gegen Vorjahr, schlafende Kunden mit Winback-Empfehlung |
@@ -127,6 +127,12 @@ Gut zu wissen:
 * Gesperrte Kunden und inaktive Artikel fliegen aus Listen und Rankings raus, aus den KPIs nicht –
   für gesperrte Artikel mit Bestand gibt es einen eigenen Warnblock.
 * Bundesländer werden aus der PLZ hergeleitet, weil das JTL-Feld leer bleibt.
+* **„Heute zu tun" kommt aus denselben Prüfregeln wie der Unternehmensmonitor.** Angezeigt werden
+  die Regeln, deren Auswertungen dieses Cockpit mitbringt, plus die Ladenhüter-Warnung des
+  Lager-Cockpits, falls installiert. Die Schwellwerte stehen zentral im Dashboard-Reiter
+  „Warnungen" und gelten damit für Cockpit, Monitor und PDF-Report gleichermaßen. Bis Version 2.1
+  stand hier eine eigene Aufgabenliste mit im SQL verdrahteten Schwellen – sie ist ersetzt, weil
+  dieselbe Frage sonst zweimal und mit unterschiedlichen Grenzen beantwortet wurde.
 
 ### 3.2 Vertriebs-Cockpit
 *Template `jtl_vertrieb_cockpit`, Version 1.3 – 31 Auswertungen, 7 Reiter*

@@ -86,6 +86,9 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
               title: dd.title || r.name,
               hidden_columns: dd.hidden_columns || [],
               param: dd.param || null,
+              // Weitere Ebenen der Regel (z.B. Artikelliste → aktuelle
+              // Beschreibung); handleTaskClick öffnet sie per Zeilenklick.
+              levels: dd.levels || [],
             }) : undefined}
             style={{ display: "flex", alignItems: "flex-start", gap: 12,
               padding: "11px 16px",

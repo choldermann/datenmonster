@@ -557,9 +557,14 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
             # deshalb hier sequenziell im Anschluss an die Mapping-Actions.
             from app.services import alert_service
             try:
+                _opt = action.get("options") or {}
+                # Ein Cockpit zeigt nur seine eigenen Regeln (options.cockpits),
+                # kann aber einzelne fremde dazunehmen (options.rule_keys).
                 lauf = alert_service.evaluate(
                     db, f.project_id, run_params,
-                    include_ok=bool((action.get("options") or {}).get("include_ok")))
+                    include_ok=bool(_opt.get("include_ok")),
+                    rule_keys=_opt.get("rule_keys") or None,
+                    cockpits=_opt.get("cockpits") or None)
                 results[action_id] = {
                     "kind": "alerts",
                     "columns": ["severity", "titel", "Anzahl", "wert"],

@@ -150,6 +150,20 @@ def _rewrite_ids_export(obj, int_to_str: dict):
     return obj
 
 
+def _resolve_mapping_ids_install(node, mapping_id_map: dict) -> None:
+    """Ersetzt IN-PLACE jedes `mapping_id`, das eine Template-String-ID ist, durch
+    die echte DB-ID – an beliebiger Stelle der Widget-Konfiguration."""
+    if isinstance(node, dict):
+        mid = node.get("mapping_id")
+        if isinstance(mid, str) and mid in mapping_id_map:
+            node["mapping_id"] = mapping_id_map[mid]
+        for v in node.values():
+            _resolve_mapping_ids_install(v, mapping_id_map)
+    elif isinstance(node, list):
+        for v in node:
+            _resolve_mapping_ids_install(v, mapping_id_map)
+
+
 def _rewrite_ids_install(obj, str_to_int: dict):
     """Ersetzt Template-String-IDs durch echte Integer-Dataset-IDs beim Install."""
     if isinstance(obj, dict):
@@ -685,43 +699,20 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             did = w.get("dataset_id")
             if isinstance(did, str) and did in ds_id_map:
                 w["dataset_id"] = ds_id_map[did]
-            # Drilldown-Mapping-Referenzen (Template-String-IDs → echte DB-IDs)
-            # auch verschachtelt in config.drilldown.mapping_id und levels[].mapping_id.
-            dd = (w.get("config") or {}).get("drilldown")
-            if isinstance(dd, dict):
-                dmid = dd.get("mapping_id")
-                if isinstance(dmid, str) and dmid in mapping_id_map:
-                    dd["mapping_id"] = mapping_id_map[dmid]
-                for lvl in dd.get("levels") or []:
-                    lmid = lvl.get("mapping_id")
-                    if isinstance(lmid, str) and lmid in mapping_id_map:
-                        lvl["mapping_id"] = mapping_id_map[lmid]
-            # KI-Handlungsempfehlung: config.ai_action.mapping_id (Analyse-Mapping).
-            ai = (w.get("config") or {}).get("ai_action")
-            if isinstance(ai, dict):
-                amid = ai.get("mapping_id")
-                if isinstance(amid, str) and amid in mapping_id_map:
-                    ai["mapping_id"] = mapping_id_map[amid]
-            # Hersteller-Navigator: Artikel- und Fakten-Mapping in der Konfiguration.
+            # Mapping-Referenzen in der Widget-Konfiguration (Template-String-IDs
+            # → echte DB-IDs). Rekursiv, weil `mapping_id` an beliebiger Tiefe
+            # stehen kann: config.drilldown.levels[].levels[], row_detail.map[<key>]
+            # samt eigener levels[], ai_action, ean_research. Eine feste Liste von
+            # Pfaden hat genau das verfehlt (eine verschachtelte Ebene blieb als
+            # Template-String stehen und der Klick lief ins Leere).
+            _resolve_mapping_ids_install(w.get("config"), mapping_id_map)
+            # Hersteller-Navigator: eigene Schlüsselnamen, deshalb separat.
             hn = (w.get("config") or {}).get("hersteller_navigator")
             if isinstance(hn, dict):
                 for schluessel in ("artikel_mapping_id", "fakten_mapping_id"):
                     hmid = hn.get(schluessel)
                     if isinstance(hmid, str) and hmid in mapping_id_map:
                         hn[schluessel] = mapping_id_map[hmid]
-            # EAN-Recherche: config.ean_research.mapping_id (Kandidaten-Mapping).
-            er = (w.get("config") or {}).get("ean_research")
-            if isinstance(er, dict):
-                emid = er.get("mapping_id")
-                if isinstance(emid, str) and emid in mapping_id_map:
-                    er["mapping_id"] = mapping_id_map[emid]
-            # Aufgabenliste: config.row_detail.map[<key>].mapping_id (Detail-Mappings).
-            rd = (w.get("config") or {}).get("row_detail")
-            if isinstance(rd, dict) and isinstance(rd.get("map"), dict):
-                for ent in rd["map"].values():
-                    rmid = ent.get("mapping_id") if isinstance(ent, dict) else None
-                    if isinstance(rmid, str) and rmid in mapping_id_map:
-                        ent["mapping_id"] = mapping_id_map[rmid]
         schema = _apply_config_deep(schema, config)
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),

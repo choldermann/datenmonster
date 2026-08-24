@@ -4,7 +4,7 @@
  "template_name": "Unternehmensmonitor (JTL)",
  "description": "Operative Startseite: Was ist heute wichtig, wo besteht Handlungsbedarf? Die Warnungen werden deterministisch aus den vorhandenen Cockpit-Auswertungen abgeleitet – Schwellwerte sind je Projekt einstellbar.",
  "category": "jtl-reporting",
- "version": "1.0",
+ "version": "1.1",
  "author": "Datenmonster",
  "hinweise": [
   "Beim Installieren die JTL-Datenbankverbindung wählen – nur die eigene Kennzahlen-Auswertung des Monitors braucht sie.",
@@ -515,6 +515,60 @@
    "action_kind": null,
    "active": true,
    "sort": 12
+  },
+  {
+   "rule_key": "gf_rohertrag_trend",
+   "name": "Rohertrag rückläufig",
+   "category": "Geschäftsführung",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Monate mit sinkendem Rohertrag",
+   "params": {
+    "plattform": []
+   },
+   "condition": {
+    "mode": "count",
+    "value_column": "Rueckgang",
+    "min_count": 2
+   },
+   "facts": [
+    {
+     "label": "Letzter Monat",
+     "column": "Monat",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Rohertrag",
+     "column": "Rohertrag",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Vormonat",
+     "column": "Vormonat",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Rückgang",
+     "column": "Rueckgang",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} der letzten 3 Monate mit sinkendem Rohertrag – {summe} €",
+   "subtitle": "Zeile anklicken: die betroffenen Monate mit Vormonatsvergleich.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Monate mit sinkendem Rohertrag",
+    "title": "Monate mit sinkendem Rohertrag"
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 13
   },
   {
    "rule_key": "op_ueberfaellig",
@@ -1630,6 +1684,63 @@
    "action_kind": null,
    "active": true,
    "sort": 91
+  },
+  {
+   "rule_key": "gf_beschreibungen",
+   "name": "Artikelbeschreibungen fehlen",
+   "category": "Stammdaten",
+   "cockpit": "GF-Cockpit",
+   "description": null,
+   "severity": "hinweis",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "Cockpit – Artikelbeschreibungen offen",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Bestand",
+    "min_count": 1
+   },
+   "facts": [
+    {
+     "label": "Beispiel",
+     "column": "Artikel",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Bestand",
+     "column": "Bestand",
+     "unit": "Stk",
+     "decimals": 0
+    },
+    {
+     "label": "Zeichen",
+     "column": "Beschreibungslaenge",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Artikel mit Bestand ohne brauchbare Beschreibung",
+   "subtitle": "Zeile anklicken: die Liste, ein weiterer Klick zeigt die aktuelle Beschreibung.",
+   "drilldown": {
+    "mapping_name": "Cockpit – Artikelbeschreibungen offen",
+    "title": "Artikelbeschreibungen verbessern",
+    "hidden_columns": [
+     "kArtikel"
+    ],
+    "levels": [
+     {
+      "mapping_name": "Cockpit – Artikelbeschreibung (Detail)",
+      "key_column": "kArtikel",
+      "param": "kArtikel",
+      "title": "Aktuelle Beschreibung"
+     }
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 92
   }
  ]
 }

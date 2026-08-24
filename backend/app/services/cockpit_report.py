@@ -1040,8 +1040,11 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             continue
         try:
             from app.services import alert_service as _alert_service
+            _o = _a.get("options") or {}
             _lauf = _alert_service.evaluate(db, getattr(form, "project_id", None),
-                                            params, persist=False)
+                                            params, persist=False,
+                                            rule_keys=_o.get("rule_keys") or None,
+                                            cockpits=_o.get("cockpits") or None)
             results[_a["id"]] = {"columns": [], "rows": _lauf.get("alerts") or []}
         except Exception:
             results[_a["id"]] = {"columns": [], "rows": []}
