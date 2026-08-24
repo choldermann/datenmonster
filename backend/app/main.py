@@ -87,6 +87,10 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE api_collections ADD COLUMN openapi_doc JSON",
             # Grundregeln, die die Relevanzauswahl des AI-Memory nie wegfiltert
             "ALTER TABLE ai_memory_knowledge ADD COLUMN always_include BOOLEAN DEFAULT 0",
+            # Woher ein Warnungslauf kam – trennt die nächtliche Grundlinie vom Klick
+            "ALTER TABLE alert_runs ADD COLUMN triggered_by TEXT DEFAULT 'manuell'",
+            # Regelumfang des Laufs – ohne ihn ist der Vergleich mit dem Vortag unsauber
+            "ALTER TABLE alert_runs ADD COLUMN checked_keys JSON",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -309,10 +313,12 @@ async def lifespan(app: FastAPI):
             print(f"Slug für {len(_ohne_slug)} Formular(e) nachgetragen")
     finally:
         db.close()
-    from app.services.scheduler_service import start_scheduler, reload_all_jobs, reload_all_dataset_jobs
+    from app.services.scheduler_service import (start_scheduler, reload_all_jobs,
+                                                 reload_all_dataset_jobs, reload_all_alert_jobs)
     start_scheduler()
     reload_all_jobs()
     reload_all_dataset_jobs()
+    reload_all_alert_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()

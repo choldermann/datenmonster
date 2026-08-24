@@ -82,3 +82,53 @@ class AlertRun(Base):
     checked     = Column(Integer, default=0)      # geprüfte Regeln
     triggered   = Column(Integer, default=0)      # davon ausgelöst
     errors      = Column(JSON, default=list)
+    triggered_by = Column(String, default="manuell")  # manuell|scheduler
+    # WELCHE Regeln dieser Lauf geprüft hat. Unverzichtbar für den Vergleich:
+    # ein Cockpit-Lauf prüft gefiltert 11 Regeln, der Monitor alle 26. Ohne
+    # diesen Umfang sähe eine ungeprüfte Regel aus wie eine behobene.
+    checked_keys = Column(JSON, default=list)
+
+
+class AlertSchedule(Base):
+    """Der nächtliche Warnungslauf – eine Zeile je Projekt.
+
+    Zweck ist NICHT Geschwindigkeit (ein Lauf dauert rund eine Sekunde), sondern
+    zweierlei:
+
+    1. Eine lückenlose Grundlinie. Bisher entstand ein `AlertRun` nur, wenn
+       jemand klickte – die Historie war löchrig und für Aussagen wie „feuert
+       seit zwölf Tagen" wertlos. Ein fester täglicher Lauf macht den Vergleich
+       mit gestern überhaupt erst möglich.
+    2. Zustellung. Eine Warnung, die niemand sieht, weil er das Dashboard nicht
+       geöffnet hat, ist keine Warnung.
+
+    Ein Zeitplan ohne `email_to` ist ausdrücklich erlaubt und kein Fehler: dann
+    entsteht nur die Grundlinie. Versendet wird nichts, solange keine Empfänger
+    eingetragen sind – ausgehende Post ist nie ein Nebeneffekt einer Voreinstellung.
+    """
+
+    __tablename__ = "alert_schedules"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    project_id   = Column(Integer, nullable=True, index=True)
+    cron_expr    = Column(String, default="30 5 * * *")   # 5-stellig, Europe/Berlin
+    active       = Column(Boolean, default=False)
+
+    # Zustellung
+    email_to     = Column(String, nullable=True)          # kommagetrennt; leer = nur Grundlinie
+    min_severity = Column(String, default="warnung")      # ab dieser Stufe wird gemailt
+    only_new     = Column(Boolean, default=False)         # nur mailen, wenn etwas NEU ist
+
+    # Laufparameter (Zeitraum, Filter) – wie im Formularlauf
+    params       = Column(JSON, default=dict)
+    rule_keys    = Column(JSON, default=list)
+    cockpits     = Column(JSON, default=list)
+
+    # Protokoll des letzten Laufs, damit die Oberfläche nicht raten muss
+    last_run_at  = Column(DateTime, nullable=True)
+    last_status  = Column(String, nullable=True)          # success|error
+    last_message = Column(Text, nullable=True)
+
+    created_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at   = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                          onupdate=lambda: datetime.now(timezone.utc))

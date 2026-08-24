@@ -18,6 +18,36 @@ function de(v, decimals = 0) {
   return n.toLocaleString("de-DE", { maximumFractionDigits: decimals });
 }
 
+/** Kurze Marke rechts vom Titel: was hat sich seit dem Vergleichslauf getan? */
+function DiffMarke({ row }) {
+  if (row.neu === true) {
+    return (
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, color: "#fff",
+        backgroundColor: "#e8913a", borderRadius: 3, padding: "1px 5px", marginLeft: 8,
+        verticalAlign: "middle" }}>NEU</span>
+    );
+  }
+  const d = typeof row.delta === "number" ? row.delta : parseFloat(row.delta);
+  if (isFinite(d) && d !== 0) {
+    const schlechter = d > 0;
+    return (
+      <span title="Veränderung der Anzahl gegenüber dem Vergleichslauf"
+        style={{ fontSize: 11, fontWeight: 700, marginLeft: 8,
+          color: schlechter ? "#e05656" : "#5cb85c", verticalAlign: "middle" }}>
+        {schlechter ? "▲" : "▼"} {de(Math.abs(d), 0)}
+      </span>
+    );
+  }
+  if (row.seit_tagen >= 2) {
+    return (
+      <span title="So lange feuert diese Regel ununterbrochen"
+        style={{ fontSize: 10.5, color: "var(--text-dim)", marginLeft: 8,
+          verticalAlign: "middle" }}>seit {row.seit_tagen} Tagen</span>
+    );
+  }
+  return null;
+}
+
 /**
  * Widget "alerts": Unternehmenswarnungen aus dem Regelwerk (Action-Typ run_alerts).
  *
@@ -30,7 +60,13 @@ function de(v, decimals = 0) {
  * Klick auf eine Zeile öffnet – sofern die Regel einen Drilldown hinterlegt hat –
  * die zugehörige Detailliste (derselbe Weg wie beim tasklist-Widget).
  *
- * config: { width, info?, max?, hide_facts? }
+ * Vergleich zum Vortag: Das Backend liefert je Zeile `neu`, `delta` und
+ * `seit_tagen`, am Kopf `meta.vergleich` und `meta.erledigt`. Der Stand allein
+ * („47 überfällige Forderungen") wird nach zwei Wochen zur Tapete – erst die
+ * Veränderung ist die Information. `neu === null` heißt ausdrücklich „unbekannt"
+ * (kein Vergleichslauf) und wird NICHT als „nicht neu" dargestellt.
+ *
+ * config: { width, info?, max?, hide_facts?, hide_diff? }
  */
 export default function AlertsWidget({ widget, result, onTaskClick }) {
   const cfg = widget.config || {};
@@ -43,6 +79,15 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
     const s = r.severity || "warnung";
     zaehler[s] = (zaehler[s] || 0) + 1;
   }
+  // Vergleich zum Vortag – rein anzeigend, gerechnet wird im Backend.
+  const vergleich = meta.vergleich || null;
+  const zeigeDiff = !cfg.hide_diff && !!(vergleich && vergleich.vollstaendig !== false);
+  const vergTag = vergleich?.tag
+    ? new Date(vergleich.tag).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" })
+    : null;
+  const anzahlNeu = zeigeDiff ? alle.filter(r => r.neu === true).length : 0;
+  const erledigt = zeigeDiff ? (meta.erledigt || []) : [];
+
   const kopfzeile = Object.keys(zaehler)
     .sort((a, b) => (SEV_ORDER[a] ?? 9) - (SEV_ORDER[b] ?? 9))
     .map(s => `${zaehler[s]} ${SEV_LABEL[s] || s}`)
@@ -66,12 +111,24 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
         gap: 10, padding: "8px 16px", borderBottom: "1px solid var(--border)",
         fontSize: 11, color: "var(--text-dim)" }}>
-        <span>{kopfzeile}</span>
+        <span>
+          {kopfzeile}
+          {anzahlNeu > 0 && (
+            <b style={{ color: "#e8913a", marginLeft: 8 }}>{anzahlNeu} neu seit {vergTag}</b>
+          )}
+        </span>
         {meta.checked ? (
           <span>{meta.checked} Regeln geprüft
             {meta.duration_ms ? ` · ${(meta.duration_ms / 1000).toFixed(1)} s` : ""}</span>
         ) : null}
       </div>
+
+      {!zeigeDiff && vergleich && vergleich.vollstaendig === false && (
+        <div style={{ padding: "6px 16px", borderBottom: "1px solid var(--border)",
+          fontSize: 11, color: "var(--text-dim)" }}>
+          Kein Vergleich mit dem Vortag möglich ({vergleich.grund}).
+        </div>
+      )}
 
       {rows.map((r, i) => {
         const color = AMPEL[String(r.Ampel || "").toLowerCase()] || AMPEL.gelb;
@@ -103,6 +160,7 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, color: "var(--text-main)", fontWeight: 600 }}>
                 {r.titel || r.name}
+                {zeigeDiff && <DiffMarke row={r} />}
               </div>
               {r.untertitel && (
                 <div style={{ fontSize: 12, color: "var(--text-dim)", marginTop: 2 }}>
@@ -132,6 +190,16 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
           </div>
         );
       })}
+
+      {erledigt.length > 0 && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "8px 16px",
+          borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--text-dim)" }}>
+          <CheckCircle2 size={12} style={{ color: AMPEL.gruen, flexShrink: 0, marginTop: 1 }} />
+          <span>
+            Seit dem {vergTag} weggefallen: {erledigt.map(e => e.name).join(", ")}
+          </span>
+        </div>
+      )}
 
       {(meta.errors || []).length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px",

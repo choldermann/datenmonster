@@ -348,3 +348,156 @@ def reload_all_dataset_jobs():
         logger.info(f"✓ {len(datasets)} Dataset Auto-Refresh Jobs geladen")
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# Nächtlicher Warnungslauf
+# ---------------------------------------------------------------------------
+
+def _standard_zeitraum() -> dict:
+    """Zeitraum für einen Lauf ohne eigene Parameter: laufender Monat.
+
+    Bewusst identisch zum Standard des Monitor-Formulars (`this_month`) – eine
+    Warnung darf nicht davon abhängen, ob sie ein Mensch oder der Zeitplan
+    ausgelöst hat. Regeln ohne Zeitbezug ignorieren die Werte ohnehin.
+    """
+    from datetime import date
+    heute = date.today()
+    return {"von": heute.replace(day=1).isoformat(), "bis": heute.isoformat()}
+
+
+def _run_alert_check(schedule_id: int, triggered_by: str = "scheduler"):
+    """Führt den Warnungslauf eines Zeitplans aus und stellt ihn zu."""
+    from app.core.database import SessionLocal, safe_commit
+    from app.models.alert import AlertSchedule
+    from app.models.project import Project
+    from app.services import alert_service, alert_notify
+
+    db = SessionLocal()
+    try:
+        plan = db.query(AlertSchedule).filter(AlertSchedule.id == schedule_id).first()
+        if not plan:
+            logger.warning(f"Alert-Zeitplan {schedule_id} nicht gefunden")
+            return
+        if not plan.active and triggered_by == "scheduler":
+            return
+
+        params = dict(plan.params or {})
+        for k, v in _standard_zeitraum().items():
+            params.setdefault(k, v)
+
+        lauf = alert_service.evaluate(
+            db, plan.project_id, params=params,
+            rule_keys=plan.rule_keys or None, cockpits=plan.cockpits or None,
+            persist=True, triggered_by=triggered_by,
+        )
+
+        projekt_name = None
+        if plan.project_id:
+            p = db.query(Project).filter(Project.id == plan.project_id).first()
+            projekt_name = p.name if p else None
+
+        versand = {"sent": False, "grund": "kein Versand konfiguriert"}
+        try:
+            versand = alert_notify.send_alert_email(
+                db, plan.email_to, lauf, projekt_name,
+                min_severity=plan.min_severity or "warnung",
+                only_new=bool(plan.only_new),
+            )
+        except Exception as e:
+            # Ein gescheiterter Versand darf die Grundlinie nicht entwerten:
+            # der Lauf ist gespeichert, nur die Zustellung ist schiefgegangen.
+            logger.error(f"Warnungs-Mail konnte nicht versendet werden: {e}")
+            versand = {"sent": False, "grund": f"Mailfehler: {e}"}
+
+        neu = len([a for a in (lauf.get("alerts") or []) if a.get("neu") is True])
+        meldung = (f"{lauf.get('triggered')} von {lauf.get('checked')} Regeln ausgelöst, "
+                   f"{neu} neu; " +
+                   ("Mail an " + ", ".join(versand.get("empfaenger", []))
+                    if versand.get("sent") else f"keine Mail ({versand.get('grund')})"))
+
+        plan.last_run_at = datetime.now(timezone.utc)
+        plan.last_status = "success"
+        plan.last_message = meldung[:1000]
+        safe_commit(db)
+        logger.info(f"✓ Warnungslauf (Zeitplan {schedule_id}): {meldung}")
+        return lauf
+
+    except Exception as e:
+        logger.error(f"✗ Warnungslauf (Zeitplan {schedule_id}) fehlgeschlagen: {e}")
+        try:
+            plan = db.query(AlertSchedule).filter(AlertSchedule.id == schedule_id).first()
+            if plan:
+                plan.last_run_at = datetime.now(timezone.utc)
+                plan.last_status = "error"
+                plan.last_message = str(e)[:1000]
+                safe_commit(db)
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def register_alert_job(schedule_id: int, cron_expr: str):
+    """Registriert den nächtlichen Warnungslauf eines Zeitplans."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"alerts_{schedule_id}"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not cron_expr or not cron_expr.strip():
+        return
+
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        logger.warning(f"Ungültiger Cron-Ausdruck für Alert-Zeitplan {schedule_id}: {cron_expr}")
+        return
+    try:
+        trigger = CronTrigger(
+            minute=parts[0], hour=parts[1],
+            day=parts[2], month=parts[3], day_of_week=parts[4],
+            timezone="Europe/Berlin",
+        )
+        sched.add_job(_run_alert_check, trigger=trigger, id=job_id,
+                      args=[schedule_id], replace_existing=True)
+        logger.info(f"Alert-Zeitplan {schedule_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von Alert-Zeitplan {schedule_id}: {e}")
+
+
+def unregister_alert_job(schedule_id: int):
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"alerts_{schedule_id}")
+        logger.info(f"Alert-Zeitplan {schedule_id} entfernt")
+    except Exception:
+        pass
+
+
+def trigger_alert_check_now(schedule_id: int):
+    """„Jetzt ausführen" – läuft im Thread, damit die Oberfläche nicht wartet."""
+    import threading
+    t = threading.Thread(target=_run_alert_check, args=[schedule_id, "manuell"], daemon=True)
+    t.start()
+
+
+def reload_all_alert_jobs():
+    """Beim Start: alle aktiven Warnungs-Zeitpläne registrieren."""
+    from app.core.database import SessionLocal
+    from app.models.alert import AlertSchedule
+    db = SessionLocal()
+    try:
+        plaene = db.query(AlertSchedule).filter(AlertSchedule.active.is_(True)).all()
+        for p in plaene:
+            register_alert_job(p.id, p.cron_expr)
+        logger.info(f"✓ {len(plaene)} Warnungs-Zeitplan/-pläne geladen")
+    except Exception as e:
+        logger.error(f"Warnungs-Zeitpläne konnten nicht geladen werden: {e}")
+    finally:
+        db.close()

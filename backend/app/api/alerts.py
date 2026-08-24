@@ -157,3 +157,113 @@ def latest(project_id: Optional[int] = None, db: Session = Depends(get_db),
         return {"alerts": [], "run_id": None, "started_at": None,
                 "checked": 0, "triggered": 0, "errors": []}
     return run
+
+
+# ---------------------------------------------------------------------------
+# Nächtlicher Lauf
+# ---------------------------------------------------------------------------
+
+class ScheduleIn(BaseModel):
+    project_id: Optional[int] = None
+    cron_expr: str = "30 5 * * *"
+    active: bool = False
+    email_to: Optional[str] = None
+    min_severity: str = "warnung"
+    only_new: bool = False
+    params: dict = {}
+    rule_keys: Optional[list] = None
+    cockpits: Optional[list] = None
+
+
+def _schedule_out(s) -> dict:
+    return {
+        "id": s.id, "project_id": s.project_id, "cron_expr": s.cron_expr,
+        "active": bool(s.active), "email_to": s.email_to or "",
+        "min_severity": s.min_severity or "warnung", "only_new": bool(s.only_new),
+        "params": s.params or {}, "rule_keys": s.rule_keys or [],
+        "cockpits": s.cockpits or [],
+        "last_run_at": s.last_run_at.isoformat() if s.last_run_at else None,
+        "last_status": s.last_status, "last_message": s.last_message,
+    }
+
+
+def _get_schedule(db: Session, project_id: Optional[int]):
+    from app.models.alert import AlertSchedule
+    q = db.query(AlertSchedule)
+    q = q.filter(AlertSchedule.project_id == project_id) if project_id is not None \
+        else q.filter(AlertSchedule.project_id.is_(None))
+    return q.first()
+
+
+@router.get("/schedule")
+def get_schedule(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Zeitplan des Projekts. Ohne angelegten Zeitplan die Voreinstellung."""
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    s = _get_schedule(db, project_id)
+    if not s:
+        return {"id": None, "project_id": project_id, "cron_expr": "30 5 * * *",
+                "active": False, "email_to": "", "min_severity": "warnung",
+                "only_new": False, "params": {}, "rule_keys": [], "cockpits": [],
+                "last_run_at": None, "last_status": None, "last_message": None}
+    return _schedule_out(s)
+
+
+@router.put("/schedule")
+def put_schedule(body: ScheduleIn, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Zeitplan anlegen oder ändern. Registriert den Job sofort neu."""
+    from app.models.alert import AlertSchedule
+    from app.services.scheduler_service import register_alert_job, unregister_alert_job
+
+    require_editor(body.project_id, user, db)
+
+    parts = (body.cron_expr or "").strip().split()
+    if len(parts) != 5:
+        raise HTTPException(400, "Cron-Ausdruck muss fünf Felder haben, z. B. „30 5 * * *“")
+
+    s = _get_schedule(db, body.project_id)
+    if not s:
+        s = AlertSchedule(project_id=body.project_id)
+        db.add(s)
+
+    s.cron_expr = body.cron_expr.strip()
+    s.active = bool(body.active)
+    s.email_to = (body.email_to or "").strip() or None
+    s.min_severity = body.min_severity or "warnung"
+    s.only_new = bool(body.only_new)
+    s.params = body.params or {}
+    s.rule_keys = body.rule_keys or []
+    s.cockpits = body.cockpits or []
+    db.commit()
+    db.refresh(s)
+
+    if s.active:
+        register_alert_job(s.id, s.cron_expr)
+    else:
+        unregister_alert_job(s.id)
+    return _schedule_out(s)
+
+
+@router.post("/schedule/run-now")
+def run_schedule_now(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Führt den Lauf sofort aus – gleicher Weg wie nachts, inklusive Versand.
+
+    Bewusst synchron: der Anwender soll sehen, ob die Mail tatsächlich rausging,
+    statt einem Hintergrundprozess vertrauen zu müssen. Ein Lauf dauert rund
+    eine Sekunde.
+    """
+    from app.models.alert import AlertSchedule
+    from app.services.scheduler_service import _run_alert_check
+
+    require_editor(project_id, user, db)
+    s = _get_schedule(db, project_id)
+    if not s:
+        s = AlertSchedule(project_id=project_id)
+        db.add(s); db.commit(); db.refresh(s)
+
+    _run_alert_check(s.id, triggered_by="manuell")
+    db.refresh(s)
+    return _schedule_out(s)

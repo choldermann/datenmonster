@@ -310,7 +310,8 @@ def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict) -> dict
 
 def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
              include_ok: bool = False, rule_keys: Optional[list] = None,
-             persist: bool = True, cockpits: Optional[list] = None) -> dict:
+             persist: bool = True, cockpits: Optional[list] = None,
+             triggered_by: str = "manuell", compare: bool = True) -> dict:
     """Führt alle aktiven Regeln des Projekts aus und liefert die Warnungen.
 
     include_ok=True gibt zusätzlich die nicht ausgelösten und die nicht
@@ -427,6 +428,7 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
         "params": {k: v for k, v in (params or {}).items()},
         "alerts": alerts,
         "checked": len(vorbereitet),
+        "checked_keys": [r.rule_key for r in rules],
         "triggered": len(alerts),
         "errors": fehler,
         "unavailable": nicht_verfuegbar,
@@ -438,7 +440,8 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             run = AlertRun(project_id=project_id, duration_ms=round(dauer, 1),
                            params=lauf["params"], alerts=alerts,
                            checked=len(vorbereitet), triggered=len(alerts),
-                           errors=fehler)
+                           errors=fehler, triggered_by=triggered_by,
+                           checked_keys=[r.rule_key for r in rules])
             db.add(run)
             db.commit()
             lauf["run_id"] = run.id
@@ -447,19 +450,46 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             db.rollback()
             logger.warning("AlertRun konnte nicht gespeichert werden: %s", e)
 
+    if compare:
+        try:
+            compare_with_previous(db, project_id, lauf)
+        except Exception as e:
+            # Der Vergleich ist Beiwerk – er darf den Lauf nie scheitern lassen.
+            logger.warning("Vergleich mit dem Vortag fehlgeschlagen: %s", e)
+
     return lauf
 
 
-def _cleanup_runs(db, project_id, keep: int = 30):
-    """Nur die letzten Läufe behalten – der Verlauf ist Diagnose, kein Archiv."""
+def _cleanup_runs(db, project_id, keep: int = 30, keep_days: int = 120):
+    """Aufräumen, ohne die Grundlinie zu zerstören.
+
+    Manuelle Läufe sind Diagnose: davon reichen die letzten `keep`. Die
+    nächtlichen Läufe sind die Grundlinie für „neu seit gestern" und für
+    Serienlängen – sie bleiben, bis sie älter als `keep_days` sind. Würde man
+    hier stumpf nach Anzahl kappen, wäre die Historie nach ein paar Klicks
+    wieder löchrig und der Vergleich mit dem Vortag wertlos.
+    """
     from app.models.alert import AlertRun
-    q = db.query(AlertRun)
-    q = q.filter(AlertRun.project_id == project_id) if project_id is not None \
-        else q.filter(AlertRun.project_id.is_(None))
-    alte = q.order_by(AlertRun.started_at.desc()).offset(keep).all()
-    if not alte:
+    from datetime import timedelta
+
+    def _q():
+        q = db.query(AlertRun)
+        return q.filter(AlertRun.project_id == project_id) if project_id is not None \
+            else q.filter(AlertRun.project_id.is_(None))
+
+    weg = []
+
+    grenze = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=keep_days)
+    weg.extend(_q().filter(AlertRun.started_at < grenze).all())
+
+    manuelle = _q().filter(
+        or_(AlertRun.triggered_by.is_(None), AlertRun.triggered_by != "scheduler")
+    ).order_by(AlertRun.started_at.desc()).offset(keep).all()
+    weg.extend(manuelle)
+
+    if not weg:
         return
-    for r in alte:
+    for r in {id(x): x for x in weg}.values():
         db.delete(r)
     db.commit()
 
@@ -472,8 +502,183 @@ def latest_run(db, project_id) -> Optional[dict]:
     run = q.order_by(AlertRun.started_at.desc()).first()
     if not run:
         return None
-    return {"run_id": run.id, "project_id": run.project_id,
+    lauf = {"run_id": run.id, "project_id": run.project_id,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "duration_ms": run.duration_ms, "params": run.params or {},
             "alerts": run.alerts or [], "checked": run.checked,
-            "triggered": run.triggered, "errors": run.errors or []}
+            "triggered": run.triggered, "errors": run.errors or [],
+            "triggered_by": getattr(run, "triggered_by", None) or "manuell",
+            "checked_keys": getattr(run, "checked_keys", None) or []}
+    # Der Vergleich wird beim Lesen gerechnet, nicht mitgespeichert: gespeichert
+    # ist der rohe Befund, „neu" ist immer eine Aussage relativ zu einem
+    # anderen Lauf und würde eingefroren schnell falsch.
+    try:
+        compare_with_previous(db, project_id, lauf, ref=run.started_at)
+    except Exception as e:
+        logger.warning("Vergleich mit dem Vortag fehlgeschlagen: %s", e)
+    return lauf
+
+
+# ---------------------------------------------------------------------------
+# Vergleich mit dem Vortag ("neu seit gestern")
+# ---------------------------------------------------------------------------
+# Eine Warnliste beantwortet nur „was ist gerade schlecht". Erst der Vergleich
+# mit dem letzten Stand beantwortet „was hat sich verändert" – und das ist die
+# Frage, die eine Geschäftsführung morgens tatsächlich hat.
+#
+# Verglichen wird bewusst gegen den letzten Lauf eines FRÜHEREN Kalendertages,
+# nicht gegen den zeitlich letzten Lauf. Sonst wäre nach zweimaligem Klicken
+# hintereinander alles „nicht neu", weil der Vergleich zwei Minuten alt ist.
+
+try:                                     # Zoneinfo ist seit 3.9 im Standard
+    from zoneinfo import ZoneInfo
+    _BERLIN = ZoneInfo("Europe/Berlin")
+except Exception:                        # pragma: no cover – Fallback ohne tzdata
+    _BERLIN = timezone.utc
+
+
+def _as_utc(dt: datetime) -> datetime:
+    """Gespeicherte Zeitstempel sind naiv, gemeint ist immer UTC."""
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt.astimezone(timezone.utc)
+
+
+def _lokaler_tag(dt: datetime):
+    """Kalendertag in Europe/Berlin – der Tag, den der Anwender meint."""
+    u = _as_utc(dt)
+    return u.astimezone(_BERLIN).date() if u else None
+
+
+def _num_or_none(v):
+    try:
+        return float(v) if v is not None and v != "" else None
+    except (TypeError, ValueError):
+        return None
+
+
+def compare_with_previous(db, project_id, lauf: dict, ref: Optional[datetime] = None,
+                          max_runs: int = 200) -> dict:
+    """Reichert die Warnungen eines Laufs um den Vergleich zum Vortag an.
+
+    Setzt je Warnung:
+      neu           – True/False, oder None wenn die Regel im Vergleichslauf gar
+                      nicht geprüft wurde („weiß ich nicht" ist nicht „nicht neu")
+      vortag_anzahl – Anzahl am Vergleichstag
+      delta         – Veränderung der Anzahl (negativ = besser geworden)
+      seit_datum    – Beginn der ununterbrochenen Serie, in der die Regel feuert
+      seit_tagen    – Länge dieser Serie in Kalendertagen
+
+    Und am Lauf:
+      vergleich – Beschreibung des Vergleichslaufs, oder None
+      erledigt  – Warnungen, die im Vergleichslauf standen und jetzt weg sind
+
+    Entscheidend ist der REGELUMFANG: ein Cockpit-Lauf prüft gefiltert elf
+    Regeln, der Monitor alle sechsundzwanzig. Verglichen wird deshalb nur die
+    Schnittmenge der in beiden Läufen geprüften Regeln – sonst meldet der
+    Vergleich Entwarnungen für Regeln, die einfach nicht drankamen.
+    """
+    from app.models.alert import AlertRun
+
+    alerts = lauf.get("alerts") or []
+    ref_tag = _lokaler_tag(ref or datetime.now(timezone.utc))
+    jetzt_geprueft = set(lauf.get("checked_keys") or [])
+
+    def _leer(grund: str):
+        lauf["vergleich"] = None if grund == "kein früherer Lauf" else {
+            "vollstaendig": False, "grund": grund}
+        lauf["erledigt"] = []
+        for a in alerts:
+            a["neu"] = None
+            a["vortag_anzahl"] = a["delta"] = a["seit_datum"] = a["seit_tagen"] = None
+        return lauf
+
+    q = db.query(AlertRun)
+    q = q.filter(AlertRun.project_id == project_id) if project_id is not None \
+        else q.filter(AlertRun.project_id.is_(None))
+    runs = q.order_by(AlertRun.started_at.desc()).limit(max_runs).all()
+
+    frueher = [r for r in runs
+               if _lokaler_tag(r.started_at) and _lokaler_tag(r.started_at) < ref_tag]
+    if not frueher:
+        return _leer("kein früherer Lauf")
+
+    basis = frueher[0]
+    basis_geprueft = set(getattr(basis, "checked_keys", None) or [])
+    if not basis_geprueft:
+        # Läufe von vor dieser Erweiterung kennen ihren Umfang nicht. Sie taugen
+        # als Vergleichsbasis nicht, denn jede fehlende Regel wäre mehrdeutig.
+        return _leer("Vergleichslauf ohne festgehaltenen Regelumfang")
+
+    basis_tag = _lokaler_tag(basis.started_at)
+    basis_map = {a.get("rule_key"): a for a in (basis.alerts or []) if a.get("rule_key")}
+    gemeinsam = jetzt_geprueft & basis_geprueft if jetzt_geprueft else basis_geprueft
+
+    # Tageskarte für die Serienlänge: je Kalendertag, welche Regeln geprüft
+    # wurden und welche davon ausgelöst haben.
+    tage: dict = {}
+    for r in runs:
+        d = _lokaler_tag(r.started_at)
+        if not d:
+            continue
+        gefeuert, geprueft = tage.setdefault(d, (set(), set()))
+        gefeuert.update(a.get("rule_key") for a in (r.alerts or []) if a.get("rule_key"))
+        geprueft.update(getattr(r, "checked_keys", None) or [])
+    gefeuert, geprueft = tage.setdefault(ref_tag, (set(), set()))
+    gefeuert.update(a.get("rule_key") for a in alerts if a.get("rule_key"))
+    geprueft.update(jetzt_geprueft)
+    tage_sortiert = sorted(tage.keys(), reverse=True)
+
+    def _serie(key: str):
+        """Erster Tag der ununterbrochenen Serie, in der `key` feuert.
+
+        Ein Tag, an dem die Regel nicht geprüft wurde, wird übersprungen: er
+        darf die Serie weder verlängern noch abreißen lassen, weil über ihn
+        schlicht nichts bekannt ist.
+        """
+        start = None
+        for d in tage_sortiert:
+            if d > ref_tag:
+                continue
+            gef, gep = tage[d]
+            if key not in gep:
+                continue
+            if key in gef:
+                start = d
+            else:
+                break
+        return start
+
+    for a in alerts:
+        key = a.get("rule_key")
+        if key not in gemeinsam:
+            a["neu"] = None
+            a["vortag_anzahl"] = a["delta"] = None
+        else:
+            vor = basis_map.get(key)
+            a["neu"] = vor is None
+            a["vortag_anzahl"] = vor.get("Anzahl") if vor else None
+            jetzt_n, vor_n = _num_or_none(a.get("Anzahl")), _num_or_none(a.get("vortag_anzahl"))
+            a["delta"] = (jetzt_n - vor_n) if (jetzt_n is not None and vor_n is not None) else None
+        start = _serie(key)
+        a["seit_datum"] = start.isoformat() if start else None
+        a["seit_tagen"] = (ref_tag - start).days if start else None
+
+    aktuelle_keys = {a.get("rule_key") for a in alerts}
+    lauf["erledigt"] = [
+        {"rule_key": k, "name": v.get("name"), "titel": v.get("titel"),
+         "severity": v.get("severity")}
+        for k, v in basis_map.items()
+        if k not in aktuelle_keys and k in gemeinsam
+    ]
+    lauf["vergleich"] = {
+        "vollstaendig": True,
+        "run_id": basis.id,
+        "started_at": _as_utc(basis.started_at).isoformat() if basis.started_at else None,
+        "tag": basis_tag.isoformat() if basis_tag else None,
+        "tage_zurueck": (ref_tag - basis_tag).days if basis_tag else None,
+        "triggered": basis.triggered,
+        "regeln_verglichen": len(gemeinsam),
+        "regeln_nur_heute": sorted(jetzt_geprueft - basis_geprueft) if jetzt_geprueft else [],
+    }
+    return lauf

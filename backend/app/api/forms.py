@@ -605,7 +605,10 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                     "total": lauf.get("triggered", 0),
                     "meta": {k: lauf.get(k) for k in
                              ("checked", "triggered", "duration_ms", "started_at",
-                              "errors", "unavailable", "ok")},
+                              "errors", "unavailable", "ok",
+                              # Vergleich zum Vortag: „neu" steht an der Zeile,
+                              # „erledigt"/„vergleich" gehören an den Kopf.
+                              "vergleich", "erledigt")},
                 }
             except Exception as e:
                 results[action_id] = {"kind": "alerts", "columns": [], "rows": [],
