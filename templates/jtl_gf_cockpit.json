@@ -6168,7 +6168,7 @@
             "Ueberfaellig",
             "AvgVerzugTage"
           ],
-          "sql": "SELECT\n    COUNT(*) AS OffeneBestellungen,\n    CAST(ISNULL(SUM(OffenerWert), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    SUM(CASE WHEN VerzugTage > 0 THEN 1 ELSE 0 END) AS Ueberfaellig,\n    CAST(ISNULL(AVG(CASE WHEN VerzugTage > 0 THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage\nFROM (\n    SELECT B.kLieferantenBestellung,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN B.dLieferdatum IS NOT NULL THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END AS VerzugTage\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2 WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung AND P2.fAnzahlOffen > 0)\n) X"
+          "sql": "SELECT\n    SUM(CASE WHEN Klasse = 'aktiv' THEN 1 ELSE 0 END) AS OffeneBestellungen,\n    CAST(ISNULL(SUM(CASE WHEN Klasse = 'aktiv' THEN OffenerWert END), 0)\n        AS DECIMAL(18,2)) AS OffenerWert,\n    SUM(CASE WHEN Klasse = 'aktiv' AND VerzugTage > 0 THEN 1 ELSE 0 END) AS Ueberfaellig,\n    CAST(ISNULL(AVG(CASE WHEN Klasse = 'aktiv' AND VerzugTage > 0\n                         THEN CAST(VerzugTage AS FLOAT) END), 0)\n        AS DECIMAL(18,1)) AS AvgVerzugTage,\n    SUM(CASE WHEN Klasse = 'alt' THEN 1 ELSE 0 END) AS AltbestandAnzahl,\n    CAST(ISNULL(SUM(CASE WHEN Klasse = 'alt' THEN OffenerWert END), 0)\n        AS DECIMAL(18,2)) AS AltbestandWert,\n    SUM(CASE WHEN Klasse = 'ohne' THEN 1 ELSE 0 END) AS OhneTerminAnzahl,\n    CAST(ISNULL(SUM(CASE WHEN Klasse = 'ohne' THEN OffenerWert END), 0)\n        AS DECIMAL(18,2)) AS OhneTerminWert\nFROM (\n    -- Offene Bestellungen in drei Klassen: die laufende Beschaffung ('aktiv'), seit\n    -- über einem Jahr überfällige Karteileichen ('alt') und solche ohne gesetzten\n    -- Liefertermin ('ohne'). Ohne diese Trennung zieht der Altbestand (bis zu 1600\n    -- Tage Verzug) den Durchschnittsverzug ins Unbrauchbare.\n    SELECT B.kLieferantenBestellung,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN B.dLieferdatum IS NOT NULL THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END AS VerzugTage,\n        CASE WHEN B.dLieferdatum IS NULL THEN 'ohne'\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) > 365 THEN 'alt'\n             ELSE 'aktiv' END AS Klasse\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2 WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung AND P2.fAnzahlOffen > 0)\n) X"
         }
       ],
       "targets": [
@@ -6219,6 +6219,46 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "AvgVerzugTage"
+              }
+            },
+            {
+              "source_field": "AltbestandAnzahl",
+              "target_field": "AltbestandAnzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AltbestandAnzahl"
+              }
+            },
+            {
+              "source_field": "AltbestandWert",
+              "target_field": "AltbestandWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AltbestandWert"
+              }
+            },
+            {
+              "source_field": "OhneTerminAnzahl",
+              "target_field": "OhneTerminAnzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneTerminAnzahl"
+              }
+            },
+            {
+              "source_field": "OhneTerminWert",
+              "target_field": "OhneTerminWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneTerminWert"
               }
             }
           ]
@@ -6452,7 +6492,7 @@
             "OffenePositionen",
             "kLieferantenBestellung"
           ],
-          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen,\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
+          "sql": "SELECT TOP 500\n    ISNULL(B.cEigeneBestellnummer, CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnummer,\n    ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n    CONVERT(char(10), B.dErstellt, 104) AS Bestelldatum,\n    ISNULL(CONVERT(char(10), B.dLieferdatum, 104), '') AS Liefertermin,\n    -- Trennt die laufende Beschaffung vom Altbestand: Bestellungen ohne Liefertermin\n    -- und solche mit über einem Jahr Verzug sind in aller Regel Karteileichen, die\n    -- in der Wawi nie abgeschlossen wurden.\n    CASE WHEN B.dLieferdatum IS NULL THEN 'ohne Liefertermin'\n         WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) > 365 THEN 'über 1 Jahr'\n         WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) > 90  THEN '91-365 Tage'\n         WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) > 30  THEN '31-90 Tage'\n         WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) > 0   THEN 'bis 30 Tage'\n         ELSE 'noch nicht fällig' END AS Altersgruppe,\n    ISNULL(CASE WHEN B.dLieferdatum IS NOT NULL AND B.dLieferdatum < GETDATE()\n        THEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) END, 0) AS VerzugTage,\n    CAST(ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) AS DECIMAL(18,2)) AS OffenerWert,\n    COUNT(*) AS OffenePositionen,\n    CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung\nFROM dbo.tLieferantenBestellung B\nJOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n     AND P.fAnzahlOffen > 0\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n\nGROUP BY B.kLieferantenBestellung, B.cEigeneBestellnummer, L.cFirma, B.dErstellt, B.dLieferdatum\nORDER BY SUM(P.fAnzahlOffen * P.fEKNetto) DESC"
         }
       ],
       "targets": [
@@ -6503,6 +6543,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "Altersgruppe",
+              "target_field": "Altersgruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Altersgruppe"
               }
             },
             {
@@ -8857,10 +8907,10 @@
           {
             "id": "w_gf_ek_o_anz",
             "type": "kpi",
-            "label": "Offene Bestellungen",
+            "label": "Offene Bestellungen (laufend)",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "OffeneBestellungen",
               "aggregation": "first",
               "prefix": "",
@@ -8871,10 +8921,10 @@
           {
             "id": "w_gf_ek_o_wert",
             "type": "kpi",
-            "label": "Offener Bestellwert",
+            "label": "Offener Wert (laufend)",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "OffenerWert",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8888,7 +8938,7 @@
             "label": "Liefertermin überschritten",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Ueberfaellig",
               "aggregation": "first",
               "prefix": "",
@@ -8899,10 +8949,10 @@
           {
             "id": "w_gf_ek_o_verzug",
             "type": "kpi",
-            "label": "Ø Verzug offener Bestellungen",
+            "label": "Ø Verzug (laufend)",
             "action_id": "act_ek_offen_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "AvgVerzugTage",
               "aggregation": "first",
               "prefix": "",
@@ -8911,12 +8961,58 @@
             }
           },
           {
+            "id": "w_gf_ek_o_altbestand",
+            "type": "kpi",
+            "label": "⚠ Altbestand über 1 Jahr",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 6,
+              "column": "AltbestandAnzahl",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Bestellungen",
+              "decimals": 0,
+              "color": "#e0a070",
+              "breakdown": [
+                {
+                  "label": "Offener Wert",
+                  "column": "AltbestandWert",
+                  "prefix": "€ ",
+                  "decimals": 2
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_gf_ek_o_ohnetermin",
+            "type": "kpi",
+            "label": "⚠ Ohne Liefertermin",
+            "action_id": "act_ek_offen_kpi",
+            "config": {
+              "width": 6,
+              "column": "OhneTerminAnzahl",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Bestellungen",
+              "decimals": 0,
+              "color": "#e0a070",
+              "breakdown": [
+                {
+                  "label": "Offener Wert",
+                  "column": "OhneTerminWert",
+                  "prefix": "€ ",
+                  "decimals": 2
+                }
+              ]
+            }
+          },
+          {
             "id": "w_gf_ek_t_quote",
             "type": "kpi",
             "label": "Termintreue",
             "action_id": "act_ek_termintreue_kpi",
             "config": {
-              "width": 4,
+              "width": 6,
               "column": "TermintreueQuote",
               "aggregation": "first",
               "prefix": "",
@@ -8930,7 +9026,7 @@
             "label": "Ø Verzug verspäteter Lieferungen",
             "action_id": "act_ek_termintreue_kpi",
             "config": {
-              "width": 4,
+              "width": 6,
               "column": "AvgVerzugTage",
               "aggregation": "first",
               "prefix": "",
@@ -9004,7 +9100,7 @@
             "action_id": "act_ek_offen_liste",
             "config": {
               "width": 12,
-              "info": "Momentaufnahme, unabhängig vom Zeitraum: Bestellungen mit Restmenge, weder gelöscht noch manuell abgeschlossen. Sehr alte Einträge sind meist Karteileichen – manuell abschließen bereinigt die Liste.",
+              "info": "Momentaufnahme, unabhängig vom Zeitraum: Bestellungen mit Restmenge, weder gelöscht noch manuell abgeschlossen. Die Spalte Altersgruppe trennt die laufende Beschaffung vom Altbestand – „über 1 Jahr\" und „ohne Liefertermin\" sind meist Karteileichen, die in der Wawi manuell abgeschlossen werden sollten.",
               "full_rows": true,
               "drilldown": {
                 "mapping_id": "m_gf_ek_pos_detail",
