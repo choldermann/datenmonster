@@ -316,6 +316,54 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     map_by_name = {m.name: m for m in db.query(Mapping)
                    .filter(Mapping.project_id == body.project_id).all() if m.name}
 
+    # Der Name allein reicht als Zuordnung aber nicht: ein Template darf zwei
+    # gleichnamige Elemente enthalten (das GF-Cockpit hatte zweimal "Cockpit –
+    # Kennzahlen" – einmal die Umsatz-, einmal die Einkaufs-Kennzahlen). Beide
+    # fanden dasselbe DB-Mapping und das zweite überschrieb das erste; das
+    # Cockpit zeigte danach Einkaufszahlen in den Umsatz-Kacheln. Deshalb:
+    #  1. Zuordnung vorrangig über die beim letzten Install gemerkte Ref→ID-Karte,
+    #  2. sonst über den Namen,
+    #  3. und in beiden Fällen darf jedes DB-Objekt pro Lauf nur EINMAL beansprucht
+    #     werden – das zweite gleichnamige Template-Element bekommt ein eigenes.
+    ref_map = {"datasets": {}, "mappings": {}}
+    for _inst in (t.installations or []):
+        if _inst.get("project_id") != body.project_id:
+            continue
+        for _typ, _refs in (_inst.get("refs") or {}).items():
+            ref_map.setdefault(_typ, {}).update(
+                {str(k): v for k, v in (_refs or {}).items()})
+    claimed = {"datasets": set(), "mappings": set()}
+
+    def _bestehendes(typ, model, by_name, ref, name):
+        """Das DB-Objekt, das dieses Template-Element beim letzten Mal erzeugt hat –
+        oder None, wenn es neu angelegt werden muss."""
+        obj = None
+        zuvor = ref_map.get(typ, {}).get(str(ref))
+        if zuvor is not None:
+            kand = db.query(model).filter(model.id == zuvor,
+                                          model.project_id == body.project_id).first()
+            if kand is not None:
+                obj = kand
+        if obj is None:
+            obj = by_name.get(name)
+        if obj is None or obj.id in claimed[typ]:
+            return None
+        claimed[typ].add(obj.id)
+        return obj
+
+    def _freier_name(name, vorschlag, vergeben):
+        """Namen für ein neu anzulegendes Objekt, das nicht das gleichnamige
+        bestehende verdrängen darf. `vorschlag` ist der sprechende Zweitname aus dem
+        Template (bei Mappings der Name des Ziels, z.B. "Einkauf – Kennzahlen")."""
+        if name not in vergeben:
+            return name
+        if vorschlag and vorschlag not in vergeben:
+            return vorschlag
+        i = 2
+        while f"{name} ({i})" in vergeben:
+            i += 1
+        return f"{name} ({i})"
+
     # ── Datasets anlegen ──────────────────────────────────────────────────────
     ds_id_map = {}
     for ds_def in content.get("datasets", []):
@@ -326,7 +374,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         columns = [_apply_config(c, config) if isinstance(c, str) else c for c in columns]
 
         # Schon vorhanden? → weiterverwenden (SQL-Datasets auf Template-Stand bringen).
-        existing_ds = ds_by_name.get(ds_def.get("name", "Dataset"))
+        existing_ds = _bestehendes("datasets", Dataset, ds_by_name,
+                                   ds_def.get("id"), ds_def.get("name", "Dataset"))
         if existing_ds is not None:
             if file_type == "db_query" and existing_ds.file_type == "db_query":
                 existing_ds.source_sql = _apply_config(ds_def.get("sql", ""), config)
@@ -343,7 +392,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             continue
 
         ds_kwargs = dict(
-            name=ds_def.get("name", "Dataset"),
+            name=_freier_name(ds_def.get("name", "Dataset"), None, ds_by_name),
             file_type=file_type,
             row_count=0,
             columns=columns,
@@ -478,6 +527,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
 
         ds_id_map[ds_def["id"]] = ds.id
         ds_by_name[ds.name] = ds  # Doppel innerhalb desselben Templates vermeiden
+        claimed["datasets"].add(ds.id)  # gehört diesem Template-Element, kein zweites Mal
         created["datasets"].append({"id": ds.id, "name": ds.name, "file_type": file_type})
 
     # ── Mappings anlegen ──────────────────────────────────────────────────────
@@ -629,7 +679,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         # Gleichnamiges Mapping im Projekt? → wiederverwenden und auf den Stand des
         # Templates bringen, statt ein Duplikat anzulegen. Bestehende Formulare, die
         # per mapping_id darauf zeigen, bleiben dadurch funktionsfähig.
-        existing_m = map_by_name.get(m_name)
+        existing_m = _bestehendes("mappings", Mapping, map_by_name,
+                                  m_def.get("id"), m_name)
         if existing_m is not None:
             for key, val in m_fields.items():
                 setattr(existing_m, key, val)
@@ -640,11 +691,17 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                                         "reused": True})
             continue
 
+        # Ist der Name im Projekt schon belegt (weil ihn ein anderes Template-Element
+        # trägt), bekommt dieses Mapping den Namen seines Ziels – sonst würde die
+        # Zuordnung beim nächsten Install wieder zwischen beiden hin- und herspringen.
+        ziel_name = (targets or [{}])[0].get("name")
+        m_name = _freier_name(m_name, ziel_name, map_by_name)
         m = Mapping(name=m_name, project_id=body.project_id, **m_fields)
         db.add(m)
         db.commit()
         db.refresh(m)
         map_by_name[m_name] = m  # Doppel innerhalb desselben Templates vermeiden
+        claimed["mappings"].add(m.id)  # gehört diesem Template-Element, kein zweites Mal
         mapping_id_map[m_def["id"]] = m.id
         created["mappings"].append({"id": m.id, "name": m.name})
 
@@ -780,6 +837,13 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                   if isinstance(o, dict) and "id" in o and not o.get("reused")]
             for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms",
                         "reports", "alert_rules")
+        },
+        # Ref aus dem Template → erzeugtes Objekt. Beim nächsten Install wird darüber
+        # zugeordnet statt über den Namen: zwei gleichnamige Template-Elemente landen
+        # dadurch verlässlich wieder auf ihrem jeweils eigenen Objekt.
+        "refs": {
+            "datasets": {str(k): v for k, v in ds_id_map.items()},
+            "mappings": {str(k): v for k, v in mapping_id_map.items()},
         },
     }
     t.installations = (t.installations or []) + [inst_record]
