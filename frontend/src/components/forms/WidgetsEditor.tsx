@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Trash2, ChevronDown, ChevronRight, Table2, Hash,
-         BarChart2, TrendingUp, PieChart, Receipt, Sparkles, ShieldAlert } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -33,6 +32,8 @@ const WIDGET_TYPES = [
     desc: "KI formuliert aus dem Ergebnis der Action eine kurze Management-Zusammenfassung" },
   { type: "alerts", label: "Unternehmenswarnungen", Icon: ShieldAlert, color: "#fb923c",
     desc: "Ergebnis einer Warnungs-Action (run_alerts): Ampel, Fakten und Drilldown je Regel" },
+  { type: "kostenstruktur", label: "Kostenstruktur", Icon: Wallet, color: "#fbbf24",
+    desc: "Monatliche Fixkosten je Kostenart pflegen – Grundlage für den Ergebnis-Reiter" },
 ];
 
 function LabelRow({ label, children }) {

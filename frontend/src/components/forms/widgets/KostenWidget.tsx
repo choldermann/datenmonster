@@ -21,17 +21,25 @@ const heuteISO = () => new Date().toISOString().slice(0, 10);
 const jahresbeginnISO = () => `${new Date().getFullYear()}-01-01`;
 
 /**
- * Panel "Kosten": monatliche Fixkosten je Kostenart pflegen.
+ * Widget "Kostenstruktur": monatliche Fixkosten je Kostenart pflegen.
+ *
+ * Bewusst ein Formular-Widget und kein eigener Bereich in der Seitenleiste:
+ * Fixkosten sind kein Datenmonster-Thema, sondern gehören zu den JTL-Cockpits.
+ * Das Widget wird deshalb mit dem GF-Cockpit-Template als eigenes Formular
+ * ausgeliefert – wie jedes andere eigenständige Widget rendert es sofort, ohne
+ * dass eine Action laufen muss.
  *
  * Der Standardkatalog (Miete, Personal, Strom …) kommt vom Backend und ist
- * immer sichtbar – gepflegt wird nur "gültig ab" und der Monatsbetrag. Jede
- * Kostenart trägt eine Zeitleiste: eine Mieterhöhung ist ein zweiter Eintrag,
- * kein überschriebener Wert. Nur so bleibt ein Vorjahresvergleich ehrlich.
+ * immer vorgeblendet; gepflegt werden nur "gültig ab" und der Monatsbetrag.
+ * Jede Kostenart trägt eine Zeitleiste: eine Mieterhöhung ist ein zweiter
+ * Eintrag, kein überschriebener Wert. Nur so bleibt ein Vorjahresvergleich
+ * ehrlich.
  *
- * Die Summen gehen als :cfg_kosten_monat, :cfg_kosten_<gruppe>_monat und
- * :cfg_kosten_zeitraum in jeden Mapping-Lauf ein.
+ * Die Summen gehen als :cfg_kosten_monat, :cfg_kosten_<gruppe>_monat,
+ * :cfg_kosten_zeitraum und :cfg_kosten_monatsreihe in jeden Mapping-Lauf ein –
+ * daraus rechnet der Reiter "Ergebnis" des GF-Cockpits das Betriebsergebnis.
  */
-export default function CostsPanel({ projectId, canEdit }) {
+export default function KostenWidget({ widget, projectId, canEdit = true }) {
   const [arten, setArten] = useState([]);
   const [gruppen, setGruppen] = useState([]);
   const [summe, setSumme] = useState({ gesamt: 0, gruppen: {} });
@@ -130,19 +138,19 @@ export default function CostsPanel({ projectId, canEdit }) {
   const gepflegt = arten.filter(a => (a.eintraege || []).length > 0).length;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: 16 }}>
       <div style={{ display: "flex", alignItems: "flex-start",
         justifyContent: "space-between", gap: 20 }}>
         <div>
-          <h2 style={{ fontSize: 15, fontWeight: 700, color: S.textBright,
-            display: "flex", alignItems: "center", gap: 8 }}>
-            <Wallet size={16} style={{ color: S.accent }} /> Kostenstruktur
-          </h2>
-          <p style={{ fontSize: 11.5, color: S.textDim, marginTop: 4, maxWidth: 720 }}>
+          <p style={{ fontSize: 11.5, color: S.textDim, maxWidth: 720,
+            display: "flex", alignItems: "flex-start", gap: 7 }}>
+            <Wallet size={14} style={{ color: S.accent, flexShrink: 0, marginTop: 1 }} />
+            <span>
             Monatliche Fixkosten dieses Projekts. Die gängigen Kostenarten sind
             vorgeblendet – einzutragen sind nur Betrag und „gültig ab". Ändert sich
             ein Betrag, kommt ein <b>weiterer Zeitraum</b> dazu statt den alten Wert zu
             überschreiben; vor dem frühesten „gültig ab" wird mit 0 € gerechnet.
+            Die Summen fließen in den Reiter <b>Ergebnis</b> des GF-Cockpits.</span>
           </p>
         </div>
         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>

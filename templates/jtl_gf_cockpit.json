@@ -2,9 +2,9 @@
   "format_version": "1.0",
   "template_id": "jtl_gf_cockpit",
   "template_name": "JTL – Geschäftsführer-Cockpit",
-  "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
+  "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.4",
+  "version": "2.5",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -13,7 +13,8 @@
     "Ladenhüter/Warnungen: 'ladenhueter_tage' legt fest, ab wie vielen Tagen ohne Verkauf ein Artikel mit Bestand als Ladenhüter gilt (Standard 180).",
     "Rohertrag/Marge werden mit dem aktuellen Artikel-EK (dbo.tArtikel.fEKNetto) gerechnet – ein Näherungswert, kein historischer EK.",
     "SCHEMA-PRÜFUNG: Die Abfragen nutzen Standard-JTL-Tabellen (Rechnung.vRechnung, Rechnung.tRechnungPosition, Rechnung.vRechnungRechnungsadresse, dbo.tArtikel, dbo.tArtikelBeschreibung, dbo.tlagerbestand, dbo.tWarengruppe). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen prüfen.",
-    "Die Aufgabenliste oben im Reiter „Unternehmensübersicht“ kommt aus der Warnungs-Engine: Die Regeln sind Daten, die Schwellwerte stehen zentral unter Warnungen und gelten auch für den Unternehmensmonitor. Ist das Lager-Cockpit installiert, erscheint zusätzlich dessen Ladenhüter-Warnung."
+    "Die Aufgabenliste oben im Reiter „Unternehmensübersicht“ kommt aus der Warnungs-Engine: Die Regeln sind Daten, die Schwellwerte stehen zentral unter Warnungen und gelten auch für den Unternehmensmonitor. Ist das Lager-Cockpit installiert, erscheint zusätzlich dessen Ladenhüter-Warnung.",
+    "Das mitinstallierte Formular 'Kostenstruktur' pflegt die monatlichen Fixkosten (Personal, Miete, Strom, Fahrzeuge …). Erst damit füllt sich der Reiter 'Ergebnis' mit Betriebsergebnis, Umsatzrendite und Break-even – ohne gepflegte Kosten sind die Fixkosten 0 und das Betriebsergebnis entspricht dem Deckungsbeitrag II. Wichtig: den ersten Eintrag je Kostenart weit genug zurückdatieren, sonst rechnet der Vorjahresvergleich dort mit 0 €."
   ],
   "config_required": [
     {
@@ -9927,6 +9928,28 @@
           }
         ],
         "show_ai_assistant": true
+      },
+      "portal_config": {}
+    },
+    {
+      "name": "Kostenstruktur",
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "actions": [],
+        "widgets": [
+          {
+            "id": "w_kostenstruktur",
+            "type": "kostenstruktur",
+            "label": "Fixkosten je Kostenart",
+            "action_id": null,
+            "config": {
+              "width": 12
+            }
+          }
+        ],
+        "result_tabs": [],
+        "show_ai_assistant": false
       },
       "portal_config": {}
     }

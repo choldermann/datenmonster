@@ -7,7 +7,7 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wallet, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -34,7 +34,6 @@ import PluginsPanel from "../components/dashboard/panels/PluginsPanel";
 import AIMemoryPanel from "../components/dashboard/panels/AIMemoryPanel";
 import LicensePanel from "../components/dashboard/panels/LicensePanel";
 import AlertsPanel from "../components/dashboard/panels/AlertsPanel";
-import CostsPanel from "../components/dashboard/panels/CostsPanel";
 import NewDatasetWizard from "../components/NewDatasetWizard";
 
 
@@ -247,7 +246,6 @@ export default function Dashboard() {
     { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
     { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: pluginsCount, dividerAfter: true },
     { id: "alerts",      label: "Warnungen",       icon: ShieldAlert, badge: 0 },
-    { id: "costs",       label: "Kosten",          icon: Wallet,      badge: 0 },
     { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
     { id: "license",     label: "Lizenz",           icon: KeyRound,    badge: 0 },
   ];
@@ -717,10 +715,6 @@ export default function Dashboard() {
 
         {tab === "alerts" && (
           <AlertsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
-        )}
-
-        {tab === "costs" && (
-          <CostsPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
         )}
 
         {tab === "license" && (

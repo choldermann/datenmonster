@@ -11,6 +11,7 @@ import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
 import HerstellerNavigator from "./widgets/HerstellerNavigator";
+import KostenWidget from "./widgets/KostenWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
 import AlertsWidget from "./widgets/AlertsWidget";
@@ -24,17 +25,22 @@ const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
+  kostenstruktur: "Kostenstruktur",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
-export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research"]);
+export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research", "kostenstruktur"]);
 
-function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText }) {
+function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
   if (widget.type === "ean_research") return <EanResearchWidget widget={widget} />;
+  // Bearbeitbar rendern und das Backend entscheiden lassen: require_editor weist
+  // einen Portal-Nutzer beim Speichern ab, die Anzeige bleibt für alle gleich.
+  if (widget.type === "kostenstruktur")
+    return <KostenWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
@@ -66,7 +72,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   }
 }
 
-export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText }) {
+export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null }) {
   // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
   // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
@@ -200,7 +206,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
+                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
               </div>
             );
           })}

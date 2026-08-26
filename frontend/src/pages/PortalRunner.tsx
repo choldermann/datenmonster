@@ -491,6 +491,7 @@ export default function PortalRunner() {
             results={results || {}}
             allowDownload={allowDownload}
             baseParams={params}
+            projectId={form.project_id}
             onAiText={(aid, text, loading) => {
               setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
               setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });

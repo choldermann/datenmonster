@@ -346,8 +346,10 @@ export default function FormRunner() {
               </div>
             )}
           </div>
-        ) : (
-          // Kein Schema → trotzdem Run-Button für verknüpfte Mappings
+        ) : actions.length > 0 && (
+          // Kein Schema → trotzdem Run-Button für verknüpfte Mappings. Ein Formular
+          // ohne Felder UND ohne Actions ist eine reine Pflegemaske (eigenständiges
+          // Widget) – dort wäre der Button funktionslos.
           <div style={{ textAlign: "center", padding: "40px 0", marginBottom: 24 }}>
             <p style={{ color: S.textDim, fontSize: 12, marginBottom: 16 }}>
               Dieses Formular hat noch keine Eingabefelder.
@@ -387,6 +389,7 @@ export default function FormRunner() {
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results || {}} allowDownload={true} baseParams={params}
+            projectId={form.project_id}
             onAiText={(aid, text, loading) => {
               setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
               setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
