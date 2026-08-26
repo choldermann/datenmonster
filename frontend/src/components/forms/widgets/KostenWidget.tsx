@@ -17,6 +17,10 @@ const inp = {
 const eur = (n) => new Intl.NumberFormat("de-DE", {
   style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
 
+// Eine Zeitscheibe zählt erst als fertig, wenn Datum UND Betrag stehen.
+const offen = (e) => !e || !e.gueltig_ab || e.betrag === "" || e.betrag === null
+  || e.betrag === undefined || isNaN(Number(e.betrag));
+
 const heuteISO = () => new Date().toISOString().slice(0, 10);
 const jahresbeginnISO = () => `${new Date().getFullYear()}-01-01`;
 
@@ -75,9 +79,12 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
   const speichern = async (key) => {
     const art = arten.find(a => a.key === key);
     if (!art) return;
-    // Zeilen ohne Betrag sind Tippreste, keine Kostenart mit 0 €.
+    // Eine halb ausgefüllte Zeile ist noch in Arbeit – typischerweise steht das
+    // Datum schon, der Betrag folgt beim nächsten Feld. Solange wird gar nicht
+    // gespeichert: ein Speichern würde die Zeile als leer wegschreiben und das
+    // anschließende Neuladen die Eingabe überschreiben.
+    if ((art.eintraege || []).some(offen)) return;
     const eintraege = (art.eintraege || [])
-      .filter(e => e.betrag !== "" && e.betrag !== null && !isNaN(Number(e.betrag)))
       .map(e => ({ gueltig_ab: e.gueltig_ab || jahresbeginnISO(),
                    betrag: Number(e.betrag) }));
     setSpeichert(key); setFehler(null);
@@ -216,6 +223,13 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
                       {speichert === a.key && (
                         <Loader2 size={11} className="animate-spin" style={{ color: S.textDim }} />
                       )}
+                      {eintraege.some(offen) && (
+                        <span style={{ fontSize: 10, color: "#e8913a" }}>
+                          {offen(aktuell) && !aktuell?.betrag && aktuell?.gueltig_ab
+                            ? "Betrag fehlt – noch nicht gespeichert"
+                            : "unvollständig – noch nicht gespeichert"}
+                        </span>
+                      )}
                     </div>
                     {a.hinweis && (
                       <div style={{ fontSize: 11, color: S.textDim, marginTop: 2 }}>{a.hinweis}</div>
@@ -228,8 +242,9 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
                       value={aktuell?.gueltig_ab || ""}
                       onChange={e => aktuell
                         ? feldAendern(a, aktuellIdx, "gueltig_ab", e.target.value)
-                        : aendern(a.key, [{ gueltig_ab: e.target.value, betrag: "" }])}
-                      onBlur={() => aktuell && speichern(a.key)}
+                        // Ein leerer Wert (halb getipptes Datum) legt noch keine Zeile an.
+                        : e.target.value && aendern(a.key, [{ gueltig_ab: e.target.value, betrag: "" }])}
+                      onBlur={() => speichern(a.key)}
                       style={{ ...inp, width: 140 }} />
                   </div>
 
