@@ -18,7 +18,7 @@ const eur = (n) => new Intl.NumberFormat("de-DE", {
   style: "currency", currency: "EUR", maximumFractionDigits: 0 }).format(n || 0);
 
 // Eine Zeitscheibe zählt erst als fertig, wenn Datum UND Betrag stehen.
-const offen = (e) => !e || !e.gueltig_ab || e.betrag === "" || e.betrag === null
+const unvollstaendig = (e) => !e || !e.gueltig_ab || e.betrag === "" || e.betrag === null
   || e.betrag === undefined || isNaN(Number(e.betrag));
 
 const heuteISO = () => new Date().toISOString().slice(0, 10);
@@ -83,7 +83,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
     // Datum schon, der Betrag folgt beim nächsten Feld. Solange wird gar nicht
     // gespeichert: ein Speichern würde die Zeile als leer wegschreiben und das
     // anschließende Neuladen die Eingabe überschreiben.
-    if ((art.eintraege || []).some(offen)) return;
+    if ((art.eintraege || []).some(unvollstaendig)) return;
     const eintraege = (art.eintraege || [])
       .map(e => ({ gueltig_ab: e.gueltig_ab || jahresbeginnISO(),
                    betrag: Number(e.betrag) }));
@@ -223,9 +223,9 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
                       {speichert === a.key && (
                         <Loader2 size={11} className="animate-spin" style={{ color: S.textDim }} />
                       )}
-                      {eintraege.some(offen) && (
+                      {eintraege.some(unvollstaendig) && (
                         <span style={{ fontSize: 10, color: "#e8913a" }}>
-                          {offen(aktuell) && !aktuell?.betrag && aktuell?.gueltig_ab
+                          {unvollstaendig(aktuell) && !aktuell?.betrag && aktuell?.gueltig_ab
                             ? "Betrag fehlt – noch nicht gespeichert"
                             : "unvollständig – noch nicht gespeichert"}
                         </span>
