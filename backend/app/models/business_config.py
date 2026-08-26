@@ -14,11 +14,15 @@ class BusinessConfig(Base):
 
     scope trennt die Namensräume:
       threshold – Schwellwerte für Warnungen (Ladenhüter-Tage, Marge-Minimum …)
-      cost      – kalkulatorische Kostensätze (Versand, Verpackung, Payment …)
+      cost      – monatliche Fixkosten je Kostenart (Miete, Personal, Strom …)
       goal      – Unternehmensziele (Jahresumsatz, DB-Marge …)
 
-    value ist bewusst JSON: Schwellwerte sind Zahlen, Kostenregeln und Ziele sind
-    Objekte ({"typ": "versand", "match": {...}, "betrag_je_sendung": 6.9}).
+    value ist bewusst JSON: Schwellwerte sind Zahlen, Kostenarten und Ziele sind
+    Objekte. Eine Kostenart trägt ihre zeitliche Entwicklung in sich –
+    {"eintraege": [{"gueltig_ab": "2025-01-01", "betrag": 2400}, …]}, jeweils
+    gültig bis zur nächsten Scheibe. Eigene Kostenarten (Schlüssel "x_…") legen
+    zusätzlich label/gruppe/gruppe_key im Wert ab, Standardarten holen das aus
+    business_config_service.COST_DEFAULTS.
     """
 
     __tablename__ = "business_config"

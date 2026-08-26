@@ -6,6 +6,7 @@ Mappings injiziert (business_config_service.apply_config).
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional, Any
+from datetime import date
 from pydantic import BaseModel
 
 from app.core.database import get_db
@@ -69,35 +70,117 @@ def reset_threshold(key: str, project_id: Optional[int] = None,
         (m["key"], m["default"]) for m in cfg_service.threshold_meta()).get(key)}
 
 
-# ── Kostensätze und Ziele: Speicher steht, Auswertung folgt in Phase 2/4 ──────
+# ── Kostenarten: Fixkosten je Monat mit "gültig ab" ──────────────────────────
+# Die Standardarten sind vorgeblendet (COST_DEFAULTS) – gepflegt werden nur
+# Betrag und Beginn. Eigene Arten bekommen einen Schlüssel "x_<slug>".
 
 @router.get("/costs")
 def list_costs(project_id: Optional[int] = None, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     if not can_read_project(project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    return cfg_service.get_costs(project_id, db)
+    kosten = cfg_service.get_costs(project_id, db)
+    return {"project_id": project_id,
+            "gruppen": cfg_service.COST_GROUPS,
+            "kosten": kosten,
+            "summe_monat": cfg_service.kosten_monat(project_id, db)}
 
 
-class ScopedValueIn(BaseModel):
+class KostenEintragIn(BaseModel):
+    gueltig_ab: str
+    betrag: float
+
+
+class KostenartIn(BaseModel):
     project_id: Optional[int] = None
     key: str
-    value: dict
+    eintraege: list[KostenEintragIn] = []
+
+
+def _slug(text: str) -> str:
+    umlaute = {"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"}
+    t = "".join(umlaute.get(c, c) for c in (text or "").strip().lower())
+    t = "".join(c if c.isalnum() else "_" for c in t)
+    return "_".join(p for p in t.split("_") if p)[:40]
 
 
 @router.put("/costs")
-def set_cost(body: ScopedValueIn, db: Session = Depends(get_db),
+def set_cost(body: KostenartIn, db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
+    """Zeitscheiben einer Kostenart speichern (ersetzt die bisherigen)."""
     require_editor(body.project_id, user, db)
-    cfg_service.set_value(body.project_id, db, "cost", body.key, body.value)
-    return {"key": body.key, "value": body.value}
+
+    bestand = {k["key"]: k for k in cfg_service.get_costs(body.project_id, db)}
+    art = bestand.get(body.key)
+    if art is None:
+        raise HTTPException(400, f"Unbekannte Kostenart: {body.key}")
+
+    eintraege = []
+    for e in body.eintraege:
+        datum = cfg_service._parse_datum(e.gueltig_ab)
+        if datum is None:
+            raise HTTPException(400, f"Ungültiges Datum: {e.gueltig_ab}")
+        if e.betrag < 0:
+            raise HTTPException(400, "Der Betrag darf nicht negativ sein")
+        eintraege.append({"gueltig_ab": datum.isoformat(), "betrag": round(e.betrag, 2)})
+    # Doppelte Startdaten würden je nach Sortierung unterschiedlich gewinnen –
+    # der zuletzt eingetragene Betrag gilt.
+    entdoppelt = {e["gueltig_ab"]: e for e in eintraege}
+    eintraege = sorted(entdoppelt.values(), key=lambda e: e["gueltig_ab"])
+
+    wert = {"eintraege": eintraege}
+    if art["custom"]:            # Bezeichnung/Gruppe leben nur bei eigenen Arten im Wert
+        wert.update({"label": art["label"], "gruppe": art["gruppe"],
+                     "gruppe_key": art["gruppe_key"], "custom": True})
+    cfg_service.set_value(body.project_id, db, "cost", body.key, wert)
+    return {**art, "eintraege": eintraege,
+            "betrag_aktuell": cfg_service.betrag_am(eintraege, date.today())}
+
+
+class EigeneKostenartIn(BaseModel):
+    project_id: Optional[int] = None
+    label: str
+    gruppe_key: Optional[str] = "sonstiges"
+
+
+@router.post("/costs/custom")
+def add_custom_cost(body: EigeneKostenartIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Eigene Kostenart anlegen – erscheint danach wie eine Standardart."""
+    require_editor(body.project_id, user, db)
+    if not (body.label or "").strip():
+        raise HTTPException(400, "Bezeichnung fehlt")
+
+    basis = _slug(body.label)
+    if not basis:
+        raise HTTPException(400, "Bezeichnung ergibt keinen gültigen Schlüssel")
+    vorhanden = {k["key"] for k in cfg_service.get_costs(body.project_id, db)}
+    key, n = f"x_{basis}", 2
+    while key in vorhanden:
+        key, n = f"x_{basis}_{n}", n + 1
+
+    gruppe = next((g for g in cfg_service.COST_GROUPS if g["key"] == body.gruppe_key), None)
+    wert = {"label": body.label.strip(), "custom": True, "eintraege": [],
+            "gruppe_key": gruppe["key"] if gruppe else "sonstiges",
+            "gruppe": gruppe["label"] if gruppe else "Sonstiges"}
+    cfg_service.set_value(body.project_id, db, "cost", key, wert)
+    return {"key": key, **wert, "betrag_aktuell": 0, "hinweis": ""}
 
 
 @router.delete("/costs/{key}")
 def delete_cost(key: str, project_id: Optional[int] = None,
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Eigene Art entfernen bzw. eine Standardart wieder auf ungepflegt setzen."""
     require_editor(project_id, user, db)
     return {"deleted": cfg_service.reset_value(project_id, db, "cost", key)}
+
+
+# ── Ziele: Speicher steht, Auswertung folgt in Phase 4 ───────────────────────
+
+class ScopedValueIn(BaseModel):
+    project_id: Optional[int] = None
+    key: str
+    value: dict
 
 
 @router.get("/goals")
