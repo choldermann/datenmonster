@@ -691,7 +691,7 @@ def _pctval(v):
 # müssen diese Abfragen auch dann laufen, wenn ihr Reiter abgewählt wurde.
 _ASSESSMENT_ACTION_IDS = {
     # GF-Cockpit
-    "act_overview_kpi", "act_kunden_kpi", "act_kunden_rueckgang", "act_zm_kpi",
+    "act_overview_kpi", "act_ergebnis_kpi", "act_kunden_kpi", "act_kunden_rueckgang", "act_zm_kpi",
     "act_op_kpi", "act_kapital_kpi", "act_klumpen_kpi", "act_forecast",
     "act_churn", "act_retouren_kpi",
     # Lager-Cockpit
@@ -724,6 +724,21 @@ def _assessment_rows(results: dict) -> list:
         p = _apct(ov.get("Umsatz"), ov.get("UmsatzVJ"))
         out.append(("Ertragslage", p is None or p >= 0,
                     f"Umsatz {_spct(p)} ggü. Vorjahr, DB II-Marge {_pctval(ov.get('DB2Marge'))}"))
+    erg = one("act_ergebnis_kpi")
+    # Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes
+    # Betriebsergebnis "gut". Die Zeile entfällt dann lieber ganz.
+    if erg and (_asnum(erg.get("Fixkosten")) or 0) > 0:
+        be = _asnum(erg.get("Betriebsergebnis"))
+        bevj = _asnum(erg.get("BetriebsergebnisVJ"))
+        good = (be is None or be > 0) and (bevj is None or be is None or be >= bevj)
+        vj = f" (VJ {_eur(erg.get('BetriebsergebnisVJ'))})" if bevj is not None else ""
+        out.append(("Betriebsergebnis", good,
+                    f"{_eur(erg.get('Betriebsergebnis'))}{vj} nach Fixkosten von "
+                    f"{_eur(erg.get('Fixkosten'))}, Umsatzrendite "
+                    f"{_pctval(erg.get('Umsatzrendite'))}, Kosten gedeckt nach "
+                    f"{_fmt(erg.get('KostendeckungNachTagen'), 1)} von "
+                    f"{_fmt(erg.get('Tage'), 0)} Tagen"))
+
     kk = one("act_kunden_kpi")
     decl = rows_of("act_kunden_rueckgang")
     if kk or decl:

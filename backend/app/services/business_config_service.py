@@ -11,6 +11,7 @@ referenzieren, bleiben davon völlig unberührt (sql_helpers._resolve_sql_run_pa
 bindet ausschließlich, was im SQL-Text vorkommt) – deshalb ist die Injektion für
 alle bestehenden Mappings ein No-Op.
 """
+import json
 from datetime import date, timedelta
 from typing import Optional
 
@@ -290,35 +291,59 @@ def kosten_monat(project_id, db, stichtag: Optional[date] = None) -> dict:
             "gruppen": {g: round(v, 2) for g, v in je_gruppe.items()}}
 
 
-def kosten_zeitraum(project_id, db, von: date, bis: date) -> float:
-    """Fixkosten für einen Zeitraum – taggenau anteilig.
+def kosten_zeitraum_gruppen(project_id, db, von: date, bis: date) -> dict:
+    """Fixkosten eines Zeitraums je Gruppe – taggenau anteilig.
 
     Tagweise statt monatsweise, weil ein Cockpit-Zeitraum selten auf
     Monatsgrenzen liegt und eine Kostenänderung mitten im Monat greifen kann.
     """
+    out: dict = {g["key"]: 0.0 for g in COST_GROUPS}
     if bis < von:
-        return 0.0
+        return out
     if (bis - von).days > 366 * 20:      # Schutz gegen unsinnige Zeiträume
         bis = von + timedelta(days=366 * 20)
-    arten = [k["eintraege"] for k in get_costs(project_id, db)]
-    summe = 0.0
+    arten = [(k["gruppe_key"], k["eintraege"]) for k in get_costs(project_id, db)]
     tag = von
     while tag <= bis:
         tage = _monatstage(tag)
-        for eintraege in arten:
+        for gruppe, eintraege in arten:
             b = betrag_am(eintraege, tag)
             if b:
-                summe += b / tage
+                out[gruppe] = out.get(gruppe, 0.0) + b / tage
         tag += timedelta(days=1)
-    return round(summe, 2)
+    return {g: round(v, 2) for g, v in out.items()}
 
 
-def get_goals(project_id, db) -> list[dict]:
-    """Ziele/Budgets (Phase 4)."""
+def kosten_zeitraum(project_id, db, von: date, bis: date) -> float:
+    return round(sum(kosten_zeitraum_gruppen(project_id, db, von, bis).values()), 2)
+
+
+def _minus_jahr(d: date) -> date:
+    """Gleiches Datum ein Jahr früher – wie DATEADD(YEAR, -1, …) im SQL."""
+    try:
+        return d.replace(year=d.year - 1)
+    except ValueError:      # 29. Februar
+        return d.replace(year=d.year - 1, day=28)
+
+
+def kosten_monatsreihe(project_id, db, bis: date, monate: int = 36) -> list[dict]:
+    """Monatsbeträge der letzten n Monate bis einschließlich Monat von `bis`.
+
+    Für Verlaufsdiagramme: die Fixkosten sind je Monat unterschiedlich, ein
+    einzelner Skalar würde die Historie mit den heutigen Kosten übermalen.
+    Die Reihe geht als JSON in den Lauf und wird im SQL per OPENJSON gejoint.
+    """
+    arten = [k["eintraege"] for k in get_costs(project_id, db)]
     out = []
-    for r in _rows(project_id, db, "goal"):
-        v = r.value if isinstance(r.value, dict) else {"wert": r.value}
-        out.append({**v, "key": r.key})
+    jahr, monat = bis.year, bis.month
+    for _ in range(max(1, monate)):
+        erster = date(jahr, monat, 1)
+        summe = sum(betrag_am(e, erster) for e in arten)
+        out.append({"monat": erster.isoformat()[:7], "betrag": round(summe, 2)})
+        monat -= 1
+        if monat == 0:
+            jahr, monat = jahr - 1, 12
+    out.reverse()
     return out
 
 
@@ -351,6 +376,22 @@ def apply_config(run_params: Optional[dict], project_id, db) -> dict:
         run_params.setdefault(
             "cfg_kosten_zeitraum",
             kosten_zeitraum(project_id, db, von, bis) if von else monat["gesamt"])
+        # Vorjahreszeitraum mit den damals gültigen Sätzen – sonst vergleicht das
+        # Cockpit das Vorjahr gegen die heutigen Kosten.
+        run_params.setdefault(
+            "cfg_kosten_zeitraum_vj",
+            kosten_zeitraum(project_id, db, _minus_jahr(von), _minus_jahr(bis))
+            if von else 0.0)
+        run_params.setdefault("cfg_kosten_monatsreihe",
+                              json.dumps(kosten_monatsreihe(project_id, db, bis)))
+        # Kostenblöcke als JSON: im SQL per OPENJSON eine fertige Tabelle, ohne
+        # neun einzelne Parameter per UNION zusammenstückeln zu müssen.
+        je_gruppe = kosten_zeitraum_gruppen(project_id, db, von, bis) if von else {}
+        run_params.setdefault("cfg_kosten_gruppen", json.dumps([
+            {"key": g["key"], "gruppe": g["label"],
+             "monat": monat["gruppen"].get(g["key"], 0.0),
+             "zeitraum": je_gruppe.get(g["key"], 0.0)}
+            for g in COST_GROUPS]))
     except Exception:
         pass
     return run_params

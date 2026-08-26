@@ -62,6 +62,21 @@ function buildAssessment(results) {
     out.push({ bereich: "Ertragslage", good: (p == null || p >= 0),
       kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, DB II-Marge ${deNum(ov.DB2Marge)} %` });
   }
+  const erg = one("act_ergebnis_kpi");
+  // Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes
+  // Betriebsergebnis "gut". Die Zeile entfällt dann lieber ganz.
+  if (erg && num(erg.Fixkosten) > 0) {
+    const be = num(erg.Betriebsergebnis), rend = num(erg.Umsatzrendite);
+    const bevj = num(erg.BetriebsergebnisVJ);
+    const good = (be == null || be > 0) && (bevj == null || be == null || be >= bevj);
+    out.push({ bereich: "Betriebsergebnis", good,
+      kommentar: `${deNum(erg.Betriebsergebnis, true)}`
+        + (bevj != null ? ` (VJ ${deNum(erg.BetriebsergebnisVJ, true)})` : "")
+        + ` nach Fixkosten von ${deNum(erg.Fixkosten, true)}, `
+        + `Umsatzrendite ${deNum(rend)} %, `
+        + `Kosten gedeckt nach ${deNum(erg.KostendeckungNachTagen)} von ${deNum(erg.Tage)} Tagen` });
+  }
+
   const kk = one("act_kunden_kpi");
   const decl = rowsOf("act_kunden_rueckgang");
   if (kk || decl.length) {

@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.3",
+  "version": "2.4",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -7181,6 +7181,451 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ergebnis_kpi",
+      "name": "Cockpit – Ergebnis Kennzahlen",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    Umsatz, UmsatzVJ, DB2, DB2VJ, Fixkosten, FixkostenVJ, Tage,\n    CAST(DB2 - Fixkosten AS DECIMAL(18,2)) AS Betriebsergebnis,\n    CAST(DB2VJ - FixkostenVJ AS DECIMAL(18,2)) AS BetriebsergebnisVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * (DB2 - Fixkosten) / Umsatz END AS DECIMAL(18,2)) AS Umsatzrendite,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * (DB2VJ - FixkostenVJ) / UmsatzVJ END AS DECIMAL(18,2)) AS UmsatzrenditeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Quote,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2QuoteVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Fixkosten / Umsatz END AS DECIMAL(18,2)) AS Fixkostenquote,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * FixkostenVJ / UmsatzVJ END AS DECIMAL(18,2)) AS FixkostenquoteVJ,\n    CAST(CASE WHEN DB2 > 0 THEN Fixkosten / (DB2 / Umsatz) END AS DECIMAL(18,2)) AS BreakEvenUmsatz,\n    CAST(CASE WHEN Fixkosten > 0 THEN 100.0 * DB2 / Fixkosten END AS DECIMAL(18,2)) AS Kostendeckung,\n    CAST(CASE WHEN Fixkosten > 0 THEN Fixkosten / NULLIF(Tage, 0) END AS DECIMAL(18,2)) AS FixkostenProTag,\n    CAST(CASE WHEN DB2 > 0 AND Fixkosten > 0 THEN Tage * Fixkosten / DB2 END AS DECIMAL(18,1)) AS KostendeckungNachTagen\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        CAST(:cfg_kosten_zeitraum AS DECIMAL(18,2)) AS Fixkosten,\n        CAST(:cfg_kosten_zeitraum_vj AS DECIMAL(18,2)) AS FixkostenVJ,\n        DATEDIFF(DAY, :von, :bis) + 1 AS Tage\n    FROM (\n        SELECT POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Umsatz",
+            "UmsatzVJ",
+            "DB2",
+            "DB2VJ",
+            "Fixkosten",
+            "FixkostenVJ",
+            "Tage",
+            "Betriebsergebnis",
+            "BetriebsergebnisVJ",
+            "Umsatzrendite",
+            "UmsatzrenditeVJ",
+            "DB2Quote",
+            "DB2QuoteVJ",
+            "Fixkostenquote",
+            "FixkostenquoteVJ",
+            "BreakEvenUmsatz",
+            "Kostendeckung",
+            "FixkostenProTag",
+            "KostendeckungNachTagen"
+          ]
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Ergebnis Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "DB2",
+              "target_field": "DB2",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2"
+              }
+            },
+            {
+              "source_field": "DB2VJ",
+              "target_field": "DB2VJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2VJ"
+              }
+            },
+            {
+              "source_field": "Fixkosten",
+              "target_field": "Fixkosten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fixkosten"
+              }
+            },
+            {
+              "source_field": "FixkostenVJ",
+              "target_field": "FixkostenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "FixkostenVJ"
+              }
+            },
+            {
+              "source_field": "Tage",
+              "target_field": "Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tage"
+              }
+            },
+            {
+              "source_field": "Betriebsergebnis",
+              "target_field": "Betriebsergebnis",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Betriebsergebnis"
+              }
+            },
+            {
+              "source_field": "BetriebsergebnisVJ",
+              "target_field": "BetriebsergebnisVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BetriebsergebnisVJ"
+              }
+            },
+            {
+              "source_field": "Umsatzrendite",
+              "target_field": "Umsatzrendite",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatzrendite"
+              }
+            },
+            {
+              "source_field": "UmsatzrenditeVJ",
+              "target_field": "UmsatzrenditeVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzrenditeVJ"
+              }
+            },
+            {
+              "source_field": "DB2Quote",
+              "target_field": "DB2Quote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2Quote"
+              }
+            },
+            {
+              "source_field": "DB2QuoteVJ",
+              "target_field": "DB2QuoteVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2QuoteVJ"
+              }
+            },
+            {
+              "source_field": "Fixkostenquote",
+              "target_field": "Fixkostenquote",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fixkostenquote"
+              }
+            },
+            {
+              "source_field": "FixkostenquoteVJ",
+              "target_field": "FixkostenquoteVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "FixkostenquoteVJ"
+              }
+            },
+            {
+              "source_field": "BreakEvenUmsatz",
+              "target_field": "BreakEvenUmsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BreakEvenUmsatz"
+              }
+            },
+            {
+              "source_field": "Kostendeckung",
+              "target_field": "Kostendeckung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kostendeckung"
+              }
+            },
+            {
+              "source_field": "FixkostenProTag",
+              "target_field": "FixkostenProTag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "FixkostenProTag"
+              }
+            },
+            {
+              "source_field": "KostendeckungNachTagen",
+              "target_field": "KostendeckungNachTagen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KostendeckungNachTagen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ergebnis_verlauf",
+      "name": "Cockpit – Ergebnis-Verlauf (12 Monate)",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH k AS (\n    SELECT Monat, Fixkosten\n    FROM OPENJSON(:cfg_kosten_monatsreihe)\n         WITH (Monat char(7) '$.monat', Fixkosten decimal(18,2) '$.betrag')\n), u AS (\n    SELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n        CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(SUM(CASE WHEN POS.nType IN (1,2)\n                 THEN POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) END)\n             AS DECIMAL(18,2)) AS DB2\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    WHERE RE.dErstellt >= DATEADD(MONTH, -11, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n      AND RE.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n    GROUP BY CONVERT(char(7), RE.dErstellt, 120)\n)\nSELECT k.Monat,\n    CAST(ISNULL(u.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(u.DB2, 0) AS DECIMAL(18,2)) AS DB2,\n    k.Fixkosten,\n    CAST(ISNULL(u.DB2, 0) - k.Fixkosten AS DECIMAL(18,2)) AS Betriebsergebnis\nFROM k LEFT JOIN u ON u.Monat = k.Monat\nWHERE k.Monat >= CONVERT(char(7), DATEADD(MONTH, -11, :bis), 120)\n  AND k.Monat <= CONVERT(char(7), :bis, 120)\nORDER BY k.Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz",
+            "DB2",
+            "Fixkosten",
+            "Betriebsergebnis"
+          ]
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Ergebnis-Verlauf (12 Monate)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "DB2",
+              "target_field": "DB2",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB2"
+              }
+            },
+            {
+              "source_field": "Fixkosten",
+              "target_field": "Fixkosten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fixkosten"
+              }
+            },
+            {
+              "source_field": "Betriebsergebnis",
+              "target_field": "Betriebsergebnis",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Betriebsergebnis"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ergebnis_bloecke",
+      "name": "Cockpit – Kostenblöcke",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT g.Kostenblock,\n    CAST(g.ProMonat AS DECIMAL(18,2)) AS [Euro pro Monat],\n    CAST(g.ImZeitraum AS DECIMAL(18,2)) AS [Euro im Zeitraum],\n    CAST(CASE WHEN u.Umsatz > 0 THEN 100.0 * g.ImZeitraum / u.Umsatz END AS DECIMAL(18,2)) AS [Anteil am Umsatz %],\n    CAST(CASE WHEN u.Rechnungen > 0 THEN g.ImZeitraum / u.Rechnungen END AS DECIMAL(18,2)) AS [Euro je Rechnung]\nFROM OPENJSON(:cfg_kosten_gruppen)\n     WITH (Kostenblock nvarchar(60) '$.gruppe', ProMonat decimal(18,2) '$.monat',\n           ImZeitraum decimal(18,2) '$.zeitraum') g\nCROSS JOIN (\n    SELECT CAST(ISNULL(SUM(POS.fAnzahl * POS.fVkNetto), 0) AS DECIMAL(18,2)) AS Umsatz,\n           COUNT(DISTINCT RE.kRechnung) AS Rechnungen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n) u\nWHERE g.ProMonat > 0 OR g.ImZeitraum > 0\nORDER BY g.ImZeitraum DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Kostenblock",
+            "Euro pro Monat",
+            "Euro im Zeitraum",
+            "Anteil am Umsatz %",
+            "Euro je Rechnung"
+          ]
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Kostenblöcke",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kostenblock",
+              "target_field": "Kostenblock",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kostenblock"
+              }
+            },
+            {
+              "source_field": "Euro pro Monat",
+              "target_field": "Euro pro Monat",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Euro pro Monat"
+              }
+            },
+            {
+              "source_field": "Euro im Zeitraum",
+              "target_field": "Euro im Zeitraum",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Euro im Zeitraum"
+              }
+            },
+            {
+              "source_field": "Anteil am Umsatz %",
+              "target_field": "Anteil am Umsatz %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil am Umsatz %"
+              }
+            },
+            {
+              "source_field": "Euro je Rechnung",
+              "target_field": "Euro je Rechnung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Euro je Rechnung"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -7635,6 +8080,27 @@
             "mapping_id": "m_gf_ek_er_offen",
             "pipeline_id": null,
             "label": "Cockpit – Offene Eingangsrechnungen"
+          },
+          {
+            "id": "act_ergebnis_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ergebnis_kpi",
+            "pipeline_id": null,
+            "label": "Cockpit – Ergebnis Kennzahlen"
+          },
+          {
+            "id": "act_ergebnis_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_ergebnis_verlauf",
+            "pipeline_id": null,
+            "label": "Cockpit – Ergebnis-Verlauf (12 Monate)"
+          },
+          {
+            "id": "act_ergebnis_bloecke",
+            "type": "run_mapping",
+            "mapping_id": "m_ergebnis_bloecke",
+            "pipeline_id": null,
+            "label": "Cockpit – Kostenblöcke"
           }
         ],
         "widgets": [
@@ -7814,6 +8280,11 @@
               "report_layout": true,
               "instruction": "Berücksichtige alle gelieferten Bereiche des Cockpits gleichgewichtig und halte die feste Blockreihenfolge ein.",
               "extra_sections": [
+                {
+                  "action_id": "act_ergebnis_kpi",
+                  "label": "Betriebsergebnis (DB II abzüglich Fixkosten)",
+                  "kind": "kpi"
+                },
                 {
                   "action_id": "act_kunden_kpi",
                   "label": "Kunden-Kennzahlen",
@@ -9154,6 +9625,172 @@
                 "kEingangsrechnung"
               ]
             }
+          },
+          {
+            "id": "w_erg_kpi_umsatz",
+            "type": "kpi",
+            "label": "Umsatz",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "Umsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "UmsatzVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_erg_kpi_db2",
+            "type": "kpi",
+            "label": "Deckungsbeitrag II",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "DB2",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "DB2VJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_erg_kpi_fix",
+            "type": "kpi",
+            "label": "Fixkosten im Zeitraum",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "Fixkosten",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "FixkostenVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true
+            }
+          },
+          {
+            "id": "w_erg_kpi_ergebnis",
+            "type": "kpi",
+            "label": "Betriebsergebnis",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "Betriebsergebnis",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "BetriebsergebnisVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_erg_kpi_rendite",
+            "type": "kpi",
+            "label": "Umsatzrendite",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "Umsatzrendite",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 2,
+              "compare_column": "UmsatzrenditeVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_erg_kpi_db2quote",
+            "type": "kpi",
+            "label": "DB-II-Quote",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "DB2Quote",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 2,
+              "compare_column": "DB2QuoteVJ",
+              "compare_label": "Vorjahr"
+            }
+          },
+          {
+            "id": "w_erg_kpi_breakeven",
+            "type": "kpi",
+            "label": "Break-even-Umsatz",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "BreakEvenUmsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_erg_kpi_deckung",
+            "type": "kpi",
+            "label": "Kosten gedeckt nach",
+            "action_id": "act_ergebnis_kpi",
+            "config": {
+              "width": 3,
+              "column": "KostendeckungNachTagen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tagen",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_erg_verlauf",
+            "type": "bar",
+            "label": "Deckungsbeitrag II gegen Fixkosten je Monat",
+            "action_id": "act_ergebnis_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "DB2",
+                "Fixkosten"
+              ],
+              "stacked": false,
+              "info": "Deckungsbeitrag II (Rohertrag inkl. Versandergebnis) gegen die Fixkosten des jeweiligen Monats. Die Fixkosten stammen aus dem Reiter „Kosten“ und folgen dort dem hinterlegten „gültig ab“. Ohne gepflegte Kostenstruktur sind sie 0 – dann entspricht das Betriebsergebnis dem DB II."
+            }
+          },
+          {
+            "id": "w_erg_verlauf_ergebnis",
+            "type": "line",
+            "label": "Betriebsergebnis je Monat",
+            "action_id": "act_ergebnis_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Betriebsergebnis"
+              ],
+              "curved": false
+            }
+          },
+          {
+            "id": "w_erg_bloecke",
+            "type": "table",
+            "label": "Kostenblöcke",
+            "action_id": "act_ergebnis_bloecke",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Kostenblöcke des Zeitraums, taggenau anteilig aus den monatlichen Sätzen. Das ist eine Managementsicht, keine BWA: Abgrenzungen, Bestandsveränderungen und Steuern sind nicht enthalten."
+            }
           }
         ],
         "result_tabs": [
@@ -9164,6 +9801,15 @@
               "act_gf_alerts",
               "act_overview_kpi",
               "act_umsatz_verlauf"
+            ]
+          },
+          {
+            "id": "tab_ergebnis",
+            "label": "Ergebnis",
+            "action_ids": [
+              "act_ergebnis_kpi",
+              "act_ergebnis_verlauf",
+              "act_ergebnis_bloecke"
             ]
           },
           {
