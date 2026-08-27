@@ -25,7 +25,7 @@ Die Schwächen liegen woanders – in dieser Reihenfolge:
 | # | Befund | Schwere | Aufwand |
 |---|--------|---------|---------|
 | **1** | Die Portal-Rolle wird serverseitig nicht durchgesetzt. Ein Kunde sieht fremde Pipelines, das Systemprotokoll und Servermetriken | **hoch** | mittel |
-| **2** | `pipelines`, `dispatcher` und `exports` prüfen keinen Projektzugriff | **hoch** | klein |
+| **2** | `pipelines` und `dispatcher` prüfen keinen Projektzugriff | **hoch** | klein |
 | **3** | Keine automatisierten Tests – bei 82.000 Zeilen | **hoch** | groß, aber teilbar |
 | **4** | Kein Backup-Verfahren; die Daten liegen allein im Docker-Volume | **hoch** | klein |
 | **5** | Keine echten Datenbank-Migrationen: 51 `ALTER TABLE` mit verschlucktem Fehler | mittel | mittel |
@@ -83,7 +83,14 @@ Zählung der Rechteprüfungen je Modul (`require_editor`, `can_read_project`,
 | **`forms.py`** | **2** | 11 |
 | **`pipelines.py`** | **0** | 9 |
 | **`dispatcher.py`** | **0** | 5 |
-| **`exports.py`** | **0** | 4 |
+| `exports.py` | 0\* | 4 |
+
+\* **Korrektur (27.08.2026, bei der Umsetzung bemerkt):** `exports.py` ist entgegen
+dieser Zählung **nicht** ungeschützt. Es nutzt ein anderes, ebenso gültiges Muster –
+jeder Endpunkt filtert über `ExportFile.user_id == user.id`, jeder sieht also nur
+seine eigenen Ausgabedateien. Meine Zählung suchte nur nach `require_editor` und
+`can_read_project` und hat das nicht erkannt. Der Befund gilt für `pipelines.py` und
+`dispatcher.py`.
 
 `pipelines.py:118-141` im Klartext: `list_pipelines` filtert nur, wenn eine
 `project_id` mitgegeben wird – ohne Parameter kommt alles. `get_pipeline`,
@@ -329,7 +336,7 @@ Damit die Durchsicht nicht mehr verspricht, als sie hält:
 
 **Zuerst, weil klein und wirksam:**
 1. Backup einrichten (§4) – schützt vor dem einzigen wirklich irreversiblen Schaden
-2. Projektzugriff in `pipelines`/`dispatcher`/`exports` nachziehen (§2)
+2. Projektzugriff in `pipelines`/`dispatcher` nachziehen (§2)
 3. `npm audit fix` (§6)
 
 **Dann, weil es die Grundlage für alles Weitere ist:**

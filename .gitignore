@@ -105,3 +105,6 @@ doku/heute.md
 
 # ─── Claude Code (lokale Maschine) ───────────────────────────────────────────
 .claude/settings.local.json
+
+# Datensicherungen (enthalten Geheimnisse)
+backups/

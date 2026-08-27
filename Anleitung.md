@@ -100,6 +100,42 @@ Neue Versionen lassen sich direkt in der Anwendung einspielen: Version prüfen,
 Änderungsliste ansehen, installieren. Die Auslieferung erfolgt über die
 Container-Registry, ein Eingriff auf der Kommandozeile ist nicht nötig.
 
+### Datensicherung
+
+Die Anwendungsdaten liegen **nicht** im Projektordner, sondern im Docker-Volume
+`datenmonster-data`: die Datenbank mit allen Mappings, Formularen, Warnregeln und
+Zeitplänen, dazu die Dateien der Datasets. Ein verlorenes Volume bedeutet den
+Verlust der gesamten Einrichtungsarbeit.
+
+```bash
+./backup.sh                    # Sicherung anlegen
+./backup.sh --list             # vorhandene Sicherungen anzeigen
+./backup.sh --restore <datei>  # zurückspielen (fragt vorher nach)
+```
+
+Die Datenbank wird dabei über die Sicherungsschnittstelle von SQLite kopiert, nicht
+mit `cp` – bei laufendem Schreibzugriff wäre eine einfache Dateikopie unbrauchbar.
+Die Anwendung muss dafür nicht angehalten werden.
+
+Das Archiv enthält die Datenbank, die Dataset-Dateien und die `.env`. Die `.env`
+gehört zwingend dazu: Ohne den darin enthaltenen `SECRET_KEY` lassen sich die
+gespeicherten Zugangsdaten nicht mehr entschlüsseln.
+
+> ⚠️ Damit enthält jedes Archiv Geheimnisse. Es liegt unter `backups/` (von der
+> Versionsverwaltung ausgenommen) mit den Rechten `600` und gehört an einen
+> geschützten Ort – nicht in einen offenen Netzwerkordner.
+
+Standardmäßig bleiben die letzten 14 Sicherungen liegen; über die Umgebungsvariablen
+`DM_BACKUP_DIR` und `DM_BACKUP_KEEP` lässt sich beides ändern. Für einen täglichen
+Lauf genügt ein Eintrag in der Aufgabenplanung des Servers, z. B.:
+
+```
+0 2 * * *  cd /pfad/zu/datenmonster && ./backup.sh >> backups/backup.log 2>&1
+```
+
+**Prüfe die Wiederherstellung gelegentlich.** Eine Sicherung, die noch nie
+zurückgespielt wurde, ist keine.
+
 ---
 
 ## 3. Menüaufbau (Übersicht)
