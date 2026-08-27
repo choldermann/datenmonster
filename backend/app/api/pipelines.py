@@ -115,18 +115,49 @@ class PipelineBody(BaseModel):
     connections: Optional[List[Any]] = []
 
 
+def _pipeline_lesbar(pipeline_id: int, db: Session, user: User) -> Pipeline:
+    """Pipeline holen – und nur zurückgeben, wenn der Nutzer ihr Projekt lesen darf."""
+    from app.api.projects import can_read_project
+    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
+    if not p:
+        raise HTTPException(404, "Nicht gefunden")
+    if not can_read_project(p.project_id, user, db):
+        # Bewusst 404: ob es die ID gibt, geht einen Fremden nichts an.
+        raise HTTPException(404, "Nicht gefunden")
+    return p
+
+
+def _pipeline_aenderbar(pipeline_id: int, db: Session, user: User) -> Pipeline:
+    """Wie oben, verlangt aber Schreibrecht am Projekt."""
+    from app.api.projects import require_editor
+    p = _pipeline_lesbar(pipeline_id, db, user)
+    require_editor(p.project_id, user, db)
+    return p
+
+
 @router.get("/")
 def list_pipelines(project_id: Optional[int] = None, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
+    from app.api.projects import get_accessible_project_ids, can_read_project
+    if project_id is not None and not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     q = db.query(Pipeline)
     if project_id:
         q = q.filter(Pipeline.project_id == project_id)
+    else:
+        # Ohne Filter kamen bisher die Pipelines aller Projekte zurück – auch die
+        # fremder Mandanten und für Nutzer, die nur das Portal sehen sollen.
+        erlaubt = get_accessible_project_ids(user, db)
+        if erlaubt is not None:
+            q = q.filter((Pipeline.project_id.in_(erlaubt)) | (Pipeline.project_id.is_(None)))
     return [pipeline_out(p) for p in q.order_by(Pipeline.id).all()]
 
 
 @router.post("/")
 def create_pipeline(body: PipelineBody, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
+    from app.api.projects import require_editor
+    require_editor(body.project_id, user, db)
     p = Pipeline(**body.dict())
     db.add(p); db.commit(); db.refresh(p)
     _sync_pipeline_scheduler(p)
@@ -136,16 +167,17 @@ def create_pipeline(body: PipelineBody, db: Session = Depends(get_db),
 @router.get("/{pipeline_id}")
 def get_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p: raise HTTPException(404, "Nicht gefunden")
-    return pipeline_out(p)
+    return pipeline_out(_pipeline_lesbar(pipeline_id, db, user))
 
 
 @router.put("/{pipeline_id}")
 def update_pipeline(pipeline_id: int, body: PipelineBody, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p: raise HTTPException(404, "Nicht gefunden")
+    from app.api.projects import require_editor
+    p = _pipeline_aenderbar(pipeline_id, db, user)
+    # Auch das Ziel muss erlaubt sein, sonst liesse sich eine Pipeline in ein
+    # fremdes Projekt verschieben.
+    require_editor(body.project_id, user, db)
     for k, v in body.dict().items():
         setattr(p, k, v)
     p.updated_at = datetime.now(timezone.utc)
@@ -157,8 +189,7 @@ def update_pipeline(pipeline_id: int, body: PipelineBody, db: Session = Depends(
 @router.delete("/{pipeline_id}")
 def delete_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p: raise HTTPException(404, "Nicht gefunden")
+    p = _pipeline_aenderbar(pipeline_id, db, user)
     # Scheduler-Job entfernen
     try:
         from app.services.scheduler_service import get_scheduler
@@ -172,8 +203,7 @@ def delete_pipeline(pipeline_id: int, db: Session = Depends(get_db),
 @router.post("/{pipeline_id}/run")
 def run_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p: raise HTTPException(404, "Nicht gefunden")
+    p = _pipeline_aenderbar(pipeline_id, db, user)
     from app.services.pipeline_service import run_pipeline as _run
     try:
         result = _run(p, db)
@@ -203,9 +233,7 @@ def debug_run_pipeline(pipeline_id: int, dry_run: bool = True,
     simuliert, Mappings laufen im Preview OHNE Schreiben. Aktualisiert bewusst
     NICHT last_run_status (kein echter Lauf).
     """
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p:
-        raise HTTPException(404, "Nicht gefunden")
+    p = _pipeline_aenderbar(pipeline_id, db, user)
     from app.services.pipeline_service import run_pipeline as _run
     try:
         return _run(p, db, debug=True, dry_run=dry_run)
@@ -222,6 +250,7 @@ def pipeline_runs(pipeline_id: int, limit: int = 20,
     Jede Zeile = ein Lauf, inkl. persistierter node_summary (B3). Debug-/Dry-Run-
     Läufe werden herausgefiltert (kein echter Lauf).
     """
+    _pipeline_lesbar(pipeline_id, db, user)   # Zugriff auf das Projekt prüfen
     from sqlalchemy import text
     import json
     rows = db.execute(text("""
@@ -255,8 +284,7 @@ def pipeline_runs(pipeline_id: int, limit: int = 20,
 def toggle_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     """Aktiviert/Deaktiviert eine Pipeline und sync den Scheduler."""
-    p = db.query(Pipeline).filter(Pipeline.id == pipeline_id).first()
-    if not p: raise HTTPException(404, "Nicht gefunden")
+    p = _pipeline_aenderbar(pipeline_id, db, user)
     old_active = p.active
     p.active = not p.active
     p.updated_at = datetime.now(timezone.utc)
