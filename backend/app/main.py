@@ -454,6 +454,8 @@ from app.api import research as research_api
 app.include_router(research_api.router)
 from app.api import stammdaten as stammdaten_api
 app.include_router(stammdaten_api.router)
+from app.api import backup as backup_api
+app.include_router(backup_api.router)
 
 
 @app.get("/api/health")

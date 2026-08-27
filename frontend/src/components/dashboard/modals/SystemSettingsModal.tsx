@@ -16,6 +16,7 @@ const TABS = [
   { id: "users", label: "Benutzer", icon: "👤" },
   { id: "network", label: "Netzwerk", icon: "🛡️" },
   { id: "appearance", label: "Optik", icon: "🎨" },
+  { id: "backup", label: "Sicherung", icon: "💾", nurAdmin: true },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
 ];
 
@@ -800,6 +801,260 @@ const ROLE_META = {
   portal: { label: "Portal", color: "#fce499", bg: "rgba(252,228,153,0.10)", border: "rgba(252,228,153,0.35)", hint: "Sieht nur veröffentlichte Formulare, keinen Editor" },
 };
 
+
+// ─── Datensicherung ───────────────────────────────────────────────────────────
+// Die Anwendungsdaten liegen im Docker-Volume, nicht im Projektordner. Ohne
+// Sicherung ist ein verlorenes Volume der Verlust der gesamten Einrichtung.
+function BackupSettings() {
+  const [liste, setListe] = useState([]);
+  const [frei, setFrei] = useState(null);
+  const [behalten, setBehalten] = useState(14);
+  const [laden, setLaden] = useState(true);
+  const [arbeitet, setArbeitet] = useState(false);
+  const [meldung, setMeldung] = useState(null);
+  const [pruefung, setPruefung] = useState(null);   // { name, inhalt }
+  const [fertig, setFertig] = useState(null);       // Ergebnis des Zurückspielens
+
+  const laden_ = async () => {
+    setLaden(true);
+    try {
+      const { data } = await api.get("/api/backup/");
+      setListe(data.sicherungen || []);
+      setFrei(data.speicher_frei);
+      setBehalten(data.behalten);
+    } catch (e) {
+      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+    } finally { setLaden(false); }
+  };
+  useEffect(() => { laden_(); }, []);
+
+  const kb = (b) => b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.round(b / 1024)} KB`;
+  const zeit = (iso) => { try { return new Date(iso).toLocaleString("de-DE"); } catch { return iso; } };
+
+  const sichern = async () => {
+    setArbeitet(true); setMeldung(null);
+    try {
+      const { data } = await api.post("/api/backup/");
+      setMeldung({ art: "ok", text: `Sicherung angelegt: ${data.name} (${kb(data.groesse)})` });
+      await laden_();
+    } catch (e) {
+      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+    } finally { setArbeitet(false); }
+  };
+
+  const herunterladen = async (name) => {
+    try {
+      const res = await api.get(`/api/backup/${name}/download`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setMeldung({ art: "fehler", text: "Download fehlgeschlagen: " + (e.response?.data?.detail || e.message) });
+    }
+  };
+
+  const loeschen = async (name) => {
+    setArbeitet(true);
+    try { await api.delete(`/api/backup/${name}`); await laden_(); }
+    catch (e) { setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message }); }
+    finally { setArbeitet(false); }
+  };
+
+  // Erst prüfen, dann bestätigen lassen – wer zurückspielt, soll vorher sehen,
+  // was er bekommt.
+  const pruefen = async (name) => {
+    setArbeitet(true); setMeldung(null); setFertig(null);
+    try {
+      const { data } = await api.post(`/api/backup/restore?name=${encodeURIComponent(name)}&bestaetigt=false`);
+      setPruefung({ name, inhalt: data.inhalt });
+    } catch (e) {
+      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+    } finally { setArbeitet(false); }
+  };
+
+  const zurueckspielen = async () => {
+    if (!pruefung) return;
+    setArbeitet(true);
+    try {
+      const { data } = await api.post(
+        `/api/backup/restore?name=${encodeURIComponent(pruefung.name)}&bestaetigt=true`);
+      setFertig(data); setPruefung(null); await laden_();
+    } catch (e) {
+      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+    } finally { setArbeitet(false); }
+  };
+
+  const hochladen = async (ev) => {
+    const datei = ev.target.files?.[0];
+    if (!datei) return;
+    setArbeitet(true); setMeldung(null); setFertig(null);
+    try {
+      const fd = new FormData(); fd.append("datei", datei);
+      const { data } = await api.post("/api/backup/restore?bestaetigt=false", fd,
+        { headers: { "Content-Type": "multipart/form-data" } });
+      setMeldung({ art: "info",
+        text: `Archiv geprüft: ${JSON.stringify(data.inhalt)}. Hochgeladene Archive spielst `
+            + `du über die Kommandozeile zurück (./backup.sh --restore), damit nichts `
+            + `versehentlich passiert.` });
+    } catch (e) {
+      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+    } finally { setArbeitet(false); ev.target.value = ""; }
+  };
+
+  const kasten = (farbe, rand) => ({
+    padding: "10px 12px", borderRadius: 6, fontSize: 11, lineHeight: 1.5,
+    background: farbe, border: `1px solid ${rand}`, marginBottom: 12,
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div>
+        <p style={{ fontSize: 12, fontWeight: 700, color: S.textBright, margin: "0 0 4px" }}>
+          Datensicherung
+        </p>
+        <p style={{ fontSize: 11, color: S.textDim, lineHeight: 1.5, margin: 0 }}>
+          Gesichert werden die Datenbank – mit allen Mappings, Formularen, Warnregeln und
+          Zeitplänen – sowie die Dateien der Datasets. Die Anwendung muss dafür nicht
+          angehalten werden.
+        </p>
+      </div>
+
+      <div style={kasten("rgba(252,228,153,0.08)", "rgba(252,228,153,0.3)")}>
+        <strong>Lade die Sicherung herunter.</strong> Sie liegt sonst auf demselben Server
+        wie die Daten – beim Ausfall dieses Servers wäre auch sie verloren. Das Archiv
+        enthält die Zugangsdaten aller Verbindungen (verschlüsselt) und gehört an einen
+        geschützten Ort.
+        <br /><br />
+        Der <code>SECRET_KEY</code> aus der <code>.env</code> ist <strong>nicht</strong> im
+        Archiv – ohne ihn lassen sich die Zugangsdaten später nicht entschlüsseln. Sichere
+        die <code>.env</code> getrennt, oder nutze <code>./backup.sh</code> auf dem Server,
+        das beides zusammen ablegt.
+      </div>
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button onClick={sichern} disabled={arbeitet}
+          style={{ padding: "7px 14px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                   cursor: arbeitet ? "default" : "pointer", border: "none",
+                   background: ACCENT, color: "#1a1a1a", display: "flex",
+                   alignItems: "center", gap: 6, opacity: arbeitet ? 0.6 : 1 }}>
+          {arbeitet ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+          Jetzt sichern
+        </button>
+        <label style={{ padding: "7px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+                        cursor: "pointer", border: `1px solid ${S.border}`, color: S.textDim }}>
+          Archiv prüfen …
+          <input type="file" accept=".tar.gz,.gz" onChange={hochladen} style={{ display: "none" }} />
+        </label>
+        {frei !== null && (
+          <span style={{ fontSize: 10, color: S.textDim, marginLeft: "auto" }}>
+            {kb(frei)} frei · die letzten {behalten} Sicherungen bleiben liegen
+          </span>
+        )}
+      </div>
+
+      {meldung && (
+        <div style={kasten(
+          meldung.art === "fehler" ? "rgba(224,112,112,0.1)" : "rgba(110,231,183,0.08)",
+          meldung.art === "fehler" ? "rgba(224,112,112,0.35)" : "rgba(110,231,183,0.3)")}>
+          {meldung.text}
+        </div>
+      )}
+
+      {fertig && (
+        <div style={kasten("rgba(252,228,153,0.12)", "rgba(252,228,153,0.45)")}>
+          <strong>Zurückgespielt.</strong> {fertig.hinweis}
+          <br />
+          Der vorherige Stand wurde vorher gesichert als <code>{fertig.sicherheitskopie}</code>.
+        </div>
+      )}
+
+      {pruefung && (
+        <div style={kasten("rgba(224,112,112,0.1)", "rgba(224,112,112,0.4)")}>
+          <strong>Wirklich zurückspielen?</strong>
+          <br />
+          Archiv <code>{pruefung.name}</code> enthält:{" "}
+          {Object.entries(pruefung.inhalt || {})
+            .filter(([, v]) => v !== null)
+            .map(([k, v]) => `${v} ${k}`).join(", ")}.
+          <br /><br />
+          <strong>Der jetzige Stand wird dabei ersetzt und ist danach weg.</strong> Die
+          laufende Anwendung arbeitet zunächst weiter mit den alten Daten – erst nach einem
+          Neustart des Backend-Containers gilt der zurückgespielte Stand:
+          <br />
+          <code style={{ display: "inline-block", marginTop: 4 }}>docker compose restart backend</code>
+          <br /><br />
+          Zur Sicherheit wird der jetzige Stand vorher automatisch als Archiv abgelegt.
+          <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+            <button onClick={zurueckspielen} disabled={arbeitet}
+              style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 700,
+                       cursor: "pointer", border: "none", background: "#e07070", color: "#fff" }}>
+              Ja, zurückspielen
+            </button>
+            <button onClick={() => setPruefung(null)}
+              style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600,
+                       cursor: "pointer", border: `1px solid ${S.border}`,
+                       background: "none", color: S.textDim }}>
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase",
+                    letterSpacing: "0.06em", marginBottom: 6 }}>
+          Sicherungen auf dem Server
+        </p>
+        {laden ? (
+          <p style={{ fontSize: 11, color: S.textDim }}>Lädt …</p>
+        ) : liste.length === 0 ? (
+          <p style={{ fontSize: 11, color: S.textDim, fontStyle: "italic" }}>
+            Noch keine Sicherung vorhanden.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            {liste.map(s => (
+              <div key={s.name} style={{ display: "flex", alignItems: "center", gap: 8,
+                     padding: "7px 10px", borderRadius: 4, background: S.bgEl,
+                     border: `1px solid ${S.border}`, fontSize: 11 }}>
+                <span style={{ color: S.textBright, fontFamily: "ui-monospace, monospace" }}>
+                  {s.name}
+                </span>
+                <span style={{ color: S.textDim }}>{kb(s.groesse)}</span>
+                <span style={{ color: S.textDim, marginLeft: "auto" }}>{zeit(s.erstellt)}</span>
+                <button onClick={() => herunterladen(s.name)} title="Herunterladen"
+                  style={{ background: "none", border: "none", cursor: "pointer",
+                           color: ACCENT, padding: 2 }}>
+                  <Download size={13} />
+                </button>
+                <button onClick={() => pruefen(s.name)} disabled={arbeitet} title="Zurückspielen"
+                  style={{ background: "none", border: `1px solid ${S.border}`, borderRadius: 3,
+                           cursor: "pointer", color: S.textDim, fontSize: 10,
+                           padding: "2px 7px", fontWeight: 600 }}>
+                  Zurückspielen
+                </button>
+                <button onClick={() => loeschen(s.name)} disabled={arbeitet} title="Löschen"
+                  style={{ background: "none", border: "none", cursor: "pointer",
+                           color: S.textDim, padding: 2 }}>
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p style={{ fontSize: 10, color: S.textDim, lineHeight: 1.6, marginTop: 4 }}>
+        Für die regelmäßige Sicherung eignet sich <code>./backup.sh</code> auf dem Server –
+        es legt zusätzlich die <code>.env</code> mit ins Archiv und lässt sich in die
+        Aufgabenplanung eintragen. Eine Sicherung, die noch nie zurückgespielt wurde, ist
+        keine: prüfe das gelegentlich.
+      </p>
+    </div>
+  );
+}
+
 const roleOf = (u) => (u.is_admin ? "admin" : (u.is_portal_only ? "portal" : "editor"));
 const roleToFlags = (role) => ({
   is_admin:       role === "admin",
@@ -1444,6 +1699,12 @@ function AppearanceSettings() {
 
 export default function SystemSettingsModal({ onClose }) {
   const [activeTab, setActiveTab] = useState("email");
+  const { user: angemeldet } = useAuth();
+  // Die Sicherung ist Administratoren vorbehalten: ein Archiv enthält die
+  // Zugangsdaten aller Verbindungen. Das Backend weist Fremde ohnehin ab –
+  // der Reiter wird hier gar nicht erst angeboten.
+  const sichtbareTabs = TABS.filter(
+    t => !t.nurAdmin || angemeldet?.is_admin);
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "flex-end", justifyContent: "flex-start" }} onClick={onClose}>
@@ -1458,7 +1719,7 @@ export default function SystemSettingsModal({ onClose }) {
 
         {/* Tabs */}
         <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, padding: "0 18px" }}>
-          {TABS.map(tab => (
+          {sichtbareTabs.map(tab => (
             <button key={tab.id}
               onClick={() => !tab.disabled && setActiveTab(tab.id)}
               style={{ padding: "8px 14px", fontSize: 11, fontWeight: 600, background: "none", border: "none", cursor: tab.disabled ? "default" : "pointer", color: activeTab === tab.id ? ACCENT : S.textDim, borderBottom: `2px solid ${activeTab === tab.id ? ACCENT : "transparent"}`, opacity: tab.disabled ? 0.4 : 1, display: "flex", alignItems: "center", gap: 5 }}>
@@ -1476,6 +1737,7 @@ export default function SystemSettingsModal({ onClose }) {
           {activeTab === "users"      && <UserManagement />}
           {activeTab === "network"    && <NetworkSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "backup"     && angemeldet?.is_admin && <BackupSettings />}
         </div>
       </div>
     </div>
