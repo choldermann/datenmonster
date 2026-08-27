@@ -5,6 +5,12 @@
 > **So verwendest du es:** Gib dieses Dokument der KI als Kontext/Systemprompt mit und beschreibe dann, welches Template du brauchst (welche Auswertung, welche Datenquelle, welche Widgets). Die KI gibt **eine einzelne JSON-Datei** aus. Diese lädst du in Datenmonster unter *Templates → Hochladen* hoch und installierst sie in ein Projekt.
 
 > **Aktuelle Format-Version:** `1.0` – jedes generierte Template setzt `"format_version": "1.0"` (siehe §2).
+>
+> *Stand dieser Referenz: 27.08.2026. Neu gegenüber der vorigen Fassung: die Knotenarten
+> `python_nodes`, `expr_nodes`, `quality_nodes`, `param_nodes` und `ai_nodes` werden jetzt mit
+> übertragen (§5.4), Warnregeln (`alert_rules`, §7a) und Berichte (`reports`) sind dokumentiert,
+> ebenso die vollständigen Aktions- und Widget-Typen (§6.1/§6.2) und der REST-Knoten mit
+> Anfragerumpf (§5.5).*
 
 ---
 
@@ -79,7 +85,9 @@ Wenn du nichts anderes brauchst, **halte dich exakt an dieses Muster** – es is
   "datasets": [ ... ],
   "mappings": [ ... ],
   "pipelines": [],
-  "forms": [ ... ]
+  "forms": [ ... ],
+  "alert_rules": [ ... ],
+  "reports": []
 }
 ```
 
@@ -98,6 +106,8 @@ Wenn du nichts anderes brauchst, **halte dich exakt an dieses Muster** – es is
 | `mappings` | Array | Die Auswertungslogik. |
 | `pipelines` | Array | Meist `[]`. |
 | `forms` | Array | Formulare/Dashboards. |
+| `alert_rules` | Array | Unternehmenswarnungen (§7a). Optional, meist `[]`. |
+| `reports` | Array | Eigenständige Berichte (`{name, widgets}`). Wird selten gebraucht – Dashboards laufen über `forms`. Optional, meist `[]`. |
 
 > **Hinweis zu `pipelines`:** Kanonisch ist das **Array `pipelines`** – ein Template kann mehrere Pipelines enthalten. Für reine Reporting-Templates bleibt es einfach leer (`"pipelines": []`). Pipelines werden in §7 beschrieben. (Ein älteres Singular-Feld `pipeline` als Objekt wird vom Installer weiterhin akzeptiert, ist aber nur Fallback – neue Templates nutzen das Array.)
 
@@ -263,6 +273,7 @@ Ein Mapping besteht aus **Quell-/Verarbeitungsknoten** und **Zielen (`targets`)*
 
 - Mapping-`id`: Template-interne String-ID (z. B. `"mapping_kpi"`). Formulare referenzieren sie in Actions.
 - **Alle** Node-Arrays angeben (auch leere): `canvas_nodes`, `joins`, `sql_nodes`, `agg_nodes`, `transform_nodes`, `constant_nodes`, `rest_nodes`, `lookup_nodes`, `calc_nodes`, `switch_nodes`, `sort_nodes`. Nicht benötigte einfach als `[]`.
+- Für anspruchsvollere Mappings kommen `python_nodes`, `expr_nodes`, `quality_nodes`, `param_nodes` und `ai_nodes` dazu (§5.4). Sie sind optional; wer sie nicht braucht, lässt sie weg.
 - Der SQL-Knoten braucht `"mode": "transform"` (sonst wird das Ergebnis nicht als Datenquelle behandelt).
 - **`source_dataset_id` im Ziel-Feld muss `"__sql__" + <sql-node-id>` sein.** Bei `"id": "sql1"` also `"__sql__sql1"`. Das ist die kritischste Verknüpfung – hier passieren die häufigsten Fehler.
 - Jede **Spalte, die dein SQL zurückgibt** und die du im Dashboard nutzen willst, braucht einen Eintrag in `output_fields` **und** ein Feld in `targets[].fields`.
@@ -367,6 +378,127 @@ Diese sind für reines Reporting **nicht nötig** (SQL erledigt alles). Kurzübe
 
 Wenn du sie nicht brauchst: als leeres Array `[]` mitgeben.
 
+### 5.4.1 Knoten für anspruchsvollere Mappings
+
+Diese fünf gingen früher beim Ex- und Import verloren; seit August 2026 werden sie
+übertragen. Für reines Reporting braucht man sie nicht – für Integrationen (Feldwerte
+zerlegen, Eingaben prüfen, Laufzeitwerte einspeisen) sind sie das Mittel der Wahl.
+
+**`param_nodes` – Laufzeitwerte ins Mapping holen**
+
+Stellt Werte bereit, die beim Ausführen von außen kommen (Formularfeld, Pipeline-Start,
+API-Aufruf). Anders als `:name` im SQL wirken sie auf der Zeilenebene und stehen damit
+auch Ausdrücken und Python zur Verfügung.
+
+```json
+{ "id": "p1", "x": 40, "y": 40, "label": "Laufzeit",
+  "fields": [ { "name": "stichtag", "type": "text", "label": "Stichtag", "default": "" } ] }
+```
+
+`type` ist `"text"` oder `"number"` (bei `number` wird der Wert in eine Zahl gewandelt).
+Fehlt der Wert beim Lauf, greift `default`.
+
+**`expr_nodes` – berechnete Felder aus einer Formel**
+
+```json
+{ "id": "e1", "x": 300, "y": 40,
+  "output_fields": [ { "name": "Ganzname", "expr": "concat({Vorname}, ' ', {Nachname})" } ] }
+```
+
+Feldbezug in Ausdrücken mit einfachen geschweiften Klammern: `{Feldname}`.
+
+**`quality_nodes` – Werte prüfen**
+
+Ergänzt je Zeile `__dq_valid__` (wahr/falsch) und `__dq_errors__` (Liste der Verstöße).
+Die Zeilen werden **nicht** entfernt – aussteuern muss man selbst, etwa über einen
+Filter im Ziel oder eine `CASE`-Spalte.
+
+```json
+{ "id": "q1", "x": 300, "y": 200, "label": "Eingangsprüfung",
+  "rules": [
+    { "field": "Email", "type": "email",  "message": "Keine gültige Adresse" },
+    { "field": "PLZ",   "type": "plz_de" },
+    { "field": "ArtNr", "type": "regex", "pattern": "^[0-9]{4,10}$" }
+  ] }
+```
+
+Zulässige `type`-Werte: `required`, `number`, `email`, `plz_de`, `phone`, `iban`, `ean`,
+`vat_id`, `regex` (mit `pattern`), `date`, `url`.
+
+**`python_nodes` – eigene Logik je Datensatz**
+
+```json
+{ "id": "py1", "x": 560, "y": 40,
+  "script": "row['Ort'] = (row.get('Ort') or '').strip().title()\nreturn row" }
+```
+
+Das Skript bekommt die Zeile als `row` und gibt sie mit `return row` zurück. Verfügbar
+sind `math`, `re`, `json`, `decimal`, `statistics`, `string`, `datetime`, `date`,
+`timedelta` sowie die üblichen eingebauten Funktionen. **Nicht** verfügbar sind
+`import`, Dateizugriff und Netzwerk; je Zeile gilt eine Zeitgrenze.
+
+> ⚠️ **Ein Template mit `python_nodes` bringt ausführbaren Code mit.** Er läuft beim
+> Ausführen des Mappings auf dem Server des Installierenden. Datenmonster weist beim
+> Installieren darauf hin und protokolliert es. Nutze Python nur, wenn keine der
+> anderen Knotenarten reicht – und beschreibe in `hinweise[]`, was das Skript tut.
+
+**`ai_nodes` – Sprachmodell je Zeile**
+
+```json
+{ "id": "ai1", "x": 560, "y": 200,
+  "prompt_template": "Ordne den Artikel '{{Artikelname}}' einer Warengruppe zu.",
+  "output_fields": [ { "name": "Warengruppe", "type": "string" } ],
+  "batch_size": 10 }
+```
+
+Feldbezug hier mit **doppelten** geschweiften Klammern. `model` ist optional; ohne
+Angabe greift das eingestellte Modell. Bedenke, dass jeder Lauf echte Modellaufrufe
+auslöst – bei Datenmonster AI kostet das Guthaben.
+
+### 5.5 `rest_nodes` – fremde Schnittstellen ansprechen
+
+Der REST-Knoten kann seit August 2026 auch **schreiben**. Er läuft über denselben Weg
+wie REST-Quellen und Pipeline, samt Wiederholung bei Drosselung und Schutz vor Aufrufen
+auf interne Adressen.
+
+```json
+{ "id": "r1", "x": 560, "y": 360,
+  "url": "https://api.example.com/orders",
+  "method": "POST",
+  "mode": "single",
+  "input_fields": [ { "field": "Auftragsnr", "placeholder": "{Auftragsnr}" } ],
+  "body_type": "json",
+  "body_content": "{\"name\": \"{{Auftragsnr}}\", \"menge\": {{Menge}}}",
+  "auth_type": "bearer",
+  "auth_config": { "token": "" },
+  "data_path": "",
+  "response_mappings": [ { "json_path": "id", "output_field": "externe_id" } ],
+  "status_field": "http_status",
+  "error_field": "http_fehler",
+  "store_response": false }
+```
+
+| Feld | Bedeutung |
+|------|-----------|
+| `method` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` |
+| `mode` | `"single"` (ein Aufruf je Zeile) oder `"batch"` (alle Werte in einem Aufruf) |
+| `input_fields` | Felder, deren Werte eingesetzt werden. `{Feld}` und `{{Feld}}` funktionieren beide |
+| `body_type` / `body_content` | `none`, `json`, `form`, `xml`, `raw`. Werte im JSON-Rumpf werden JSON-gerecht maskiert |
+| `auth_type` / `auth_config` | `none`, `basic`, `bearer`, `apikey`, `oauth2_cc`, `oauth2_refresh` |
+| `response_mappings` | `json_path` → `output_field` |
+| `status_field` / `error_field` | optionale Spalten für Statuscode und Fehlertext |
+| `store_response` | ob die Antwort im Systemprotokoll aufgehoben wird (kann personenbezogene Daten enthalten) |
+| `timeout` | Sekunden, Vorgabe 30 |
+
+> **Zugangsdaten gehören nicht ins Template.** Beim Export werden `token`, `password`,
+> `key_value`, `client_secret` geleert; das Verfahren bleibt stehen. Lege für Geheimnisse
+> einen `config_required`-Eintrag an oder lass den Installierenden sie im Knoten eintragen.
+>
+> Im Einzelmodus wird das Ergebnis je Eingabewert nur einmal geholt – **außer** bei
+> `POST`/`PUT`/`PATCH`/`DELETE`: dort läuft jede Zeile für sich, sonst würden zwei gleich
+> aussehende Zeilen nur einen Aufruf auslösen. Je Knoten und Lauf sind höchstens
+> 1000 Aufrufe zulässig.
+
 ---
 
 ## 6. `forms` – Formulare & Dashboards
@@ -406,18 +538,53 @@ Eine Action führt beim Klick ein Mapping (oder eine Pipeline) aus; ihr Ergebnis
 | Feld | Bedeutung |
 |------|-----------|
 | `id` | Action-ID (Widgets referenzieren sie via `action_id`). |
-| `type` | `"run_mapping"` oder `"run_pipeline"`. |
+| `type` | Siehe Tabelle unten. Für Dashboards fast immer `"run_mapping"`. |
 | `mapping_id` | **Die Template-interne Mapping-`id`** (z. B. `"mapping_kpi"`). Beim Install automatisch auf die echte ID umgeschrieben. |
 | `pipeline_id` | Bei `run_mapping` `null`; bei `run_pipeline` die Pipeline-ID. |
 | `label` | Button-Beschriftung. |
 
 > **Kritisch:** `mapping_id` in der Action muss **exakt** der `id` eines Mappings in `mappings[]` entsprechen – sonst findet der Installer keine Zuordnung.
 
+**Die vier Aktions-Typen:**
+
+| `type` | Wirkung |
+|--------|---------|
+| `run_mapping` | Führt das Mapping **lesend** aus und liefert das Ergebnis an die Widgets. **Die Ziele des Mappings werden dabei nicht geschrieben.** Der Normalfall für Dashboards. |
+| `export_mapping` | Führt das Mapping **schreibend** aus: alle Ziele werden bedient und Dateien erzeugt (z. B. `.idev`, CSV). Nötig überall dort, wo ein Klick tatsächlich etwas erzeugen oder fortschreiben soll. |
+| `run_pipeline` | Startet eine Pipeline. Statt `mapping_id` wird `pipeline_id` gesetzt. |
+| `run_alerts` | Wertet die Unternehmenswarnungen aus (§7a) und speist ein `alerts`-Widget. Über `options.cockpits` bzw. `options.rule_keys` lässt sich eingrenzen, welche Regeln laufen. |
+
+> **Häufiger Fehler:** Ein Knopf, der Daten schreiben soll, bekommt `run_mapping`. Dann
+> passiert nichts – ohne Fehlermeldung, weil der lesende Lauf ja gelingt. Für schreibende
+> Abläufe `export_mapping` oder `run_pipeline` verwenden.
+
+```json
+{ "id": "act_warnungen", "type": "run_alerts", "mapping_id": null, "pipeline_id": null,
+  "label": "Warnungen prüfen", "options": { "cockpits": ["gf"] } }
+```
+
 ### 6.2 `widgets` – Anzeige
 
 Jedes Widget hat `id`, `type`, `label`, `action_id` (verweist auf eine Action) und `config`. `config.width` ist die Breite im **12-Spalten-Raster** (1–12).
 
-**Widget-Typen:** `kpi`, `bar`, `line`, `pie`, `table`, `ai_summary`, `eingangsrechnung`.
+**Widget-Typen:**
+
+| Typ | Zweck | braucht `action_id` |
+|-----|-------|---------------------|
+| `kpi` | Kennzahl, optional mit Vorjahresvergleich | ja |
+| `bar` / `line` / `pie` | Diagramme | ja |
+| `table` | Tabelle, sortierbar, mit Drilldown | ja |
+| `ai_summary` | KI-Kurzanalyse über die Zahlen des Dashboards | ja |
+| `tasklist` | Aufgabenliste mit Ampel; Klick öffnet die Detailliste | ja |
+| `alerts` | Unternehmenswarnungen; gehört zu einer `run_alerts`-Aktion (§7a) | ja |
+| `kostenstruktur` | Maske für die monatlichen Fixkosten | nein |
+| `eingangsrechnung` | E-Rechnung einlesen und freigeben | nein |
+| `ean_research` | EAN-Recherche beim Hersteller | nein |
+| `hersteller_navigator` | Hersteller → Artikel → Vorschlag | ja |
+
+Die drei Widgets ohne `action_id` (`kostenstruktur`, `eingangsrechnung`, `ean_research`)
+sind eigenständig: sie holen ihre Daten selbst und erscheinen sofort, ohne dass ein
+Mapping laufen muss.
 
 #### KPI-Kachel (`kpi`)
 ```json
@@ -618,6 +785,83 @@ Nur für automatisierte Abläufe (z. B. nächtlicher Export). Für Reporting-Das
 
 ---
 
+## 7a. `alert_rules` – Unternehmenswarnungen
+
+Eine Warnregel ist **Daten, kein Code**: Die Zahl kommt aus einem ganz normalen Mapping,
+die Regel entscheidet nur, ab wann daraus eine Warnung wird und wie dringend sie ist.
+Es wird nichts geschätzt oder vom Modell erfunden.
+
+```json
+"alert_rules": [
+  {
+    "rule_key": "gf_offene_posten_ueberfaellig",
+    "name": "Überfällige Forderungen",
+    "description": "Rechnungen über Zahlungsziel",
+    "category": "Liquidität",
+    "cockpit": "gf",
+    "severity": "warnung",
+    "mapping_name": "GF – Offene Posten überfällig",
+    "condition": { "mode": "count", "min_count": 1, "value_column": "Betrag" },
+    "facts": [ { "label": "Offener Betrag", "column": "Betrag", "unit": "€" } ],
+    "title_template": "{anzahl} überfällige Forderungen",
+    "subtitle": "Mahnlauf prüfen",
+    "drilldown": { "mapping_name": "GF – Offene Posten Detail", "title": "Überfällige Rechnungen" },
+    "sort": 100
+  }
+]
+```
+
+| Feld | Bedeutung |
+|------|-----------|
+| `rule_key` | **Pflicht.** Eindeutiger Schlüssel. Beim erneuten Installieren wird darüber abgeglichen; was der Anwender an `active`, `severity` und `sort` verstellt hat, bleibt erhalten. |
+| `name` | **Pflicht.** Anzeigename. |
+| `mapping_name` | Name des auswertenden Mappings. **Bevorzugt**, weil Mapping-IDs je Installation verschieden sind – und weil eine Regel auf ein Mapping aus einem *anderen* Template zeigen darf. |
+| `mapping_id` | Alternativ die Template-interne Mapping-`id`; der Installer setzt die echte ID ein. |
+| `category` | Freitext, gruppiert die Anzeige (z. B. „Liquidität"). |
+| `cockpit` | Herkunfts-Cockpit; eine `run_alerts`-Aktion kann darüber eingrenzen. |
+| `severity` | `kritisch`, `warnung`, `hinweis`, `info`, `positiv`. |
+| `severity_levels` | Eskalation, erster Treffer gewinnt: `[{"metric": "wert", "op": ">=", "value": 10000, "severity": "kritisch"}]`. Als `metric` stehen `anzahl`, `wert` und `summe` zur Verfügung. |
+| `condition` | Die eigentliche Regel, siehe unten. |
+| `facts` | Die nachvollziehbaren Zahlen hinter der Warnung: `[{"label": "…", "column": "…", "unit": "€"}]`. Der Anwender muss sehen, **warum** gewarnt wird. |
+| `title_template` | Überschrift mit Platzhaltern, z. B. `"{anzahl} überfällige Forderungen"`. |
+| `subtitle` | Handlungshinweis im Klartext. |
+| `drilldown` | `{mapping_name oder mapping_id, title, hidden_columns}` – die Liste hinter der Warnung. |
+| `params` | Zusätzliche Laufzeitparameter für das Mapping. |
+| `action_kind` | Art der KI-Handlungsempfehlung, falls gewünscht. |
+| `active`, `sort` | Vorbelegung; im Betrieb vom Anwender änderbar. |
+
+**Die drei `condition.mode`:**
+
+```json
+{ "mode": "count", "min_count": 1, "value_column": "Betrag" }
+```
+Eine Warnung, sobald die Ergebnisliste Zeilen hat – die SQL-Abfrage selbst definiert also,
+was ein Problem ist. Anzahl und Summe erscheinen im Text.
+
+```json
+{ "mode": "kpi", "column": "Umsatz", "op": "<", "compare_column": "UmsatzVJ", "factor": 0.95 }
+```
+Vergleicht Werte **einer** Kennzahlenzeile. Statt `compare_column` kann über
+`"value_config": "<schluessel>"` ein zentral gepflegter Schwellwert herangezogen werden.
+
+```json
+{ "mode": "rows", "limit": 5, "label_column": "Kunde", "value_column": "Betrag" }
+```
+Jede Zeile wird zu einer eigenen Warnung – für Einzelfälle.
+
+> **Schwellwerte gehören nicht ins Template.** Nutze `condition.value_config` und
+> verweise damit auf die zentrale Schwellwertverwaltung des Projekts. Fest verdrahtete
+> Grenzwerte kann der Anwender später nicht anpassen.
+>
+> **Fehlt das Mapping**, auf das eine Regel zeigt, ist das kein Fehler: die Regel meldet
+> sich im Lauf als „nicht verfügbar". Ein Template darf also Regeln für Auswertungen
+> mitbringen, die erst mit einem anderen Template kommen.
+
+Damit die Warnungen im Dashboard erscheinen, braucht das Formular eine `run_alerts`-Aktion
+und ein `alerts`-Widget, das darauf zeigt (§6.1/§6.2).
+
+---
+
 ## 8. Verknüpfungs-Übersicht (die kritischen IDs)
 
 Damit ein Template funktioniert, müssen diese Referenzen zusammenpassen:
@@ -655,6 +899,11 @@ Die generierende KI soll **eine einzige, valide JSON-Datei** ausgeben und Folgen
 - [ ] T-SQL-Dialekt (MS SQL Server / JTL-Wawi): `TOP n`, `GETDATE()`, `DATEADD`, `CAST(... AS DECIMAL(18,2))`.
 - [ ] Widget-`config.width` je Zeile sinnvoll aufs 12er-Raster verteilt.
 - [ ] `pipelines: []` und `portal_config: {}` gesetzt, falls nicht gebraucht.
+- [ ] Jede Aktion hat den passenden Typ: `run_mapping` liest nur, Schreibendes braucht `export_mapping` oder `run_pipeline` (§6.1).
+- [ ] Widgets ohne `action_id` sind nur `kostenstruktur`, `eingangsrechnung` und `ean_research`; alle übrigen brauchen eine (§6.2).
+- [ ] `alert_rules[]`: jede Regel hat einen eindeutigen `rule_key`, zeigt per `mapping_name` auf ihre Auswertung und begründet sich über `facts` (§7a). Grenzwerte über `condition.value_config` statt fest verdrahtet.
+- [ ] Keine Zugangsdaten im Template – weder in `rest_nodes`, noch in `datasets[].rest_config`, noch in `config_required[].default`.
+- [ ] `python_nodes` nur verwendet, wenn keine andere Knotenart reicht; in `hinweise[]` erklärt, was das Skript tut (§5.4.1).
 
 ---
 
