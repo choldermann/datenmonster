@@ -5,6 +5,7 @@ import api from "../../../api/client";
 import { useAuth } from "../../../context/AuthContext";
 import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
 import { aiDownloadStore } from "../../../store/aiDownloadStore";
+import { getAiProvider, setAiProvider, onAiProviderChange } from "../../../services/aiProvider";
 import { S } from "../constants";
 
 const ACCENT = "#fce499";
@@ -418,6 +419,11 @@ function AiSettings() {
   const [pullProgress, setPullProgress] = useState(null); // {status, percent, completed, total}
   const [aiStatus, setAiStatus] = useState(null); // {code_ready, prose_ready, prose_model, loaded_models}
   const [warming, setWarming]   = useState(false);
+  // Wahl dieses Browsers (Portal-Kopfzeile, localStorage). Sie wird jedem KI-Aufruf
+  // als `provider` mitgeschickt und schlägt damit die Einstellung hier – deshalb
+  // muss sie sichtbar sein und beim Speichern einer abweichenden Wahl weichen.
+  const [sitzungsWahl, setSitzungsWahl] = useState(getAiProvider());
+  useEffect(() => onAiProviderChange(setSitzungsWahl), []);
 
   useEffect(() => {
     api.get("/api/settings/ai").then(({ data }) => {
@@ -494,6 +500,12 @@ function AiSettings() {
     setSaving(true); setSaved(false);
     try {
       await api.post("/api/settings/ai", { ...form, ai_model: effectiveModel });
+      // Dieser Browser kann eine eigene Anbieterwahl gespeichert haben (Portal-Kopfzeile).
+      // Sie wird jedem KI-Aufruf mitgeschickt und schlägt die Einstellung hier – wer also
+      // "Datenmonster AI" einstellt, bekam trotzdem weiter das lokale Modell. Widerspricht
+      // die Sitzungswahl der gerade gespeicherten, fällt sie weg: die bewusste Wahl in den
+      // Einstellungen ist die jüngere und gewinnt.
+      if (sitzungsWahl && sitzungsWahl !== form.ai_provider) setAiProvider(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
       // Nach dem Speichern die gewählten Modelle direkt aufwärmen (Auto-Warmup),
@@ -567,6 +579,24 @@ function AiSettings() {
         <>
           {/* Anbieterwahl */}
           <ProviderSelector value={form.ai_provider} onChange={v => set("ai_provider", v)} />
+
+          {sitzungsWahl && sitzungsWahl !== form.ai_provider && (
+            <div style={{ fontSize: 11, lineHeight: 1.5, color: S.textDim, marginTop: -4,
+              padding: "8px 10px", border: `1px solid ${S.border}`, borderRadius: 7 }}>
+              Dieser Browser nutzt gerade die abweichende Sitzungswahl{" "}
+              <b style={{ color: S.textBright }}>
+                {sitzungsWahl === "datenmonster" ? "Datenmonster AI" : "Lokal"}
+              </b>{" "}
+              (gesetzt in der Portal-Kopfzeile). Sie gilt für alle KI-Antworten dieses
+              Browsers und geht der Einstellung hier vor. Beim Speichern wird sie
+              zurückgesetzt.{" "}
+              <button type="button" onClick={() => setAiProvider(null)}
+                style={{ background: "none", border: "none", padding: 0, cursor: "pointer",
+                  color: ACCENT, fontSize: 11, textDecoration: "underline" }}>
+                Jetzt zurücksetzen
+              </button>
+            </div>
+          )}
 
           {form.ai_provider === "datenmonster" && (
             <DatenmonsterAiPanel model={form.ai_dm_model} onModel={v => set("ai_dm_model", v)} />
