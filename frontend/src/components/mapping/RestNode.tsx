@@ -220,7 +220,13 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
                     : "feld={{ArtNr}}"} />
                 <p style={{ fontSize: 9, color: S.textDim, marginTop: 3, lineHeight: 1.4 }}>
                   Feldwerte als <code style={{ color: REST_NODE_COLOR }}>{"{{Feldname}}"}</code> einsetzen.
-                  {node.body_type === "json" && " Werte werden JSON-gerecht maskiert – Anführungszeichen im Wert zerstören den Rumpf nicht."}
+                  {node.body_type === "json" && (
+                    <> Werte werden JSON-gerecht maskiert – Anführungszeichen im Wert zerstören
+                    den Rumpf nicht. Für eine fertige Liste aus der Datenbank (z.B. per{" "}
+                    <code style={{ color: REST_NODE_COLOR }}>FOR JSON</code>) stattdessen{" "}
+                    <code style={{ color: REST_NODE_COLOR }}>{"{{json:Feldname}}"}</code> –
+                    der Wert wird dann unverändert eingesetzt und muss selbst gültiges JSON sein.</>
+                  )}
                 </p>
               </>
             )}
