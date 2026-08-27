@@ -76,7 +76,8 @@ echo "SECRET_KEY=$(openssl rand -hex 32)" >> .env
 docker compose up -d
 ```
 
-Danach im Browser öffnen: **http://localhost:5173**
+Danach im Browser öffnen: **http://localhost:5174**
+(Der Port lässt sich über `FRONTEND_PORT` in der `.env` ändern.)
 Standard-Login: `admin` / *(Passwort aus `.env` oder aus den Container-Logs)*.
 
 > ⚠️ **Wichtig:** Die `.env` enthält Passwörter und darf **niemals** ins Repository
@@ -89,7 +90,7 @@ Standard-Login: `admin` / *(Passwort aus `.env` oder aus den Container-Logs)*.
 
 ### Architektur der Container
 - **Backend** – FastAPI (Python), stellt die REST-API unter `/api/` bereit.
-- **Frontend** – React/Vite, per nginx ausgeliefert (Port 5173 → 80).
+- **Frontend** – React/Vite, per nginx ausgeliefert (Port 5174 → 80).
 - **Ollama** – lokales Sprachmodell für die KI-Funktionen (`OLLAMA_BASE_URL=http://ollama:11434`).
 - **Datenbank** – SQLite (Pfad über `DATABASE_URL`); die Daten liegen in einem
   Docker-Volume, **nicht** im Projektordner.

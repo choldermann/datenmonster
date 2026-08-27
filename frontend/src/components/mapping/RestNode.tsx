@@ -158,7 +158,7 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
         {/* Methode */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", flexShrink: 0 }}>Methode</p>
-          {["GET", "POST"].map(m => (
+          {["GET", "POST", "PUT", "PATCH", "DELETE"].map(m => (
             <button key={m} onClick={() => set("method", m)}
               style={{ padding: "2px 8px", borderRadius: 3, fontSize: 10, fontWeight: 700, cursor: "pointer", border: "1px solid " + ((node.method || "GET") === m ? REST_NODE_COLOR : S.border), backgroundColor: (node.method || "GET") === m ? REST_NODE_COLOR + "20" : "transparent", color: (node.method || "GET") === m ? REST_NODE_COLOR : S.textDim }}>
               {m}
@@ -196,20 +196,69 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
           </div>
         )}
 
+        {/* Anfrage-Rumpf – nur bei Verfahren, die einen mitschicken */}
+        {["POST", "PUT", "PATCH", "DELETE"].includes(node.method || "GET") && (
+          <div>
+            <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+              Rumpf
+            </p>
+            <select style={iS} value={node.body_type || "none"} onChange={(e) => set("body_type", e.target.value)}>
+              <option value="none">Kein Rumpf</option>
+              <option value="json">JSON</option>
+              <option value="form">Formularfelder (key=value je Zeile)</option>
+              <option value="xml">XML</option>
+              <option value="raw">Roh</option>
+            </select>
+            {(node.body_type || "none") !== "none" && (
+              <>
+                <textarea
+                  style={{ ...iS, marginTop: 4, minHeight: 74, fontFamily: "ui-monospace, monospace", resize: "vertical" }}
+                  value={node.body_content || ""}
+                  onChange={(e) => set("body_content", e.target.value)}
+                  placeholder={(node.body_type === "json")
+                    ? '{\n  "name": "{{ArtNr}}",\n  "menge": {{Menge}}\n}'
+                    : "feld={{ArtNr}}"} />
+                <p style={{ fontSize: 9, color: S.textDim, marginTop: 3, lineHeight: 1.4 }}>
+                  Feldwerte als <code style={{ color: REST_NODE_COLOR }}>{"{{Feldname}}"}</code> einsetzen.
+                  {node.body_type === "json" && " Werte werden JSON-gerecht maskiert – Anführungszeichen im Wert zerstören den Rumpf nicht."}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
         {/* Auth */}
         <div>
           <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Auth</p>
           <select style={iS} value={auth.type || "none"} onChange={(e) => setAuth("type", e.target.value)}>
             <option value="none">Keine</option>
             <option value="bearer">Bearer Token</option>
-            <option value="apikey">API Key (Header)</option>
+            <option value="apikey">API Key</option>
             <option value="basic">Basic Auth</option>
+            <option value="oauth2_cc">OAuth2 (Client Credentials)</option>
           </select>
           {auth.type === "bearer" && <input style={{ ...iS, marginTop: 4 }} type="password" value={auth.token || ""} onChange={(e) => setAuth("token", e.target.value)} placeholder="Bearer Token" />}
           {auth.type === "apikey" && (
-            <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-              <input style={iS} value={auth.key_name || ""} onChange={(e) => setAuth("key_name", e.target.value)} placeholder="Header-Name" />
-              <input style={iS} type="password" value={auth.key_value || ""} onChange={(e) => setAuth("key_value", e.target.value)} placeholder="Wert" />
+            <>
+              <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                <input style={iS} value={auth.key_name || ""} onChange={(e) => setAuth("key_name", e.target.value)} placeholder="Name, z.B. X-Api-Key" />
+                <input style={iS} type="password" value={auth.key_value || ""} onChange={(e) => setAuth("key_value", e.target.value)} placeholder="Wert" />
+              </div>
+              <select style={{ ...iS, marginTop: 4 }} value={auth.location || "header"}
+                onChange={(e) => setAuth("location", e.target.value)}>
+                <option value="header">als Kopfzeile</option>
+                <option value="query">als Abfrageparameter</option>
+              </select>
+            </>
+          )}
+          {auth.type === "oauth2_cc" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 4 }}>
+              <input style={iS} value={auth.token_url || ""} onChange={(e) => setAuth("token_url", e.target.value)} placeholder="Token-URL" />
+              <div style={{ display: "flex", gap: 4 }}>
+                <input style={iS} value={auth.client_id || ""} onChange={(e) => setAuth("client_id", e.target.value)} placeholder="Client-ID" />
+                <input style={iS} type="password" value={auth.client_secret || ""} onChange={(e) => setAuth("client_secret", e.target.value)} placeholder="Client-Secret" />
+              </div>
+              <input style={iS} value={auth.scope || ""} onChange={(e) => setAuth("scope", e.target.value)} placeholder="Scope (optional)" />
             </div>
           )}
           {auth.type === "basic" && (
@@ -218,6 +267,35 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
               <input style={iS} type="password" value={auth.password || ""} onChange={(e) => setAuth("password", e.target.value)} placeholder="Passwort" />
             </div>
           )}
+
+          {["token", "key_value", "password", "client_secret"].some(k => auth[k] === "***") && (
+            <p style={{ fontSize: 9, color: S.textDim, marginTop: 4, lineHeight: 1.4 }}>
+              🔒 Hinterlegt und verschlüsselt gespeichert. Zum Ändern überschreiben –
+              bleibt <code style={{ color: REST_NODE_COLOR }}>***</code> stehen, ändert sich nichts.
+            </p>
+          )}
+        </div>
+
+        {/* Protokoll & Fehlerbehandlung */}
+        <div>
+          <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+            Protokoll
+          </p>
+          <div style={{ display: "flex", gap: 4 }}>
+            <input style={iS} value={node.status_field || ""} onChange={(e) => set("status_field", e.target.value)}
+              placeholder="Feld für Statuscode" />
+            <input style={iS} value={node.error_field || ""} onChange={(e) => set("error_field", e.target.value)}
+              placeholder="Feld für Fehlertext" />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 5, fontSize: 10, color: S.textDim, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!node.store_response}
+              onChange={(e) => set("store_response", e.target.checked)} />
+            Antwort im Systemprotokoll aufheben
+          </label>
+          <p style={{ fontSize: 9, color: S.textDim, marginTop: 3, lineHeight: 1.4 }}>
+            Statuscode und Dauer werden immer protokolliert. Die Antwort selbst nur mit
+            diesem Haken – sie kann personenbezogene Daten enthalten.
+          </p>
         </div>
 
         {/* Daten-Pfad */}

@@ -43,6 +43,9 @@ class MappingCreate(BaseModel):
 
 
 class PreviewRequest(BaseModel):
+    # Nur zum Auflösen maskierter Anmeldedaten: der Editor schickt beim
+    # Ausprobieren zurück, was er bekommen hat – und das ist maskiert.
+    mapping_id:      Optional[int] = None
     canvas_nodes:    Optional[List[Any]] = []
     fields:          Optional[List[Any]] = []   # Verbindungen des aktiven Targets
     joins:           Optional[List[Any]] = []
@@ -119,7 +122,85 @@ def _migrate_legacy_targets(m: Mapping) -> list:
     return []
 
 
-def _build_context_from_request(data) -> "MappingContext":
+# ── Anmeldedaten in REST-Knoten ───────────────────────────────────────────────
+#
+# Sie lagen bisher im Klartext in der Mapping-Definition und wurden mit jeder
+# Abfrage an den Browser ausgeliefert. Dasselbe Verfahren wie bei REST-Quellen:
+# verschlüsselt speichern, maskiert ausliefern, beim Speichern die Maske gegen
+# den hinterlegten Wert auflösen.
+#
+# Zwei Formen sind im Umlauf: die ältere `auth: {type, token, key_value, …}` des
+# Knotens und die neue `auth_config` wie überall sonst. Beide werden behandelt.
+_REST_MASKE = "***"
+_REST_GEHEIM_ALT = ("token", "key_value", "password")
+
+
+def _rest_geheimfelder(behaelter: str) -> tuple:
+    from app.services.rest_service import _SENSITIVE_AUTH_KEYS
+    return _REST_GEHEIM_ALT if behaelter == "auth" else _SENSITIVE_AUTH_KEYS
+
+
+def _rest_nodes_schuetzen(neu: list, alt: list) -> list:
+    """Beim Speichern: Geheimnisse verschlüsseln, Maske durch den bisherigen Wert
+    ersetzen. Ohne das Zurückschreiben wäre ein Speichern aus dem Editor genug,
+    um jedes Passwort durch ``***`` zu ersetzen."""
+    from app.core.security import encrypt_credential
+    import copy as _c
+    alt_je_id = {n.get("id"): n for n in (alt or []) if isinstance(n, dict)}
+    heraus = _c.deepcopy(neu or [])
+    for rn in heraus:
+        if not isinstance(rn, dict):
+            continue
+        vorher = alt_je_id.get(rn.get("id")) or {}
+        for behaelter in ("auth", "auth_config"):
+            werte = rn.get(behaelter)
+            if not isinstance(werte, dict):
+                continue
+            frueher = (vorher.get(behaelter) or {}) if isinstance(vorher, dict) else {}
+            for schluessel in _rest_geheimfelder(behaelter):
+                wert = werte.get(schluessel)
+                if wert == _REST_MASKE:
+                    if frueher.get(schluessel):
+                        werte[schluessel] = frueher[schluessel]
+                    else:
+                        werte.pop(schluessel, None)
+                elif wert:
+                    werte[schluessel] = encrypt_credential(wert)
+    return heraus
+
+
+def _rest_nodes_maskieren(nodes: list) -> list:
+    """Für die Ausgabe: weder Klartext noch Geheimtext verlassen den Server."""
+    import copy as _c
+    heraus = _c.deepcopy(nodes or [])
+    for rn in heraus:
+        if not isinstance(rn, dict):
+            continue
+        for behaelter in ("auth", "auth_config"):
+            werte = rn.get(behaelter)
+            if isinstance(werte, dict):
+                for schluessel in _rest_geheimfelder(behaelter):
+                    if werte.get(schluessel):
+                        werte[schluessel] = _REST_MASKE
+    return heraus
+
+
+def _rest_nodes_entmasken(nodes: list, mapping_id, db) -> list:
+    """Vor dem Ausführen: die Maske gegen den gespeicherten Wert tauschen.
+
+    Der Editor schickt beim Ausprobieren zurück, was er bekommen hat – und das
+    ist maskiert. Ohne diesen Schritt liefe jede Vorschau mit ``***`` als Token.
+    Bei einem noch nicht gespeicherten Mapping gibt es nichts nachzuschlagen;
+    dann bleibt die Maske stehen und die Gegenstelle lehnt hörbar ab."""
+    if not nodes or not mapping_id:
+        return nodes or []
+    m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
+    if not m:
+        return nodes
+    return _rest_nodes_schuetzen(nodes, getattr(m, "rest_nodes", None) or [])
+
+
+def _build_context_from_request(data, db: Session = None) -> "MappingContext":
     """Erstellt MappingContext aus einem API-Request-Objekt."""
     from app.services.mapping_service import MappingContext
 
@@ -149,7 +230,10 @@ def _build_context_from_request(data) -> "MappingContext":
         constant_nodes  = getattr(data, "constant_nodes",  None) or [],
         sql_nodes       = getattr(data, "sql_nodes",       None) or [],
         agg_nodes       = getattr(data, "agg_nodes",       None) or [],
-        rest_nodes      = getattr(data, "rest_nodes",      None) or [],
+        rest_nodes      = _rest_nodes_entmasken(
+            getattr(data, "rest_nodes", None) or [],
+            getattr(data, "mapping_id", None), db) if db else (
+            getattr(data, "rest_nodes", None) or []),
         lookup_nodes    = getattr(data, "lookup_nodes",    None) or [],
         calc_nodes      = getattr(data, "calc_nodes",      None) or [],
         switch_nodes    = getattr(data, "switch_nodes",    None) or [],
@@ -184,7 +268,7 @@ def mapping_out(m: Mapping, db: Session) -> dict:
         "constant_nodes": m.constant_nodes  or [],
         "sql_nodes":      m.sql_nodes       or [],
         "agg_nodes":      m.agg_nodes       or [],
-        "rest_nodes":     getattr(m, "rest_nodes",   None) or [],
+        "rest_nodes":     _rest_nodes_maskieren(getattr(m, "rest_nodes", None) or []),
         "lookup_nodes":   getattr(m, "lookup_nodes", None) or [],
         "calc_nodes":     getattr(m, "calc_nodes",    None) or [],
         "switch_nodes":   getattr(m, "switch_nodes",    None) or [],
@@ -262,7 +346,8 @@ def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
         canvas_nodes=data.canvas_nodes,   joins=data.joins,
         transform_nodes=data.transform_nodes, constant_nodes=data.constant_nodes,
         sql_nodes=data.sql_nodes,         agg_nodes=data.agg_nodes,
-        rest_nodes=data.rest_nodes or [], lookup_nodes=data.lookup_nodes or [],
+        rest_nodes=_rest_nodes_schuetzen(data.rest_nodes or [], []),
+        lookup_nodes=data.lookup_nodes or [],
         calc_nodes=data.calc_nodes or [], switch_nodes=data.switch_nodes or [],
         python_nodes=data.python_nodes or [],
         ai_nodes=data.ai_nodes or [],
@@ -299,7 +384,7 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     m.constant_nodes  = data.constant_nodes
     m.sql_nodes       = data.sql_nodes
     m.agg_nodes       = data.agg_nodes
-    m.rest_nodes      = data.rest_nodes   or []
+    m.rest_nodes      = _rest_nodes_schuetzen(data.rest_nodes or [], m.rest_nodes or [])
     m.lookup_nodes    = data.lookup_nodes or []
     m.calc_nodes      = data.calc_nodes    or []
     m.switch_nodes    = data.switch_nodes   or []
@@ -332,7 +417,7 @@ def preview_mapping(data: PreviewRequest, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     from app.services.mapping_service import MappingContext, run_mapping_object
     try:
-        ctx = _build_context_from_request(data)
+        ctx = _build_context_from_request(data, db)
         # Wenn targets übergeben wurden, nutze diese direkt
         if data.targets:
             ctx.targets = data.targets
@@ -366,7 +451,7 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
     """Führt das Mapping aus und gibt einen Debug-Trace zurück."""
     import time as _time
     try:
-        ctx = _build_context_from_request(data)
+        ctx = _build_context_from_request(data, db)
         if data.targets:
             ctx.targets = data.targets
         elif data.fields:
@@ -544,7 +629,7 @@ def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db)
                               user: User = Depends(get_current_user)):
     from app.services.mapping_service import MappingContext, run_mapping_object
 
-    ctx = _build_context_from_request(data)
+    ctx = _build_context_from_request(data, db)
 
     # save_as_dataset Flag in Target eintragen falls gesetzt
     if data.save_as_dataset and ctx.targets:
@@ -664,7 +749,7 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     from app.services.mapping_service import execute_mapping, _apply_target_types
     import pandas as pd
 
-    ctx = _build_context_from_request(data)
+    ctx = _build_context_from_request(data, db)
     if not ctx.targets:
         raise HTTPException(400, "Kein Ziel definiert")
 

@@ -3,7 +3,7 @@ import { Loader2, ChevronDown } from "lucide-react";
 import api from "../../api/client";
 import { S } from "./constants";
 
-function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, targets }) {
+function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, targets }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -21,6 +21,7 @@ function PreviewPanel({ canvasNodes, connections, joins, transformNodes, constan
     setLoading(true);
     try {
       const { data } = await api.post("/api/mappings/preview", {
+        mapping_id:      mappingId,
         canvas_nodes:    canvasNodes,
         joins,
         transform_nodes: transformNodes,

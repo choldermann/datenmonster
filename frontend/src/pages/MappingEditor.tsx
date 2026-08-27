@@ -981,6 +981,8 @@ export default function MappingEditor() {
         // Noch nicht gespeichert: Preview-Endpunkt mit aktuellem State
         const activeTarget = targets[0];
         const { data } = await api.post("/api/mappings/preview", {
+          // Damit der Server maskierte Zugangsdaten der REST-Knoten auflösen kann
+          mapping_id: id && id !== "new" ? parseInt(id) : null,
           canvas_nodes: canvasNodes, joins,
           transform_nodes: transformNodes, constant_nodes: constantNodes,
           sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
@@ -1006,6 +1008,7 @@ export default function MappingEditor() {
     setDebugSelectedRowIdx(null);
     try {
       const payload = {
+        mapping_id: id && id !== "new" ? parseInt(id) : null,
         canvas_nodes: canvasNodes, joins,
         transform_nodes: transformNodes, constant_nodes: constantNodes,
         sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
@@ -1679,6 +1682,7 @@ export default function MappingEditor() {
 
           {/* Preview Panel */}
           <PreviewPanel
+            mappingId={id && id !== "new" ? parseInt(id) : null}
             canvasNodes={canvasNodes}
             connections={connections}
             joins={joins}
