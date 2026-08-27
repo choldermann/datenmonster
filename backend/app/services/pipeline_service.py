@@ -314,8 +314,19 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                                 f"REST-Fetch fehlgeschlagen: {str(e)[:200]}",
                                 entity_id=pipeline.id, entity_name=pipeline.name,
                                 project_id=getattr(pipeline, "project_id", None),
-                                details={"rest_source": src.name, "url": getattr(src, "url", ""),
+                                details={"rest_source": src.name,
+                                         "url": (getattr(src, "url", "") or "").split("?", 1)[0],
+                                         "method": getattr(src, "method", None) or "GET",
                                          "for_each": for_each,
+                                         "status_code": getattr(
+                                             getattr(e, "response", None), "status_code", None),
+                                         # Nur wenn an der Quelle ausdrücklich gewünscht –
+                                         # dieselbe Regel wie im API-Studio-Verlauf.
+                                         "response_body": (
+                                             (getattr(e, "response", None).text or "")[:2000]
+                                             if (getattr(src, "store_response", 0)
+                                                 and getattr(e, "response", None) is not None)
+                                             else None),
                                          "exception_type": type(e).__name__,
                                          "exception_message": str(e),
                                          "traceback": traceback.format_exc()})
@@ -334,7 +345,10 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                             entity_id=pipeline.id, entity_name=pipeline.name,
                             project_id=getattr(pipeline, "project_id", None),
                             rows_processed=rows,
-                            details={"rest_source": src.name})
+                            details={"rest_source": src.name,
+                                     "method": getattr(src, "method", None) or "GET",
+                                     "url": (getattr(src, "url", "") or "").split("?", 1)[0],
+                                     "for_each": for_each})
 
                 elif ntype == "business_insights":
                     dataset_id  = config.get("dataset_id")

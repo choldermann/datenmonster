@@ -24,6 +24,7 @@ import logging
 import hashlib
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from urllib.parse import quote
 from typing import Optional
 import pandas as pd
 import requests
@@ -86,6 +87,23 @@ HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS")
 
 # Antwortkörper werden für die Anzeige gedeckelt (sonst blockiert eine 50-MB-Antwort das UI).
 MAX_BODY_CHARS = 200_000
+
+
+def _wartezeit_fuer_wiederholung(resp, versuch: int) -> Optional[float]:
+    """
+    Wartezeit vor dem nächsten Versuch – oder None, wenn nicht wiederholt wird.
+
+    Eine Stelle für die Politik, damit der unbeaufsichtigte Weg (REST-Quelle,
+    Pipeline, Mapping-Node) sich überall gleich verhält. Verlangt die Gegenstelle
+    eine sehr lange Pause, ist sie ernst gemeint: dann lieber jetzt mit klarer
+    Meldung abbrechen, als einen Lauf minutenlang stillstehen zu lassen.
+    """
+    if resp.status_code not in _RETRY_STATUS:
+        return None
+    warten = _wartezeit_aus_header(resp)
+    if warten is None:
+        warten = _backoff(versuch)
+    return warten if warten <= _RETRY_DECKEL else None
 
 
 def _decrypt_auth_config(auth_config: dict) -> dict:
@@ -396,27 +414,33 @@ def _do_request(
             time.sleep(warten)
             continue
 
-        if resp.status_code in _RETRY_STATUS and not letzter:
-            warten = _wartezeit_aus_header(resp)
-            gefordert = warten is not None
-            if warten is None:
-                warten = _backoff(versuch)
-            if warten <= _RETRY_DECKEL:
+        if not letzter:
+            warten = _wartezeit_fuer_wiederholung(resp, versuch)
+            if warten is not None:
                 logger.warning(
                     "REST %s %s: Status %d%s – Wiederholung %d/%d in %.1fs",
                     method, url, resp.status_code,
-                    " (Retry-After)" if gefordert else "",
+                    " (Retry-After)" if _wartezeit_aus_header(resp) is not None else "",
                     versuch + 1, _RETRY_VERSUCHE, warten)
                 time.sleep(warten)
                 continue
-            # Verlangt die Gegenstelle eine sehr lange Pause, ist sie ernst
-            # gemeint – dann lieber jetzt mit klarer Meldung abbrechen, als
-            # einen Pipeline-Lauf minutenlang stillstehen zu lassen.
-            logger.warning("REST %s %s: Status %d, gefordert %.0fs Pause – abgebrochen",
-                           method, url, resp.status_code, warten)
+            if resp.status_code in _RETRY_STATUS:
+                logger.warning("REST %s %s: Status %d, geforderte Pause zu lang – abgebrochen",
+                               method, url, resp.status_code)
         break
 
-    resp.raise_for_status()
+    if not resp.ok:
+        # raise_for_status() meldet nur „422 Client Error" – warum die Gegenstelle
+        # ablehnt, steht aber im Rumpf. Ohne ihn ist jede Fehlersuche an einer API
+        # mit undokumentierten Fehlerobjekten Raterei.
+        # Bewusst knapp: diese Meldung landet über exception_message dauerhaft im
+        # Systemprotokoll. Für ein Fehlerobjekt reicht der Anfang; der vollständige
+        # Rumpf wird nur aufgehoben, wenn das an der Quelle eingeschaltet ist.
+        rumpf = (resp.text or "")[:300].strip()
+        raise requests.HTTPError(
+            f"{resp.status_code} {resp.reason} bei {method} {url.split('?', 1)[0]}"
+            + (f" – Antwort: {rumpf}" if rumpf else ""),
+            response=resp)
 
     content_type = resp.headers.get("Content-Type", "")
     if "json" in content_type:
@@ -823,6 +847,7 @@ def execute_request(
     variables: Optional[dict] = None,
     timeout: int = 30,
     on_new_refresh_token=None,
+    wiederholen: bool = False,
 ) -> dict:
     """
     Führt EINEN Request aus und gibt die vollständige Antwort zurück –
@@ -833,6 +858,11 @@ def execute_request(
     Request überhaupt zustande kam; `ok` steht für einen 2xx-Status.
 
     Secrets tauchen in der Rückgabe nur maskiert auf (siehe request.headers).
+
+    `wiederholen=True` schaltet die Wiederholung bei Drosselung und Netzaussetzern
+    zu – für den unbeaufsichtigten Weg (Mapping-Node, Pipeline, Zeitplan), wo ein
+    einzelner Aussetzer sonst eine ganze Zeile verliert. Beim Ausprobieren im
+    Studio bleibt sie aus: dort ist die 429 die Information, auf die es ankommt.
     """
     ergebnis = {
         "success": False, "ok": False, "error": None,
@@ -870,7 +900,24 @@ def execute_request(
             cfg.get("body_type") or "none", cfg.get("body_content"), headers, variables))
 
         start = time.perf_counter()
-        resp = guarded_request(session, method, url, **kwargs)  # SSRF-geprüft (inkl. Redirects)
+        versuche = _RETRY_VERSUCHE if wiederholen else 1
+        for versuch in range(1, versuche + 1):
+            letzter = versuch == versuche
+            try:
+                resp = guarded_request(session, method, url, **kwargs)  # SSRF-geprüft (inkl. Redirects)
+            except (requests.ConnectionError, requests.Timeout):
+                if letzter:
+                    raise
+                time.sleep(_backoff(versuch))
+                continue
+            if letzter:
+                break
+            warten = _wartezeit_fuer_wiederholung(resp, versuch)
+            if warten is None:
+                break
+            logger.warning("REST %s %s: Status %d – Wiederholung %d/%d in %.1fs",
+                           method, url, resp.status_code, versuch + 1, versuche, warten)
+            time.sleep(warten)
         ergebnis["duration_ms"] = int((time.perf_counter() - start) * 1000)
     except Exception as e:
         ergebnis["error"] = str(e)[:500]
@@ -912,3 +959,102 @@ def execute_request(
             pass
 
     return ergebnis
+
+
+# ── REST-Knoten im Mapping ────────────────────────────────────────────────────
+#
+# Der Knoten im Mapping-Editor hatte lange eine eigene, viel einfachere
+# HTTP-Umsetzung: ohne Body, ohne Wiederholung und ohne SSRF-Prüfung. Diese
+# beiden Funktionen bilden seine Konfiguration auf execute_request ab, sodass es
+# im ganzen Haus nur noch einen Weg nach draußen gibt.
+
+_NODE_MAX_AUFRUFE = 1000     # Notbremse gegen ein Mapping, das eine API überrennt
+
+
+def knoten_config(rn: dict) -> dict:
+    """
+    Konfiguration eines REST-Knotens in das Format von execute_request bringen.
+
+    Ältere Knoten tragen ihre Anmeldung als `auth: {type, token, …}`; neuere
+    nutzen `auth_type`/`auth_config` wie überall sonst und bekommen dadurch auch
+    die Verfahren, die der alte Knoten nie kannte (OAuth2). Beides wird hier
+    zusammengeführt, damit im Mapping nichts umgestellt werden muss.
+    """
+    auth_type   = rn.get("auth_type")
+    auth_config = dict(rn.get("auth_config") or {})
+
+    if not auth_type:
+        alt = rn.get("auth") or {}
+        auth_type = alt.get("type") or "none"
+        if auth_type == "bearer":
+            auth_config = {"token": alt.get("token", "")}
+        elif auth_type == "basic":
+            auth_config = {"username": alt.get("username", ""),
+                           "password": alt.get("password", "")}
+        elif auth_type == "apikey":
+            # Der alte Knoten kannte nur den Header-Weg.
+            auth_config = {"key": alt.get("key_name") or "X-Api-Key",
+                           "value": alt.get("key_value", ""),
+                           "location": "header"}
+
+    return {
+        "url":          rn.get("url", ""),
+        "method":       (rn.get("method") or "GET").upper(),
+        "headers":      dict(rn.get("headers") or {}),
+        "query_params": dict(rn.get("query_params") or {}),
+        "body_type":    rn.get("body_type") or "none",
+        "body_content": rn.get("body_content"),
+        "auth_type":    auth_type,
+        "auth_config":  auth_config,
+        "data_path":    rn.get("data_path") or "",
+        "flatten":      rn.get("flatten", 1),
+    }
+
+
+def _als_text(wert) -> str:
+    """Zellwert als Text – Leerwerte werden leer, nicht zu 'None' oder 'nan'."""
+    if wert is None:
+        return ""
+    if isinstance(wert, float) and wert != wert:      # NaN
+        return ""
+    return str(wert)
+
+
+def werte_einsetzen(cfg: dict, werte: dict) -> dict:
+    """
+    Kopie der Konfiguration, in der die Platzhalter durch Zeilenwerte ersetzt sind.
+
+    Entscheidend ist, dass je Zielort anders eingesetzt wird:
+
+    * **URL und Query** werden prozentkodiert – sonst zerlegt ein Schrägstrich
+      oder Leerzeichen im Wert den Pfad.
+    * **JSON-Body** wird JSON-gerecht maskiert. Genau hier ist die frühere
+      Textersetzung gescheitert: ein Kunde namens `Meyer "Bau" GmbH` hat den
+      Rumpf zerrissen und die Gegenstelle bekam ungültiges JSON.
+    * Header und übrige Rumpfarten werden unverändert eingesetzt.
+
+    Erkannt werden beide Schreibweisen: `{feld}` (die des alten Knotens) und
+    `{{feld}}` (die überall sonst in Datenmonster gilt). Zusätzlich bleibt
+    `{value}` als Name für den ersten Wert erhalten.
+    """
+    def ersetzen(text: str, art: str) -> str:
+        if not isinstance(text, str) or not text:
+            return text
+        for feld, roh in werte.items():
+            wert = _als_text(roh)
+            if art == "url":
+                wert = quote(wert, safe="")
+            elif art == "json":
+                wert = json.dumps(wert)[1:-1]     # maskiert, ohne die äußeren Anführungszeichen
+            for marke in ("{{" + feld + "}}", "{" + feld + "}"):
+                text = text.replace(marke, wert)
+        return text
+
+    kopie = dict(cfg)
+    kopie["url"]          = ersetzen(cfg.get("url", ""), "url")
+    kopie["query_params"] = {k: ersetzen(v, "url") for k, v in (cfg.get("query_params") or {}).items()}
+    kopie["headers"]      = {k: ersetzen(v, "roh") for k, v in (cfg.get("headers") or {}).items()}
+    kopie["body_content"] = ersetzen(
+        cfg.get("body_content"),
+        "json" if (cfg.get("body_type") or "none") == "json" else "roh")
+    return kopie

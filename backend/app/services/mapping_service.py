@@ -6,6 +6,7 @@ SQL-Helpers → sql_helpers.py
 Ziel-Schreiben → mapping_writer.py
 """
 import re
+import time
 import logging
 import pandas as pd
 from dataclasses import dataclass, field
@@ -59,6 +60,11 @@ class MappingContext:
     param_nodes:     List[Dict] = field(default_factory=list)
     run_params:      Dict       = field(default_factory=dict)
     targets:         List[Dict] = field(default_factory=list)
+    # Nur fürs Protokoll: woher der Lauf stammt. Ohne das ließe sich ein
+    # ausgehender Aufruf hinterher keinem Mapping zuordnen.
+    mapping_id:      Optional[int] = None
+    mapping_name:    Optional[str] = None
+    project_id:      Optional[int] = None
 
     @classmethod
     def from_orm(cls, mapping) -> "MappingContext":
@@ -80,6 +86,9 @@ class MappingContext:
             quality_nodes   = getattr(mapping, "quality_nodes",  None) or [],
             param_nodes     = getattr(mapping, "param_nodes",    None) or [],
             targets         = _migrate_legacy_targets(mapping),
+            mapping_id      = getattr(mapping, "id", None),
+            mapping_name    = getattr(mapping, "name", None),
+            project_id      = getattr(mapping, "project_id", None),
         )
 
     def to_execute_kwargs(self, connections: List[Dict], preview_rows: int = 999999) -> Dict:
@@ -104,6 +113,9 @@ class MappingContext:
             param_nodes     = self.param_nodes,
             run_params      = self.run_params,
             preview_rows    = preview_rows,
+            _log_kontext    = {"mapping_id": self.mapping_id,
+                               "mapping_name": self.mapping_name,
+                               "project_id": self.project_id},
         )
 
 
@@ -882,6 +894,7 @@ def execute_mapping(
     row_cap: int = None,
     _debug_trace: list = None,
     _ai_config: Dict = None,
+    _log_kontext: Dict = None,
 ) -> Dict[str, Any]:
     """
     Führt das Mapping aus und gibt Vorschau-Daten zurück.
@@ -1386,10 +1399,34 @@ def execute_mapping(
             })
             _dbg_err_idx = len(errors)
 
-    # ─── REST API Nodes: pro Zeile API-Call ────────────────────────────────────
+    # ─── REST API Nodes: pro Zeile bzw. gebündelt ein API-Aufruf ───────────────
+    #
+    # Der Aufruf läuft über rest_service.execute_request – denselben Weg, den auch
+    # REST-Quellen, Pipeline und API-Studio nehmen. Damit bekommt der Knoten
+    # Anfragerumpf, alle Anmeldeverfahren, Wiederholung bei Drosselung und vor
+    # allem die SSRF-Prüfung, die seiner früheren eigenen Umsetzung fehlte.
     if rest_nodes and output_rows:
-        import requests as _req
-        from urllib.parse import quote
+        from app.services.rest_service import (
+            execute_request, knoten_config, werte_einsetzen, _NODE_MAX_AUFRUFE,
+        )
+        from app.services.db_logger import (
+            log_rest_aufruf, log_rest_zusammenfassung, REST_LOG_MAX_FEHLER,
+        )
+        _lk = _log_kontext or {}
+
+        def _protokoll(ergebnis, rn, gezaehlt):
+            """Einen Fehlschlag ins Systemprotokoll schreiben – gedeckelt, damit ein
+            Lauf über viele Zeilen das Protokoll nicht unbrauchbar macht."""
+            if gezaehlt >= REST_LOG_MAX_FEHLER:
+                return
+            try:
+                log_rest_aufruf(
+                    ergebnis, module="mapping_service", action="rest_call",
+                    entity_id=_lk.get("mapping_id"), entity_name=_lk.get("mapping_name"),
+                    project_id=_lk.get("project_id"), knoten=rn.get("id"),
+                    antwort_aufheben=bool(rn.get("store_response")))
+            except Exception:
+                pass   # ein Protokollfehler darf den Lauf nie beenden"
 
         def _get_nested(obj, path):
             """JSON-Pfad wie 'data.result.price' auflösen."""
@@ -1404,165 +1441,214 @@ def execute_mapping(
                     return None
             return obj
 
-        def _build_headers(auth):
-            headers = {}
-            if not auth:
-                return headers
-            atype = auth.get("type", "none")
-            if atype == "bearer":
-                headers["Authorization"] = f"Bearer {auth.get('token','')}"
-            elif atype == "apikey":
-                headers[auth.get("key_name","X-API-Key")] = auth.get("key_value","")
-            elif atype == "basic":
-                import base64
-                creds = base64.b64encode(f"{auth.get('username','')}:{auth.get('password','')}".encode()).decode()
-                headers["Authorization"] = f"Basic {creds}"
-            return headers
+        def _eingabefelder(rn):
+            """Die Felder, deren Werte in URL, Kopfzeilen und Rumpf eingesetzt werden.
+
+            Die Oberfläche kennt seit einer Erweiterung mehrere Felder
+            (`input_fields`); gelesen wurde davon lange nur das alte Einzelfeld –
+            wer zwei Felder einstellte, bekam still nur eines."""
+            felder = [f.get("field") for f in (rn.get("input_fields") or []) if f.get("field")]
+            if not felder and rn.get("input_field"):
+                felder = [rn["input_field"]]
+            return felder
+
+        def _antwort_auswerten(rn, ergebnis, mappings, row):
+            """Antwort auf die Ausgabefelder der Zeile verteilen."""
+            status_feld = rn.get("status_field")
+            fehler_feld = rn.get("error_field")
+            data_path   = rn.get("data_path") or ""
+
+            if status_feld:
+                row[status_feld] = ergebnis.get("status_code")
+
+            if not ergebnis.get("ok"):
+                grund = ergebnis.get("error") or (
+                    f"HTTP {ergebnis.get('status_code')} {ergebnis.get('reason') or ''}".strip())
+                if fehler_feld:
+                    row[fehler_feld] = grund[:300]
+                for m in mappings:
+                    if m.get("output_field"):
+                        # Ohne eigenes Fehlerfeld bleibt es beim bisherigen Verhalten:
+                        # der Grund steht im Zielfeld, damit er überhaupt sichtbar ist.
+                        row[m["output_field"]] = None if fehler_feld else f"[API-Fehler: {grund[:100]}]"
+                return grund
+
+            daten = _get_nested(ergebnis.get("json"), data_path) if data_path else ergebnis.get("json")
+            if fehler_feld:
+                row[fehler_feld] = None
+            if not mappings:
+                if isinstance(daten, dict):
+                    for k, v in daten.items():
+                        row[k] = v
+                return None
+            for m in mappings:
+                ziel = m.get("output_field")
+                if not ziel:
+                    continue
+                pfad = m.get("json_path", "")
+                row[ziel] = _get_nested(daten, pfad) if pfad else (
+                    daten.get(ziel) if isinstance(daten, dict) else daten)
+            return None
 
         for rn in rest_nodes:
-            input_field  = rn.get("input_field", "")
-            url_template = rn.get("url", "")
-            method       = rn.get("method", "GET").upper()
-            auth         = rn.get("auth", {})
-            data_path    = rn.get("data_path", "")
-            mappings     = rn.get("response_mappings", [])
-            mode         = rn.get("mode", "single")        # "single" | "batch"
-            join_sep     = rn.get("join_separator", ",")   # Batch: Trennzeichen
-            join_key     = rn.get("join_key", input_field) # Batch: Key-Feld in Response
-            batch_placeholder = rn.get("batch_placeholder", "{{" + input_field + "s}}")
-
-            if not url_template:
+            if not rn.get("url"):
                 continue
 
-            headers = _build_headers(auth)
+            grund_cfg = knoten_config(rn)
+            mappings  = rn.get("response_mappings", [])
+            felder    = _eingabefelder(rn)
+            timeout   = int(rn.get("timeout") or 30)
+            modus     = rn.get("mode", "single")
 
-            # ── BATCH-Modus ───────────────────────────────────────────────────
-            # Alle Werte aus input_field sammeln → einen API-Call → Ergebnis joinen
-            if mode == "batch":
-                # 1. Alle Werte sammeln (eindeutig, nicht leer)
-                all_vals = []
-                seen_vals = set()
+            # ── Gebündelt: alle Werte in einen Aufruf ─────────────────────────
+            if modus == "batch":
+                leitfeld = felder[0] if felder else ""
+                join_sep = rn.get("join_separator", ",")
+                join_key = rn.get("join_key") or leitfeld
+
+                werte, gesehen = [], set()
                 for row in output_rows:
-                    v = str(row.get(input_field, "")).strip()
-                    if v and v not in seen_vals:
-                        seen_vals.add(v)
-                        all_vals.append(v)
-
-                if not all_vals:
+                    v = str(row.get(leitfeld, "")).strip() if leitfeld else ""
+                    if v and v not in gesehen:
+                        gesehen.add(v)
+                        werte.append(v)
+                if not werte:
                     continue
 
-                # 2. URL bauen: {{station_ids}} oder {{input_fields}} ersetzen
-                joined = join_sep.join(all_vals)
-                url = url_template
-                # Generische Platzhalter ersetzen
-                for ph in [batch_placeholder,
-                           "{{" + input_field + "s}}",
-                           "{{" + input_field + "_ids}}",
-                           "{{ids}}",
-                           "{{values}}"]:
-                    url = url.replace(ph, joined)
-                # Auch {{station_ids}} etc. ersetzen (häufig in Tankerkönig-Templates)
-                import re as _re
-                url = _re.sub(r"\{\{\w+\}\}", joined, url)
+                gebuendelt = join_sep.join(werte)
+                # Der Sammelplatzhalter darf verschieden heißen; historisch waren
+                # mehrere Schreibweisen im Umlauf, die alle bedient werden.
+                ersatz = {}
+                for name in (rn.get("batch_placeholder", "").strip("{}"),
+                             f"{leitfeld}s", f"{leitfeld}_ids", "ids", "values"):
+                    if name:
+                        ersatz[name] = gebuendelt
+                cfg = werte_einsetzen(grund_cfg, ersatz)
 
-                # 3. API-Call
+                _t0 = time.time()
+                ergebnis = execute_request(cfg, timeout=timeout, wiederholen=True)
+                _dauer = int((time.time() - _t0) * 1000)
+                if not ergebnis.get("ok"):
+                    _protokoll(ergebnis, rn, 0)
+                    errors.append("REST-Sammelaufruf fehlgeschlagen: " + (
+                        ergebnis.get("error")
+                        or f"HTTP {ergebnis.get('status_code')}")[:200])
+                    continue
                 try:
-                    if method == "GET":
-                        resp = _req.get(url, headers=headers, timeout=30)
-                    else:
-                        resp = _req.post(url, headers=headers, timeout=30)
-                    resp.raise_for_status()
-                    raw = resp.json()
-                    batch_data = _get_nested(raw, data_path) if data_path else raw
-                except Exception as e:
-                    errors.append(f"REST Batch-Fehler: {str(e)[:200]}")
-                    continue
+                    log_rest_zusammenfassung(
+                        module="mapping_service", entity_id=_lk.get("mapping_id"),
+                        entity_name=_lk.get("mapping_name"), project_id=_lk.get("project_id"),
+                        knoten=rn.get("id"), aufrufe=1, fehler=0, dauer_ms=_dauer,
+                        zusatz={"modus": "batch", "werte": len(werte)})
+                except Exception:
+                    pass
 
-                # 4. Response-Format erkennen und normalisieren
-                # Format A: Dict mit ID als Key → {"uuid1": {e5, e10, diesel}, ...}
-                # Format B: Liste mit Key-Feld → [{station_id: "uuid1", e5: 1.89}, ...]
-                lookup = {}  # id → data-dict
+                daten = _get_nested(ergebnis.get("json"), rn.get("data_path") or "") \
+                    if rn.get("data_path") else ergebnis.get("json")
 
-                if isinstance(batch_data, dict):
-                    # Format A (Tankerkönig prices.php)
-                    lookup = batch_data
-                elif isinstance(batch_data, list):
-                    # Format B: Liste mit join_key als Schlüssel
-                    for item in batch_data:
-                        if isinstance(item, dict):
-                            key_val = str(item.get(join_key, ""))
-                            if key_val:
-                                lookup[key_val] = item
-
-                # 5. Ergebnis in output_rows einjoinen
-                if not mappings:
-                    # Kein response_mappings: alle Felder aus der Response einfügen
-                    for row in output_rows:
-                        row_key = str(row.get(input_field, "")).strip()
-                        item = lookup.get(row_key, {})
-                        if isinstance(item, dict):
-                            for k, v in item.items():
-                                row[k] = v
-                else:
-                    for row in output_rows:
-                        row_key = str(row.get(input_field, "")).strip()
-                        item = lookup.get(row_key)
-                        for m in mappings:
-                            out_field = m.get("output_field")
-                            json_path = m.get("json_path", "")
-                            if not out_field:
-                                continue
-                            if item is None:
-                                row[out_field] = None
-                            elif isinstance(item, dict):
-                                val = _get_nested(item, json_path) if json_path else item.get(out_field)
-                                row[out_field] = val
-                            else:
-                                row[out_field] = item
-
-            # ── SINGLE-Modus (bestehend, pro Zeile) ──────────────────────────
-            else:
-                if not mappings:
-                    continue
-
-                cache = {}  # input_value → response_data
+                # Zwei verbreitete Antwortformen: nach Schlüssel abgelegt, oder
+                # eine Liste, in der ein Feld den Schlüssel trägt.
+                index = {}
+                if isinstance(daten, dict):
+                    index = daten
+                elif isinstance(daten, list):
+                    for eintrag in daten:
+                        if isinstance(eintrag, dict):
+                            schluessel = str(eintrag.get(join_key, ""))
+                            if schluessel:
+                                index[schluessel] = eintrag
 
                 for row in output_rows:
-                    input_val = str(row.get(input_field, "")) if input_field else ""
-                    if not input_val:
-                        for m in mappings:
-                            if m.get("output_field"):
-                                row[m["output_field"]] = None
+                    treffer = index.get(str(row.get(leitfeld, "")).strip())
+                    if not mappings:
+                        if isinstance(treffer, dict):
+                            for k, v in treffer.items():
+                                row[k] = v
                         continue
-
-                    # Cache-Lookup
-                    if input_val not in cache:
-                        url = url_template.replace(f"{{{input_field}}}", quote(str(input_val), safe=""))
-                        url = url.replace("{value}", quote(str(input_val), safe=""))
-                        try:
-                            if method == "GET":
-                                resp = _req.get(url, headers=headers, timeout=10)
-                            else:
-                                resp = _req.post(url, headers=headers, timeout=10)
-                            resp.raise_for_status()
-                            data = resp.json()
-                            cache[input_val] = _get_nested(data, data_path) if data_path else data
-                        except Exception as e:
-                            cache[input_val] = {"__error__": str(e)[:100]}
-
-                    response_data = cache[input_val]
-
                     for m in mappings:
-                        out_field = m.get("output_field")
-                        json_path = m.get("json_path", "")
-                        if not out_field:
+                        ziel = m.get("output_field")
+                        if not ziel:
                             continue
-                        if "__error__" in (response_data or {}):
-                            row[out_field] = f"[API-Fehler: {response_data['__error__']}]"
+                        if treffer is None:
+                            row[ziel] = None
+                        elif isinstance(treffer, dict):
+                            pfad = m.get("json_path", "")
+                            row[ziel] = _get_nested(treffer, pfad) if pfad else treffer.get(ziel)
                         else:
-                            val = _get_nested(response_data, json_path) if json_path else response_data
-                            row[out_field] = str(val) if val is not None else None
+                            row[ziel] = treffer
+                continue
 
+            # ── Einzeln: ein Aufruf je Zeile ──────────────────────────────────
+            #
+            # Gleiche Eingabewerte ergeben denselben Aufruf – das Ergebnis wird
+            # deshalb je Wertkombination nur einmal geholt. Bei schreibenden
+            # Verfahren wäre das falsch: ein POST je Auftrag muss auch dann
+            # zweimal laufen, wenn zwei Zeilen zufällig gleich aussehen.
+            schreibend = grund_cfg["method"] in ("POST", "PUT", "PATCH", "DELETE")
+            zwischenspeicher = {}
+            aufrufe = 0
+            fehler_anzahl = 0
+            fehler_gesehen = []
+            _t0 = time.time()
+
+            for row in output_rows:
+                werte = {f: row.get(f) for f in felder}
+                if felder:
+                    werte.setdefault("value", row.get(felder[0]))
+
+                # Ohne Eingabewert gibt es nichts nachzuschlagen – schreibende
+                # Aufrufe brauchen dagegen keinen Schlüssel.
+                if felder and not schreibend and not any(
+                        str(v).strip() for v in werte.values() if v is not None):
+                    for m in mappings:
+                        if m.get("output_field"):
+                            row[m["output_field"]] = None
+                    continue
+
+                schluessel = tuple(str(werte.get(f, "")) for f in felder)
+                if not schreibend and schluessel in zwischenspeicher:
+                    _antwort_auswerten(rn, zwischenspeicher[schluessel], mappings, row)
+                    continue
+
+                if aufrufe >= _NODE_MAX_AUFRUFE:
+                    errors.append(
+                        f"REST-Knoten: Obergrenze von {_NODE_MAX_AUFRUFE} Aufrufen erreicht – "
+                        "die restlichen Zeilen wurden nicht abgefragt.")
+                    break
+
+                cfg = werte_einsetzen(grund_cfg, werte)
+                try:
+                    ergebnis = execute_request(cfg, timeout=timeout, wiederholen=True)
+                except Exception as e:
+                    ergebnis = {"ok": False, "error": str(e)[:200], "status_code": None}
+                aufrufe += 1
+
+                if not schreibend:
+                    zwischenspeicher[schluessel] = ergebnis
+                grund = _antwort_auswerten(rn, ergebnis, mappings, row)
+                if grund:
+                    _protokoll(ergebnis, rn, fehler_anzahl)
+                    fehler_anzahl += 1
+                    if len(fehler_gesehen) < 5:
+                        fehler_gesehen.append(grund[:150])
+
+            # Fehler gehören ins Protokoll des Laufs, nicht nur in eine Zelle –
+            # im Einzelmodus fehlte diese Rückmeldung bisher ganz.
+            if fehler_gesehen:
+                errors.append(
+                    f"REST-Knoten: {fehler_anzahl} fehlgeschlagene Aufrufe – "
+                    + "; ".join(fehler_gesehen))
+            if aufrufe:
+                try:
+                    log_rest_zusammenfassung(
+                        module="mapping_service", entity_id=_lk.get("mapping_id"),
+                        entity_name=_lk.get("mapping_name"), project_id=_lk.get("project_id"),
+                        knoten=rn.get("id"), aufrufe=aufrufe, fehler=fehler_anzahl,
+                        dauer_ms=int((time.time() - _t0) * 1000),
+                        zusatz={"modus": "single", "methode": grund_cfg["method"],
+                                "aus_zwischenspeicher": len(output_rows) - aufrufe})
+                except Exception:
+                    pass
 
     # ─── Lookup Nodes: Werte aus anderem Dataset nachschlagen ─────────────────────
     if lookup_nodes and output_rows:

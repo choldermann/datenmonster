@@ -193,3 +193,106 @@ def log_mapping_error(db, mapping_name: str, mapping_id: int,
         project_id=project_id,
         details=details,
     )
+
+
+# ── Ausgehende REST-Aufrufe ───────────────────────────────────────────────────
+#
+# Ausgehende Aufrufe waren bisher nur im API-Studio nachvollziehbar. In Mapping
+# und Pipeline fehlten Statuscode und Antwort vollständig – bei einer Gegenstelle,
+# deren Fehlerobjekte nicht dokumentiert sind, ist die Fehlersuche damit blind.
+#
+# Zwei Regeln halten das Protokoll benutzbar:
+#   * Kopfdaten immer, Antwortkörper nur auf ausdrücklichen Wunsch. Antworten
+#     können personenbezogene Daten enthalten; die Entscheidung trifft der
+#     Anwender am Knoten, nicht das System.
+#   * Ein Lauf mit 500 Zeilen erzeugt keine 500 Einträge, sondern eine
+#     Zusammenfassung plus die ersten Fehlschläge.
+
+REST_LOG_MAX_FEHLER = 20      # Einzeleinträge je Knoten und Lauf
+_REST_BODY_MAX      = 2000    # Zeichen, die von einer Antwort aufgehoben werden
+
+
+def _eigene_session():
+    """Eigene Session – der Mapping-Lauf läuft teils in Threads, und eine
+    SQLAlchemy-Session darf nicht zwischen Threads geteilt werden."""
+    from app.core.database import SessionLocal
+    return SessionLocal()
+
+
+def _sichere_url(ergebnis: dict) -> str:
+    """URL ohne Abfrageteil. Ein API-Schlüssel kann als Abfrageparameter
+    übergeben werden – der gehört nicht ins Protokoll."""
+    url = (ergebnis.get("request") or {}).get("url") or ""
+    return url.split("?", 1)[0]
+
+
+def rest_aufruf_details(ergebnis: dict, antwort_aufheben: bool = False) -> dict:
+    """Die protokollwürdigen Teile einer execute_request-Antwort."""
+    anfrage = ergebnis.get("request") or {}
+    details = {
+        "method":        anfrage.get("method"),
+        "url":           _sichere_url(ergebnis),
+        "params":        anfrage.get("params") or {},      # bereits maskiert
+        "status_code":   ergebnis.get("status_code"),
+        "reason":        ergebnis.get("reason"),
+        "duration_ms":   ergebnis.get("duration_ms"),
+        "size_bytes":    ergebnis.get("size_bytes"),
+        "content_type":  ergebnis.get("content_type"),
+    }
+    if ergebnis.get("error"):
+        details["error"] = str(ergebnis["error"])[:500]
+    if antwort_aufheben and ergebnis.get("body_text"):
+        text = ergebnis["body_text"]
+        details["response_body"] = text[:_REST_BODY_MAX]
+        details["response_truncated"] = len(text) > _REST_BODY_MAX
+    return details
+
+
+def log_rest_aufruf(ergebnis: dict, *, module: str, action: str = "rest_call",
+                    entity_id=None, entity_name=None, project_id=None,
+                    knoten: str = None, antwort_aufheben: bool = False,
+                    zusatz: dict = None) -> None:
+    """Einen einzelnen ausgehenden Aufruf protokollieren (i. d. R. einen Fehlschlag)."""
+    details = rest_aufruf_details(ergebnis, antwort_aufheben)
+    if knoten:
+        details["node"] = knoten
+    if zusatz:
+        details.update(zusatz)
+
+    status = ergebnis.get("status_code")
+    ok = bool(ergebnis.get("ok"))
+    kurz = ergebnis.get("error") or f"HTTP {status} {ergebnis.get('reason') or ''}".strip()
+
+    db = _eigene_session()
+    try:
+        log(db,
+            level="success" if ok else "error",
+            module=module, action=action,
+            message=(f"{details.get('method')} {details.get('url')} → "
+                     + (f"{status}" if ok else kurz[:180])),
+            entity_id=entity_id, entity_name=entity_name, project_id=project_id,
+            details=details, duration_ms=ergebnis.get("duration_ms"))
+    finally:
+        db.close()
+
+
+def log_rest_zusammenfassung(*, module: str, action: str = "rest_calls",
+                             entity_id=None, entity_name=None, project_id=None,
+                             knoten: str = None, aufrufe: int = 0, fehler: int = 0,
+                             dauer_ms: int = None, zusatz: dict = None) -> None:
+    """Ein Eintrag je Knoten und Lauf – damit ein Lauf über viele Zeilen das
+    Protokoll nicht flutet."""
+    details = {"node": knoten, "aufrufe": aufrufe, "fehler": fehler}
+    if zusatz:
+        details.update(zusatz)
+    db = _eigene_session()
+    try:
+        log(db,
+            level="warning" if fehler else "success",
+            module=module, action=action,
+            message=(f"REST-Knoten: {aufrufe} Aufrufe"
+                     + (f", davon {fehler} fehlgeschlagen" if fehler else " – alle erfolgreich")),
+            entity_id=entity_id, entity_name=entity_name, project_id=project_id,
+            details=details, duration_ms=dauer_ms, rows_processed=aufrufe)
+    finally:
+        db.close()
