@@ -88,6 +88,47 @@ _CONN_ID_KEYS = {"connection_id", "target_connection_id", "source_connection_id"
 _CONN_PLACEHOLDER_RE = re.compile(r"^\{\{(connection_\w+)\}\}$")
 
 
+# Anmeldedaten eines REST-Knotens: die alte Knotenform trägt sie unter `auth`,
+# die neue unter `auth_config`. Beim Export müssen sie in beiden Formen fallen –
+# ein Template wandert weiter, ein Zugangstoken darf das nicht.
+_REST_GEHEIM = ("token", "key_value", "password", "value", "client_secret", "refresh_token")
+
+
+def code_knoten_zaehlen(content: dict) -> int:
+    """Wie viele Python-Knoten ein Template mitbringt.
+
+    Seit Templates auch Python-Knoten übertragen, kann eine heruntergeladene Datei
+    Code enthalten, der beim Lauf auf diesem Server ausgeführt wird. Die Ausführung
+    ist zwar abgeschottet (keine Einfuhr von Modulen, kein Dateisystem, kein Netz,
+    Zeitgrenze je Zeile), aber wer ein fremdes Template installiert, soll es wissen –
+    verschwiegene Codeausführung ist das, was man Anwendern nicht antun darf.
+    """
+    return sum(len(m.get("python_nodes") or [])
+               for m in (content.get("mappings") or [])
+               if isinstance(m, dict))
+
+
+def _rest_nodes_ohne_zugangsdaten(rest_nodes: list) -> list:
+    """REST-Knoten für den Export, ohne Anmeldedaten.
+
+    Für Datenbankverbindungen gilt das längst; für REST-Knoten wanderten Token und
+    Passwörter bisher unverändert in die Template-Datei. Das Verfahren (bearer,
+    basic …) bleibt erhalten, damit der Installierende sieht, was er einzutragen hat.
+    """
+    import copy as _c
+    sauber = _c.deepcopy(rest_nodes or [])
+    for rn in sauber:
+        if not isinstance(rn, dict):
+            continue
+        for behaelter in ("auth", "auth_config"):
+            werte = rn.get(behaelter)
+            if isinstance(werte, dict):
+                for schluessel in _REST_GEHEIM:
+                    if werte.get(schluessel):
+                        werte[schluessel] = ""
+    return sauber
+
+
 def _rewrite_conn_export(obj, referenced: set):
     """Ersetzt Integer-Verbindungs-IDs durch {{connection_X}}-Platzhalter und
     sammelt die referenzierten IDs in `referenced`."""
@@ -606,6 +647,14 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         transform_nodes = m_def.get("transform_nodes") or []
         calc_nodes      = m_def.get("calc_nodes") or []
         sort_nodes      = m_def.get("sort_nodes") or []
+        # Diese fünf fehlten hier: sie wurden weder ex- noch importiert, sodass ein
+        # Template seine Python-, Ausdrucks-, Qualitäts-, Parameter- und KI-Knoten
+        # beim Weitergeben stillschweigend verlor.
+        python_nodes    = m_def.get("python_nodes") or []
+        expr_nodes      = m_def.get("expr_nodes") or []
+        quality_nodes   = m_def.get("quality_nodes") or []
+        param_nodes     = m_def.get("param_nodes") or []
+        ai_nodes        = m_def.get("ai_nodes") or []
         # lookup/switch referenzieren Dataset-IDs → umschreiben
         lookup_nodes = _rewrite_ids_install(m_def.get("lookup_nodes") or [], ds_id_map)
         switch_nodes = _rewrite_ids_install(m_def.get("switch_nodes") or [], ds_id_map)
@@ -674,6 +723,11 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             calc_nodes=calc_nodes,
             switch_nodes=switch_nodes,
             sort_nodes=sort_nodes,
+            python_nodes=python_nodes,
+            expr_nodes=expr_nodes,
+            quality_nodes=quality_nodes,
+            param_nodes=param_nodes,
+            ai_nodes=ai_nodes,
             targets=targets,
         )
         # Gleichnamiges Mapping im Projekt? → wiederverwenden und auf den Stand des
@@ -850,14 +904,22 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     flag_modified(t, "installations")
     db.commit()
 
+    code_knoten = code_knoten_zaehlen(content)
     try:
         from app.services.db_logger import log as _dblog
         _dblog(db, "success", "templates", "template_installed",
             f"Template '{t.name}' erfolgreich installiert",
-            details={"created": created, "config_keys": list(config.keys())})
+            details={"created": created, "config_keys": list(config.keys()),
+                     "python_nodes": code_knoten})
+        if code_knoten:
+            _dblog(db, "warning", "templates", "template_enthaelt_code",
+                f"Template '{t.name}' bringt {code_knoten} Python-Knoten mit – "
+                "der Code läuft beim Ausführen der Mappings auf diesem Server",
+                details={"python_nodes": code_knoten})
     except Exception as _log_e:
         pass  # Logging-Fehler nicht eskalieren
-    return {"ok": True, "template": t.name, "created": created}
+    return {"ok": True, "template": t.name, "created": created,
+            "python_nodes": code_knoten}
 
 
 @router.post("/upload")
@@ -1084,11 +1146,16 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 "agg_nodes":       m.agg_nodes or [],
                 "transform_nodes": m.transform_nodes or [],
                 "constant_nodes":  m.constant_nodes or [],
-                "rest_nodes":      getattr(m, "rest_nodes",   None) or [],
+                "rest_nodes":      _rest_nodes_ohne_zugangsdaten(getattr(m, "rest_nodes", None) or []),
                 "lookup_nodes":    _rewrite_ids_export(getattr(m, "lookup_nodes", None) or [], ds_real_to_tpl),
                 "calc_nodes":      getattr(m, "calc_nodes",   None) or [],
                 "switch_nodes":    _rewrite_ids_export(getattr(m, "switch_nodes", None) or [], ds_real_to_tpl),
                 "sort_nodes":      getattr(m, "sort_nodes",   None) or [],
+                "python_nodes":    getattr(m, "python_nodes",  None) or [],
+                "expr_nodes":      getattr(m, "expr_nodes",    None) or [],
+                "quality_nodes":   getattr(m, "quality_nodes", None) or [],
+                "param_nodes":     getattr(m, "param_nodes",   None) or [],
+                "ai_nodes":        getattr(m, "ai_nodes",      None) or [],
                 # targets enthalten Dataset-IDs (source_dataset_id) und ggf. target_connection_id → umschreiben
                 "targets": _rewrite_conn_export(_rewrite_ids_export(targets_raw, ds_real_to_tpl), referenced_conn_ids),
             })
