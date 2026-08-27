@@ -483,6 +483,7 @@ auf interne Adressen.
 | `method` | `GET`, `POST`, `PUT`, `PATCH`, `DELETE` |
 | `mode` | `"single"` (ein Aufruf je Zeile) oder `"batch"` (alle Werte in einem Aufruf) |
 | `input_fields` | Felder, deren Werte eingesetzt werden. `{Feld}` und `{{Feld}}` funktionieren beide |
+| `{{json:Feld}}` | setzt den Wert **unmaskiert** ein – für JSON, das die Datenbank schon fertig gebaut hat (siehe unten) |
 | `body_type` / `body_content` | `none`, `json`, `form`, `xml`, `raw`. Werte im JSON-Rumpf werden JSON-gerecht maskiert |
 | `auth_type` / `auth_config` | `none`, `basic`, `bearer`, `apikey`, `oauth2_cc`, `oauth2_refresh` |
 | `response_mappings` | `json_path` → `output_field` |
@@ -498,6 +499,41 @@ auf interne Adressen.
 > `POST`/`PUT`/`PATCH`/`DELETE`: dort läuft jede Zeile für sich, sonst würden zwei gleich
 > aussehende Zeilen nur einen Aufruf auslösen. Je Knoten und Lauf sind höchstens
 > 1000 Aufrufe zulässig.
+
+#### Listen im Rumpf: `{{json:Feld}}`
+
+Werte in einem JSON-Rumpf werden maskiert – aus `Meyer "Bau" GmbH` wird
+`Meyer \"Bau\" GmbH`, damit der Rumpf gültig bleibt. Für eine **Liste**, etwa die
+Positionen eines Auftrags, ist das falsch: sie käme als Text an, nicht als Array.
+
+Dafür gibt es `{{json:Feld}}`. Der Wert wird unverändert eingesetzt und muss selbst
+gültiges JSON sein; ist er es nicht, bricht dieser eine Aufruf mit einer klaren Meldung
+ab, statt einen kaputten Rumpf loszuschicken. Beide Formen dürfen im selben Rumpf stehen.
+
+Die Liste baut man am besten schon in SQL – der MS SQL Server kann das seit 2016:
+
+```sql
+SELECT
+    A.cAuftragsNr AS name,
+    ISNULL((SELECT POS.cArtNr AS item,
+                   CAST(POS.fAnzahl AS DECIMAL(18,3)) AS amount
+            FROM Verkauf.tAuftragPosition POS
+            WHERE POS.kAuftrag = A.kAuftrag AND POS.nType = 1
+            FOR JSON PATH), '[]') AS items_json
+FROM Verkauf.tAuftrag A
+```
+
+Im Knoten dann:
+
+```json
+{ "body_type": "json",
+  "body_content": "{\"name\": \"{{name}}\", \"items\": {{json:items_json}}}" }
+```
+
+Zwei Kleinigkeiten aus der Praxis: `ISNULL(..., '[]')` fängt Aufträge ohne Positionen ab
+(ohne das liefert `FOR JSON` `NULL`, und im Rumpf steht dann `null`), und `CAST(... AS
+DECIMAL(18,3))` verhindert Mengen wie `30.0000000000000`. In URL und Kopfzeilen wirkt
+`{{json:…}}` nicht – dort gehört kein JSON hin.
 
 ---
 

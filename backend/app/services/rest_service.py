@@ -1036,10 +1036,33 @@ def werte_einsetzen(cfg: dict, werte: dict) -> dict:
     Erkannt werden beide Schreibweisen: `{feld}` (die des alten Knotens) und
     `{{feld}}` (die überall sonst in Datenmonster gilt). Zusätzlich bleibt
     `{value}` als Name für den ersten Wert erhalten.
+
+    **`{{json:feld}}` setzt den Wert unmaskiert ein.** Das ist der Weg für einen
+    Programmteil, den die Datenbank schon fertig gebaut hat – etwa eine Liste von
+    Positionen aus `FOR JSON PATH`. Über die normale Maskierung ginge das nicht:
+    sie macht aus dem Array einen Text. Der Wert muss dann selbst gültiges JSON
+    sein; ist er es nicht, bricht der Aufruf mit einer klaren Meldung ab, statt
+    einen kaputten Rumpf loszuschicken.
     """
     def ersetzen(text: str, art: str) -> str:
         if not isinstance(text, str) or not text:
             return text
+        if art == "json":
+            for feld, roh in werte.items():
+                marke = "{{json:" + str(feld) + "}}"
+                if marke not in text:
+                    continue
+                wert = _als_text(roh).strip()
+                if not wert:
+                    wert = "null"          # kein Wert – z.B. Auftrag ohne Positionen
+                else:
+                    try:
+                        json.loads(wert)
+                    except ValueError as e:
+                        raise ValueError(
+                            f"{{{{json:{feld}}}}} erwartet gültiges JSON, bekam aber: "
+                            f"{wert[:80]} ({e})") from None
+                text = text.replace(marke, wert)
         for feld, roh in werte.items():
             wert = _als_text(roh)
             if art == "url":

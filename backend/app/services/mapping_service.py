@@ -1528,10 +1528,12 @@ def execute_mapping(
                              f"{leitfeld}s", f"{leitfeld}_ids", "ids", "values"):
                     if name:
                         ersatz[name] = gebuendelt
-                cfg = werte_einsetzen(grund_cfg, ersatz)
-
                 _t0 = time.time()
-                ergebnis = execute_request(cfg, timeout=timeout, wiederholen=True)
+                try:
+                    cfg = werte_einsetzen(grund_cfg, ersatz)
+                    ergebnis = execute_request(cfg, timeout=timeout, wiederholen=True)
+                except Exception as e:
+                    ergebnis = {"ok": False, "error": str(e)[:200], "status_code": None}
                 _dauer = int((time.time() - _t0) * 1000)
                 if not ergebnis.get("ok"):
                     _protokoll(ergebnis, rn, 0)
@@ -1621,8 +1623,11 @@ def execute_mapping(
                         "die restlichen Zeilen wurden nicht abgefragt.")
                     break
 
-                cfg = werte_einsetzen(grund_cfg, werte)
                 try:
+                    # Auch das Einsetzen kann scheitern – etwa wenn {{json:…}} auf
+                    # etwas zeigt, das kein gültiges JSON ist. Das darf die Zeile
+                    # kosten, nicht den ganzen Lauf.
+                    cfg = werte_einsetzen(grund_cfg, werte)
                     ergebnis = execute_request(cfg, timeout=timeout, wiederholen=True)
                 except Exception as e:
                     ergebnis = {"ok": False, "error": str(e)[:200], "status_code": None}

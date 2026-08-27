@@ -315,6 +315,12 @@ sieben davon.
 
 ### 2.2 Was fehlt — Vorschlag je Blockierer
 
+> **Nachtrag 27.08.2026:** B1 und B2 sind behoben, dazu die Protokollierung ausgehender
+> Aufrufe, die Verschlüsselung der Zugangsdaten und die Format-Referenz. Der Weg über
+> `rest_fetch` in der Pipeline bleibt gültig; zusätzlich kann jetzt auch der REST-Knoten
+> im Mapping schreiben. Das `items[]`-Risiko aus §8 ist ausgeräumt (siehe dort).
+> **Offen bleiben B3 und B4** – beide bewusst, siehe unten.
+
 **B1 – REST-Node ohne Body.**
 *Empfehlung: im Template umgehen, nicht nachrüsten.* Der Pipeline-Weg
 (`rest_fetch` + `for_each`) kann alles Nötige und ist der gepflegte Codepfad
@@ -847,7 +853,7 @@ hier, weil die Analyse sie zutage gefördert hat:
 |---|---|---|
 | **Doppelter Versandauftrag** durch Wiederholungslauf nach Teilabbruch | echte Kosten, doppelte Sendung | Journal **vor** dem Aufruf auf `uebermittelt` setzen und bei Fehler zurücksetzen, statt danach zu schreiben. Setzt A3 voraus – bis F3 beantwortet ist, das größte Einzelrisiko. |
 | **JSON-Zerstörung durch Sonderzeichen** in Namen/Adressen (`_mit_zeilenwerten` ist Textersetzung, §1.4) | Aufruf schlägt fehl oder überträgt Unsinn | Alle eingesetzten Felder in M1 bereits JSON-sicher aufbereiten (Anführungszeichen und Backslashes ersetzen). **Muss in Phase 1 explizit getestet werden** – ein Kunde namens `Meyer "Bau" GmbH` reicht. |
-| **Variable Positionsanzahl** lässt sich per Textersetzung nicht als `items[]`-Array bauen (§1.4) | Aufträge mit mehr als einer Position nicht übertragbar | **Ungelöst.** Denkbar: `items` in M1 als fertigen JSON-Teilstring erzeugen (T-SQL `STRING_AGG`/`FOR JSON`) und als **eine** Spalte einsetzen. Muss in Phase 1 als Erstes geprüft werden – davon hängt ab, ob der Pipeline-Weg überhaupt trägt. |
+| ~~**Variable Positionsanzahl** lässt sich per Textersetzung nicht als `items[]`-Array bauen~~ | – | **Geklärt am 27.08.2026.** Die Liste wird in SQL per `FOR JSON PATH` gebaut und mit dem neuen Roh-Platzhalter `{{json:items_json}}` unmaskiert in den Rumpf gesetzt. Gegen echte Wawi-Aufträge mit einer und mit zwei Positionen geprüft: kommt als echtes Array an. `ISNULL(…, '[]')` für Aufträge ohne Positionen, `CAST(… AS DECIMAL(18,3))` gegen `30.0000000000000`. |
 | **`for_each`-Deckel 100** und sequenzielle Aufrufe | lange Laufzeiten, unvollständige Läufe | Zeitplan enger takten statt Deckel erhöhen; Laufzeit in Phase 1 messen. |
 | **Kein Bestandsabgleich** | Überverkäufe | §2.3 – dokumentieren, später zweiter Kanal |
 | **Unbekannte Fehlerobjekte** (F4) | `fehlgeschlagen` vs. „später erneut" nicht unterscheidbar | Bis F4 beantwortet ist: alles außer 2xx als `fehlgeschlagen` mit Rohtext in `letzter_fehler`, kein automatischer Wiederholungsversuch. Lieber eine Zeile Handarbeit als eine Schleife gegen die API. |
