@@ -885,18 +885,23 @@ function BackupSettings() {
     } finally { setArbeitet(false); }
   };
 
+  // Ein Archiv von aussen wird geprüft und in die Liste aufgenommen. Ob es zur
+  // laufenden Anlage passt, entscheidet der Mensch – zurückgespielt wird es
+  // danach wie jedes andere, mit derselben Rückfrage.
   const hochladen = async (ev) => {
     const datei = ev.target.files?.[0];
     if (!datei) return;
     setArbeitet(true); setMeldung(null); setFertig(null);
     try {
       const fd = new FormData(); fd.append("datei", datei);
-      const { data } = await api.post("/api/backup/restore?bestaetigt=false", fd,
+      const { data } = await api.post("/api/backup/upload", fd,
         { headers: { "Content-Type": "multipart/form-data" } });
-      setMeldung({ art: "info",
-        text: `Archiv geprüft: ${JSON.stringify(data.inhalt)}. Hochgeladene Archive spielst `
-            + `du über die Kommandozeile zurück (./backup.sh --restore), damit nichts `
-            + `versehentlich passiert.` });
+      const inhalt = Object.entries(data.inhalt || {})
+        .filter(([, v]) => v !== null).map(([k, v]) => `${v} ${k}`).join(", ");
+      setMeldung({ art: "ok",
+        text: `Eingespielt als ${data.name} – enthält ${inhalt}. `
+            + `Zum Übernehmen in der Liste auf „Zurückspielen" klicken.` });
+      await laden_();
     } catch (e) {
       setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
     } finally { setArbeitet(false); ev.target.value = ""; }
@@ -943,7 +948,7 @@ function BackupSettings() {
         </button>
         <label style={{ padding: "7px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600,
                         cursor: "pointer", border: `1px solid ${S.border}`, color: S.textDim }}>
-          Archiv prüfen …
+          Archiv einspielen …
           <input type="file" accept=".tar.gz,.gz" onChange={hochladen} style={{ display: "none" }} />
         </label>
         {frei !== null && (
@@ -985,6 +990,14 @@ function BackupSettings() {
           <code style={{ display: "inline-block", marginTop: 4 }}>docker compose restart backend</code>
           <br /><br />
           Zur Sicherheit wird der jetzige Stand vorher automatisch als Archiv abgelegt.
+          {pruefung.name.includes("_import") && (
+            <>
+              <br /><br />
+              <strong>Dieses Archiv wurde von aussen eingespielt.</strong> Es kann aus einer
+              anderen Anlage stammen – prüfe die Zahlen oben, bevor du fortfährst. Passen sie
+              nicht zu dem, was du erwartest, brich lieber ab.
+            </>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button onClick={zurueckspielen} disabled={arbeitet}
               style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 700,
@@ -1021,6 +1034,14 @@ function BackupSettings() {
                 <span style={{ color: S.textBright, fontFamily: "ui-monospace, monospace" }}>
                   {s.name}
                 </span>
+                {s.importiert && (
+                  <span title="Von aussen eingespielt – stammt möglicherweise aus einer anderen Anlage"
+                    style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3,
+                             color: "#fcd34d", background: "rgba(252,211,77,0.12)",
+                             border: "1px solid rgba(252,211,77,0.35)" }}>
+                    eingespielt
+                  </span>
+                )}
                 <span style={{ color: S.textDim }}>{kb(s.groesse)}</span>
                 <span style={{ color: S.textDim, marginLeft: "auto" }}>{zeit(s.erstellt)}</span>
                 <button onClick={() => herunterladen(s.name)} title="Herunterladen"
@@ -1048,8 +1069,9 @@ function BackupSettings() {
       <p style={{ fontSize: 10, color: S.textDim, lineHeight: 1.6, marginTop: 4 }}>
         Für die regelmäßige Sicherung eignet sich <code>./backup.sh</code> auf dem Server –
         es legt zusätzlich die <code>.env</code> mit ins Archiv und lässt sich in die
-        Aufgabenplanung eintragen. Eine Sicherung, die noch nie zurückgespielt wurde, ist
-        keine: prüfe das gelegentlich.
+        Aufgabenplanung eintragen. Beide arbeiten im selben Verzeichnis, seine Archive
+        stehen also auch hier in der Liste. Eine Sicherung, die noch nie zurückgespielt
+        wurde, ist keine: prüfe das gelegentlich.
       </p>
     </div>
   );

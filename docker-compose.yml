@@ -12,6 +12,10 @@ services:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - datenmonster-data:/app/uploads
+      # Sicherungen liegen bewusst NICHT im Daten-Volume, sondern daneben auf dem
+      # Host: ein verlorenes Volume nimmt sonst die Sicherungen gleich mit. So
+      # sehen die Oberfläche und ./backup.sh dasselbe Verzeichnis.
+      - ./backups:/app/backups
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       - SECRET_KEY=${SECRET_KEY}

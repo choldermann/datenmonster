@@ -107,6 +107,19 @@ Die Anwendungsdaten liegen **nicht** im Projektordner, sondern im Docker-Volume
 Zeitplänen, dazu die Dateien der Datasets. Ein verlorenes Volume bedeutet den
 Verlust der gesamten Einrichtungsarbeit.
 
+Es gibt zwei Wege, die sich **dasselbe Verzeichnis teilen** (`./backups` auf dem
+Server): den Bereich **Systemeinstellungen → Sicherung** für die tägliche Arbeit
+und das Skript `./backup.sh` für den geplanten Lauf. Was der eine anlegt, sieht
+der andere.
+
+**In der Oberfläche** (nur für Administratoren):
+Sicherung anlegen, herunterladen, zurückspielen, löschen – dazu die Liste aller
+vorhandenen Archive. Über *Archiv einspielen* lässt sich auch eine Sicherung aus
+einer **anderen Installation** hereinholen; sie erscheint dann als „eingespielt"
+gekennzeichnet in der Liste.
+
+**Auf der Kommandozeile:**
+
 ```bash
 ./backup.sh                    # Sicherung anlegen
 ./backup.sh --list             # vorhandene Sicherungen anzeigen
@@ -117,16 +130,34 @@ Die Datenbank wird dabei über die Sicherungsschnittstelle von SQLite kopiert, n
 mit `cp` – bei laufendem Schreibzugriff wäre eine einfache Dateikopie unbrauchbar.
 Die Anwendung muss dafür nicht angehalten werden.
 
-Das Archiv enthält die Datenbank, die Dataset-Dateien und die `.env`. Die `.env`
-gehört zwingend dazu: Ohne den darin enthaltenen `SECRET_KEY` lassen sich die
-gespeicherten Zugangsdaten nicht mehr entschlüsseln.
+Das Archiv enthält die Datenbank und die Dataset-Dateien. Das Skript legt
+zusätzlich die `.env` mit hinein – sie gehört zwingend dazu, denn ohne den darin
+enthaltenen `SECRET_KEY` lassen sich die gespeicherten Zugangsdaten nicht mehr
+entschlüsseln. Sicherungen aus der Oberfläche enthalten sie **nicht**; wer nur
+diesen Weg nutzt, sichert die `.env` bitte getrennt.
+
+**Zum Zurückspielen:** Zuerst wird das Archiv nur geprüft und angezeigt, was
+darin steckt – wie viele Mappings, Formulare und Warnregeln. Erst die
+Bestätigung schreibt. Der bisherige Stand wandert dabei automatisch in ein
+eigenes Archiv. Danach ist ein Neustart nötig, weil die laufende Anwendung die
+alte Datei noch offen hält:
+
+```bash
+docker compose restart backend
+```
+
+Ein eingespieltes Archiv aus einer fremden Anlage lässt sich genauso
+zurückspielen. Die Oberfläche weist ausdrücklich darauf hin und zeigt den
+Inhalt – ob er zur eigenen Anlage passt, entscheidet der Mensch.
 
 > ⚠️ Damit enthält jedes Archiv Geheimnisse. Es liegt unter `backups/` (von der
 > Versionsverwaltung ausgenommen) mit den Rechten `600` und gehört an einen
 > geschützten Ort – nicht in einen offenen Netzwerkordner.
 
 Standardmäßig bleiben die letzten 14 Sicherungen liegen; über die Umgebungsvariablen
-`DM_BACKUP_DIR` und `DM_BACKUP_KEEP` lässt sich beides ändern. Für einen täglichen
+`DM_BACKUP_DIR` und `DM_BACKUP_KEEP` lässt sich beides ändern. Eingespielte
+Archive werden dabei nie automatisch entfernt – die hat jemand bewusst
+hergebracht. Für einen täglichen
 Lauf genügt ein Eintrag in der Aufgabenplanung des Servers, z. B.:
 
 ```
@@ -853,6 +884,7 @@ Projekte lassen sich einzelnen Benutzern freigeben. Das Passwort ändert jeder s
 | **Benutzer** | Benutzer anlegen, Rollen vergeben |
 | **Netzwerk** | Schutz vor missbräuchlichen ausgehenden Aufrufen: Cloud-Metadaten-Adressen sind immer gesperrt, interne Netze für den Betrieb vor Ort erlaubt und protokolliert; per Positiv- und Negativliste anpassbar |
 | **Optik** | Dunkles oder helles Erscheinungsbild, oder der Systemeinstellung folgen |
+| **Sicherung** | Datensicherung anlegen, herunterladen, zurückspielen – nur für Administratoren sichtbar, weil ein Archiv die Zugangsdaten aller Verbindungen enthält |
 
 ### Erste Schritte
 Für neue Installationen gibt es eine **Erste-Schritte-Checkliste** auf dem Dashboard;

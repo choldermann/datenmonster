@@ -35,10 +35,14 @@ from app.models.user import User
 router = APIRouter(prefix="/api/backup", tags=["backup"])
 
 DATEN_VERZ  = "/app/uploads"
-SICHER_VERZ = os.path.join(DATEN_VERZ, "backups")
+# Absichtlich neben dem Daten-Volume, nicht darin: ein verlorenes Volume würde
+# sonst die Sicherungen mitnehmen. Das Verzeichnis ist vom Host gemountet, sodass
+# die Oberfläche und ./backup.sh dieselben Archive sehen.
+SICHER_VERZ = os.getenv("DM_BACKUP_DIR", "/app/backups")
 DB_DATEI    = os.path.join(DATEN_VERZ, "datenmonster.db")
-BEHALTEN    = 14                      # so viele Archive bleiben auf dem Server liegen
-_NAME_MUSTER = re.compile(r"^datenmonster_\d{8}_\d{6}\.tar\.gz$")
+BEHALTEN    = 14                      # so viele Archive bleiben liegen
+# Das Suffix _import kennzeichnet ein von aussen eingespieltes Archiv.
+_NAME_MUSTER = re.compile(r"^datenmonster_\d{8}_\d{6}(_import)?\.tar\.gz$")
 
 
 def _nur_admin(user: User):
@@ -72,8 +76,11 @@ def _datenbank_kopieren(ziel: str):
 
 def _aufraeumen():
     """Nur die jüngsten Archive behalten."""
+    # Eingespielte Archive (_import) bleiben unangetastet – die hat jemand
+    # bewusst hergebracht und will sie nicht durch einen Zeitplan verlieren.
     archive = sorted(
-        (f for f in os.listdir(SICHER_VERZ) if _NAME_MUSTER.match(f)),
+        (f for f in os.listdir(SICHER_VERZ)
+         if _NAME_MUSTER.match(f) and "_import" not in f),
         reverse=True)
     for alt in archive[BEHALTEN:]:
         try:
@@ -97,6 +104,7 @@ def liste(user: User = Depends(get_current_user)):
             "groesse": os.path.getsize(pfad),
             "erstellt": datetime.fromtimestamp(
                 os.path.getmtime(pfad), tz=timezone.utc).isoformat(),
+            "importiert": "_import" in name,
         })
     eintraege.sort(key=lambda e: e["name"], reverse=True)
     frei = shutil.disk_usage(DATEN_VERZ).free
@@ -216,6 +224,51 @@ def _pruefe_archiv(pfad: str) -> dict:
     except Exception as e:
         shutil.rmtree(arbeit, ignore_errors=True)
         raise HTTPException(400, f"Archiv nicht lesbar: {str(e)[:200]}")
+
+
+@router.post("/upload")
+async def hochladen(datei: UploadFile = File(...),
+                    db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """
+    Ein Archiv von aussen einspielen – es wird geprüft und in die Liste
+    aufgenommen, aber noch nicht zurückgespielt.
+
+    Es darf ausdrücklich aus einer anderen Installation stammen. Was darin steckt,
+    zeigt die Antwort; ob es zur laufenden Anlage passt, entscheidet der Mensch.
+    Zurückgespielt wird es danach wie jedes andere Archiv – und dabei wird der
+    jetzige Stand automatisch vorher gesichert.
+    """
+    _nur_admin(user)
+    os.makedirs(SICHER_VERZ, exist_ok=True)
+
+    zwischen = tempfile.mktemp(suffix=".tar.gz")
+    try:
+        with open(zwischen, "wb") as fh:
+            while stueck := await datei.read(1024 * 1024):
+                fh.write(stueck)
+
+        geprueft = _pruefe_archiv(zwischen)          # wirft bei Unbrauchbarem
+        shutil.rmtree(geprueft["arbeit"], ignore_errors=True)
+
+        name = f"datenmonster_{datetime.now().strftime('%Y%m%d_%H%M%S')}_import.tar.gz"
+        ziel = os.path.join(SICHER_VERZ, name)
+        shutil.move(zwischen, ziel)
+        os.chmod(ziel, 0o600)
+    finally:
+        if os.path.exists(zwischen):
+            os.remove(zwischen)
+
+    try:
+        from app.services.db_logger import log as _log
+        _log(db, "info", "backup", "backup_imported",
+             f"Archiv '{datei.filename}' eingespielt als '{name}'",
+             details={"inhalt": geprueft["zahlen"], "benutzer": user.username})
+    except Exception:
+        pass
+
+    return {"ok": True, "name": name, "inhalt": geprueft["zahlen"],
+            "groesse": os.path.getsize(ziel)}
 
 
 @router.post("/restore")

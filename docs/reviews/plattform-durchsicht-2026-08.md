@@ -70,6 +70,10 @@ werden kann. Ausnahmen bleiben `portal`, `auth`, `forms` (Lauf), `ai` und
 
 ## 2. Drei Module prüfen keinen Projektzugriff
 
+> **Nachtrag 27.08.2026:** erledigt für `pipelines` und `dispatcher` (`exports`
+> war, siehe Korrektur unten, nie betroffen). Derselbe Portal-Nutzer sieht jetzt
+> null Einträge und bekommt auf fremde IDs 404.
+
 Zählung der Rechteprüfungen je Modul (`require_editor`, `can_read_project`,
 `get_accessible_project_ids`):
 
@@ -141,6 +145,12 @@ ausgeliefert wird.
 
 ## 4. Kein Backup-Verfahren
 
+> **Nachtrag 27.08.2026:** erledigt. Es gibt jetzt `./backup.sh` und den Bereich
+> *Systemeinstellungen → Sicherung* (nur für Administratoren), beide auf demselben
+> Verzeichnis `./backups` – bewusst neben dem Daten-Volume statt darin. Der
+> Rückspielweg ist durchgespielt: gesichert, zurückgespielt, Zugangsdaten allein
+> aus Archiv und `.env` entschlüsselt, Cockpit danach fehlerfrei.
+
 Die gesamte Anwendungsdatenbank liegt im Docker-Volume `datenmonster-data`
 (`docker-compose.yml`), also **nicht** im Projektordner. Es gibt im Repository
 kein Sicherungs- oder Rückspielverfahren – weder ein Skript, noch einen
@@ -191,6 +201,11 @@ Schema-Schritt – nicht danach.
 ---
 
 ## 6. Abhängigkeiten
+
+> **Nachtrag 27.08.2026:** `npm audit fix` ausgeführt – von sechs Meldungen auf
+> zwei, die beiden hohen (axios, form-data) sind weg. Die verbleibenden zwei
+> mittleren zu react-router bräuchten React Router 7, also einen Breaking Change;
+> das ist bewusst offen.
 
 **Frontend:** `npm audit --production` meldet 6 Schwachstellen, davon zwei hoch:
 
