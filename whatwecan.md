@@ -1,214 +1,328 @@
-# Datenmonster – Was wir können (Stand 2026-06-27)
+# Datenmonster – Was die Plattform kann
 
-## Datenquellen & Formate
+Stand: 2026-08-27 · Version 1.0.2 · Holdermann IT
 
-### Datenbankverbindungen
-- **MS SQL Server** (MSSQL/pyodbc)
+Datenmonster ist eine selbst gehostete ETL- und BI-Plattform: Daten aus beliebigen
+Quellen holen, im visuellen Editor umbauen, zurückschreiben oder exportieren,
+per Zeitplan automatisieren und als Formular, Dashboard oder Portal-Seite
+ausliefern – mit KI-Unterstützung an allen Stellen, an denen sonst Handarbeit
+oder SQL-Kenntnisse nötig wären.
+
+---
+
+## 1. Datenquellen und Konnektoren
+
+### Datenbanken
+- **Microsoft SQL Server** (pyodbc)
 - **MySQL / MariaDB**
 - **PostgreSQL**
 - **SQLite**
-- **Microsoft Access** (.mdb / .accdb via mdbtools)
+- **Microsoft Access** (.mdb / .accdb, eigener Import-Bereich)
 
-### Dateiformate
-- CSV, Excel (.xlsx / .xls), XML, JSON, ODS
-- Parquet
-- Statische Datasets (manuell gepflegte Tabellen im Browser)
+Je Verbindung: Verbindungstest, automatischer Schema-Cache (Tabellen, Spalten,
+Typen, Primär-/Fremdschlüssel), Cache-Alter sichtbar, Neuaufbau per Knopfdruck,
+Tabelle direkt als Dataset importieren. Zugangsdaten liegen verschlüsselt
+(Fernet, abgeleitet aus dem SECRET_KEY).
 
-### Sonstige Quellen
-- **REST-API** (GET/POST, Auth: Bearer/Basic, JSON-Pfad-Extraktion)
-- **E-Mail / IMAP** (Mail-Connector, regelbasiert)
-- **HTML-Seiten** (Web-Scraper mit Visual Selector)
-- **MongoDB** (Plugin, Collection als Quelle und Ziel)
+### Dateien
+- CSV, Excel (.xlsx/.xls), ODS, XML, JSON, Parquet
+- Upload im Browser oder Abholung per FTP/SFTP
+- Statische Datasets: Tabellen, die direkt im Browser gepflegt werden
 
----
-
-## Dataset-Management
-
-- Datasets anlegen aus: Datei-Upload, DB-Abfrage (SQL), REST, Plugin, manuell
-- **KI-Dataset-Assistent**: Beschreibung → KI findet Tabellen → generiert SELECT-Abfragen
-- Schema-Editor: Spaltentypen, Pflichtfelder, FK-Badges
-- **Database Analyzer**: interaktives ER-Diagramm, FK-Beziehungen visualisieren, Pfadfinder mit Zwischenstationen, Dataset direkt aus Diagramm importieren
-- Auto-Refresh: Datasets per Zeitplan automatisch neu laden
-- Daten-Explorer: Inline-Vorschau, Suche, Sortierung
-- Dataset-Zeilen-Editor (für statische Datasets)
-- FK-Badge in Spaltenköpfen
+### Weitere Quellen
+- **REST-API** (GET/POST, Bearer-/Basic-Auth, JSON-Pfad-Extraktion, Paginierung)
+- **E-Mail / IMAP** – Mail-Connector, regelbasierte Anhang-Verarbeitung
+- **HTML-Seiten** – Web-Scraper mit visuellem Selektor
+- **FTP / SFTP** – Dateien holen und ablegen, als Quelle *und* Ziel
+- **Plugins** – z. B. MongoDB-Connector, eStatistik-Core, Faker-Quelle
 
 ---
 
-## Mapping-Editor (ETL-Canvas)
+## 2. Datasets
 
-Visueller Flow-Editor mit Nodes per Drag & Drop.
+- Anlegen aus Datei-Upload, SQL-Abfrage, REST-Aufruf, Plugin oder manuell
+- **KI-Dataset-Assistent**: Beschreibung in Alltagssprache → KI schlägt Tabellen
+  vor (Stichwort- und Fremdschlüssel-Expansion, deutsches Stemming) → generiert
+  fertige SELECT-Abfragen, die vor dem Anlegen bearbeitet werden können
+- **Database Analyzer**: interaktives ER-Diagramm, Beziehungen sichtbar machen,
+  Pfadfinder mit Zwischenstationen, Dataset direkt aus dem Diagramm erzeugen
+- Schema-Editor: Spaltentypen, Pflichtfelder, PK/FK-Kennzeichnung
+- Daten-Explorer mit Inline-Vorschau, Suche und Sortierung
+- Zeilen-Editor für statische Datasets
+- Automatische Aktualisierung per Zeitplan
 
-### Daten-Eingang
+---
+
+## 3. Mapping-Editor (der ETL-Canvas)
+
+Visueller Flow-Editor: Quellen und Verarbeitungsschritte per Drag & Drop,
+Felder per Klick oder Ziehen verbinden.
+
+### Verfügbare Nodes
 | Node | Funktion |
 |---|---|
-| **Dataset Node** | Zieht Daten aus einem Dataset (DB, Datei, REST, …) |
-| **Params Node** | Laufzeit-Parameter (werden bei Ausführung abgefragt) |
+| **Dataset** | Quelle aus Dataset, DB, Datei, REST oder Plugin; filter- und sortierbar |
+| **Params** | Laufzeit-Parameter, die beim Ausführen abgefragt oder vom Formular geliefert werden |
+| **Transform** | Feldzuordnung, Umbenennen, Typen, Standardwerte, String-/Zahlen-/Datumsoperationen |
+| **Konstante** | Fester Wert oder berechneter Ausdruck als zusätzliche Quelle |
+| **Ausdruck** | Formelsprache: `{feld}`, `upper()`, `if_()`, `concat()`, `today()` u. v. m. |
+| **Berechnung** | Fensterfunktionen: kumulierte Summe, gleitender Durchschnitt, Zeilennummer, Rang, Lag/Lead |
+| **Aggregation** | GROUP BY mit SUM, COUNT, AVG, MIN, MAX, DISTINCT |
+| **SQL** | Direkte SQL-Abfrage auf einer DB-Verbindung; als Quelle, Lookup (`:param`, zeilenweise oder Batch-IN) oder ausführender Schritt (Stored Procedure) |
+| **Lookup** | Nachschlagen in einem anderen Dataset |
+| **Python** | Beliebiges Python je Datensatz, in einer Sandbox mit Zeitlimit |
+| **REST** | HTTP-Aufruf als Anreicherungsschritt |
+| **Switch** | Verzweigung nach Bedingungen, mehrere Ausgänge |
+| **Datenqualität** | Regeln je Feld (Pflicht, Zahl, E-Mail, IBAN, EAN, Regex …), liefert Gültigkeitsflag und Fehlerliste |
+| **KI-Transform** | Feldwerte durch ein Sprachmodell erzeugen, `{{feld}}`-Vorlage, strukturierte Ausgabe |
 
-### Transformation
-| Node | Funktion |
-|---|---|
-| **Transform Node** | Feldmapping, Umbenennen, Typen, Standardwerte, String-/Zahlen-/Datumsoperationen |
-| **Calc Node** | Berechnungen zwischen Feldern |
-| **Constant Node** | Feste Werte einfügen |
-| **Expression Node** | Formelausdrücke: `{feldname}`, `upper()`, `if_()`, `concat()`, `today()` u.v.m. |
-| **Python Node** | Beliebiges Python-Skript pro Datensatz (Sandbox, Timeout 3s) |
-| **SQL Node** | SQL-Abfrage direkt auf DB-Quelle; Lookup-Modus mit `:param`-Binding (row_by_row / batch-IN) |
-| **Aggregation Node** | GROUP BY + Aggregatfunktionen (SUM, COUNT, AVG, …) |
-| **REST Node** | HTTP-Requests als Transformation (Lookup, Anreicherung) |
-| **Switch Node** | Routing nach Bedingungen (mehrere Ausgänge) |
-| **Data Quality Node** | Validierungsregeln pro Feld (required, number, email, IBAN, EAN, Regex, …), gibt `__dq_valid__` und `__dq_errors__` aus |
-
-### Canvas-Features
-- Zoom, Pan, Minimap
-- Nodes minimieren/expandieren
-- Verbindungslinien per Klick löschbar
-- Auto-Join-Erkennung beim Hinzufügen von Datasets
-- PK/FK automatisch erkennen und als Badge anzeigen
-- Dataset-Nodes resizable
-- Filter & Sortierung direkt im Canvas konfigurierbar
-- SQL Filter-Pushdown für DB-Quellen (bis 25× schneller)
+### Canvas
+- Zoom, Verschieben, Minimap, Nodes minimieren/aufklappen
+- Verbindungen per Klick löschen, Vorschau an jeder Verbindungslinie
+- Automatische Join-Erkennung beim Hinzufügen weiterer Datasets
+- Primär-/Fremdschlüssel werden erkannt und als Kennzeichen angezeigt
 - Anti-Join (LEFT ANTI / RIGHT ANTI)
-- Vorschau an jeder Verbindungslinie
-- Node Statistics: nach Debug-Run zeigt jeder Node Zeilen-In/Out + Fehler
+- Filter-Pushdown in die Datenbank statt Filtern im Speicher
+- Typkonvertierung je Verbindung mit Warnung bei Typkonflikten
+- Mehrere Ziele pro Mapping
+- Export und Import ganzer Mappings als Vorlage
 
-### Debug-Run
-- **Phase 1**: Stage-Flow mit Sample-Daten je Stage
-- **Phase 2**: Canvas-Glow, Feld-Tooltips, Row Inspector, Step-Through
-- Einzeldatensatz durch alle Stages verfolgen
-
-### KI im Mapping
-- SQL erklären / generieren
-- Python-Code generieren / Fehler erklären
-- Ausdruck vorschlagen (Expression Node)
-- Feld-Verknüpfungsvorschläge (Smart Mapping)
-- Aktives Modell im Modal-Header sichtbar
+### Debug-Lauf
+- Stufenweiser Durchlauf mit Stichprobendaten je Stufe
+- Zeilen rein/raus und Fehler je Node
+- Einzelnen Datensatz durch alle Stufen verfolgen (Row Inspector, Step-Through)
+- SQL-Nodes sind im Ablaufprotokoll enthalten
 
 ---
 
-## Pipeline-Editor
+## 4. Ziele – wohin die Daten geschrieben werden
 
-- Mehrere Mappings in einer Pipeline sequenziell oder parallel verknüpfen
-- Ausführungsreihenfolge konfigurierbar
+- **Dataset** (Anhängen, Ersetzen, Upsert nach Schlüssel)
+- **Datenbank**: Insert, Truncate+Insert, Update, Upsert, Delete
+- **Dateien**: CSV, Excel, JSON, XML, Parquet
+- **Amtliche Formate**: Destatis-CSV, Intrahandels-CSV, IDEV (`.idev`)
+- **FTP/SFTP-Ablage**
+- **Plugin-Ziele** (z. B. MongoDB-Collection)
 
----
-
-## Scheduler
-
-- Mappings und Pipelines per Cron-Zeitplan automatisch ausführen
-- Log der letzten Ausführungen
-
----
-
-## Dispatcher
-
-- Zentrales Routing von eingehenden Daten auf verschiedene Ziele/Mappings
+Alle erzeugten Dateien landen in einer Export-Liste mit Download.
 
 ---
 
-## Exporte
+## 5. Automatisierung
 
-- Mapping-Ergebnis als CSV, Excel, JSON, XML, Parquet exportieren
-- Export-Liste: alle erzeugten Exporte mit Download
-
----
-
-## Form-System
-
-### Form Builder
-- Drag & Drop Canvas mit Feldtypen: Text, Zahl, Datum, Auswahl, Checkbox, Textarea
-- 3-Panel-Layout: Palette | Canvas | Eigenschaften
-- Pflichtfelder, Platzhalter, Reihenfolge konfigurierbar
-
-### Portal (öffentliche Formulare)
-- Formulare ohne Login zugänglich (eigene URL)
-- Responsives Grid-Layout
-- Vollständige Validierung, Einreichung per POST
-
-### Ergebnis-Widgets
-- Nach Submit: konfigurierbare Ergebnis-Seite
-- Widgets: Text, Tabelle, Diagramm (Chart.js), Karte
-- Mapping kann als Datenquelle für Widgets dienen
+- **Pipelines**: mehrere Mappings sequenziell oder parallel verketten;
+  Node-Typen für Trigger, Mapping, Bedingung, FTP, REST-Abruf, Dispatcher,
+  Business-Insights und Ausgaben
+- **Scheduler**: Mappings und Pipelines per Cron-Ausdruck; Verlauf der letzten Läufe;
+  nächster Lauf wird aus dem Scheduler ausgewiesen
+- **Dispatcher**: eingehende Dateien anhand von Regeln (Dateiname, Inhalt, XML-Struktur)
+  automatisch dem richtigen Mapping zuordnen, inklusive Folgeaktionen
+- **Eingehende REST-Schnittstelle**: eigene Endpunkte, Daten per POST annehmen und
+  ein Mapping auslösen
+- **Ereignis-Bus** für interne Auslöser
 
 ---
 
-## KI-Assistent (lokal, Ollama)
+## 6. Formulare, Dashboards und Portal
 
-- Läuft vollständig **lokal** auf eigenem Server (kein Cloud-API-Key)
-- Kompatibel mit OpenAI-API → austauschbar gegen Groq, LM Studio, Azure
-- Modell-Verwaltung direkt im UI: installieren, wechseln, Download-Fortschritt
+### Formular-Editor
+Drei-Spalten-Oberfläche (Palette | Canvas | Eigenschaften), Raster-Layout,
+Feldsichtbarkeit je Reiter.
 
-### KI-Dataset-Assistent (3-Step-Flow)
-1. **Beschreibung**: Freitext ("Rechnungen mit Lieferantendaten")
-2. **Tabellenauswahl**: KI schlägt Tabellen vor (Keyword + FK-Expansion, deutsches Stemming), Preview-Modal je Tabelle
-3. **SQL-Generierung**: KI generiert SELECT-Abfragen, bearbeitbar, direkt als Datasets anlegbar
+**Feldtypen**
+- Eingabe: Text, mehrzeiliger Text, Zahl, Datum, Uhrzeit, Dateiauswahl
+- Auswahl: Checkbox, Schalter, Dropdown, Mehrfachauswahl, Radio
+- Dashboard-Filter: Zeitraum (Kalender-Popover), DB-Auswahl mit Tippsuche
+  (Werte kommen live aus der Datenbank, auch mehrfach wählbar)
+- Aktionen: Button
+- Layout: Überschrift, Text, Trennlinie, Container
 
-### Schema-Cache
-- Vollständiges DB-Schema (Tabellen, Spalten, Typen, PK/FK) persistent gespeichert
-- MSSQL: Single-Query-Ansatz (kein Inspector-Hang bei 1000+ Tabellen)
-- Wird automatisch beim Connection-Test aufgebaut
+**Aktionen**: Mapping ausführen, Pipeline ausführen, Warnungen auswerten,
+Mapping exportieren. Ergebnisse können auf Reiter verteilt werden.
 
----
+### Widgets
+| Widget | Zweck |
+|---|---|
+| **Tabelle** | sortierbar, klickbar, volle Zeilenzahl statt Vorschau, Download |
+| **KPI** | Kennzahl mit Vorjahresvergleich |
+| **Balken / Linie / Kreis** | Diagramme, klickbar für Drilldown |
+| **KI-Analyse** | Sprachmodell kommentiert die Zahlen des Dashboards; knapp oder ausführlich, mit Bewertungstabelle |
+| **Aufgabenliste** | Ampel mit Anzahl, Klick öffnet die Detailliste |
+| **Unternehmenswarnungen** | Ergebnisse der Warn-Engine |
+| **Kostenstruktur** | monatliche Fixkosten je Kostenart pflegen |
+| **Eingangsrechnungs-Freigabe** | E-Rechnung prüfen und übernehmen |
+| **EAN-Recherche / Hersteller-Navigator / Stammdatenprüfung** | Stammdaten anreichern |
 
-## Verbindungs-Manager (Datenbanken)
+### Drilldown und Interaktion
+- Mehrstufiger Drilldown bis auf Belegebene (Navigations-Stack)
+- KI-Handlungsempfehlung je Tabellenzeile
+- Tabelle per E-Mail versenden
+- **PDF-Report**: komplettes Dashboard inklusive Diagrammen, KI-Analyse und
+  Bewertungstabelle als PDF, mit Firmendaten aus der Wawi
 
-- Verbindungen anlegen: MSSQL, MySQL, PostgreSQL, SQLite, Access
-- Connection-Test mit automatischem Schema-Cache-Aufbau
-- Schema-Cache-Status + Alter auf jeder Kachel
-- Rebuild-Button
-- KI-Dataset-Assistent direkt aus Verbindungs-Kachel starten
-- Import: Tabelle direkt als Dataset importieren
-
----
-
-## FTP / SFTP
-
-- FTP/SFTP-Verbindungen verwalten
-- Dateien hoch-/herunterladen, als Quelle/Ziel in Mappings nutzbar
-
----
-
-## REST-API (eingehend)
-
-- Eigene REST-Endpunkte definieren (intern)
-- Daten per POST empfangen → Mapping auslösen
-
----
-
-## Monitoring & System
-
-- CPU, RAM, Speichernutzung, SQLite-Größe, Uptime
-- System-Log mit Projekt-Spalte
-- Ausführungshistorie
+### Portal
+- Formulare veröffentlichen, eigene URL, mehrere Formulare je Portal
+- Portal-Benutzer sehen nur das Portal, keinen Editor
+- Vollständige Funktionsgleichheit: Drilldown, KI-Empfehlung, PDF-Report,
+  Export und Ausschlusslisten funktionieren auch dort
+- Formular-Einreichungen werden gespeichert und sind einsehbar
 
 ---
 
-## Projekte & Benutzer
+## 7. Betriebswirtschaftliche Auswertung (BI)
 
-- Mehrmandantenfähig: Projekte isolieren Datasets, Mappings, Formulare
-- Benutzer-Verwaltung mit Rollen
-- Projekt teilen zwischen Benutzern
-- Passwort ändern
-
----
-
-## Plugin-System
-
-- **Tier-1**: Builtin-Plugins im Backend (Mail, Web/HTML)
-- **Tier-2**: Externe Python-Plugins (`manifest.json` + `connector.py`)
-- Installiertes Plugin: **MongoDB Connector**
-- Neue Plugins per Datei-Upload installierbar
+- **Warn-Engine**: Regeln auf Kennzahlen und Listen, Schweregrade, Fakten je
+  Warnung, Drilldown; nächtlicher Lauf mit Vergleich zum Vortag
+  („neu seit gestern"), Läufe werden archiviert
+- **Zentrale Schwellwerte**: einmal gepflegt, von allen Regeln und Cockpits genutzt
+- **Kostenstruktur**: 25 vorbereitete Fixkostenarten plus eigene, jeweils mit
+  „gültig ab"-Zeitleiste; fließt als Parameter in die Auswertungen
+- **Unternehmensziele** hinterlegen
+- **Business-Insights-Node**: fertige Analysen (Umsatz, Länder, Top-Kunden,
+  Lagerbestand) mit semantischer Feldzuordnung und Voreinstellungen
 
 ---
 
-## Technischer Stack
+## 8. Künstliche Intelligenz
+
+### Anbieter
+- **Ollama**, lokal im eigenen Container – keine Daten verlassen den Server
+- **Datenmonster AI** – gehosteter Gateway über monstersuite mit Guthaben (Credits),
+  Verbrauchsanzeige, Paketkauf und Rechnung
+- Anbieter ist pro Oberfläche wählbar; getrennte Modelle für Code und Fließtext;
+  Modelle lassen sich vorwärmen, damit der erste Aufruf nicht ins Timeout läuft
+- Modellverwaltung im UI: installieren, wechseln, Download-Fortschritt
+
+### Wo die KI hilft
+- SQL erklären und generieren, Python erzeugen, Fehler erklären
+- Ausdruck für den Ausdrucks-Node vorschlagen
+- Feldverknüpfungen vorschlagen (Smart Mapping), ganze Nodes generieren
+- Datasets und Tabellen zu einer Beschreibung vorschlagen
+- Daten zusammenfassen und bewerten (Dashboard-Analyse, Lagebericht)
+- Handlungsempfehlung zu einer einzelnen Zeile (Kundenrückgang, Ladenhüter, Winback)
+- Artikelbeschreibungen vorschlagen
+- Schema-Katalog: Tabellen und Spalten beschreiben, Beziehungen vorschlagen
+- Schwebender KI-Assistent als Chat über die ganze Anwendung
+
+### KI-Gedächtnis
+- Wissensdatenbank mit Fachregeln (z. B. JTL-Besonderheiten)
+- Lösungsarchiv und Korrekturen, die in künftige Antworten einfließen
+- Kontextauswahl nach Stichwörtern und Token-Budget statt „alles mitschicken"
+- Antwort-Cache mit Trefferquote, Vorschau des tatsächlich gesendeten Kontexts
+
+---
+
+## 9. Schema-Katalog
+
+- Datenbankschema einlesen und dauerhaft dokumentieren
+- Tabellen und Spalten beschreiben (manuell oder per KI)
+- Beziehungen pflegen, **aus Schlüsseln ableiten** (Fremdschlüssel plus
+  Namensgleichheit mit Primärschlüsseln), Massenübernahme
+- Katalog exportieren und importieren
+
+---
+
+## 10. API Studio
+
+Ein vollwertiger REST-Arbeitsplatz in der Anwendung:
+- Sammlungen und Umgebungen (Variablen, Geheimnisse maskiert)
+- Anfragen senden, Verlauf mit Wiederholung
+- **Analyse und Fehler-Debugger** für fehlgeschlagene Aufrufe
+- Variablen vorschlagen lassen, Sammlung befragen („was macht dieser Endpunkt?")
+- **OpenAPI-Import**: Spezifikation einlesen, Sammlung erzeugen
+- **Verkettung**: mehrere Aufrufe hintereinander, Vorschau und Anlegen
+- **Integration erstellen**: aus einem Aufruf direkt Dataset, Mapping und
+  Pipeline generieren
+
+---
+
+## 11. Vorlagen (Templates) und Store
+
+Fertige Lösungspakete, die Mappings, Formulare, Pipelines und Verbindungen in
+einem Rutsch installieren. Beim Installieren wird abgeglichen statt doppelt
+angelegt.
+
+**Ausgelieferte JTL-Wawi-Vorlagen**
+| Vorlage | Inhalt |
+|---|---|
+| **GF-Cockpit** | Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Einkauf & Verbindlichkeiten, Offene Posten, Retouren, Mitarbeiter, Ausblick (Hochrechnung, Churn), Warnungen – 67 Mappings |
+| **Vertriebs-Cockpit** | Auftragseingang, Auftragsbestand, Angebote mit Nachfassliste, Kunden, Artikel, Mitarbeiter – 31 Mappings |
+| **Einkaufs-Cockpit** | Bestellvolumen, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, Verbindlichkeiten, EK-Preisentwicklung – 21 Mappings |
+| **Lager-Cockpit** | Lagerwert zum Stichtag (bewertet zum historischen EK), Disposition, Umschlag und Reichweite, Preisverlauf EK gegen VK – 26 Mappings |
+| **Versand-Cockpit** | Sendungsaufkommen je Versandart, Durchlaufzeit, Tracking-Qualität, Rückstand – 11 Mappings |
+| **Health-Check** | Artikel- und Kundenstammdaten auf Lücken prüfen: EAN, Gewicht, EK, VK unter EK, Warentarifnummer, Herkunftsland, Dubletten – 26 Mappings |
+| **Intrastat** | Ausfuhr und Einfuhr, eSTATISTIK.core und Destatis-CSV, Zeitraum-Formular, Monats-Pipelines |
+
+Dazu: eigene Vorlagen erstellen und hochladen, In-App-Store mit den über
+monstersuite gekauften Paketen.
+
+---
+
+## 12. Fachmodule
+
+### Intrastat
+Ausfuhr- und Einfuhrmeldung, Ausgabe als IDEV-Datei oder Destatis-CSV,
+Ausschlussliste für Artikel, die nicht in die Statistik gehören,
+Datenqualitätsprüfung mit Herkunftsland-Ersatzwert.
+
+### Eingangsrechnungen (E-Rechnung)
+ZUGFeRD/Factur-X (CII) und XRechnung (UBL) einlesen, Positionen den
+Bestellungen zuordnen, Artikelsuche, Vorschau vor dem Schreiben, Übernahme in
+die Wawi.
+
+### Stammdaten-Rückschreiben
+Änderungen direkt in die Warenwirtschaft schreiben, Kollisionsschutz über
+Zeilenversion, Trockenlauf mit Plan-Vorschau vor der Ausführung.
+
+### Produktrecherche
+Herstellerseiten auswerten (robots.txt wird beachtet) und EAN, Warennummer,
+Herkunftsland und Gewicht vorschlagen – jeweils mit **Sicherheitsgrad**
+(gesichert / prüfen / ungesichert) statt blinder Übernahme.
+
+---
+
+## 13. Plugins
+
+- Ein einheitlicher Katalog mit „Aktiv" und „Verfügbar"; ob ein Plugin im
+  Backend eingebaut oder extern ist, bleibt Interna
+- Eingebaut: Mail-Connector, Web/HTML-Connector
+- Extern (`manifest.json` + `connector.py`): MongoDB, eStatistik-Core, Faker
+- Installation per Datei-Upload; lizenzgeprüfte Auslieferung über monstersuite
+
+---
+
+## 14. Benutzer, Projekte, Lizenz
+
+- **Mehrmandantenfähig**: Projekte kapseln Datasets, Mappings, Formulare
+- Benutzerverwaltung, Administrator- und Portal-Rolle, Projektfreigabe,
+  Passwortänderung
+- **Lizenzierung** über monstersuite: Aktivierung per Schlüssel, tägliche
+  Neuvalidierung, 14 Tage Kulanzzeit bei Serverausfall, danach Rückfall auf den
+  kostenlosen Plan. Freischaltbare Funktionsbereiche: unbegrenzte Projekte,
+  DB-Schreiben, Pipelines & Scheduler, FTP/SFTP, REST-Quellen, Mail, KI-Assistent,
+  KI-Wissensdatenbank, Schema-Katalog, Formular-Builder & Portal, erweiterte
+  Plugins, mehrere Benutzer, erweitertes Monitoring
+
+---
+
+## 15. Betrieb
+
+- **Monitoring**: CPU, Arbeitsspeicher, Plattenplatz, Datenbankgröße, Laufzeit
+- **Systemprotokoll** mit Projektspalte, Ausführungshistorie
+- **Update-Funktion in der Anwendung**: Version prüfen, Änderungsliste ansehen,
+  installieren – Auslieferung über GHCR und CI/CD
+- Onboarding: Erste-Schritte-Checkliste und Leerzustände mit Hinweisen
+
+---
+
+## 16. Technischer Unterbau
 
 | Schicht | Technologie |
 |---|---|
-| Backend | FastAPI + SQLAlchemy + SQLite |
-| Frontend | React + Tailwind CSS |
-| KI | Ollama (lokal), qwen2.5-coder:3b empfohlen |
-| JOINs | pandas (in-process) |
-| Scheduling | APScheduler |
-| Container | Docker Compose |
-| Proxy | nginx mit SSE-Support |
+| Backend | FastAPI, SQLAlchemy, SQLite |
+| Frontend | React, Tailwind CSS |
+| Verarbeitung | pandas (Joins und Transformationen im Prozess) |
+| KI | Ollama lokal oder Datenmonster-AI-Gateway (OpenAI-kompatibel) |
+| Zeitsteuerung | APScheduler |
+| PDF | xhtml2pdf und matplotlib |
+| Betrieb | Docker Compose, nginx mit SSE-Unterstützung |
