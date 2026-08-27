@@ -12,6 +12,7 @@ import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../c
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import { formIcon } from "../utils/formIcon";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -307,7 +308,7 @@ export default function PortalRunner() {
       {/* ── Header ── */}
       <header style={{ position: "sticky", top: 0, zIndex: 10,
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px",
+        <div style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto", padding: "12px 24px",
           display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button onClick={() => navigate("/portal")}
@@ -317,7 +318,7 @@ export default function PortalRunner() {
             </button>
             <span style={{ color: S.border }}>|</span>
             <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>
-              {form?.icon && <span style={{ marginRight: 6 }}>{form.icon}</span>}
+              {form?.icon && <span style={{ marginRight: 6 }}>{formIcon(form.icon)}</span>}
               {form?.name || slug}
             </span>
           </div>
@@ -348,7 +349,7 @@ export default function PortalRunner() {
       </header>
 
       {/* ── Main ── (Dashboards mit Widgets breiter) */}
-      <main style={{ maxWidth: widgets.length ? 1200 : 1100, margin: "0 auto", padding: "36px 24px" }}>
+      <main style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto", padding: "36px 24px" }}>
 
         {/* Load error */}
         {loadErr && (

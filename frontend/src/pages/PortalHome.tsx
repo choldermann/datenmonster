@@ -4,6 +4,7 @@ import { Play, LogOut, LayoutGrid } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import { formIcon } from "../utils/formIcon";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -88,7 +89,7 @@ export default function PortalHome() {
                     e.currentTarget.style.borderColor = S.border;
                     e.currentTarget.style.boxShadow = "none";
                   }}>
-                  <div style={{ fontSize: 28, marginBottom: 10 }}>{f.icon || "📊"}</div>
+                  <div style={{ fontSize: 28, marginBottom: 10 }}>{formIcon(f.icon)}</div>
                   <h3 style={{ fontSize: 14, fontWeight: 700, color: S.textBright, margin: "0 0 6px" }}>
                     {f.name}
                   </h3>
