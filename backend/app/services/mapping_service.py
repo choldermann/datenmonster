@@ -81,6 +81,11 @@ class MappingContext:
             lookup_nodes    = getattr(mapping, "lookup_nodes", None) or [],
             calc_nodes      = getattr(mapping, "calc_nodes",   None) or [],
             switch_nodes    = getattr(mapping, "switch_nodes",  None) or [],
+            # sort_nodes und ai_nodes fehlten hier: sie sind im Mapping gespeichert,
+            # wurden aber von keinem Lauf über diesen Kontext ausgeführt – also weder
+            # aus Formularen noch aus Pipeline, Zeitplan oder Export.
+            sort_nodes      = getattr(mapping, "sort_nodes",     None) or [],
+            ai_nodes        = getattr(mapping, "ai_nodes",       None) or [],
             python_nodes    = getattr(mapping, "python_nodes",   None) or [],
             expr_nodes      = getattr(mapping, "expr_nodes",     None) or [],
             quality_nodes   = getattr(mapping, "quality_nodes",  None) or [],
