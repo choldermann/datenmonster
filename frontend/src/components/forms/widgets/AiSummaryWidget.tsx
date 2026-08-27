@@ -56,6 +56,24 @@ function buildAssessment(results) {
   const one = id => rowsOf(id)[0] || null;
   const out = [];
 
+  // Der Unternehmensmonitor liefert dieselben Spalten wie die Cockpit-Übersicht,
+  // nur unter eigener Action-ID. Zusätzlich bewertet er seine offenen Warnungen –
+  // das ist dort die eigentliche Aussage.
+  const mon = one("act_monitor_kpi");
+  if (mon) {
+    const p = pctNum(mon.Umsatz, mon.UmsatzVJ);
+    out.push({ bereich: "Ertragslage", good: (p == null || p >= 0),
+      kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, DB II-Marge ${deNum(mon.DB2Marge)} %` });
+  }
+  const warn = rowsOf("act_monitor_alerts");
+  if (warn.length) {
+    const krit = warn.filter(w => w.severity === "kritisch").length;
+    out.push({ bereich: "Offene Warnungen", good: krit === 0,
+      kommentar: krit
+        ? `${krit} kritisch von ${warn.length} offenen Warnungen`
+        : `${warn.length} offene Warnungen, keine davon kritisch` });
+  }
+
   const ov = one("act_overview_kpi");
   if (ov) {
     const p = pctNum(ov.Umsatz, ov.UmsatzVJ);
@@ -375,6 +393,30 @@ function buildSectionText(kind, rows, deep = false) {
       + (ex ? ` Beispiele: ${ex}.` : "");
   }
 
+  if (kind === "alerts") {
+    // Die Warnungen sind beim Unternehmensmonitor die eigentliche Aussage. Sie
+    // kommen fertig ausgewertet aus den Prüfregeln – die KI ordnet sie nur ein,
+    // sie rechnet nichts nach. Nach Dringlichkeit gruppiert, damit das Modell
+    // nicht Nebensächliches nach vorne stellt.
+    const rang = { kritisch: 0, warnung: 1, hinweis: 2, info: 3, positiv: 4 };
+    const sortiert = [...rows].sort(
+      (a, b) => (rang[a.severity] ?? 9) - (rang[b.severity] ?? 9));
+    const zaehler = sortiert.reduce((acc, r) => {
+      acc[r.severity] = (acc[r.severity] || 0) + 1; return acc;
+    }, {});
+    const kopf = Object.entries(zaehler)
+      .map(([k, n]) => `${n} ${k}`).join(", ");
+    const zeilen = sortiert.slice(0, deep ? 20 : 6).map(r => {
+      const teile = [`[${r.severity}] ${r.titel}`];
+      if (r.kategorie) teile.push(`Bereich ${r.kategorie}`);
+      const f = (r.fakten || []).slice(0, deep ? 3 : 1)
+        .map(x => `${x.label}: ${x.wert}${x.einheit ? " " + x.einheit : ""}`).join("; ");
+      if (f) teile.push(f);
+      return "- " + teile.join(" | ");
+    });
+    return `${rows.length} offene Warnungen (${kopf}).\n` + zeilen.join("\n");
+  }
+
   if (kind === "ladenhueter") {
     const sum = rows.reduce((a, r) => a + (parseFloat(r.Kapitalbindung) || 0), 0);
     const ex = rows.slice(0, EX).map(r => {
@@ -666,10 +708,16 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
       .filter(s => s.text);
   }, [cfg.extra_sections, results, deep]);
 
-  // Bewertungstabelle (nur im Report-Layout) – rein aus den Daten, unabhängig vom LLM.
+  // Bewertungstabelle – rein aus den Daten, unabhängig vom LLM.
+  //
+  // Sie hing bisher am Report-Layout. Das ist zweierlei: report_layout schreibt dem
+  // Modell zusätzlich die feste Blockfolge des GF-Cockpits vor (Kunden, Liquidität,
+  // Einkauf …). Ein Dashboard, das diese Bereiche gar nicht liefert, bekam damit
+  // erfundene Blöcke. `assessment` lässt sich deshalb getrennt einschalten.
+  const zeigeBewertung = cfg.assessment ?? cfg.report_layout;
   const assessment = useMemo(
-    () => (cfg.report_layout ? buildAssessment(results) : []),
-    [cfg.report_layout, results],
+    () => (zeigeBewertung ? buildAssessment(results) : []),
+    [zeigeBewertung, results],
   );
 
   // Nur (neu) generieren, wenn sich die zugrunde liegenden Daten (oder der Detailgrad) ändern.
@@ -802,7 +850,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
           </p>
         )
       ) : (
-        cfg.report_layout && assessment.length ? (
+        zeigeBewertung && assessment.length ? (
           <AssessmentTable rows={assessment} />
         ) : (
           <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>

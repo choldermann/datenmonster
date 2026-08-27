@@ -135,6 +135,7 @@ def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None)
             futs = {ex.submit(_run_one_action, a, params, _cap(a)): a["id"] for a in actions}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
+
     return results
 
 
@@ -705,6 +706,8 @@ _ASSESSMENT_ACTION_IDS = {
     "act_vs_kpi", "act_vs_dauer_kpi", "act_vs_tracking_kpi",
     # Stammdaten-Health-Check
     "act_hc_kpi", "act_hc_summary", "act_hc_luecken",
+    # Unternehmensmonitor
+    "act_monitor_kpi", "act_monitor_alerts",
 }
 
 
@@ -719,6 +722,20 @@ def _assessment_rows(results: dict) -> list:
         return rs[0] if rs else None
 
     out = []
+    # Der Unternehmensmonitor liefert dieselben Spalten wie die Cockpit-Übersicht,
+    # nur unter eigener Action-ID; dazu die Bewertung seiner offenen Warnungen.
+    mon = one("act_monitor_kpi")
+    if mon:
+        p = _apct(mon.get("Umsatz"), mon.get("UmsatzVJ"))
+        out.append(("Ertragslage", p is None or p >= 0,
+                    f"Umsatz {_spct(p)} ggü. Vorjahr, DB II-Marge {_pctval(mon.get('DB2Marge'))}"))
+    warn = rows_of("act_monitor_alerts")
+    if warn:
+        krit = sum(1 for w in warn if w.get("severity") == "kritisch")
+        out.append(("Offene Warnungen", krit == 0,
+                    f"{krit} kritisch von {len(warn)} offenen Warnungen" if krit
+                    else f"{len(warn)} offene Warnungen, keine davon kritisch"))
+
     ov = one("act_overview_kpi")
     if ov:
         p = _apct(ov.get("Umsatz"), ov.get("UmsatzVJ"))
@@ -1023,13 +1040,17 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
                  "action_ids": [a.get("id") for a in schema.get("actions", [])]}]
 
     ai_widget = next((w for w in schema.get("widgets", []) if w.get("type") == "ai_summary"), None)
-    is_report = bool((ai_widget or {}).get("config", {}).get("report_layout"))
+    _ai_cfg = (ai_widget or {}).get("config", {})
+    is_report = bool(_ai_cfg.get("report_layout"))
+    # Die Bewertungstabelle ist reine Datenauswertung und hängt nicht daran,
+    # ob dem Modell die Blockfolge des GF-Cockpits vorgegeben wird.
+    hat_bewertung = bool(_ai_cfg.get("assessment", _ai_cfg.get("report_layout")))
 
     # Abschnittsauswahl auswerten: Reiter filtern, KI-Summary/Bewertung ein-/ausschalten
     # und daraus die wirklich benötigten Mapping-Actions ableiten.
     sel = set(sections) if sections is not None else None
     want_summary = SECTION_SUMMARY in sel if sel is not None else True
-    want_assessment = (SECTION_ASSESSMENT in sel if sel is not None else True) and is_report
+    want_assessment = (SECTION_ASSESSMENT in sel if sel is not None else True) and hat_bewertung
     if sel is not None:
         tabs = [t for t in tabs if t.get("id") in sel]
 
