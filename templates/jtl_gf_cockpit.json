@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.5",
+  "version": "2.6",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -45,7 +45,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ,\n    Warenumsatz, Wareneinsatz, Versandergebnis,\n    Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Warenumsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto - DBpos END), 0) AS DECIMAL(18,2)) AS Wareneinsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 2 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Versandergebnis,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
+          "sql": "SELECT\n    Umsatz, UmsatzVJ, Rohertrag, RohertragVJ, DB2, DB2VJ,\n    Warenumsatz, Wareneinsatz, Versandergebnis,\n    Rechnungen, RechnungenVJ, AktiveKunden, AktiveKundenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgAuftrag,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgAuftragVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * Rohertrag / Umsatz END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * RohertragVJ / UmsatzVJ END AS DECIMAL(18,2)) AS MargeVJ,\n    CAST(CASE WHEN Umsatz > 0 THEN 100.0 * DB2 / Umsatz END AS DECIMAL(18,2)) AS DB2Marge,\n    CAST(CASE WHEN UmsatzVJ > 0 THEN 100.0 * DB2VJ / UmsatzVJ END AS DECIMAL(18,2)) AS DB2MargeVJ,\n    (SELECT CAST(ISNULL(SUM(SP.fAnzahl * SP.fVkNetto), 0) AS DECIMAL(18,2))\n     FROM Rechnung.vRechnung SR   /* storno-absicht: hier sind Stornos der Zweck */\n     JOIN Rechnung.tRechnungPosition SP ON SP.kRechnung = SR.kRechnung\n     WHERE SR.nStorno = 1\n       AND (:plattform_empty = 1 OR SR.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n       AND SR.dErstellt >= :von AND SR.dErstellt < DATEADD(DAY, 1, :bis)) AS StornoWert,\n    (SELECT CAST(ISNULL(SUM(SP.fAnzahl * SP.fVkNetto), 0) AS DECIMAL(18,2))\n     FROM Rechnung.vRechnung SR   /* storno-absicht */\n     JOIN Rechnung.tRechnungPosition SP ON SP.kRechnung = SR.kRechnung\n     WHERE SR.nStorno = 1\n       AND (:plattform_empty = 1 OR SR.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n       AND SR.dErstellt >= DATEADD(YEAR, -1, :von)\n       AND SR.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))) AS StornoWertVJ,\n    (SELECT COUNT(*)\n     FROM Rechnung.vRechnung SR   /* storno-absicht */\n     WHERE SR.nStorno = 1\n       AND (:plattform_empty = 1 OR SR.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n       AND SR.dErstellt >= :von AND SR.dErstellt < DATEADD(DAY, 1, :bis)) AS StornoAnzahl\nFROM (\n    SELECT\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Rohertrag,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType = 1 THEN DBpos END), 0) AS DECIMAL(18,2)) AS RohertragVJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2,\n        CAST(ISNULL(SUM(CASE WHEN vj = 1 AND nType IN (1,2) THEN DBpos END), 0) AS DECIMAL(18,2)) AS DB2VJ,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto END), 0) AS DECIMAL(18,2)) AS Warenumsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 1 THEN Netto - DBpos END), 0) AS DECIMAL(18,2)) AS Wareneinsatz,\n        CAST(ISNULL(SUM(CASE WHEN cur = 1 AND nType = 2 THEN DBpos END), 0) AS DECIMAL(18,2)) AS Versandergebnis,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kRechnung END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN vj = 1 THEN kKunde END) AS AktiveKundenVJ\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType,\n            POS.fAnzahl * POS.fVkNetto AS Netto,\n            POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    ) p\n) s",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -277,6 +277,36 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "DB2MargeVJ"
+              }
+            },
+            {
+              "source_field": "StornoWert",
+              "target_field": "StornoWert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StornoWert"
+              }
+            },
+            {
+              "source_field": "StornoWertVJ",
+              "target_field": "StornoWertVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StornoWertVJ"
+              }
+            },
+            {
+              "source_field": "StornoAnzahl",
+              "target_field": "StornoAnzahl",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "StornoAnzahl"
               }
             }
           ]
@@ -8235,6 +8265,30 @@
               "compare_column": "RechnungenVJ",
               "compare_label": "Vorjahr",
               "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_storno",
+            "type": "kpi",
+            "label": "davon storniert",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 4,
+              "column": "StornoWert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "StornoWertVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true,
+              "breakdown": [
+                {
+                  "label": "Stornierte Rechnungen",
+                  "column": "StornoAnzahl"
+                }
+              ],
+              "hint": "Bereits aus dem Umsatz herausgerechnet. JTLs Statistik zeigt den Umsatz einschließlich dieser Belege – Cockpit-Umsatz plus dieser Betrag ergibt die JTL-Zahl."
             }
           },
           {

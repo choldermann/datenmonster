@@ -38,6 +38,10 @@ export default function KpiWidget({ widget, result }) {
     // { label, column, prefix?, suffix?, decimals? } – prefix/suffix/decimals fallen
     // auf die Widget-Werte zurück.
     breakdown,
+    // Erklärender Satz zur Kennzahl. Als Tooltip an der Beschriftung – manche Zahlen
+    // sind ohne ihre Definition nicht deutbar (»davon storniert« etwa erklärt die
+    // Differenz zur JTL-Statistik, die Stornos einschließt).
+    hint,
   } = cfg;
   const label = widget.label || column || "KPI";
 
@@ -74,8 +78,12 @@ export default function KpiWidget({ widget, result }) {
         letterSpacing: "-0.02em", lineHeight: 1.1, marginBottom: 8 }}>
         {text}
       </div>
-      <div style={{ fontSize: 12, fontWeight: 600, color: S.textDim,
-        textTransform: "uppercase", letterSpacing: "0.08em" }}>
+      <div title={hint || undefined}
+        style={{ fontSize: 12, fontWeight: 600, color: S.textDim,
+          textTransform: "uppercase", letterSpacing: "0.08em",
+          cursor: hint ? "help" : undefined,
+          borderBottom: hint ? "1px dotted var(--border)" : undefined,
+          display: "inline-block" }}>
         {label}
       </div>
       {delta && (

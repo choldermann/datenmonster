@@ -18,6 +18,15 @@ import re, sys
 FILTER = "ISNULL(nStorno,0) = 0"
 KEYWORDS = {"WHERE","JOIN","LEFT","RIGHT","INNER","OUTER","CROSS","GROUP","ORDER",
             "UNION","ON","HAVING","AS","SELECT","FROM","WITH"}
+# Ausnahme für Abfragen, die stornierte Belege ABSICHTLICH auswerten (die Kachel
+# "davon storniert"). Ohne diese Marke würde der Patch sie stumm auf 0 setzen –
+# und niemand käme darauf, warum die Kachel leer bleibt.
+ABSICHT = "storno-absicht"
+_UMFELD = 140          # so weit hinter der Tabelle wird nach der Marke gesucht
+
+
+def _gewollt(s: str, ende: int) -> bool:
+    return ABSICHT in s[ende:ende + _UMFELD]
 
 def patch_sql(s: str):
     """Gibt (neues_sql, anzahl_aenderungen) zurück. Idempotent."""
@@ -35,6 +44,8 @@ def patch_sql(s: str):
         rest = s[m.end():m.end() + 120]
         if FILTER in rest or re.match(r"(?i)\s*ISNULL\(nStorno", rest):
             return m.group(0)                      # schon gefiltert
+        if _gewollt(s, m.end()):
+            return m.group(0)
         n += 1
         return f"{m.group(1)} Rechnung.vRechnung WHERE {FILTER} AND "
     s = re.sub(r"(?i)\b(FROM)\s+Rechnung\.vRechnung\s+WHERE\s+", a, s)
@@ -42,6 +53,8 @@ def patch_sql(s: str):
     # ── B: FROM/JOIN Rechnung.vRechnung <alias>
     def b(m):
         nonlocal n
+        if _gewollt(s, m.end()):
+            return m.group(0)
         alias = m.group(2)
         if alias.upper() in KEYWORDS:
             raise SystemExit(f"UNERWARTET: kein Alias nach Rechnung.vRechnung → {m.group(0)!r}")
@@ -57,6 +70,8 @@ def patch_sql(s: str):
     for m in re.finditer(r"(?i)\b(?:FROM|JOIN)\s+Rechnung\.vRechnung\b", s):
         danach = s[m.end():m.end() + 40]
         if re.match(r"(?i)\s+WHERE\s+ISNULL\(nStorno,0\)\s*=\s*0", danach):
+            continue
+        if _gewollt(s, m.end()):
             continue
         raise SystemExit(f"UNBEHANDELT: …{s[max(0,m.start()-70):m.end()+40]}…")
     return s, n
