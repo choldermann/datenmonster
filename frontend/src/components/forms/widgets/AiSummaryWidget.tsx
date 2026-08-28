@@ -441,9 +441,14 @@ function buildSectionText(kind, rows, deep = false) {
 const MARKER_RE = /\{([+-])([\s\S]*?)\1\}/g;
 const GUT = "#3f9d5a", SCHLECHT = "#c9524a";
 
-/** Marker, die halb geschrieben wurden, dürfen nicht als Text stehen bleiben. */
+/** Marker, die halb geschrieben wurden, dürfen nicht als Text stehen bleiben.
+ *  Auch vorzeichenlose Klammern ({3.414}) kommen vor – das Modell übernimmt dann die
+ *  Klammerform, ohne sich für eine Richtung zu entscheiden. Angezeigt werden soll in
+ *  beiden Fällen nur der Wert, nie die Klammer. */
 function markerBereinigen(s) {
-  return String(s).replace(/\{[+-]|[+-]\}/g, "");
+  return String(s)
+    .replace(/\{[+-]|[+-]\}/g, "")
+    .replace(/\{([^{}]{1,60}?)\}/g, "$1");
 }
 
 /** **fett** im (bereits marker-freien) Textstück. */

@@ -587,6 +587,10 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
 # geraten – dann bleiben nur die Klammern weg.
 _MARKER_RE = re.compile(r"\{([+-])([\s\S]*?)\1\}")
 _MARKER_REST_RE = re.compile(r"\{[+-]|[+-]\}")
+# Vorzeichenlose Klammern ({3.414}) schreibt das Modell, wenn es die Klammerform
+# übernimmt, sich aber für keine Richtung entscheidet. Der Wert soll trotzdem ohne
+# Klammer im Report stehen. Spiegelbild von markerBereinigen() im Widget.
+_KLAMMER_REST_RE = re.compile(r"\{([^{}]{1,60}?)\}")
 GUT_FARBE, SCHLECHT_FARBE = "#3f8f45", "#c0392b"
 
 
@@ -595,7 +599,8 @@ def _fett_html(s: str) -> str:
     for p in re.split(r"(\*\*[^*]+\*\*)", s):
         m = re.match(r"^\*\*([^*]+)\*\*$", p)
         out.append(f"<strong>{_esc(m.group(1))}</strong>"
-                   if m else _esc(_MARKER_REST_RE.sub("", p)))
+                   if m else _esc(_KLAMMER_REST_RE.sub(
+                       r"\1", _MARKER_REST_RE.sub("", p))))
     return "".join(out)
 
 

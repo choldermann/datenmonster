@@ -500,14 +500,26 @@ async def summarize_data(
     # Markier-Regel nur für den Gateway: kleine lokale Modelle schreiben die Klammern
     # unsauber ({++6,6 %} statt {++6,6 %+}), dann bliebe die Farbe ohnehin aus – der
     # Prompt wäre nur länger und lenkte von der eigentlichen Aufgabe ab.
+    # Die Markierung ist eine FARBE, kein Rechenzeichen. Das muss ausdrücklich dastehen:
+    # aus der Beispielzeile »{++6,6 %+}« (wo das Plus zum gelieferten Wert gehört) hat das
+    # Modell sonst geschlossen, das Vorzeichen gehöre generell in die Marke – und schrieb
+    # »{--712.803,75 €-}« für einen ganz normalen Umsatz. Angezeigt wurde daraus
+    # »-712.803,75 €«: ein erfundenes Minus an einer positiven Zahl, quer durch die Analyse.
     _MARKIER = ("ZAHLEN BEWERTEN: Hebe die KENNZAHL hervor, nicht deine Meinung dazu. Umschließe dafür "
                 "den Zahlenwert (mit Einheit und, wenn vorhanden, direkt davorstehendem Bezugswort) "
                 "mit {+ und +}, wenn er erfreulich ist, bzw. mit {- und -}, wenn er kritisch ist. "
+                "Die Markierung ist NUR eine Farbe – sie verändert die Zahl nicht. Übernimm den Wert "
+                "exakt so, wie er oben steht, und setze ihm KEIN Vorzeichen voran, das oben nicht "
+                "dasteht: aus einem Umsatz von 712.803,75 € wird {-712.803,75 €-}, niemals "
+                "{--712.803,75 €-} – das wäre eine erfundene Zahl. Ein Minus gehört nur dann zwischen "
+                "die Klammern, wenn es oben bereits am Wert klebt (etwa bei -6,4 %). "
                 "Beispiel: 'Der Umsatz stieg um {++6,6 %+} auf {+2.984.527 €+}, die Retourenquote "
                 "verschlechterte sich auf {-0,4 %-}.' Schreibe die Klammern GENAU so, ohne Leerzeichen "
                 "und ohne Auslassungspunkte dazwischen. Markiere nie ganze Sätze und hänge keine "
                 "Wertungsfloskeln wie 'dies ist erfreulich' an – die Farbe sagt das bereits. Zahlen ohne "
-                "klare Richtung bleiben unmarkiert. Ein Plus ist nicht automatisch gut: steigende "
+                "klare Richtung bleiben unmarkiert. Die Farbe richtet sich nach der ENTWICKLUNG, nicht "
+                "nach dem Vorzeichen des Betrags: ein gesunkener Umsatz ist kritisch, auch wenn der "
+                "Betrag selbst positiv ist. Umgekehrt ist ein Plus nicht automatisch gut – steigende "
                 "Retouren, Ladenhüter, Verzug oder Verbindlichkeiten sind kritisch. "
                 ) if getattr(svc, "is_gateway", False) else ""
 
