@@ -108,3 +108,8 @@ doku/heute.md
 
 # Datensicherungen (enthalten Geheimnisse)
 backups/
+
+# Ablageort von backend/template_exportieren.py. Im Container ist /app der
+# gemountete backend-Ordner – jeder Export landet sonst als unverfolgte Datei
+# mitten im Repo, obwohl die gepflegte Fassung unter templates/ liegt.
+backend/templates_export/
