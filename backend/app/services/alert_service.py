@@ -202,6 +202,28 @@ def _eval_kpi(rows: list, cond: dict, thresholds: dict):
     return (bool(op(left, right)) if op else False), left
 
 
+def _wert_einheit(rule) -> str:
+    """Einheit der großen Zahl rechts in der Warnungszeile.
+
+    Sie stand fest auf „€", obwohl die Zahl bei jeder zweiten Regel gar kein Geld
+    ist: „14 offene Aufträge mit überschrittenem Liefertermin" bekam ein „14 €"
+    daneben. Regeln können die Einheit jetzt in der Bedingung angeben
+    (`value_unit`), etwa "" für Stückzahlen oder "%" für Quoten.
+
+    Ohne Angabe gilt: Summiert die Regel eine Wertspalte (Modus count/rows), ist
+    es fast immer Geld – das bleibt der Vorgabewert, damit ältere Installationen
+    ohne gepflegte Einheit weiter richtig anzeigen. Eine Kennzahl (Modus kpi)
+    bekommt dagegen KEINE Einheit geraten; dort ist die Zahl mal Umsatz, mal
+    Anzahl, mal Prozent, und eine falsche Einheit ist schlimmer als keine.
+    """
+    cond = rule.condition if isinstance(rule.condition, dict) else {}
+    if "value_unit" in cond:
+        return str(cond.get("value_unit") or "")
+    if cond.get("mode") in ("count", "rows") and cond.get("value_column"):
+        return "€"
+    return ""
+
+
 def _severity_for(rule, metrics: dict) -> str:
     """Eskalationsstufen: erster Treffer gewinnt, sonst die Standard-Severity."""
     for lvl in (rule.severity_levels or []):
@@ -386,6 +408,7 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
         anzahl = res.get("anzahl") or 0
         wert = res.get("wert")
         summe = res.get("summe")
+        einheit = _wert_einheit(rule)
         first_row = (res.get("rows") or [{}])[0] if res.get("rows") else {}
         metrics = {"anzahl": anzahl, "wert": wert, "summe": summe}
         werte_fuer_text = {
@@ -416,6 +439,7 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             "Anzahl":     anzahl,
             "wert":       wert,
             "summe":      summe,
+            "einheit":    einheit,
             "gedeckelt":  bool(res.get("gedeckelt")),
             "fakten":     _facts(rule, first_row, metrics),
             "beispiele":  res.get("rows") or [],

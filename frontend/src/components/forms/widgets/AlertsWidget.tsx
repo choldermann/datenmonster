@@ -136,6 +136,10 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
         const canClick = !!(onTaskClick && dd?.mapping_id);
         const fakten = cfg.hide_facts ? [] : (r.fakten || []);
         const wert = de(r.summe ?? r.wert, 0);
+        // Die Einheit kommt aus der Prüfregel. Früher stand hier fest „€" – bei
+        // Regeln, deren Kopfzahl eine Stückzahl ist, las sich das als „14 €"
+        // neben „14 offene Aufträge".
+        const einheit = r.einheit ?? "€";
         return (
           <div key={r.rule_key || i}
             onClick={canClick ? () => onTaskClick(r, {
@@ -183,7 +187,7 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
 
             {wert !== null && (
               <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-bright)",
-                whiteSpace: "nowrap", marginTop: 2 }}>{wert} €</span>
+                whiteSpace: "nowrap", marginTop: 2 }}>{einheit ? `${wert} ${einheit}` : wert}</span>
             )}
             {canClick && <ChevronRight size={15} style={{ color: "var(--text-dim)",
               flexShrink: 0, marginTop: 3 }} />}
