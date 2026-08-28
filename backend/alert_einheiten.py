@@ -156,8 +156,48 @@ def template_patchen(c, anwenden: bool) -> int:
     return n
 
 
+def datei_patchen(pfad: str, anwenden: bool) -> int:
+    """Dieselben Einheiten in einer Template-DATEI im Repo.
+
+    Nötig, weil die Datei eines Cockpits an anderer Stelle weiter sein kann als
+    die Installation (siehe backend/template_abgleich.py): dort wäre ein
+    Überschreiben aus der Datenbank ein Rückschritt.
+    """
+    with open(pfad, encoding="utf-8") as f:
+        t = json.load(f)
+    n = 0
+    for r in (t.get("alert_rules") or []):
+        key = r.get("rule_key")
+        if key not in EINHEIT:
+            continue
+        d = r.get("condition")
+        d = json.loads(d) if isinstance(d, str) else (d or {})
+        txt = TEXTE.get(key) or {}
+        neu_fakten, fakten_geaendert = fakten_patchen(r.get("facts"))
+        if (d.get("value_unit") == EINHEIT[key] and not fakten_geaendert
+                and all(r.get(k) == v for k, v in txt.items())):
+            continue
+        d["value_unit"] = EINHEIT[key]
+        r["condition"] = d
+        if fakten_geaendert:
+            r["facts"] = neu_fakten
+        r.update(txt)
+        n += 1
+    print(f"{pfad}: {n} Regeln")
+    if n and anwenden:
+        with open(pfad, "w", encoding="utf-8") as f:
+            json.dump(t, f, ensure_ascii=False, indent=2); f.write("\n")
+        print("geschrieben.")
+    elif n:
+        print("(Trockenlauf – mit --anwenden schreiben)")
+    return n
+
+
 if __name__ == "__main__":
     anwenden = "--anwenden" in sys.argv
+    if "--template" in sys.argv:
+        datei_patchen(sys.argv[sys.argv.index("--template") + 1], anwenden)
+        raise SystemExit(0)
     c = sqlite3.connect(DB)
     print("Prüfregeln:")
     n = regeln_patchen(c, anwenden)

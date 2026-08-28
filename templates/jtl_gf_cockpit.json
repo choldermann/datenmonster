@@ -10214,7 +10214,8 @@
       "condition": {
         "mode": "count",
         "value_column": "Rueckgang",
-        "min_count": 2
+        "min_count": 2,
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10224,7 +10225,7 @@
           "decimals": 0
         },
         {
-          "label": "Rohertrag",
+          "label": "Rohertrag Ware",
           "column": "Rohertrag",
           "unit": "€",
           "decimals": 0
@@ -10276,7 +10277,8 @@
         "mode": "kpi",
         "column": "OffenUeberfaellig",
         "op": ">",
-        "value": 0
+        "value": 0,
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10341,7 +10343,8 @@
           "column": "TageUeberfaellig",
           "op": ">=",
           "value_config": "forderung_kritisch_tage"
-        }
+        },
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10398,7 +10401,8 @@
           "column": "Verschlechterung",
           "op": ">=",
           "value_config": "zahldauer_verschlechterung_tage"
-        }
+        },
+        "value_unit": ""
       },
       "facts": [
         {
@@ -10459,7 +10463,8 @@
           "column": "Rueckgang",
           "op": ">=",
           "value_config": "kunde_rueckgang_betrag"
-        }
+        },
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10515,7 +10520,8 @@
       },
       "condition": {
         "mode": "count",
-        "value_column": "Umsatz 24M"
+        "value_column": "Umsatz 24M",
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10568,7 +10574,8 @@
       "mapping_name": "Cockpit – Warnung Marge",
       "params": {},
       "condition": {
-        "mode": "count"
+        "mode": "count",
+        "value_unit": ""
       },
       "facts": [
         {
@@ -10578,7 +10585,7 @@
           "decimals": 0
         },
         {
-          "label": "Rohertrag",
+          "label": "Rohertrag Ware",
           "column": "Rohertrag",
           "unit": "€",
           "decimals": 0
@@ -10618,7 +10625,8 @@
       "mapping_name": "Cockpit – Warnung Bestand",
       "params": {},
       "condition": {
-        "mode": "count"
+        "mode": "count",
+        "value_unit": ""
       },
       "facts": [
         {
@@ -10657,7 +10665,8 @@
       "params": {},
       "condition": {
         "mode": "count",
-        "value_column": "Kapitalbindung"
+        "value_column": "Kapitalbindung",
+        "value_unit": "€"
       },
       "facts": [
         {
@@ -10703,7 +10712,8 @@
       "condition": {
         "mode": "count",
         "value_column": "Bestand",
-        "min_count": 1
+        "min_count": 1,
+        "value_unit": "Stück"
       },
       "facts": [
         {
