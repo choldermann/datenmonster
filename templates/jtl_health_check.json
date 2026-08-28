@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.9",
+  "version": "1.10",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -3238,6 +3238,136 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_hc_luecke_artikel",
+      "name": "Health-Check – Artikel ohne dieses Feld (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "ArtNr",
+            "Artikel",
+            "Hersteller",
+            "Warengruppe",
+            "EKNetto",
+            "Bestand",
+            "kArtikel"
+          ],
+          "sql": "WITH artikel AS (\n    SELECT A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel,\n        ISNULL(H.cName, '') AS Hersteller,\n        ISNULL(WG.cName, '') AS Warengruppe,\n        ISNULL(A.fEKNetto, 0) AS EKNetto,\n        ISNULL((SELECT SUM(LB.fLagerbestand) FROM dbo.tlagerbestand LB\n                 WHERE LB.kArtikel = A.kArtikel), 0) AS Bestand,\n        CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel,\n        ROW_NUMBER() OVER (ORDER BY A.cArtNr) AS rn\n    FROM dbo.tArtikel A\n    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n         AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n    LEFT JOIN dbo.tHersteller H ON H.kHersteller = A.kHersteller\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\n    WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n      AND ISNULL(A.nIstVater, 0) = 0\n      AND CASE :feld\n        WHEN 'EAN/Barcode'      THEN CASE WHEN ISNULL(A.cBarcode, '') = '' THEN 1 ELSE 0 END\n        WHEN 'Gewicht'          THEN CASE WHEN ISNULL(A.fGewicht, 0) = 0\n                                           AND ISNULL(A.fArtGewicht, 0) = 0 THEN 1 ELSE 0 END\n        WHEN 'Einkaufspreis'    THEN CASE WHEN ISNULL(A.fEKNetto, 0) = 0 THEN 1 ELSE 0 END\n        WHEN 'Warengruppe'      THEN CASE WHEN ISNULL(A.kWarengruppe, 0) = 0 THEN 1 ELSE 0 END\n        WHEN 'Warentarifnummer' THEN CASE WHEN ISNULL(A.cTaric, '') = '' THEN 1 ELSE 0 END\n        WHEN 'Herkunftsland'    THEN CASE WHEN ISNULL(A.cHerkunftsland, '') = '' THEN 1 ELSE 0 END\n        WHEN 'Bezeichnung'      THEN CASE WHEN ISNULL(AB.cName, '') = '' THEN 1 ELSE 0 END\n        ELSE 0 END = 1\n)\nSELECT 0 AS Sortierung, ArtNr, Artikel, Hersteller, Warengruppe,\n    CAST(EKNetto AS DECIMAL(18,2)) AS EKNetto,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand, kArtikel\nFROM artikel WHERE rn <= 499\nUNION ALL\nSELECT 1, '', CONCAT('… ', COUNT(*), ' weitere Artikel'), '', '', NULL,\n    CAST(SUM(Bestand) AS DECIMAL(18,2)), ''\nFROM artikel WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, ArtNr"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Artikel ohne dieses Feld (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -3468,7 +3598,33 @@
               "x_column": "Feld",
               "y_columns": [
                 "Anteil"
-              ]
+              ],
+              "drilldown": {
+                "mapping_id": "m_hc_luecke_artikel",
+                "key_column": "Feld",
+                "param": "feld",
+                "title": "Artikel ohne diese Angabe",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_detail",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Artikel-Detail"
+                  }
+                ]
+              }
             }
           },
           {
@@ -3912,6 +4068,24 @@
                 "title": "Artikelbeschreibung – KI-Vorschlag",
                 "manual": true,
                 "button_label": "Beschreibung erzeugen"
+              },
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
               }
             }
           },
