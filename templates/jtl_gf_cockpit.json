@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.10",
+  "version": "2.11",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -8243,7 +8243,7 @@
             "label": "Umsatz netto",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Umsatz",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8255,12 +8255,82 @@
             }
           },
           {
+            "id": "w_kpi_storno",
+            "type": "kpi",
+            "label": "davon storniert",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 3,
+              "column": "StornoWert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "StornoWertVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true,
+              "breakdown": [
+                {
+                  "label": "Stornierte Rechnungen",
+                  "column": "StornoAnzahl",
+                  "prefix": "",
+                  "decimals": 0
+                }
+              ],
+              "hint": "Bereits aus dem Umsatz herausgerechnet. JTLs Statistik zeigt den Umsatz einschließlich dieser Belege – Cockpit-Umsatz plus dieser Betrag ergibt die JTL-Zahl."
+            }
+          },
+          {
+            "id": "w_kpi_korrektur",
+            "type": "kpi",
+            "label": "davon gutgeschrieben",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 3,
+              "column": "KorrekturWert",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "KorrekturWertVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": true,
+              "breakdown": [
+                {
+                  "label": "Rechnungskorrekturen",
+                  "column": "KorrekturAnzahl",
+                  "prefix": "",
+                  "decimals": 0
+                }
+              ],
+              "hint": "Echte Gutschriften ohne Storno – der Beleg bleibt gültig, der Kunde bekommt Geld zurück. Im Umsatz oben noch NICHT abgezogen. Eine Korrektur zählt in den Zeitraum der Rechnung, auf die sie sich bezieht, nicht in den ihrer eigenen Erstellung – so rechnet JTL auch."
+            }
+          },
+          {
+            "id": "w_kpi_umsatz_netto",
+            "type": "kpi",
+            "label": "Umsatz nach Korrekturen",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 3,
+              "column": "UmsatzNachKorrektur",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2,
+              "compare_column": "UmsatzNachKorrekturVJ",
+              "compare_label": "Vorjahr",
+              "invert_delta": false,
+              "hint": "Umsatz abzüglich der Rechnungskorrekturen: die kaufmännisch belastbare Zahl. Der Umsatz oben entspricht der Zahl aus JTLs Statistik (abzüglich Storno)."
+            }
+          },
+          {
             "id": "w_kpi_rohertrag",
             "type": "kpi",
             "label": "Rohertrag Ware",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Rohertrag",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8288,7 +8358,7 @@
             "action_id": "act_overview_kpi",
             "label": "Rohertrag gesamt",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "DB2",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8320,7 +8390,7 @@
             "label": "Marge",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Marge",
               "aggregation": "first",
               "prefix": "",
@@ -8337,7 +8407,7 @@
             "action_id": "act_overview_kpi",
             "label": "Rohertragsmarge",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "DB2Marge",
               "aggregation": "first",
               "prefix": "",
@@ -8349,38 +8419,12 @@
             }
           },
           {
-            "id": "w_kpi_versand_ohne_ek",
-            "type": "kpi",
-            "label": "Versand ohne Kosten",
-            "action_id": "act_overview_kpi",
-            "config": {
-              "width": 4,
-              "column": "VersandPosOhneEK",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0,
-              "invert_delta": true,
-              "breakdown": [
-                {
-                  "label": "von Versandpositionen",
-                  "column": "VersandPos"
-                },
-                {
-                  "label": "Erlös ohne Gegenkosten",
-                  "column": "VersandErloesOhneEK"
-                }
-              ],
-              "hint": "Versandpositionen, bei denen in der Wawi kein Einkaufspreis hinterlegt ist. Ihr Erlös zählt im Rohertrag als 100 % Marge und schönt ihn. Zu beheben ist das nur in JTL bei den Versandarten, nicht hier."
-            }
-          },
-          {
             "id": "w_kpi_rechnungen",
             "type": "kpi",
             "label": "Rechnungen",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "Rechnungen",
               "aggregation": "first",
               "prefix": "",
@@ -8392,78 +8436,12 @@
             }
           },
           {
-            "id": "w_kpi_storno",
-            "type": "kpi",
-            "label": "davon storniert",
-            "action_id": "act_overview_kpi",
-            "config": {
-              "width": 4,
-              "column": "StornoWert",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2,
-              "compare_column": "StornoWertVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": true,
-              "breakdown": [
-                {
-                  "label": "Stornierte Rechnungen",
-                  "column": "StornoAnzahl"
-                }
-              ],
-              "hint": "Bereits aus dem Umsatz herausgerechnet. JTLs Statistik zeigt den Umsatz einschließlich dieser Belege – Cockpit-Umsatz plus dieser Betrag ergibt die JTL-Zahl."
-            }
-          },
-          {
-            "id": "w_kpi_korrektur",
-            "type": "kpi",
-            "label": "davon gutgeschrieben",
-            "action_id": "act_overview_kpi",
-            "config": {
-              "width": 4,
-              "column": "KorrekturWert",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2,
-              "compare_column": "KorrekturWertVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": true,
-              "breakdown": [
-                {
-                  "label": "Rechnungskorrekturen",
-                  "column": "KorrekturAnzahl"
-                }
-              ],
-              "hint": "Echte Gutschriften ohne Storno – der Beleg bleibt gültig, der Kunde bekommt Geld zurück. Im Umsatz oben noch NICHT abgezogen. Eine Korrektur zählt in den Zeitraum der Rechnung, auf die sie sich bezieht, nicht in den ihrer eigenen Erstellung – so rechnet JTL auch."
-            }
-          },
-          {
-            "id": "w_kpi_umsatz_netto",
-            "type": "kpi",
-            "label": "Umsatz nach Korrekturen",
-            "action_id": "act_overview_kpi",
-            "config": {
-              "width": 4,
-              "column": "UmsatzNachKorrektur",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2,
-              "compare_column": "UmsatzNachKorrekturVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": false,
-              "hint": "Umsatz abzüglich der Rechnungskorrekturen: die kaufmännisch belastbare Zahl. Der Umsatz oben entspricht der Zahl aus JTLs Statistik (abzüglich Storno)."
-            }
-          },
-          {
             "id": "w_kpi_avg",
             "type": "kpi",
             "label": "Ø Auftragswert",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "AvgAuftrag",
               "aggregation": "first",
               "prefix": "€ ",
@@ -8480,7 +8458,7 @@
             "label": "Aktive Kunden",
             "action_id": "act_overview_kpi",
             "config": {
-              "width": 4,
+              "width": 3,
               "column": "AktiveKunden",
               "aggregation": "first",
               "prefix": "",
@@ -8489,6 +8467,36 @@
               "compare_column": "AktiveKundenVJ",
               "compare_label": "Vorjahr",
               "invert_delta": false
+            }
+          },
+          {
+            "id": "w_kpi_versand_ohne_ek",
+            "type": "kpi",
+            "label": "Versand ohne Kosten",
+            "action_id": "act_overview_kpi",
+            "config": {
+              "width": 3,
+              "column": "VersandPosOhneEK",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "invert_delta": true,
+              "breakdown": [
+                {
+                  "label": "von Versandpositionen",
+                  "column": "VersandPos",
+                  "prefix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "Erlös ohne Gegenkosten",
+                  "column": "VersandErloesOhneEK",
+                  "prefix": "€ ",
+                  "decimals": 2
+                }
+              ],
+              "hint": "Versandpositionen, bei denen in der Wawi kein Einkaufspreis hinterlegt ist. Ihr Erlös zählt im Rohertrag als 100 % Marge und schönt ihn. Zu beheben ist das nur in JTL bei den Versandarten, nicht hier."
             }
           },
           {
