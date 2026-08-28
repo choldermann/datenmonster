@@ -78,12 +78,19 @@ def widgets_verdrahten(widgets: list, drilldowns: dict, ebene2, aufloesen) -> in
 
 
 def uebersicht_erweitern(sql: str, ziel_felder: list, d: dict):
-    """Ergänzt eine Schlüsselspalte in Abfrage und Zielfeldern."""
+    """Ergänzt eine Schlüsselspalte in Abfrage und Zielfeldern.
+
+    Manche Abfragen brauchen die Spalte an ZWEI Stellen – einmal in der inneren
+    Gruppierung, einmal in der äußeren Auswahl. Dafür nimmt `ersetzungen` eine
+    Liste von (Anker, Zusatz)-Paaren statt eines einzelnen Paars.
+    """
     if d["feld"] in [f.get("target_field") for f in ziel_felder]:
         return sql, ziel_felder, False
-    if d["anker"] not in sql:
-        raise SystemExit(f"Anker in {d['name_teil']} nicht gefunden:\n  {d['anker']!r}")
-    sql = sql.replace(d["anker"], d["anker"] + d["zusatz"], 1)
+    paare = d.get("ersetzungen") or [(d["anker"], d["zusatz"])]
+    for anker, zusatz in paare:
+        if anker not in sql:
+            raise SystemExit(f"Anker in {d['name_teil']} nicht gefunden:\n  {anker!r}")
+        sql = sql.replace(anker, anker + zusatz, 1)
     ziel_felder = ziel_felder + [{
         "source_field": d["feld"], "target_field": d["feld"], "target_type": "string",
         "source_dataset_id": "__sql__sql1",

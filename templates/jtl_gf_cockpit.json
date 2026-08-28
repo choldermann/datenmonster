@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.11",
+  "version": "2.12",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -578,7 +578,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [Rohertrag Ware],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [Rohertrag gesamt],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [Rohertragsmarge %]\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(kKunde AS VARCHAR(20)) AS kKunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [Rohertrag Ware],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [Rohertrag gesamt],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [Rohertragsmarge %]\nFROM (\n    SELECT  X.kKunde,MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 THEN DBpos END) AS DB2\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -588,7 +588,8 @@
             "Veraenderung",
             "Rohertrag Ware",
             "Rohertrag gesamt",
-            "Rohertragsmarge %"
+            "Rohertragsmarge %",
+            "kKunde"
           ]
         }
       ],
@@ -678,6 +679,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Rohertragsmarge %"
+              }
+            },
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
               }
             }
           ]
@@ -7759,6 +7770,1350 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_gf_rg_monat",
+      "name": "GF-Cockpit – Rechnungen des Monats (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung"
+          ],
+          "sql": "WITH beleg AS (\n    SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr,\n        MAX(RE.dErstellt) AS dErstellt,\n        MAX(ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(*) AS Positionen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE CONVERT(char(7), RE.dErstellt, 120) = :monat\n      AND RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    GROUP BY RE.kRechnung\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Rechnungen'),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), SUM(Positionen), ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Rechnungen des Monats (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_rg_monat_trend",
+      "name": "GF-Cockpit – Rechnungen des Monats, 24-Monats-Trend (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung"
+          ],
+          "sql": "WITH beleg AS (\n    SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr,\n        MAX(RE.dErstellt) AS dErstellt,\n        MAX(ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(*) AS Positionen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE CONVERT(char(7), RE.dErstellt, 120) = :monat\n      AND RE.dErstellt >= DATEADD(MONTH, -24, CAST(GETDATE() AS date))\n    GROUP BY RE.kRechnung\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Rechnungen'),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), SUM(Positionen), ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Rechnungen des Monats, 24-Monats-Trend (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_rg_monat_ergebnis",
+      "name": "GF-Cockpit – Rechnungen des Monats, Ergebnisverlauf (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung"
+          ],
+          "sql": "WITH beleg AS (\n    SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr,\n        MAX(RE.dErstellt) AS dErstellt,\n        MAX(ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(*) AS Positionen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE CONVERT(char(7), RE.dErstellt, 120) = :monat\n      AND RE.dErstellt >= DATEADD(MONTH, -11, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n      AND RE.dErstellt <  DATEADD(MONTH, 1, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n    GROUP BY RE.kRechnung\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Rechnungen'),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), SUM(Positionen), ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Rechnungen des Monats, Ergebnisverlauf (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_rg_kunde",
+      "name": "GF-Cockpit – Rechnungen des Kunden (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung"
+          ],
+          "sql": "WITH beleg AS (\n    SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr,\n        MAX(RE.dErstellt) AS dErstellt,\n        MAX(ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(*) AS Positionen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.kKunde = :kKunde\n      AND RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n    GROUP BY RE.kRechnung\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Rechnungen'),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), SUM(Positionen), ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Rechnungen des Kunden (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_artikel_rg",
+      "name": "GF-Cockpit – Rechnungen mit diesem Artikel (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Kunde",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung"
+          ],
+          "sql": "WITH beleg AS (\n    SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr,\n        MAX(RE.dErstellt) AS dErstellt,\n        MAX(ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(*) AS Positionen\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n      AND RE.kRechnung IN (SELECT P2.kRechnung FROM Rechnung.tRechnungPosition P2 WHERE P2.cArtNr = :artnr)\n    GROUP BY RE.kRechnung\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Rechnungen'),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), SUM(Positionen), ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Rechnungen mit diesem Artikel (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_wg_artikel",
+      "name": "GF-Cockpit – Artikel der Warengruppe (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Umsatz",
+            "Rohertrag",
+            "Rechnungen",
+            "kArtikel"
+          ],
+          "sql": "WITH je_artikel AS (\n    SELECT POS.cArtNr AS ArtNr, MAX(POS.cName) AS Artikel,\n        SUM(POS.fAnzahl) AS Menge,\n        SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n        SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS Rohertrag,\n        COUNT(DISTINCT RE.kRechnung) AS Rechnungen,\n        CAST(MAX(A.kArtikel) AS VARCHAR(20)) AS kArtikel\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\n    WHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n      AND ISNULL(WG.cName, '') = CASE WHEN :warengruppe IN ('(ohne)', '') THEN ''\n                                      ELSE :warengruppe END\n    GROUP BY POS.cArtNr\n), sortiert AS (\n    SELECT *, ROW_NUMBER() OVER (ORDER BY Umsatz DESC) AS rn FROM je_artikel\n)\nSELECT 0 AS Sortierung, ArtNr, Artikel,\n    CAST(Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n    Rechnungen, kArtikel\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', CONCAT('… ', COUNT(*), ' weitere Artikel'),\n    CAST(SUM(Menge) AS DECIMAL(18,2)),\n    CAST(SUM(Umsatz) AS DECIMAL(18,2)),\n    CAST(SUM(Rohertrag) AS DECIMAL(18,2)), NULL, ''\nFROM sortiert WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Artikel der Warengruppe (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ret_grund",
+      "name": "GF-Cockpit – Retouren dieses Grundes (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Datum",
+            "Retourennr",
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Wert",
+            "Grund",
+            "Kunde"
+          ],
+          "sql": "WITH pos AS (\n    SELECT R.dErstellt, R.cRetoureNr AS Retourennr,\n        ISNULL(POS.cArtNr, '') AS ArtNr, ISNULL(POS.cName, '') AS Artikel,\n        POS.fAnzahl AS Menge, POS.fAnzahl * POS.fVKNetto AS Wert,\n        ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') AS Grund,\n        '' AS Kunde,\n        ROW_NUMBER() OVER (ORDER BY POS.fAnzahl * POS.fVKNetto DESC) AS rn\n    FROM dbo.tRMRetoure R\n    JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n    WHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\n      AND ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') = :grund\n)\nSELECT 0 AS Sortierung, CONVERT(char(10), dErstellt, 104) AS Datum, Retourennr, ArtNr, Artikel,\n    CAST(Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert, Grund, Kunde\nFROM pos WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', '', CONCAT('… ', COUNT(*), ' weitere Positionen'),\n    CAST(SUM(Menge) AS DECIMAL(18,2)),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''\nFROM pos WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Retouren dieses Grundes (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Retourennr",
+              "target_field": "Retourennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retourennr"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ret_artikel",
+      "name": "GF-Cockpit – Retouren dieses Artikels (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Datum",
+            "Retourennr",
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Wert",
+            "Grund",
+            "Kunde"
+          ],
+          "sql": "WITH pos AS (\n    SELECT R.dErstellt, R.cRetoureNr AS Retourennr,\n        ISNULL(POS.cArtNr, '') AS ArtNr, ISNULL(POS.cName, '') AS Artikel,\n        POS.fAnzahl AS Menge, POS.fAnzahl * POS.fVKNetto AS Wert,\n        ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') AS Grund,\n        '' AS Kunde,\n        ROW_NUMBER() OVER (ORDER BY POS.fAnzahl * POS.fVKNetto DESC) AS rn\n    FROM dbo.tRMRetoure R\n    JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n    WHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\n      AND POS.cArtNr = :artnr\n)\nSELECT 0 AS Sortierung, CONVERT(char(10), dErstellt, 104) AS Datum, Retourennr, ArtNr, Artikel,\n    CAST(Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert, Grund, Kunde\nFROM pos WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', '', CONCAT('… ', COUNT(*), ' weitere Positionen'),\n    CAST(SUM(Menge) AS DECIMAL(18,2)),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''\nFROM pos WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Retouren dieses Artikels (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Retourennr",
+              "target_field": "Retourennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retourennr"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ret_kunde",
+      "name": "GF-Cockpit – Retouren dieses Kunden (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Datum",
+            "Retourennr",
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Wert",
+            "Grund",
+            "Kunde"
+          ],
+          "sql": "WITH pos AS (\n    SELECT R.dErstellt, R.cRetoureNr AS Retourennr,\n        ISNULL(POS.cArtNr, '') AS ArtNr, ISNULL(POS.cName, '') AS Artikel,\n        POS.fAnzahl AS Menge, POS.fAnzahl * POS.fVKNetto AS Wert,\n        ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') AS Grund,\n        ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, '')))))), ''), '(unbekannt)') AS Kunde,\n        ROW_NUMBER() OVER (ORDER BY POS.fAnzahl * POS.fVKNetto DESC) AS rn\n    FROM RM.lvRetoure R\n    JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n    WHERE R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)\n      AND ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''), LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, '')))))), ''), '(unbekannt)') = :kunde\n)\nSELECT 0 AS Sortierung, CONVERT(char(10), dErstellt, 104) AS Datum, Retourennr, ArtNr, Artikel,\n    CAST(Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert, Grund, Kunde\nFROM pos WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', '', CONCAT('… ', COUNT(*), ' weitere Positionen'),\n    CAST(SUM(Menge) AS DECIMAL(18,2)),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''\nFROM pos WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Retouren dieses Kunden (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Retourennr",
+              "target_field": "Retourennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retourennr"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_gf_ret_monat",
+      "name": "GF-Cockpit – Retouren dieses Monats (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Datum",
+            "Retourennr",
+            "ArtNr",
+            "Artikel",
+            "Menge",
+            "Wert",
+            "Grund",
+            "Kunde"
+          ],
+          "sql": "WITH pos AS (\n    SELECT R.dErstellt, R.cRetoureNr AS Retourennr,\n        ISNULL(POS.cArtNr, '') AS ArtNr, ISNULL(POS.cName, '') AS Artikel,\n        POS.fAnzahl AS Menge, POS.fAnzahl * POS.fVKNetto AS Wert,\n        ISNULL(NULLIF(LTRIM(RTRIM(POS.Grund)), ''), '(ohne Angabe)') AS Grund,\n        '' AS Kunde,\n        ROW_NUMBER() OVER (ORDER BY POS.fAnzahl * POS.fVKNetto DESC) AS rn\n    FROM dbo.tRMRetoure R\n    JOIN RM.lvRetourePosition POS ON POS.kRMRetoure = R.kRMRetoure\n    WHERE CONVERT(char(7), R.dErstellt, 126) = :monat\n      AND R.dErstellt >= DATEADD(MONTH, -12, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1))\n      AND R.dErstellt < DATEADD(DAY, 1, :bis)\n      AND 1 = 1\n)\nSELECT 0 AS Sortierung, CONVERT(char(10), dErstellt, 104) AS Datum, Retourennr, ArtNr, Artikel,\n    CAST(Menge AS DECIMAL(18,2)) AS Menge,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert, Grund, Kunde\nFROM pos WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', '', CONCAT('… ', COUNT(*), ' weitere Positionen'),\n    CAST(SUM(Menge) AS DECIMAL(18,2)),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''\nFROM pos WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "GF-Cockpit – Retouren dieses Monats (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Retourennr",
+              "target_field": "Retourennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Retourennr"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Grund",
+              "target_field": "Grund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Grund"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -8604,7 +9959,33 @@
                 "Umsatz",
                 "UmsatzVorjahr"
               ],
-              "curved": true
+              "curved": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_monat",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Rechnungen dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8666,7 +10047,33 @@
             "action_id": "act_top_kunden",
             "config": {
               "width": 6,
-              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge."
+              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge.",
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8688,7 +10095,33 @@
                 "kKunde"
               ],
               "info": "Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung (Rückgewinnung).",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8703,7 +10136,25 @@
                 "Umsatz",
                 "UmsatzVJ"
               ],
-              "stacked": false
+              "stacked": false,
+              "drilldown": {
+                "mapping_id": "m_gf_wg_artikel",
+                "key_column": "Warengruppe",
+                "param": "warengruppe",
+                "title": "Artikel dieser Warengruppe",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -8713,7 +10164,25 @@
             "action_id": "act_wg_entwicklung",
             "config": {
               "width": 6,
-              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge."
+              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge.",
+              "drilldown": {
+                "mapping_id": "m_gf_wg_artikel",
+                "key_column": "Warengruppe",
+                "param": "warengruppe",
+                "title": "Artikel dieser Warengruppe",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -8723,7 +10192,33 @@
             "action_id": "act_top_artikel",
             "config": {
               "width": 6,
-              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge."
+              "info": "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis der verkauften Artikel), nur Artikelpositionen. Rohertrag gesamt = derselbe Rohertrag über ALLE Positionsarten, also zuzüglich Versandergebnis (Versanderlöse − Versandkosten) und sonstiger Positionen wie Rabatten. Marge % bezogen auf den Umsatz. Achtung: Versandarten ohne hinterlegte Kosten zählen als 100 % Marge.",
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8822,7 +10317,33 @@
             "label": "Top 15 Artikel nach Kapitalbindung",
             "action_id": "act_kapital_artikel",
             "config": {
-              "width": 12
+              "width": 12,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8837,7 +10358,33 @@
                 "Umsatz",
                 "Rohertrag"
               ],
-              "curved": true
+              "curved": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_monat_trend",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Rechnungen dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8846,7 +10393,25 @@
             "label": "Warengruppen-Trend (letzte 12 vs. vorherige 12 Monate)",
             "action_id": "act_trend_wg",
             "config": {
-              "width": 12
+              "width": 12,
+              "drilldown": {
+                "mapping_id": "m_gf_wg_artikel",
+                "key_column": "Warengruppe",
+                "param": "warengruppe",
+                "title": "Artikel dieser Warengruppe",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -8868,7 +10433,33 @@
                 "kArtikel"
               ],
               "info": "Klick auf einen Artikel öffnet eine KI-Abverkaufsempfehlung (Rabatt/Bundle).",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8878,7 +10469,33 @@
             "action_id": "act_warn_bestand",
             "config": {
               "width": 12,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -8888,7 +10505,33 @@
             "action_id": "act_warn_marge",
             "config": {
               "width": 12,
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9017,7 +10660,33 @@
             "config": {
               "width": 6,
               "info": "Ø Zahlungsdauer = Tage von Rechnungsdatum bis zur (letzten) Zahlung im gewählten Zeitraum. Anteil verspätet = Anteil der Rechnungen, die erst nach mehr als 30 Tagen beglichen wurden.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9031,7 +10700,33 @@
               "hidden_columns": [
                 "kKunde"
               ],
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9161,7 +10856,33 @@
             "config": {
               "width": 12,
               "info": "Umschlag/Jahr = auf 365 Tage hochgerechnete Verkaufsmenge geteilt durch aktuellen Bestand (wie oft der Bestand pro Jahr umgeschlagen wird). Reichweite (Tage) = wie lange der aktuelle Bestand beim Absatz des Zeitraums reicht. Niedriger Umschlag / hohe Reichweite = gebundenes Kapital / Überbestand.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9245,7 +10966,33 @@
             "config": {
               "width": 12,
               "info": "Umsatzstärkste Artikel mit Anteil, kumuliertem Anteil und ABC-Klasse (A bis 80 %, B bis 95 %, C Rest). Nur aktive Artikel.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_artikel_rg",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Rechnungen mit diesem Artikel",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9327,7 +11074,33 @@
                 "kKunde"
               ],
               "info": "Früher regelmäßige Kunden, die zuletzt deutlich länger als ihr gewohnter Bestellrhythmus nichts mehr gekauft haben (Top 25 nach Umsatz). Klick auf einen Kunden öffnet eine KI-Handlungsempfehlung zur Rückgewinnung.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9341,7 +11114,33 @@
                 "kKunde"
               ],
               "info": "Kunden mit ihrer ersten Bestellung im gewählten Zeitraum – mit Datum, Plattform, betreuendem Mitarbeiter, Region sowie bisherigem Umsatz und Marge.",
-              "full_rows": true
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_kunde",
+                "key_column": "kKunde",
+                "param": "kKunde",
+                "title": "Rechnungen dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -9505,7 +11304,25 @@
               "y_columns": [
                 "Wert"
               ],
-              "stacked": false
+              "stacked": false,
+              "drilldown": {
+                "mapping_id": "m_gf_ret_monat",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Retouren dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -9515,7 +11332,25 @@
             "action_id": "act_retouren_gruende",
             "config": {
               "width": 6,
-              "info": "Verteilung der Retourengründe nach retournierter Menge im Zeitraum."
+              "info": "Verteilung der Retourengründe nach retournierter Menge im Zeitraum.",
+              "drilldown": {
+                "mapping_id": "m_gf_ret_grund",
+                "key_column": "Grund",
+                "param": "grund",
+                "title": "Retouren dieses Grundes",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -9526,7 +11361,25 @@
             "config": {
               "width": 6,
               "label_column": "Grund",
-              "value_column": "Menge"
+              "value_column": "Menge",
+              "drilldown": {
+                "mapping_id": "m_gf_ret_grund",
+                "key_column": "Grund",
+                "param": "grund",
+                "title": "Retouren dieses Grundes",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -9537,7 +11390,25 @@
             "config": {
               "width": 12,
               "full_rows": true,
-              "info": "Nach Retour-Wert. Retourenquote je Artikel = retournierte Menge / verkaufte Menge im Zeitraum."
+              "info": "Nach Retour-Wert. Retourenquote je Artikel = retournierte Menge / verkaufte Menge im Zeitraum.",
+              "drilldown": {
+                "mapping_id": "m_gf_ret_artikel",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Retouren dieses Artikels",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -9548,7 +11419,25 @@
             "config": {
               "width": 12,
               "full_rows": true,
-              "info": "Kunden mit dem höchsten Retouren-Wert im Zeitraum."
+              "info": "Kunden mit dem höchsten Retouren-Wert im Zeitraum.",
+              "drilldown": {
+                "mapping_id": "m_gf_ret_kunde",
+                "key_column": "Kunde",
+                "param": "kunde",
+                "title": "Retouren dieses Kunden",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -10008,7 +11897,33 @@
                 "Fixkosten"
               ],
               "stacked": false,
-              "info": "Rohertrag gesamt gegen die Fixkosten des jeweiligen Monats. Die Fixkosten stammen aus dem Reiter „Kosten“ und folgen dort dem hinterlegten „gültig ab“. Ohne gepflegte Kostenstruktur sind sie 0 – dann entspricht das Betriebsergebnis dem Rohertrag gesamt."
+              "info": "Rohertrag gesamt gegen die Fixkosten des jeweiligen Monats. Die Fixkosten stammen aus dem Reiter „Kosten“ und folgen dort dem hinterlegten „gültig ab“. Ohne gepflegte Kostenstruktur sind sie 0 – dann entspricht das Betriebsergebnis dem Rohertrag gesamt.",
+              "drilldown": {
+                "mapping_id": "m_gf_rg_monat_ergebnis",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Rechnungen dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -10022,7 +11937,33 @@
               "y_columns": [
                 "Betriebsergebnis"
               ],
-              "curved": false
+              "curved": false,
+              "drilldown": {
+                "mapping_id": "m_gf_rg_monat_ergebnis",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Rechnungen dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
