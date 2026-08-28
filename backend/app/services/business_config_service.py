@@ -169,7 +169,18 @@ def threshold_meta() -> list[dict]:
     return [dict(d) for d in THRESHOLD_DEFAULTS]
 
 
-def _rows(project_id, db, scope: str) -> list:
+def _rows(project_id, db, scope: str, mandant_id=None, strikt: bool = False) -> list:
+    """Konfigurationszeilen eines Bereichs, in Anwendungsreihenfolge.
+
+    strikt=True  (Fixkosten): ausschließlich die Zeilen dieses Mandanten. Ein
+        Rückfall auf projektweite Werte wäre hier gefährlich – der eine Betrieb
+        bekäme die Miete des anderen ins Betriebsergebnis gerechnet.
+    strikt=False (Schwellwerte, Ziele): erst die projektweiten Zeilen
+        (mandant_id NULL), danach die mandantenspezifischen. Der Aufrufer
+        überschreibt in dieser Reihenfolge, mandantenspezifisch gewinnt also.
+        So bleiben die 18 Schwellwerte einmal gepflegt und lassen sich trotzdem
+        für einen einzelnen Mandanten abweichend setzen.
+    """
     if db is None:
         return []
     try:
@@ -177,18 +188,33 @@ def _rows(project_id, db, scope: str) -> list:
         q = db.query(BusinessConfig).filter(BusinessConfig.scope == scope)
         q = q.filter(BusinessConfig.project_id == project_id) if project_id is not None \
             else q.filter(BusinessConfig.project_id.is_(None))
-        return q.all()
+        alle = q.all()
     except Exception:
         return []
 
+    def mid(r):
+        return getattr(r, "mandant_id", None)
 
-def get_thresholds(project_id, db) -> dict:
-    """Standardwerte, überschrieben von den projektbezogenen Einstellungen."""
+    if strikt:
+        return [r for r in alle if mid(r) == mandant_id]
+    allgemein = [r for r in alle if mid(r) is None]
+    if mandant_id is None:
+        return allgemein
+    return allgemein + [r for r in alle if mid(r) == mandant_id]
+
+
+def get_thresholds(project_id, db, mandant_id=None) -> dict:
+    """Standardwerte, überschrieben von Projekt- und dann Mandanten-Einstellungen."""
     values = default_thresholds()
-    for r in _rows(project_id, db, "threshold"):
+    for r in _rows(project_id, db, "threshold", mandant_id):
         if r.key in values or r.key.startswith("x_"):
             values[r.key] = r.value
     return values
+
+
+def get_goals(project_id, db, mandant_id=None) -> dict:
+    """Unternehmensziele als {key: value}. Ohne gepflegte Ziele ein leeres Dict."""
+    return {r.key: r.value for r in _rows(project_id, db, "goal", mandant_id)}
 
 
 def _parse_datum(wert) -> Optional[date]:
@@ -240,7 +266,7 @@ def betrag_am(eintraege: list[dict], stichtag: date) -> float:
     return treffer
 
 
-def get_costs(project_id, db) -> list[dict]:
+def get_costs(project_id, db, mandant_id=None) -> list[dict]:
     """Kostenarten-Katalog: Standardarten, angereichert um die gepflegten Werte.
 
     Standardarten erscheinen immer – auch ungepflegt, damit die Maske sie
@@ -248,7 +274,7 @@ def get_costs(project_id, db) -> list[dict]:
     tragen Bezeichnung und Gruppe im Wert selbst.
     """
     gespeichert = {r.key: (r.value if isinstance(r.value, dict) else {})
-                   for r in _rows(project_id, db, "cost")}
+                   for r in _rows(project_id, db, "cost", mandant_id, strikt=True)}
     heute = date.today()
 
     def bauen(key: str, meta: dict, value: dict) -> dict:
@@ -276,12 +302,13 @@ def _monatstage(d: date) -> int:
     return (naechster - date(d.year, d.month, 1)).days
 
 
-def kosten_monat(project_id, db, stichtag: Optional[date] = None) -> dict:
+def kosten_monat(project_id, db, stichtag: Optional[date] = None,
+                 mandant_id=None) -> dict:
     """Monatliche Fixkosten zum Stichtag: Summe und je Gruppe."""
     stichtag = stichtag or date.today()
     je_gruppe: dict = {g["key"]: 0.0 for g in COST_GROUPS}
     gesamt = 0.0
-    for k in get_costs(project_id, db):
+    for k in get_costs(project_id, db, mandant_id):
         betrag = betrag_am(k["eintraege"], stichtag)
         if not betrag:
             continue
@@ -291,7 +318,8 @@ def kosten_monat(project_id, db, stichtag: Optional[date] = None) -> dict:
             "gruppen": {g: round(v, 2) for g, v in je_gruppe.items()}}
 
 
-def kosten_zeitraum_gruppen(project_id, db, von: date, bis: date) -> dict:
+def kosten_zeitraum_gruppen(project_id, db, von: date, bis: date,
+                            mandant_id=None) -> dict:
     """Fixkosten eines Zeitraums je Gruppe – taggenau anteilig.
 
     Tagweise statt monatsweise, weil ein Cockpit-Zeitraum selten auf
@@ -302,7 +330,7 @@ def kosten_zeitraum_gruppen(project_id, db, von: date, bis: date) -> dict:
         return out
     if (bis - von).days > 366 * 20:      # Schutz gegen unsinnige Zeiträume
         bis = von + timedelta(days=366 * 20)
-    arten = [(k["gruppe_key"], k["eintraege"]) for k in get_costs(project_id, db)]
+    arten = [(k["gruppe_key"], k["eintraege"]) for k in get_costs(project_id, db, mandant_id)]
     tag = von
     while tag <= bis:
         tage = _monatstage(tag)
@@ -314,8 +342,8 @@ def kosten_zeitraum_gruppen(project_id, db, von: date, bis: date) -> dict:
     return {g: round(v, 2) for g, v in out.items()}
 
 
-def kosten_zeitraum(project_id, db, von: date, bis: date) -> float:
-    return round(sum(kosten_zeitraum_gruppen(project_id, db, von, bis).values()), 2)
+def kosten_zeitraum(project_id, db, von: date, bis: date, mandant_id=None) -> float:
+    return round(sum(kosten_zeitraum_gruppen(project_id, db, von, bis, mandant_id).values()), 2)
 
 
 def _minus_jahr(d: date) -> date:
@@ -326,14 +354,15 @@ def _minus_jahr(d: date) -> date:
         return d.replace(year=d.year - 1, day=28)
 
 
-def kosten_monatsreihe(project_id, db, bis: date, monate: int = 36) -> list[dict]:
+def kosten_monatsreihe(project_id, db, bis: date, monate: int = 36,
+                       mandant_id=None) -> list[dict]:
     """Monatsbeträge der letzten n Monate bis einschließlich Monat von `bis`.
 
     Für Verlaufsdiagramme: die Fixkosten sind je Monat unterschiedlich, ein
     einzelner Skalar würde die Historie mit den heutigen Kosten übermalen.
     Die Reihe geht als JSON in den Lauf und wird im SQL per OPENJSON gejoint.
     """
-    arten = [k["eintraege"] for k in get_costs(project_id, db)]
+    arten = [k["eintraege"] for k in get_costs(project_id, db, mandant_id)]
     out = []
     jahr, monat = bis.year, bis.month
     for _ in range(max(1, monate)):
@@ -347,15 +376,20 @@ def kosten_monatsreihe(project_id, db, bis: date, monate: int = 36) -> list[dict
     return out
 
 
-def apply_config(run_params: Optional[dict], project_id, db) -> dict:
+def apply_config(run_params: Optional[dict], project_id, db, mandant_id=None) -> dict:
     """Injiziert die Schwellwerte als :cfg_<key> in die run_params.
 
     Idempotent und nicht-überschreibend: ein explizit übergebener Wert (z.B. aus
     einem Formularfeld) gewinnt gegen die Projektkonfiguration.
+
+    mandant_id entscheidet, wessen Fixkosten in :cfg_kosten_* landen. Wird er
+    vergessen, rechnet ein Cockpit mit den Kosten des falschen Betriebs – deshalb
+    reichen ihn alle Ausführungspfade (Formular, Drilldown, Report, Warnungen)
+    ausdrücklich durch.
     """
     run_params = dict(run_params or {})
     try:
-        for key, value in get_thresholds(project_id, db).items():
+        for key, value in get_thresholds(project_id, db, mandant_id).items():
             pname = f"cfg_{key}"
             if pname not in run_params:
                 run_params[pname] = value
@@ -369,24 +403,24 @@ def apply_config(run_params: Optional[dict], project_id, db) -> dict:
     try:
         bis = _parse_datum(run_params.get("bis")) or date.today()
         von = _parse_datum(run_params.get("von"))
-        monat = kosten_monat(project_id, db, bis)
+        monat = kosten_monat(project_id, db, bis, mandant_id)
         run_params.setdefault("cfg_kosten_monat", monat["gesamt"])
         for gruppe, betrag in monat["gruppen"].items():
             run_params.setdefault(f"cfg_kosten_{gruppe}_monat", betrag)
         run_params.setdefault(
             "cfg_kosten_zeitraum",
-            kosten_zeitraum(project_id, db, von, bis) if von else monat["gesamt"])
+            kosten_zeitraum(project_id, db, von, bis, mandant_id) if von else monat["gesamt"])
         # Vorjahreszeitraum mit den damals gültigen Sätzen – sonst vergleicht das
         # Cockpit das Vorjahr gegen die heutigen Kosten.
         run_params.setdefault(
             "cfg_kosten_zeitraum_vj",
-            kosten_zeitraum(project_id, db, _minus_jahr(von), _minus_jahr(bis))
+            kosten_zeitraum(project_id, db, _minus_jahr(von), _minus_jahr(bis), mandant_id)
             if von else 0.0)
         run_params.setdefault("cfg_kosten_monatsreihe",
-                              json.dumps(kosten_monatsreihe(project_id, db, bis)))
+                              json.dumps(kosten_monatsreihe(project_id, db, bis, mandant_id)))
         # Kostenblöcke als JSON: im SQL per OPENJSON eine fertige Tabelle, ohne
         # neun einzelne Parameter per UNION zusammenstückeln zu müssen.
-        je_gruppe = kosten_zeitraum_gruppen(project_id, db, von, bis) if von else {}
+        je_gruppe = kosten_zeitraum_gruppen(project_id, db, von, bis, mandant_id) if von else {}
         run_params.setdefault("cfg_kosten_gruppen", json.dumps([
             {"key": g["key"], "gruppe": g["label"],
              "monat": monat["gruppen"].get(g["key"], 0.0),
@@ -397,15 +431,29 @@ def apply_config(run_params: Optional[dict], project_id, db) -> dict:
     return run_params
 
 
-def set_value(project_id, db, scope: str, key: str, value):
+def _eine_zeile(db, project_id, scope: str, key: str, mandant_id):
     from app.models.business_config import BusinessConfig
-    row = (db.query(BusinessConfig)
-             .filter(BusinessConfig.scope == scope, BusinessConfig.key == key,
-                     BusinessConfig.project_id == project_id
-                     if project_id is not None else BusinessConfig.project_id.is_(None))
-             .first())
+    q = db.query(BusinessConfig).filter(BusinessConfig.scope == scope,
+                                        BusinessConfig.key == key)
+    q = q.filter(BusinessConfig.project_id == project_id) if project_id is not None \
+        else q.filter(BusinessConfig.project_id.is_(None))
+    q = q.filter(BusinessConfig.mandant_id == mandant_id) if mandant_id is not None \
+        else q.filter(BusinessConfig.mandant_id.is_(None))
+    return q.first()
+
+
+def set_value(project_id, db, scope: str, key: str, value, mandant_id=None):
+    """Schreibt einen Wert. mandant_id=None heißt "gilt projektweit".
+
+    Fixkosten übergeben immer einen Mandanten, sobald das Projekt welche hat;
+    Schwellwerte und Ziele bleiben bewusst projektweit, solange niemand sie
+    ausdrücklich für einen einzelnen Mandanten abweichend setzt.
+    """
+    from app.models.business_config import BusinessConfig
+    row = _eine_zeile(db, project_id, scope, key, mandant_id)
     if row is None:
-        row = BusinessConfig(project_id=project_id, scope=scope, key=key, value=value)
+        row = BusinessConfig(project_id=project_id, mandant_id=mandant_id,
+                             scope=scope, key=key, value=value)
         db.add(row)
     else:
         row.value = value
@@ -413,14 +461,9 @@ def set_value(project_id, db, scope: str, key: str, value):
     return row
 
 
-def reset_value(project_id, db, scope: str, key: str) -> bool:
+def reset_value(project_id, db, scope: str, key: str, mandant_id=None) -> bool:
     """Löscht die Überschreibung – der Standardwert gilt wieder."""
-    from app.models.business_config import BusinessConfig
-    q = db.query(BusinessConfig).filter(BusinessConfig.scope == scope,
-                                        BusinessConfig.key == key)
-    q = q.filter(BusinessConfig.project_id == project_id) if project_id is not None \
-        else q.filter(BusinessConfig.project_id.is_(None))
-    row = q.first()
+    row = _eine_zeile(db, project_id, scope, key, mandant_id)
     if not row:
         return False
     db.delete(row)
@@ -428,8 +471,39 @@ def reset_value(project_id, db, scope: str, key: str) -> bool:
     return True
 
 
-def is_default(project_id, db, key: str) -> bool:
+def is_default(project_id, db, key: str, mandant_id=None) -> bool:
     meta = _DEFAULTS_BY_KEY.get(key)
     if not meta:
         return False
-    return get_thresholds(project_id, db).get(key) == meta["default"]
+    return get_thresholds(project_id, db, mandant_id).get(key) == meta["default"]
+
+
+def altdaten_uebernehmen(project_id, db, mandant_id: int, scope: str = "cost") -> int:
+    """Einmalige Zuordnung: bisher projektweite Kostendaten gehören diesem Mandanten.
+
+    Vor der Mandantenfähigkeit gab es je Projekt genau einen Satz Fixkosten ohne
+    Mandantenbezug. Beim Markieren des ersten Mandanten werden diese Zeilen ihm
+    zugeschlagen – sonst stünde die Kostenmaske nach dem Update leer da und das
+    Betriebsergebnis wäre über Nacht falsch.
+    """
+    from app.models.business_config import BusinessConfig
+    q = db.query(BusinessConfig).filter(BusinessConfig.scope == scope,
+                                        BusinessConfig.mandant_id.is_(None))
+    q = q.filter(BusinessConfig.project_id == project_id) if project_id is not None \
+        else q.filter(BusinessConfig.project_id.is_(None))
+    zeilen = q.all()
+    if not zeilen:
+        return 0
+    # Nur übernehmen, was beim Ziel-Mandanten noch nicht existiert – sonst
+    # verletzt die Übernahme die Eindeutigkeit und überschreibt Gepflegtes.
+    vorhanden = {r.key for r in db.query(BusinessConfig)
+                 .filter(BusinessConfig.scope == scope,
+                         BusinessConfig.mandant_id == mandant_id).all()}
+    n = 0
+    for r in zeilen:
+        if r.key in vorhanden:
+            continue
+        r.mandant_id = mandant_id
+        n += 1
+    db.commit()
+    return n

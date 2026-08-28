@@ -142,7 +142,8 @@ def evaluate(body: EvaluateIn, db: Session = Depends(get_db),
     return alert_service.evaluate(db, body.project_id, body.params,
                                   include_ok=body.include_ok,
                                   rule_keys=body.rule_keys,
-                                  cockpits=body.cockpits)
+                                  cockpits=body.cockpits,
+                                  user=user)
 
 
 @router.get("/latest")
@@ -152,7 +153,9 @@ def latest(project_id: Optional[int] = None, db: Session = Depends(get_db),
     if not (can_read_project(project_id, user, db)
             or user_can_access_portal_project(project_id, user, db)):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    run = alert_service.latest_run(db, project_id)
+    from app.services import mandant_service
+    run = alert_service.latest_run(db, project_id,
+                                   mandant_service.aktiver(project_id, user, db))
     if not run:
         return {"alerts": [], "run_id": None, "started_at": None,
                 "checked": 0, "triggered": 0, "errors": []}
@@ -165,6 +168,7 @@ def latest(project_id: Optional[int] = None, db: Session = Depends(get_db),
 
 class ScheduleIn(BaseModel):
     project_id: Optional[int] = None
+    mandant_id: Optional[int] = None
     cron_expr: str = "30 5 * * *"
     active: bool = False
     email_to: Optional[str] = None
@@ -195,7 +199,8 @@ def _naechster_lauf(schedule_id: int) -> Optional[str]:
 def _schedule_out(s) -> dict:
     return {
         "next_run": _naechster_lauf(s.id),
-        "id": s.id, "project_id": s.project_id, "cron_expr": s.cron_expr,
+        "id": s.id, "project_id": s.project_id,
+        "mandant_id": getattr(s, "mandant_id", None), "cron_expr": s.cron_expr,
         "active": bool(s.active), "email_to": s.email_to or "",
         "min_severity": s.min_severity or "warnung", "only_new": bool(s.only_new),
         "params": s.params or {}, "rule_keys": s.rule_keys or [],
@@ -205,12 +210,32 @@ def _schedule_out(s) -> dict:
     }
 
 
-def _get_schedule(db: Session, project_id: Optional[int]):
+def _get_schedule(db: Session, project_id: Optional[int], mandant_id: Optional[int] = None):
+    """Der Zeitplan dieses Projekts und Mandanten.
+
+    Ein Zeitplan aus der Zeit vor der Mandantenfähigkeit (mandant_id NULL) wird
+    beim ersten Zugriff dem Standard-Mandanten zugeschlagen – sonst stünde nach
+    dem Update ein verwaister Nachtlauf da, während die Oberfläche „noch nicht
+    eingerichtet" meldet und ein zweiter angelegt würde.
+    """
     from app.models.alert import AlertSchedule
     q = db.query(AlertSchedule)
     q = q.filter(AlertSchedule.project_id == project_id) if project_id is not None \
         else q.filter(AlertSchedule.project_id.is_(None))
-    return q.first()
+    alle = q.all()
+    if mandant_id is None:
+        return alle[0] if alle else None
+    treffer = [s for s in alle if getattr(s, "mandant_id", None) == mandant_id]
+    if treffer:
+        return treffer[0]
+    from app.services import mandant_service
+    if mandant_service.standard(project_id, db) == mandant_id:
+        verwaist = [s for s in alle if getattr(s, "mandant_id", None) is None]
+        if verwaist:
+            verwaist[0].mandant_id = mandant_id
+            db.commit()
+            return verwaist[0]
+    return None
 
 
 @router.get("/schedule")
@@ -219,9 +244,12 @@ def get_schedule(project_id: Optional[int] = None, db: Session = Depends(get_db)
     """Zeitplan des Projekts. Ohne angelegten Zeitplan die Voreinstellung."""
     if not can_read_project(project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    s = _get_schedule(db, project_id)
+    from app.services import mandant_service
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    s = _get_schedule(db, project_id, mandant_id)
     if not s:
-        return {"id": None, "project_id": project_id, "cron_expr": "30 5 * * *",
+        return {"id": None, "project_id": project_id, "mandant_id": mandant_id,
+                "cron_expr": "30 5 * * *",
                 "active": False, "email_to": "", "min_severity": "warnung",
                 "only_new": False, "params": {}, "rule_keys": [], "cockpits": [],
                 "last_run_at": None, "last_status": None, "last_message": None,
@@ -242,9 +270,14 @@ def put_schedule(body: ScheduleIn, db: Session = Depends(get_db),
     if len(parts) != 5:
         raise HTTPException(400, "Cron-Ausdruck muss fünf Felder haben, z. B. „30 5 * * *“")
 
-    s = _get_schedule(db, body.project_id)
+    from app.services import mandant_service
+    mandant_id = body.mandant_id if body.mandant_id is not None \
+        else mandant_service.aktiver(body.project_id, user, db)
+    if not mandant_service.darf_nutzen(mandant_id, user, db):
+        raise HTTPException(403, "Dieser Mandant ist für Sie nicht freigegeben")
+    s = _get_schedule(db, body.project_id, mandant_id)
     if not s:
-        s = AlertSchedule(project_id=body.project_id)
+        s = AlertSchedule(project_id=body.project_id, mandant_id=mandant_id)
         db.add(s)
 
     s.cron_expr = body.cron_expr.strip()
@@ -278,9 +311,11 @@ def run_schedule_now(project_id: Optional[int] = None, db: Session = Depends(get
     from app.services.scheduler_service import _run_alert_check
 
     require_editor(project_id, user, db)
-    s = _get_schedule(db, project_id)
+    from app.services import mandant_service
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    s = _get_schedule(db, project_id, mandant_id)
     if not s:
-        s = AlertSchedule(project_id=project_id)
+        s = AlertSchedule(project_id=project_id, mandant_id=mandant_id)
         db.add(s); db.commit(); db.refresh(s)
 
     _run_alert_check(s.id, triggered_by="manuell")

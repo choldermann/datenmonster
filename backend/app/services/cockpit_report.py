@@ -92,7 +92,8 @@ def _fetch_company(conn_id: Optional[int]) -> dict:
         return {}
 
 
-def _run_one_action(action: dict, params: dict, row_cap: int = None) -> dict:
+def _run_one_action(action: dict, params: dict, row_cap: int = None,
+                    mandant_id: Optional[int] = None) -> dict:
     """Führt EINE run_mapping-Action read-only aus – mit EIGENER DB-Session, damit
     die Funktion gefahrlos parallel laufen kann (SQLAlchemy-Sessions sind nicht
     thread-sicher). Gibt das Ergebnis-Dict für results[action_id] zurück.
@@ -106,6 +107,8 @@ def _run_one_action(action: dict, params: dict, row_cap: int = None) -> dict:
             return {"columns": [], "rows": []}
         ctx = MappingContext.from_orm(m)
         ctx.run_params = dict(params)  # eigene Kopie je Thread (keine geteilte Mutation)
+        from app.services import mandant_service
+        mandant_service.verbindung_ersetzen(ctx, mandant_id, db, m.project_id)
         res = execute_mapping(**ctx.to_execute_kwargs(ctx.targets[0].get("fields") or [], 500),
                               row_cap=row_cap)
         return {"columns": res.get("columns", []), "rows": res.get("rows", [])}
@@ -115,7 +118,8 @@ def _run_one_action(action: dict, params: dict, row_cap: int = None) -> dict:
         db.close()
 
 
-def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None) -> dict:
+def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None,
+                 mandant_id: Optional[int] = None) -> dict:
     """Mapping-Actions des Reports read-only ausführen. Gedrosselt PARALLEL, damit
     ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run).
     only_ids: nur diese Action-IDs ausführen (Abschnittsauswahl im Report-Dialog) –
@@ -129,10 +133,12 @@ def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None)
         return FULL_ROWS_CAP if a.get("id") in expandable else None
     results = {}
     if len(actions) == 1:
-        results[actions[0]["id"]] = _run_one_action(actions[0], params, _cap(actions[0]))
+        results[actions[0]["id"]] = _run_one_action(actions[0], params, _cap(actions[0]),
+                                                   mandant_id)
     elif actions:
         with ThreadPoolExecutor(max_workers=_REPORT_RUN_CONCURRENCY) as ex:
-            futs = {ex.submit(_run_one_action, a, params, _cap(a)): a["id"] for a in actions}
+            futs = {ex.submit(_run_one_action, a, params, _cap(a), mandant_id): a["id"]
+                    for a in actions}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
 
@@ -1022,17 +1028,22 @@ SECTION_ASSESSMENT = "__assessment__"
 
 async def generate_report(form, params: dict, db, precomputed_summary: str | None = None,
                           sections: Optional[list] = None,
-                          provider: Optional[str] = None) -> bytes:
+                          provider: Optional[str] = None,
+                          user=None) -> bytes:
     """sections: Auswahl aus dem Report-Dialog – Reiter-IDs plus die Pseudo-IDs
     SECTION_SUMMARY / SECTION_ASSESSMENT. None = kompletter Report (wie bisher)."""
+    from app.services import mandant_service
     schema = form.schema or {}
-    conn_id = _resolve_conn_id(schema, db)
-    company = _fetch_company(conn_id)
+    _project_id = getattr(form, "project_id", None)
 
-    # Projektbezogene Schwellwerte als :cfg_<key> mitgeben – sonst liefen Mappings,
-    # die einen Schwellwert referenzieren, im Report ohne gebundenen Parameter.
-    from app.services.business_config_service import apply_config as _apply_cfg
-    params = _apply_cfg(params or {}, getattr(form, "project_id", None), db)
+    # Schwellwerte, Fixkosten und Ausschlussliste des aktiven Mandanten. Der
+    # Mandant bestimmt außerdem, aus welcher WaWi die Firmenanschrift des
+    # Deckblatts kommt – ein Report mit dem Briefkopf des anderen Betriebs wäre
+    # der peinlichste denkbare Fehler dieses Features.
+    params, mandant_id = mandant_service.lauf_vorbereiten(
+        params or {}, _project_id, db, user)
+    conn_id = mandant_id or _resolve_conn_id(schema, db)
+    company = _fetch_company(conn_id)
 
     tabs = schema.get("result_tabs") or []
     if not tabs:  # ohne Reiter: ein einziger Block über alle Actions
@@ -1064,7 +1075,7 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
         if want_summary and ai_widget and ai_widget.get("action_id"):
             only_ids.add(ai_widget["action_id"])
 
-    results = _run_actions(schema, params, db, only_ids)
+    results = _run_actions(schema, params, db, only_ids, mandant_id)
 
     # Unternehmenswarnungen (Action-Typ run_alerts) laufen nicht über _run_actions,
     # weil sie selbst mehrere Mappings auswerten. persist=False: ein Report soll den

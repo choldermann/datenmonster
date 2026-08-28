@@ -15,6 +15,7 @@ const TABS = [
   { id: "ai", label: "KI", icon: "✨" },
   { id: "models", label: "Modelle", icon: "🧠" },
   { id: "users", label: "Benutzer", icon: "👤" },
+  { id: "mandanten", label: "Mandanten", icon: "🏢", nurAdmin: true },
   { id: "network", label: "Netzwerk", icon: "🛡️" },
   { id: "appearance", label: "Optik", icon: "🎨" },
   { id: "backup", label: "Sicherung", icon: "💾", nurAdmin: true },
@@ -1107,6 +1108,157 @@ function BackupSettings() {
   );
 }
 
+/**
+ * Mandanten: welche Verbindung ist ein Betrieb, und wer darf ihn sehen.
+ *
+ * Ein Mandant ist keine eigene Entität, sondern eine als Mandant markierte
+ * DB-Verbindung. Dieselben Cockpits laufen dann wahlweise gegen die eine oder die
+ * andere WaWi; Fixkosten, Ausschlusslisten und Nachtläufe hängen am Mandanten.
+ *
+ * Die Freigabe folgt der Konvention der Formular-Veröffentlichung: keine Auswahl
+ * heißt "alle". Erst wer etwas ankreuzt, wird auf genau das beschränkt.
+ */
+function MandantenSettings() {
+  const [verbindungen, setVerbindungen] = useState([]);
+  const [benutzer, setBenutzer] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const [hinweis, setHinweis] = useState(null);
+
+  const laden = () => Promise.all([
+    api.get("/api/mandanten/verwaltung"),
+    api.get("/api/mandanten/freigaben"),
+  ]).then(([v, f]) => { setVerbindungen(v.data || []); setBenutzer(f.data || []); })
+    .catch(() => {});
+
+  useEffect(() => { laden(); }, []);
+
+  const speichern = async (c, patch) => {
+    setBusy(c.connection_id); setHinweis(null);
+    try {
+      const { data } = await api.put("/api/mandanten/verwaltung", {
+        connection_id: c.connection_id,
+        is_mandant: patch.is_mandant ?? c.is_mandant,
+        mandant_label: patch.mandant_label ?? c.mandant_label,
+        ist_standard: patch.ist_standard ?? c.ist_standard,
+      });
+      const ue = data.uebernommen || {};
+      if (ue.kosten || ue.zeitplan) {
+        setHinweis(`Bisherige Daten übernommen: ${ue.kosten} Kostenart(en)`
+          + (ue.zeitplan ? `, ${ue.zeitplan} Nachtlauf` : ""));
+      }
+      await laden();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Speichern fehlgeschlagen");
+    } finally { setBusy(null); }
+  };
+
+  const freigabeUmschalten = async (u, cid) => {
+    const neu = u.mandanten.includes(cid)
+      ? u.mandanten.filter(x => x !== cid) : [...u.mandanten, cid];
+    setBusy(`u${u.user_id}`);
+    try {
+      await api.put("/api/mandanten/freigaben", { user_id: u.user_id, mandanten: neu });
+      await laden();
+    } catch (e) {
+      alert(e.response?.data?.detail || "Speichern fehlgeschlagen");
+    } finally { setBusy(null); }
+  };
+
+  const mandanten = verbindungen.filter(v => v.is_mandant);
+  const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
+               color: S.textBright, fontSize: 11, padding: "4px 8px", outline: "none" };
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase",
+               letterSpacing: "0.06em", display: "block", marginBottom: 6 };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>
+        Ein Mandant ist eine WaWi-Datenbank. Markierte Verbindungen erscheinen im
+        Portal als Umschalter – dieselben Cockpits, andere Zahlen. Fixkosten,
+        Ausschlusslisten und Nachtläufe gehören jeweils genau einem Mandanten.
+      </p>
+
+      <div>
+        <span style={lS}>Verbindungen</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {verbindungen.map(c => (
+            <div key={c.connection_id} style={{ padding: "8px 10px", borderRadius: 5,
+              backgroundColor: S.bgEl, border: `1px solid ${S.border}`,
+              display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={c.is_mandant} disabled={busy === c.connection_id}
+                  onChange={e => speichern(c, { is_mandant: e.target.checked })} />
+                <span style={{ fontSize: 12, color: S.textMain, flex: 1 }}>
+                  {c.verbindung}
+                  <span style={{ color: S.textDim, fontSize: 10.5 }}> · {c.datenbank}</span>
+                </span>
+                {busy === c.connection_id && <Loader2 size={11} className="animate-spin" />}
+              </label>
+              {c.is_mandant && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, paddingLeft: 22 }}>
+                  <input style={{ ...iS, flex: 1 }} defaultValue={c.mandant_label}
+                    placeholder={`Anzeigename (sonst „${c.verbindung}")`}
+                    onBlur={e => e.target.value !== c.mandant_label
+                      && speichern(c, { mandant_label: e.target.value })} />
+                  <label title="Erstauswahl neuer Benutzer; erbt die bisherigen Kostendaten"
+                    style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5,
+                      color: S.textDim, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    <input type="radio" checked={c.ist_standard}
+                      onChange={() => speichern(c, { ist_standard: true })} />
+                    Standard
+                  </label>
+                </div>
+              )}
+            </div>
+          ))}
+          {!verbindungen.length && (
+            <span style={{ fontSize: 11, color: S.textDim }}>Keine Verbindungen angelegt.</span>
+          )}
+        </div>
+        {hinweis && (
+          <p style={{ fontSize: 10.5, color: "#6ee7b7", margin: "6px 0 0" }}>✓ {hinweis}</p>
+        )}
+      </div>
+
+      {mandanten.length > 0 && (
+        <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 14 }}>
+          <span style={lS}>Wer darf welchen Mandanten</span>
+          <p style={{ fontSize: 10.5, color: S.textDim, margin: "0 0 8px" }}>
+            Nichts angekreuzt = alle Mandanten. Administratoren sehen ohnehin alle.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {benutzer.map(u => (
+              <div key={u.user_id} style={{ padding: "8px 10px", borderRadius: 5,
+                backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: S.textMain, flex: 1 }}>{u.username}</span>
+                  {u.is_admin && <span style={{ fontSize: 9.5, color: S.textDim }}>alle (Admin)</span>}
+                  {!u.is_admin && !u.mandanten.length &&
+                    <span style={{ fontSize: 9.5, color: S.textDim }}>alle</span>}
+                  {busy === `u${u.user_id}` && <Loader2 size={11} className="animate-spin" />}
+                </div>
+                {!u.is_admin && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10, paddingLeft: 2 }}>
+                    {mandanten.map(m => (
+                      <label key={m.connection_id} style={{ display: "flex", alignItems: "center",
+                        gap: 5, fontSize: 11, color: S.textDim, cursor: "pointer" }}>
+                        <input type="checkbox" checked={u.mandanten.includes(m.connection_id)}
+                          onChange={() => freigabeUmschalten(u, m.connection_id)} />
+                        {m.mandant_label || m.verbindung}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 const roleOf = (u) => (u.is_admin ? "admin" : (u.is_portal_only ? "portal" : "editor"));
 const roleToFlags = (role) => ({
   is_admin:       role === "admin",
@@ -1787,6 +1939,7 @@ export default function SystemSettingsModal({ onClose }) {
           {activeTab === "ai"         && <AiSettings />}
           {activeTab === "models"     && <ModelLibrary />}
           {activeTab === "users"      && <UserManagement />}
+          {activeTab === "mandanten"  && angemeldet?.is_admin && <MandantenSettings />}
           {activeTab === "network"    && <NetworkSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
           {activeTab === "backup"     && angemeldet?.is_admin && <BackupSettings />}

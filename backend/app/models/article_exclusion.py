@@ -20,5 +20,8 @@ class ArticleExclusion(Base):
     created_at    = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
-        UniqueConstraint("project_id", "k_artikel", name="uq_article_excl_project_artikel"),
+        # Mandantenfähig: dieselbe kArtikel-Nummer bezeichnet in einer anderen
+        # WaWi einen anderen Artikel, deshalb gehört die Verbindung in den Schlüssel.
+        UniqueConstraint("project_id", "connection_id", "k_artikel",
+                        name="uq_article_excl_mandant_artikel"),
     )

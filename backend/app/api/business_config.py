@@ -14,6 +14,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.api.projects import can_read_project, require_editor
 from app.services import business_config_service as cfg_service
+from app.services import mandant_service
 
 router = APIRouter(prefix="/api/business-config", tags=["business-config"])
 
@@ -25,7 +26,8 @@ def get_thresholds(project_id: Optional[int] = None,
     """Alle Schwellwerte mit Standardwert, aktuellem Wert und Beschreibung."""
     if not can_read_project(project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    aktuell = cfg_service.get_thresholds(project_id, db)
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    aktuell = cfg_service.get_thresholds(project_id, db, mandant_id)
     out = []
     for meta in cfg_service.threshold_meta():
         key = meta["key"]
@@ -79,11 +81,17 @@ def list_costs(project_id: Optional[int] = None, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     if not can_read_project(project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    kosten = cfg_service.get_costs(project_id, db)
+    # Fixkosten gehören immer genau einem Mandanten. Der Name wandert mit in die
+    # Antwort, damit die Maske zeigen kann, wessen Kosten gerade gepflegt werden –
+    # ohne diese Angabe wäre bei zwei Betrieben nie sicher, wo man gerade tippt.
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    kosten = cfg_service.get_costs(project_id, db, mandant_id)
     return {"project_id": project_id,
+            "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db),
             "gruppen": cfg_service.COST_GROUPS,
             "kosten": kosten,
-            "summe_monat": cfg_service.kosten_monat(project_id, db)}
+            "summe_monat": cfg_service.kosten_monat(project_id, db, None, mandant_id)}
 
 
 class KostenEintragIn(BaseModel):
@@ -110,7 +118,8 @@ def set_cost(body: KostenartIn, db: Session = Depends(get_db),
     """Zeitscheiben einer Kostenart speichern (ersetzt die bisherigen)."""
     require_editor(body.project_id, user, db)
 
-    bestand = {k["key"]: k for k in cfg_service.get_costs(body.project_id, db)}
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    bestand = {k["key"]: k for k in cfg_service.get_costs(body.project_id, db, mandant_id)}
     art = bestand.get(body.key)
     if art is None:
         raise HTTPException(400, f"Unbekannte Kostenart: {body.key}")
@@ -132,8 +141,8 @@ def set_cost(body: KostenartIn, db: Session = Depends(get_db),
     if art["custom"]:            # Bezeichnung/Gruppe leben nur bei eigenen Arten im Wert
         wert.update({"label": art["label"], "gruppe": art["gruppe"],
                      "gruppe_key": art["gruppe_key"], "custom": True})
-    cfg_service.set_value(body.project_id, db, "cost", body.key, wert)
-    return {**art, "eintraege": eintraege,
+    cfg_service.set_value(body.project_id, db, "cost", body.key, wert, mandant_id)
+    return {**art, "eintraege": eintraege, "mandant_id": mandant_id,
             "betrag_aktuell": cfg_service.betrag_am(eintraege, date.today())}
 
 
@@ -154,7 +163,8 @@ def add_custom_cost(body: EigeneKostenartIn, db: Session = Depends(get_db),
     basis = _slug(body.label)
     if not basis:
         raise HTTPException(400, "Bezeichnung ergibt keinen gültigen Schlüssel")
-    vorhanden = {k["key"] for k in cfg_service.get_costs(body.project_id, db)}
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    vorhanden = {k["key"] for k in cfg_service.get_costs(body.project_id, db, mandant_id)}
     key, n = f"x_{basis}", 2
     while key in vorhanden:
         key, n = f"x_{basis}_{n}", n + 1
@@ -163,8 +173,9 @@ def add_custom_cost(body: EigeneKostenartIn, db: Session = Depends(get_db),
     wert = {"label": body.label.strip(), "custom": True, "eintraege": [],
             "gruppe_key": gruppe["key"] if gruppe else "sonstiges",
             "gruppe": gruppe["label"] if gruppe else "Sonstiges"}
-    cfg_service.set_value(body.project_id, db, "cost", key, wert)
-    return {"key": key, **wert, "betrag_aktuell": 0, "hinweis": ""}
+    cfg_service.set_value(body.project_id, db, "cost", key, wert, mandant_id)
+    return {"key": key, **wert, "betrag_aktuell": 0, "hinweis": "",
+            "mandant_id": mandant_id}
 
 
 @router.delete("/costs/{key}")
@@ -172,7 +183,9 @@ def delete_cost(key: str, project_id: Optional[int] = None,
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Eigene Art entfernen bzw. eine Standardart wieder auf ungepflegt setzen."""
     require_editor(project_id, user, db)
-    return {"deleted": cfg_service.reset_value(project_id, db, "cost", key)}
+    return {"deleted": cfg_service.reset_value(
+        project_id, db, "cost", key,
+        mandant_service.aktiver(project_id, user, db))}
 
 
 # ── Ziele: Speicher steht, Auswertung folgt in Phase 4 ───────────────────────

@@ -81,15 +81,36 @@ def _connection_aus_mapping(mapping_id: int, user: User, db: Session) -> tuple[i
                              "sich die Wawi ableiten lässt")
 
 
+def _mandant_beruecksichtigen(connection_id: int, project_id: Optional[int],
+                              user: User, db: Session) -> int:
+    """Lenkt den Schreibzugriff auf die WaWi, die der Anwender gerade ansieht.
+
+    Die Artikel-IDs, die die Oberfläche schickt, stammen aus der Datenbank des
+    aktiven Mandanten. Würde hier die im Mapping hinterlegte Standardverbindung
+    gewinnen, schriebe die Übernahme dieselben IDs in die WaWi des anderen
+    Betriebs – und träfe dort völlig andere Artikel. Das ist der eine Fall, in dem
+    ein Schreibpfad dem Mandanten folgen MUSS.
+    """
+    from app.services import mandant_service
+    aktiv = mandant_service.aktiver(project_id, user, db)
+    if aktiv is None or aktiv == connection_id:
+        return connection_id
+    if connection_id not in mandant_service.austauschbare_ids(project_id, db):
+        return connection_id
+    return aktiv
+
+
 def _aufloesen(req: PlanRequest, user: User, db: Session) -> tuple[int, Optional[int]]:
     """Verbindung bestimmen und Zugriff prüfen. Gibt (connection_id, project_id)."""
     from app.api.projects import can_read_project
+    from app.services import mandant_service
 
     if getattr(user, "is_portal_only", False) and not getattr(user, "is_admin", False):
         raise HTTPException(403, "Stammdaten-Übernahme ist Portal-Benutzern nicht erlaubt")
 
     if req.mapping_id and not req.connection_id:
-        return _connection_aus_mapping(req.mapping_id, user, db)
+        cid, pid = _connection_aus_mapping(req.mapping_id, user, db)
+        return _mandant_beruecksichtigen(cid, pid, user, db), pid
 
     if not req.connection_id:
         raise HTTPException(400, "connection_id oder mapping_id angeben")
@@ -99,7 +120,9 @@ def _aufloesen(req: PlanRequest, user: User, db: Session) -> tuple[int, Optional
         raise HTTPException(404, f"DB-Verbindung #{req.connection_id} nicht gefunden")
     if not can_read_project(conn.project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
-    return int(conn.id), conn.project_id
+    if not mandant_service.darf_nutzen(conn.id, user, db):
+        raise HTTPException(403, "Dieser Mandant ist für Sie nicht freigegeben")
+    return _mandant_beruecksichtigen(int(conn.id), conn.project_id, user, db), conn.project_id
 
 
 def _writer(connection_id: int) -> ArtikelWriter:

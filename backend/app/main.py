@@ -18,6 +18,7 @@ from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHisto
 from app.models.form import Form, FormSubmission
 from app.models.article_exclusion import ArticleExclusion
 from app.models.business_config import BusinessConfig
+from app.models.mandant import MandantFreigabe, MandantAuswahl
 from app.models.alert import AlertRule, AlertRun
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
@@ -89,6 +90,15 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE ai_memory_knowledge ADD COLUMN always_include BOOLEAN DEFAULT 0",
             # Woher ein Warnungslauf kam – trennt die nächtliche Grundlinie vom Klick
             "ALTER TABLE alert_runs ADD COLUMN triggered_by TEXT DEFAULT 'manuell'",
+            # Mandantenfähigkeit: eine Verbindung kann ein Mandant sein, und
+            # Kosten, Warnungsläufe und Nachtläufe gehören dann genau einem.
+            "ALTER TABLE db_connections ADD COLUMN is_mandant BOOLEAN DEFAULT 0",
+            "ALTER TABLE db_connections ADD COLUMN mandant_label TEXT",
+            "ALTER TABLE db_connections ADD COLUMN is_mandant_default BOOLEAN DEFAULT 0",
+            "ALTER TABLE db_connections ADD COLUMN mandant_sort INTEGER DEFAULT 100",
+            "ALTER TABLE business_config ADD COLUMN mandant_id INTEGER",
+            "ALTER TABLE alert_runs ADD COLUMN mandant_id INTEGER",
+            "ALTER TABLE alert_schedules ADD COLUMN mandant_id INTEGER",
             # Regelumfang des Laufs – ohne ihn ist der Vergleich mit dem Vortag unsauber
             "ALTER TABLE alert_runs ADD COLUMN checked_keys JSON",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
@@ -272,6 +282,63 @@ async def lifespan(app: FastAPI):
                 conn.commit()
             except Exception:
                 pass
+
+        # ── Eindeutigkeit um den Mandanten erweitern ─────────────────────────
+        # SQLite kann eine benannte UNIQUE-Bedingung nicht ändern, sie steckt im
+        # CREATE TABLE. Ohne diesen Umbau könnten zwei Mandanten nicht dieselbe
+        # Kostenart (»miete«) bzw. denselben Artikel ausschließen – der zweite
+        # Betrieb liefe in einen Eindeutigkeitsfehler. Beide Tabellen sind klein,
+        # der Umbau kopiert sie deshalb einfach um.
+        def _tabelle_umbauen(tabelle: str, alte_bedingung: str, neues_create: str,
+                             spalten: str):
+            try:
+                vorhanden = conn.execute(text(
+                    "SELECT sql FROM sqlite_master WHERE type='table' AND name=:n"
+                ), {"n": tabelle}).fetchone()
+                if not vorhanden or alte_bedingung not in (vorhanden[0] or ""):
+                    return
+                conn.execute(text("PRAGMA foreign_keys=OFF"))
+                conn.execute(text(f"ALTER TABLE {tabelle} RENAME TO {tabelle}_alt"))
+                conn.execute(text(neues_create))
+                conn.execute(text(
+                    f"INSERT INTO {tabelle} ({spalten}) SELECT {spalten} FROM {tabelle}_alt"))
+                conn.execute(text(f"DROP TABLE {tabelle}_alt"))
+                conn.commit()
+                print(f"Eindeutigkeit von {tabelle} auf Mandanten erweitert")
+            except Exception as e:
+                conn.rollback()
+                print(f"Umbau von {tabelle} übersprungen: {e}")
+
+        _tabelle_umbauen(
+            "business_config", "UNIQUE (project_id, scope",
+            """CREATE TABLE business_config (
+                id INTEGER NOT NULL PRIMARY KEY,
+                project_id INTEGER,
+                mandant_id INTEGER,
+                scope VARCHAR NOT NULL,
+                "key" VARCHAR NOT NULL,
+                value JSON,
+                updated_at DATETIME,
+                CONSTRAINT uq_business_config_key_mandant
+                    UNIQUE (project_id, mandant_id, scope, "key")
+            )""",
+            'id, project_id, mandant_id, scope, "key", value, updated_at')
+
+        _tabelle_umbauen(
+            "article_exclusions", "UNIQUE (project_id, k_artikel)",
+            """CREATE TABLE article_exclusions (
+                id INTEGER NOT NULL PRIMARY KEY,
+                project_id INTEGER,
+                connection_id INTEGER,
+                k_artikel INTEGER NOT NULL,
+                art_nr VARCHAR,
+                name VARCHAR,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT uq_article_excl_mandant_artikel
+                    UNIQUE (project_id, connection_id, k_artikel)
+            )""",
+            "id, project_id, connection_id, k_artikel, art_nr, name, created_at")
+
     db = SessionLocal()
     try:
         import os as _os, secrets as _secrets
@@ -450,6 +517,8 @@ from app.api import business_config as business_config_api
 app.include_router(business_config_api.router)
 from app.api import alerts as alerts_api
 app.include_router(alerts_api.router)
+from app.api import mandanten as mandanten_api
+app.include_router(mandanten_api.router)
 from app.api import research as research_api
 app.include_router(research_api.router)
 from app.api import stammdaten as stammdaten_api

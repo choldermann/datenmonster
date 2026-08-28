@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from "react";
 import { ShieldAlert, RotateCcw, Play, Loader2, CheckCircle2, AlertCircle,
          Clock, Mail, Save } from "lucide-react";
 import api from "../../../api/client";
+import MandantWaehler from "../../MandantWaehler";
+import { onMandantChange } from "../../../services/mandant";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -57,11 +59,18 @@ export default function AlertsPanel({ projectId, canEdit }) {
 
   useEffect(() => { laden_(); }, [laden_]);
 
-  useEffect(() => {
+  const standLaden = useCallback(() => {
     // Letzten gespeicherten Lauf zeigen, ohne die Quell-DB zu belasten.
     api.get(`/api/alerts/latest${q}`).then(r => setLauf(r.data)).catch(() => {});
     api.get(`/api/alerts/schedule${q}`).then(r => setPlan(r.data)).catch(() => {});
   }, [q]);
+
+  useEffect(() => { standLaden(); }, [standLaden]);
+
+  // Warnungslauf und Nachtlauf gehören je einem Mandanten – nach dem Wechsel
+  // stünden sonst die Zahlen des einen unter dem Namen des anderen.
+  useEffect(() => onMandantChange(() => { standLaden(); laden_(); }),
+            [standLaden, laden_]);
 
   const speichern = async (key, wert) => {
     try {
@@ -203,6 +212,9 @@ export default function AlertsPanel({ projectId, canEdit }) {
                 Nächtlicher Lauf
               </span>
               {planSpeichert && <Loader2 size={12} className="animate-spin" style={{ color: S.textDim }} />}
+              {/* Jeder Mandant hat seinen eigenen Nachtlauf – eigene Uhrzeit,
+                  eigene Empfänger. Der Umschalter steht deshalb hier. */}
+              <MandantWaehler projectId={projectId ?? null} kompakt />
             </div>
             <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12,
               color: S.textMain, cursor: canEdit ? "pointer" : "default" }}>

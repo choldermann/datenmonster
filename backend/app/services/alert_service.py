@@ -92,7 +92,8 @@ def _resolve_mapping(db, project_id, mapping_id=None, mapping_name=None):
     return None
 
 
-def _run_mapping(mapping_id: int, run_params: dict, preview_rows: int = 500) -> dict:
+def _run_mapping(mapping_id: int, run_params: dict, preview_rows: int = 500,
+                 mandant_id: Optional[int] = None) -> dict:
     """Read-only Lauf eines Mappings mit eigener DB-Session (thread-sicher)."""
     from app.core.database import SessionLocal
     from app.models.mapping import Mapping
@@ -104,6 +105,8 @@ def _run_mapping(mapping_id: int, run_params: dict, preview_rows: int = 500) -> 
             return {"rows": [], "columns": [], "error": f"Mapping {mapping_id} nicht gefunden"}
         ctx = MappingContext.from_orm(m)
         ctx.run_params = dict(run_params)
+        from app.services import mandant_service
+        mandant_service.verbindung_ersetzen(ctx, mandant_id, db, m.project_id)
         if not ctx.targets:
             return {"rows": [], "columns": [], "error": "Mapping hat keine Ziele"}
         t_fields = ctx.targets[0].get("fields") or []
@@ -260,7 +263,8 @@ def _drilldown(rule, db, project_id) -> Optional[dict]:
 
 # ── Auswertung einer Regel ───────────────────────────────────────────────────
 
-def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict) -> dict:
+def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict,
+                   mandant_id: Optional[int] = None) -> dict:
     """Läuft im Thread: führt das Regel-Mapping aus und wertet die Bedingung aus.
     Bekommt nur einfache Daten (kein ORM-Objekt, keine Session)."""
     cond = rule_data.get("condition") or {}
@@ -272,7 +276,8 @@ def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict) -> dict
     # Anzahl eine Untergrenze – das wird im Text ausgewiesen, nicht verschwiegen.
     cap = limit if mode == "rows" else 500
 
-    res = _run_mapping(rule_data["mapping_id"], params, preview_rows=cap)
+    res = _run_mapping(rule_data["mapping_id"], params, preview_rows=cap,
+                       mandant_id=mandant_id)
     if res.get("error"):
         return {"status": "error", "error": res["error"]}
 
@@ -311,15 +316,15 @@ def _evaluate_rule(rule_data: dict, base_params: dict, thresholds: dict) -> dict
 def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
              include_ok: bool = False, rule_keys: Optional[list] = None,
              persist: bool = True, cockpits: Optional[list] = None,
-             triggered_by: str = "manuell", compare: bool = True) -> dict:
+             triggered_by: str = "manuell", compare: bool = True,
+             mandant_id: Optional[int] = None, user=None) -> dict:
     """Führt alle aktiven Regeln des Projekts aus und liefert die Warnungen.
 
     include_ok=True gibt zusätzlich die nicht ausgelösten und die nicht
     verfügbaren Regeln zurück (Reiter „Alle Prüfungen").
     """
     from app.models.alert import AlertRule, AlertRun
-    from app.services.business_config_service import apply_config
-    from app.services.article_exclusion_service import apply_article_exclusions
+    from app.services import mandant_service
 
     t0 = time.perf_counter()
     q = db.query(AlertRule).filter(AlertRule.active.is_(True))
@@ -337,8 +342,11 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             q = q.filter(von_keys if von_keys is not None else von_cock)
     rules = q.order_by(AlertRule.sort.asc(), AlertRule.id.asc()).all()
 
-    base_params = apply_config(params or {}, project_id, db)
-    base_params = apply_article_exclusions(base_params, project_id, db)
+    # Regeln sind projektweit definiert, die Zahlen dahinter aber mandantenbezogen:
+    # dieselbe Regel läuft für jeden Betrieb gegen dessen eigene WaWi und dessen
+    # eigene Fixkosten.
+    base_params, mandant_id = mandant_service.lauf_vorbereiten(
+        params or {}, project_id, db, user, mandant_id)
     thresholds = {k[4:]: v for k, v in base_params.items() if k.startswith("cfg_")}
 
     # Regeln in einfache Dicts übersetzen (Threads bekommen keine ORM-Objekte)
@@ -359,7 +367,7 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
     ergebnisse: dict = {}
     if vorbereitet:
         with ThreadPoolExecutor(max_workers=ALERT_CONCURRENCY) as ex:
-            futs = {ex.submit(_evaluate_rule, data, base_params, thresholds): rule.rule_key
+            futs = {ex.submit(_evaluate_rule, data, base_params, thresholds, mandant_id): rule.rule_key
                     for rule, data in vorbereitet}
             for fut in as_completed(futs):
                 try:
@@ -423,6 +431,8 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
     dauer = (time.perf_counter() - t0) * 1000.0
     lauf = {
         "project_id": project_id,
+        "mandant_id": mandant_id,
+        "mandant_name": mandant_service.name_von(mandant_id, db),
         "started_at": datetime.now(timezone.utc).isoformat(),
         "duration_ms": round(dauer, 1),
         "params": {k: v for k, v in (params or {}).items()},
@@ -437,7 +447,8 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
 
     if persist:
         try:
-            run = AlertRun(project_id=project_id, duration_ms=round(dauer, 1),
+            run = AlertRun(project_id=project_id, mandant_id=mandant_id,
+                           duration_ms=round(dauer, 1),
                            params=lauf["params"], alerts=alerts,
                            checked=len(vorbereitet), triggered=len(alerts),
                            errors=fehler, triggered_by=triggered_by,
@@ -445,14 +456,14 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             db.add(run)
             db.commit()
             lauf["run_id"] = run.id
-            _cleanup_runs(db, project_id)
+            _cleanup_runs(db, project_id, mandant_id=mandant_id)
         except Exception as e:
             db.rollback()
             logger.warning("AlertRun konnte nicht gespeichert werden: %s", e)
 
     if compare:
         try:
-            compare_with_previous(db, project_id, lauf)
+            compare_with_previous(db, project_id, lauf, mandant_id=mandant_id)
         except Exception as e:
             # Der Vergleich ist Beiwerk – er darf den Lauf nie scheitern lassen.
             logger.warning("Vergleich mit dem Vortag fehlgeschlagen: %s", e)
@@ -460,7 +471,16 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
     return lauf
 
 
-def _cleanup_runs(db, project_id, keep: int = 30, keep_days: int = 120):
+def _mandant_filter(q, mandant_id):
+    """Läufe eines Mandanten. Ohne Mandanten (NULL) sind es die Altläufe eines
+    Projekts, das noch nicht mandantenfähig betrieben wird."""
+    from app.models.alert import AlertRun
+    return q.filter(AlertRun.mandant_id == mandant_id) if mandant_id is not None \
+        else q.filter(AlertRun.mandant_id.is_(None))
+
+
+def _cleanup_runs(db, project_id, keep: int = 30, keep_days: int = 120,
+                  mandant_id: Optional[int] = None):
     """Aufräumen, ohne die Grundlinie zu zerstören.
 
     Manuelle Läufe sind Diagnose: davon reichen die letzten `keep`. Die
@@ -474,8 +494,11 @@ def _cleanup_runs(db, project_id, keep: int = 30, keep_days: int = 120):
 
     def _q():
         q = db.query(AlertRun)
-        return q.filter(AlertRun.project_id == project_id) if project_id is not None \
+        q = q.filter(AlertRun.project_id == project_id) if project_id is not None \
             else q.filter(AlertRun.project_id.is_(None))
+        # Je Mandant aufräumen: sonst verdrängen die Diagnoseläufe des einen
+        # Betriebs die Grundlinie des anderen.
+        return _mandant_filter(q, mandant_id)
 
     weg = []
 
@@ -494,15 +517,17 @@ def _cleanup_runs(db, project_id, keep: int = 30, keep_days: int = 120):
     db.commit()
 
 
-def latest_run(db, project_id) -> Optional[dict]:
+def latest_run(db, project_id, mandant_id: Optional[int] = None) -> Optional[dict]:
     from app.models.alert import AlertRun
     q = db.query(AlertRun)
     q = q.filter(AlertRun.project_id == project_id) if project_id is not None \
         else q.filter(AlertRun.project_id.is_(None))
+    q = _mandant_filter(q, mandant_id)
     run = q.order_by(AlertRun.started_at.desc()).first()
     if not run:
         return None
     lauf = {"run_id": run.id, "project_id": run.project_id,
+            "mandant_id": getattr(run, "mandant_id", None),
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "duration_ms": run.duration_ms, "params": run.params or {},
             "alerts": run.alerts or [], "checked": run.checked,
@@ -513,7 +538,8 @@ def latest_run(db, project_id) -> Optional[dict]:
     # ist der rohe Befund, „neu" ist immer eine Aussage relativ zu einem
     # anderen Lauf und würde eingefroren schnell falsch.
     try:
-        compare_with_previous(db, project_id, lauf, ref=run.started_at)
+        compare_with_previous(db, project_id, lauf, ref=run.started_at,
+                              mandant_id=getattr(run, "mandant_id", None))
     except Exception as e:
         logger.warning("Vergleich mit dem Vortag fehlgeschlagen: %s", e)
     return lauf
@@ -558,7 +584,8 @@ def _num_or_none(v):
 
 
 def compare_with_previous(db, project_id, lauf: dict, ref: Optional[datetime] = None,
-                          max_runs: int = 200) -> dict:
+                          max_runs: int = 200,
+                          mandant_id: Optional[int] = None) -> dict:
     """Reichert die Warnungen eines Laufs um den Vergleich zum Vortag an.
 
     Setzt je Warnung:
@@ -596,6 +623,9 @@ def compare_with_previous(db, project_id, lauf: dict, ref: Optional[datetime] = 
     q = db.query(AlertRun)
     q = q.filter(AlertRun.project_id == project_id) if project_id is not None \
         else q.filter(AlertRun.project_id.is_(None))
+    # Nur gegen Läufe desselben Mandanten vergleichen – sonst meldet der eine
+    # Betrieb Entwarnungen, weil beim anderen etwas nicht mehr feuert.
+    q = _mandant_filter(q, mandant_id)
     runs = q.order_by(AlertRun.started_at.desc()).limit(max_runs).all()
 
     frueher = [r for r in runs

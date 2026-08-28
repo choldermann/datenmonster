@@ -9,6 +9,7 @@ import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/Wid
 import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
+import MandantWaehler from "../components/MandantWaehler";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -259,6 +260,8 @@ export default function FormRunner() {
         </button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
+        <MandantWaehler projectId={form?.project_id ?? null}
+          onWechsel={() => { setResults({}); runForm(null); }} kompakt />
         {widgets.length > 0 && (
           <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
             title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}

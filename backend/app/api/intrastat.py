@@ -46,6 +46,15 @@ def list_exclusions(project_id: Optional[int] = None,
     else:
         q = q.filter(ArticleExclusion.project_id.is_(None))
     rows = q.order_by(ArticleExclusion.art_nr.asc()).all()
+    # kArtikel ist eine interne ID der jeweiligen WaWi – die Liste zeigt deshalb
+    # nur die Ausschlüsse des aktiven Mandanten. Alteinträge ohne Verbindung
+    # gehören dem Standard-Mandanten, weil es damals nur einen gab.
+    from app.services import mandant_service
+    aktiv = mandant_service.aktiver(project_id, user, db)
+    if aktiv is not None:
+        ist_standard = mandant_service.standard(project_id, db) == aktiv
+        rows = [e for e in rows if e.connection_id == aktiv
+                or (e.connection_id is None and ist_standard)]
     return [_out(e) for e in rows]
 
 
@@ -66,20 +75,24 @@ def add_exclusion(data: ExclusionIn,
     if not (getattr(user, "is_portal_only", False)
             and user_can_access_portal_project(data.project_id, user, db)):
         require_editor(data.project_id, user, db)
+    # Der Ausschluss gehört zu der WaWi, in der die Artikel-ID gilt.
+    from app.services import mandant_service
+    conn_id = data.connection_id or mandant_service.aktiver(data.project_id, user, db)
     existing = (db.query(ArticleExclusion)
                 .filter(ArticleExclusion.project_id == data.project_id,
-                        ArticleExclusion.k_artikel == data.k_artikel)
+                        ArticleExclusion.k_artikel == data.k_artikel,
+                        ArticleExclusion.connection_id == conn_id)
                 .first())
     if existing:
         # Anzeige-Daten auffrischen, aber kein Duplikat anlegen
         existing.art_nr = data.art_nr or existing.art_nr
         existing.name = data.name or existing.name
-        existing.connection_id = data.connection_id or existing.connection_id
+        existing.connection_id = conn_id or existing.connection_id
         db.commit()
         return _out(existing)
     e = ArticleExclusion(
         project_id=data.project_id,
-        connection_id=data.connection_id,
+        connection_id=conn_id,
         k_artikel=data.k_artikel,
         art_nr=data.art_nr,
         name=data.name,

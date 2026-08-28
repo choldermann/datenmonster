@@ -100,6 +100,16 @@ def options(connection_id: int, kind: str,
         raise HTTPException(400, f"Unbekannte Lookup-Art: {kind}")
     _check_lookup_access(connection_id, user, db)
 
+    # Die Auswahlliste eines Filters muss aus derselben WaWi kommen wie die Zahlen
+    # daneben – sonst wählt man einen Kunden, den es im aktiven Mandanten nicht gibt.
+    from app.models.dataset import DbConnection as _DBC
+    from app.services import mandant_service
+    _conn = db.query(_DBC).filter(_DBC.id == connection_id).first()
+    if _conn is not None:
+        _aktiv = mandant_service.aktiver(_conn.project_id, user, db)
+        if _aktiv and connection_id in mandant_service.austauschbare_ids(_conn.project_id, db):
+            connection_id = _aktiv
+
     import pandas as pd
     import sqlalchemy as sa
     from app.services.sql_helpers import _get_sql_engine

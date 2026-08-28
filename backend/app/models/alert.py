@@ -75,6 +75,9 @@ class AlertRun(Base):
 
     id          = Column(Integer, primary_key=True, index=True)
     project_id  = Column(Integer, nullable=True, index=True)
+    # Mandant (JTL-Verbindung) des Laufs. Ohne diese Spalte würde der Vergleich
+    # „neu seit gestern" die Warnungen zweier Betriebe miteinander verrechnen.
+    mandant_id  = Column(Integer, nullable=True, index=True)
     started_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     duration_ms = Column(Float, nullable=True)
     params      = Column(JSON, default=dict)      # Zeitraum/Filter des Laufs
@@ -90,7 +93,7 @@ class AlertRun(Base):
 
 
 class AlertSchedule(Base):
-    """Der nächtliche Warnungslauf – eine Zeile je Projekt.
+    """Der nächtliche Warnungslauf – eine Zeile je Projekt und Mandant.
 
     Zweck ist NICHT Geschwindigkeit (ein Lauf dauert rund eine Sekunde), sondern
     zweierlei:
@@ -111,6 +114,10 @@ class AlertSchedule(Base):
 
     id           = Column(Integer, primary_key=True, index=True)
     project_id   = Column(Integer, nullable=True, index=True)
+    # Je Mandant ein eigener Zeitplan: verschiedene Betriebe haben verschiedene
+    # Empfänger und oft auch verschiedene Uhrzeiten. Ein einziger Lauf, der beide
+    # Datenbanken prüft, könnte weder das eine noch das andere trennen.
+    mandant_id   = Column(Integer, nullable=True, index=True)
     cron_expr    = Column(String, default="30 5 * * *")   # 5-stellig, Europe/Berlin
     active       = Column(Boolean, default=False)
 

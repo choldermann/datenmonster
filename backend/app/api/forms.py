@@ -201,10 +201,12 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Mapping")
 
     ctx = MappingContext.from_orm(m)
-    from app.services.article_exclusion_service import apply_article_exclusions
-    from app.services.business_config_service import apply_config
-    ctx.run_params = apply_config(body.params or {}, m.project_id, db)
-    ctx.run_params = apply_article_exclusions(ctx.run_params, m.project_id, db)
+    from app.services import mandant_service
+    # Der Drilldown muss in derselben WaWi landen wie die Zahl, auf die geklickt
+    # wurde – sonst zeigt die Detailliste Belege eines fremden Betriebs.
+    ctx.run_params, _mandant = mandant_service.lauf_vorbereiten(
+        body.params or {}, m.project_id, db, user)
+    mandant_service.verbindung_ersetzen(ctx, _mandant, db, m.project_id)
     if not ctx.targets:
         return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
 
@@ -365,7 +367,7 @@ def run_form(form_id: int, data: FormRunRequest,
     f = db.query(Form).filter(Form.id == form_id).first()
     if not f:
         raise HTTPException(404, "Formular nicht gefunden")
-    return _execute_form(f, data, db, user_id=user.id)
+    return _execute_form(f, data, db, user_id=user.id, user=user)
 
 
 @router.post("/{form_id}/report")
@@ -383,7 +385,8 @@ async def form_report(form_id: int, data: FormRunRequest,
         pdf = await generate_report(f, data.params or {}, db,
                                     precomputed_summary=data.ai_summary,
                                     sections=data.sections,
-                                    provider=data.ai_provider)
+                                    provider=data.ai_provider,
+                                    user=user)
     except Exception as e:
         import traceback as _tb
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}\n{_tb.format_exc()[-400:]}")
@@ -491,7 +494,7 @@ def _expandable_action_ids(schema: dict) -> set:
 
 
 def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
-                         row_cap: int = None) -> dict:
+                         row_cap: int = None, mandant_id: int = None) -> dict:
     """Führt EINE run_mapping-Action read-only aus. Öffnet eine EIGENE DB-Session
     (SQLAlchemy-Sessions sind nicht thread-sicher), damit die Funktion gefahrlos
     parallel laufen kann. Gibt das fertige Ergebnis-Dict für results[action_id] zurück."""
@@ -508,6 +511,8 @@ def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
                     "error": f"Mapping {mapping_id} nicht gefunden"}
         ctx = MappingContext.from_orm(m)
         ctx.run_params = dict(run_params)  # eigene Kopie je Thread (keine geteilte Mutation)
+        from app.services import mandant_service
+        mandant_service.verbindung_ersetzen(ctx, mandant_id, db, m.project_id)
         if not ctx.targets:
             return {"columns": [], "rows": [], "total": 0, "error": "Mapping hat keine Ziele"}
         t_fields = ctx.targets[0].get("fields") or []
@@ -530,17 +535,18 @@ def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
 
 
 def _execute_form(f: Form, data: FormRunRequest, db: Session,
-                  user_id: Optional[int] = None) -> dict:
+                  user_id: Optional[int] = None, user=None) -> dict:
     schema = f.schema or {}
     run_params = data.params or {}
     _validate_required(schema, run_params)
 
-    from app.services.article_exclusion_service import apply_article_exclusions
-    from app.services.business_config_service import apply_config
+    from app.services import mandant_service
     # Projektbezogene Schwellwerte als :cfg_<key> mitgeben. Für bestehende Mappings
-    # ein No-Op – gebunden wird nur, was das SQL auch referenziert.
-    run_params = apply_config(run_params, f.project_id, db)
-    run_params = apply_article_exclusions(run_params, f.project_id, db)
+    # ein No-Op – gebunden wird nur, was das SQL auch referenziert. Der Mandant
+    # entscheidet zugleich über die WaWi-Verbindung und über die Fixkosten, mit
+    # denen das Cockpit rechnet.
+    run_params, mandant_id = mandant_service.lauf_vorbereiten(
+        run_params, f.project_id, db, user)
 
     actions = schema.get("actions") or []
     if data.action_ids:
@@ -570,10 +576,12 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     mapping_actions = [a for a in actions if a.get("type") == "run_mapping"]
     if len(mapping_actions) == 1:
         a0 = mapping_actions[0]
-        results[a0.get("id")] = _run_mapping_preview(a0, run_params, preview_rows, _cap_for(a0))
+        results[a0.get("id")] = _run_mapping_preview(a0, run_params, preview_rows,
+                                                    _cap_for(a0), mandant_id)
     elif mapping_actions:
         with ThreadPoolExecutor(max_workers=_FORM_RUN_CONCURRENCY) as ex:
-            futs = {ex.submit(_run_mapping_preview, a, run_params, preview_rows, _cap_for(a)): a.get("id")
+            futs = {ex.submit(_run_mapping_preview, a, run_params, preview_rows,
+                              _cap_for(a), mandant_id): a.get("id")
                     for a in mapping_actions}
             for fut in as_completed(futs):
                 results[futs[fut]] = fut.result()
@@ -597,7 +605,8 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                     db, f.project_id, run_params,
                     include_ok=bool(_opt.get("include_ok")),
                     rule_keys=_opt.get("rule_keys") or None,
-                    cockpits=_opt.get("cockpits") or None)
+                    cockpits=_opt.get("cockpits") or None,
+                    mandant_id=mandant_id)
                 results[action_id] = {
                     "kind": "alerts",
                     "columns": ["severity", "titel", "Anzahl", "wert"],
@@ -659,6 +668,7 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                 from app.models.project import Project
                 ctx = MappingContext.from_orm(m)
                 ctx.run_params = run_params
+                mandant_service.verbindung_ersetzen(ctx, mandant_id, db, m.project_id)
                 _proj = db.query(Project).filter(Project.id == m.project_id).first() if m.project_id else None
                 result = run_mapping_object(
                     ctx, preview_rows=999999, db=db,

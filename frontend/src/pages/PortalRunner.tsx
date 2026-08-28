@@ -12,6 +12,7 @@ import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../c
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import MandantWaehler from "../components/MandantWaehler";
 import { formIcon } from "../utils/formIcon";
 
 const S = {
@@ -337,6 +338,10 @@ export default function PortalRunner() {
                 {reporting ? "Erstelle PDF…" : aiBusy ? "KI-Analyse läuft…" : "PDF-Report"}
               </button>
             )}
+            {/* Der Mandant steht neben dem Formularnamen im Kopf: eine Umsatzzahl
+                ohne sichtbaren Betrieb dahinter ist im Zweifel wertlos. */}
+            <MandantWaehler projectId={form?.project_id ?? null}
+              onWechsel={() => { setResults({}); runAction(null); }} />
             <KiCredits />
             <ThemeUmschalter />
             <button onClick={handleLogout}

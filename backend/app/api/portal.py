@@ -137,7 +137,7 @@ def run_portal_form(slug: str, data: FormRunRequest,
     if not pc.get("allow_manual_run", True) and data.action_ids:
         raise HTTPException(403, "Manueller Start nicht erlaubt")
 
-    result = _execute_form(f, data, db, user_id=user.id)
+    result = _execute_form(f, data, db, user_id=user.id, user=user)
 
     # Download-Recht prüfen: wenn nicht erlaubt, Zeilen auf 100 begrenzen
     if not pc.get("allow_download", False):
@@ -176,7 +176,8 @@ async def portal_form_report(slug: str, data: FormRunRequest,
         pdf = await generate_report(f, data.params or {}, db,
                                     precomputed_summary=data.ai_summary,
                                     sections=data.sections,
-                                    provider=data.ai_provider)
+                                    provider=data.ai_provider,
+                                    user=user)
     except Exception as e:
         raise HTTPException(500, f"Report-Fehler: {str(e)[:200]}")
 

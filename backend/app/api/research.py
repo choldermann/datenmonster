@@ -80,6 +80,9 @@ def ean_research(body: EanResearchRequest, db: Session = Depends(get_db),
 
     ctx = MappingContext.from_orm(m)
     ctx.run_params = {}
+    from app.services import mandant_service
+    mandant_service.verbindung_ersetzen(
+        ctx, mandant_service.aktiver(m.project_id, user, db), db, m.project_id)
     felder = (ctx.targets[0].get("fields") or []) if ctx.targets else []
     try:
         # row_cap hebt den 50er-Vorschaudeckel auf und deckelt zugleich das SQL –

@@ -4,6 +4,7 @@ import { Play, LogOut, LayoutGrid } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import MandantWaehler from "../components/MandantWaehler";
 import { formIcon } from "../utils/formIcon";
 
 const S = {
@@ -27,6 +28,14 @@ export default function PortalHome() {
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
+  // Der Mandant gilt je Projekt. Stammen alle freigegebenen Formulare aus
+  // demselben Projekt – der Normalfall, wenn die Cockpits zusammen installiert
+  // wurden – kann die Übersicht die Wahl schon hier anbieten. Bei Formularen aus
+  // mehreren Projekten wäre nicht entscheidbar, welcher Mandant gemeint ist;
+  // dann bleibt die Wahl dem einzelnen Cockpit überlassen.
+  const projekte = [...new Set(forms.map(f => f.project_id).filter(p => p != null))];
+  const einProjekt = projekte.length === 1 ? projekte[0] : null;
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
       {/* Header */}
@@ -38,6 +47,7 @@ export default function PortalHome() {
             <span style={{ fontSize: 16, fontWeight: 700, color: S.textBright }}>Datenportal</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            {einProjekt != null && <MandantWaehler projectId={einProjekt} />}
             <KiCredits />
             <ThemeUmschalter />
             <span style={{ fontSize: 12, color: S.textDim }}>{user?.username}</span>

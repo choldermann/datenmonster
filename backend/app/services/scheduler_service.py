@@ -386,16 +386,27 @@ def _run_alert_check(schedule_id: int, triggered_by: str = "scheduler"):
         for k, v in _standard_zeitraum().items():
             params.setdefault(k, v)
 
+        # Der Zeitplan gehört einem Mandanten: geprüft wird dessen WaWi, mit
+        # dessen Fixkosten. Ein Zeitplan ohne Mandant (Altbestand oder Projekt
+        # ohne Mandanten) läuft unverändert gegen die eingetragene Verbindung.
+        from app.services import mandant_service
+        mandant_id = getattr(plan, "mandant_id", None)
         lauf = alert_service.evaluate(
             db, plan.project_id, params=params,
             rule_keys=plan.rule_keys or None, cockpits=plan.cockpits or None,
             persist=True, triggered_by=triggered_by,
+            mandant_id=mandant_id,
         )
 
         projekt_name = None
         if plan.project_id:
             p = db.query(Project).filter(Project.id == plan.project_id).first()
             projekt_name = p.name if p else None
+        # Der Mandantenname gehört in den Betreff – sonst stehen zwei gleich
+        # aussehende Mails im Postfach und niemand weiß, welcher Betrieb gemeint ist.
+        _mname = mandant_service.name_von(mandant_id, db)
+        if _mname:
+            projekt_name = f"{projekt_name} · {_mname}" if projekt_name else _mname
 
         versand = {"sent": False, "grund": "kein Versand konfiguriert"}
         try:
@@ -420,7 +431,8 @@ def _run_alert_check(schedule_id: int, triggered_by: str = "scheduler"):
         plan.last_status = "success"
         plan.last_message = meldung[:1000]
         safe_commit(db)
-        logger.info(f"✓ Warnungslauf (Zeitplan {schedule_id}): {meldung}")
+        logger.info(f"✓ Warnungslauf (Zeitplan {schedule_id}"
+                    + (f", Mandant {_mname}" if _mname else "") + f"): {meldung}")
         return lauf
 
     except Exception as e:

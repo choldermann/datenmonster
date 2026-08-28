@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -43,6 +43,15 @@ class DbConnection(Base):
     username = Column(String, nullable=False)
     password = Column(String, nullable=False)
     project_id      = Column(Integer, nullable=True)
+    # ── Mandantenfähigkeit ───────────────────────────────────────────────────
+    # Ein Mandant IST eine DB-Verbindung: dieselben Cockpits, andere WaWi-Datenbank.
+    # Deshalb kein eigenes Entity – nur die Kennzeichnung, dass diese Verbindung im
+    # Portal als Mandant auswählbar sein soll. Verbindungen ohne das Häkchen
+    # (Import-Quellen, Schreibziele) tauchen im Umschalter nicht auf.
+    is_mandant         = Column(Boolean, default=False)
+    mandant_label      = Column(String, nullable=True)   # Anzeigename, sonst name
+    is_mandant_default = Column(Boolean, default=False)  # Erstauswahl + Ziel der Altdaten
+    mandant_sort       = Column(Integer, default=100)
     schema_cache    = Column(Text, nullable=True)
     schema_cached_at = Column(DateTime(timezone=True), nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())

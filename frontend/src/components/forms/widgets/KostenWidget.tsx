@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Wallet, Trash2, Plus, ChevronDown, ChevronRight, AlertCircle,
-         Loader2, History } from "lucide-react";
+         Loader2, History, Building2 } from "lucide-react";
 import api from "../../../api/client";
+import { onMandantChange } from "../../../services/mandant";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -52,6 +53,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
   const [offen, setOffen] = useState({});        // key → Zeitleiste aufgeklappt
   const [neu, setNeu] = useState(null);          // Entwurf für eigene Kostenart
   const [speichert, setSpeichert] = useState(null);
+  const [mandant, setMandant] = useState(null);  // Name des Mandanten, dessen Kosten hier stehen
 
   const q = projectId ? `?project_id=${projectId}` : "";
 
@@ -60,6 +62,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
     try {
       const { data } = await api.get(`/api/business-config/costs${q}`);
       setArten(data.kosten || []);
+      setMandant(data.mandant_name || null);
       setGruppen(data.gruppen || []);
       setSumme(data.summe_monat || { gesamt: 0, gruppen: {} });
       setFehler(null);
@@ -71,6 +74,10 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
   }, [q]);
 
   useEffect(() => { laden_(); }, [laden_]);
+
+  // Beim Mandantenwechsel neu laden: die Fixkosten des einen Betriebs haben in
+  // der Maske des anderen nichts verloren.
+  useEffect(() => onMandantChange(() => { laden_(); }), [laden_]);
 
   // Lokal ändern (flüssiges Tippen), gespeichert wird beim Verlassen des Feldes.
   const aendern = (key, eintraege) =>
@@ -153,7 +160,8 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
             display: "flex", alignItems: "flex-start", gap: 7 }}>
             <Wallet size={14} style={{ color: S.accent, flexShrink: 0, marginTop: 1 }} />
             <span>
-            Monatliche Fixkosten dieses Projekts. Die gängigen Kostenarten sind
+            Monatliche Fixkosten {mandant ? "dieses Mandanten" : "dieses Projekts"}.
+            Die gängigen Kostenarten sind
             vorgeblendet – einzutragen sind nur Betrag und „gültig ab". Ändert sich
             ein Betrag, kommt ein <b>weiterer Zeitraum</b> dazu statt den alten Wert zu
             überschreiben; vor dem frühesten „gültig ab" wird mit 0 € gerechnet.
@@ -161,6 +169,15 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
           </p>
         </div>
         <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+          {/* Wessen Kosten hier stehen, muss ohne Nachdenken sichtbar sein –
+              sonst pflegt man bei zwei Betrieben irgendwann die falschen. */}
+          {mandant && (
+            <div style={{ display: "flex", alignItems: "center", gap: 5,
+              justifyContent: "flex-end", fontSize: 11.5, fontWeight: 600,
+              color: S.accent, marginBottom: 4 }}>
+              <Building2 size={12} /> {mandant}
+            </div>
+          )}
           <div style={{ fontSize: 10.5, color: S.textDim, letterSpacing: "0.06em",
             textTransform: "uppercase" }}>Fixkosten heute</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: S.textBright }}>

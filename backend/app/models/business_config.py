@@ -14,7 +14,9 @@ class BusinessConfig(Base):
 
     scope trennt die Namensräume:
       threshold – Schwellwerte für Warnungen (Ladenhüter-Tage, Marge-Minimum …)
-      cost      – monatliche Fixkosten je Kostenart (Miete, Personal, Strom …)
+      cost      – monatliche Fixkosten je Kostenart (Miete, Personal, Strom …),
+                  immer an einen Mandanten gebunden – die Miete des einen Betriebs
+                  darf nie das Betriebsergebnis des anderen belasten.
       goal      – Unternehmensziele (Jahresumsatz, DB-Marge …)
 
     value ist bewusst JSON: Schwellwerte sind Zahlen, Kostenarten und Ziele sind
@@ -29,6 +31,10 @@ class BusinessConfig(Base):
 
     id         = Column(Integer, primary_key=True, index=True)
     project_id = Column(Integer, nullable=True, index=True)
+    # Mandant = die JTL-Verbindung, für die dieser Wert gilt. NULL heißt
+    # "projektweit, für alle Mandanten" – so gelten Schwellwerte weiterhin
+    # einmal für alle, während Fixkosten je Mandant getrennt gepflegt werden.
+    mandant_id = Column(Integer, nullable=True, index=True)
     scope      = Column(String, nullable=False, default="threshold")
     key        = Column(String, nullable=False)
     value      = Column(JSON, nullable=True)
@@ -36,5 +42,6 @@ class BusinessConfig(Base):
                         onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        UniqueConstraint("project_id", "scope", "key", name="uq_business_config_key"),
+        UniqueConstraint("project_id", "mandant_id", "scope", "key",
+                        name="uq_business_config_key_mandant"),
     )
