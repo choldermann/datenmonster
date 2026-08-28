@@ -80,6 +80,20 @@ function buildAssessment(results) {
     out.push({ bereich: "Ertragslage", good: (p == null || p >= 0),
       kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, Rohertragsmarge ${deNum(ov.DB2Marge)} %` });
   }
+  // Versandkosten-Pflege. Spiegelbild in cockpit_report._assessment_rows.
+  const vl = versandluecke(ov);
+  if (vl) {
+    out.push({ bereich: "Versandkosten", good: !vl.wesentlich,
+      kommentar: vl.wesentlich
+        ? `${deNum(vl.ohne)} von ${deNum(vl.ges)} Versandpositionen ohne Einkaufspreis `
+          + `(${deNum(vl.anteil)} %), ${deNum(vl.erloes, true)} Erlös zählt als 100 % Marge `
+          + `– in JTL bei den Versandarten nachpflegen`
+        : vl.ohne
+          ? `${deNum(vl.ohne)} von ${deNum(vl.ges)} Versandpositionen ohne Einkaufspreis, `
+            + `betrifft aber nur ${deNum(vl.erloes, true)} Erlös`
+          : `alle ${deNum(vl.ges)} Versandpositionen mit hinterlegtem Einkaufspreis` });
+  }
+
   const erg = one("act_ergebnis_kpi");
   // Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes
   // Betriebsergebnis "gut". Die Zeile entfällt dann lieber ganz.
@@ -353,11 +367,41 @@ function buildKpiText(rows) {
 // Die KI rechnet nichts nach – sie webt diese Texte nur in die Lagebeurteilung ein.
 // `deep` (Detailgrad "ausführlich") gibt mehr Beispielzeilen mit: das große Modell
 // erkennt Muster über viele Zeilen, statt nur Summen nachzuerzählen.
+// Versandpositionen ohne hinterlegten Einkaufspreis. Bewertet wird das GELD, nicht
+// die Anzahl: „Selbstabholer" & Co. haben zu Recht keinen EK und meist auch keinen
+// Erlös – sie blähen die Zahl auf, verzerren aber nichts. Wesentlich ist die Lücke
+// erst ab einem halben Prozent des Rohertrags. Spiegelbild: _versandluecke in
+// cockpit_report.py.
+function versandluecke(row) {
+  const ges = num(row?.VersandPos);
+  if (!ges) return null;
+  const ohne = num(row.VersandPosOhneEK) || 0;
+  const erloes = num(row.VersandErloesOhneEK) || 0;
+  const rohertrag = Math.abs(num(row.DB2) || 0);
+  const wesentlich = !!erloes && (!rohertrag || erloes > 0.005 * rohertrag);
+  return { ohne, ges, anteil: (100 * ohne) / ges, erloes, wesentlich };
+}
+
 function buildSectionText(kind, rows, deep = false) {
   if (!Array.isArray(rows) || rows.length === 0) return "";
   const EX = deep ? 8 : 2;      // Beispiele je Themenblock
 
   if (kind === "kpi") return buildKpiText(rows);
+
+  if (kind === "versandluecke") {
+    // Ohne wesentliche Lücke liefert der Block nichts – dann fällt er heraus und
+    // die KI erwähnt das Thema gar nicht erst.
+    const v = versandluecke(rows[0]);
+    if (!v || !v.wesentlich) return "";
+    return `${deNum(v.ohne)} von ${deNum(v.ges)} Versandpositionen (${deNum(v.anteil)} %) haben in der `
+      + `Warenwirtschaft keinen Einkaufspreis hinterlegt. Ihr Versanderlös von `
+      + `${deNum(v.erloes, true)} geht deshalb ohne Gegenkosten in den Rohertrag ein und zählt dort `
+      + `als 100 % Marge – der ausgewiesene Rohertrag ist um die fehlenden Frachtkosten zu hoch, und `
+      + `ein Versand, der in Wahrheit bezuschusst wird, sieht profitabel aus. Ursache ist die `
+      + `Stammdatenpflege in JTL, nicht die Auswertung. Abhilfe: in JTL bei den betroffenen `
+      + `Versandarten die tatsächlichen Frachtkosten hinterlegen; danach rechnet das Cockpit den `
+      + `Versand von selbst richtig.`;
+  }
 
   if (kind === "churn") {
     const sum = rows.reduce((a, r) => a + (parseFloat(r["Umsatz 24M"]) || 0), 0);

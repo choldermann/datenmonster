@@ -542,7 +542,11 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
             srows = (results.get(sek.get("action_id")) or {}).get("rows") or []
             if not srows:
                 continue
-            if sek.get("kind") == "kpi":
+            if sek.get("kind") == "versandluecke":
+                inhalt = _versandluecke_text(srows[0])
+                if not inhalt:
+                    continue
+            elif sek.get("kind") == "kpi":
                 inhalt = ", ".join(f"{k}: {_fmt(v, 1) if _is_num(v) else v}"
                                    for k, v in srows[0].items() if v is not None)
             else:
@@ -699,6 +703,48 @@ def _pctval(v):
     return "–" if _asnum(v) is None else _fmt(v, 1) + " %"
 
 
+def _versandluecke(row: dict):
+    """(ohne EK, gesamt, Anteil %, Erlös ohne Gegenkosten, wesentlich?) oder None.
+
+    Bewertet wird das GELD, nicht die Anzahl. Positionen wie „Selbstabholer" oder
+    „Lieferung durch Gerd" haben zu Recht keinen Einkaufspreis und meist auch keinen
+    Erlös – sie blähen die Anzahl auf, verzerren aber nichts. Bei HaKo sind das 776
+    von 4.152 Positionen mit zusammen 111 € Erlös; das als Mangel zu melden wäre ein
+    Fehlalarm. Wesentlich ist die Lücke erst, wenn der Erlös ohne Gegenkosten mehr
+    als ein halbes Prozent des Rohertrags ausmacht (PPS: 6.271 € = 1,9 %).
+
+    Gibt None, wenn die Kennzahl fehlt (ältere Cockpit-Stände).
+    """
+    ges = _asnum((row or {}).get("VersandPos"))
+    if not ges:
+        return None
+    ohne = _asnum(row.get("VersandPosOhneEK")) or 0
+    erloes = _asnum(row.get("VersandErloesOhneEK")) or 0.0
+    rohertrag = abs(_asnum(row.get("DB2")) or 0.0)
+    wesentlich = bool(erloes) and (not rohertrag or erloes > 0.005 * rohertrag)
+    return ohne, ges, 100.0 * ohne / ges, erloes, wesentlich
+
+
+def _versandluecke_text(row: dict) -> str:
+    """Fließtext für die KI – erklärt Ursache und Abhilfe. Leer, wenn unwesentlich.
+
+    Wortgleich mit buildSectionText(kind "versandluecke") im Frontend, damit
+    Cockpit und PDF-Report dasselbe sagen.
+    """
+    lage = _versandluecke(row)
+    if not lage or not lage[4]:
+        return ""
+    ohne, ges, anteil, erloes, _ = lage
+    return (
+        f"{_fmt(ohne, 0)} von {_fmt(ges, 0)} Versandpositionen ({_fmt(anteil, 1)} %) haben in der "
+        f"Warenwirtschaft keinen Einkaufspreis hinterlegt. Ihr Versanderlös von {_eur(erloes)} geht "
+        "deshalb ohne Gegenkosten in den Rohertrag ein und zählt dort als 100 % Marge – der "
+        "ausgewiesene Rohertrag ist um die fehlenden Frachtkosten zu hoch, und ein Versand, der in "
+        "Wahrheit bezuschusst wird, sieht profitabel aus. Ursache ist die Stammdatenpflege in JTL, "
+        "nicht die Auswertung. Abhilfe: in JTL bei den betroffenen Versandarten die tatsächlichen "
+        "Frachtkosten hinterlegen; danach rechnet das Cockpit den Versand von selbst richtig.")
+
+
 # Action-IDs, die die Bewertungstabelle auswertet. Wird die Bewertung angefordert,
 # müssen diese Abfragen auch dann laufen, wenn ihr Reiter abgewählt wurde.
 _ASSESSMENT_ACTION_IDS = {
@@ -752,6 +798,19 @@ def _assessment_rows(results: dict) -> list:
         p = _apct(ov.get("Umsatz"), ov.get("UmsatzVJ"))
         out.append(("Ertragslage", p is None or p >= 0,
                     f"Umsatz {_spct(p)} ggü. Vorjahr, Rohertragsmarge {_pctval(ov.get('DB2Marge'))}"))
+    lage = _versandluecke(ov or {})
+    if lage:
+        ohne, ges, anteil, erloes, wesentlich = lage
+        if wesentlich:
+            kommentar = (f"{_fmt(ohne, 0)} von {_fmt(ges, 0)} Versandpositionen ohne Einkaufspreis "
+                         f"({_fmt(anteil, 1)} %), {_eur(erloes)} Erlös zählt als 100 % Marge "
+                         "– in JTL bei den Versandarten nachpflegen")
+        elif ohne:
+            kommentar = (f"{_fmt(ohne, 0)} von {_fmt(ges, 0)} Versandpositionen ohne Einkaufspreis, "
+                         f"betrifft aber nur {_eur(erloes)} Erlös")
+        else:
+            kommentar = f"alle {_fmt(ges, 0)} Versandpositionen mit hinterlegtem Einkaufspreis"
+        out.append(("Versandkosten", not wesentlich, kommentar))
     erg = one("act_ergebnis_kpi")
     # Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes
     # Betriebsergebnis "gut". Die Zeile entfällt dann lieber ganz.

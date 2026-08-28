@@ -489,8 +489,15 @@ async def summarize_data(
     # Weniger Blöcke und kürzere Texte = weniger Angriffsfläche.
     if not getattr(svc, "is_gateway", False):
         _LOKAL_MAX_BLOECKE, _LOKAL_MAX_ZEICHEN = 5, 600
+        # Datenqualitäts-Befunde stehen konfigurationsseitig hinten, weil sie meist
+        # gar nichts liefern. Wenn sie es doch tun, ist wirklich etwas im Argen –
+        # dann wiegen sie schwerer als ein weiterer Fachbereich und dürfen nicht
+        # ausgerechnet der Kürzung zum Opfer fallen.
+        _vorrang = [s for s in sections if str(s.get("label", "")).startswith("Datenqualität")]
+        _rest = [s for s in sections if s not in _vorrang]
+        sections = _vorrang + _rest[:max(0, _LOKAL_MAX_BLOECKE - len(_vorrang))]
         sections = [{**s, "text": str(s["text"]).strip()[:_LOKAL_MAX_ZEICHEN]}
-                    for s in sections[:_LOKAL_MAX_BLOECKE]]
+                    for s in sections]
     sections_text = "\n\n".join(
         f"{s.get('label', 'Weitere Kennzahlen')}:\n{str(s['text']).strip()}" for s in sections
     )
@@ -596,6 +603,7 @@ async def summarize_data(
             "**Ausblick:** Umsatzprognose Jahresende vs. Vorjahr und schlafende Kunden (Anzahl, max. 1 Beispiel).\n"
             "**Retouren:** Retourenquote (Wert-basiert) und Retourenwert mit Entwicklung zum Vorjahr; "
             "eine sehr niedrige Quote ausdrücklich als gut einordnen.\n"
+            "**Datenqualität:** nur wenn ein Block dazu geliefert wurde – benenne die Lücke, ihre Wirkung auf die Zahlen und die konkrete Abhilfe. Nicht erfinden, wenn nichts geliefert wurde.\n"
             "**Handlungsbedarf:** die zwei bis drei wichtigsten Maßnahmen in EINEM Satz.\n\n"
             "Beginne direkt mit **Ertragslage:** – keine Überschrift, keine Einleitung, kein Text danach. "
             + _MARKIER +
