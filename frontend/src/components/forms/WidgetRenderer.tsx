@@ -110,7 +110,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     try {
       // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
       const params = param ? { ...base, [param]: value } : { ...base };
-      const { data } = await api.post("/api/forms/drilldown", { mapping_id, params });
+      // Ohne max_rows deckelt der Endpunkt auf 200 Zeilen – bei einer Detailliste
+      // mit mehreren hundert Artikeln (Lagerwert eines Monats) fehlte damit ein
+      // Gutteil, ohne dass man es sah. 500 ist das Maximum, das er zulässt.
+      const { data } = await api.post("/api/forms/drilldown", { mapping_id, params, max_rows: 500 });
       setStack(prev => prev.map(f => f.id === id ? { ...f, rows: data.rows || [], loading: false } : f));
     } catch (e) {
       setStack(prev => prev.map(f => f.id === id

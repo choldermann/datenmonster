@@ -46,58 +46,110 @@ CTE = """WITH bestand AS (
     GROUP BY H.kArtikel
 )"""
 
-ARTIKEL_FELDER = ["ArtNr", "Artikel", "Warengruppe", "Bestand", "EKNetto",
+# „Sortierung" hält die Sammelzeile unten und wird im Modal ausgeblendet.
+ARTIKEL_FELDER = ["Sortierung", "ArtNr", "Artikel", "Warengruppe", "Bestand", "EKNetto",
                   "Lagerwert", "LetzterAbgang", "TageOhneAbgang", "kArtikel"]
+
+# Der Drilldown-Endpunkt liefert höchstens 500 Zeilen. Bei den großen Listen
+# (ein Monatsstichtag hat gut 1.000 Artikel) fehlte damit ein Fünftel des Werts,
+# ohne dass es jemand sah. Deshalb: die teuersten 499 einzeln, der Rest als EINE
+# beschriftete Sammelzeile – so stimmt die Summe der Liste immer mit der
+# angeklickten Zahl überein, und die Kürzung steht sichtbar da.
+REST_GRENZE = 499
+
+
+def mit_sammelzeile(quelle: str, spalten: str, rest: str, sortierung: str) -> str:
+    """Baut „die teuersten N einzeln + eine Sammelzeile" um eine Quelle mit `rn`.
+
+    `quelle` ist der Name einer CTE, die eine Spalte `rn` (ROW_NUMBER nach dem
+    Sortierkriterium) mitbringt. `spalten` ist die Auswahl der Einzelzeilen,
+    `rest` die gleich breite Auswahl für die Sammelzeile.
+    """
+    return f"""SELECT 0 AS Sortierung, {spalten}
+FROM {quelle} WHERE rn <= {REST_GRENZE}
+UNION ALL
+SELECT 1, {rest}
+FROM {quelle} WHERE rn > {REST_GRENZE}
+HAVING COUNT(*) > 0
+ORDER BY Sortierung, {sortierung}"""
+
 
 def artikel_liste(joins: str, filter_: str, aktiv_filter: bool = False) -> str:
     """Artikelliste zum Stichtag. `aktiv_filter` spiegelt die Klassen-Diagramme."""
     aktiv = " AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0" if aktiv_filter else ""
     return f"""{CTE}
-SELECT TOP 300 A.cArtNr AS ArtNr,
-    ISNULL(AB.cName, '') AS Artikel,
-    ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,
-    CAST(b.Menge AS DECIMAL(18,2)) AS Bestand,
-    CAST(COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,4)) AS EKNetto,
-    CAST(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,2)) AS Lagerwert,
-    ISNULL(CONVERT(varchar(10), ab2.LetzterAbgang, 104), '') AS LetzterAbgang,
-    DATEDIFF(DAY, ab2.LetzterAbgang, :bis) AS TageOhneAbgang,
-    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel
-FROM bestand b
-JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel{aktiv}
-LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
-     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
-LEFT JOIN ek ON ek.kArtikel = b.kArtikel
-LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
-LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel{joins}
-WHERE {filter_}
-ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC"""
+, bewertet AS (
+    SELECT A.cArtNr AS ArtNr,
+        ISNULL(AB.cName, '') AS Artikel,
+        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,
+        b.Menge AS Bestand,
+        COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK,
+        b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS Wert,
+        ab2.LetzterAbgang,
+        CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC) AS rn
+    FROM bestand b
+    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel{aktiv}
+    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
+         AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
+    LEFT JOIN ek ON ek.kArtikel = b.kArtikel
+    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
+    LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel{joins}
+    WHERE {filter_}
+)
+""" + mit_sammelzeile(
+        "bewertet",
+        """ArtNr, Artikel, Warengruppe,
+    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,
+    CAST(EK AS DECIMAL(18,4)) AS EKNetto,
+    CAST(Wert AS DECIMAL(18,2)) AS Lagerwert,
+    ISNULL(CONVERT(varchar(10), LetzterAbgang, 104), '') AS LetzterAbgang,
+    DATEDIFF(DAY, LetzterAbgang, :bis) AS TageOhneAbgang,
+    kArtikel""",
+        """'', CONCAT('… ', COUNT(*), ' weitere Artikel'), '',
+    CAST(SUM(Bestand) AS DECIMAL(18,2)), NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), '', NULL, ''""",
+        "Lagerwert DESC")
 
 
 # Reichweite in Tagen – Zähler und Nenner wie im Klassen-Diagramm.
 REICHWEITE = """(b.Menge + CASE WHEN ISNULL(bs.Menge, 0) > 0 THEN bs.Menge ELSE 0 END) / 2.0"""
 
-BUCHUNG_FELDER = ["Datum", "ArtNr", "Artikel", "Typ", "Buchungsart", "Menge",
-                  "BestandDanach", "Wert", "Benutzer", "kArtikel"]
+BUCHUNG_FELDER = ["Sortierung", "Datum", "ArtNr", "Artikel", "Typ", "Buchungsart",
+                  "Menge", "BestandDanach", "Wert", "Benutzer", "kArtikel"]
 
 def buchungen(filter_: str) -> str:
     """Einzelbuchungen im Zeitraum – die Detailebene unter jeder Buchungs-Summe."""
-    return f"""SELECT TOP 500
-    CONVERT(varchar(10), H.dGebucht, 104) AS Datum,
-    A.cArtNr AS ArtNr,
-    ISNULL(AB.cName, '') AS Artikel,
-    H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,
-    CAST(H.fAnzahl AS DECIMAL(18,2)) AS Menge,
-    CAST(H.fLagerBestandGesamt AS DECIMAL(18,2)) AS BestandDanach,
-    CAST(H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) AS DECIMAL(18,2)) AS Wert,
-    ISNULL(NULLIF(B.cName, ''), 'unbekannt') AS Benutzer,
-    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel
-FROM dbo.vArtikelHistorie H
-JOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel
-LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
-     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
-LEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer
-WHERE {filter_}
-ORDER BY H.dGebucht DESC"""
+    return f"""WITH gebucht AS (
+    SELECT H.dGebucht,
+        A.cArtNr AS ArtNr,
+        ISNULL(AB.cName, '') AS Artikel,
+        H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,
+        H.fAnzahl AS Menge,
+        H.fLagerBestandGesamt AS BestandDanach,
+        H.fAnzahl * COALESCE(NULLIF(H.fEKNetto, 0), A.fEKNetto, 0) AS Wert,
+        ISNULL(NULLIF(B.cName, ''), 'unbekannt') AS Benutzer,
+        CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY H.dGebucht DESC) AS rn
+    FROM dbo.vArtikelHistorie H
+    JOIN dbo.tArtikel A ON A.kArtikel = H.kArtikel
+    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
+         AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
+    LEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer
+    WHERE {filter_}
+)
+""" + mit_sammelzeile(
+        "gebucht",
+        """CONVERT(varchar(10), dGebucht, 104) AS Datum,
+    ArtNr, Artikel, Typ, Buchungsart,
+    CAST(Menge AS DECIMAL(18,2)) AS Menge,
+    CAST(BestandDanach AS DECIMAL(18,2)) AS BestandDanach,
+    CAST(Wert AS DECIMAL(18,2)) AS Wert,
+    Benutzer, kArtikel""",
+        """'', '', CONCAT('… ', COUNT(*), ' ältere Buchungen'), '', '',
+    CAST(SUM(Menge) AS DECIMAL(18,2)), NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''""",
+        "Datum DESC")
 
 
 # ── Die neuen Detail-Abfragen ───────────────────────────────────────────────
@@ -109,20 +161,21 @@ NEUE_MAPPINGS = {
         # Die Übersicht fasst leere Warengruppen unter „(ohne Warengruppe)"
         # zusammen; der Klick liefert genau diesen Text zurück.
         "sql": artikel_liste("", "(:warengruppe = '(ohne Warengruppe)' AND ISNULL(W.cName, '') = '')\n"
-                                 "   OR W.cName = :warengruppe"),
+                                 "       OR W.cName = :warengruppe"),
     },
     "m_lg_hst_artikel": {
         "name": "Lager – Artikel des Herstellers (Detail)",
         "felder": ARTIKEL_FELDER,
-        "sql": artikel_liste("\nLEFT JOIN dbo.tHersteller HS ON HS.kHersteller = A.kHersteller",
+        "sql": artikel_liste("\n    LEFT JOIN dbo.tHersteller HS ON HS.kHersteller = A.kHersteller",
                              "(:hersteller = '(ohne Hersteller)' AND ISNULL(HS.cName, '') = '')\n"
-                             "   OR HS.cName = :hersteller"),
+                             "       OR HS.cName = :hersteller"),
     },
     "m_lg_lager_artikel": {
         "name": "Lager – Artikel im Warenlager (Detail)",
         "felder": ARTIKEL_FELDER,
-        # Bestand JE LAGER statt gesamt: derselbe Aufbau wie die Übersicht.
-        "sql": f"""WITH bestand AS (
+        # Bestand JE LAGER statt gesamt – wie in der Übersicht über die
+        # Lagerplätze gerechnet, sonst stimmt die Summe nicht.
+        "sql": """WITH bestand AS (
     SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge
     FROM dbo.vArtikelHistorie H
     JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz
@@ -143,29 +196,85 @@ NEUE_MAPPINGS = {
     WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'
       AND H.dGebucht < DATEADD(DAY, 1, :bis)
     GROUP BY H.kArtikel
+), bewertet AS (
+    SELECT A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel,
+        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,
+        b.Menge AS Bestand, COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK,
+        b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS Wert,
+        ab2.LetzterAbgang, CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC) AS rn
+    FROM bestand b
+    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel
+    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
+         AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
+    LEFT JOIN ek ON ek.kArtikel = b.kArtikel
+    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
+    LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel
 )
-SELECT TOP 300 A.cArtNr AS ArtNr,
-    ISNULL(AB.cName, '') AS Artikel,
-    ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,
-    CAST(b.Menge AS DECIMAL(18,2)) AS Bestand,
-    CAST(COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,4)) AS EKNetto,
-    CAST(b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,2)) AS Lagerwert,
-    ISNULL(CONVERT(varchar(10), ab2.LetzterAbgang, 104), '') AS LetzterAbgang,
-    DATEDIFF(DAY, ab2.LetzterAbgang, :bis) AS TageOhneAbgang,
-    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel
-FROM bestand b
-JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel
-LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
-     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
-LEFT JOIN ek ON ek.kArtikel = b.kArtikel
-LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
-LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel
-ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC""",
+""" + mit_sammelzeile(
+            "bewertet",
+            """ArtNr, Artikel, Warengruppe,
+    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,
+    CAST(EK AS DECIMAL(18,4)) AS EKNetto,
+    CAST(Wert AS DECIMAL(18,2)) AS Lagerwert,
+    ISNULL(CONVERT(varchar(10), LetzterAbgang, 104), '') AS LetzterAbgang,
+    DATEDIFF(DAY, LetzterAbgang, :bis) AS TageOhneAbgang,
+    kArtikel""",
+            """'', CONCAT('… ', COUNT(*), ' weitere Artikel'), '',
+    CAST(SUM(Bestand) AS DECIMAL(18,2)), NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), '', NULL, ''""",
+            "Lagerwert DESC"),
+    },
+    "m_lg_stichtag_artikel": {
+        "name": "Lager – Artikel zum Monatsstichtag (Detail)",
+        "felder": ["Sortierung", "ArtNr", "Artikel", "Warengruppe", "Bestand",
+                   "EKNetto", "Lagerwert", "kArtikel"],
+        # Der Verlauf zeigt den Bestand zum MONATSERSTEN (`dGebucht < Monat`) und
+        # bewertet ihn mit dem bis dahin zuletzt gebuchten EK. Beides muss das
+        # Detail genauso machen, sonst weicht die Summe vom Punkt der Kurve ab.
+        # Der Klick liefert den Monat als 'JJJJ-MM'.
+        "sql": """WITH stichtag AS (
+    SELECT CAST(CONCAT(:monat, '-01') AS DATE) AS Tag
+), bestand AS (
+    SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge
+    FROM dbo.vArtikelHistorie H CROSS JOIN stichtag s
+    WHERE H.dGebucht < s.Tag
+    GROUP BY H.kArtikel HAVING SUM(H.fAnzahl) > 0
+), bewertet AS (
+    SELECT A.cArtNr AS ArtNr, ISNULL(AB.cName, '') AS Artikel,
+        ISNULL(NULLIF(W.cName, ''), '') AS Warengruppe,
+        b.Menge AS Bestand, COALESCE(e.fEKNetto, A.fEKNetto, 0) AS EK,
+        b.Menge * COALESCE(e.fEKNetto, A.fEKNetto, 0) AS Wert,
+        CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY b.Menge * COALESCE(e.fEKNetto, A.fEKNetto, 0) DESC) AS rn
+    FROM bestand b
+    CROSS JOIN stichtag s
+    JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel
+    LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel
+         AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0
+    LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
+    OUTER APPLY (
+        SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H
+        WHERE H.kArtikel = b.kArtikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0
+          AND H.dGebucht < s.Tag ORDER BY H.dGebucht DESC
+    ) e
+)
+""" + mit_sammelzeile(
+            "bewertet",
+            """ArtNr, Artikel, Warengruppe,
+    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,
+    CAST(EK AS DECIMAL(18,4)) AS EKNetto,
+    CAST(Wert AS DECIMAL(18,2)) AS Lagerwert,
+    kArtikel""",
+            """'', CONCAT('… ', COUNT(*), ' weitere Artikel'), '',
+    CAST(SUM(Bestand) AS DECIMAL(18,2)), NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), ''""",
+            "Lagerwert DESC"),
     },
     "m_lg_reichweite_artikel": {
         "name": "Lager – Artikel der Reichweite-Klasse (Detail)",
-        "felder": ["ArtNr", "Artikel", "Bestand", "Abgang12M", "ReichweiteTage",
-                   "EKNetto", "Lagerwert", "kArtikel"],
+        "felder": ["Sortierung", "ArtNr", "Artikel", "Bestand", "Abgang12M",
+                   "ReichweiteTage", "EKNetto", "Lagerwert", "kArtikel"],
         "sql": f"""{CTE}
 , bestand_start AS (
     SELECT H.kArtikel, SUM(H.fAnzahl) AS Menge FROM dbo.vArtikelHistorie H
@@ -179,7 +288,6 @@ ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC""",
 ), je_artikel AS (
     SELECT A.kArtikel, A.cArtNr, ISNULL(AB.cName, '') AS Artikel,
         b.Menge AS Bestand, ISNULL(ab12.Menge12M, 0) AS Abgang12M,
-        {REICHWEITE} AS DurchschnittBestand,
         COALESCE(ek.fEKNetto, A.fEKNetto, 0) AS EK
     FROM bestand b
     JOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel AND A.cAktiv = 'Y' AND A.kVaterArtikel = 0
@@ -188,27 +296,38 @@ ORDER BY b.Menge * COALESCE(ek.fEKNetto, A.fEKNetto, 0) DESC""",
     LEFT JOIN bestand_start bs ON bs.kArtikel = b.kArtikel
     LEFT JOIN abgang12 ab12 ON ab12.kArtikel = b.kArtikel
     LEFT JOIN ek ON ek.kArtikel = b.kArtikel
+), bewertet AS (
+    SELECT cArtNr AS ArtNr, Artikel, Bestand, Abgang12M, EK,
+        CASE WHEN Abgang12M = 0 THEN NULL
+             ELSE Bestand / (Abgang12M / 365.0) END AS Reichweite,
+        Bestand * EK AS Wert, CAST(kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY Bestand * EK DESC) AS rn
+    FROM je_artikel
+    WHERE CASE
+            WHEN Abgang12M = 0 THEN '5 – kein Abgang'
+            WHEN Bestand / (Abgang12M / 365.0) < 30 THEN '1 – unter 30 Tage'
+            WHEN Bestand / (Abgang12M / 365.0) < 90 THEN '2 – 30 bis 90 Tage'
+            WHEN Bestand / (Abgang12M / 365.0) < 180 THEN '3 – 90 bis 180 Tage'
+            ELSE '4 – über 180 Tage' END = :klasse
 )
-SELECT TOP 300 cArtNr AS ArtNr, Artikel,
+""" + mit_sammelzeile(
+            "bewertet",
+            """ArtNr, Artikel,
     CAST(Bestand AS DECIMAL(18,2)) AS Bestand,
     CAST(Abgang12M AS DECIMAL(18,2)) AS Abgang12M,
-    CASE WHEN Abgang12M = 0 THEN NULL
-         ELSE CAST(Bestand / (Abgang12M / 365.0) AS DECIMAL(18,0)) END AS ReichweiteTage,
+    CAST(Reichweite AS DECIMAL(18,0)) AS ReichweiteTage,
     CAST(EK AS DECIMAL(18,4)) AS EKNetto,
-    CAST(Bestand * EK AS DECIMAL(18,2)) AS Lagerwert,
-    CAST(kArtikel AS VARCHAR(20)) AS kArtikel
-FROM je_artikel
-WHERE CASE
-        WHEN Abgang12M = 0 THEN '5 – kein Abgang'
-        WHEN Bestand / (Abgang12M / 365.0) < 30 THEN '1 – unter 30 Tage'
-        WHEN Bestand / (Abgang12M / 365.0) < 90 THEN '2 – 30 bis 90 Tage'
-        WHEN Bestand / (Abgang12M / 365.0) < 180 THEN '3 – 90 bis 180 Tage'
-        ELSE '4 – über 180 Tage' END = :klasse
-ORDER BY Bestand * EK DESC""",
+    CAST(Wert AS DECIMAL(18,2)) AS Lagerwert,
+    kArtikel""",
+            """'', CONCAT('… ', COUNT(*), ' weitere Artikel'),
+    CAST(SUM(Bestand) AS DECIMAL(18,2)),
+    CAST(SUM(Abgang12M) AS DECIMAL(18,2)), NULL, NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), ''""",
+            "Lagerwert DESC"),
     },
     "m_lg_lh_artikel": {
         "name": "Lager – Artikel der Ladenhüter-Klasse (Detail)",
-        "felder": ["ArtNr", "Artikel", "Warengruppe", "Bestand", "EKNetto",
+        "felder": ["Sortierung", "ArtNr", "Artikel", "Warengruppe", "Bestand", "EKNetto",
                    "GebundenesKapital", "LetzterAbgang", "TageOhneAbgang", "kArtikel"],
         "sql": f"""{CTE}
 , je_artikel AS (
@@ -224,23 +343,32 @@ ORDER BY Bestand * EK DESC""",
     LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe
     LEFT JOIN ek ON ek.kArtikel = b.kArtikel
     LEFT JOIN abgang ab2 ON ab2.kArtikel = b.kArtikel
+), bewertet AS (
+    SELECT cArtNr AS ArtNr, Artikel, Warengruppe, Bestand, EK, LetzterAbgang,
+        NULLIF(TageOhneAbgang, 9999) AS TageOhneAbgang,
+        Bestand * EK AS Wert, CAST(kArtikel AS VARCHAR(20)) AS kArtikel,
+        ROW_NUMBER() OVER (ORDER BY Bestand * EK DESC) AS rn
+    FROM je_artikel
+    WHERE CASE
+            WHEN TageOhneAbgang = 9999 THEN '6 – nie verkauft'
+            WHEN TageOhneAbgang <= 90 THEN '1 – bis 90 Tage'
+            WHEN TageOhneAbgang <= 180 THEN '2 – 90 bis 180 Tage'
+            WHEN TageOhneAbgang <= 365 THEN '3 – 180 Tage bis 1 Jahr'
+            WHEN TageOhneAbgang <= 730 THEN '4 – 1 bis 2 Jahre'
+            ELSE '5 – über 2 Jahre' END = :klasse
 )
-SELECT TOP 300 cArtNr AS ArtNr, Artikel, Warengruppe,
+""" + mit_sammelzeile(
+            "bewertet",
+            """ArtNr, Artikel, Warengruppe,
     CAST(Bestand AS DECIMAL(18,2)) AS Bestand,
     CAST(EK AS DECIMAL(18,4)) AS EKNetto,
-    CAST(Bestand * EK AS DECIMAL(18,2)) AS GebundenesKapital,
+    CAST(Wert AS DECIMAL(18,2)) AS GebundenesKapital,
     ISNULL(CONVERT(varchar(10), LetzterAbgang, 104), '') AS LetzterAbgang,
-    NULLIF(TageOhneAbgang, 9999) AS TageOhneAbgang,
-    CAST(kArtikel AS VARCHAR(20)) AS kArtikel
-FROM je_artikel
-WHERE CASE
-        WHEN TageOhneAbgang = 9999 THEN '6 – nie verkauft'
-        WHEN TageOhneAbgang <= 90 THEN '1 – bis 90 Tage'
-        WHEN TageOhneAbgang <= 180 THEN '2 – 90 bis 180 Tage'
-        WHEN TageOhneAbgang <= 365 THEN '3 – 180 Tage bis 1 Jahr'
-        WHEN TageOhneAbgang <= 730 THEN '4 – 1 bis 2 Jahre'
-        ELSE '5 – über 2 Jahre' END = :klasse
-ORDER BY Bestand * EK DESC""",
+    TageOhneAbgang, kArtikel""",
+            """'', CONCAT('… ', COUNT(*), ' weitere Artikel'), '',
+    CAST(SUM(Bestand) AS DECIMAL(18,2)), NULL,
+    CAST(SUM(Wert) AS DECIMAL(18,2)), '', NULL, ''""",
+            "GebundenesKapital DESC"),
     },
     "m_lg_buchungsart_detail": {
         "name": "Lager – Buchungen der Buchungsart (Detail)",
@@ -252,23 +380,23 @@ ORDER BY Bestand * EK DESC""",
         # zusammengesetzter Schlüssel „Buchungsart|Typ", den die Übersicht als
         # verborgene Spalte mitliefert.
         "sql": buchungen("H.cBuchungsart = LEFT(:schluessel, CHARINDEX('|', :schluessel) - 1)\n"
-                         "  AND H.cTyp = SUBSTRING(:schluessel, CHARINDEX('|', :schluessel) + 1, 100)\n"
-                         "  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)"),
+                         "      AND H.cTyp = SUBSTRING(:schluessel, CHARINDEX('|', :schluessel) + 1, 100)\n"
+                         "      AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)"),
     },
     "m_lg_benutzer_detail": {
         "name": "Lager – Korrekturen des Benutzers (Detail)",
         "felder": BUCHUNG_FELDER,
         # „unbekannt" fasst in der Übersicht alle Buchungen ohne Benutzer zusammen.
         "sql": buchungen("H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n"
-                         "  AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\n"
-                         "  AND ((:benutzer = 'unbekannt' AND ISNULL(B.cName, '') = '')\n"
-                         "       OR B.cName = :benutzer)"),
+                         "      AND H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis)\n"
+                         "      AND ((:benutzer = 'unbekannt' AND ISNULL(B.cName, '') = '')\n"
+                         "           OR B.cName = :benutzer)"),
     },
     "m_lg_schwund_monat_detail": {
         "name": "Lager – Korrekturen des Monats (Detail)",
         "felder": BUCHUNG_FELDER,
         "sql": buchungen("H.cBuchungsart IN ('Korrekturbuchung', 'Inventurdifferenzbuchung')\n"
-                         "  AND CONVERT(varchar(7), H.dGebucht, 126) = :monat"),
+                         "      AND CONVERT(varchar(7), H.dGebucht, 126) = :monat"),
     },
 }
 
@@ -320,6 +448,8 @@ DRILLDOWNS = {
                              "Artikel dieser Klasse"),
     "w_lg_line_schwund":    ("m_lg_schwund_monat_detail", "Monat", "monat",
                              "Korrekturen dieses Monats"),
+    "w_lg_line_verlauf":    ("m_lg_stichtag_artikel", "Monat", "monat",
+                             "Artikel zum Monatsstichtag"),
 }
 
 
@@ -351,7 +481,7 @@ def widgets_verdrahten(widgets: list, id_aufloesen) -> int:
         neu = {"mapping_id": id_aufloesen(mapping), "key_column": schluessel,
                "param": param, "title": titel,
                "levels": [{"mapping_id": id_aufloesen(HISTORIE), **EBENE_ARTIKEL}],
-               "hidden_columns": ["kArtikel", "Schluessel"]}
+               "hidden_columns": ["kArtikel", "Schluessel", "Sortierung"]}
         if cfg.get("drilldown") == neu:
             continue
         cfg["drilldown"] = neu
