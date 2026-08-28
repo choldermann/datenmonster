@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.9",
+  "version": "2.10",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -8238,16 +8238,6 @@
         ],
         "widgets": [
           {
-            "id": "w_gf_alerts",
-            "type": "alerts",
-            "label": "📋 Heute zu tun",
-            "action_id": "act_gf_alerts",
-            "config": {
-              "width": 12,
-              "info": "Jede Zeile ist eine Prüfregel: Ampel, Anzahl und Betrag kommen aus der Auswertung, nicht aus einer Schätzung. Klick öffnet die Detailliste. Schwellwerte und Regeln stehen im Dashboard-Reiter „Warnungen“."
-            }
-          },
-          {
             "id": "w_kpi_umsatz",
             "type": "kpi",
             "label": "Umsatz netto",
@@ -8607,6 +8597,16 @@
                 "UmsatzVorjahr"
               ],
               "curved": true
+            }
+          },
+          {
+            "id": "w_gf_alerts",
+            "type": "alerts",
+            "label": "📋 Heute zu tun",
+            "action_id": "act_gf_alerts",
+            "config": {
+              "width": 12,
+              "info": "Jede Zeile ist eine Prüfregel: Ampel, Anzahl und Betrag kommen aus der Auswertung, nicht aus einer Schätzung. Klick öffnet die Detailliste. Schwellwerte und Regeln stehen im Dashboard-Reiter „Warnungen“."
             }
           },
           {

@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -3440,6 +3440,37 @@
             }
           },
           {
+            "id": "w_hc_ai",
+            "type": "ai_summary",
+            "label": "KI-Kurzanalyse Datenqualität",
+            "action_id": "act_hc_kpi",
+            "config": {
+              "width": 12,
+              "instruction": "Bewerte die Stammdatenqualität. Priorisiere nach Geschäftsnutzen: fehlende Einkaufspreise und VK unter EK verfälschen die Marge, fehlende Warentarifnummer und Herkunftsland blockieren Intrastat/Zoll, fehlende EAN behindern Marktplätze. Nenne eine konkrete Reihenfolge zum Abarbeiten.",
+              "extra_sections": [
+                {
+                  "action_id": "act_hc_luecken",
+                  "label": "Lücken je Feld",
+                  "kind": "kpi"
+                }
+              ],
+              "report_layout": true
+            }
+          },
+          {
+            "id": "w_hc_bar_luecken",
+            "type": "bar",
+            "label": "Fehlende Angaben je Feld (Anteil der aktiven Artikel)",
+            "action_id": "act_hc_luecken",
+            "config": {
+              "width": 12,
+              "x_column": "Feld",
+              "y_columns": [
+                "Anteil"
+              ]
+            }
+          },
+          {
             "id": "w_hc_tasklist",
             "type": "tasklist",
             "label": "🚦 Stammdaten-Prüfungen",
@@ -3511,37 +3542,6 @@
                   }
                 }
               }
-            }
-          },
-          {
-            "id": "w_hc_ai",
-            "type": "ai_summary",
-            "label": "KI-Kurzanalyse Datenqualität",
-            "action_id": "act_hc_kpi",
-            "config": {
-              "width": 12,
-              "instruction": "Bewerte die Stammdatenqualität. Priorisiere nach Geschäftsnutzen: fehlende Einkaufspreise und VK unter EK verfälschen die Marge, fehlende Warentarifnummer und Herkunftsland blockieren Intrastat/Zoll, fehlende EAN behindern Marktplätze. Nenne eine konkrete Reihenfolge zum Abarbeiten.",
-              "extra_sections": [
-                {
-                  "action_id": "act_hc_luecken",
-                  "label": "Lücken je Feld",
-                  "kind": "kpi"
-                }
-              ],
-              "report_layout": true
-            }
-          },
-          {
-            "id": "w_hc_bar_luecken",
-            "type": "bar",
-            "label": "Fehlende Angaben je Feld (Anteil der aktiven Artikel)",
-            "action_id": "act_hc_luecken",
-            "config": {
-              "width": 12,
-              "x_column": "Feld",
-              "y_columns": [
-                "Anteil"
-              ]
             }
           },
           {
