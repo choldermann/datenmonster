@@ -492,7 +492,13 @@ const GUT = "#3f9d5a", SCHLECHT = "#c9524a";
 function markerBereinigen(s) {
   return String(s)
     .replace(/\{[+-]|[+-]\}/g, "")
-    .replace(/\{([^{}]{1,60}?)\}/g, "$1");
+    .replace(/\{([^{}]{1,60}?)\}/g, "$1")
+    // Öffnet das Modell einen Marker und schließt ihn nie (beobachtet im
+    // Health-Check: "{1.388 Artikeln mit Lücken"), bliebe die Klammer mitten im
+    // Satz stehen. Nur Klammern AN ZAHLEN entfernen – geschweifte Klammern in
+    // echtem Text sollen bleiben.
+    .replace(/\{(?=\s*[+-]?[\d.,])/g, "")
+    .replace(/(?<=[\d.,%€])\}/g, "");
 }
 
 /** **fett** im (bereits marker-freien) Textstück. */
@@ -894,9 +900,17 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
         ) : (
           // Auch ohne Report-Layout durch renderInline: sonst stünden die
           // Bewertungsmarker {+ … +} als Rohtext in der Analyse.
-          <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>
-            {renderInline(text, "plain")}
-          </p>
+          //
+          // Die Bewertungstabelle gehört auch hierher: sie hängt an `assessment`,
+          // nicht am Report-Layout. Stand sie nur im Report-Zweig, verschwand sie
+          // bei einem Cockpit mit assessment:true, sobald der KI-Text eintraf –
+          // der Fallback weiter unten greift ja nur, solange es keinen Text gibt.
+          <>
+            <p style={{ fontSize: 13.5, lineHeight: 1.65, color: S.textMain, margin: 0, whiteSpace: "pre-wrap" }}>
+              {renderInline(text, "plain")}
+            </p>
+            {zeigeBewertung && <AssessmentTable rows={assessment} />}
+          </>
         )
       ) : (
         zeigeBewertung && assessment.length ? (

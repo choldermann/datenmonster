@@ -458,6 +458,23 @@ async def summarize_data(
         s = f"{int(fv):,}" if fv == int(fv) else f"{fv:,.2f}"
         return s.replace(",", "§").replace(".", ",").replace("§", ".")  # de-DE Tausender/Dezimal
 
+    # Interne Spaltennamen, die als Fachbegriff im Text nichts zu suchen haben. Sie
+    # bleiben im Schema stehen (die Widgets binden daran), aber das Modell schreibt
+    # sonst wörtlich „der DB2 fiel um 2 %" in die Lagebeurteilung – ein Kürzel, das
+    # seit der Umbenennung auf „Rohertrag" nirgends mehr erklärt wird.
+    _SPALTEN_LABEL = {
+        "Rohertrag": "Rohertrag Ware",
+        "DB2": "Rohertrag gesamt",
+        "DB2VJ": "Rohertrag gesamtVJ",
+        "DB2Marge": "Rohertragsmarge",
+        "DB2MargeVJ": "RohertragsmargeVJ",
+        "DB2Quote": "Rohertragsquote",
+        "DB2QuoteVJ": "RohertragsquoteVJ",
+    }
+
+    def _label(c):
+        return _SPALTEN_LABEL.get(c, c)
+
     # Kennzahlen aufbereiten. Bei EINER Zeile (KPI-Ergebnis) werden Vorjahres-Deltas
     # serverseitig berechnet und vorformatiert – das Modell muss dann nicht rechnen
     # (genauere Prozentwerte/Richtungen, schnelleres/kleineres Modell reicht).
@@ -469,7 +486,7 @@ async def summarize_data(
                 continue
             v = row.get(c)
             vj = row.get(c + "VJ", row.get(c + "Vorjahr"))
-            line = f"{c}: {_fmt(v)}"
+            line = f"{_label(c)}: {_fmt(v)}"
             try:
                 if vj is not None and float(vj) != 0:
                     pct = 100.0 * (float(v) - float(vj)) / float(vj)
@@ -479,7 +496,8 @@ async def summarize_data(
             lines.append(line)
         data_text = "\n".join(lines)
     else:
-        data_text = "\n".join("; ".join(f"{c}: {_fmt(r.get(c))}" for c in cols) for r in rows) or "(keine Daten)"
+        data_text = "\n".join("; ".join(f"{_label(c)}: {_fmt(r.get(c))}" for c in cols)
+                              for r in rows) or "(keine Daten)"
 
     # Zusatz-Sektionen (vom Client fertig aufbereitet) anhängen.
     sections = [s for s in (body.sections or [])
