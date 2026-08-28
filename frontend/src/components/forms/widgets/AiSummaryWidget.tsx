@@ -63,7 +63,7 @@ function buildAssessment(results) {
   if (mon) {
     const p = pctNum(mon.Umsatz, mon.UmsatzVJ);
     out.push({ bereich: "Ertragslage", good: (p == null || p >= 0),
-      kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, DB II-Marge ${deNum(mon.DB2Marge)} %` });
+      kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, Rohertragsmarge ${deNum(mon.DB2Marge)} %` });
   }
   const warn = rowsOf("act_monitor_alerts");
   if (warn.length) {
@@ -78,7 +78,7 @@ function buildAssessment(results) {
   if (ov) {
     const p = pctNum(ov.Umsatz, ov.UmsatzVJ);
     out.push({ bereich: "Ertragslage", good: (p == null || p >= 0),
-      kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, DB II-Marge ${deNum(ov.DB2Marge)} %` });
+      kommentar: `Umsatz ${signPct(p)} ggü. Vorjahr, Rohertragsmarge ${deNum(ov.DB2Marge)} %` });
   }
   const erg = one("act_ergebnis_kpi");
   // Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes

@@ -512,9 +512,9 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
         row = res["rows"][0]
         # Kennzahlen sauber mit Label, Einheit und Vorjahresvergleich aufbereiten,
         # damit die KID guten Fließtext schreibt (keine rohen Feldnamen).
-        LABELS = {"Umsatz": ("Umsatz", "€"), "Rohertrag": ("Rohertrag (DB I)", "€"),
-                  "DB2": ("Deckungsbeitrag II", "€"), "Marge": ("Marge", "%"),
-                  "DB2Marge": ("DB-II-Marge", "%"), "Rechnungen": ("Rechnungen", ""),
+        LABELS = {"Umsatz": ("Umsatz", "€"), "Rohertrag": ("Rohertrag Ware", "€"),
+                  "DB2": ("Rohertrag gesamt", "€"), "Marge": ("Marge", "%"),
+                  "DB2Marge": ("Rohertragsmarge", "%"), "Rechnungen": ("Rechnungen", ""),
                   "AktiveKunden": ("Aktive Kunden", ""), "AvgAuftrag": ("Ø Auftragswert", "€")}
         lines = []
         # Andere Cockpits (Lager, Einkauf …) haben ganz andere Kennzahlen – dort die
@@ -739,7 +739,7 @@ def _assessment_rows(results: dict) -> list:
     if mon:
         p = _apct(mon.get("Umsatz"), mon.get("UmsatzVJ"))
         out.append(("Ertragslage", p is None or p >= 0,
-                    f"Umsatz {_spct(p)} ggü. Vorjahr, DB II-Marge {_pctval(mon.get('DB2Marge'))}"))
+                    f"Umsatz {_spct(p)} ggü. Vorjahr, Rohertragsmarge {_pctval(mon.get('DB2Marge'))}"))
     warn = rows_of("act_monitor_alerts")
     if warn:
         krit = sum(1 for w in warn if w.get("severity") == "kritisch")
@@ -751,7 +751,7 @@ def _assessment_rows(results: dict) -> list:
     if ov:
         p = _apct(ov.get("Umsatz"), ov.get("UmsatzVJ"))
         out.append(("Ertragslage", p is None or p >= 0,
-                    f"Umsatz {_spct(p)} ggü. Vorjahr, DB II-Marge {_pctval(ov.get('DB2Marge'))}"))
+                    f"Umsatz {_spct(p)} ggü. Vorjahr, Rohertragsmarge {_pctval(ov.get('DB2Marge'))}"))
     erg = one("act_ergebnis_kpi")
     # Ohne gepflegte Kostenstruktur sind die Fixkosten 0 – dann wäre jedes
     # Betriebsergebnis "gut". Die Zeile entfällt dann lieber ganz.

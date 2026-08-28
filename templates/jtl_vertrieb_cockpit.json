@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.3",
+  "version": "1.4",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -1588,7 +1588,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [DB I],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [DB II],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [DB-Marge %],\n    kKunde\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 AND nType IN (1,2) THEN DBpos END) AS DB2,\n        CAST(X.kKunde AS VARCHAR(20)) AS kKunde\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 10 Kunde,\n    CAST(ISNULL(Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(ISNULL(Umsatz, 0) - ISNULL(UmsatzVJ, 0) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(ISNULL(DB1, 0) AS DECIMAL(18,2)) AS [Rohertrag Ware],\n    CAST(ISNULL(DB2, 0) AS DECIMAL(18,2)) AS [Rohertrag gesamt],\n    CAST(CASE WHEN ISNULL(Umsatz,0) > 0 THEN 100.0 * ISNULL(DB2,0) / Umsatz END AS DECIMAL(18,1)) AS [Rohertragsmarge %],\n    kKunde\nFROM (\n    SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''), ISNULL(RA.cVorname,'') + ' ' + ISNULL(RA.cName,''))))) AS Kunde,\n        SUM(CASE WHEN cur = 1 THEN Netto END) AS Umsatz,\n        SUM(CASE WHEN vj = 1 THEN Netto END) AS UmsatzVJ,\n        SUM(CASE WHEN cur = 1 AND nType = 1 THEN DBpos END) AS DB1,\n        SUM(CASE WHEN cur = 1 THEN DBpos END) AS DB2,\n        CAST(X.kKunde AS VARCHAR(20)) AS kKunde\n    FROM (\n        SELECT RE.kRechnung, RE.kKunde, POS.nType AS nType, POS.fAnzahl * POS.fVkNetto AS Netto, POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n            CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n            CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n        WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis) AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n    ) X\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = X.kRechnung\n    GROUP BY X.kKunde\n    HAVING SUM(CASE WHEN cur = 1 THEN Netto END) > 0\n) g ORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1596,9 +1596,9 @@
             "Umsatz",
             "UmsatzVJ",
             "Veraenderung",
-            "DB I",
-            "DB II",
-            "DB-Marge %",
+            "Rohertrag Ware",
+            "Rohertrag gesamt",
+            "Rohertragsmarge %",
             "kKunde"
           ]
         }
@@ -1654,33 +1654,33 @@
               }
             },
             {
-              "source_field": "DB I",
-              "target_field": "DB I",
+              "source_field": "Rohertrag Ware",
+              "target_field": "Rohertrag Ware",
               "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
-                "source_field": "DB I"
+                "source_field": "Rohertrag Ware"
               }
             },
             {
-              "source_field": "DB II",
-              "target_field": "DB II",
+              "source_field": "Rohertrag gesamt",
+              "target_field": "Rohertrag gesamt",
               "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
-                "source_field": "DB II"
+                "source_field": "Rohertrag gesamt"
               }
             },
             {
-              "source_field": "DB-Marge %",
-              "target_field": "DB-Marge %",
+              "source_field": "Rohertragsmarge %",
+              "target_field": "Rohertragsmarge %",
               "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
-                "source_field": "DB-Marge %"
+                "source_field": "Rohertragsmarge %"
               }
             },
             {
@@ -1934,7 +1934,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [DB-Marge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
+          "sql": "SELECT TOP 15\n    A.cArtNr AS ArtNr, AB.cName AS Artikel, ISNULL(WG.cName, '') AS Warengruppe,\n    CAST(SUM(POS.fAnzahl) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(POS.fAnzahl * POS.fVkNetto) > 0 THEN 100.0 * SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))) / SUM(POS.fAnzahl * POS.fVkNetto) END AS DECIMAL(18,1)) AS [Rohertragsmarge %]\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nJOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr AND A.cAktiv = 'Y'\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY A.kArtikel, A.cArtNr, AB.cName, WG.cName\nORDER BY Umsatz DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -1944,7 +1944,7 @@
             "Menge",
             "Umsatz",
             "Rohertrag",
-            "DB-Marge %"
+            "Rohertragsmarge %"
           ]
         }
       ],
@@ -2019,13 +2019,13 @@
               }
             },
             {
-              "source_field": "DB-Marge %",
-              "target_field": "DB-Marge %",
+              "source_field": "Rohertragsmarge %",
+              "target_field": "Rohertragsmarge %",
               "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
-                "source_field": "DB-Marge %"
+                "source_field": "Rohertragsmarge %"
               }
             }
           ]

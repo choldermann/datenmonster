@@ -14,9 +14,10 @@ const S = {
 const ACCENT = "#fce499";
 
 // Erklärung wird automatisch eingeblendet, sobald die Detailtabelle eine
-// Deckungsbeitrags-Spalte enthält (DB, DB I, DB II …).
-const DB_INFO = "Deckungsbeitrag I (= Rohertrag) = Umsatz − Wareneinsatz (Einkaufspreis). "
-  + "Deckungsbeitrag II = DB I zzgl. Versandergebnis (Versanderlöse − Versandkosten).";
+// Ertrags-Spalte enthält (DB, Rohertrag Ware, Rohertrag gesamt …).
+const DB_INFO = "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis), nur Artikelpositionen. "
+  + "Rohertrag gesamt = derselbe Rohertrag über alle Positionsarten, also zuzüglich "
+  + "Versandergebnis und sonstiger Positionen wie Rabatten.";
 
 // CSV aus Zeilen bauen (RFC-4180-konform: Felder mit " , \n werden gequotet)
 function toCsv(columns, rows) {
@@ -127,7 +128,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
         </div>
 
         {/* DB-Erklärung, wenn die Detailtabelle eine Deckungsbeitrags-Spalte hat */}
-        {!loading && !error && columns.some(c => /^DB([ -]|$)/.test(c)) && (
+        {!loading && !error && columns.some(c => /^(DB([ -]|$)|Rohertrag)/.test(c)) && (
           <div style={{ display: "flex", alignItems: "flex-start", gap: 7, padding: "8px 16px",
             borderBottom: `1px solid ${S.border}`, fontSize: 10.5, lineHeight: 1.5, color: S.textDim,
             backgroundColor: "rgba(255,255,255,0.02)" }}>

@@ -586,7 +586,7 @@ async def summarize_data(
             "Schreibe die Lagebeurteilung als klar getrennte Themenblöcke – jeder mit fettem Vorspann-Label "
             "und in FESTER Reihenfolge (überspringe Blöcke ohne Daten). HÖCHSTENS ein bis zwei knappe Sätze "
             "pro Block, keine Wiederholungen zwischen den Blöcken, keine nummerierten Listen, keine Tabelle:\n"
-            "**Ertragslage:** Umsatz, Rohertrag/Marge und DB II mit Entwicklung zum Vorjahr.\n"
+            "**Ertragslage:** Umsatz, Rohertrag und Marge mit Entwicklung zum Vorjahr.\n"
             "**Kunden:** aktive/Neukunden, Umsatz je Kunde, Kunden mit Rückgang (Größenordnung, max. 1 Beispiel).\n"
             "**Liquidität:** offene/überfällige Forderungen, DSO, Zahlungsmoral.\n"
             "**Einkauf & Verbindlichkeiten:** offene Verbindlichkeiten und überfällige Eingangsrechnungen, "
