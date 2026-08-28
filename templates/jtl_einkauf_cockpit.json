@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
   "category": "jtl-reporting",
-  "version": "1.1",
+  "version": "1.2",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -2323,6 +2323,288 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ek_monat_detail",
+      "name": "Einkauf – Bestellungen des Monats (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Bestellnr",
+            "Datum",
+            "Lieferant",
+            "Liefertermin",
+            "Wert",
+            "OffenerWert",
+            "Status",
+            "kLieferantenBestellung"
+          ],
+          "sql": "WITH bestellung AS (\n    -- `tLieferantenBestellung` hat keine cBestellNr; die Wawi führt die\n    -- eigene Nummer in cEigeneBestellnummer, sonst bleibt nur der Schlüssel.\n    SELECT ISNULL(B.cEigeneBestellnummer,\n                  CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnr,\n        B.dErstellt, B.dLieferdatum,\n        ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n        (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN ISNULL(B.nManuellAbgeschlossen, 0) = 1 THEN 'abgeschlossen'\n             WHEN B.dLieferdatum IS NULL THEN 'ohne Termin'\n             WHEN B.dLieferdatum < GETDATE() THEN 'überfällig' ELSE 'im Termin' END AS Status,\n        CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung,\n        ROW_NUMBER() OVER (ORDER BY B.dErstellt DESC) AS rn\n    FROM dbo.tLieferantenBestellung B\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND CONVERT(char(7), B.dErstellt, 120) = :monat\n)\nSELECT 0 AS Sortierung, Bestellnr, CONVERT(char(10), dErstellt, 104) AS Datum, Lieferant,\n    ISNULL(CONVERT(char(10), dLieferdatum, 104), '') AS Liefertermin,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert,\n    CAST(OffenerWert AS DECIMAL(18,2)) AS OffenerWert,\n    Status, kLieferantenBestellung\nFROM bestellung WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' ältere Bestellungen'), '',\n    CAST(SUM(Wert) AS DECIMAL(18,2)),\n    CAST(SUM(OffenerWert) AS DECIMAL(18,2)), '', ''\nFROM bestellung WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Datum DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Bestellungen des Monats (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Bestellnr",
+              "target_field": "Bestellnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
+              }
+            },
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ek_verzug_detail",
+      "name": "Einkauf – Offene Bestellungen der Verzugsklasse (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Bestellnr",
+            "Datum",
+            "Lieferant",
+            "Liefertermin",
+            "Wert",
+            "OffenerWert",
+            "Status",
+            "kLieferantenBestellung"
+          ],
+          "sql": "WITH bestellung AS (\n    -- `tLieferantenBestellung` hat keine cBestellNr; die Wawi führt die\n    -- eigene Nummer in cEigeneBestellnummer, sonst bleibt nur der Schlüssel.\n    SELECT ISNULL(B.cEigeneBestellnummer,\n                  CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnr,\n        B.dErstellt, B.dLieferdatum,\n        ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,\n        (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert,\n        (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung AND P.fAnzahlOffen > 0) AS OffenerWert,\n        CASE WHEN ISNULL(B.nManuellAbgeschlossen, 0) = 1 THEN 'abgeschlossen'\n             WHEN B.dLieferdatum IS NULL THEN 'ohne Termin'\n             WHEN B.dLieferdatum < GETDATE() THEN 'überfällig' ELSE 'im Termin' END AS Status,\n        CAST(B.kLieferantenBestellung AS VARCHAR(20)) AS kLieferantenBestellung,\n        ROW_NUMBER() OVER (ORDER BY B.dErstellt DESC) AS rn\n    FROM dbo.tLieferantenBestellung B\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n      AND ISNULL(B.nManuellAbgeschlossen, 0) = 0\n      AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos P2\n                   WHERE P2.kLieferantenBestellung = B.kLieferantenBestellung\n                     AND P2.fAnzahlOffen > 0)\n      AND CASE WHEN B.dLieferdatum IS NULL THEN 'ohne Termin'\n             WHEN B.dLieferdatum >= GETDATE() THEN 'im Termin'\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 7  THEN 'bis 7 Tage über'\n             WHEN DATEDIFF(DAY, B.dLieferdatum, GETDATE()) <= 30 THEN '8-30 Tage über'\n             ELSE 'über 30 Tage über' END = :klasse\n)\nSELECT 0 AS Sortierung, Bestellnr, CONVERT(char(10), dErstellt, 104) AS Datum, Lieferant,\n    ISNULL(CONVERT(char(10), dLieferdatum, 104), '') AS Liefertermin,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert,\n    CAST(OffenerWert AS DECIMAL(18,2)) AS OffenerWert,\n    Status, kLieferantenBestellung\nFROM bestellung WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' ältere Bestellungen'), '',\n    CAST(SUM(Wert) AS DECIMAL(18,2)),\n    CAST(SUM(OffenerWert) AS DECIMAL(18,2)), '', ''\nFROM bestellung WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Datum DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Offene Bestellungen der Verzugsklasse (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Bestellnr",
+              "target_field": "Bestellnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Liefertermin",
+              "target_field": "Liefertermin",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "OffenerWert",
+              "target_field": "OffenerWert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerWert"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
+              }
+            },
+            {
+              "source_field": "kLieferantenBestellung",
+              "target_field": "kLieferantenBestellung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kLieferantenBestellung"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2573,7 +2855,33 @@
                 "Bestellvolumen",
                 "Vorjahr"
               ],
-              "curved": true
+              "curved": true,
+              "drilldown": {
+                "mapping_id": "m_ek_monat_detail",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Bestellungen dieses Monats",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ek_pos",
+                    "param": "kLieferantenBestellung",
+                    "key_column": "kLieferantenBestellung",
+                    "title": "Positionen der Bestellung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -2682,7 +2990,33 @@
               "x_column": "Verzugsklasse",
               "y_columns": [
                 "OffenerWert"
-              ]
+              ],
+              "drilldown": {
+                "mapping_id": "m_ek_verzug_detail",
+                "key_column": "Verzugsklasse",
+                "param": "klasse",
+                "title": "Offene Bestellungen dieser Klasse",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ek_pos",
+                    "param": "kLieferantenBestellung",
+                    "key_column": "kLieferantenBestellung",
+                    "title": "Positionen der Bestellung"
+                  }
+                ]
+              }
             }
           },
           {
