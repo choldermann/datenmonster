@@ -230,10 +230,15 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
             pass
         raise HTTPException(500, f"Drilldown-Fehler: {str(e)[:200]}")
 
+    # Fehler der Engine (z.B. ungebundener :parameter) landen in result["errors"]
+    # und führten hier zu einer leeren, aber fehlerfreien Antwort – die Detailliste
+    # sah dann aus wie „nichts gefunden". Ohne Zeilen wird der Fehler durchgereicht.
+    fehler = result.get("errors") or []
     return {
         "columns": result.get("columns", []),
         "rows":    result.get("rows", []),
         "total":   result.get("total", 0),
+        "error":   (str(fehler[0])[:300] if fehler and not result.get("rows") else None),
     }
 
 

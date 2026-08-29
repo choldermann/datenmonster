@@ -147,6 +147,9 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
               title: dd.title || r.name,
               hidden_columns: dd.hidden_columns || [],
               param: dd.param || null,
+              // Parameter der Prüfregel (z.B. plattform: []) – ohne sie läuft das
+              // Detail-Mapping mit ungebundenen Platzhaltern und liefert nichts.
+              params: dd.params || {},
               // Weitere Ebenen der Regel (z.B. Artikelliste → aktuelle
               // Beschreibung); handleTaskClick öffnet sie per Zeilenklick.
               levels: dd.levels || [],

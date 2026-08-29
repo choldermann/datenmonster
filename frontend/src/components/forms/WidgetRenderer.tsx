@@ -114,7 +114,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
       // mit mehreren hundert Artikeln (Lagerwert eines Monats) fehlte damit ein
       // Gutteil, ohne dass man es sah. 500 ist das Maximum, das er zulässt.
       const { data } = await api.post("/api/forms/drilldown", { mapping_id, params, max_rows: 500 });
-      setStack(prev => prev.map(f => f.id === id ? { ...f, rows: data.rows || [], loading: false } : f));
+      // data.error: die Abfrage lief auf einen Fehler, hat aber HTTP 200 geliefert
+      // (die Engine sammelt Fehler, statt zu werfen). Sonst sähe das aus wie „leer".
+      setStack(prev => prev.map(f => f.id === id
+        ? { ...f, rows: data.rows || [], loading: false, error: data.error || null } : f));
     } catch (e) {
       setStack(prev => prev.map(f => f.id === id
         ? { ...f, loading: false, error: e.response?.data?.detail || e.message } : f));
@@ -127,7 +130,9 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     // detail als "dd" merken → falls detail.levels[] gesetzt ist, kann in der
     // Detailliste per Zeilenklick eine weitere Ebene geöffnet werden (z.B.
     // Artikelbeschreibungen → aktuelle Beschreibung des Artikels).
-    cfgRef.current = { dd: detail, base: baseParams || {} };
+    // detail.params sind die Parameter der Prüfregel; sie überschreiben die
+    // Formular-Basis und gelten auch für tiefere Ebenen.
+    cfgRef.current = { dd: detail, base: { ...(baseParams || {}), ...(detail.params || {}) } };
     openLevel({ mapping_id: detail.mapping_id, param: detail.param || null, value: null,
       title: detail.title || row.Aufgabe || "Detail", field: "", depth: 0,
       hidden: detail.hidden_columns || [] });

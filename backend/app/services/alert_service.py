@@ -278,8 +278,13 @@ def _drilldown(rule, db, project_id) -> Optional[dict]:
         levels.append({"mapping_id": lm.id, "title": lvl.get("title") or lm.name,
                        "key_column": lvl.get("key_column"), "param": lvl.get("param"),
                        "hidden_columns": lvl.get("hidden_columns") or []})
+    # Die Regel-Parameter müssen mitreisen: das Regel-Mapping wurde mit
+    # {**Formularparameter, **rule.params} ausgewertet. Fehlt beim Drilldown z.B.
+    # :plattform, bleibt der Platzhalter ungebunden – die Abfrage scheitert und
+    # die Detailliste bliebe leer, obwohl die Regel eine Zahl gemeldet hat.
     return {"mapping_id": m.id, "title": dd.get("title") or rule.name,
             "hidden_columns": dd.get("hidden_columns") or [],
+            "params": {**(rule.params or {}), **(dd.get("params") or {})},
             "param": dd.get("param"), "levels": levels}
 
 
