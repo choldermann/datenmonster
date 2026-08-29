@@ -103,7 +103,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   };
 
   // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
-  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden }) => {
+  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter }) => {
     const base = cfgRef.current.base || {};
     const id = ++seqRef.current;
     setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [] }]);
@@ -113,7 +113,8 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
       // Ohne max_rows deckelt der Endpunkt auf 200 Zeilen – bei einer Detailliste
       // mit mehreren hundert Artikeln (Lagerwert eines Monats) fehlte damit ein
       // Gutteil, ohne dass man es sah. 500 ist das Maximum, das er zulässt.
-      const { data } = await api.post("/api/forms/drilldown", { mapping_id, params, max_rows: 500 });
+      const { data } = await api.post("/api/forms/drilldown",
+        { mapping_id, params, max_rows: 500, row_filter: rowFilter || null });
       // data.error: die Abfrage lief auf einen Fehler, hat aber HTTP 200 geliefert
       // (die Engine sammelt Fehler, statt zu werfen). Sonst sähe das aus wie „leer".
       setStack(prev => prev.map(f => f.id === id
@@ -135,7 +136,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     cfgRef.current = { dd: detail, base: { ...(baseParams || {}), ...(detail.params || {}) } };
     openLevel({ mapping_id: detail.mapping_id, param: detail.param || null, value: null,
       title: detail.title || row.Aufgabe || "Detail", field: "", depth: 0,
-      hidden: detail.hidden_columns || [] });
+      hidden: detail.hidden_columns || [],
+      // Zeilenfilter der Warnregel: nur so zeigt die Liste genau die Zeilen, aus
+      // denen die Kopfzahl entstanden ist. Gilt nur für die erste Ebene.
+      rowFilter: detail.row_filter || null });
   };
 
   // Einstieg aus einem Widget (Chart-Segment oder Tabellenzeile).

@@ -150,6 +150,7 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
               // Parameter der Prüfregel (z.B. plattform: []) – ohne sie läuft das
               // Detail-Mapping mit ungebundenen Platzhaltern und liefert nichts.
               params: dd.params || {},
+              row_filter: dd.row_filter || null,
               // Weitere Ebenen der Regel (z.B. Artikelliste → aktuelle
               // Beschreibung); handleTaskClick öffnet sie per Zeilenklick.
               levels: dd.levels || [],

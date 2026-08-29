@@ -260,7 +260,20 @@ def _title(rule, values: dict) -> str:
         return rule.name
 
 
-def _drilldown(rule, db, project_id) -> Optional[dict]:
+def _zeilenfilter(rf, thresholds: dict) -> list:
+    """Wandelt einen row_filter der Regel in fertige Kriterien um: der Schwellwert
+    aus der Projektkonfiguration (value_config) wird hier aufgelöst, damit der
+    Drilldown-Endpunkt ihn nicht kennen muss."""
+    out = []
+    for k in (rf if isinstance(rf, list) else [rf] if rf else []):
+        wert = _threshold(k, thresholds)
+        if wert is None or not k.get("column"):
+            continue
+        out.append({"column": k["column"], "op": k.get("op", ">="), "value": wert})
+    return out
+
+
+def _drilldown(rule, db, project_id, thresholds: Optional[dict] = None) -> Optional[dict]:
     dd = rule.drilldown or {}
     if not dd:
         return None
@@ -282,9 +295,19 @@ def _drilldown(rule, db, project_id) -> Optional[dict]:
     # {**Formularparameter, **rule.params} ausgewertet. Fehlt beim Drilldown z.B.
     # :plattform, bleibt der Platzhalter ungebunden – die Abfrage scheitert und
     # die Detailliste bliebe leer, obwohl die Regel eine Zahl gemeldet hat.
+    # Der Zeilenfilter der Regel muss ebenfalls mitreisen: die Kopfzahl zählt nur
+    # die gefilterten Zeilen („Verzug >= 14 Tage"), die Detailliste zeigte bisher
+    # die ungefilterte Rohliste – gemeldet 94 Bestellungen, aufgelistet 197.
+    # Ein eigener Filter am Drilldown hat Vorrang; der Filter der Regel gilt nur,
+    # wenn die Detailliste dieselbe Abfrage ist wie die der Regel.
+    rf = dd.get("row_filter")
+    if rf is None:
+        rm = _resolve_mapping(db, project_id, rule.mapping_id, rule.mapping_name)
+        rf = (rule.condition or {}).get("row_filter") if (rm and rm.id == m.id) else None
     return {"mapping_id": m.id, "title": dd.get("title") or rule.name,
             "hidden_columns": dd.get("hidden_columns") or [],
             "params": {**(rule.params or {}), **(dd.get("params") or {})},
+            "row_filter": _zeilenfilter(rf, thresholds or {}),
             "param": dd.get("param"), "levels": levels}
 
 
@@ -448,7 +471,7 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
             "gedeckelt":  bool(res.get("gedeckelt")),
             "fakten":     _facts(rule, first_row, metrics),
             "beispiele":  res.get("rows") or [],
-            "drilldown":  _drilldown(rule, db, project_id),
+            "drilldown":  _drilldown(rule, db, project_id, thresholds),
             "action_kind": rule.action_kind,
             "sort":       rule.sort or 100,
         })

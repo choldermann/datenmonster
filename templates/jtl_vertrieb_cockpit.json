@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -669,7 +669,7 @@
             "Ueberfaellig",
             "WertAelter30"
           ],
-          "sql": "SELECT\n    COUNT(*) AS OffeneAuftraege,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragsbestand,\n    CAST(ISNULL(AVG(CAST(DATEDIFF(DAY, A.dErstellt, GETDATE()) AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgAlterTage,\n    -- „Überfällig\" zählt nur laufende Vorgänge. Ein Liefertermin, der über ein\n    -- Jahr zurückliegt, ist eine Karteileiche und kein Alarm – sonst meldet die\n    -- Regel vertrieb_backlog auf ewig dieselben Altfälle (HaKo: alle 6 davon).\n    SUM(CASE WHEN A.dVoraussichtlichesLieferdatum < GETDATE()\n              AND A.dVoraussichtlichesLieferdatum >= DATEADD(YEAR, -1, GETDATE())\n             THEN 1 ELSE 0 END) AS Ueberfaellig,\n    SUM(CASE WHEN A.dVoraussichtlichesLieferdatum < DATEADD(YEAR, -1, GETDATE())\n             THEN 1 ELSE 0 END) AS UeberfaelligAlt,\n    SUM(CASE WHEN A.dVoraussichtlichesLieferdatum IS NULL THEN 1 ELSE 0 END) AS OhneLiefertermin,\n    SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 90 THEN 1 ELSE 0 END) AS AuftraegeLaufend,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 90\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS BestandLaufend,\n    SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 90 THEN 1 ELSE 0 END) AS AuftraegeAlt,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 90\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS BestandAlt,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 30\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS WertAelter30\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0\n      AND ISNULL(A.kVorgangsstatus, 1) <> 2"
+          "sql": "SELECT\n    COUNT(*) AS OffeneAuftraege,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragsbestand,\n    CAST(ISNULL(AVG(CAST(DATEDIFF(DAY, A.dErstellt, GETDATE()) AS FLOAT)), 0) AS DECIMAL(18,1)) AS AvgAlterTage,\n    -- „Überfällig\" zählt nur laufende Vorgänge. Ein Liefertermin, der über ein\n    -- Jahr zurückliegt, ist eine Karteileiche und kein Alarm – sonst meldet die\n    -- Regel vertrieb_backlog auf ewig dieselben Altfälle (HaKo: alle 6 davon).\n    SUM(CASE WHEN DATEDIFF(DAY, A.dVoraussichtlichesLieferdatum, GETDATE())\n                  BETWEEN 1 AND 365 THEN 1 ELSE 0 END) AS Ueberfaellig,\n    SUM(CASE WHEN DATEDIFF(DAY, A.dVoraussichtlichesLieferdatum, GETDATE()) > 365\n             THEN 1 ELSE 0 END) AS UeberfaelligAlt,\n    SUM(CASE WHEN A.dVoraussichtlichesLieferdatum IS NULL THEN 1 ELSE 0 END) AS OhneLiefertermin,\n    SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 90 THEN 1 ELSE 0 END) AS AuftraegeLaufend,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 90\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS BestandLaufend,\n    SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 90 THEN 1 ELSE 0 END) AS AuftraegeAlt,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 90\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS BestandAlt,\n    CAST(ISNULL(SUM(CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) > 30\n        THEN E.fWertNetto END), 0) AS DECIMAL(18,2)) AS WertAelter30\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0\n      AND ISNULL(A.kVorgangsstatus, 1) <> 2"
         }
       ],
       "targets": [
@@ -723,6 +723,66 @@
               }
             },
             {
+              "source_field": "UeberfaelligAlt",
+              "target_field": "UeberfaelligAlt",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UeberfaelligAlt"
+              }
+            },
+            {
+              "source_field": "OhneLiefertermin",
+              "target_field": "OhneLiefertermin",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneLiefertermin"
+              }
+            },
+            {
+              "source_field": "AuftraegeLaufend",
+              "target_field": "AuftraegeLaufend",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AuftraegeLaufend"
+              }
+            },
+            {
+              "source_field": "BestandLaufend",
+              "target_field": "BestandLaufend",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandLaufend"
+              }
+            },
+            {
+              "source_field": "AuftraegeAlt",
+              "target_field": "AuftraegeAlt",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AuftraegeAlt"
+              }
+            },
+            {
+              "source_field": "BestandAlt",
+              "target_field": "BestandAlt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandAlt"
+              }
+            },
+            {
               "source_field": "WertAelter30",
               "target_field": "WertAelter30",
               "target_type": "float",
@@ -770,7 +830,7 @@
             "Liefertermin",
             "kAuftrag"
           ],
-          "sql": "SELECT TOP 500\n    A.cAuftragsNr AS Auftragsnr,\n    CONVERT(char(10), A.dErstellt, 104) AS Datum,\n    DATEDIFF(DAY, A.dErstellt, GETDATE()) AS AlterTage,\n    LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CAST(ISNULL(E.fWertNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    CAST(ISNULL(P.OffenerWarenwert, 0) AS DECIMAL(18,2)) AS OffenerWarenwert,\n    CAST(ISNULL(E.fOffenerWert, 0) AS DECIMAL(18,2)) AS OffenerZahlbetrag,\n    CASE E.nLieferstatus\n         WHEN 1 THEN 'nichts geliefert'\n         WHEN 2 THEN 'teilgeliefert, nicht versendet'\n         WHEN 3 THEN 'kommissioniert, nicht versendet'\n         WHEN 4 THEN 'teilversendet'\n         WHEN 5 THEN 'komplett versendet'\n         WHEN 6 THEN 'komplett geliefert'\n         WHEN 7 THEN 'abgeschlossen (Sonderfall)'\n         ELSE 'unbekannt (' + CAST(E.nLieferstatus AS VARCHAR(10)) + ')'\n    END AS Lieferstatus,\n    ISNULL(CONVERT(char(10), A.dVoraussichtlichesLieferdatum, 104), '') AS Liefertermin,\n    CAST(A.kAuftrag AS VARCHAR(20)) AS kAuftrag\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN (\n    SELECT PE.kAuftrag, SUM(PE.fAnzahlOffen * POS.fVkNetto) AS OffenerWarenwert\n    FROM Verkauf.tAuftragPositionEckdaten PE\n    JOIN Verkauf.tAuftragPosition POS ON POS.kAuftragPosition = PE.kAuftragPosition\n    WHERE PE.fAnzahlOffen > 0\n    GROUP BY PE.kAuftrag\n) P ON P.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0 AND ISNULL(A.kVorgangsstatus, 1) <> 2\nORDER BY E.fWertNetto DESC"
+          "sql": "SELECT TOP 500\n    A.cAuftragsNr AS Auftragsnr,\n    CONVERT(char(10), A.dErstellt, 104) AS Datum,\n    DATEDIFF(DAY, A.dErstellt, GETDATE()) AS AlterTage,\n    LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),\n        ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n    CAST(ISNULL(E.fWertNetto, 0) AS DECIMAL(18,2)) AS Wert,\n    CAST(ISNULL(P.OffenerWarenwert, 0) AS DECIMAL(18,2)) AS OffenerWarenwert,\n    CAST(ISNULL(E.fOffenerWert, 0) AS DECIMAL(18,2)) AS OffenerZahlbetrag,\n    CASE E.nLieferstatus\n         WHEN 1 THEN 'nichts geliefert'\n         WHEN 2 THEN 'teilgeliefert, nicht versendet'\n         WHEN 3 THEN 'kommissioniert, nicht versendet'\n         WHEN 4 THEN 'teilversendet'\n         WHEN 5 THEN 'komplett versendet'\n         WHEN 6 THEN 'komplett geliefert'\n         WHEN 7 THEN 'abgeschlossen (Sonderfall)'\n         ELSE 'unbekannt (' + CAST(E.nLieferstatus AS VARCHAR(10)) + ')'\n    END AS Lieferstatus,\n    ISNULL(CONVERT(char(10), A.dVoraussichtlichesLieferdatum, 104), '') AS Liefertermin,\n    DATEDIFF(DAY, A.dVoraussichtlichesLieferdatum, GETDATE()) AS TageUeberfaellig,\n    CAST(A.kAuftrag AS VARCHAR(20)) AS kAuftrag\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN (\n    SELECT PE.kAuftrag, SUM(PE.fAnzahlOffen * POS.fVkNetto) AS OffenerWarenwert\n    FROM Verkauf.tAuftragPositionEckdaten PE\n    JOIN Verkauf.tAuftragPosition POS ON POS.kAuftragPosition = PE.kAuftragPosition\n    WHERE PE.fAnzahlOffen > 0\n    GROUP BY PE.kAuftrag\n) P ON P.kAuftrag = A.kAuftrag\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0 AND ISNULL(A.kVorgangsstatus, 1) <> 2\nORDER BY E.fWertNetto DESC"
         }
       ],
       "targets": [
@@ -834,13 +894,23 @@
               }
             },
             {
-              "source_field": "OffenerWert",
-              "target_field": "OffenerWert",
+              "source_field": "OffenerWarenwert",
+              "target_field": "OffenerWarenwert",
               "target_type": "float",
               "source_dataset_id": "__sql__sql1",
               "transformer": {
                 "type": "direct",
-                "source_field": "OffenerWert"
+                "source_field": "OffenerWarenwert"
+              }
+            },
+            {
+              "source_field": "OffenerZahlbetrag",
+              "target_field": "OffenerZahlbetrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OffenerZahlbetrag"
               }
             },
             {
@@ -861,6 +931,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Liefertermin"
+              }
+            },
+            {
+              "source_field": "TageUeberfaellig",
+              "target_field": "TageUeberfaellig",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "TageUeberfaellig"
               }
             },
             {

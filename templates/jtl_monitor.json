@@ -4,7 +4,7 @@
   "template_name": "Unternehmensmonitor (JTL)",
   "description": "Operative Startseite: Was ist heute wichtig, wo besteht Handlungsbedarf? Die Warnungen werden deterministisch aus den vorhandenen Cockpit-Auswertungen abgeleitet – Schwellwerte sind je Projekt einstellbar.",
   "category": "jtl-reporting",
-  "version": "1.2",
+  "version": "1.3",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung wählen – nur die eigene Kennzahlen-Auswertung des Monitors braucht sie.",
@@ -996,7 +996,19 @@
       "subtitle": "Kunden informieren oder Termin nachziehen.",
       "drilldown": {
         "mapping_name": "Vertrieb – Offene Aufträge",
-        "title": "Offene Aufträge"
+        "title": "Aufträge mit überschrittenem Liefertermin",
+        "row_filter": [
+          {
+            "column": "TageUeberfaellig",
+            "op": ">=",
+            "value": 1
+          },
+          {
+            "column": "TageUeberfaellig",
+            "op": "<=",
+            "value": 365
+          }
+        ]
       },
       "action_kind": null,
       "active": true,

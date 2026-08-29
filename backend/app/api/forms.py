@@ -51,6 +51,9 @@ class DrilldownRequest(BaseModel):
     mapping_id: int
     params:     Optional[dict] = {}
     max_rows:   Optional[int] = 200
+    # Zeilenfilter einer Warnregel ([{column, op, value}]) – die Detailliste soll
+    # genau die Zeilen zeigen, die die gemeldete Zahl ergeben haben.
+    row_filter: Optional[List[dict]] = None
 
 
 class EmailTableRequest(BaseModel):
@@ -234,10 +237,17 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     # und führten hier zu einer leeren, aber fehlerfreien Antwort – die Detailliste
     # sah dann aus wie „nichts gefunden". Ohne Zeilen wird der Fehler durchgereicht.
     fehler = result.get("errors") or []
+    rows = result.get("rows", [])
+    if body.row_filter:
+        # Schwellwerte sind bereits aufgelöst (alert_service._zeilenfilter); hier
+        # wird nur noch verglichen – dieselbe Funktion, die auch die Kopfzahl der
+        # Warnung bildet, damit Zahl und Liste nicht auseinanderlaufen.
+        from app.services.alert_service import _filter_rows
+        rows = _filter_rows(rows, {"row_filter": body.row_filter}, {})
     return {
         "columns": result.get("columns", []),
-        "rows":    result.get("rows", []),
-        "total":   result.get("total", 0),
+        "rows":    rows,
+        "total":   len(rows) if body.row_filter else result.get("total", 0),
         "error":   (str(fehler[0])[:300] if fehler and not result.get("rows") else None),
     }
 
