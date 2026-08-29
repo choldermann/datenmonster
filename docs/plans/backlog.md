@@ -4,7 +4,7 @@ Alles, was offen ist — nach Bereichen, in der Reihenfolge, in der ich es angeh
 würde. Erledigtes steht nicht drin: Die Liste soll zeigen, was zu tun ist, nicht
 was war. Beim Abhaken die Zeile also löschen, nicht durchstreichen.
 
-Stand: 30.08.2026 · 44 Aufgaben in 9 Bereichen
+Stand: 30.08.2026 · 43 Aufgaben in 9 Bereichen
 
 Markierungen: **⏳ wartet auf dich** = braucht eine Entscheidung, einen Zugang
 oder einen Test von außen. **⏸ geparkt** = bewusst zurückgestellt, mit Grund.
@@ -18,8 +18,8 @@ oder einen Test von außen. **⏸ geparkt** = bewusst zurückgestellt, mit Grund
 ## 1. Preisautomatik: Ladenhüter-Rabatte
 
 Gebaut und gegen PPS getestet: Regelwerk, Lauf, Freigabe, Ameise-Datei,
-Kontrolle, Rücknahme, Nachtlauf. Was fehlt, ist der Beweis, dass eine Zeile den
-Weg bis in die Wawi schafft.
+Kontrolle, Rücknahme, Nachtlauf und das Beenden bei Wiederverkauf. Was fehlt,
+ist der Beweis, dass eine Zeile den Weg bis in die Wawi schafft.
 
 1. [ ] **Erster echter Ameise-Import** ⏳
    Einen Artikel freigeben, Datei erzeugen, importieren, „Kontrolle" drücken.
@@ -28,21 +28,17 @@ Weg bis in die Wawi schafft.
    Bei PPS gibt es heute keinen einzigen Fall, in dem ein Sonderpreis über einer
    Staffelstufe liegt — deshalb ist aus den Daten nicht ablesbar, welcher Preis
    dann gilt. Ein Beleg mit Menge 30 klärt es.
-3. [ ] **Rabatt endet, wenn der Artikel wieder läuft** — ½ Tag
-   Die einzige echte Funktionslücke gegenüber SellerMath. Heute endet ein Rabatt
-   nur über das Datum; ein Artikel, der am dritten Tag anzieht, bleibt 27 Tage zu
-   billig. Der Nachtlauf hat die Verkaufsdaten bereits.
-4. [ ] **Sicherheitsnetz gegen Staffelpreis-Kollision** — ¼ Tag
+3. [ ] **Sicherheitsnetz gegen Staffelpreis-Kollision** — ¼ Tag
    Vorschlag ablehnen, wenn er über einer bestehenden Staffelstufe derselben
    Gruppe läge — sonst zahlt ein Mengenkäufer plötzlich mehr.
-5. [ ] **Erfolgskontrolle: hat der Rabatt gewirkt?** — 1 Tag
+4. [ ] **Erfolgskontrolle: hat der Rabatt gewirkt?** — 1 Tag
    Absatz 30 Tage davor gegen 30 Tage danach, abgeflossener Bestand, entgangene
    Marge gegen freigewordenes Kapital. Das Journal kennt Vorher-Wert und
    Zeitpunkt schon — SellerMath hat dazu nichts.
-6. [ ] **Direktschreiben als zweiter Anwendungsweg** — nach dem Import
+5. [ ] **Direktschreiben als zweiter Anwendungsweg** — nach dem Import
    Journal, Kontrolle und Rücknahme stehen bereits; es kommt nur eine zweite
    Rückseite an dieselbe Schnittstelle.
-7. [ ] **Gruppenrabatt in die Margenrechnung aufnehmen** — sobald ein Wert ≠ 0
+6. [ ] **Gruppenrabatt in die Margenrechnung aufnehmen** — sobald ein Wert ≠ 0
    `tkundenGruppe.fRabatt` steht bei allen neun PPS-Gruppen auf 0. Sobald dort
    etwas steht, läge der effektive Preis unter unserer Rechnung und das
    Margen-Minimum wäre stiller Selbstbetrug.
