@@ -32,7 +32,7 @@ def bestellungen(zusatz: str, ohne_zeitraum: bool = False) -> str:
     SELECT ISNULL(B.cEigeneBestellnummer,
                   CAST(B.kLieferantenBestellung AS VARCHAR(20))) AS Bestellnr,
         B.dErstellt, B.dLieferdatum,
-        ISNULL(NULLIF(L.cFirma, ''), 'unbekannt') AS Lieferant,
+        ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), 'unbekannt') AS Lieferant,
         (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P
           WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert,
         (SELECT ISNULL(SUM(P.fAnzahlOffen * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P

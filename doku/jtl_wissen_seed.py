@@ -38,13 +38,55 @@ EINTRAEGE = [
      "Rechnungen. dbo.tkunde enthält KEINE Namensfelder – die stehen in dbo.tAdresse "
      "(nStandard = 1 für die Standardadresse, dort auch cMail, cTel, cUSTID)."),
 
+    ("rule", "JTL – Offene Aufträge: welche Statusfelder wirklich zählen",
+     "Ein Auftrag ist offen bei Verkauf.tAuftrag.nType = 1 AND nStorno = 0 AND "
+     "nKomplettAusgeliefert = 0. nStorno ist verlässlich – Verkauf.tAuftragStorno "
+     "enthält keine Stornos, die im Auftrag nicht markiert wären. ABER: "
+     "kVorgangsstatus = 2 sind MUSTER-Vorgänge (siehe Verkauf.tVorgangsstatus), "
+     "die mit Auftragswert 0,00 in jeder Bestandsliste mitzählen – bei PPS 53 von "
+     "260. Filter: AND ISNULL(A.kVorgangsstatus, 1) <> 2 (NULL muss drin bleiben). "
+     "nKomplettAusgeliefert hat auch den Wert 2 (versendet, Sonderfall). "
+     "Ohne Zeitgrenze besteht der Bestand fast nur aus Karteileichen: bei PPS sind "
+     "nur 9 von 260 offenen Aufträgen jünger als 30 Tage, 141 sind 1–3 Jahre alt. "
+     "Laufend/Altbestand immer trennen, und „überfällig\" nur auf Liefertermine der "
+     "letzten 12 Monate rechnen – sonst meldet die Warnung ewig dieselben Altfälle."),
+
+    ("field_mapping", "JTL – tAuftragEckdaten: fOffenerWert ist ZAHLUNG, nicht Lieferung",
+     "Verkauf.tAuftragEckdaten.fOffenerWert = fWertBrutto - fZahlung - fGutschrift "
+     "(geprüft: stimmt bei 16.946 von 16.946 Aufträgen). Das ist der offene "
+     "ZAHLBETRAG. Der offene LIEFERwert kommt aus "
+     "Verkauf.tAuftragPositionEckdaten.fAnzahlOffen * tAuftragPosition.fVkNetto. "
+     "In einer Liste „Offene Aufträge\" die beiden nie verwechseln."),
+
+    ("field_mapping", "JTL – nLieferstatus: die echten Werte",
+     "Verkauf.tAuftragEckdaten.nLieferstatus (aus den Daten abgeleitet über "
+     "Versanddatum + Anteil gelieferter Menge): 1 = nichts geliefert, "
+     "2 = teilgeliefert/nicht versendet, 3 = komplett kommissioniert/nicht versendet, "
+     "4 = teilversendet, 5 = komplett versendet, 6 = komplett geliefert, "
+     "7 = abgeschlossen (Sonderfall, nKomplettAusgeliefert = 2). "
+     "Den Wert 0 gibt es NICHT, und 3 heißt NICHT „teilgeliefert\". In offenen "
+     "Aufträgen kommen nur 1, 2 und 4 vor."),
+
+    ("rule", "JTL – Kundenname: cFirma allein reicht nicht",
+     "cFirma trägt bei vielen Kunden nur eine Gattung – bei PPS steht dort 21.474-mal "
+     "nur 'Zahnarztpraxis', 'Praxis' oder sogar 'Frau'. Der eigentliche Name steckt im "
+     "Firmenzusatz. JEDE Kundenabfrage muss beide Felder zusammensetzen: "
+     "LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' "
+     "OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' "
+     "ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END) – die CHARINDEX-Bedingung verhindert "
+     "'Zahnarztpraxis Uwe Göselt Uwe Göselt', wenn der Zusatz schon im Firmennamen steht. "
+     "Das Feld heißt cZusatz in tAdresse/vRechnungRechnungsadresse/vAuftragRechnungsadresse/"
+     "RM.lvRetoure, aber cFirmenZusatz in dbo.tLieferant. cAdressZusatz ist etwas anderes "
+     "(Hinterhaus o. ä.) und gehört NICHT in den Namen. Achtung RM.lvRetoure: cFirma ist "
+     "dort die EIGENE Firma, der Kunde steht in cKundeFirma."),
+
     # ── Einkauf ─────────────────────────────────────────────────────────────
     ("table", "JTL – Einkauf: Bestellungen & Bestellwert",
      "Lieferantenbestellungen: dbo.tLieferantenBestellung (Kopf: kLieferant, dErstellt, "
      "dLieferdatum = Soll-Termin, nDeleted, nManuellAbgeschlossen, cEigeneBestellnummer) + "
      "dbo.tLieferantenBestellungPos (fMenge, fEKNetto, fMengeGeliefert, fAnzahlOffen). "
      "Bestellwert = SUM(fMenge * fEKNetto) über die Positionen. Lieferantenname aus "
-     "dbo.tlieferant.cFirma (Achtung: Tabellenname klein geschrieben)."),
+     "dbo.tlieferant.cFirma + cFirmenZusatz zusammengesetzt (Achtung: Tabellenname klein geschrieben, und der Zusatz heißt hier cFirmenZusatz, nicht cZusatz)."),
 
     ("rule", "JTL – Offene Bestellungen: nStatus ist unbrauchbar",
      "Ob eine Lieferantenbestellung offen ist, NICHT über nStatus bestimmen – auch Bestellungen "

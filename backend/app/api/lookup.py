@@ -33,10 +33,16 @@ LOOKUP_QUERIES = {
                    "FROM dbo.tPlattform WHERE nInet = 0 AND nTyp IS NOT NULL "
                    "GROUP BY nTyp ORDER BY MIN(cName)",
     # Lieferanten (Einkauf). Gelöschte/inaktive (cAktiv = 'N') bleiben außen vor.
-    "lieferant":   "SELECT kLieferant AS value, cFirma AS label "
+    # cFirma trägt oft nur ein Kürzel, der Rest steckt im Firmenzusatz –
+    # deshalb dasselbe Zusammensetzen wie in den Cockpit-Abfragen
+    # (backend/firmenzusatz.py). Der Filterwert bleibt kLieferant.
+    "lieferant":   "SELECT kLieferant AS value, "
+                   "  LTRIM(RTRIM(ISNULL(cFirma,'')) + CASE WHEN ISNULL(cFirmenZusatz,'') = '' "
+                   "  OR CHARINDEX(LTRIM(RTRIM(cFirmenZusatz)), ISNULL(cFirma,'')) > 0 THEN '' "
+                   "  ELSE ' ' + LTRIM(RTRIM(cFirmenZusatz)) END) AS label "
                    "FROM dbo.tlieferant "
                    "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cFirma, '') <> '' "
-                   "ORDER BY cFirma",
+                   "ORDER BY label",
     # Versandarten (Versand). Der Dienstleister steckt im Namen der Versandart –
     # dbo.tVersand.cLogistiker ist in der Praxis leer.
     "versandart":  "SELECT kVersandArt AS value, cName AS label "

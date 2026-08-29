@@ -53,7 +53,7 @@ def auftraege(typ_filter: str, zusatz: str, ohne_zeitraum: bool = False) -> str:
         "\n      AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)"
     return f"""WITH vorgang AS (
     SELECT A.cAuftragsNr AS Auftragsnr, A.dErstellt,
-        LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),
+        LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),
             ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,
         E.fWertNetto AS Wert,
         (SELECT COUNT(*) FROM Verkauf.tAuftragPosition P
@@ -98,7 +98,7 @@ NEUE_MAPPINGS = {
         # ausgelieferten Aufträge, egal wann sie erfasst wurden. Ein Zeitraum im
         # Detail würde die Liste kürzer machen als die angeklickte Säule.
         "sql": auftraege(
-            "A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0",
+            "A.nType = 1 AND A.nStorno = 0 AND A.nKomplettAusgeliefert = 0 AND ISNULL(A.kVorgangsstatus, 1) <> 2",
             """CASE WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 7  THEN 'bis 7 Tage'
              WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 14 THEN '8-14 Tage'
              WHEN DATEDIFF(DAY, A.dErstellt, GETDATE()) <= 30 THEN '15-30 Tage'

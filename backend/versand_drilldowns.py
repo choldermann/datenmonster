@@ -53,7 +53,7 @@ def sendungen(filter_: str) -> str:
     return f"""WITH sendung AS (
     SELECT V.dVersendet,
         ISNULL(A.cAuftragsNr, '') AS Auftragsnr,
-        LTRIM(RTRIM(ISNULL(NULLIF(RA.cFirma, ''),
+        LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),
             ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,
         ISNULL(NULLIF(VA.cName, ''), 'ohne Versandart') AS Versandart,
         ISNULL(V.fGewicht, 0) AS Gewicht,

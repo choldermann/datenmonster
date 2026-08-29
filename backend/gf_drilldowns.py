@@ -28,7 +28,7 @@ FORM_ID = 1
 RECHNUNGEN = ("(SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 "
               "AND (:plattform_empty = 1 OR kPlattform IN "
               "(SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE")
-KUNDE = ("ISNULL(NULLIF(RA.cFirma, ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') "
+KUNDE = ("ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''), LTRIM(RTRIM(ISNULL(RA.cVorname,'') "
          "+ ' ' + ISNULL(RA.cName,''))))")
 
 BELEG_FELDER = ["Sortierung", "Rechnungsnr", "Datum", "Kunde", "Umsatz",
@@ -75,7 +75,7 @@ RETOURE_FELDER = ["Sortierung", "Datum", "Retourennr", "ArtNr", "Artikel",
 def retouren(quelle: str, zusatz: str, zeitraum: str = None) -> str:
     """Einzelne Retourenpositionen – die Ebene unter jeder Retouren-Summe."""
     zeit = zeitraum or "R.dErstellt >= :von AND R.dErstellt < DATEADD(DAY, 1, :bis)"
-    kunde = ("ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''), "
+    kunde = ("ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(R.cKundeFirma,'')) + CASE WHEN ISNULL(R.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(R.cZusatz)), ISNULL(R.cKundeFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(R.cZusatz)) END), ''), "
              "LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, '')))))), ''), "
              "'(unbekannt)')") if quelle.startswith("RM.lvRetoure ") else "''"
     return f"""WITH pos AS (
@@ -192,7 +192,7 @@ NEUE_MAPPINGS = {
         # Die Übersicht gruppiert nach dem zusammengesetzten Kundennamen, nicht
         # nach einem Schlüssel – das Detail muss denselben Ausdruck vergleichen.
         "sql": retouren("RM.lvRetoure R",
-                        "ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(R.cKundeFirma, ''), "
+                        "ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(R.cKundeFirma,'')) + CASE WHEN ISNULL(R.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(R.cZusatz)), ISNULL(R.cKundeFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(R.cZusatz)) END), ''), "
                         "LTRIM(RTRIM(ISNULL(R.cVorname, '') + ' ' + ISNULL(R.cName, '')))))), ''), "
                         "'(unbekannt)') = :kunde"),
     },
