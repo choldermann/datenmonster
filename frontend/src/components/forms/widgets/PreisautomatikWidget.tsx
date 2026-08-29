@@ -441,10 +441,15 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
                     feld("kundengruppen", neu);
                     speichern({ name: entwurf.name, kundengruppen: neu });
                   }} />
-                  {/* Name trimmen ist nur Anzeige – gespeichert wird die Nummer,
+                  {/* Nummer vorn, Gruppenrabatt hinten: Der Rabatt der
+                      Kundengruppe wirkt auf den Preis und damit auf die Marge,
+                      die das Sicherheitsnetz prüft – man sollte ihn sehen.
+                      Name trimmen ist nur Anzeige; gespeichert wird die Nummer,
                       und die Ameise-Spalte baut später den ungekürzten Namen. */}
-                  {String(g.label).trim()}
-                  <span style={{ color: S.textDim }}>({g.value})</span>
+                  {g.value}-{String(g.label).trim()}
+                  <span style={{ color: S.textDim }}>
+                    ({String(g.rabatt ?? 0).replace(".", ",")}%)
+                  </span>
                 </label>
               );
             })}

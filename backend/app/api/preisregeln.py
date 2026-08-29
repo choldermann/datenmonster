@@ -257,20 +257,24 @@ def kundengruppen(rid: int, db: Session = Depends(get_db),
     /api/lookup/options: Das tauscht die Verbindung gegen den gerade aktiven
     Mandanten und lieferte dann die Gruppen eines fremden Betriebs."""
     rs = _regelwerk(db, rid, user)
-    from app.api.lookup import LOOKUP_QUERIES
     from app.services.mapping_service import _get_sql_engine
     import sqlalchemy as sa
+    # Eigene Abfrage statt LOOKUP_QUERIES["kundengruppe"]: Dort gilt der Vertrag
+    # value/label für Auswahlfelder, hier wird zusätzlich der Gruppenrabatt
+    # (tkundenGruppe.fRabatt) gebraucht. Der ist wichtig genug, um ihn zu sehen –
+    # er wirkt auf den Preis und damit auf die Marge, die das Sicherheitsnetz prüft.
+    SQL = ("SELECT kKundenGruppe, cName, ISNULL(fRabatt, 0) "
+           "FROM dbo.tkundenGruppe ORDER BY kKundenGruppe")
     try:
         with _get_sql_engine(rs.connection_id).connect() as con:
-            zeilen = con.execute(sa.text(LOOKUP_QUERIES["kundengruppe"])).fetchall()
+            zeilen = con.execute(sa.text(SQL)).fetchall()
     except Exception as e:
         raise HTTPException(400, f"Kundengruppen nicht lesbar: {str(e)[:200]}")
-    # Nach Nummer sortiert, nicht alphabetisch: Die Kundengruppen sind in der
-    # Wawi in einer gewachsenen Reihenfolge angelegt (Basis, Händler, Bronze,
-    # Silver, Gold …), und in der wiedererkennt man sie. Die gemeinsame
-    # Lookup-Abfrage bleibt alphabetisch – dort ist sie ein Auswahlfeld.
-    optionen = [{"value": int(r[0]), "label": r[1]} for r in zeilen]
-    return {"optionen": sorted(optionen, key=lambda o: o["value"])}
+    # Nach Nummer sortiert, nicht alphabetisch: Die Gruppen sind in der Wawi in
+    # einer gewachsenen Reihenfolge angelegt (Basis, Händler, Bronze, Silver,
+    # Gold …), und in der wiedererkennt man sie.
+    return {"optionen": [{"value": int(r[0]), "label": r[1], "rabatt": float(r[2] or 0)}
+                         for r in zeilen]}
 
 
 @router.post("/regelwerke/{rid}/nachtlauf")
