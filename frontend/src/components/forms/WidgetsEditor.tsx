@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -34,6 +34,8 @@ const WIDGET_TYPES = [
     desc: "Ergebnis einer Warnungs-Action (run_alerts): Ampel, Fakten und Drilldown je Regel" },
   { type: "kostenstruktur", label: "Kostenstruktur", Icon: Wallet, color: "#fbbf24",
     desc: "Monatliche Fixkosten je Kostenart pflegen – Grundlage für den Ergebnis-Reiter" },
+  { type: "preisautomatik", label: "Preisautomatik", Icon: Tags, color: "#22d3ee",
+    desc: "Ladenhüter automatisch rabattieren: Regeln, Vorschläge, Ameise-Datei und Kontrolle" },
 ];
 
 function LabelRow({ label, children }) {

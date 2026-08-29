@@ -12,6 +12,7 @@ import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
 import HerstellerNavigator from "./widgets/HerstellerNavigator";
 import KostenWidget from "./widgets/KostenWidget";
+import PreisautomatikWidget from "./widgets/PreisautomatikWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
 import AlertsWidget from "./widgets/AlertsWidget";
@@ -25,13 +26,14 @@ const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
-  kostenstruktur: "Kostenstruktur",
+  kostenstruktur: "Kostenstruktur", preisautomatik: "Preisautomatik",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
-export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research", "kostenstruktur"]);
+export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research",
+                                                "kostenstruktur", "preisautomatik"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -41,6 +43,8 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   // einen Portal-Nutzer beim Speichern ab, die Anzeige bleibt für alle gleich.
   if (widget.type === "kostenstruktur")
     return <KostenWidget widget={widget} projectId={projectId} />;
+  if (widget.type === "preisautomatik")
+    return <PreisautomatikWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
