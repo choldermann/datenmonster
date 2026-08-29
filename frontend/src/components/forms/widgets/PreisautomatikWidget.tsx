@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Tags, Plus, Trash2, Play, FileDown, CheckCircle2, XCircle,
-         RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2 } from "lucide-react";
+         RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2, Moon } from "lucide-react";
 import api from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 
@@ -21,6 +21,18 @@ const btn = (aktiv = true) => ({
   color: aktiv ? S.textMain : S.textDim, fontSize: 12, cursor: aktiv ? "pointer" : "default",
   opacity: aktiv ? 1 : 0.5,
 });
+
+// Der Nachtlauf braucht nur eine Uhrzeit; der Cron-Ausdruck dahinter bleibt
+// verborgen, weil „15 5 * * *" niemandem etwas sagt.
+const cronZuZeit = (cron) => {
+  const t = String(cron || "").trim().split(/\s+/);
+  if (t.length !== 5) return "05:15";
+  return `${String(t[1]).padStart(2, "0")}:${String(t[0]).padStart(2, "0")}`;
+};
+const zeitZuCron = (zeit) => {
+  const [h, m] = String(zeit || "05:15").split(":");
+  return `${parseInt(m, 10) || 0} ${parseInt(h, 10) || 0} * * *`;
+};
 
 const eur = (n) => n === null || n === undefined ? "–"
   : new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR",
@@ -166,6 +178,17 @@ export default function PreisautomatikWidget({ widget, projectId }) {
     await zeilenLaden(rw.id, filter);
   });
 
+  const nachtlaufJetzt = () => handeln("nachtlauf", async () => {
+    const { data } = await api.post(`/api/preisregeln/regelwerke/${rw.id}/nachtlauf`, {});
+    const k = data.kontrolle || {}, l = data.lauf || {};
+    melden(data.fehler ? `Nachtlauf fehlgeschlagen: ${data.fehler}`
+      : `Nachtlauf: ${l.vorschlaege ?? 0} neue Vorschläge, ${l.verworfen ?? 0} abgelehnt; `
+        + `Kontrolle: ${k.angewandt ?? 0} angekommen, ${k.fehlt ?? 0} offen.`
+        + (data.mail?.sent ? " Bericht verschickt." : ""));
+    await regelwerkeLaden();
+    await zeilenLaden(rw.id, filter);
+  });
+
   const kontrollieren = () => handeln("kontrolle", async () => {
     const { data } = await api.post(`/api/preisregeln/regelwerke/${rw.id}/kontrolle`, {});
     melden(`${data.geprueft} geprüft: ${data.angewandt} in der Wawi angekommen, `
@@ -220,6 +243,12 @@ export default function PreisautomatikWidget({ widget, projectId }) {
         <button style={btn()} onClick={neuesRegelwerk} disabled={arbeitet === "neu"}>
           <Plus size={12} /> Neues Regelwerk
         </button>
+        {rw?.offen?.nicht_angekommen > 0 && (
+          <span style={{ fontSize: 12, color: "#e07070" }}>
+            {rw.offen.nicht_angekommen} freigegebene Änderungen sind nicht in der Wawi
+            angekommen
+          </span>
+        )}
         {rw && (
           <button style={{ ...btn(), marginLeft: "auto" }}
             onClick={() => setEinstellungenOffen(o => !o)}>
@@ -272,6 +301,12 @@ export default function PreisautomatikWidget({ widget, projectId }) {
             </button>
             <button style={btn(auswahl.size > 0)} onClick={zuruecknehmen} disabled={!auswahl.size}>
               <Undo2 size={12} /> Zurücknehmen
+            </button>
+            <button style={{ ...btn(), marginLeft: "auto" }} onClick={nachtlaufJetzt}
+              disabled={arbeitet === "nachtlauf"}
+              title="Kontrollieren und neu vorschlagen – genau das, was nachts läuft">
+              {arbeitet === "nachtlauf" ? <Loader2 size={12} className="spin" /> : <Moon size={12} />}
+              Nachtlauf jetzt
             </button>
           </div>
 
@@ -353,6 +388,40 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
               speichern({ name: entwurf.name, active: e.target.checked }); }} />
           aktiv
         </label>
+      </div>
+
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${S.border}`,
+        display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12,
+          color: S.textMain, paddingBottom: 6 }}>
+          <input type="checkbox" checked={!!entwurf.zeitplan_aktiv}
+            onChange={e => { feld("zeitplan_aktiv", e.target.checked);
+              speichern({ name: entwurf.name, zeitplan_aktiv: e.target.checked,
+                          cron_expr: entwurf.cron_expr || "15 5 * * *" }); }} />
+          Nachtlauf
+        </label>
+        <Feld label="Uhrzeit">
+          <input style={{ ...inp, width: 90 }} type="time"
+            value={cronZuZeit(entwurf.cron_expr)}
+            onChange={e => feld("cron_expr", zeitZuCron(e.target.value))}
+            onBlur={() => speichern({ name: entwurf.name, cron_expr: entwurf.cron_expr })} />
+        </Feld>
+        <Feld label="Bericht an (leer = kein Versand)">
+          <input style={{ ...inp, width: 240 }} value={entwurf.email_to || ""}
+            placeholder="name@firma.de"
+            onChange={e => feld("email_to", e.target.value)}
+            onBlur={() => speichern({ name: entwurf.name, email_to: entwurf.email_to })} />
+        </Feld>
+        {rw.last_run_at && (
+          <div style={{ fontSize: 11, color: rw.last_status === "error" ? "#e07070" : S.textDim,
+            paddingBottom: 6, maxWidth: 460 }}>
+            zuletzt {rw.last_run_at}: {rw.last_message}
+          </div>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: S.textDim, marginTop: 6 }}>
+        Der Nachtlauf kontrolliert zuerst, was in der Wawi angekommen ist, und bildet
+        dann neue Vorschläge. Angewandt wird dabei nichts.
       </div>
 
       <div style={{ marginTop: 12, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",

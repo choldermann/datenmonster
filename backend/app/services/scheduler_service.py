@@ -499,6 +499,96 @@ def trigger_alert_check_now(schedule_id: int):
     t.start()
 
 
+def _run_price_run(ruleset_id: int, triggered_by: str = "scheduler"):
+    """Nächtlicher Lauf eines Preis-Regelwerks: kontrollieren, dann neue
+    Vorschläge bilden. Angewandt wird nichts – dafür braucht es eine Freigabe."""
+    from app.core.database import SessionLocal
+    from app.models.preisregel import PriceRuleset
+    from app.services import preisregel_service
+
+    db = SessionLocal()
+    try:
+        rs = db.query(PriceRuleset).filter(PriceRuleset.id == ruleset_id).first()
+        if not rs:
+            logger.warning(f"Preis-Regelwerk {ruleset_id} nicht gefunden")
+            return
+        if triggered_by == "scheduler" and not (rs.active and rs.zeitplan_aktiv):
+            return
+        bericht = preisregel_service.nachtlauf(db, ruleset_id, triggered_by)
+        logger.info(f"Preisautomatik „{rs.name}“: {rs.last_message}")
+        return bericht
+    except Exception as e:
+        logger.error(f"Preisautomatik-Lauf {ruleset_id} fehlgeschlagen: {e}")
+    finally:
+        db.close()
+
+
+def register_price_job(ruleset_id: int, cron_expr: str):
+    """Registriert den Nachtlauf eines Preis-Regelwerks."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"preise_{ruleset_id}"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not cron_expr or not cron_expr.strip():
+        return
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        logger.warning(f"Ungültiger Cron-Ausdruck für Preis-Regelwerk "
+                       f"{ruleset_id}: {cron_expr}")
+        return
+    try:
+        trigger = CronTrigger(minute=parts[0], hour=parts[1], day=parts[2],
+                              month=parts[3], day_of_week=parts[4],
+                              timezone="Europe/Berlin")
+        sched.add_job(_run_price_run, trigger=trigger, id=job_id,
+                      args=[ruleset_id], replace_existing=True)
+        logger.info(f"Preis-Regelwerk {ruleset_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von Preis-Regelwerk {ruleset_id}: {e}")
+
+
+def unregister_price_job(ruleset_id: int):
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"preise_{ruleset_id}")
+        logger.info(f"Preis-Regelwerk {ruleset_id} ausgetragen")
+    except Exception:
+        pass
+
+
+def trigger_price_run_now(ruleset_id: int):
+    """„Jetzt ausführen" – im Thread, damit die Oberfläche nicht wartet."""
+    import threading
+    t = threading.Thread(target=_run_price_run, args=[ruleset_id, "manuell"],
+                         daemon=True)
+    t.start()
+
+
+def reload_all_price_jobs():
+    """Beim Start: alle aktiven Preis-Nachtläufe registrieren."""
+    from app.core.database import SessionLocal
+    from app.models.preisregel import PriceRuleset
+    db = SessionLocal()
+    try:
+        werke = (db.query(PriceRuleset)
+                 .filter(PriceRuleset.active.is_(True),
+                         PriceRuleset.zeitplan_aktiv.is_(True)).all())
+        for w in werke:
+            register_price_job(w.id, w.cron_expr)
+        logger.info(f"✓ {len(werke)} Preis-Nachtlauf/-läufe geladen")
+    except Exception as e:
+        logger.error(f"Preis-Nachtläufe konnten nicht geladen werden: {e}")
+    finally:
+        db.close()
+
+
 def reload_all_alert_jobs():
     """Beim Start: alle aktiven Warnungs-Zeitpläne registrieren."""
     from app.core.database import SessionLocal

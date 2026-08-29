@@ -106,6 +106,13 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE price_changes ADD COLUMN kundengruppe TEXT",
             "ALTER TABLE price_changes ADD COLUMN steuersatz FLOAT",
             "ALTER TABLE price_changes ADD COLUMN shop_name TEXT",
+            # Nachtlauf der Preisautomatik
+            "ALTER TABLE price_rulesets ADD COLUMN zeitplan_aktiv BOOLEAN DEFAULT 0",
+            "ALTER TABLE price_rulesets ADD COLUMN cron_expr TEXT DEFAULT '15 5 * * *'",
+            "ALTER TABLE price_rulesets ADD COLUMN email_to TEXT",
+            "ALTER TABLE price_rulesets ADD COLUMN last_run_at DATETIME",
+            "ALTER TABLE price_rulesets ADD COLUMN last_status TEXT",
+            "ALTER TABLE price_rulesets ADD COLUMN last_message TEXT",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -391,6 +398,8 @@ async def lifespan(app: FastAPI):
     reload_all_jobs()
     reload_all_dataset_jobs()
     reload_all_alert_jobs()
+    from app.services.scheduler_service import reload_all_price_jobs
+    reload_all_price_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()

@@ -42,6 +42,9 @@ class RegelwerkIn(BaseModel):
     preisendung: Optional[str] = None
     auto_freigabe: bool = False
     kandidaten_mapping: Optional[str] = None
+    zeitplan_aktiv: bool = False
+    cron_expr: Optional[str] = None
+    email_to: Optional[str] = None
 
 
 class RegelIn(BaseModel):
@@ -73,6 +76,16 @@ def _regelwerk(db, rid: int, user, schreibend=False) -> PriceRuleset:
     return rs
 
 
+def _zeitplan_uebernehmen(rs: PriceRuleset):
+    """Der Nachtlauf folgt dem Regelwerk: ein inaktives Regelwerk läuft nicht,
+    auch wenn ein Zeitplan hinterlegt ist."""
+    from app.services.scheduler_service import register_price_job, unregister_price_job
+    if rs.active and rs.zeitplan_aktiv:
+        register_price_job(rs.id, rs.cron_expr or "15 5 * * *")
+    else:
+        unregister_price_job(rs.id)
+
+
 def _rw_out(rs: PriceRuleset, db) -> dict:
     return {
         "id": rs.id, "project_id": rs.project_id, "connection_id": rs.connection_id,
@@ -85,6 +98,11 @@ def _rw_out(rs: PriceRuleset, db) -> dict:
         "laufzeit_tage": rs.laufzeit_tage, "preisendung": rs.preisendung,
         "auto_freigabe": rs.auto_freigabe,
         "kandidaten_mapping": rs.kandidaten_mapping,
+        "zeitplan_aktiv": rs.zeitplan_aktiv, "cron_expr": rs.cron_expr,
+        "email_to": rs.email_to,
+        "last_run_at": rs.last_run_at.strftime("%d.%m.%Y %H:%M") if rs.last_run_at else "",
+        "last_status": rs.last_status, "last_message": rs.last_message,
+        "offen": dienst.offene_zahlen(db, rs.id),
         "regeln": [_regel_out(r) for r in
                    db.query(PriceRule).filter(PriceRule.ruleset_id == rs.id)
                    .order_by(PriceRule.sort.desc()).all()],
@@ -144,6 +162,7 @@ def anlegen(body: RegelwerkIn, db: Session = Depends(get_db),
     rs = PriceRuleset(connection_id=conn, **daten)
     db.add(rs)
     db.commit()
+    _zeitplan_uebernehmen(rs)
     return _rw_out(rs, db)
 
 
@@ -158,6 +177,7 @@ def aendern(rid: int, body: RegelwerkIn, db: Session = Depends(get_db),
             continue
         setattr(rs, feld, wert)
     db.commit()
+    _zeitplan_uebernehmen(rs)
     return _rw_out(rs, db)
 
 
@@ -173,6 +193,8 @@ def loeschen(rid: int, db: Session = Depends(get_db),
     db.query(PriceRule).filter(PriceRule.ruleset_id == rs.id).delete()
     db.query(PriceChange).filter(PriceChange.ruleset_id == rs.id).delete()
     db.query(PriceRun).filter(PriceRun.ruleset_id == rs.id).delete()
+    from app.services.scheduler_service import unregister_price_job
+    unregister_price_job(rs.id)
     db.delete(rs)
     db.commit()
     return {"ok": True}
@@ -224,6 +246,18 @@ def starten(rid: int, body: LaufIn = LaufIn(), db: Session = Depends(get_db),
     try:
         return dienst.lauf(db, rs.id, user=user, triggered_by="manuell",
                            stichtag=body.stichtag)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/regelwerke/{rid}/nachtlauf")
+def nachtlauf_jetzt(rid: int, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Führt den Nachtlauf sofort aus – kontrollieren, dann neu vorschlagen.
+    Nützlich zum Ausprobieren des Zeitplans, ohne bis morgen früh zu warten."""
+    rs = _regelwerk(db, rid, user, schreibend=True)
+    try:
+        return dienst.nachtlauf(db, rs.id, triggered_by="manuell")
     except ValueError as e:
         raise HTTPException(400, str(e))
 

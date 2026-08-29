@@ -64,6 +64,19 @@ class PriceRuleset(Base):
     # Kandidatenliste kommt aus einem ganz normalen Mapping (SQL bleibt SQL).
     kandidaten_mapping = Column(String, default="Preisautomatik – Ladenhüter-Kandidaten")
 
+    # Nachtlauf. `active` und `zeitplan_aktiv` sind zwei verschiedene Dinge:
+    # `active` heißt „dieses Regelwerk wird benutzt" (auch von Hand),
+    # `zeitplan_aktiv` heißt „es läuft zusätzlich jede Nacht von allein".
+    # Ein Nachtlauf erzeugt nur VORSCHLÄGE – angewandt wird nichts ohne Freigabe.
+    zeitplan_aktiv = Column(Boolean, default=False)
+    cron_expr      = Column(String, default="15 5 * * *")   # 5-stellig, Europe/Berlin
+    # Leer = kein Versand. Ausgehende Post ist nie ein Nebeneffekt einer
+    # Voreinstellung (gleiche Regel wie beim Warnungs-Zeitplan).
+    email_to       = Column(String, nullable=True)
+    last_run_at    = Column(DateTime, nullable=True)
+    last_status    = Column(String, nullable=True)          # success | error
+    last_message   = Column(Text, nullable=True)
+
     created_at     = Column(DateTime, default=_jetzt)
     updated_at     = Column(DateTime, default=_jetzt, onupdate=_jetzt)
 

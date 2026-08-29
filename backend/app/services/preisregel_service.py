@@ -523,3 +523,119 @@ def ruecknahme(db, ids: list, user=None) -> dict:
         n += 1
     db.commit()
     return {"zurueckgenommen": n}
+
+# ── Nachtlauf ────────────────────────────────────────────────────────────────
+
+def nachtlauf(db, ruleset_id: int, triggered_by: str = "scheduler") -> dict:
+    """Ein Nachtlauf macht zwei Dinge, in dieser Reihenfolge:
+
+    1. **Kontrolle** der offenen und angewandten Änderungen. Erst danach steht
+       fest, was gestern wirklich in der Wawi angekommen ist und was inzwischen
+       ausgelaufen ist – ein Bericht vor der Kontrolle wäre von gestern.
+    2. **Lauf**: neue Vorschläge. Angewandt wird nichts; ohne Freigabe passiert
+       im Betrieb nichts, auch wenn die Automatik jede Nacht denkt.
+
+    Ausgehende Post nur, wenn Empfänger eingetragen sind UND es etwas zu sagen
+    gibt.
+    """
+    rs = db.query(PriceRuleset).filter(PriceRuleset.id == ruleset_id).first()
+    if not rs:
+        raise ValueError("Regelwerk nicht gefunden")
+
+    bericht = {"ruleset_id": rs.id, "name": rs.name, "kontrolle": None, "lauf": None,
+               "mail": None, "fehler": None}
+    try:
+        bericht["kontrolle"] = kontrolle(db, rs.id)
+        bericht["lauf"] = lauf(db, rs.id, triggered_by=triggered_by)
+        rs.last_status = "success"
+        rs.last_message = _bericht_zeile(bericht)
+    except Exception as e:
+        bericht["fehler"] = str(e)[:400]
+        rs.last_status = "error"
+        rs.last_message = bericht["fehler"]
+    rs.last_run_at = _jetzt()
+    db.commit()
+
+    try:
+        bericht["mail"] = _bericht_senden(db, rs, bericht)
+    except Exception as e:            # ein Mailproblem darf den Lauf nicht kippen
+        logger.warning(f"Preisautomatik: Bericht nicht versendet: {e}")
+        bericht["mail"] = {"sent": False, "grund": str(e)[:200]}
+    return bericht
+
+
+def _bericht_zeile(b: dict) -> str:
+    k, l = b.get("kontrolle") or {}, b.get("lauf") or {}
+    return (f"{l.get('vorschlaege', 0)} neue Vorschläge, "
+            f"{l.get('verworfen', 0)} abgelehnt; Kontrolle: "
+            f"{k.get('angewandt', 0)} angekommen, {k.get('fehlt', 0)} offen, "
+            f"{k.get('abweichend', 0)} abweichend")
+
+
+def offene_zahlen(db, ruleset_id: int) -> dict:
+    """Was gerade auf jemanden wartet – Grundlage für Bericht und Oberfläche."""
+    from sqlalchemy import func
+    zahlen = dict(db.query(PriceChange.zustand, func.count())
+                  .filter(PriceChange.ruleset_id == ruleset_id)
+                  .group_by(PriceChange.zustand).all())
+    nicht_angekommen = (db.query(func.count(PriceChange.id))
+                        .filter(PriceChange.ruleset_id == ruleset_id,
+                                PriceChange.zustand == "freigegeben",
+                                PriceChange.abweichung.in_(("fehlt", "abweichend")))
+                        .scalar() or 0)
+    aeltester = (db.query(func.min(PriceChange.created_at))
+                 .filter(PriceChange.ruleset_id == ruleset_id,
+                         PriceChange.zustand == "vorgeschlagen").scalar())
+    return {"vorgeschlagen": zahlen.get("vorgeschlagen", 0),
+            "freigegeben": zahlen.get("freigegeben", 0),
+            "angewandt": zahlen.get("angewandt", 0),
+            "nicht_angekommen": nicht_angekommen,
+            "aeltester_vorschlag": aeltester.isoformat() if aeltester else None}
+
+
+def _bericht_senden(db, rs: PriceRuleset, bericht: dict) -> dict:
+    """Verschickt den Tagesbericht – aber nur, wenn es etwas zu berichten gibt.
+
+    Eine Mail „0 Vorschläge, alles in Ordnung" jede Nacht bringt niemanden dazu,
+    die nächste zu lesen."""
+    from app.services.email_service import send_email
+
+    ziele = [e.strip() for e in (rs.email_to or "").replace(";", ",").split(",")
+             if e.strip()]
+    if not ziele:
+        return {"sent": False, "grund": "keine Empfänger"}
+
+    offen = offene_zahlen(db, rs.id)
+    l = bericht.get("lauf") or {}
+    if bericht.get("fehler") is None and not l.get("vorschlaege") \
+            and not offen["vorgeschlagen"] and not offen["nicht_angekommen"]:
+        return {"sent": False, "grund": "nichts zu berichten"}
+
+    if bericht.get("fehler"):
+        betreff = f"Preisautomatik „{rs.name}“: Lauf fehlgeschlagen"
+        zeilen = [f"Der nächtliche Lauf ist gescheitert:", "", bericht["fehler"]]
+    else:
+        betreff = (f"Preisautomatik „{rs.name}“: {offen['vorgeschlagen']} "
+                   f"Vorschläge warten auf Freigabe")
+        k = bericht.get("kontrolle") or {}
+        zeilen = [
+            f"Neu vorgeschlagen: {l.get('vorschlaege', 0)}",
+            f"Durch das Sicherheitsnetz abgelehnt: {l.get('verworfen', 0)}",
+            "",
+            f"Warten auf Freigabe: {offen['vorgeschlagen']}",
+            f"Freigegeben, noch nicht in der Wawi: {offen['freigegeben']}",
+            f"Aktive Rabatte: {offen['angewandt']}",
+        ]
+        if offen["nicht_angekommen"]:
+            zeilen += ["",
+                       f"ACHTUNG: {offen['nicht_angekommen']} freigegebene Änderungen "
+                       "sind nicht in der Wawi angekommen oder weichen ab. "
+                       "Wurde die Datei importiert?"]
+        if k:
+            zeilen += ["", f"Kontrolle: {k.get('angewandt', 0)} angekommen, "
+                           f"{k.get('fehlt', 0)} nicht gefunden, "
+                           f"{k.get('abweichend', 0)} abweichend."]
+        zeilen += ["", "Angewandt wird nichts ohne Freigabe."]
+
+    send_email(to=", ".join(ziele), subject=betreff, body="\n".join(zeilen), db=db)
+    return {"sent": True, "empfaenger": ziele}
