@@ -72,6 +72,20 @@ Inland (Steuerzone 3): Klasse 1 = 19 %, Klasse 2 = 7 %, Klasse 3 = 0 %.
 Steuerzone 4 führt alle Klassen mit 0 % (Ausland/Reverse Charge).
 Alle Preistabellen führen **netto**; Brutto ist immer abgeleitet.
 
+Ob der Kunde netto oder brutto sieht, steht an der Kundengruppe:
+`tkundenGruppe.nNettoPreise`. Bei PPS ist das für **alle neun Gruppen** auf 1
+gesetzt, bei HaKo für alle außer der leeren Gruppe „Otto". Ein errechneter
+Nettopreis ist dort also genau der Preis, den der Kunde liest — eine
+Preisendung (x,99) wirkt wie beabsichtigt. Für eine Gruppe mit Bruttoausweis
+gilt das nicht: Dort müsste die Rundung auf den Bruttopreis rechnen.
+
+`tkundenGruppe.fRabatt` ist ein zusätzlicher Gruppenrabatt auf den Preis. In
+beiden Betrieben steht er überall auf 0. Wäre er gesetzt, käme er zu einem
+Sonderpreis möglicherweise noch obendrauf — ob JTL ihn auf Sonderpreise
+anwendet, ist **nicht geprüft**. Vor dem Einsatz einer Rabattautomatik in einer
+Gruppe mit `fRabatt > 0` gehört das nachgemessen, sonst unterläuft der
+Gruppenrabatt still das Margen-Minimum.
+
 ## 5. Schreibweg — was die Trigger von selbst erledigen
 
 Auf allen vier Tabellen liegen aktive JTL-Trigger. Der wichtigste ist
