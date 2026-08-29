@@ -205,6 +205,21 @@ export default function PreisautomatikWidget({ widget, projectId }) {
     await zeilenLaden(rw.id, filter);
   });
 
+  // „Ameise-Datei erzeugen" exportiert nur FREIGEGEBENE Änderungen. Ohne
+  // welche lief der Klick in eine Fehlermeldung – der Knopf bleibt jetzt
+  // gesperrt und sagt im Tooltip, was fehlt.
+  const ausgewaehlteFreigegebene = zeilen.filter(
+    z => auswahl.has(z.id) && z.Zustand === "freigegeben").length;
+  const freigegebenGesamt = zaehler.freigegeben || 0;
+  const exportierbar = auswahl.size > 0 ? ausgewaehlteFreigegebene : freigegebenGesamt;
+  const exportHinweis = exportierbar
+    ? (auswahl.size > 0
+        ? `${exportierbar} ausgewählte freigegebene Änderungen exportieren`
+        : `alle ${exportierbar} freigegebenen Änderungen exportieren`)
+    : (auswahl.size > 0
+        ? "In der Auswahl ist nichts Freigegebenes – erst „Freigeben“ drücken."
+        : "Es ist nichts freigegeben. Zeilen ankreuzen und „Freigeben“ drücken.");
+
   const alleUmschalten = () => setAuswahl(prev =>
     prev.size === zeilen.length ? new Set() : new Set(zeilen.map(z => z.id)));
 
@@ -292,8 +307,10 @@ export default function PreisautomatikWidget({ widget, projectId }) {
               disabled={!auswahl.size}>
               <XCircle size={12} /> Verwerfen
             </button>
-            <button style={btn()} onClick={csvErzeugen} disabled={arbeitet === "csv"}>
-              <FileDown size={12} /> Ameise-Datei erzeugen
+            <button style={btn(exportierbar > 0)} onClick={csvErzeugen}
+              disabled={!exportierbar || arbeitet === "csv"} title={exportHinweis}>
+              {arbeitet === "csv" ? <Loader2 size={12} className="spin" /> : <FileDown size={12} />}
+              Ameise-Datei erzeugen{exportierbar ? ` (${exportierbar})` : ""}
             </button>
             <button style={btn()} onClick={kontrollieren} disabled={arbeitet === "kontrolle"}>
               {arbeitet === "kontrolle" ? <Loader2 size={12} className="spin" /> : <RotateCcw size={12} />}
