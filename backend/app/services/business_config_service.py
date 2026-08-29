@@ -416,8 +416,14 @@ def apply_config(run_params: Optional[dict], project_id, db, mandant_id=None) ->
             "cfg_kosten_zeitraum_vj",
             kosten_zeitraum(project_id, db, _minus_jahr(von), _minus_jahr(bis), mandant_id)
             if von else 0.0)
-        run_params.setdefault("cfg_kosten_monatsreihe",
-                              json.dumps(kosten_monatsreihe(project_id, db, bis, mandant_id)))
+        # mandant_id NUR benannt übergeben: kosten_monatsreihe hat zwischen `bis`
+        # und `mandant_id` noch `monate` stehen. Positional landete die Mandanten-
+        # nummer auf der Monatszahl – die Verlaufsdiagramme zeigten dann genau
+        # so viele Monate, wie der Mandant als ID hatte (PPS 3, HaKo 1), und die
+        # Kosten kamen aus dem falschen Geltungsbereich.
+        run_params.setdefault(
+            "cfg_kosten_monatsreihe",
+            json.dumps(kosten_monatsreihe(project_id, db, bis, mandant_id=mandant_id)))
         # Kostenblöcke als JSON: im SQL per OPENJSON eine fertige Tabelle, ohne
         # neun einzelne Parameter per UNION zusammenstückeln zu müssen.
         je_gruppe = kosten_zeitraum_gruppen(project_id, db, von, bis, mandant_id) if von else {}
