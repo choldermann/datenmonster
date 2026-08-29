@@ -20,6 +20,7 @@ from app.models.article_exclusion import ArticleExclusion
 from app.models.business_config import BusinessConfig
 from app.models.mandant import MandantFreigabe, MandantAuswahl
 from app.models.alert import AlertRule, AlertRun
+from app.models.preisregel import PriceRuleset, PriceRule, PriceRun, PriceChange
 from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaRelationMeta
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 from app import auth
@@ -101,6 +102,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE alert_schedules ADD COLUMN mandant_id INTEGER",
             # Regelumfang des Laufs – ohne ihn ist der Vergleich mit dem Vortag unsauber
             "ALTER TABLE alert_runs ADD COLUMN checked_keys JSON",
+            # Preisautomatik: Kundengruppenname im Journal (Lesbarkeit)
+            "ALTER TABLE price_changes ADD COLUMN kundengruppe TEXT",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -517,6 +520,8 @@ from app.api import business_config as business_config_api
 app.include_router(business_config_api.router)
 from app.api import alerts as alerts_api
 app.include_router(alerts_api.router)
+from app.api import preisregeln as preisregeln_api
+app.include_router(preisregeln_api.router)
 from app.api import mandanten as mandanten_api
 app.include_router(mandanten_api.router)
 from app.api import research as research_api
