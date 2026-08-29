@@ -135,6 +135,7 @@ class PriceChange(Base):
     k_kundengruppe = Column(Integer, nullable=False, default=0)
     kundengruppe   = Column(String, nullable=True)   # Klartext, wie beim Artikelnamen
     k_shop         = Column(Integer, nullable=False, default=0)
+    shop_name      = Column(String, nullable=True)   # leer = alle Kanäle (kShop 0)
 
     preis_alt        = Column(Float, nullable=True)
     preis_alt_quelle = Column(String, nullable=True)  # fVKNetto | tPreisDetail | sonderpreis

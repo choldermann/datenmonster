@@ -136,21 +136,17 @@ Neu ist ausschließlich die Fachlogik: vier Modelle, ein Dienst
 
 ## 7. Offene Punkte
 
-- **Zeitraum und Aktiv-Schalter beim Sonderpreis-Import.** Die Ameise importiert
-  Preise artikelweise: eine Zeile je Artikel, je Kundengruppe eine Spalte
-  (`Sonderpreise: Basis netto`). Der vorliegende Beispiel-Export enthält KEINE
-  Spalten für Gültigkeitszeitraum oder Aktiv-Kennzeichen — es waren allerdings
-  auch nicht alle verfügbaren Preisspalten ausgewählt.
+- ~~Zeitraum beim Sonderpreis-Import~~ **geklärt am 2026-08-29 an einem echten
+  Artikelstammdaten-Export:** Die Ameise kennt `Sonderpreise aktivieren vom
+  (Startdatum)`, `Bis einschließlich (Enddatum)` und `Bis Anzahl im Lager
+  kleiner als` — je ARTIKEL, genau wie `tArtikelSonderpreis` der Kopf ist. Die
+  Preise stehen je Kundengruppe in einer eigenen Spalte
+  (`Sonderpreise: <Gruppe> netto`), kanalabweichende Preise als
+  `Verkaufskanal [<Shop>]: Sonderpreis: <Gruppe> netto` — Singular im Kanalfall,
+  Plural im Wawi-Fall. Der Entwurf trägt damit unverändert: Der Rabatt läuft
+  über das Enddatum von selbst aus, und eine Rücknahme setzt das Enddatum auf
+  gestern, statt eine leere Zelle deuten zu müssen.
 
-  Davon hängt der Entwurf ab. **Mit** Zeitraum bleibt alles wie beschrieben: Der
-  Rabatt läuft über `dEnde` von selbst aus, das ist die tragende
-  Sicherheitseigenschaft. **Ohne** Zeitraum wäre der Sonderpreis unbefristet,
-  und die Rücknahme müsste ihn aktiv entfernen — ob eine leere Zelle im Import
-  den Sonderpreis löscht oder nur „nicht ändern" bedeutet, ist ungeprüft und
-  wäre der Unterschied zwischen einer selbstauflösenden und einer dauerhaften
-  Preissenkung. Sollte die Ameise das nicht können, ist das ein Argument, den
-  Direktschreib-Weg vorzuziehen: In `tArtikelSonderpreis` stehen `dStart`,
-  `dEnde` und `nAktiv` als ganz normale Felder.
 - Behandlung bereits bestehender Sonderpreise: übersteuern, in Ruhe lassen oder
   als Konflikt melden? Vorschlag: in Ruhe lassen und als Hinweis ausweisen —
   bei PPS sind 439 Sonderpreise von Hand gepflegt.

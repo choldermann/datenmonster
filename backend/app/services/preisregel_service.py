@@ -56,7 +56,8 @@ def _resolve_mapping(db, project_id, name: str):
     return q.first()
 
 
-def kandidaten(db, ruleset: PriceRuleset, stichtag: date, tage_min: int) -> list:
+def kandidaten(db, ruleset: PriceRuleset, stichtag: date, tage_min: int,
+               shops: Optional[list] = None) -> list:
     """Führt das Kandidaten-Mapping in der Wawi des Regelwerks aus.
 
     SQL bleibt SQL: Was ein Ladenhüter ist, steht in einem ganz normalen Mapping
@@ -69,7 +70,8 @@ def kandidaten(db, ruleset: PriceRuleset, stichtag: date, tage_min: int) -> list
         raise ValueError(f"Kandidaten-Auswertung „{ruleset.kandidaten_mapping}“ "
                          f"ist in diesem Projekt nicht installiert.")
     ctx = MappingContext.from_orm(m)
-    ctx.run_params = {"bis": stichtag, "tage_min": tage_min}
+    # shops als Liste: leer heißt „alle Kanäle" (Muster :name / :name_empty).
+    ctx.run_params = {"bis": stichtag, "tage_min": tage_min, "shops": shops or []}
     mandant_service.verbindung_ersetzen(ctx, ruleset.connection_id, db, m.project_id)
     if not ctx.targets:
         raise ValueError("Kandidaten-Auswertung hat kein Ziel.")
@@ -195,7 +197,8 @@ def lauf(db, ruleset_id: int, user=None, triggered_by: str = "manuell",
     db.commit()
 
     try:
-        rows = kandidaten(db, rs, stichtag, int(tage_min))
+        rows = kandidaten(db, rs, stichtag, int(tage_min),
+                          [int(x) for x in (rs.shops or [])])
     except Exception as e:
         run.status, run.error, run.finished_at = "fehler", str(e)[:500], _jetzt()
         db.commit()
@@ -262,7 +265,7 @@ def lauf(db, ruleset_id: int, user=None, triggered_by: str = "manuell",
             k_artikel=art, c_artnr=str(k.get("ArtNr") or ""),
             artikelname=str(k.get("Artikel") or "")[:250],
             k_kundengruppe=kg, kundengruppe=str(k.get("Kundengruppe") or ""),
-            k_shop=shop,
+            k_shop=shop, shop_name=str(k.get("Shop") or ""),
             preis_alt=alt, preis_alt_quelle=str(k.get("PreisQuelle") or ""),
             preis_neu=neu, ek_netto=_num(k.get("EKNetto")),
             steuersatz=_num(k.get("Steuersatz")),
@@ -302,14 +305,29 @@ def zustand_setzen(db, ids: list, neuer: str, user=None) -> int:
 # ── Ameise-Export ────────────────────────────────────────────────────────────
 
 # Die Ameise importiert Preise ARTIKELWEISE: eine Zeile je Artikel, je
-# Kundengruppe eine eigene Spalte („Sonderpreise: Basis netto"). Das Journal
-# führt dagegen eine Zeile je Artikel × Gruppe × Shop – der Export dreht das
-# also quer. Vorlage sind echte Ameise-Exporte aus derselben Wawi.
+# Kundengruppe eine eigene Spalte. Das Journal führt dagegen eine Zeile je
+# Artikel × Gruppe × Shop – der Export dreht das quer. Spaltennamen 1:1 aus
+# einem echten Artikelstammdaten-Export derselben Wawi:
 #
-# Der Gruppenname geht UNVERÄNDERT in die Überschrift, auch mit
-# nachgestelltem Leerzeichen („ProLiberis Kitas "): Die Ameise bildet ihre
-# Spaltennamen aus genau diesem Feld, ein „aufgeräumter" Name träfe nicht.
-SPALTE_SONDERPREIS = "Sonderpreise: {gruppe} netto"
+#   Sonderpreise aktivieren vom (Startdatum)      -> tArtikelSonderpreis.dStart
+#   Bis einschließlich (Enddatum)                 -> tArtikelSonderpreis.dEnde
+#   Sonderpreise: <Gruppe> netto                  -> kShop = 0 (alle Kanäle)
+#   Verkaufskanal [<Shop>]: Sonderpreis: <Gruppe> netto  -> kShop > 0
+#
+# Zwei Fallen: Start- und Enddatum stehen je ARTIKEL (wie in der Wawi, wo
+# tArtikelSonderpreis der Kopf ist), nicht je Gruppe. Und die Kanalvariante
+# heißt „Sonderpreis" im Singular, die Wawi-Variante „Sonderpreise" im Plural.
+SPALTE_START = "Sonderpreise aktivieren vom (Startdatum)"
+SPALTE_ENDE  = "Bis einschließlich (Enddatum)"
+
+
+def _spalte_sonderpreis(gruppe: str, shop_name: str) -> str:
+    """Der Gruppenname geht UNVERÄNDERT in die Überschrift, auch mit
+    nachgestelltem Leerzeichen („ProLiberis Kitas ") – die Ameise bildet ihre
+    Spaltennamen aus genau diesem Feld."""
+    if shop_name:
+        return f"Verkaufskanal [{shop_name}]: Sonderpreis: {gruppe} netto"
+    return f"Sonderpreise: {gruppe} netto"
 
 
 def _zahl(v) -> str:
@@ -323,32 +341,37 @@ def _datum(v) -> str:
 def _ameise_text(posten: list) -> str:
     """Baut den Dateiinhalt in der Schreibweise der Ameise: UTF-8 ohne BOM, LF,
     Semikolon, jede Zeile endet auf ein Semikolon, Werte in Anführungszeichen,
-    leere Felder bleiben wirklich leer, Dezimalkomma."""
+    leere Felder bleiben wirklich leer, Dezimalkomma, Datum TT.MM.JJJJ."""
     def zelle(v):
         text = "" if v is None else str(v)
         return f'"{text}"' if text != "" else ""
 
-    # Spaltensatz aus den vorkommenden Kundengruppen – in stabiler Reihenfolge.
-    gruppen, gesehen = [], set()
+    # Spaltensatz aus den vorkommenden Gruppen/Kanälen – in stabiler Reihenfolge.
+    preisspalten, gesehen = [], set()
     for c in posten:
-        name = c.kundengruppe or str(c.k_kundengruppe)
+        name = _spalte_sonderpreis(c.kundengruppe or str(c.k_kundengruppe),
+                                   c.shop_name or "")
         if name not in gesehen:
             gesehen.add(name)
-            gruppen.append(name)
+            preisspalten.append(name)
 
-    kopf = ["Artikelnummer", "Artikelname"] + \
-           [SPALTE_SONDERPREIS.format(gruppe=g) for g in gruppen]
+    kopf = ["Artikelnummer", "Artikelname", SPALTE_START, SPALTE_ENDE] + preisspalten
 
-    # Je Artikel eine Zeile, die Gruppen nebeneinander.
     zeilen_je_artikel = {}
     for c in posten:
-        z = zeilen_je_artikel.setdefault(
-            c.c_artnr, {"Artikelnummer": c.c_artnr, "Artikelname": c.artikelname})
-        name = c.kundengruppe or str(c.k_kundengruppe)
-        # Eine Rücknahme setzt keinen Preis, sie beendet die Aktion – dafür
-        # bleibt die Zelle leer (siehe offener Punkt in docs/plans/).
-        z[SPALTE_SONDERPREIS.format(gruppe=name)] = (
-            "" if c.ruecknahme_von else _zahl(c.preis_neu))
+        z = zeilen_je_artikel.setdefault(c.c_artnr, {
+            "Artikelnummer": c.c_artnr, "Artikelname": c.artikelname,
+            SPALTE_START: _datum(c.gueltig_von), SPALTE_ENDE: _datum(c.gueltig_bis)})
+        spalte = _spalte_sonderpreis(c.kundengruppe or str(c.k_kundengruppe),
+                                     c.shop_name or "")
+        if c.ruecknahme_von:
+            # Rücknahme: kein neuer Preis, sondern ein Enddatum in der
+            # Vergangenheit – damit endet die Aktion, ohne dass eine leere Zelle
+            # interpretiert werden müsste.
+            z[SPALTE_ENDE] = _datum(c.gueltig_bis)
+            z[spalte] = _zahl(c.preis_alt)
+        else:
+            z[spalte] = _zahl(c.preis_neu)
 
     text = [";".join(zelle(k) for k in kopf) + ";"]
     for z in zeilen_je_artikel.values():
@@ -490,7 +513,7 @@ def ruecknahme(db, ids: list, user=None) -> dict:
             project_id=c.project_id, connection_id=c.connection_id,
             k_artikel=c.k_artikel, c_artnr=c.c_artnr, artikelname=c.artikelname,
             k_kundengruppe=c.k_kundengruppe, kundengruppe=c.kundengruppe,
-            k_shop=c.k_shop,
+            k_shop=c.k_shop, shop_name=c.shop_name,
             preis_alt=c.preis_neu, preis_alt_quelle="sonderpreis",
             preis_neu=c.preis_alt, ek_netto=c.ek_netto, steuersatz=c.steuersatz,
             gueltig_von=c.gueltig_von, gueltig_bis=gestern,

@@ -74,6 +74,7 @@ SELECT
     ISNULL(CONVERT(varchar(10), J.ErsterZugang, 104), '') AS ErsterZugang,
     J.TageOhneAbgang, J.NieVerkauft,
     PL.kKundenGruppe, KG.cName AS Kundengruppe, PL.kShop,
+    ISNULL(SH.cName, '') AS Shop,
     CAST(PL.fNettoPreis AS DECIMAL(18,4)) AS PreisAktuell,
     CAST(ISNULL(ST.fSteuersatz, 0) AS DECIMAL(18,2)) AS Steuersatz,
     CASE WHEN EXISTS (SELECT 1 FROM dbo.tPreis P JOIN dbo.tPreisDetail D ON D.kPreis = P.kPreis
@@ -92,7 +93,9 @@ JOIN Preisliste.vPreislisteNetto PL ON PL.kArtikel = J.kArtikel AND PL.nAnzahlAb
 JOIN dbo.tkundenGruppe KG ON KG.kKundenGruppe = PL.kKundenGruppe
 LEFT JOIN dbo.tArtikel A2 ON A2.kArtikel = J.kArtikel
 LEFT JOIN dbo.tSteuersatz ST ON ST.kSteuerklasse = A2.kSteuerklasse AND ST.kSteuerzone = 3
-WHERE J.TageOhneAbgang >= :tage_min AND PL.kShop = 0
+LEFT JOIN dbo.tShop SH ON SH.kShop = PL.kShop
+WHERE J.TageOhneAbgang >= :tage_min
+  AND (:shops_empty = 1 OR PL.kShop IN (:shops))
   AND PL.fNettoPreis > 0
 ORDER BY J.Bestand * J.EK DESC"""
 
@@ -152,6 +155,10 @@ FELDER = [
     [
         "kShop",
         "int"
+    ],
+    [
+        "Shop",
+        "string"
     ],
     [
         "PreisAktuell",
