@@ -21,8 +21,9 @@ EINTRAEGE = [
     ("field_mapping", "JTL – Auftragswerte aus Verkauf.tAuftragEckdaten",
      "Werte eines Auftrags NICHT aus den Positionen summieren, sondern aus "
      "Verkauf.tAuftragEckdaten (Join kAuftrag): fWertNetto / fWertBrutto (Auftragswert), "
-     "fOffenerWert (noch offen), nLieferstatus (5 = komplett geliefert, 3 = teilgeliefert, "
-     "0 = offen), nAnzahlPakete, dBezahlt. Positionen (Verkauf.tAuftragPosition, nType = 1 für "
+     "fOffenerWert (das ist der offene ZAHLBETRAG, nicht die offene Lieferung), "
+     "nLieferstatus (Werte siehe eigenen Eintrag – die Legende 5/3/0 war falsch), "
+     "nAnzahlPakete, dBezahlt. Positionen (Verkauf.tAuftragPosition, nType = 1 für "
      "Artikelpositionen) nur für Artikel-/Mengenauswertungen verwenden."),
 
     ("rule", "JTL – Keine Verknüpfung Angebot → Auftrag",
@@ -305,6 +306,47 @@ EINTRAEGE = [
      "Formular gepatcht werden – ein erneuter Template-Install genügt nicht. Deshalb "
      "Mappings, die sich mehrere Cockpits teilen, neutral benennen (z. B. 'Cockpit – "
      "Auftragspositionen (Detail)' statt 'Vertrieb – …'), sonst legt der Installer Doppel an."),
+
+    # ── Preise (verifiziert 2026-08-29 an PPS und HaKo) ─────────────────────
+    ("table", "JTL – Wo der Verkaufspreis steht (vier Ebenen)",
+     "Es gibt KEINEN einzelnen Preis je Artikel. Der gültige Nettopreis entsteht aus vier "
+     "Ebenen: (1) dbo.tArtikel.fVKNetto als Grundpreis/Fallback, (2) dbo.tPreis (Kopf: "
+     "kArtikel, kKundenGruppe, kShop, kKunde) + dbo.tPreisDetail (Beträge: nAnzahlAb, "
+     "fNettoPreis) als Gruppen-/Kundenpreis, (3) dbo.tPreisDetail.nAnzahlAb > 0 als "
+     "Mengenstaffel, (4) dbo.tArtikelSonderpreis + dbo.tSonderpreise als befristete Aktion. "
+     "Konventionen: kShop = 0 gilt für alle Kanäle, kShop > 0 überschreibt ihn; kKunde > 0 "
+     "(mit kKundenGruppe = 0) ist ein individueller Kundenpreis; nAnzahlAb = 0 ist der "
+     "Festpreis der Gruppe. fProzent und nProzentualePreisStaffelAktiv sind unbenutzt. "
+     "Alle Preistabellen führen NETTO; Brutto über tArtikel.kSteuerklasse -> dbo.tSteuersatz "
+     "(Inland: Klasse 1 = 19 %, 2 = 7 %, 3 = 0 %)."),
+
+    ("rule", "JTL – Preisauflösung nicht selbst bauen",
+     "JTL liefert die Auflösung als View mit: Preisliste.vIndividuellePreise löst "
+     "tPreis/tPreisDetail inkl. Shop-Fallback auf, Preisliste.vPreislisteNetto ergänzt den "
+     "Fallback auf tArtikel.fVKNetto für jede Kombination Artikel x Kundengruppe x Shop. "
+     "Diese Views benutzen statt eigener CASE-Kaskaden – bei PPS 118.721 Zeilen in 0,3 s. "
+     "Sonderpreise sind darin NICHT enthalten, die kommen aus DbeS.vArtikelSonderpreis "
+     "(gilt nur bei nAktiv = 1 und, falls nIstDatum = 1, innerhalb dStart/dEnde)."),
+
+    ("rule", "JTL – Preise schreiben: Wertänderung gehört in tPreisDetail",
+     "Der Trigger tgr_tPreisDetail_INSUP feuert bei Änderung von fNettoPreis/nAnzahlAb und "
+     "erledigt den kompletten Abgleich selbst: Sync.tEntityTracking für POS, "
+     "tArtikelShop.nAktion |= 2 (Artikel geht neu an die Webshops) und Amazon-B2B-Preise. "
+     "Direkt schreiben ist also gleichwertig zur Änderung von Hand in der Wawi. ABER: der "
+     "Trigger auf dbo.tPreis feuert NUR bei Änderung der Zuordnung (kArtikel/kKundenGruppe/"
+     "kShop/kKunde) – eine reine Preisänderung dort käme nie im Shop an. Ein neuer "
+     "Gruppenpreis braucht Kopf in tPreis UND eine Zeile mit nAnzahlAb = 0 in tPreisDetail. "
+     "jtlActionValidator_tPreis lehnt nichts ab, er räumt nur nach DELETE auf. bRowversion "
+     "gibt es auf allen vier Preistabellen für die Kollisionserkennung."),
+
+    ("rule", "JTL – Sonderpreise: aktiv heißt nicht wirksam",
+     "dbo.tArtikelSonderpreis ist der Kopf je Artikel (nAktiv, dStart/dEnde mit Schalter "
+     "nIstDatum, nAnzahl mit Schalter nIstAnzahl), die Beträge je Kundengruppe und Shop "
+     "stehen in dbo.tSonderpreise. Ein Kopf ohne Zeile in tSonderpreise ist wirkungslos, "
+     "auch wenn nAktiv = 1 – bei HaKo trifft das auf 495 von 502 'aktiven' Sonderpreisen zu. "
+     "Und abgelaufene Aktionen bleiben auf nAktiv = 1 stehen: bei PPS 90 von 439. "
+     "Jede Sonderpreis-Auswertung muss deshalb auf Preiszeile UND Zeitraum prüfen; "
+     "Dashboard.vAbgelaufeneSonderpreise gibt es dafür fertig."),
 ]
 
 db = SessionLocal()
