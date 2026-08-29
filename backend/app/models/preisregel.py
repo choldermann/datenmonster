@@ -58,6 +58,11 @@ class PriceRuleset(Base):
     max_rabatt_prozent = Column(Float, nullable=True)
 
     laufzeit_tage  = Column(Integer, default=30)     # dEnde des Sonderpreises
+    # Ein Ladenhüter, der wieder anzieht, braucht den Rabatt nicht mehr. Der
+    # Schalter startet bewusst AUS: Ein einzelner Verkauf ist noch kein Trend,
+    # und wer die Automatik einschaltet, soll das entschieden haben.
+    ende_bei_verkauf = Column(Boolean, default=False)
+    ende_ab_menge    = Column(Float, default=1)
     preisendung    = Column(String, nullable=True)   # z.B. "0.99" – optional
     # Automatische Freigabe ist eine bewusste Einstellung, kein Standard.
     auto_freigabe  = Column(Boolean, default=False)

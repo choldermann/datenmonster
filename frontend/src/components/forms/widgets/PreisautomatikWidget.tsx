@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Tags, Plus, Trash2, Play, FileDown, CheckCircle2, XCircle,
-         RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2, Moon } from "lucide-react";
+         RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2, Moon, TrendingUp } from "lucide-react";
 import api from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 
@@ -202,6 +202,14 @@ export default function PreisautomatikWidget({ widget, projectId }) {
     await zeilenLaden(rw.id, filter);
   });
 
+  const wiederverkauf = () => handeln("wiederverkauf", async () => {
+    const { data } = await api.post(`/api/preisregeln/regelwerke/${rw.id}/wiederverkauf`, {});
+    melden(data.aus
+      ? "Der Schalter „Rabatt endet bei Wiederverkauf“ ist aus – es wurde nichts geprüft."
+      : `${data.geprueft} laufende Rabatte geprüft, ${data.beendet} beendet.`);
+    await zeilenLaden(rw.id, filter);
+  });
+
   const kontrollieren = () => handeln("kontrolle", async () => {
     const { data } = await api.post(`/api/preisregeln/regelwerke/${rw.id}/kontrolle`, {});
     melden(`${data.geprueft} geprüft: ${data.angewandt} in der Wawi angekommen, `
@@ -333,6 +341,15 @@ export default function PreisautomatikWidget({ widget, projectId }) {
             <button style={btn(auswahl.size > 0)} onClick={zuruecknehmen} disabled={!auswahl.size}>
               <Undo2 size={12} /> Zurücknehmen
             </button>
+            {rw.ende_bei_verkauf && (
+              <button style={btn()} onClick={wiederverkauf}
+                disabled={arbeitet === "wiederverkauf"}
+                title="Laufende Rabatte beenden, deren Artikel sich wieder verkauft">
+                {arbeitet === "wiederverkauf"
+                  ? <Loader2 size={12} className="spin" /> : <TrendingUp size={12} />}
+                Wiederverkauf prüfen
+              </button>
+            )}
             <button style={{ ...btn(), marginLeft: "auto" }} onClick={nachtlaufJetzt}
               disabled={arbeitet === "nachtlauf"}
               title="Kontrollieren und neu vorschlagen – genau das, was nachts läuft">
@@ -407,6 +424,24 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
               speichern({ name: entwurf.name, nie_unter_ek: e.target.checked }); }} />
           nie unter Einstandspreis
         </label>
+        <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12,
+          color: S.textMain, paddingBottom: 6 }}
+          title="Verkauft sich ein rabattierter Artikel wieder, wird der Rabatt beendet.">
+          <input type="checkbox" checked={!!entwurf.ende_bei_verkauf}
+            onChange={e => { feld("ende_bei_verkauf", e.target.checked);
+              speichern({ name: entwurf.name, ende_bei_verkauf: e.target.checked,
+                          ende_ab_menge: Number(entwurf.ende_ab_menge) || 1 }); }} />
+          Rabatt endet bei Wiederverkauf
+        </label>
+        {entwurf.ende_bei_verkauf && (
+          <Feld label="ab verkaufter Menge">
+            <input style={{ ...inp, width: 80 }} type="number" min="1"
+              value={entwurf.ende_ab_menge ?? 1}
+              onChange={e => feld("ende_ab_menge", e.target.value)}
+              onBlur={() => speichern({ name: entwurf.name,
+                ende_ab_menge: Number(entwurf.ende_ab_menge) || 1 })} />
+          </Feld>
+        )}
         <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12,
           color: S.textMain, paddingBottom: 6 }}>
           <input type="checkbox" checked={!!entwurf.active}

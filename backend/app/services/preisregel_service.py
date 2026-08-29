@@ -473,6 +473,12 @@ def kontrolle(db, ruleset_id: int, ids: Optional[list] = None,
             if wert is None:
                 c.abweichung, c.zustand = "ok", "angewandt"
                 c.angewandt_am = c.angewandt_am or _jetzt()
+                # Jetzt – und erst jetzt – ist der ursprüngliche Rabatt auch im
+                # Betrieb beendet.
+                original = db.query(PriceChange).filter(
+                    PriceChange.id == c.ruecknahme_von).first()
+                if original is not None and original.zustand == "angewandt":
+                    original.zustand, original.updated_at = "zurueckgenommen", _jetzt()
                 zaehler["angewandt"] += 1
             else:
                 c.abweichung = "abweichend"
@@ -498,16 +504,28 @@ def kontrolle(db, ruleset_id: int, ids: Optional[list] = None,
 
 # ── Rücknahme ────────────────────────────────────────────────────────────────
 
-def ruecknahme(db, ids: list, user=None) -> dict:
+def ruecknahme(db, ids: list, user=None, zustand: str = "freigegeben",
+               grund: Optional[str] = None) -> dict:
     """Nimmt angewandte Änderungen zurück – nicht durch Löschen, sondern durch
     einen neuen Journaleintrag, der den Sonderpreis beendet. Der Export dieser
-    Einträge trägt Aktiv = N und ein Enddatum von gestern."""
+    Einträge trägt ein Enddatum von gestern.
+
+    Der Originaleintrag bleibt bewusst auf „angewandt": In der Wawi läuft der
+    Rabatt weiter, bis die Gegenbuchung dort angekommen ist. Erst die Kontrolle
+    setzt ihn auf „zurückgenommen" – sonst behauptet das Journal etwas, das im
+    Betrieb noch nicht stimmt."""
     posten = db.query(PriceChange).filter(
         PriceChange.id.in_(ids or []),
         PriceChange.zustand == "angewandt").all()
+    # Wofür schon eine Gegenbuchung offen ist, wird nicht zweimal zurückgenommen.
+    laufend = {r.ruecknahme_von for r in db.query(PriceChange).filter(
+        PriceChange.ruecknahme_von.in_([c.id for c in posten] or [0]),
+        PriceChange.zustand.in_(OFFENE_ZUSTAENDE)).all()}
     gestern = datetime.now() - timedelta(days=1)
     n = 0
     for c in posten:
+        if c.id in laufend:
+            continue
         db.add(PriceChange(
             run_id=None, ruleset_id=c.ruleset_id, rule_id=c.rule_id,
             project_id=c.project_id, connection_id=c.connection_id,
@@ -517,12 +535,79 @@ def ruecknahme(db, ids: list, user=None) -> dict:
             preis_alt=c.preis_neu, preis_alt_quelle="sonderpreis",
             preis_neu=c.preis_alt, ek_netto=c.ek_netto, steuersatz=c.steuersatz,
             gueltig_von=c.gueltig_von, gueltig_bis=gestern,
-            zustand="freigegeben", ruecknahme_von=c.id,
-            begruendung=f"Rücknahme der Änderung #{c.id}"))
-        c.zustand, c.updated_at = "zurueckgenommen", _jetzt()
+            zustand=zustand, ruecknahme_von=c.id,
+            begruendung=grund or f"Rücknahme der Änderung #{c.id}"))
         n += 1
     db.commit()
     return {"zurueckgenommen": n}
+
+
+# ── Rabatt endet, wenn der Artikel wieder läuft ──────────────────────────────
+
+VERKAUF_SQL = """
+SELECT H.kArtikel, SUM(-H.fAnzahl) AS Menge
+FROM dbo.vArtikelHistorie H
+WHERE H.cTyp = 'Ausgang' AND H.cBuchungsart = 'Warenausgang'
+  AND H.kArtikel IN :artikel AND H.dGebucht >= :seit
+GROUP BY H.kArtikel
+"""
+
+
+def wiederverkauf(db, ruleset_id: int) -> dict:
+    """Beendet Rabatte für Artikel, die sich seit Beginn der Aktion wieder
+    verkauft haben.
+
+    Ein Ladenhüter, der wieder anzieht, braucht den Nachlass nicht mehr – und
+    jeder weitere Tag kostet Marge. Ob und ab welcher Menge das greift, steht am
+    Regelwerk; ohne den Schalter passiert nichts.
+
+    Die Gegenbuchung folgt derselben Regel wie ein neuer Vorschlag: Ist
+    `auto_freigabe` gesetzt, ist sie sofort exportierbar, sonst wartet sie auf
+    eine Freigabe."""
+    from app.services.mapping_service import _get_sql_engine
+
+    rs = db.query(PriceRuleset).filter(PriceRuleset.id == ruleset_id).first()
+    if not rs:
+        raise ValueError("Regelwerk nicht gefunden")
+    if not rs.ende_bei_verkauf:
+        return {"geprueft": 0, "beendet": 0, "aus": True}
+
+    aktiv = db.query(PriceChange).filter(
+        PriceChange.ruleset_id == rs.id,
+        PriceChange.zustand == "angewandt",
+        PriceChange.ruecknahme_von.is_(None)).all()
+    if not aktiv:
+        return {"geprueft": 0, "beendet": 0}
+
+    schwelle = float(rs.ende_ab_menge or 1)
+    engine = _get_sql_engine(rs.connection_id)
+    # Ein Lauf legt alle Änderungen mit demselben Startdatum an – nach Datum
+    # gruppieren spart die Abfrage je Artikel.
+    nach_datum: dict = {}
+    for c in aktiv:
+        nach_datum.setdefault(c.gueltig_von, []).append(c)
+
+    verkauft: dict = {}
+    with engine.connect() as con:
+        for seit, posten in nach_datum.items():
+            artikel = sorted({c.k_artikel for c in posten})
+            zeilen = con.execute(
+                sa.text(VERKAUF_SQL).bindparams(sa.bindparam("artikel", expanding=True)),
+                {"artikel": artikel, "seit": seit or datetime(1990, 1, 1)}).fetchall()
+            for r in zeilen:
+                verkauft[(seit, int(r[0]))] = float(r[1] or 0)
+
+    zustand = "freigegeben" if rs.auto_freigabe else "vorgeschlagen"
+    beendet = 0
+    for c in aktiv:
+        menge = verkauft.get((c.gueltig_von, c.k_artikel), 0.0)
+        if menge < schwelle:
+            continue
+        erg = ruecknahme(db, [c.id], zustand=zustand,
+                         grund=(f"seit Rabattbeginn {menge:g} Stück verkauft "
+                                f"(Schwelle {schwelle:g}) – Rabatt wird beendet"))
+        beendet += erg["zurueckgenommen"]
+    return {"geprueft": len(aktiv), "beendet": beendet}
 
 # ── Nachtlauf ────────────────────────────────────────────────────────────────
 
@@ -542,10 +627,15 @@ def nachtlauf(db, ruleset_id: int, triggered_by: str = "scheduler") -> dict:
     if not rs:
         raise ValueError("Regelwerk nicht gefunden")
 
-    bericht = {"ruleset_id": rs.id, "name": rs.name, "kontrolle": None, "lauf": None,
-               "mail": None, "fehler": None}
+    bericht = {"ruleset_id": rs.id, "name": rs.name, "kontrolle": None,
+               "wiederverkauf": None, "lauf": None, "mail": None, "fehler": None}
     try:
         bericht["kontrolle"] = kontrolle(db, rs.id)
+        # Zwischen Kontrolle und neuem Lauf: Erst wissen wir, was wirklich aktiv
+        # ist; dann beenden wir, was sich wieder verkauft; und erst danach wird
+        # neu vorgeschlagen – sonst schlüge der Lauf einen Artikel vor, dessen
+        # Rabatt in derselben Nacht endet.
+        bericht["wiederverkauf"] = wiederverkauf(db, rs.id)
         bericht["lauf"] = lauf(db, rs.id, triggered_by=triggered_by)
         rs.last_status = "success"
         rs.last_message = _bericht_zeile(bericht)
@@ -565,11 +655,16 @@ def nachtlauf(db, ruleset_id: int, triggered_by: str = "scheduler") -> dict:
 
 
 def _bericht_zeile(b: dict) -> str:
-    k, l = b.get("kontrolle") or {}, b.get("lauf") or {}
-    return (f"{l.get('vorschlaege', 0)} neue Vorschläge, "
+    k = b.get("kontrolle") or {}
+    l = b.get("lauf") or {}
+    w = b.get("wiederverkauf") or {}
+    text = (f"{l.get('vorschlaege', 0)} neue Vorschläge, "
             f"{l.get('verworfen', 0)} abgelehnt; Kontrolle: "
             f"{k.get('angewandt', 0)} angekommen, {k.get('fehlt', 0)} offen, "
             f"{k.get('abweichend', 0)} abweichend")
+    if w.get("beendet"):
+        text += f"; {w['beendet']} Rabatte beendet (wieder verkauft)"
+    return text
 
 
 def offene_zahlen(db, ruleset_id: int) -> dict:
@@ -626,6 +721,10 @@ def _bericht_senden(db, rs: PriceRuleset, bericht: dict) -> dict:
             f"Freigegeben, noch nicht in der Wawi: {offen['freigegeben']}",
             f"Aktive Rabatte: {offen['angewandt']}",
         ]
+        w = bericht.get("wiederverkauf") or {}
+        if w.get("beendet"):
+            zeilen += ["", f"Beendet, weil wieder verkauft: {w['beendet']} "
+                           f"(von {w.get('geprueft', 0)} laufenden Rabatten)"]
         if offen["nicht_angekommen"]:
             zeilen += ["",
                        f"ACHTUNG: {offen['nicht_angekommen']} freigegebene Änderungen "

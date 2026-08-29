@@ -39,6 +39,8 @@ class RegelwerkIn(BaseModel):
     min_marge_prozent: Optional[float] = None
     max_rabatt_prozent: Optional[float] = None
     laufzeit_tage: int = 30
+    ende_bei_verkauf: bool = False
+    ende_ab_menge: Optional[float] = None
     preisendung: Optional[str] = None
     auto_freigabe: bool = False
     kandidaten_mapping: Optional[str] = None
@@ -96,6 +98,7 @@ def _rw_out(rs: PriceRuleset, db) -> dict:
         "min_marge_prozent": rs.min_marge_prozent,
         "max_rabatt_prozent": rs.max_rabatt_prozent,
         "laufzeit_tage": rs.laufzeit_tage, "preisendung": rs.preisendung,
+        "ende_bei_verkauf": rs.ende_bei_verkauf, "ende_ab_menge": rs.ende_ab_menge,
         "auto_freigabe": rs.auto_freigabe,
         "kandidaten_mapping": rs.kandidaten_mapping,
         "zeitplan_aktiv": rs.zeitplan_aktiv, "cron_expr": rs.cron_expr,
@@ -246,6 +249,18 @@ def starten(rid: int, body: LaufIn = LaufIn(), db: Session = Depends(get_db),
     try:
         return dienst.lauf(db, rs.id, user=user, triggered_by="manuell",
                            stichtag=body.stichtag)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/regelwerke/{rid}/wiederverkauf")
+def wiederverkauf_pruefen(rid: int, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    """Prüft laufende Rabatte auf Wiederverkauf und beendet sie – dasselbe, was
+    der Nachtlauf tut, nur auf Knopfdruck."""
+    rs = _regelwerk(db, rid, user, schreibend=True)
+    try:
+        return dienst.wiederverkauf(db, rs.id)
     except ValueError as e:
         raise HTTPException(400, str(e))
 

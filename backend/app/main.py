@@ -113,6 +113,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE price_rulesets ADD COLUMN last_run_at DATETIME",
             "ALTER TABLE price_rulesets ADD COLUMN last_status TEXT",
             "ALTER TABLE price_rulesets ADD COLUMN last_message TEXT",
+            "ALTER TABLE price_rulesets ADD COLUMN ende_bei_verkauf BOOLEAN DEFAULT 0",
+            "ALTER TABLE price_rulesets ADD COLUMN ende_ab_menge FLOAT DEFAULT 1",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
