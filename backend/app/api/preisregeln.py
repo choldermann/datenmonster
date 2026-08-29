@@ -265,7 +265,12 @@ def kundengruppen(rid: int, db: Session = Depends(get_db),
             zeilen = con.execute(sa.text(LOOKUP_QUERIES["kundengruppe"])).fetchall()
     except Exception as e:
         raise HTTPException(400, f"Kundengruppen nicht lesbar: {str(e)[:200]}")
-    return {"optionen": [{"value": int(r[0]), "label": r[1]} for r in zeilen]}
+    # Nach Nummer sortiert, nicht alphabetisch: Die Kundengruppen sind in der
+    # Wawi in einer gewachsenen Reihenfolge angelegt (Basis, Händler, Bronze,
+    # Silver, Gold …), und in der wiedererkennt man sie. Die gemeinsame
+    # Lookup-Abfrage bleibt alphabetisch – dort ist sie ein Auswahlfeld.
+    optionen = [{"value": int(r[0]), "label": r[1]} for r in zeilen]
+    return {"optionen": sorted(optionen, key=lambda o: o["value"])}
 
 
 @router.post("/regelwerke/{rid}/nachtlauf")
