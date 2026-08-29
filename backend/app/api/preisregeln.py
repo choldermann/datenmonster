@@ -250,6 +250,24 @@ def starten(rid: int, body: LaufIn = LaufIn(), db: Session = Depends(get_db),
         raise HTTPException(400, str(e))
 
 
+@router.get("/regelwerke/{rid}/kundengruppen")
+def kundengruppen(rid: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Kundengruppen der Wawi DIESES Regelwerks – bewusst nicht über
+    /api/lookup/options: Das tauscht die Verbindung gegen den gerade aktiven
+    Mandanten und lieferte dann die Gruppen eines fremden Betriebs."""
+    rs = _regelwerk(db, rid, user)
+    from app.api.lookup import LOOKUP_QUERIES
+    from app.services.mapping_service import _get_sql_engine
+    import sqlalchemy as sa
+    try:
+        with _get_sql_engine(rs.connection_id).connect() as con:
+            zeilen = con.execute(sa.text(LOOKUP_QUERIES["kundengruppe"])).fetchall()
+    except Exception as e:
+        raise HTTPException(400, f"Kundengruppen nicht lesbar: {str(e)[:200]}")
+    return {"optionen": [{"value": int(r[0]), "label": r[1]} for r in zeilen]}
+
+
 @router.post("/regelwerke/{rid}/nachtlauf")
 def nachtlauf_jetzt(rid: int, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):

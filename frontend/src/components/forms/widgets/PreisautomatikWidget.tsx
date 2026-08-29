@@ -69,6 +69,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
   const [fehler, setFehler] = useState(null);
   const [hinweis, setHinweis] = useState(null);
   const [einstellungenOffen, setEinstellungenOffen] = useState(false);
+  const [gruppen, setGruppen] = useState([]);
 
   const q = projectId ? `?project_id=${projectId}` : "";
   const rw = regelwerke.find(r => r.id === aktivId) || null;
@@ -106,6 +107,18 @@ export default function PreisautomatikWidget({ widget, projectId }) {
   }, []);
 
   useEffect(() => { zeilenLaden(aktivId, filter); }, [aktivId, filter, zeilenLaden]);
+
+  // Kundengruppen der Wawi dieses Regelwerks – für die Auswahl mit Namen statt
+  // Nummern. Schlägt der Zugriff fehl (Verbindung weg), bleibt die Liste leer
+  // und die Einstellungen zeigen die gespeicherten Nummern.
+  useEffect(() => {
+    if (!aktivId) { setGruppen([]); return; }
+    let abgebrochen = false;
+    api.get(`/api/preisregeln/regelwerke/${aktivId}/kundengruppen`)
+      .then(({ data }) => { if (!abgebrochen) setGruppen(data.optionen || []); })
+      .catch(() => { if (!abgebrochen) setGruppen([]); });
+    return () => { abgebrochen = true; };
+  }, [aktivId]);
 
   const melden = (text) => { setHinweis(text); setTimeout(() => setHinweis(null), 8000); };
 
@@ -288,7 +301,8 @@ export default function PreisautomatikWidget({ widget, projectId }) {
 
       {rw && einstellungenOffen && (
         <Einstellungen rw={rw} speichern={speichern} stufeAnlegen={stufeAnlegen}
-          stufeAendern={stufeAendern} stufeLoeschen={stufeLoeschen} arbeitet={arbeitet} />
+          stufeAendern={stufeAendern} stufeLoeschen={stufeLoeschen} arbeitet={arbeitet}
+          gruppen={gruppen} />
       )}
 
       {rw && (
@@ -349,7 +363,8 @@ export default function PreisautomatikWidget({ widget, projectId }) {
 }
 
 
-function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoeschen, arbeitet }) {
+function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoeschen,
+                        arbeitet, gruppen = [] }) {
   const [entwurf, setEntwurf] = useState(rw);
   useEffect(() => setEntwurf(rw), [rw]);
   const feld = (k, v) => setEntwurf(p => ({ ...p, [k]: v }));
@@ -374,13 +389,7 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
           <input style={{ ...inp, width: 90 }} type="number" value={entwurf.laufzeit_tage ?? 30}
             onChange={e => feld("laufzeit_tage", e.target.value)} onBlur={sichern} />
         </Feld>
-        <Feld label="Kundengruppen (IDs, leer = alle)">
-          <input style={{ ...inp, width: 140 }}
-            value={(entwurf.kundengruppen || []).join(", ")}
-            onChange={e => feld("kundengruppen", e.target.value.split(",")
-              .map(s => parseInt(s.trim(), 10)).filter(n => !isNaN(n)))}
-            onBlur={sichern} />
-        </Feld>
+
         <Feld label="Mindestmarge %">
           <input style={{ ...inp, width: 80 }} type="number"
             value={entwurf.min_marge_prozent ?? ""}
@@ -405,6 +414,42 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
               speichern({ name: entwurf.name, active: e.target.checked }); }} />
           aktiv
         </label>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        <label style={{ display: "block", fontSize: 9, fontWeight: 700, letterSpacing: "0.1em",
+          textTransform: "uppercase", color: S.textDim, marginBottom: 5 }}>
+          Kundengruppen – ohne Auswahl gilt der Rabatt für alle
+        </label>
+        {gruppen.length === 0 ? (
+          <div style={{ fontSize: 12, color: S.textDim }}>
+            Kundengruppen konnten nicht gelesen werden
+            {(entwurf.kundengruppen || []).length
+              ? ` – gespeichert: ${(entwurf.kundengruppen || []).join(", ")}` : ""}
+          </div>
+        ) : (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {gruppen.map(g => {
+              const drin = (entwurf.kundengruppen || []).includes(g.value);
+              return (
+                <label key={g.value} style={{ display: "flex", gap: 5, alignItems: "center",
+                  fontSize: 12, color: drin ? S.textBright : S.textMain }}>
+                  <input type="checkbox" checked={drin} onChange={e => {
+                    const neu = e.target.checked
+                      ? [...(entwurf.kundengruppen || []), g.value]
+                      : (entwurf.kundengruppen || []).filter(v => v !== g.value);
+                    feld("kundengruppen", neu);
+                    speichern({ name: entwurf.name, kundengruppen: neu });
+                  }} />
+                  {/* Name trimmen ist nur Anzeige – gespeichert wird die Nummer,
+                      und die Ameise-Spalte baut später den ungekürzten Namen. */}
+                  {String(g.label).trim()}
+                  <span style={{ color: S.textDim }}>({g.value})</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${S.border}`,

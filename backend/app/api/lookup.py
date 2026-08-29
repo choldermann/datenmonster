@@ -43,6 +43,11 @@ LOOKUP_QUERIES = {
                    "FROM dbo.tlieferant "
                    "WHERE ISNULL(cAktiv, 'Y') <> 'N' AND ISNULL(cFirma, '') <> '' "
                    "ORDER BY label",
+    # Kundengruppen (Preisautomatik). Der Name geht UNVERÄNDERT zurück, auch mit
+    # nachgestelltem Leerzeichen („ProLiberis Kitas ") – die Ameise bildet ihre
+    # Spaltennamen aus genau diesem Feld, ein aufgeräumter Name träfe nicht.
+    "kundengruppe": "SELECT kKundenGruppe AS value, cName AS label "
+                    "FROM dbo.tkundenGruppe ORDER BY cName",
     # Versandarten (Versand). Der Dienstleister steckt im Namen der Versandart –
     # dbo.tVersand.cLogistiker ist in der Praxis leer.
     "versandart":  "SELECT kVersandArt AS value, cName AS label "
