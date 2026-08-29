@@ -301,26 +301,15 @@ def zustand_setzen(db, ids: list, neuer: str, user=None) -> int:
 
 # ── Ameise-Export ────────────────────────────────────────────────────────────
 
-# Spaltenüberschriften in der Schreibweise der Ameise (deutsch, mit Leerzeichen).
-# Ein Export aus der Ameise sieht genauso aus: UTF-8 ohne BOM, Semikolon, jede
-# Zeile endet auf ein Semikolon, Werte in Anführungszeichen, leere Felder bleiben
-# WIRKLICH leer (nicht ""), Dezimaltrennzeichen ist das Komma.
-AMEISE_SPALTEN = [
-    ("Artikelnummer",        lambda c: c.c_artnr),
-    ("Interner Schlüssel",   lambda c: c.k_artikel),
-    ("Artikelname",          lambda c: c.artikelname),
-    ("Kundengruppe",         lambda c: c.kundengruppe or ""),
-    ("Interner Schlüssel (Kundengruppe)", lambda c: c.k_kundengruppe),
-    ("Shop",                 lambda c: c.k_shop),
-    ("Netto-VK",             lambda c: _zahl(c.preis_neu)),
-    ("Brutto-VK",            lambda c: _zahl(_brutto(c.preis_neu, c.steuersatz))),
-    ("Aktiv",                lambda c: "N" if c.ruecknahme_von else "Y"),
-    ("Gültig von",           lambda c: _datum(c.gueltig_von)),
-    ("Gültig bis",           lambda c: _datum(c.gueltig_bis)),
-    ("Bisheriger Netto-VK",  lambda c: _zahl(c.preis_alt)),
-    ("Grund",                lambda c: c.begruendung or ""),
-    ("Änderung",             lambda c: c.id),
-]
+# Die Ameise importiert Preise ARTIKELWEISE: eine Zeile je Artikel, je
+# Kundengruppe eine eigene Spalte („Sonderpreise: Basis netto"). Das Journal
+# führt dagegen eine Zeile je Artikel × Gruppe × Shop – der Export dreht das
+# also quer. Vorlage sind echte Ameise-Exporte aus derselben Wawi.
+#
+# Der Gruppenname geht UNVERÄNDERT in die Überschrift, auch mit
+# nachgestelltem Leerzeichen („ProLiberis Kitas "): Die Ameise bildet ihre
+# Spaltennamen aus genau diesem Feld, ein „aufgeräumter" Name träfe nicht.
+SPALTE_SONDERPREIS = "Sonderpreise: {gruppe} netto"
 
 
 def _zahl(v) -> str:
@@ -331,22 +320,40 @@ def _datum(v) -> str:
     return v.strftime("%d.%m.%Y") if v else ""
 
 
-def _brutto(netto, satz):
-    if netto is None:
-        return None
-    return round(netto * (1 + (satz or 0) / 100.0), 2)
-
-
 def _ameise_text(posten: list) -> str:
-    """Baut den Dateiinhalt in der Schreibweise der Ameise."""
+    """Baut den Dateiinhalt in der Schreibweise der Ameise: UTF-8 ohne BOM, LF,
+    Semikolon, jede Zeile endet auf ein Semikolon, Werte in Anführungszeichen,
+    leere Felder bleiben wirklich leer, Dezimalkomma."""
     def zelle(v):
         text = "" if v is None else str(v)
         return f'"{text}"' if text != "" else ""
 
-    zeilen = [";".join(zelle(name) for name, _ in AMEISE_SPALTEN) + ";"]
+    # Spaltensatz aus den vorkommenden Kundengruppen – in stabiler Reihenfolge.
+    gruppen, gesehen = [], set()
     for c in posten:
-        zeilen.append(";".join(zelle(hol(c)) for _, hol in AMEISE_SPALTEN) + ";")
-    return "\n".join(zeilen) + "\n"
+        name = c.kundengruppe or str(c.k_kundengruppe)
+        if name not in gesehen:
+            gesehen.add(name)
+            gruppen.append(name)
+
+    kopf = ["Artikelnummer", "Artikelname"] + \
+           [SPALTE_SONDERPREIS.format(gruppe=g) for g in gruppen]
+
+    # Je Artikel eine Zeile, die Gruppen nebeneinander.
+    zeilen_je_artikel = {}
+    for c in posten:
+        z = zeilen_je_artikel.setdefault(
+            c.c_artnr, {"Artikelnummer": c.c_artnr, "Artikelname": c.artikelname})
+        name = c.kundengruppe or str(c.k_kundengruppe)
+        # Eine Rücknahme setzt keinen Preis, sie beendet die Aktion – dafür
+        # bleibt die Zelle leer (siehe offener Punkt in docs/plans/).
+        z[SPALTE_SONDERPREIS.format(gruppe=name)] = (
+            "" if c.ruecknahme_von else _zahl(c.preis_neu))
+
+    text = [";".join(zelle(k) for k in kopf) + ";"]
+    for z in zeilen_je_artikel.values():
+        text.append(";".join(zelle(z.get(k, "")) for k in kopf) + ";")
+    return "\n".join(text) + "\n"
 
 
 def ameise_csv(db, ruleset_id: int, ids: Optional[list], user) -> dict:

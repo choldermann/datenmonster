@@ -136,9 +136,21 @@ Neu ist ausschließlich die Fachlogik: vier Modelle, ein Dienst
 
 ## 7. Offene Punkte
 
-- Exaktes Spaltenlayout der Ameise-Importdatei. Die Zuordnung geschieht in der
-  Ameise selbst, wir brauchen also stabile, sprechende Spalten — der genaue Satz
-  wird beim Bau an einer echten Ameise-Vorlage abgeglichen.
+- **Zeitraum und Aktiv-Schalter beim Sonderpreis-Import.** Die Ameise importiert
+  Preise artikelweise: eine Zeile je Artikel, je Kundengruppe eine Spalte
+  (`Sonderpreise: Basis netto`). Der vorliegende Beispiel-Export enthält KEINE
+  Spalten für Gültigkeitszeitraum oder Aktiv-Kennzeichen — es waren allerdings
+  auch nicht alle verfügbaren Preisspalten ausgewählt.
+
+  Davon hängt der Entwurf ab. **Mit** Zeitraum bleibt alles wie beschrieben: Der
+  Rabatt läuft über `dEnde` von selbst aus, das ist die tragende
+  Sicherheitseigenschaft. **Ohne** Zeitraum wäre der Sonderpreis unbefristet,
+  und die Rücknahme müsste ihn aktiv entfernen — ob eine leere Zelle im Import
+  den Sonderpreis löscht oder nur „nicht ändern" bedeutet, ist ungeprüft und
+  wäre der Unterschied zwischen einer selbstauflösenden und einer dauerhaften
+  Preissenkung. Sollte die Ameise das nicht können, ist das ein Argument, den
+  Direktschreib-Weg vorzuziehen: In `tArtikelSonderpreis` stehen `dStart`,
+  `dEnde` und `nAktiv` als ganz normale Felder.
 - Behandlung bereits bestehender Sonderpreise: übersteuern, in Ruhe lassen oder
   als Konflikt melden? Vorschlag: in Ruhe lassen und als Hinweis ausweisen —
   bei PPS sind 439 Sonderpreise von Hand gepflegt.
