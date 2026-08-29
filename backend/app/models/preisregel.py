@@ -140,6 +140,7 @@ class PriceChange(Base):
     preis_alt_quelle = Column(String, nullable=True)  # fVKNetto | tPreisDetail | sonderpreis
     preis_neu        = Column(Float, nullable=True)
     ek_netto         = Column(Float, nullable=True)   # Basis des Sicherheitsnetzes
+    steuersatz       = Column(Float, nullable=True)   # für den Brutto-VK der Ameise
     gueltig_von      = Column(DateTime, nullable=True)
     gueltig_bis      = Column(DateTime, nullable=True)
 

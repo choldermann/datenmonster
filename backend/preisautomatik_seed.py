@@ -75,6 +75,7 @@ SELECT
     J.TageOhneAbgang, J.NieVerkauft,
     PL.kKundenGruppe, KG.cName AS Kundengruppe, PL.kShop,
     CAST(PL.fNettoPreis AS DECIMAL(18,4)) AS PreisAktuell,
+    CAST(ISNULL(ST.fSteuersatz, 0) AS DECIMAL(18,2)) AS Steuersatz,
     CASE WHEN EXISTS (SELECT 1 FROM dbo.tPreis P JOIN dbo.tPreisDetail D ON D.kPreis = P.kPreis
                       WHERE P.kArtikel = J.kArtikel AND P.kKundenGruppe = PL.kKundenGruppe
                         AND P.kShop = PL.kShop AND P.kKunde = 0 AND D.nAnzahlAb = 0)
@@ -89,6 +90,8 @@ SELECT
 FROM je_artikel J
 JOIN Preisliste.vPreislisteNetto PL ON PL.kArtikel = J.kArtikel AND PL.nAnzahlAb = 0
 JOIN dbo.tkundenGruppe KG ON KG.kKundenGruppe = PL.kKundenGruppe
+LEFT JOIN dbo.tArtikel A2 ON A2.kArtikel = J.kArtikel
+LEFT JOIN dbo.tSteuersatz ST ON ST.kSteuerklasse = A2.kSteuerklasse AND ST.kSteuerzone = 3
 WHERE J.TageOhneAbgang >= :tage_min AND PL.kShop = 0
   AND PL.fNettoPreis > 0
 ORDER BY J.Bestand * J.EK DESC"""
@@ -152,6 +155,10 @@ FELDER = [
     ],
     [
         "PreisAktuell",
+        "float"
+    ],
+    [
+        "Steuersatz",
         "float"
     ],
     [

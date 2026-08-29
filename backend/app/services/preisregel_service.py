@@ -265,6 +265,7 @@ def lauf(db, ruleset_id: int, user=None, triggered_by: str = "manuell",
             k_shop=shop,
             preis_alt=alt, preis_alt_quelle=str(k.get("PreisQuelle") or ""),
             preis_neu=neu, ek_netto=_num(k.get("EKNetto")),
+            steuersatz=_num(k.get("Steuersatz")),
             gueltig_von=datetime.combine(stichtag, datetime.min.time()),
             gueltig_bis=bis,
             zustand=("verworfen" if not ok else
@@ -300,14 +301,63 @@ def zustand_setzen(db, ids: list, neuer: str, user=None) -> int:
 
 # ── Ameise-Export ────────────────────────────────────────────────────────────
 
+# Spaltenüberschriften in der Schreibweise der Ameise (deutsch, mit Leerzeichen).
+# Ein Export aus der Ameise sieht genauso aus: UTF-8 ohne BOM, Semikolon, jede
+# Zeile endet auf ein Semikolon, Werte in Anführungszeichen, leere Felder bleiben
+# WIRKLICH leer (nicht ""), Dezimaltrennzeichen ist das Komma.
+AMEISE_SPALTEN = [
+    ("Artikelnummer",        lambda c: c.c_artnr),
+    ("Interner Schlüssel",   lambda c: c.k_artikel),
+    ("Artikelname",          lambda c: c.artikelname),
+    ("Kundengruppe",         lambda c: c.kundengruppe or ""),
+    ("Interner Schlüssel (Kundengruppe)", lambda c: c.k_kundengruppe),
+    ("Shop",                 lambda c: c.k_shop),
+    ("Netto-VK",             lambda c: _zahl(c.preis_neu)),
+    ("Brutto-VK",            lambda c: _zahl(_brutto(c.preis_neu, c.steuersatz))),
+    ("Aktiv",                lambda c: "N" if c.ruecknahme_von else "Y"),
+    ("Gültig von",           lambda c: _datum(c.gueltig_von)),
+    ("Gültig bis",           lambda c: _datum(c.gueltig_bis)),
+    ("Bisheriger Netto-VK",  lambda c: _zahl(c.preis_alt)),
+    ("Grund",                lambda c: c.begruendung or ""),
+    ("Änderung",             lambda c: c.id),
+]
+
+
+def _zahl(v) -> str:
+    return "" if v is None else f"{v:.2f}".replace(".", ",")
+
+
+def _datum(v) -> str:
+    return v.strftime("%d.%m.%Y") if v else ""
+
+
+def _brutto(netto, satz):
+    if netto is None:
+        return None
+    return round(netto * (1 + (satz or 0) / 100.0), 2)
+
+
+def _ameise_text(posten: list) -> str:
+    """Baut den Dateiinhalt in der Schreibweise der Ameise."""
+    def zelle(v):
+        text = "" if v is None else str(v)
+        return f'"{text}"' if text != "" else ""
+
+    zeilen = [";".join(zelle(name) for name, _ in AMEISE_SPALTEN) + ";"]
+    for c in posten:
+        zeilen.append(";".join(zelle(hol(c)) for _, hol in AMEISE_SPALTEN) + ";")
+    return "\n".join(zeilen) + "\n"
+
+
 def ameise_csv(db, ruleset_id: int, ids: Optional[list], user) -> dict:
     """Erzeugt die Importdatei für die JTL-Ameise.
 
     Der Zustand bleibt bewusst „freigegeben“: Erzeugt heißt nicht importiert.
     Erst die Kontrolle (§kontrolle) setzt „angewandt“, und zwar anhand der
     echten Preise in der Wawi."""
-    import pandas as pd
-    from app.services.file_export_service import save_export_file
+    import os
+    from app.services.file_export_service import build_export_path
+    from app.models.export_file import ExportFile
     from app.models.project import Project
 
     rs = db.query(PriceRuleset).filter(PriceRuleset.id == ruleset_id).first()
@@ -321,43 +371,29 @@ def ameise_csv(db, ruleset_id: int, ids: Optional[list], user) -> dict:
     if not posten:
         raise ValueError("Keine freigegebenen Preisänderungen zum Exportieren.")
 
-    def _d(v):
-        return v.strftime("%d.%m.%Y") if v else ""
-
-    def _p(v):
-        # Dezimalkomma: die Ameise erwartet die deutsche Schreibweise.
-        return f"{(v or 0):.2f}".replace(".", ",")
-
-    # Eine Rücknahme beendet die Aktion, statt einen neuen Preis zu setzen.
-    df = pd.DataFrame([{
-        "ArtNr": c.c_artnr,
-        "Artikel": c.artikelname,
-        "Kundengruppe": c.kundengruppe or "",
-        "KundengruppeId": c.k_kundengruppe,
-        "ShopId": c.k_shop,
-        "Sonderpreis": _p(c.preis_neu),
-        "Aktiv": "N" if c.ruecknahme_von else "Y",
-        "GueltigVon": _d(c.gueltig_von),
-        "GueltigBis": _d(c.gueltig_bis),
-        "PreisAlt": _p(c.preis_alt),
-        "Begruendung": c.begruendung or "",
-        "AenderungId": c.id,
-    } for c in posten])
-
     projekt = (db.query(Project).filter(Project.id == rs.project_id).first()
                if rs.project_id else None)
-    info = save_export_file(
-        df, user_id=getattr(user, "id", 0), project_id=rs.project_id,
+    pfad = build_export_path(getattr(user, "id", 0), getattr(projekt, "name", None),
+                             "manual", f"ameise_sonderpreise_{rs.name}", "csv")
+    # UTF-8 OHNE BOM – so exportiert die Ameise selbst.
+    with open(pfad, "wb") as fh:
+        fh.write(_ameise_text(posten).encode("utf-8"))
+
+    datei = ExportFile(
+        user_id=getattr(user, "id", 0), project_id=rs.project_id,
         project_name=getattr(projekt, "name", None), job_id=None,
         mapping_id=None, mapping_name=None,
-        target_name=f"ameise_sonderpreise_{rs.name}", target_type="csv",
-        target_options={"delimiter": ";", "encoding": "utf-8-sig"},
-        db=db, triggered_by="manual")
+        target_name=f"Preisautomatik – {rs.name}", file_path=pfad,
+        file_name=os.path.basename(pfad), file_ext="csv",
+        file_size=os.path.getsize(pfad), triggered_by="manual")
+    db.add(datei)
+    db.commit()
+    db.refresh(datei)
 
     for c in posten:
-        c.weg, c.export_file_id, c.updated_at = "ameise", info.get("id"), _jetzt()
+        c.weg, c.export_file_id, c.updated_at = "ameise", datei.id, _jetzt()
     db.commit()
-    return {"export_file_id": info.get("id"), "file_name": info.get("file_name"),
+    return {"export_file_id": datei.id, "file_name": datei.file_name,
             "zeilen": len(posten)}
 
 
@@ -449,7 +485,7 @@ def ruecknahme(db, ids: list, user=None) -> dict:
             k_kundengruppe=c.k_kundengruppe, kundengruppe=c.kundengruppe,
             k_shop=c.k_shop,
             preis_alt=c.preis_neu, preis_alt_quelle="sonderpreis",
-            preis_neu=c.preis_alt, ek_netto=c.ek_netto,
+            preis_neu=c.preis_alt, ek_netto=c.ek_netto, steuersatz=c.steuersatz,
             gueltig_von=c.gueltig_von, gueltig_bis=gestern,
             zustand="freigegeben", ruecknahme_von=c.id,
             begruendung=f"Rücknahme der Änderung #{c.id}"))

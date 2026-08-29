@@ -104,6 +104,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE alert_runs ADD COLUMN checked_keys JSON",
             # Preisautomatik: Kundengruppenname im Journal (Lesbarkeit)
             "ALTER TABLE price_changes ADD COLUMN kundengruppe TEXT",
+            "ALTER TABLE price_changes ADD COLUMN steuersatz FLOAT",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
