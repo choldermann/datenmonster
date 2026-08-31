@@ -126,6 +126,26 @@ class MappingContext:
 
 # ─── Zentrale Ausführungsfunktion ─────────────────────────────────────────────
 
+def _binaerspalten_als_hex(df):
+    """bytes-Spalten (varbinary, timestamp/rowversion, image) in Hex-Strings
+    wandeln — so wie SQL Server sie selbst anzeigt. Ohne das bricht jede
+    Weiterverarbeitung: die Typerkennung und FastAPIs JSON-Encoder versuchen
+    beide, die Rohbytes als UTF-8 zu dekodieren."""
+    if df is None or df.empty:
+        return df
+    for spalte in df.columns:
+        if df[spalte].dtype != object:
+            continue
+        probe = df[spalte].dropna()
+        if len(probe) == 0 or not isinstance(probe.iloc[0], (bytes, bytearray, memoryview)):
+            continue
+        df[spalte] = df[spalte].map(
+            lambda v: "0x" + bytes(v).hex().upper()
+            if isinstance(v, (bytes, bytearray, memoryview)) else v
+        )
+    return df
+
+
 def run_mapping_object(
     ctx: "MappingContext",
     target_index: Optional[int] = None,
@@ -1264,7 +1284,14 @@ def execute_mapping(
                     with tmp_engine.connect() as con:
                         result_df = _pd_t.read_sql(_sa.text(_tf_sql), con, params=_bound_params or None)
 
-                # 6. Output-Felder aus SQL-Node übernehmen
+                # 6. Binärspalten lesbar machen. SQL Server liefert timestamp/
+                #    rowversion/varbinary als rohe bytes; die überleben weder die
+                #    Typerkennung noch die JSON-Ausgabe (utf-8-Dekodierfehler).
+                #    "SELECT * FROM dbo.tEingangsrechnung" zieht mit bRowversion
+                #    genau so eine Spalte mit.
+                result_df = _binaerspalten_als_hex(result_df)
+
+                # 7. Output-Felder aus SQL-Node übernehmen
                 sql_output_fields = sn.get("output_fields") or list(result_df.columns)
 
             except Exception as e:

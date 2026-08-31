@@ -316,6 +316,15 @@ def infer_column_types(df: pd.DataFrame, db_raw_types: dict = None) -> dict:
             continue
 
         # 2) Kein/generischer DB-Typ → aus pandas-dtype + Dateninhalt ableiten.
+        # Binärspalten zuerst abfangen: pandas dekodiert bytes beim astype(str)
+        # als UTF-8 und wirft sonst UnicodeDecodeError. Ein "SELECT *" auf eine
+        # JTL-Tabelle bringt mit bRowversion (timestamp) genau so eine Spalte mit.
+        if dtype == object:
+            _probe = df[col].dropna()
+            if len(_probe) > 0 and isinstance(_probe.iloc[0], (bytes, bytearray, memoryview)):
+                result[col] = {"type": "string", "raw": raw}
+                continue
+
         if pd.api.types.is_bool_dtype(dtype):
             simple = "bool"
         elif pd.api.types.is_integer_dtype(dtype):
