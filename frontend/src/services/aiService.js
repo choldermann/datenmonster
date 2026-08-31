@@ -221,11 +221,17 @@ export async function suggestDatasets(connectionId, description, selectedTables,
 export const suggestMapping = (mappingId, onToken) =>
   streamRequest("/suggest-mapping", { mapping_id: mappingId }, onToken);
 
-export async function generateNodes(description, availableDatasets, onToken) {
+export async function generateNodes(description, availableDatasets, onToken, opts = {}) {
   const resp = await fetch(`${BASE}/generate-nodes`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
-    body: JSON.stringify({ description, available_datasets: availableDatasets ?? [] }),
+    body: JSON.stringify({
+      description,
+      available_datasets: availableDatasets ?? [],
+      mapping_id: opts.mappingId ?? null,
+      connection_id: opts.connectionId ?? null,
+      canvas_nodes: opts.canvasNodes ?? [],
+    }),
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
@@ -248,6 +254,7 @@ export async function generateNodes(description, availableDatasets, onToken) {
         const msg = JSON.parse(raw);
         if (msg.error) throw new Error(msg.error);
         if (msg.result) return msg.result; // { nodes, explanation }
+        if (msg.progress && opts.onProgress) opts.onProgress(msg.progress);
         if (msg.token && onToken) onToken(msg.token);
       } catch (e) {
         if (e.message && !e.message.startsWith("JSON")) throw e;

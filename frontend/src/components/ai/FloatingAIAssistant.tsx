@@ -51,6 +51,25 @@ function MarkdownText({ text }: { text: string }) {
 
 type GenMode = "idle" | "input" | "loading" | "preview";
 
+// Erkennt, ob eine Chat-Nachricht im Mapping-Editor etwas BAUEN will statt zu fragen.
+// Bewusst großzügig: greift die Erkennung daneben, kostet es einen Klick auf
+// „Stattdessen nur antworten"; umgekehrt bliebe der Wunsch unerfüllt.
+const BAU_VERB = /\b(erstell\w*|erzeug\w*|generier\w*|bau\w*|leg\w* an|anleg\w*|hinzufüg\w*|füg\w*|mach mir|schreib mir|setz\w* um|implementier\w*|benötig\w*|brauch\w*|möchte\w*|hätte gern|hätte gerne|wünsche mir|will ein\w*)\b/i;
+const BAU_OBJEKT = /\b(node|nodes|knoten|mapping|sql|abfrage|query|select|spalte|spalten|feld|felder|transformation|aggregation|lookup|python|ausdruck|expression|ziel|zielfeld|datenqualität|konstante)\b/i;
+const BAU_FRAGE = /^(was|wie|warum|wieso|wo|wann|welche\w*|wer|kannst du|kann ich|erklär\w*|zeig\w*|erkläre)\b/i;
+
+// Das Modell darf einen Bauauftrag auch selbst melden – siehe Seiten-Systemprompt
+// "mapping_editor" im Backend. Fängt die Fälle, die die Stichwortliste verpasst.
+const BAU_MARKER = /\[\[BAUEN\]\]\s*([\s\S]*)/;
+
+function istBauauftrag(text: string): boolean {
+  const t = text.trim();
+  if (BAU_FRAGE.test(t)) return false;
+  if (t.endsWith("?")) return false;
+  return BAU_VERB.test(t) && BAU_OBJEKT.test(t);
+}
+
+
 function nodePreviewLabel(node: any): string {
   switch (node.node_type) {
     case "transform":
@@ -73,6 +92,10 @@ function nodePreviewLabel(node: any): string {
     }
     case "data_quality":
       return `Datenqualität: ${(node.rules || []).map((r: any) => `${r.field}(${r.type})`).join(", ") || "?"}`;
+    case "sql": {
+      const cols = (node.columns || []).length;
+      return `SQL-Node (${node.mode || "transform"})${cols ? ` → ${cols} Spalten` : ""}`;
+    }
     default:
       return node.node_type || "Unbekannter Node";
   }
@@ -120,6 +143,14 @@ export default function FloatingAIAssistant() {
   const [genDescription, setGenDescription] = useState("");
   const [genTokens, setGenTokens] = useState("");
   const [genResult, setGenResult] = useState<{ nodes: any[]; explanation: string } | null>(null);
+  const [genProgress, setGenProgress] = useState("");
+  const [genConnId, setGenConnId] = useState<number | null>(null);
+  // Original-Formulierung eines aus dem Chat erkannten Bauauftrags – für den
+  // Rückweg „doch lieber nur antworten".
+  const [lastBuildRequest, setLastBuildRequest] = useState<string | null>(null);
+  // runStream läuft vor runGenerate im Modul – der Umweg über die Ref hält die
+  // Reihenfolge auseinander.
+  const runGenerateRef = useRef<((beschreibung: string) => void) | null>(null);
   const [tokenCount, setTokenCount] = useState(0);
   const [expertMode, setExpertMode] = useState(false);
   // Schema-Wissensdatenbank
@@ -326,15 +357,20 @@ export default function FloatingAIAssistant() {
       ? { page: pageContext.page, title: pageContext.title, description: pageContext.description, currentData: enrichedData }
       : {};
 
+    let volltext = "";
     try {
       await streamRequest("/chat", {
         message: text, history, mode: aiMode, debug: expertMode, page_context: pageCtx,
       }, (_token: string, full: string) => {
         if (abortRef.current) return;
+        volltext = full;
         setTokenCount(prev => prev + 1);
         setMessages(prev => {
           const updated = [...prev];
-          updated[updated.length - 1] = { role: "assistant", content: full, streaming: true };
+          // Bauauftrag: die Marker-Zeile ist keine Antwort, sondern ein Auftrag
+          // an uns – dem Benutzer zeigen wir stattdessen die Bau-Vorschau.
+          const angezeigt = BAU_MARKER.test(full) ? "Ich baue das …" : full;
+          updated[updated.length - 1] = { role: "assistant", content: angezeigt, streaming: true };
           return updated;
         });
       }, (meta: any) => {
@@ -373,16 +409,99 @@ export default function FloatingAIAssistant() {
         return updated;
       });
     }
+
+    // Zweites Netz hinter der Stichwort-Erkennung: hat das Modell selbst einen
+    // Bauauftrag erkannt, hat es mit [[BAUEN]] <Aufgabe> geantwortet.
+    const marker = volltext.match(BAU_MARKER);
+    if (marker && !abortRef.current) {
+      const auftrag = marker[1].trim() || text;
+      setMessages(prev => prev.slice(0, -1));
+      setLastBuildRequest(text);
+      runGenerateRef.current?.(auftrag);
+    }
   }, [aiMode, expertMode, pageContext, schemaContext]);
+
+  const resetGenMode = () => {
+    setGenMode("idle");
+    setGenDescription("");
+    setGenTokens("");
+    setGenProgress("");
+    setGenResult(null);
+    setLastBuildRequest(null);
+  };
+
+  // Verbindungen des Mapping-Editors – für SQL-Nodes braucht der Baumodus eine.
+  const genConnections: { id: number; name: string }[] =
+    (pageContext?.currentData as any)?.dbConnections ?? [];
+  const defaultConnId: number | null =
+    ((pageContext?.currentData as any)?.connectionIds ?? [])[0] ?? genConnections[0]?.id ?? null;
+  const activeConnId = genConnId ?? defaultConnId;
+
+  const runGenerate = useCallback(async (beschreibung: string, connId: number | null) => {
+    setGenMode("loading");
+    setGenTokens("");
+    setGenProgress("");
+    setGenResult(null);
+
+    const cd = (pageContext?.currentData as any) ?? {};
+    try {
+      const result = await generateNodes(
+        beschreibung,
+        cd.canvasDatasets ?? [],
+        (token: string) => setGenTokens(prev => prev + token),
+        {
+          mappingId: Number.isInteger(Number(cd.mappingId)) && cd.mappingId !== null
+            ? Number(cd.mappingId) : null,
+          connectionId: connId,
+          canvasNodes: (cd.canvasDatasets ?? []).map((d: any) => ({ dataset_id: d.id })),
+          onProgress: (p: string) => setGenProgress(p),
+        },
+      );
+      if (result && Array.isArray(result.nodes) && result.nodes.length > 0) {
+        setGenResult(result);
+        setGenMode("preview");
+      } else {
+        throw new Error("Keine Nodes generiert – bitte Beschreibung präzisieren");
+      }
+    } catch (e: any) {
+      resetGenMode();
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `Fehler beim Generieren: ${e.message}`,
+        streaming: false,
+      }]);
+    }
+  }, [pageContext]);
+
+  useEffect(() => {
+    runGenerateRef.current = (beschreibung: string) => { runGenerate(beschreibung, activeConnId); };
+  }, [runGenerate, activeConnId]);
+
+  const handleGenerate = async () => {
+    if (!genDescription.trim()) return;
+    await runGenerate(genDescription, activeConnId);
+  };
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
     if (!text || streaming) return;
+
+    // Bauauftrag statt Frage? Im Mapping-Editor setzt der Assistent den Wunsch
+    // direkt in Nodes um, statt nur darüber zu reden. Vorschau + Übernehmen
+    // bleiben dazwischen, gebaut wird also nichts ungefragt.
+    if (pageContext?.page === "mapping_editor" && genMode === "idle" && istBauauftrag(text)) {
+      setInput("");
+      setMessages(prev => [...prev, { role: "user", content: text }]);
+      setLastBuildRequest(text);
+      await runGenerate(text, activeConnId);
+      return;
+    }
+
     setInput("");
     const history = messages.map(m => ({ role: m.role, content: m.content }));
     setMessages(prev => [...prev, { role: "user", content: text }, { role: "assistant", content: "", streaming: true }]);
     await runStream(text, history);
-  }, [input, streaming, messages, runStream]);
+  }, [input, streaming, messages, runStream, pageContext, genMode, runGenerate, activeConnId]);
 
   // Automatisch abschicken wenn triggerExplainError aufgerufen wurde
   useEffect(() => {
@@ -425,52 +544,20 @@ export default function FloatingAIAssistant() {
     abortCtrlRef.current = null;
   };
 
-  const resetGenMode = () => {
-    setGenMode("idle");
-    setGenDescription("");
-    setGenTokens("");
-    setGenResult(null);
-  };
-
-  const handleGenerate = async () => {
-    if (!genDescription.trim()) return;
-    setGenMode("loading");
-    setGenTokens("");
-    setGenResult(null);
-
-    const canvasDatasets = (pageContext?.currentData as any)?.canvasDatasets ?? [];
-
-    try {
-      const result = await generateNodes(
-        genDescription,
-        canvasDatasets,
-        (token: string) => setGenTokens(prev => prev + token),
-      );
-      if (result && Array.isArray(result.nodes) && result.nodes.length > 0) {
-        setGenResult(result);
-        setGenMode("preview");
-      } else {
-        throw new Error("Keine Nodes generiert – bitte Beschreibung präzisieren");
-      }
-    } catch (e: any) {
-      setGenMode("input");
-      setMessages(prev => [...prev, {
-        role: "assistant",
-        content: `Fehler beim Generieren: ${e.message}`,
-        streaming: false,
-      }]);
-      resetGenMode();
-    }
-  };
-
   const handleApplyNodes = () => {
     if (!genResult) return;
     callGenerateNodes(genResult);
     const n = genResult.nodes.length;
     const explanation = genResult.explanation;
-    setMessages([{
+    const spalten = genResult.nodes
+      .filter((x: any) => x.node_type === "sql")
+      .reduce((sum: number, x: any) => sum + (x.columns || []).length, 0);
+    const zusatz = spalten > 0
+      ? `\n\n${spalten} Spalten wurden als Zielfelder übernommen. Nicht vergessen: Mapping speichern.`
+      : "\n\nNicht vergessen: Mapping speichern.";
+    setMessages(prev => [...prev, {
       role: "assistant",
-      content: `✅ ${n} Node${n !== 1 ? "s" : ""} wurden zum Mapping hinzugefügt.\n\n${explanation || ""}`,
+      content: `✅ ${n} Node${n !== 1 ? "s" : ""} zum Mapping hinzugefügt.\n\n${explanation || ""}${zusatz}`,
       streaming: false,
     }]);
     resetGenMode();
@@ -955,6 +1042,35 @@ export default function FloatingAIAssistant() {
                 </button>
               </div>
 
+              {/* SQL-Nodes brauchen eine Verbindung – hier ist sichtbar, welche */}
+              {genConnections.length > 0 && genMode !== "loading" && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <Database size={11} color="rgba(255,255,255,0.35)" />
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)" }}>Datenbank</span>
+                  <select
+                    value={activeConnId ?? ""}
+                    onChange={e => {
+                      const neu = e.target.value ? parseInt(e.target.value) : null;
+                      setGenConnId(neu);
+                      // In der Vorschau hängt das erzeugte SQL an der Datenbank –
+                      // eine andere Wahl heißt: nochmal bauen.
+                      const auftrag = lastBuildRequest || genDescription;
+                      if (genMode === "preview" && auftrag) runGenerate(auftrag, neu);
+                    }}
+                    style={{
+                      flex: 1, backgroundColor: BG_CARD, border: `1px solid ${BORDER}`,
+                      borderRadius: 5, color: "rgba(255,255,255,0.7)", fontSize: 10,
+                      padding: "3px 5px", outline: "none",
+                    }}
+                  >
+                    <option value="">— keine (nur Canvas-Daten) —</option>
+                    {genConnections.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Input-Modus */}
               {genMode === "input" && (
                 <>
@@ -1007,7 +1123,7 @@ export default function FloatingAIAssistant() {
                 <div style={{ flex: 1, overflowY: "auto" }}>
                   <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
                     <Loader2 size={10} className="animate-spin" />
-                    KI denkt nach...
+                    {genProgress || "KI denkt nach..."}
                   </div>
                   <pre style={{
                     fontSize: 10, color: "rgba(255,255,255,0.35)",
@@ -1032,7 +1148,9 @@ export default function FloatingAIAssistant() {
                     </div>
                   )}
                   <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}>
-                    {genResult.nodes.length} Node{genResult.nodes.length !== 1 ? "s" : ""} werden erstellt:
+                    {genResult.nodes.length === 1
+                      ? "1 Node wird erstellt:"
+                      : `${genResult.nodes.length} Nodes werden erstellt:`}
                   </div>
                   <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
                     {genResult.nodes.map((node: any, i: number) => (
@@ -1044,7 +1162,29 @@ export default function FloatingAIAssistant() {
                         fontSize: 11, color: "rgba(255,255,255,0.7)",
                       }}>
                         <span style={{ color: ACCENT, fontWeight: 700, minWidth: 16, fontSize: 10, paddingTop: 1 }}>{i + 1}</span>
-                        <span style={{ lineHeight: 1.45 }}>{nodePreviewLabel(node)}</span>
+                        <div style={{ lineHeight: 1.45, flex: 1, minWidth: 0 }}>
+                          <div>{nodePreviewLabel(node)}</div>
+                          {node.node_type === "sql" && node.sql && (
+                            <pre style={{
+                              margin: "6px 0 0", padding: "6px 8px", borderRadius: 5,
+                              backgroundColor: "rgba(0,0,0,0.4)", border: `1px solid ${BORDER}`,
+                              fontSize: 10, lineHeight: 1.45, color: "#a8d8a8",
+                              fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word",
+                              maxHeight: 190, overflowY: "auto",
+                            }}>{node.sql}</pre>
+                          )}
+                          {node.node_type === "sql" && (node.columns || []).length > 0 && (
+                            <div style={{ marginTop: 5, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+                              Geprüft · Spalten: {(node.columns || []).join(", ")}
+                            </div>
+                          )}
+                          {node.sql_error && (
+                            <div style={{ marginTop: 5, fontSize: 10, color: "#e0a070", lineHeight: 1.45 }}>
+                              ⚠ Die Datenbank lehnt diese Abfrage ab: {node.sql_error}
+                              <br />Der Node wird trotzdem angelegt – SQL im Editor korrigieren.
+                            </div>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1062,7 +1202,7 @@ export default function FloatingAIAssistant() {
                       <Check size={13} /> Übernehmen
                     </button>
                     <button
-                      onClick={() => { setGenMode("input"); setGenResult(null); setGenTokens(""); }}
+                      onClick={() => { setGenMode("input"); setGenResult(null); setGenTokens(""); setGenProgress(""); }}
                       style={{
                         flex: 1, padding: "9px 8px",
                         borderRadius: 8,
@@ -1075,6 +1215,24 @@ export default function FloatingAIAssistant() {
                       Verwerfen
                     </button>
                   </div>
+                  {lastBuildRequest && (
+                    <button
+                      onClick={() => {
+                        const frage = lastBuildRequest;
+                        resetGenMode();
+                        const history = messages.map(m => ({ role: m.role, content: m.content }));
+                        setMessages(prev => [...prev, { role: "assistant", content: "", streaming: true }]);
+                        runStream(frage, history);
+                      }}
+                      style={{
+                        background: "none", border: "none", color: "rgba(255,255,255,0.3)",
+                        fontSize: 10, cursor: "pointer", padding: 0, textDecoration: "underline",
+                        alignSelf: "center", flexShrink: 0,
+                      }}
+                    >
+                      Ich wollte gar nichts bauen – bitte nur antworten
+                    </button>
+                  )}
                 </>
               )}
             </div>

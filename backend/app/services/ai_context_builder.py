@@ -83,6 +83,45 @@ def _load_schema_from_connection(conn, keywords: list[str] | None = None) -> str
     return text
 
 
+def _schema_fuer_aufgabe(conn, beschreibung: str) -> str:
+    """Die zur Beschreibung passenden Tabellen samt Spalten, statt einer
+    abgeschnittenen Namensliste. Fällt auf eine kompakte Namensübersicht
+    zurück, wenn kein Stichwort trifft."""
+    from app.services.schema_cache_service import (
+        get_cached_schema, build_schema_json, schema_json_to_text,
+        filter_schema_with_fk_expansion, extract_keywords,
+    )
+
+    schema_json = get_cached_schema(conn)
+    if schema_json is None:
+        try:
+            schema_json = build_schema_json(conn)
+        except Exception as e:
+            log.warning(f"AI Context: Schema-Laden fehlgeschlagen für conn {conn.id}: {e}")
+            return ""
+
+    keywords = extract_keywords(beschreibung)
+    gefiltert, info = filter_schema_with_fk_expansion(schema_json, keywords, max_tables=12)
+    getroffen = [i for i in info if i.get("match_type") != "fallback"]
+
+    if getroffen:
+        return (
+            "Zur Aufgabe passende Tabellen mit ihren Spalten — verwende bevorzugt diese "
+            "und schreibe Tabellen- und Spaltennamen exakt so:\n"
+            + schema_json_to_text(gefiltert)
+        )
+
+    # Kein Treffer → wenigstens die Namen aller Tabellen, damit das Modell nicht rät
+    namen = [t["full_name"] for t in schema_json.get("tables", [])][:300]
+    if not namen:
+        return ""
+    return (
+        "Verfügbare Tabellen in der Datenbank (kompakte Übersicht — "
+        "bitte Tabellennamen exakt so im SQL verwenden):\n"
+        + "\n".join(f"  - {t}" for t in namen)
+    )
+
+
 def _load_schema_from_connection_legacy(conn) -> str:
     """Legacy live-query path kept for reference; replaced by cache-aware version above."""
     conn_id = conn.id
@@ -490,7 +529,15 @@ class AIContextBuilder:
 
     def sql_generate_context(self, description: str, connection_id: Optional[int], mapping_id: Optional[int] = None) -> tuple[str, str]:
         """Context for generating a new SQL query from a description."""
-        context_parts = []
+        # Ohne Datum rät das Modell das Jahr — "dieses Jahr" wurde prompt zu 2023.
+        from datetime import date as _date
+        _heute = _date.today()
+        context_parts = [
+            f"Heutiges Datum: {_heute.strftime('%d.%m.%Y')}. "
+            f"\"dieses Jahr\"/\"laufendes Jahr\" = {_heute.year}, "
+            f"\"letztes Jahr\"/\"Vorjahr\" = {_heute.year - 1}. "
+            f"Schreibe Jahreszahlen bevorzugt relativ (YEAR(GETDATE()), DATEADD) statt fest."
+        ]
 
         # Datasets already on the canvas — if present, use ONLY these; skip full schema.
         # A small model gets confused by 80 tables and picks the wrong one.
@@ -512,24 +559,14 @@ class AIContextBuilder:
             context_parts.append("\n".join(lines))
             # No full schema when datasets are known — keeps the model focused
         elif connection_id:
-            # No mapping datasets available → send only a compact table list (no columns).
-            # Sending a full 80-table schema with all columns overwhelms small models.
+            # Kein Mapping-Dataset da → aus dem ganzen Schema die zur Aufgabe
+            # passenden Tabellen heraussuchen und MIT Spalten schicken.
+            # Eine alphabetisch abgeschnittene Namensliste half nicht: bei einer
+            # JTL-Datenbank endete sie bei "BI.…", dbo.tEingangsrechnung kam nie
+            # im Prompt an und das Modell erfand sich eine Tabelle.
             conn = self._get_conn(connection_id)
             if conn:
-                schema_text = _load_schema_from_connection(conn)
-                # Extract only the "Tabelle X.Y:" header lines for a compact overview
-                table_names = [
-                    line.replace("Tabelle ", "").rstrip(":")
-                    for line in schema_text.split("\n")
-                    if line.startswith("Tabelle ")
-                ]
-                if table_names:
-                    compact = (
-                        f"Verfügbare Tabellen in der Datenbank (kompakte Übersicht — "
-                        f"bitte Tabellennamen exakt so im SQL verwenden):\n"
-                        + "\n".join(f"  - {t}" for t in table_names)
-                    )
-                    context_parts.append(compact)
+                context_parts.append(_schema_fuer_aufgabe(conn, description))
 
         # Projektwissen zuletzt, direkt vor der Aufgabe: die Regeln zu Feldern und
         # Tabellen entscheiden hier über richtiges oder falsches SQL.

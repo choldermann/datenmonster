@@ -162,9 +162,11 @@ def schema_json_to_text(schema_json: dict, max_tables: int = 120) -> str:
     return "\n".join(lines)
 
 
-# Column names that are internal/system fields — excluded from AI context to reduce noise
+# Column names that are internal/system fields — excluded from AI context to reduce noise.
+# dErstellt steht bewusst NICHT hier: in JTL ist das das fachliche Belegdatum
+# (Rechnungs-/Bestelldatum), ohne das sich kein Zeitraum filtern lässt.
 _SYSTEM_COL_LOWER = {
-    "browversion", "derstellt", "dgeaendert", "dmutdat", "nversion",
+    "browversion", "dgeaendert", "dmutdat", "nversion",
     "cjtlwawi", "kbenutzerstellt", "kbenutzergeaendert",
     "created_at", "updated_at", "timestamp", "rowversion",
     "npositionslauf", "nlaufnummer",

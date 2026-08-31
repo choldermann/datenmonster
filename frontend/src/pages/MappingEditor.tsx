@@ -292,6 +292,7 @@ export default function MappingEditor() {
     const newPython: any[] = [];
     const newExprs: any[] = [];
     const newQuality: any[] = [];
+    const newSql: any[] = [];
 
     rawNodes.forEach((n: any, idx: number) => {
       const { x, y } = pos(idx);
@@ -349,6 +350,17 @@ export default function MappingEditor() {
         case "data_quality":
           newQuality.push({ id: newId(), x, y, label: n.label || "Datenqualität", rules: n.rules || [] });
           break;
+        case "sql":
+          newSql.push({
+            id: newId(), x: 80 + (idx % 4) * 300, y,
+            width: 420, height: 260,
+            connection_id: n.connection_id ?? null,
+            sql: n.sql || "",
+            mode: n.mode || "transform",
+            output_field: n.output_field || `sql_${sqlNodes.length + newSql.length + 1}`,
+            output_fields: n.columns || [],
+          });
+          break;
       }
     });
 
@@ -360,8 +372,49 @@ export default function MappingEditor() {
     if (newPython.length) setPythonNodes(prev => [...prev, ...newPython]);
     if (newExprs.length) setExprNodes(prev => [...prev, ...newExprs]);
     if (newQuality.length) setQualityNodes(prev => [...prev, ...newQuality]);
+    if (newSql.length) setSqlNodes(prev => [...prev, ...newSql]);
+
+    // Zielfelder mitziehen: ohne Eintrag in targets.fields taucht eine neue
+    // SQL-Spalte nirgends in der Ausgabe auf. Fehlt noch jedes Ziel, legen wir
+    // ein CSV-Ziel an — sonst ist das Mapping nicht lauffähig.
+    const sqlWithCols = newSql.filter(n => (n.output_fields || []).length > 0);
+    if (sqlWithCols.length) {
+      const neueFelder = sqlWithCols.flatMap(n =>
+        (n.output_fields || []).map((col: any) => {
+          const feld = typeof col === "string" ? col : col?.name || String(col);
+          return {
+            source_dataset_id: `__sql__${n.id}`,
+            source_field: feld,
+            target_field: feld,
+            transformer: { type: "direct", source_field: feld },
+          };
+        })
+      );
+      setTargets(prev => {
+        if (prev.length === 0) {
+          const ziel = {
+            id: `t_${Date.now()}`,
+            name: name || "Ergebnis",
+            target_type: "csv",
+            target_connection_id: null,
+            target_table: "",
+            target_write_mode: "insert",
+            target_options: {},
+            fields: neueFelder,
+          };
+          setActiveTargetId(ziel.id);
+          return [ziel];
+        }
+        const zielId = activeTargetId || prev[0].id;
+        return prev.map(t => {
+          if (t.id !== zielId) return t;
+          const vorhanden = new Set((t.fields || []).map((f: any) => f.target_field));
+          return { ...t, fields: [...(t.fields || []), ...neueFelder.filter(f => !vorhanden.has(f.target_field))] };
+        });
+      });
+    }
     setTimeout(triggerLineDraw, 100);
-  }, [canvasNodes, transformNodes, constantNodes, aggNodes, calcNodes, lookupNodes, pythonNodes, exprNodes, qualityNodes, allDatasets, triggerLineDraw]);
+  }, [canvasNodes, transformNodes, constantNodes, aggNodes, calcNodes, lookupNodes, pythonNodes, exprNodes, qualityNodes, sqlNodes, allDatasets, targets, activeTargetId, name, triggerLineDraw]);
 
   const insertGeneratedNodesRef = useRef<any>(null);
   useEffect(() => {
@@ -422,12 +475,15 @@ export default function MappingEditor() {
             .map((n: any) => allDatasets.find((d: any) => d.id === n.dataset_id)?.source_connection_id)
             .filter(Boolean)
         )],
+        // Für den Baumodus des KI-Assistenten: er braucht eine Verbindung, um
+        // SQL mit Schemawissen zu erzeugen und zu prüfen.
+        dbConnections: dbConnections.map((c: any) => ({ id: c.id, name: c.name, type: c.db_type })),
         ...(tableRelationships.length > 0 ? { tableRelationships } : {}),
         ...(activeNodeInfo ? { activeNode: activeNodeInfo } : {}),
       },
     });
     return () => setPageContext(null);
-  }, [setPageContext, name, id, activeNodeInfo, canvasNodes, tableRelationships,
+  }, [setPageContext, name, id, activeNodeInfo, canvasNodes, tableRelationships, dbConnections,
       transformNodes, constantNodes, sqlNodes, aggNodes, calcNodes, lookupNodes,
       switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, paramNodes, restNodes]);
   const setConnections = (updater) => {

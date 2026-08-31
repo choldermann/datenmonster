@@ -347,6 +347,27 @@ EINTRAEGE = [
      "Und abgelaufene Aktionen bleiben auf nAktiv = 1 stehen: bei PPS 90 von 439. "
      "Jede Sonderpreis-Auswertung muss deshalb auf Preiszeile UND Zeitraum prüfen; "
      "Dashboard.vAbgelaufeneSonderpreise gibt es dafür fertig."),
+
+    # ── Alltagssprache → richtige Quelle ────────────────────────────────────
+    ("rule", "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+     "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", "
+     "\"Kauf\", \"Käufe\", \"letzter Kauf\", \"Kunden die nichts mehr kaufen\", "
+     "\"schlafende Kunden\", \"Kundenrückgang\", \"Kundenumsatz\". Quelle ist immer "
+     "Rechnung.vRechnung (Belegdatum dErstellt, Storno ausschließen mit "
+     "ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag. \"Datum des letzten Kaufs\" = "
+     "MAX(vRechnung.dErstellt) je Kunde. Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich "
+     "von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede "
+     "ist — dort steht der Frühindikator, nicht der Umsatz.", True),
+
+    ("field_mapping", "JTL – Kundennummer, Nachname, Vorname",
+     "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen "
+     "wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt "
+     "dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). "
+     "Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in "
+     "Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, "
+     "cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — "
+     "dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). "
+     "Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.", True),
 ]
 
 db = SessionLocal()

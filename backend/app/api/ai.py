@@ -1267,7 +1267,20 @@ _PAGE_SYSTEM_PROMPTS = {
         "beziehe dich gezielt darauf. "
         "Falls Tabellenbeziehungen vorhanden sind, nutze diese für JOIN-Empfehlungen. "
         "Falls keine bekannt sind, sag das ehrlich. "
-        "Falls 'lastRunError' im Kontext: erkläre Ursache, zeige kritische Stelle, gib Lösungsschritte."
+        "Falls 'lastRunError' im Kontext: erkläre Ursache, zeige kritische Stelle, gib Lösungsschritte.\n\n"
+        "BAUAUFTRÄGE — WICHTIG:\n"
+        "Will der Benutzer, dass etwas im Mapping ENTSTEHT (\"erstelle mir…\", \"ich brauche ein "
+        "Mapping…\", \"ich benötige…\", \"füg eine Spalte hinzu…\"), dann erkläre es NICHT und "
+        "schreibe KEIN SQL. Antworte in diesem Fall AUSSCHLIESSLICH mit einer einzigen Zeile:\n"
+        "[[BAUEN]] <die Aufgabe in einem Satz, mit allen genannten Feldern und Filtern>\n"
+        "Nichts davor, nichts danach. Datenmonster baut daraus die Nodes und zeigt sie dem "
+        "Benutzer zur Bestätigung — dabei kennt es das Datenbankschema, du hier nicht.\n"
+        "Beispiel Eingabe: \"Ich benötige ein Mapping der Kunden, die dieses Jahr nichts gekauft "
+        "haben, aber letztes Jahr schon. Zielfelder Kundennummer, Nachname, Vorname, Datum letzter Kauf\"\n"
+        "Beispiel Antwort: [[BAUEN]] Kunden mit Kauf im Vorjahr, aber ohne Kauf im laufenden Jahr; "
+        "Ausgabe: Kundennummer, Nachname, Vorname, Datum des letzten Kaufs\n"
+        "Bei echten FRAGEN (\"was ist…\", \"wie funktioniert…\", \"warum…\") antwortest du normal "
+        "und benutzt den Marker NICHT."
     ),
     "pipeline_editor": (
         "Du bist der KI-Assistent für den Pipeline-Editor von Datenmonster. "
@@ -2300,6 +2313,22 @@ VERFÜGBARE NODE-TYPEN (node_type + Felder):
   label: Bezeichnung
   rules: [{ field, type: not_null|email|regex|min_length|max_length|in_list, pattern (nur bei regex) }]
 
+"sql" – SQL-Abfrage direkt gegen die Datenbank. Der mächtigste Node: liefert komplette
+        Ergebnismengen (alle Zeilen einer Tabelle, Joins, Filter, Zeiträume, Gruppierungen).
+  mode: "transform" (Standard – die Abfrage liefert die gesamte Datenmenge des Mappings)
+        | "scalar" (ein Wert pro Zeile) | "column" | "lookup" | "exec"
+  sql_description: EIN Satz auf Deutsch, WAS die Abfrage liefern soll – welche Tabelle(n),
+        welcher Filter/Zeitraum, welche Spalten. Schreibe hier KEIN SQL!
+        Das SQL erzeugt danach ein eigener Schritt, der das Datenbankschema kennt.
+  output_field: Ausgabefeldname (nur bei mode "scalar"/"column")
+
+REGELN:
+- Sollen Daten AUS EINER DATENBANK kommen (z.B. "alle Eingangsrechnungen 2025",
+  "Umsatz je Kunde", "Artikel ohne Bestand") und liegt kein passendes Dataset auf dem
+  Canvas, dann nimm GENAU EINEN "sql"-Node mit mode "transform".
+- Erfinde keine Feldnamen für Datenbankspalten – dafür ist die sql_description da.
+- Lieber wenige, richtige Nodes als viele geratene.
+
 ANTWORT (genau dieses JSON, nichts anderes):
 {"nodes":[...],"explanation":"Kurze Erklärung auf Deutsch was erstellt wurde"}\
 """
@@ -2309,6 +2338,76 @@ class GenerateNodesRequest(BaseModel):
     description: str
     available_datasets: list[dict] = []
     mapping_id: Optional[int] = None
+    # Verbindung für SQL-Nodes: ohne sie kann das SQL weder mit Schemawissen
+    # erzeugt noch geprüft werden.
+    connection_id: Optional[int] = None
+    canvas_nodes: list[dict] = []
+
+
+def _sql_saeubern(text: str) -> str:
+    """Markdown-Zaun und Geschwätz entfernen, das kleine Modelle um das SQL packen."""
+    import re as _re
+    t = (text or "").strip()
+    fence = _re.search(r"```[a-zA-Z]*\s*(.+?)```", t, _re.DOTALL)
+    if fence:
+        t = fence.group(1)
+    t = _re.sub(r"^```[a-zA-Z]*\s*", "", t, flags=_re.MULTILINE)
+    t = _re.sub(r"```\s*$", "", t, flags=_re.MULTILINE)
+    t = t.strip()
+    # Vorspann wie "Hier ist die Abfrage:" abschneiden – ab dem ersten SELECT/WITH
+    m = _re.search(r"\b(WITH|SELECT)\b", t, _re.IGNORECASE)
+    if m and m.start() > 0:
+        t = t[m.start():]
+    return t.strip().rstrip(";").strip()
+
+
+def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
+                 canvas_nodes: list[dict] | None = None) -> tuple[list[str], Optional[str]]:
+    """Führt die Abfrage ohne Zeilen aus und liefert (Spalten, Fehlermeldung).
+
+    Anders als /api/mappings/sql-schema wird hier NICHT auf ein Regex-Raten
+    zurückgefallen: der Bauplan soll wissen, ob das SQL wirklich läuft.
+    """
+    if not sql_text:
+        return [], "Kein SQL erzeugt"
+    try:
+        import sqlalchemy as _sa
+        import re as _re
+        probe = _re.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", "NULL", sql_text)
+        if connection_id:
+            from app.services.mapping_service import _get_sql_engine
+            engine = _get_sql_engine(connection_id)
+            with engine.connect() as con:
+                try:
+                    res = con.execute(_sa.text(f"SELECT TOP 0 * FROM ({probe}) __q"))
+                except Exception:
+                    res = con.execute(_sa.text(f"SELECT * FROM ({probe}) __q WHERE 1=0"))
+                return list(res.keys()), None
+        # Ohne Verbindung: gegen die Canvas-Datasets in einer SQLite-Kopie prüfen
+        import pandas as _pd
+        from app.services.file_service import read_dataset
+        from app.models.dataset import Dataset
+        tmp = _sa.create_engine("sqlite:///:memory:")
+        for n in (canvas_nodes or []):
+            ds_id = n.get("dataset_id")
+            if not ds_id:
+                continue
+            try:
+                ds = db.query(Dataset).filter(Dataset.id == ds_id).first()
+                if not ds:
+                    continue
+                data = read_dataset(ds_id, page=0, page_size=5)
+                if data.get("preview"):
+                    _pd.DataFrame(data["preview"]).to_sql(
+                        _re.sub(r"[^a-zA-Z0-9_]", "_", ds.name), tmp,
+                        if_exists="replace", index=False)
+            except Exception:
+                pass
+        with tmp.connect() as con:
+            res = con.execute(_sa.text(f"SELECT * FROM ({probe}) __q LIMIT 0"))
+            return list(res.keys()), None
+    except Exception as e:
+        return [], str(e)[:400]
 
 
 @router.post("/generate-nodes")
@@ -2323,6 +2422,11 @@ async def generate_nodes(
     ds_info = ""
     if body.available_datasets:
         ds_info = f"\nVerfügbare Datasets auf dem Canvas:\n{json.dumps(body.available_datasets[:8], ensure_ascii=False)}\n"
+    else:
+        ds_info = "\nAuf dem Canvas liegt noch kein Dataset.\n"
+    if body.connection_id:
+        ds_info += ("Eine Datenbankverbindung ist eingerichtet – Daten aus der Datenbank "
+                    "holst du mit einem \"sql\"-Node (mode \"transform\").\n")
     user_msg = f"{ds_info}\nAufgabe: {body.description}"
 
     async def generate():
@@ -2345,10 +2449,68 @@ async def generate_nodes(
             parsed = json.loads(cleaned[start:end + 1])
             nodes = parsed.get("nodes", [])
             explanation = parsed.get("explanation", "")
-            print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
-            yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': f'JSON-Parsing fehlgeschlagen: {str(e)}'})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+
+        # ── Stufe 2: für jeden SQL-Node echtes SQL erzeugen ───────────────────
+        # Ein kleines Modell kann nicht gleichzeitig die JSON-Struktur UND
+        # korrektes SQL treffen. Stufe 1 beschreibt nur, Stufe 2 schreibt das
+        # SQL mit vollem Schema- und Projektwissen und prüft es gegen die DB.
+        ctx = AIContextBuilder(db)
+        for n in nodes:
+            if not isinstance(n, dict) or n.get("node_type") != "sql":
+                continue
+            n.setdefault("mode", "transform")
+            beschreibung = (n.get("sql_description") or body.description).strip()
+            yield f"data: {json.dumps({'progress': f'SQL wird erzeugt: {beschreibung[:80]}'})}\n\n"
+
+            sql_system, sql_ctx = ctx.sql_generate_context(
+                beschreibung, body.connection_id, body.mapping_id)
+            auftrag = f"{sql_ctx}\n\nAufgabe: {beschreibung}" if sql_ctx else f"Aufgabe: {beschreibung}"
+
+            from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
+            sql_params = params_fuer_prompt(len(sql_system) + len(auftrag))
+            svc.timeout = timeout_fuer_prompt(len(sql_system) + len(auftrag), svc.timeout)
+
+            sql_text = _sql_saeubern(await svc.complete_with_context(
+                auftrag, sql_system, params=sql_params))
+            columns, fehler = _sql_pruefen(db, sql_text, body.connection_id, body.canvas_nodes)
+
+            # Reparaturläufe mit der echten Fehlermeldung der Datenbank. Ein
+            # Versuch reicht oft nicht: der zweite Anlauf bekommt zusätzlich das
+            # Schema der bemängelten Tabelle nachgereicht.
+            for versuch in (1, 2):
+                if not fehler:
+                    break
+                yield f"data: {json.dumps({'progress': f'SQL-Fehler, Reparaturversuch {versuch}: {fehler[:110]}'})}\n\n"
+                nachschlag = ""
+                if versuch == 2 and body.connection_id:
+                    conn_obj = ctx._get_conn(body.connection_id)
+                    if conn_obj:
+                        from app.services.ai_context_builder import _schema_fuer_aufgabe
+                        nachschlag = "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {fehler}")
+                reparatur = (
+                    f"{auftrag}{nachschlag}\n\nDieses SQL wurde erzeugt:\n{sql_text}\n\n"
+                    f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
+                    "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und Spalten, "
+                    "die oben im Schema stehen. Antworte NUR mit dem korrigierten SQL."
+                )
+                sql_neu = _sql_saeubern(await svc.complete_with_context(
+                    reparatur, sql_system, params=sql_params))
+                columns_neu, fehler_neu = _sql_pruefen(
+                    db, sql_neu, body.connection_id, body.canvas_nodes)
+                sql_text, columns, fehler = sql_neu, columns_neu, fehler_neu
+
+            n["sql"] = sql_text
+            n["columns"] = columns
+            n["connection_id"] = body.connection_id
+            if fehler:
+                n["sql_error"] = fehler
+
+        print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
+        yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
