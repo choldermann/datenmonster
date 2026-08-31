@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.11",
+  "version": "1.12",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -4198,6 +4198,141 @@
         "show_ai_assistant": true
       },
       "portal_config": {}
+    }
+  ],
+  "knowledge": [
+    {
+      "category": "rule",
+      "title": "JTL – Umsatzbasis & Netto",
+      "content": "Umsatz/Kennzahlen basieren auf View Rechnung.vRechnung (Rechnungsdatum dErstellt) + Rechnung.tRechnungPosition (Join kRechnung). Beträge NETTO (POS.fVkNetto). Nicht Aufträge/Angebote, nicht brutto.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+      "content": "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", \"Kauf\", \"Käufe\", \"letzter Kauf\", \"Kunden die nichts mehr kaufen\", \"schlafende Kunden\", \"Kundenrückgang\", \"Kundenumsatz\". Quelle ist immer Rechnung.vRechnung (Belegdatum dErstellt, Storno ausschließen mit ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag. \"Datum des letzten Kaufs\" = MAX(vRechnung.dErstellt) je Kunde. Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede ist — dort steht der Frühindikator, nicht der Umsatz.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – vRechnung.cFirma = eigene Firma",
+      "content": "In Rechnung.vRechnung ist cFirma die EIGENE (rechnungsstellende) Firma, NICHT der Kunde. Kundenname/Land aus Rechnung.vRechnungRechnungsadresse (Join kRechnung): cFirma bzw. cVorname+cName, cLand, cPLZ.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundennummer, Nachname, Vorname",
+      "content": "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Kundenname: cFirma allein reicht nicht",
+      "content": "cFirma trägt bei vielen Kunden nur eine Gattung – bei PPS steht dort 21.474-mal nur 'Zahnarztpraxis', 'Praxis' oder sogar 'Frau'. Der eigentliche Name steckt im Firmenzusatz. JEDE Kundenabfrage muss beide Felder zusammensetzen: LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END) – die CHARINDEX-Bedingung verhindert 'Zahnarztpraxis Uwe Göselt Uwe Göselt', wenn der Zusatz schon im Firmennamen steht. Das Feld heißt cZusatz in tAdresse/vRechnungRechnungsadresse/vAuftragRechnungsadresse/RM.lvRetoure, aber cFirmenZusatz in dbo.tLieferant. cAdressZusatz ist etwas anderes (Hinterhaus o. ä.) und gehört NICHT in den Namen. Achtung RM.lvRetoure: cFirma ist dort die EIGENE Firma, der Kunde steht in cKundeFirma.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Gesperrte Kunden / inaktive Artikel",
+      "content": "Gesperrte Kunden: dbo.tkunde.cSperre='Y'. Inaktive Artikel: dbo.tArtikel.cAktiv<>'Y' (Y=aktiv). Im GF-Cockpit aus Listen/Rankings gefiltert, aber NICHT aus aggregierten KPI-Summen.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – zentrale Joins",
+      "content": "tRechnungPosition.kRechnung→vRechnung.kRechnung; tRechnungPosition.cArtNr→tArtikel.cArtNr; tArtikelBeschreibung.kArtikel→tArtikel.kArtikel; tlagerbestand.kArtikel→tArtikel.kArtikel; tStueckliste.kVaterArtikel/kArtikel→tArtikel.kArtikel; tArtikel.kWarengruppe→tWarengruppe.kWarengruppe; vRechnungRechnungsadresse.kRechnung→vRechnung.kRechnung.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Artikelbezeichnung",
+      "content": "Artikelname NICHT in dbo.tArtikel, sondern dbo.tArtikelBeschreibung.cName. Join: AB.kArtikel=A.kArtikel AND AB.kSprache=1 AND AB.kPlattform=1 AND AB.kShop=0. tArtikel.cArtNr=Artikelnummer.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "T-SQL – Kein Aggregat über Unterabfrage oder Fensterfunktion",
+      "content": "SQL Server lehnt SUM/AVG über einen Ausdruck ab, der eine Unterabfrage oder eine Fensterfunktion enthält (Fehler 130: 'Eine Aggregatfunktion kann auf einem Ausdruck, der ein Aggregat oder eine Unterabfrage enthält, nicht ausgeführt werden'). Typische Fälle: SUM(CASE WHEN EXISTS(...) THEN 1 END) oder MAX(CASE WHEN d = MAX(d) OVER (...) THEN x END). Lösung: den Ausdruck in einer abgeleiteten Tabelle/CTE als Spalte vorberechnen (z. B. CASE WHEN EXISTS(...) THEN 1 ELSE 0 END AS Flag bzw. ROW_NUMBER() OVER (...) AS rn) und erst in der äußeren Abfrage aggregieren.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Dashboard – Drilldown verdrahten (Schlüsselspalte, Fallen)",
+      "content": "Ein Tabellen-Drilldown braucht config.drilldown = {mapping_id, key_column, param, title, hidden_columns?, levels?[]} und eine SCHLÜSSELSPALTE in der Liste (kKunde, kAuftrag, kLieferant …), die per config.hidden_columns ausgeblendet wird – sie bleibt in den Zeilendaten erhalten und taucht in CSV/E-Mail/PDF nicht auf. Drei Fallen: (1) Die Schlüsselspalte IMMER hinten anhängen, weil manche Listen über Spaltennummern sortieren (ORDER BY 7 DESC). (2) Bei Unterabfragen/CTEs muss der Schlüssel von innen nach außen durchgereicht werden – zwei Stellen. (3) Ist am selben Widget config.ai_action gesetzt, schluckt die KI-Aktion den Zeilenklick; ein zusätzlicher Drilldown wäre tote Konfiguration.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – row_cap hebt hartkodierte TOP-Werte an",
+      "content": "_apply_row_cap deckelt nicht nur, es HEBT ein TOP N im SQL auf row_cap AN. Ein 'SELECT TOP 50' in einem Detail-Mapping ist deshalb nur beratend – der Drilldown-Endpunkt ruft mit row_cap 200 auf und bekommt bis zu 200 Zeilen. Wer wirklich begrenzen will, muss im SQL filtern (WHERE/HAVING), nicht über TOP.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – Ziel ohne Feldliste erzeugt leere Zeilen",
+      "content": "Wird ein Mapping per Skript angelegt und bekommt targets[0].fields nicht gefüllt, liefert execute_mapping zu jeder echten Zeile eine zusätzliche leere ({}). Die Feldliste muss je Ausgabespalte einen Eintrag haben: source_field/target_field = Spaltenname, target_type 'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer {'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe hart auf 50 Zeilen — für vollständige Listen row_cap übergeben.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Prüfbasis für Stammdaten-Checks",
+      "content": "Für Datenqualitäts-Prüfungen auf Artikel gilt als Prüfbasis: ISNULL(nDelete,0)=0 AND ISNULL(cAktiv,'Y')='Y' AND ISNULL(nIstVater,0)=0 – Vater-Artikel tragen selbst keine EAN/Gewichte und würden die Quoten verfälschen. Relevante Felder in dbo.tArtikel: cBarcode (EAN), fGewicht/fArtGewicht, fEKNetto/fVKNetto/fLetzterEK, kWarengruppe, cTaric (Warentarifnummer), cHerkunftsland, cHAN, kHersteller. Artikelname weiterhin aus dbo.tArtikelBeschreibung. Kunden: dbo.tkunde + dbo.tAdresse (nStandard = 1), gesperrt via tkunde.cSperre.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – cHAN ist oft die eigene Artikelnummer, keine Herstellernummer",
+      "content": "In tArtikel.cHAN steht bei vielen Beständen nicht die Nummer des Herstellers, sondern eine Kopie der eigenen cArtNr (gemessen: 1.510 von 2.818 aktiven Artikeln). Für Abgleiche mit Herstellerdaten ist cHAN deshalb nur brauchbar, wenn cHAN <> cArtNr gilt. Bei manchen Herstellern steht dort auch ein Produktname statt einer Nummer (z. B. 'rhenus FY 122 L'), und derselbe cHAN kann mehrere Artikel abdecken (Gebindegrößen, Farben, Konfektionsgrößen).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – Artikelbeschreibungen und ihre Felder",
+      "content": "Beschreibungstexte liegen in dbo.tArtikelBeschreibung: cName (Artikelname), cBeschreibung (Langtext) und cKurzBeschreibung. Join über kArtikel mit kSprache=1, kPlattform=1, kShop=0. In der Praxis enthält cKurzBeschreibung häufig die eigentlichen technischen Daten (Maße, Material, Verpackungsstaffel), während cBeschreibung leer ist — beim Erzeugen von Texten ist die Kurzbeschreibung deshalb die wichtigste Quelle im Artikelstamm.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Lagerbestand kommt aus tlagerbestand, nicht aus tArtikel",
+      "content": "tArtikel.nLagerbestand ist in lagergeführten Beständen durchgehend 0. Der reale Bestand steht in dbo.tlagerbestand und muss je Artikel summiert werden: (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel). Gilt für alle Auswertungen, die nach Bestand priorisieren oder Kapitalbindung rechnen.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Pflichtfelder der Intrastat-Meldung im Artikelstamm",
+      "content": "Eine Intrastat-Meldezeile braucht drei Angaben aus dbo.tArtikel: cTaric (achtstellige Warennummer der Kombinierten Nomenklatur), cHerkunftsland (Ursprungsland, seit 2022 auch bei der Versendung Pflicht) und das Gewicht als Eigenmasse — dabei fGewicht prüfen und auf fArtGewicht ausweichen, denn gepflegt ist mal das eine, mal das andere. Fehlt eines davon, ist die Zeile nicht meldefähig. Artikel mit cHerkunftsland NOT IN ('', 'DE') sind die vorrangigen Kandidaten für die Pflege.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Vater/Kind-Artikel via Stückliste",
+      "content": "Varianten (Palette↔Einzel) hängen an STÜCKLISTEN, NICHT an tArtikel.kVaterArtikel/nIstVater (hier 0/ungenutzt!). Vaterartikel: tArtikel.kStueckliste>0. dbo.tStueckliste (Key kStueckliste): kArtikel=Komponente(Kind), fAnzahl, kVaterArtikel=Rückverweis auf Vaterartikel. Bsp: 100283P(Palette,inaktiv)→Komponente 100283(aktiv).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Wo der Verkaufspreis steht (vier Ebenen)",
+      "content": "Es gibt KEINEN einzelnen Preis je Artikel. Der gültige Nettopreis entsteht aus vier Ebenen: (1) dbo.tArtikel.fVKNetto als Grundpreis/Fallback, (2) dbo.tPreis (Kopf: kArtikel, kKundenGruppe, kShop, kKunde) + dbo.tPreisDetail (Beträge: nAnzahlAb, fNettoPreis) als Gruppen-/Kundenpreis, (3) dbo.tPreisDetail.nAnzahlAb > 0 als Mengenstaffel, (4) dbo.tArtikelSonderpreis + dbo.tSonderpreise als befristete Aktion. Konventionen: kShop = 0 gilt für alle Kanäle, kShop > 0 überschreibt ihn; kKunde > 0 (mit kKundenGruppe = 0) ist ein individueller Kundenpreis; nAnzahlAb = 0 ist der Festpreis der Gruppe. fProzent und nProzentualePreisStaffelAktiv sind unbenutzt. Alle Preistabellen führen NETTO; Brutto über tArtikel.kSteuerklasse -> dbo.tSteuersatz (Inland: Klasse 1 = 19 %, 2 = 7 %, 3 = 0 %).",
+      "always_include": false,
+      "scope": "global"
     }
   ]
 }

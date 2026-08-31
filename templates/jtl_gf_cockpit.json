@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.13",
+  "version": "2.14",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12696,6 +12696,127 @@
       "action_kind": null,
       "active": true,
       "sort": 92
+    }
+  ],
+  "knowledge": [
+    {
+      "category": "rule",
+      "title": "JTL – Umsatzbasis & Netto",
+      "content": "Umsatz/Kennzahlen basieren auf View Rechnung.vRechnung (Rechnungsdatum dErstellt) + Rechnung.tRechnungPosition (Join kRechnung). Beträge NETTO (POS.fVkNetto). Nicht Aufträge/Angebote, nicht brutto.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+      "content": "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", \"Kauf\", \"Käufe\", \"letzter Kauf\", \"Kunden die nichts mehr kaufen\", \"schlafende Kunden\", \"Kundenrückgang\", \"Kundenumsatz\". Quelle ist immer Rechnung.vRechnung (Belegdatum dErstellt, Storno ausschließen mit ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag. \"Datum des letzten Kaufs\" = MAX(vRechnung.dErstellt) je Kunde. Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede ist — dort steht der Frühindikator, nicht der Umsatz.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – vRechnung.cFirma = eigene Firma",
+      "content": "In Rechnung.vRechnung ist cFirma die EIGENE (rechnungsstellende) Firma, NICHT der Kunde. Kundenname/Land aus Rechnung.vRechnungRechnungsadresse (Join kRechnung): cFirma bzw. cVorname+cName, cLand, cPLZ.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundennummer, Nachname, Vorname",
+      "content": "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Kundenname: cFirma allein reicht nicht",
+      "content": "cFirma trägt bei vielen Kunden nur eine Gattung – bei PPS steht dort 21.474-mal nur 'Zahnarztpraxis', 'Praxis' oder sogar 'Frau'. Der eigentliche Name steckt im Firmenzusatz. JEDE Kundenabfrage muss beide Felder zusammensetzen: LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END) – die CHARINDEX-Bedingung verhindert 'Zahnarztpraxis Uwe Göselt Uwe Göselt', wenn der Zusatz schon im Firmennamen steht. Das Feld heißt cZusatz in tAdresse/vRechnungRechnungsadresse/vAuftragRechnungsadresse/RM.lvRetoure, aber cFirmenZusatz in dbo.tLieferant. cAdressZusatz ist etwas anderes (Hinterhaus o. ä.) und gehört NICHT in den Namen. Achtung RM.lvRetoure: cFirma ist dort die EIGENE Firma, der Kunde steht in cKundeFirma.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Gesperrte Kunden / inaktive Artikel",
+      "content": "Gesperrte Kunden: dbo.tkunde.cSperre='Y'. Inaktive Artikel: dbo.tArtikel.cAktiv<>'Y' (Y=aktiv). Im GF-Cockpit aus Listen/Rankings gefiltert, aber NICHT aus aggregierten KPI-Summen.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – zentrale Joins",
+      "content": "tRechnungPosition.kRechnung→vRechnung.kRechnung; tRechnungPosition.cArtNr→tArtikel.cArtNr; tArtikelBeschreibung.kArtikel→tArtikel.kArtikel; tlagerbestand.kArtikel→tArtikel.kArtikel; tStueckliste.kVaterArtikel/kArtikel→tArtikel.kArtikel; tArtikel.kWarengruppe→tWarengruppe.kWarengruppe; vRechnungRechnungsadresse.kRechnung→vRechnung.kRechnung.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Artikelbezeichnung",
+      "content": "Artikelname NICHT in dbo.tArtikel, sondern dbo.tArtikelBeschreibung.cName. Join: AB.kArtikel=A.kArtikel AND AB.kSprache=1 AND AB.kPlattform=1 AND AB.kShop=0. tArtikel.cArtNr=Artikelnummer.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "T-SQL – Kein Aggregat über Unterabfrage oder Fensterfunktion",
+      "content": "SQL Server lehnt SUM/AVG über einen Ausdruck ab, der eine Unterabfrage oder eine Fensterfunktion enthält (Fehler 130: 'Eine Aggregatfunktion kann auf einem Ausdruck, der ein Aggregat oder eine Unterabfrage enthält, nicht ausgeführt werden'). Typische Fälle: SUM(CASE WHEN EXISTS(...) THEN 1 END) oder MAX(CASE WHEN d = MAX(d) OVER (...) THEN x END). Lösung: den Ausdruck in einer abgeleiteten Tabelle/CTE als Spalte vorberechnen (z. B. CASE WHEN EXISTS(...) THEN 1 ELSE 0 END AS Flag bzw. ROW_NUMBER() OVER (...) AS rn) und erst in der äußeren Abfrage aggregieren.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Dashboard – Drilldown verdrahten (Schlüsselspalte, Fallen)",
+      "content": "Ein Tabellen-Drilldown braucht config.drilldown = {mapping_id, key_column, param, title, hidden_columns?, levels?[]} und eine SCHLÜSSELSPALTE in der Liste (kKunde, kAuftrag, kLieferant …), die per config.hidden_columns ausgeblendet wird – sie bleibt in den Zeilendaten erhalten und taucht in CSV/E-Mail/PDF nicht auf. Drei Fallen: (1) Die Schlüsselspalte IMMER hinten anhängen, weil manche Listen über Spaltennummern sortieren (ORDER BY 7 DESC). (2) Bei Unterabfragen/CTEs muss der Schlüssel von innen nach außen durchgereicht werden – zwei Stellen. (3) Ist am selben Widget config.ai_action gesetzt, schluckt die KI-Aktion den Zeilenklick; ein zusätzlicher Drilldown wäre tote Konfiguration.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – row_cap hebt hartkodierte TOP-Werte an",
+      "content": "_apply_row_cap deckelt nicht nur, es HEBT ein TOP N im SQL auf row_cap AN. Ein 'SELECT TOP 50' in einem Detail-Mapping ist deshalb nur beratend – der Drilldown-Endpunkt ruft mit row_cap 200 auf und bekommt bis zu 200 Zeilen. Wer wirklich begrenzen will, muss im SQL filtern (WHERE/HAVING), nicht über TOP.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – Ziel ohne Feldliste erzeugt leere Zeilen",
+      "content": "Wird ein Mapping per Skript angelegt und bekommt targets[0].fields nicht gefüllt, liefert execute_mapping zu jeder echten Zeile eine zusätzliche leere ({}). Die Feldliste muss je Ausgabespalte einen Eintrag haben: source_field/target_field = Spaltenname, target_type 'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer {'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe hart auf 50 Zeilen — für vollständige Listen row_cap übergeben.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – EK/VK & Deckungsbeitrag",
+      "content": "Preise tArtikel.fEKNetto(EK)/fVKNetto(VK). Hist. EK je Position: tRechnungPosition.fEkNetto (Fallback tArtikel.fEKNetto wenn 0/NULL). DB I = Umsatz − Wareneinsatz. Positionstyp nType: 1=Artikel, 2=Versand (DB II = DB I + Versandergebnis).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Lagerbestand & Kapitalbindung",
+      "content": "Lagerbestand dbo.tlagerbestand.fLagerbestand, je kArtikel summieren (mehrere Lager). Kapitalbindung = SUM(fLagerbestand)*tArtikel.fEKNetto.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Bundesland aus PLZ",
+      "content": "cBundesland meist leer. Bundesland aus LEFT(cPLZ,2) per CASE ableiten (deutsche PLZ-Zonen).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Plattform & Warengruppe",
+      "content": "Warengruppe dbo.tWarengruppe (kWarengruppe), Join tArtikel.kWarengruppe. Plattform/Kanal dbo.tPlattform.nTyp; vRechnung.kPlattform (Shop/Amazon/eBay über nTyp filterbar).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "KI-Handlungsempfehlung: Kandidaten aus dem SQL vorgeben",
+      "content": "Bei KI-Empfehlungen zu Regionen/Kunden immer die konkreten Namen (Betrieb, Ort, Rückgangsbetrag) als fertige Liste aus dem SQL mitgeben – z. B. per FOR XML PATH aggregiert – und dem Modell verbieten, Namen zu erfinden. Alle Kennzahlen werden serverseitig deterministisch berechnet (/api/ai/recommend-action, Arten customer_winback / article_liquidation / region_potential) und als meta-Event vorab gesendet; das Modell formuliert nur die Prosa.",
+      "always_include": false,
+      "scope": "global"
     }
   ]
 }

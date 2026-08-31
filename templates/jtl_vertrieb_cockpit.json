@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.8",
+  "version": "1.9",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -5403,6 +5403,155 @@
         "show_ai_assistant": true
       },
       "portal_config": {}
+    }
+  ],
+  "knowledge": [
+    {
+      "category": "rule",
+      "title": "JTL – Umsatzbasis & Netto",
+      "content": "Umsatz/Kennzahlen basieren auf View Rechnung.vRechnung (Rechnungsdatum dErstellt) + Rechnung.tRechnungPosition (Join kRechnung). Beträge NETTO (POS.fVkNetto). Nicht Aufträge/Angebote, nicht brutto.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+      "content": "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", \"Kauf\", \"Käufe\", \"letzter Kauf\", \"Kunden die nichts mehr kaufen\", \"schlafende Kunden\", \"Kundenrückgang\", \"Kundenumsatz\". Quelle ist immer Rechnung.vRechnung (Belegdatum dErstellt, Storno ausschließen mit ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag. \"Datum des letzten Kaufs\" = MAX(vRechnung.dErstellt) je Kunde. Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede ist — dort steht der Frühindikator, nicht der Umsatz.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – vRechnung.cFirma = eigene Firma",
+      "content": "In Rechnung.vRechnung ist cFirma die EIGENE (rechnungsstellende) Firma, NICHT der Kunde. Kundenname/Land aus Rechnung.vRechnungRechnungsadresse (Join kRechnung): cFirma bzw. cVorname+cName, cLand, cPLZ.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundennummer, Nachname, Vorname",
+      "content": "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Kundenname: cFirma allein reicht nicht",
+      "content": "cFirma trägt bei vielen Kunden nur eine Gattung – bei PPS steht dort 21.474-mal nur 'Zahnarztpraxis', 'Praxis' oder sogar 'Frau'. Der eigentliche Name steckt im Firmenzusatz. JEDE Kundenabfrage muss beide Felder zusammensetzen: LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END) – die CHARINDEX-Bedingung verhindert 'Zahnarztpraxis Uwe Göselt Uwe Göselt', wenn der Zusatz schon im Firmennamen steht. Das Feld heißt cZusatz in tAdresse/vRechnungRechnungsadresse/vAuftragRechnungsadresse/RM.lvRetoure, aber cFirmenZusatz in dbo.tLieferant. cAdressZusatz ist etwas anderes (Hinterhaus o. ä.) und gehört NICHT in den Namen. Achtung RM.lvRetoure: cFirma ist dort die EIGENE Firma, der Kunde steht in cKundeFirma.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Gesperrte Kunden / inaktive Artikel",
+      "content": "Gesperrte Kunden: dbo.tkunde.cSperre='Y'. Inaktive Artikel: dbo.tArtikel.cAktiv<>'Y' (Y=aktiv). Im GF-Cockpit aus Listen/Rankings gefiltert, aber NICHT aus aggregierten KPI-Summen.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – zentrale Joins",
+      "content": "tRechnungPosition.kRechnung→vRechnung.kRechnung; tRechnungPosition.cArtNr→tArtikel.cArtNr; tArtikelBeschreibung.kArtikel→tArtikel.kArtikel; tlagerbestand.kArtikel→tArtikel.kArtikel; tStueckliste.kVaterArtikel/kArtikel→tArtikel.kArtikel; tArtikel.kWarengruppe→tWarengruppe.kWarengruppe; vRechnungRechnungsadresse.kRechnung→vRechnung.kRechnung.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Artikelbezeichnung",
+      "content": "Artikelname NICHT in dbo.tArtikel, sondern dbo.tArtikelBeschreibung.cName. Join: AB.kArtikel=A.kArtikel AND AB.kSprache=1 AND AB.kPlattform=1 AND AB.kShop=0. tArtikel.cArtNr=Artikelnummer.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "T-SQL – Kein Aggregat über Unterabfrage oder Fensterfunktion",
+      "content": "SQL Server lehnt SUM/AVG über einen Ausdruck ab, der eine Unterabfrage oder eine Fensterfunktion enthält (Fehler 130: 'Eine Aggregatfunktion kann auf einem Ausdruck, der ein Aggregat oder eine Unterabfrage enthält, nicht ausgeführt werden'). Typische Fälle: SUM(CASE WHEN EXISTS(...) THEN 1 END) oder MAX(CASE WHEN d = MAX(d) OVER (...) THEN x END). Lösung: den Ausdruck in einer abgeleiteten Tabelle/CTE als Spalte vorberechnen (z. B. CASE WHEN EXISTS(...) THEN 1 ELSE 0 END AS Flag bzw. ROW_NUMBER() OVER (...) AS rn) und erst in der äußeren Abfrage aggregieren.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Dashboard – Drilldown verdrahten (Schlüsselspalte, Fallen)",
+      "content": "Ein Tabellen-Drilldown braucht config.drilldown = {mapping_id, key_column, param, title, hidden_columns?, levels?[]} und eine SCHLÜSSELSPALTE in der Liste (kKunde, kAuftrag, kLieferant …), die per config.hidden_columns ausgeblendet wird – sie bleibt in den Zeilendaten erhalten und taucht in CSV/E-Mail/PDF nicht auf. Drei Fallen: (1) Die Schlüsselspalte IMMER hinten anhängen, weil manche Listen über Spaltennummern sortieren (ORDER BY 7 DESC). (2) Bei Unterabfragen/CTEs muss der Schlüssel von innen nach außen durchgereicht werden – zwei Stellen. (3) Ist am selben Widget config.ai_action gesetzt, schluckt die KI-Aktion den Zeilenklick; ein zusätzlicher Drilldown wäre tote Konfiguration.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – row_cap hebt hartkodierte TOP-Werte an",
+      "content": "_apply_row_cap deckelt nicht nur, es HEBT ein TOP N im SQL auf row_cap AN. Ein 'SELECT TOP 50' in einem Detail-Mapping ist deshalb nur beratend – der Drilldown-Endpunkt ruft mit row_cap 200 auf und bekommt bis zu 200 Zeilen. Wer wirklich begrenzen will, muss im SQL filtern (WHERE/HAVING), nicht über TOP.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – Ziel ohne Feldliste erzeugt leere Zeilen",
+      "content": "Wird ein Mapping per Skript angelegt und bekommt targets[0].fields nicht gefüllt, liefert execute_mapping zu jeder echten Zeile eine zusätzliche leere ({}). Die Feldliste muss je Ausgabespalte einen Eintrag haben: source_field/target_field = Spaltenname, target_type 'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer {'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe hart auf 50 Zeilen — für vollständige Listen row_cap übergeben.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Aufträge und Angebote (Verkauf.tAuftrag)",
+      "content": "Aufträge UND Angebote liegen in derselben Tabelle Verkauf.tAuftrag, unterschieden über nType: 0 = Angebot (Nummernkreis ANG-), 1 = Auftrag (AUF-). Immer auf nType filtern, sonst mischen sich beide. Storno: nStorno (bit) – für Auftragseingang nStorno = 0 verlangen. Weitere Merker: nKomplettAusgeliefert (offene Aufträge), dVoraussichtlichesLieferdatum (Liefertermin), kPlattform (Verkaufskanal). Auftragseingang ist der Frühindikator VOR der Rechnung – für Vertriebsauswertungen besser geeignet als Rechnungsumsatz.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Auftragswerte aus Verkauf.tAuftragEckdaten",
+      "content": "Werte eines Auftrags NICHT aus den Positionen summieren, sondern aus Verkauf.tAuftragEckdaten (Join kAuftrag): fWertNetto / fWertBrutto (Auftragswert), fOffenerWert (das ist der offene ZAHLBETRAG, nicht die offene Lieferung), nLieferstatus (Werte siehe eigenen Eintrag – die Legende 5/3/0 war falsch), nAnzahlPakete, dBezahlt. Positionen (Verkauf.tAuftragPosition, nType = 1 für Artikelpositionen) nur für Artikel-/Mengenauswertungen verwenden.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Keine Verknüpfung Angebot → Auftrag",
+      "content": "Es gibt in der JTL-DB KEINE Verknüpfung zwischen Angebot und daraus entstandenem Auftrag: kAuftragQuelle ist praktisch immer NULL, die Nummernkreise ANG-/AUF- sind getrennt, und ein gewandeltes Angebot behält seine ANG-Nummer nicht. Eine Angebots-Conversion kann deshalb nur als HEURISTIK berechnet werden (z. B. Auftrag desselben Kunden binnen 60 Tagen nach Angebotsdatum) – und muss im Widget als Näherung gekennzeichnet werden.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundenname bei Aufträgen",
+      "content": "Kundenname zu einem Auftrag über die View Verkauf.vAuftragRechnungsadresse (Join kAuftrag): cFirma, sonst cVorname + cName. Analog zu Rechnung.vRechnungRechnungsadresse bei Rechnungen. dbo.tkunde enthält KEINE Namensfelder – die stehen in dbo.tAdresse (nStandard = 1 für die Standardadresse, dort auch cMail, cTel, cUSTID).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Offene Aufträge: welche Statusfelder wirklich zählen",
+      "content": "Ein Auftrag ist offen bei Verkauf.tAuftrag.nType = 1 AND nStorno = 0 AND nKomplettAusgeliefert = 0. nStorno ist verlässlich – Verkauf.tAuftragStorno enthält keine Stornos, die im Auftrag nicht markiert wären. ABER: kVorgangsstatus = 2 sind MUSTER-Vorgänge (siehe Verkauf.tVorgangsstatus), die mit Auftragswert 0,00 in jeder Bestandsliste mitzählen – bei PPS 53 von 260. Filter: AND ISNULL(A.kVorgangsstatus, 1) <> 2 (NULL muss drin bleiben). nKomplettAusgeliefert hat auch den Wert 2 (versendet, Sonderfall). Ohne Zeitgrenze besteht der Bestand fast nur aus Karteileichen: bei PPS sind nur 9 von 260 offenen Aufträgen jünger als 30 Tage, 141 sind 1–3 Jahre alt. Laufend/Altbestand immer trennen, und „überfällig\" nur auf Liefertermine der letzten 12 Monate rechnen – sonst meldet die Warnung ewig dieselben Altfälle.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – tAuftragEckdaten: fOffenerWert ist ZAHLUNG, nicht Lieferung",
+      "content": "Verkauf.tAuftragEckdaten.fOffenerWert = fWertBrutto - fZahlung - fGutschrift (geprüft: stimmt bei 16.946 von 16.946 Aufträgen). Das ist der offene ZAHLBETRAG. Der offene LIEFERwert kommt aus Verkauf.tAuftragPositionEckdaten.fAnzahlOffen * tAuftragPosition.fVkNetto. In einer Liste „Offene Aufträge\" die beiden nie verwechseln.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – nLieferstatus: die echten Werte",
+      "content": "Verkauf.tAuftragEckdaten.nLieferstatus (aus den Daten abgeleitet über Versanddatum + Anteil gelieferter Menge): 1 = nichts geliefert, 2 = teilgeliefert/nicht versendet, 3 = komplett kommissioniert/nicht versendet, 4 = teilversendet, 5 = komplett versendet, 6 = komplett geliefert, 7 = abgeschlossen (Sonderfall, nKomplettAusgeliefert = 2). Den Wert 0 gibt es NICHT, und 3 heißt NICHT „teilgeliefert\". In offenen Aufträgen kommen nur 1, 2 und 4 vor.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Bundesland aus PLZ herleiten (Vertriebsregionen)",
+      "content": "JTL füllt cBundesland in den Adressen nicht – das Bundesland muss aus LEFT(cPLZ,2) über eine CASE-Klassifikation hergeleitet werden (Referenz: Mappings 'Cockpit – Umsatz nach Region' und 'Vertrieb – Auftragseingang je Bundesland', identische Zuordnung verwenden, damit Auswertungen vergleichbar bleiben). Vorher auf Inland prüfen (UPPER(cLand) IN ('','DE','D','DEU','DEUTSCHLAND','GERMANY')), sonst '(Ausland)'. Adressquelle: Verkauf.vAuftragRechnungsadresse bzw. Rechnung.vRechnungRechnungsadresse.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Vertrieb – Marktdurchdringung je Bundesland",
+      "content": "Schwachstellen in Regionen erkennt man über den Vergleich Umsatzanteil zu Bevölkerungsanteil des Bundeslands (Einwohneranteile fest hinterlegt, Destatis 2024). Marktdurchdringung = Umsatzanteil / Bevölkerungsanteil: 1,0 = so stark vertreten wie die Region groß ist, unter 0,8 unterrepräsentiert, unter 0,5 deutlich unterrepräsentiert. Zusatzpotenzial = (Bevölkerungsanteil − Umsatzanteil)/100 × Inlandsumsatz. WICHTIG: Das ist ein FAKTOR, kein Prozentwert – in KI-Prompts ausdrücklich erklären, sonst formulieren Modelle '0,2 Prozent Marktdurchdringung'. Die Kennzahl ist eine Orientierung, kein echter Marktanteil (Branchenschwerpunkte weichen regional ab).",
+      "always_include": false,
+      "scope": "global"
     }
   ]
 }
