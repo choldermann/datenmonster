@@ -37,8 +37,8 @@
   },
   {
     "category": "table",
-    "title": "JTL – Vater/Kind-Artikel via Stückliste",
-    "content": "Varianten (Palette↔Einzel) hängen an STÜCKLISTEN, NICHT an tArtikel.kVaterArtikel/nIstVater (hier 0/ungenutzt!). Vaterartikel: tArtikel.kStueckliste>0. dbo.tStueckliste (Key kStueckliste): kArtikel=Komponente(Kind), fAnzahl, kVaterArtikel=Rückverweis auf Vaterartikel. Bsp: 100283P(Palette,inaktiv)→Komponente 100283(aktiv).",
+    "title": "JTL – Vater/Kind-Artikel: zwei verschiedene Mechanismen",
+    "content": "JTL kennt ZWEI Arten von Vater/Kind, und welche benutzt wird, hängt am Mandanten – nie pauschal annehmen, immer erst zählen (SELECT COUNT(*) FROM dbo.tArtikel WHERE nIstVater = 1). (1) VARIATIONEN über dbo.tArtikel: nIstVater = 1 markiert den Vater, kVaterArtikel <> 0 das Kind. Bei PPS: 212 Väter, 1447 Kinder. Bei HaKo: keine. (2) STÜCKLISTEN (Palette↔Einzel) über tArtikel.kStueckliste > 0 und dbo.tStueckliste (kArtikel = Komponente/Kind, fAnzahl, kVaterArtikel = Rückverweis). Bsp. HaKo: 100283P (Palette, inaktiv) → Komponente 100283 (aktiv). Die beiden haben nichts miteinander zu tun.",
     "always_include": false
   },
   {
@@ -304,5 +304,12 @@
     "title": "JTL – Kundennummer, Nachname, Vorname",
     "content": "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.",
     "always_include": true
+  },
+  {
+    "category": "rule",
+    "title": "JTL – Vaterartikel doppeln den Lagerbestand",
+    "content": "Ein Variations-Vater (dbo.tArtikel.nIstVater = 1) führt in dbo.tlagerbestand den SUMMIERTEN Bestand seiner Kinder – geprüft bei PPS: bei allen 115 Vätern mit Bestand stimmt der Vaterbestand exakt mit der Summe der Kinder überein. Er ist also eine Aggregatzeile, kein eigener Bestand. Jede Abfrage, die Bestand oder Kapitalbindung SUMMIERT oder Artikel nach Bestand auflistet, muss ihn ausschließen: AND ISNULL(A.nIstVater, 0) = 0. Ohne den Filter war die Kapitalbindung im GF-Cockpit bei PPS 1.797.470 € statt 1.008.729 € – 78 % zu hoch. Nicht filtern dagegen bei: Auswertungen über Rechnungspositionen (Väter kommen dort nie vor, geprüft: 0 Treffer), Pflege-/To-do-Listen wie fehlende Beschreibungen (die werden am Vater gepflegt, 189 von 212 haben eine) und Drilldowns auf einen einzelnen Artikel.",
+    "always_include": false,
+    "scope": "global"
   }
 ]

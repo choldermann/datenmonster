@@ -35,7 +35,9 @@ TEMPLATE_ORDNER = WURZEL / "templates"
 COCKPIT_ZUSATZ = {
     # Was ein Cockpit über die Grundregeln hinaus zwingend braucht, weil seine
     # eigenen Auswertungen sonst falsch erklärt werden.
-    "jtl_lager_cockpit":   ['JTL – Lagerbestand kommt aus tlagerbestand, nicht aus tArtikel'],
+    "jtl_gf_cockpit":      ['JTL – Vaterartikel doppeln den Lagerbestand'],
+    "jtl_lager_cockpit":   ['JTL – Lagerbestand kommt aus tlagerbestand, nicht aus tArtikel',
+                            'JTL – Vaterartikel doppeln den Lagerbestand'],
     "jtl_vertrieb_cockpit": ['JTL – Aufträge und Angebote (Verkauf.tAuftrag)'],
     "jtl_einkauf_cockpit":  ['JTL – Offene Bestellungen: nStatus ist unbrauchbar'],
     "jtl_monitor":          ['KI-Handlungsempfehlung: Kandidaten aus dem SQL vorgeben'],

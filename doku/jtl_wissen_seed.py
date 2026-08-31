@@ -359,6 +359,19 @@ EINTRAEGE = [
      "von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede "
      "ist — dort steht der Frühindikator, nicht der Umsatz.", True),
 
+    ("rule", "JTL – Vaterartikel doppeln den Lagerbestand",
+     "Ein Variations-Vater (dbo.tArtikel.nIstVater = 1) führt in dbo.tlagerbestand den "
+     "SUMMIERTEN Bestand seiner Kinder – geprüft bei PPS: bei allen 115 Vätern mit Bestand "
+     "stimmt der Vaterbestand exakt mit der Summe der Kinder überein. Er ist also eine "
+     "Aggregatzeile, kein eigener Bestand. Jede Abfrage, die Bestand oder Kapitalbindung "
+     "SUMMIERT oder Artikel nach Bestand auflistet, muss ihn ausschließen: "
+     "AND ISNULL(A.nIstVater, 0) = 0. Ohne den Filter war die Kapitalbindung im GF-Cockpit "
+     "bei PPS 1.797.470 € statt 1.008.729 € – 78 % zu hoch. "
+     "Nicht filtern dagegen bei: Auswertungen über Rechnungspositionen (Väter kommen dort "
+     "nie vor, geprüft: 0 Treffer), Pflege-/To-do-Listen wie fehlende Beschreibungen "
+     "(die werden am Vater gepflegt, 189 von 212 haben eine) und Drilldowns auf einen "
+     "einzelnen Artikel."),
+
     ("field_mapping", "JTL – Kundennummer, Nachname, Vorname",
      "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen "
      "wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt "
