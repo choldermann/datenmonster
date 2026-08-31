@@ -386,6 +386,18 @@ EINTRAEGE = [
      "cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — "
      "dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). "
      "Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.", True),
+
+    ("rule", "JTL – Schnittstellen-Schemata gehören nicht in Auswertungen",
+     "Die JTL-Datenbank enthält neben den Belegtabellen mehrere Schemata für den "
+     "Datenaustausch und für Altlasten: DbeS (Abgleich mit Shop/Worker), DEPRECATED, "
+     "Sync. Deren Tabellen tragen FREMDE Nummernkreise – DbeS.tRechnungadresse etwa "
+     "hängt an kInetBestellung (Shop-Bestellung), nicht an kRechnung – und sind in "
+     "vielen Installationen schlicht leer. Ein Join von einer Belegtabelle dorthin "
+     "läuft ohne Fehlermeldung durch und liefert null Zeilen. Für Auswertungen immer "
+     "die Views der Fachschemata verwenden: Rechnung.*, Verkauf.*, Einkauf.*, "
+     "Statistik.*, dbo.*. Adressdaten zu einer Rechnung (cPLZ, cOrt, cLand, cStrasse) "
+     "kommen aus Rechnung.vRechnungRechnungsadresse über kRechnung, die Lieferanschrift "
+     "aus Rechnung.vRechnungLieferadresse.", True),
 ]
 
 db = SessionLocal()

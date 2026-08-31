@@ -1134,7 +1134,12 @@ export default function FloatingAIAssistant() {
               )}
 
               {/* Vorschau-Modus */}
-              {genMode === "preview" && genResult && (
+              {genMode === "preview" && genResult && (() => {
+                // Ein Node, der abgelehnt wurde oder im Probelauf leer blieb, darf
+                // nicht mit einem beiläufigen Klick ins Mapping wandern.
+                const hatBefund = genResult.nodes.some(
+                  (x: any) => x.sql_error || x.sql_leer);
+                return (
                 <>
                   {genResult.explanation && (
                     <div style={{
@@ -1184,6 +1189,14 @@ export default function FloatingAIAssistant() {
                               <br />Der Node wird trotzdem angelegt – SQL im Editor korrigieren.
                             </div>
                           )}
+                          {node.sql_leer && (
+                            <div style={{ marginTop: 5, fontSize: 10, color: "#e0a070", lineHeight: 1.45 }}>
+                              ⚠ Diese Abfrage läuft fehlerfrei, liefert im Probelauf aber
+                              <b> keine einzige Zeile</b>. Meist stimmt eine JOIN-Bedingung nicht
+                              (zwei Schlüssel, die nicht zusammengehören) oder der Filter ist zu eng.
+                              <br />Bitte vor dem Übernehmen prüfen.
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -1193,13 +1206,15 @@ export default function FloatingAIAssistant() {
                       onClick={handleApplyNodes}
                       style={{
                         flex: 1, padding: "9px 8px",
-                        borderRadius: 8, border: "none",
-                        backgroundColor: ACCENT, color: "#111",
+                        borderRadius: 8,
+                        border: hatBefund ? "1px solid #e0a070" : "none",
+                        backgroundColor: hatBefund ? "transparent" : ACCENT,
+                        color: hatBefund ? "#e0a070" : "#111",
                         fontSize: 12, fontWeight: 700, cursor: "pointer",
                         display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                       }}
                     >
-                      <Check size={13} /> Übernehmen
+                      <Check size={13} /> {hatBefund ? "Trotzdem übernehmen" : "Übernehmen"}
                     </button>
                     <button
                       onClick={() => { setGenMode("input"); setGenResult(null); setGenTokens(""); setGenProgress(""); }}
@@ -1234,7 +1249,8 @@ export default function FloatingAIAssistant() {
                     </button>
                   )}
                 </>
-              )}
+                );
+              })()}
             </div>
           )}
 

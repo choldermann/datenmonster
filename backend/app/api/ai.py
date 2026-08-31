@@ -2361,29 +2361,95 @@ def _sql_saeubern(text: str) -> str:
     return t.strip().rstrip(";").strip()
 
 
+def _tabellen_aus_sql(sql_text: str) -> list[str]:
+    """Tabellennamen hinter FROM/JOIN einsammeln (grob, aber gut genug für eine
+    Leer-Diagnose). Unterabfragen und Aliase bleiben außen vor."""
+    import re as _re
+    namen = _re.findall(
+        r"\b(?:FROM|JOIN)\s+((?:\[?[A-Za-z_][\w]*\]?\.){0,2}\[?[A-Za-z_][\w]*\]?)",
+        sql_text or "", _re.IGNORECASE)
+    raus, gesehen = [], set()
+    for n in namen:
+        n = n.strip()
+        if n.lower() in ("select", "(") or n.lower() in gesehen:
+            continue
+        gesehen.add(n.lower())
+        raus.append(n)
+    return raus[:8]
+
+
+def _leer_diagnose(con, sql_text: str) -> str:
+    """Warum liefert eine syntaktisch gültige Abfrage keine Zeile? Zählt die
+    beteiligten Tabellen einzeln. Eine leere Tabelle ist eine andere Geschichte
+    als ein Join, der ins Leere greift – und das Modell braucht diesen
+    Unterschied, sonst repariert es an der falschen Stelle."""
+    import sqlalchemy as _sa
+    zeilen = []
+    leer_dabei = False
+    for tab in _tabellen_aus_sql(sql_text):
+        try:
+            n = con.execute(_sa.text(f"SELECT COUNT(*) FROM {tab}")).scalar()
+        except Exception:
+            continue
+        zeilen.append(f"  {tab}: {n} Zeilen")
+        if not n:
+            leer_dabei = True
+    if not zeilen:
+        return ""
+    kopf = ("Eine der beteiligten Tabellen ist selbst leer:"
+            if leer_dabei else
+            "Alle beteiligten Tabellen sind gefüllt – es liegt also an einer "
+            "JOIN-Bedingung (verknüpfte Schlüssel passen nicht zusammen) oder "
+            "am WHERE-Filter:")
+    return kopf + "\n" + "\n".join(zeilen)
+
+
 def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
-                 canvas_nodes: list[dict] | None = None) -> tuple[list[str], Optional[str]]:
-    """Führt die Abfrage ohne Zeilen aus und liefert (Spalten, Fehlermeldung).
+                 canvas_nodes: list[dict] | None = None) -> tuple[list[str], Optional[str], Optional[str]]:
+    """Führt die Abfrage aus und liefert (Spalten, Fehlermeldung, Leer-Befund).
 
     Anders als /api/mappings/sql-schema wird hier NICHT auf ein Regex-Raten
     zurückgefallen: der Bauplan soll wissen, ob das SQL wirklich läuft.
+
+    Geprüft wird zweierlei. Erstens, ob die Datenbank die Abfrage annimmt –
+    das fängt erfundene Tabellen und Spalten. Zweitens, ob wirklich Zeilen
+    herauskommen: eine Abfrage kann fehlerfrei durchlaufen und trotzdem nichts
+    liefern, weil ein Join auf einen Schlüssel zeigt, der nie zusammenpasst.
+    Genau dieser Fall sah für die alte Prüfung (SELECT TOP 0) aus wie ein
+    Erfolg, und der leere Node landete unbemerkt im Mapping.
     """
     if not sql_text:
-        return [], "Kein SQL erzeugt"
+        return [], "Kein SQL erzeugt", None
     try:
         import sqlalchemy as _sa
         import re as _re
+        # Platzhalter durch NULL ersetzen, damit die Probe läuft. Damit wird die
+        # Zeilenzahl aber wertlos: :von/:bis sind dann NULL und jeder Vergleich
+        # darauf ist unbekannt, die Abfrage MUSS leer bleiben. Also nur bei
+        # parameterlosem SQL über leere Ergebnisse urteilen.
+        hat_parameter = bool(_re.search(r":[a-zA-Z_][a-zA-Z0-9_]*", sql_text))
         probe = _re.sub(r":([a-zA-Z_][a-zA-Z0-9_]*)", "NULL", sql_text)
         if connection_id:
             from app.services.mapping_service import _get_sql_engine
             engine = _get_sql_engine(connection_id)
+            grenze = ("SELECT TOP 5 * FROM ({q}) __q" if engine.dialect.name == "mssql"
+                      else "SELECT * FROM ({q}) __q LIMIT 5")
             with engine.connect() as con:
-                try:
-                    res = con.execute(_sa.text(f"SELECT TOP 0 * FROM ({probe}) __q"))
+                try:            # Probelauf soll keine Minuten fressen
+                    con.connection.timeout = 30
                 except Exception:
-                    res = con.execute(_sa.text(f"SELECT * FROM ({probe}) __q WHERE 1=0"))
-                return list(res.keys()), None
-        # Ohne Verbindung: gegen die Canvas-Datasets in einer SQLite-Kopie prüfen
+                    pass
+                res = con.execute(_sa.text(grenze.format(q=probe)))
+                spalten = list(res.keys())
+                treffer = len(res.fetchall())
+                if treffer or hat_parameter:
+                    return spalten, None, None
+                return spalten, None, (
+                    "Die Abfrage läuft fehlerfrei, liefert aber KEINE EINZIGE ZEILE.\n"
+                    + (_leer_diagnose(con, probe) or ""))
+        # Ohne Verbindung: gegen die Canvas-Datasets in einer SQLite-Kopie prüfen.
+        # Dort liegen nur 5 Beispielzeilen je Dataset, ein leeres Ergebnis sagt
+        # deshalb nichts aus – hier wird ausschließlich die Syntax geprüft.
         import pandas as _pd
         from app.services.file_service import read_dataset
         from app.models.dataset import Dataset
@@ -2405,9 +2471,9 @@ def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
                 pass
         with tmp.connect() as con:
             res = con.execute(_sa.text(f"SELECT * FROM ({probe}) __q LIMIT 0"))
-            return list(res.keys()), None
+            return list(res.keys()), None, None
     except Exception as e:
-        return [], str(e)[:400]
+        return [], str(e)[:400], None
 
 
 @router.post("/generate-nodes")
@@ -2476,38 +2542,60 @@ async def generate_nodes(
 
             sql_text = _sql_saeubern(await svc.complete_with_context(
                 auftrag, sql_system, params=sql_params))
-            columns, fehler = _sql_pruefen(db, sql_text, body.connection_id, body.canvas_nodes)
+            columns, fehler, leer = _sql_pruefen(db, sql_text, body.connection_id, body.canvas_nodes)
 
-            # Reparaturläufe mit der echten Fehlermeldung der Datenbank. Ein
-            # Versuch reicht oft nicht: der zweite Anlauf bekommt zusätzlich das
-            # Schema der bemängelten Tabelle nachgereicht.
+            # Reparaturläufe mit dem echten Befund der Datenbank. Zwei Sorten
+            # Befund: abgelehnt (erfundene Tabelle/Spalte) oder angenommen, aber
+            # ohne jede Zeile. Der zweite Fall ist der heimtückische – ein
+            # falscher Join sieht bis zur Vorschau wie eine fertige Abfrage aus.
+            # Ein Versuch reicht oft nicht: der zweite Anlauf bekommt zusätzlich
+            # das Schema der bemängelten Tabelle nachgereicht.
             for versuch in (1, 2):
-                if not fehler:
+                if not fehler and not leer:
                     break
-                yield f"data: {json.dumps({'progress': f'SQL-Fehler, Reparaturversuch {versuch}: {fehler[:110]}'})}\n\n"
+                befund = fehler or leer
+                lage = "SQL-Fehler" if fehler else "Abfrage bleibt leer"
+                yield f"data: {json.dumps({'progress': f'{lage}, Reparaturversuch {versuch}: {befund[:110]}'})}\n\n"
                 nachschlag = ""
                 if versuch == 2 and body.connection_id:
                     conn_obj = ctx._get_conn(body.connection_id)
                     if conn_obj:
                         from app.services.ai_context_builder import _schema_fuer_aufgabe
-                        nachschlag = "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {fehler}")
+                        nachschlag = "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {befund}")
+                if fehler:
+                    urteil = (f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
+                              "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und "
+                              "Spalten, die oben im Schema stehen.")
+                else:
+                    urteil = (f"{leer}\n\n"
+                              "Das ist fast immer ein Join über zwei Schlüssel, die nichts "
+                              "miteinander zu tun haben – etwa eine Bestell-ID gegen eine "
+                              "Rechnungs-ID, oder eine Schnittstellentabelle statt der "
+                              "Belegtabelle. Prüfe jeden JOIN einzeln: verbinden die beiden "
+                              "Spalten wirklich denselben Schlüssel? Suche im Schema oben "
+                              "nach der passenden Tabelle und schreibe die Abfrage neu.")
                 reparatur = (
                     f"{auftrag}{nachschlag}\n\nDieses SQL wurde erzeugt:\n{sql_text}\n\n"
-                    f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
-                    "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und Spalten, "
-                    "die oben im Schema stehen. Antworte NUR mit dem korrigierten SQL."
+                    f"{urteil}\n\nAntworte NUR mit dem korrigierten SQL."
                 )
                 sql_neu = _sql_saeubern(await svc.complete_with_context(
                     reparatur, sql_system, params=sql_params))
-                columns_neu, fehler_neu = _sql_pruefen(
+                columns_neu, fehler_neu, leer_neu = _sql_pruefen(
                     db, sql_neu, body.connection_id, body.canvas_nodes)
-                sql_text, columns, fehler = sql_neu, columns_neu, fehler_neu
+                # Eine Reparatur, die zwar läuft, aber weiterhin leer bleibt, ist
+                # keine Verschlechterung – der neue Stand wird übernommen.
+                sql_text, columns, fehler, leer = sql_neu, columns_neu, fehler_neu, leer_neu
 
             n["sql"] = sql_text
             n["columns"] = columns
             n["connection_id"] = body.connection_id
             if fehler:
                 n["sql_error"] = fehler
+            elif leer:
+                # Kein Fehler, aber auch kein Ergebnis: der Nutzer soll das vor
+                # dem Übernehmen sehen und entscheiden, statt einen leeren Node
+                # ins Mapping zu bekommen.
+                n["sql_leer"] = leer
 
         print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
         yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"
