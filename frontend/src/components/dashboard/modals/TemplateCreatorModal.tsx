@@ -51,11 +51,13 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
   const [mappings, setMappings] = useState([]);
   const [pipelines, setPipelines] = useState([]);
   const [forms, setForms] = useState([]);
+  const [knowledge, setKnowledge] = useState([]);
 
   const [selectedDatasets, setSelectedDatasets] = useState(new Set());
   const [selectedMappings, setSelectedMappings] = useState(new Set());
   const [selectedPipelines, setSelectedPipelines] = useState(new Set());
   const [selectedForms, setSelectedForms] = useState(new Set());
+  const [selectedKnowledge, setSelectedKnowledge] = useState(new Set());
 
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -68,11 +70,13 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
       api.get(`/api/mappings/${p}`),
       api.get(`/api/pipelines/${p}`),
       api.get(`/api/forms/`, params),
-    ]).then(([ds, ms, ps, fs]) => {
+      api.get(`/api/ai-memory/knowledge`).catch(() => ({ data: [] })),
+    ]).then(([ds, ms, ps, fs, kn]) => {
       setDatasets(ds.data || []);
       setMappings(ms.data || []);
       setPipelines(ps.data || []);
       setForms(fs.data || []);
+      setKnowledge(kn.data || []);
     }).finally(() => setLoading(false));
   }, [projectId]);
 
@@ -106,6 +110,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
         mapping_ids: [...selectedMappings],
         pipeline_ids: [...selectedPipelines],
         form_ids: [...selectedForms],
+        knowledge_ids: [...selectedKnowledge],
       };
       await api.post("/api/templates/create", payload);
       onSaved();
@@ -116,7 +121,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
     }
   };
 
-  const totalSelected = selectedDatasets.size + selectedMappings.size + selectedPipelines.size + selectedForms.size;
+  const totalSelected = selectedDatasets.size + selectedMappings.size + selectedPipelines.size + selectedForms.size + selectedKnowledge.size;
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "5px 8px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
@@ -248,7 +253,27 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
                 </div>
               )}
 
-              {!loading && datasets.length === 0 && mappings.length === 0 && pipelines.length === 0 && forms.length === 0 && (
+              {/* Projektwissen für die KI */}
+              {knowledge.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 8px" }}>
+                    <span style={{ fontSize: 13 }}>🧠</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>KI-Wissen</span>
+                    <button onClick={() => toggleAll(knowledge, setSelectedKnowledge)}
+                      style={{ fontSize: 9, color: ACCENT, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                      {knowledge.every(k => selectedKnowledge.has(k.id)) ? "Alle ab" : "Alle an"}
+                    </button>
+                  </div>
+                  {knowledge.map(k => (
+                    <TreeItem key={k.id} icon={k.always_include ? "⭐" : "📘"} label={k.title}
+                      sublabel={`${k.category || "rule"}${k.always_include ? " · Grundregel" : ""}`}
+                      checked={selectedKnowledge.has(k.id)}
+                      onChange={() => toggle(selectedKnowledge, setSelectedKnowledge, k.id)} />
+                  ))}
+                </div>
+              )}
+
+              {!loading && datasets.length === 0 && mappings.length === 0 && pipelines.length === 0 && forms.length === 0 && knowledge.length === 0 && (
                 <p style={{ fontSize: 11, color: S.textDim, padding: "12px 10px", fontStyle: "italic" }}>
                   Keine Inhalte im Projekt gefunden.
                 </p>
@@ -263,6 +288,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
               {selectedMappings.size > 0 && ` · ${selectedMappings.size} Mapping${selectedMappings.size !== 1 ? "s" : ""}`}
               {selectedPipelines.size > 0 && ` · ${selectedPipelines.size} Pipeline${selectedPipelines.size !== 1 ? "s" : ""}`}
               {selectedForms.size > 0 && ` · ${selectedForms.size} Formular${selectedForms.size !== 1 ? "e" : ""}`}
+              {selectedKnowledge.size > 0 && ` · ${selectedKnowledge.size} Wissensregel${selectedKnowledge.size !== 1 ? "n" : ""}`}
             </div>
           )}
         </div>

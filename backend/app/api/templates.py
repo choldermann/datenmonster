@@ -27,6 +27,14 @@ def template_out(t):
         "author": t.author,
         "hinweise": content.get("hinweise", []),
         "config_required": content.get("config_required", []),
+        # Was steckt drin? Sonst sieht man einem Template im Katalog nicht an,
+        # dass es z.B. Projektwissen für die KI mitbringt.
+        "contents": {
+            typ: len(content.get(typ) or [])
+            for typ in ("datasets", "mappings", "pipelines", "forms",
+                        "reports", "alert_rules", "knowledge")
+            if content.get(typ)
+        },
         "created_at": str(t.created_at or ""),
     }
 
@@ -877,6 +885,46 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             created.setdefault("alert_rules", []).append({"id": neu.id, "name": neu.name})
         db.commit()
 
+    # ── Projektwissen (knowledge) anlegen ─────────────────────────────────────
+    # Ein Template bringt nicht nur Auswertungen mit, sondern auch das Wissen,
+    # das nötig ist, damit die KI dazu brauchbares SQL schreibt ("gekauft heißt
+    # Rechnung, nicht Auftrag"). Abgleich über den Titel wie im Wissens-Seeder.
+    # Vom Anwender in der Oberfläche gesetzte Schalter bleiben erhalten: `enabled`
+    # wird nie überschrieben, `always_include` nur, wenn das Template es angibt.
+    if content.get("knowledge"):
+        from app.models.ai_memory import AiMemoryKnowledge
+        for w_def in content.get("knowledge", []):
+            if not isinstance(w_def, dict):
+                continue
+            eintrag = _apply_config_deep(_copy.deepcopy(w_def), config)
+            titel = (eintrag.get("title") or "").strip()
+            inhalt = (eintrag.get("content") or "").strip()
+            if not titel or not inhalt:
+                continue
+            scope = eintrag.get("scope") or "global"
+            scope_id = eintrag.get("scope_id")
+            if scope == "project":
+                scope_id = str(body.project_id)
+            best = (db.query(AiMemoryKnowledge)
+                    .filter(AiMemoryKnowledge.title == titel).first())
+            if best is not None:
+                best.content = inhalt
+                best.category = eintrag.get("category") or best.category
+                if "always_include" in eintrag:
+                    best.always_include = bool(eintrag["always_include"])
+                created.setdefault("knowledge", []).append(
+                    {"id": best.id, "name": titel, "reused": True})
+                continue
+            neu = AiMemoryKnowledge(
+                scope=scope, scope_id=scope_id,
+                category=eintrag.get("category") or "rule",
+                title=titel, content=inhalt, enabled=True,
+                always_include=bool(eintrag.get("always_include", False)),
+            )
+            db.add(neu); db.commit(); db.refresh(neu)
+            created.setdefault("knowledge", []).append({"id": neu.id, "name": titel})
+        db.commit()
+
     # ── Installation protokollieren (erzeugte Objekt-IDs) ────────────────────
     # Damit delete_template gezielt per ID löschen kann statt fehleranfällig nach
     # Namen (Namensabgleich konnte gleichnamige Originale mitlöschen).
@@ -890,7 +938,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             typ: [o["id"] for o in created.get(typ, [])
                   if isinstance(o, dict) and "id" in o and not o.get("reused")]
             for typ in ("datasets", "rest_sources", "mappings", "pipelines", "forms",
-                        "reports", "alert_rules")
+                        "reports", "alert_rules", "knowledge")
         },
         # Ref aus dem Template → erzeugtes Objekt. Beim nächsten Install wird darüber
         # zugeordnet statt über den Namen: zwei gleichnamige Template-Elemente landen
@@ -1076,6 +1124,7 @@ class CreateTemplateBody(BaseModel):
     pipeline_ids: Optional[List[int]] = []
     form_ids: Optional[List[int]] = []
     report_ids: Optional[List[int]] = []
+    knowledge_ids: Optional[List[int]] = []
 
 
 @router.post("/create")
@@ -1101,6 +1150,7 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
         "pipelines": [],
         "forms": [],
         "reports": [],
+        "knowledge": [],
         "config_required": [],
         "hinweise": [],
     }
@@ -1250,6 +1300,22 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
             "widgets": widgets,
         })
 
+    # ── Projektwissen exportieren ─────────────────────────────────────────────
+    # Ohne das passende Wissen schreibt die KI zu den mitgelieferten Auswertungen
+    # falsches SQL — es gehört also mit ins Bündel, nicht daneben.
+    if body.knowledge_ids:
+        from app.models.ai_memory import AiMemoryKnowledge
+        for w in (db.query(AiMemoryKnowledge)
+                  .filter(AiMemoryKnowledge.id.in_(body.knowledge_ids))
+                  .order_by(AiMemoryKnowledge.id).all()):
+            content["knowledge"].append({
+                "category": w.category or "rule",
+                "title": w.title,
+                "content": w.content,
+                "always_include": bool(w.always_include),
+                "scope": w.scope or "global",
+            })
+
     # ── Referenzierte DB-Verbindungen als config_required (Typ "connection") ──
     # Zugangsdaten werden bewusst NICHT exportiert; der Installer wählt eine
     # vorhandene Verbindung, deren ID die {{connection_X}}-Platzhalter auflöst.
@@ -1304,10 +1370,11 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
     # install_template → t.installations). KEIN Namensabgleich mehr: der konnte
     # gleichnamige Original-Objekte löschen, die nicht aus dem Template stammen.
     from app.models.alert import AlertRule
+    from app.models.ai_memory import AiMemoryKnowledge
     type_model = {
         "datasets": Dataset, "rest_sources": RestSource, "mappings": Mapping,
         "pipelines": Pipeline, "forms": Form, "reports": Report,
-        "alert_rules": AlertRule,
+        "alert_rules": AlertRule, "knowledge": AiMemoryKnowledge,
     }
     deleted = {k: 0 for k in type_model}
     installs = t.installations or []

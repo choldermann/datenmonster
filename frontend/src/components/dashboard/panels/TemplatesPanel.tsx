@@ -5,6 +5,17 @@ import api from "../../../api/client";
 import { S } from "../constants";
 
 const ACCENT = "var(--accent)";
+// Was ein Template mitbringt – für die Plaketten auf der Karte. [Einzahl, Mehrzahl]
+const INHALT_LABEL = {
+  datasets:    ["Dataset", "Datasets"],
+  mappings:    ["Mapping", "Mappings"],
+  pipelines:   ["Pipeline", "Pipelines"],
+  forms:       ["Formular", "Formulare"],
+  reports:     ["Bericht", "Berichte"],
+  alert_rules: ["Warnregel", "Warnregeln"],
+  knowledge:   ["Wissensregel", "Wissensregeln"],
+};
+
 const ACCENT_HEX = "#fce499";
 
 function TemplateCard({ template, projectId, onInstalled }) {
@@ -74,6 +85,16 @@ function TemplateCard({ template, projectId, onInstalled }) {
             )}
           </div>
           <p style={{ fontSize: 11, color: S.textDim, margin: "4px 0 0" }}>{template.description}</p>
+          {template.contents && Object.keys(template.contents).length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+              {Object.entries(template.contents).map(([typ, n]) => (
+                <span key={typ} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3,
+                  backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}>
+                  {n} {(INHALT_LABEL[typ] || [typ, typ])[n === 1 ? 0 : 1]}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
         <button
           onClick={() => setExpanded(v => !v)}

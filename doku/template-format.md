@@ -53,6 +53,7 @@ Ein Template ist **eine JSON-Datei**, die ein „Bündel" fertiger Datenmonster-
 - **Mappings** – Transformations-/Auswertungslogik (SQL-Knoten, Feldzuordnungen → Ziel)
 - **Pipelines** (optional) – automatisierte Abläufe mit Scheduler
 - **Forms** – Formulare und **Dashboards** (Eingabefelder, Buttons/Aktionen, Widgets/Charts)
+- **Knowledge** (optional) – Projektwissen für die KI: die Regeln, mit denen der Assistent zu diesen Daten richtiges SQL schreibt (§7b)
 
 Beim **Installieren** legt Datenmonster aus diesen Definitionen echte Objekte im gewählten Projekt an. Platzhalter (`{{...}}`) werden dabei durch die vom Nutzer eingegebenen Werte ersetzt – insbesondere die **Datenbank-Verbindung** (Zugangsdaten sind aus Sicherheitsgründen **nie** im Template enthalten).
 
@@ -895,6 +896,55 @@ Jede Zeile wird zu einer eigenen Warnung – für Einzelfälle.
 
 Damit die Warnungen im Dashboard erscheinen, braucht das Formular eine `run_alerts`-Aktion
 und ein `alerts`-Widget, das darauf zeigt (§6.1/§6.2).
+
+---
+
+## 7b. `knowledge` – Projektwissen für die KI
+
+Ein Template bringt nicht nur Auswertungen mit, sondern auch das **Wissen, das die KI
+braucht, um zu diesen Daten brauchbares SQL zu schreiben**. Ohne diese Regeln greift der
+KI-Assistent im Mapping-Editor zur falschen Tabelle: „gekauft" landet dann bei
+`Verkauf.tAuftrag` statt bei `Rechnung.vRechnung`, „Kundennummer" bei `kKunde` statt bei
+`cKundennr`. Die Einträge landen in derselben Wissensdatenbank, die auch über
+*Systemeinstellungen → KI-Wissen* gepflegt wird.
+
+```json
+"knowledge": [
+  {
+    "category": "rule",
+    "title": "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+    "content": "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", \"letzter Kauf\", \"schlafende Kunden\". Quelle ist immer Rechnung.vRechnung (Belegdatum dErstellt, ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag.",
+    "always_include": true,
+    "scope": "global"
+  }
+]
+```
+
+| Feld | Bedeutung |
+|------|-----------|
+| `title` | **Pflicht.** Zugleich der Abgleichsschlüssel: beim erneuten Installieren wird ein gleichnamiger Eintrag aktualisiert statt gedoppelt. |
+| `content` | **Pflicht.** Die Regel im Klartext. Konkret und überprüfbar – Tabellen, Spalten, Bedingungen ausschreiben. |
+| `category` | `rule`, `field_mapping`, `table`, `format` oder `other`. Nur zur Gruppierung. |
+| `always_include` | `true` = Grundregel, geht in **jeden** KI-Kontext. `false` (Standard) = wird nur bei passenden Stichwörtern ausgewählt. |
+| `scope` | `global` (Standard) oder `project` – bei `project` bindet der Installer den Eintrag an das Zielprojekt. |
+
+**Sparsam mit `always_include`.** Grundregeln überspringen die Relevanzauswahl und
+verbrauchen in jedem Prompt Platz. Nimm es nur für Regeln, die wirklich immer gelten.
+
+**Eine Regel muss den Gegenfall ausschließen.** Die Stichwortauswahl zieht auch
+widersprechendes Wissen mit in den Kontext. Eine Regel „nimm X" verliert gegen einen
+danebenstehenden Eintrag, der Y empfiehlt – schreibe deshalb dazu, *wann* die Alternative
+richtig ist („Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich von Auftrag oder Angebot
+die Rede ist").
+
+> **Kein Erfinden.** Schreibe nur Regeln, die gegen eine echte Datenbank geprüft sind.
+> Falsches Wissen ist schlimmer als keines: es wird ungeprüft in jedes generierte SQL
+> übernommen.
+
+Beim **Deinstallieren** des Templates werden nur die Einträge gelöscht, die dieses
+Template selbst angelegt hat – vorher vorhandene Regeln bleiben unberührt. Der Schalter
+`enabled` wird bei einer Aktualisierung nie überschrieben: was der Anwender abgeschaltet
+hat, bleibt aus.
 
 ---
 
