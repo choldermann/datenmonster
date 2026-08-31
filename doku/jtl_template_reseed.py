@@ -7,9 +7,14 @@ sonst sieht die Anwendung weiter die alte Fassung.
 
 Der Ordner templates/ ist nicht in den Container gemountet, deshalb zweistufig:
 
+    docker compose exec backend rm -rf /tmp/templates
     docker compose cp templates backend:/tmp/templates
     docker compose cp doku/jtl_template_reseed.py backend:/tmp/reseed.py
     docker compose exec backend python /tmp/reseed.py /tmp/templates
+
+Das `rm -rf` gehört dazu: existiert das Ziel schon, legt `docker compose cp` den
+Ordner DARIN ab (/tmp/templates/templates) und das Skript liest still die alten
+Dateien weiter.
 
 Bestehende Installationen bleiben erhalten: `installations` wird nicht angefasst,
 damit ein späteres Deinstallieren weiterhin die richtigen Objekte trifft.

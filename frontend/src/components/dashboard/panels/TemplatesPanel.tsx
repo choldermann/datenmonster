@@ -314,7 +314,10 @@ function StoreSection({ onInstalled }) {
         const preis = t.offers?.[0]?.price_yearly;
         const p = t.preview || {};
         const c = p.counts || {};
-        const hatVorschau = (p.tabs?.length || p.requires?.length || p.hinweise?.length || c.mappings) > 0;
+        // c.knowledge muss mit rein: ein reines Wissensmodul hat weder Mappings
+        // noch Reiter und wäre sonst gar nicht aufklappbar.
+        const hatVorschau = (p.tabs?.length || p.requires?.length || p.hinweise?.length
+                             || c.mappings || c.knowledge) > 0;
         const auf = expanded === t.template_id;
         return (
           <div key={t.template_id} style={{ padding: "10px 0", borderTop: `1px solid ${S.border}` }}>
@@ -356,13 +359,18 @@ function StoreSection({ onInstalled }) {
             <div style={{ marginTop: 10, marginLeft: 20, padding: "10px 12px", borderRadius: 6,
               backgroundColor: `${ACCENT_HEX}08`, border: `1px solid ${ACCENT_HEX}22`,
               display: "flex", flexDirection: "column", gap: 8 }}>
-              {(c.mappings > 0 || c.forms > 0) && (
+              {(c.mappings > 0 || c.forms > 0 || c.knowledge > 0) && (
                 <VorschauZeile label="Umfang" text={[
                   c.mappings && `${c.mappings} Mappings`,
                   c.forms && `${c.forms} Formular${c.forms > 1 ? "e" : ""}`,
                   c.datasets && `${c.datasets} Datasets`,
                   c.pipelines && `${c.pipelines} Pipelines`,
+                  c.knowledge && `${c.knowledge} Wissensregel${c.knowledge > 1 ? "n" : ""}`,
                 ].filter(Boolean).join(" · ")} />
+              )}
+              {p.knowledge?.length > 0 && (
+                <VorschauZeile label="Wissen" text={p.knowledge.slice(0, 6).join(" · ")
+                  + (p.knowledge.length > 6 ? ` … und ${p.knowledge.length - 6} weitere` : "")} />
               )}
               {p.tabs?.length > 0 && <VorschauZeile label="Reiter" text={p.tabs.join(" · ")} />}
               {p.requires?.length > 0 && <VorschauZeile label="Benötigt" text={p.requires.join(" · ")} />}

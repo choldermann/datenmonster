@@ -941,6 +941,11 @@ die Rede ist").
 > Falsches Wissen ist schlimmer als keines: es wird ungeprüft in jedes generierte SQL
 > übernommen.
 
+**Ein Template darf auch nur aus Wissen bestehen.** `datasets`, `mappings` und
+`forms` bleiben dann leer — beim Installieren entstehen keine Objekte im Projekt,
+nur Regeln in der Wissensdatenbank. So ist das Modul „JTL-Wissen für die KI"
+(`jtl_wissen_paket`) gebaut, das im Shop einzeln erhältlich ist.
+
 Beim **Deinstallieren** des Templates werden nur die Einträge gelöscht, die dieses
 Template selbst angelegt hat – vorher vorhandene Regeln bleiben unberührt. Der Schalter
 `enabled` wird bei einer Aktualisierung nie überschrieben: was der Anwender abgeschaltet

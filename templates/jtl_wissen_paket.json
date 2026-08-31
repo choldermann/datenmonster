@@ -1,0 +1,379 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_wissen_paket",
+  "template_name": "JTL-Wissen für die KI",
+  "description": "Macht den KI-Assistenten zum JTL-Kenner: die geprüften Regeln der JTL-Wawi-Datenbank — welche Tabelle den Umsatz führt, wo der Kundenname wirklich steht, welche Felder trügen. Damit schreibt die KI im Mapping-Editor auf Anhieb brauchbares SQL, statt sich Tabellen auszudenken. Ohne Datenbank-Verbindung nutzbar, wirkt sofort.",
+  "category": "jtl",
+  "author": "Datenmonster",
+  "datasets": [],
+  "mappings": [],
+  "pipelines": [],
+  "forms": [],
+  "reports": [],
+  "config_required": [],
+  "hinweise": [
+    "Reines Wissensmodul: legt keine Datasets, Mappings oder Formulare an.",
+    "Die Regeln landen in der KI-Wissensdatenbank und lassen sich dort unter Systemeinstellungen einzeln abschalten oder anpassen.",
+    "Gilt für die JTL-Wawi ab Version 1.5; geprüft gegen echte Kundendatenbanken."
+  ],
+  "knowledge": [
+    {
+      "category": "rule",
+      "title": "JTL – Umsatzbasis & Netto",
+      "content": "Umsatz/Kennzahlen basieren auf View Rechnung.vRechnung (Rechnungsdatum dErstellt) + Rechnung.tRechnungPosition (Join kRechnung). Beträge NETTO (POS.fVkNetto). Nicht Aufträge/Angebote, nicht brutto.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – vRechnung.cFirma = eigene Firma",
+      "content": "In Rechnung.vRechnung ist cFirma die EIGENE (rechnungsstellende) Firma, NICHT der Kunde. Kundenname/Land aus Rechnung.vRechnungRechnungsadresse (Join kRechnung): cFirma bzw. cVorname+cName, cLand, cPLZ.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Artikelbezeichnung",
+      "content": "Artikelname NICHT in dbo.tArtikel, sondern dbo.tArtikelBeschreibung.cName. Join: AB.kArtikel=A.kArtikel AND AB.kSprache=1 AND AB.kPlattform=1 AND AB.kShop=0. tArtikel.cArtNr=Artikelnummer.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Lagerbestand & Kapitalbindung",
+      "content": "Lagerbestand dbo.tlagerbestand.fLagerbestand, je kArtikel summieren (mehrere Lager). Kapitalbindung = SUM(fLagerbestand)*tArtikel.fEKNetto.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – EK/VK & Deckungsbeitrag",
+      "content": "Preise tArtikel.fEKNetto(EK)/fVKNetto(VK). Hist. EK je Position: tRechnungPosition.fEkNetto (Fallback tArtikel.fEKNetto wenn 0/NULL). DB I = Umsatz − Wareneinsatz. Positionstyp nType: 1=Artikel, 2=Versand (DB II = DB I + Versandergebnis).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Gesperrte Kunden / inaktive Artikel",
+      "content": "Gesperrte Kunden: dbo.tkunde.cSperre='Y'. Inaktive Artikel: dbo.tArtikel.cAktiv<>'Y' (Y=aktiv). Im GF-Cockpit aus Listen/Rankings gefiltert, aber NICHT aus aggregierten KPI-Summen.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Vater/Kind-Artikel via Stückliste",
+      "content": "Varianten (Palette↔Einzel) hängen an STÜCKLISTEN, NICHT an tArtikel.kVaterArtikel/nIstVater (hier 0/ungenutzt!). Vaterartikel: tArtikel.kStueckliste>0. dbo.tStueckliste (Key kStueckliste): kArtikel=Komponente(Kind), fAnzahl, kVaterArtikel=Rückverweis auf Vaterartikel. Bsp: 100283P(Palette,inaktiv)→Komponente 100283(aktiv).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Bundesland aus PLZ",
+      "content": "cBundesland meist leer. Bundesland aus LEFT(cPLZ,2) per CASE ableiten (deutsche PLZ-Zonen).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Plattform & Warengruppe",
+      "content": "Warengruppe dbo.tWarengruppe (kWarengruppe), Join tArtikel.kWarengruppe. Plattform/Kanal dbo.tPlattform.nTyp; vRechnung.kPlattform (Shop/Amazon/eBay über nTyp filterbar).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – zentrale Joins",
+      "content": "tRechnungPosition.kRechnung→vRechnung.kRechnung; tRechnungPosition.cArtNr→tArtikel.cArtNr; tArtikelBeschreibung.kArtikel→tArtikel.kArtikel; tlagerbestand.kArtikel→tArtikel.kArtikel; tStueckliste.kVaterArtikel/kArtikel→tArtikel.kArtikel; tArtikel.kWarengruppe→tWarengruppe.kWarengruppe; vRechnungRechnungsadresse.kRechnung→vRechnung.kRechnung.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Aufträge und Angebote (Verkauf.tAuftrag)",
+      "content": "Aufträge UND Angebote liegen in derselben Tabelle Verkauf.tAuftrag, unterschieden über nType: 0 = Angebot (Nummernkreis ANG-), 1 = Auftrag (AUF-). Immer auf nType filtern, sonst mischen sich beide. Storno: nStorno (bit) – für Auftragseingang nStorno = 0 verlangen. Weitere Merker: nKomplettAusgeliefert (offene Aufträge), dVoraussichtlichesLieferdatum (Liefertermin), kPlattform (Verkaufskanal). Auftragseingang ist der Frühindikator VOR der Rechnung – für Vertriebsauswertungen besser geeignet als Rechnungsumsatz.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Auftragswerte aus Verkauf.tAuftragEckdaten",
+      "content": "Werte eines Auftrags NICHT aus den Positionen summieren, sondern aus Verkauf.tAuftragEckdaten (Join kAuftrag): fWertNetto / fWertBrutto (Auftragswert), fOffenerWert (das ist der offene ZAHLBETRAG, nicht die offene Lieferung), nLieferstatus (Werte siehe eigenen Eintrag – die Legende 5/3/0 war falsch), nAnzahlPakete, dBezahlt. Positionen (Verkauf.tAuftragPosition, nType = 1 für Artikelpositionen) nur für Artikel-/Mengenauswertungen verwenden.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Keine Verknüpfung Angebot → Auftrag",
+      "content": "Es gibt in der JTL-DB KEINE Verknüpfung zwischen Angebot und daraus entstandenem Auftrag: kAuftragQuelle ist praktisch immer NULL, die Nummernkreise ANG-/AUF- sind getrennt, und ein gewandeltes Angebot behält seine ANG-Nummer nicht. Eine Angebots-Conversion kann deshalb nur als HEURISTIK berechnet werden (z. B. Auftrag desselben Kunden binnen 60 Tagen nach Angebotsdatum) – und muss im Widget als Näherung gekennzeichnet werden.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundenname bei Aufträgen",
+      "content": "Kundenname zu einem Auftrag über die View Verkauf.vAuftragRechnungsadresse (Join kAuftrag): cFirma, sonst cVorname + cName. Analog zu Rechnung.vRechnungRechnungsadresse bei Rechnungen. dbo.tkunde enthält KEINE Namensfelder – die stehen in dbo.tAdresse (nStandard = 1 für die Standardadresse, dort auch cMail, cTel, cUSTID).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Einkauf: Bestellungen & Bestellwert",
+      "content": "Lieferantenbestellungen: dbo.tLieferantenBestellung (Kopf: kLieferant, dErstellt, dLieferdatum = Soll-Termin, nDeleted, nManuellAbgeschlossen, cEigeneBestellnummer) + dbo.tLieferantenBestellungPos (fMenge, fEKNetto, fMengeGeliefert, fAnzahlOffen). Bestellwert = SUM(fMenge * fEKNetto) über die Positionen. Lieferantenname aus dbo.tlieferant.cFirma + cFirmenZusatz zusammengesetzt (Achtung: Tabellenname klein geschrieben, und der Zusatz heißt hier cFirmenZusatz, nicht cZusatz).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Offene Bestellungen: nStatus ist unbrauchbar",
+      "content": "Ob eine Lieferantenbestellung offen ist, NICHT über nStatus bestimmen – auch Bestellungen mit dem dominanten Status 500 haben noch offene Restmengen. Verlässlich ist: EXISTS(Position mit fAnzahlOffen > 0) AND ISNULL(nDeleted,0)=0 AND ISNULL(nManuellAbgeschlossen,0)=0. Offener Wert = SUM(fAnzahlOffen * fEKNetto). Praxis-Hinweis: sehr alte offene Bestellungen sind meist Karteileichen (nie manuell abgeschlossen) und verzerren Durchschnitts-Verzugswerte massiv.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Wareneingang & Termintreue (tWarenLagerEingang)",
+      "content": "dbo.tWarenLagerEingang ist der echte Wareneingang und verweist über kLieferantenBestellungPos direkt auf die Bestellposition; Datumsfelder dGeliefertAM (bevorzugt) bzw. dErstellt, Menge fAnzahl, Preis fEKEinzel. Damit ist Termintreue echt messbar: Ist-Termin = MIN(ISNULL(dGeliefertAM, dErstellt)) je Bestellung, Soll-Termin = tLieferantenBestellung.dLieferdatum, Verzug = DATEDIFF(DAY, Soll, Ist), Lieferzeit = DATEDIFF(DAY, Bestelldatum, Ist). Nur Bestellungen mit gesetztem dLieferdatum auswerten.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Eingangsrechnungen & Verbindlichkeiten",
+      "content": "dbo.tEingangsrechnung (kLieferant, dBelegdatum, dZahlungsziel, dBezahlt, nDeleted, cFremdbelegnummer = Rechnungsnummer des Lieferanten) + dbo.tEingangsrechnungPos (fMenge, fEKNetto, kLieferantenbestellung für die Zuordnung zur Bestellung). Rechnungsbetrag = SUM(fMenge * fEKNetto). Offen = dBezahlt IS NULL, überfällig = dZahlungsziel < GETDATE().",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Versanddienstleister steht in der Versandart",
+      "content": "dbo.tVersand.cLogistiker ist in der Praxis durchgängig LEER – nicht dafür verwenden. Der Dienstleister ergibt sich aus dbo.tVersandArt.cName (Join über kVersandArt), z. B. 'GLS auto', 'DHL', 'Selbstabholer', 'Speditionsdirektfahrt'. Tracking-Nummer = tVersand.cIdentCode; sie fehlt systematisch bei Selbstabholern und Spedition. Eine Auswertung 'Sendungen ohne Tracking' sollte deshalb nur Versandarten betrachten, die sonst überwiegend eine Tracking-Nummer tragen.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Versandkette Auftrag → Lieferschein → Sendung",
+      "content": "Verknüpfung: dbo.tVersand.kLieferschein → dbo.tLieferschein.kLieferschein, und dbo.tLieferschein.kBestellung = Verkauf.tAuftrag.kAuftrag (Feldname 'kBestellung' meint den Auftrag!). Versanddatum: tVersand.dVersendet bzw. tLieferscheinEckdaten.dVersendet (dort auch nAnzahlPakete, fVersandGewicht). Durchlaufzeit = DATEDIFF(HOUR, tAuftrag.dErstellt, tVersand.dVersendet). Lieferscheine ohne dVersendet = Versandrückstand.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Prüfbasis für Stammdaten-Checks",
+      "content": "Für Datenqualitäts-Prüfungen auf Artikel gilt als Prüfbasis: ISNULL(nDelete,0)=0 AND ISNULL(cAktiv,'Y')='Y' AND ISNULL(nIstVater,0)=0 – Vater-Artikel tragen selbst keine EAN/Gewichte und würden die Quoten verfälschen. Relevante Felder in dbo.tArtikel: cBarcode (EAN), fGewicht/fArtGewicht, fEKNetto/fVKNetto/fLetzterEK, kWarengruppe, cTaric (Warentarifnummer), cHerkunftsland, cHAN, kHersteller. Artikelname weiterhin aus dbo.tArtikelBeschreibung. Kunden: dbo.tkunde + dbo.tAdresse (nStandard = 1), gesperrt via tkunde.cSperre.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "T-SQL – Kein Aggregat über Unterabfrage oder Fensterfunktion",
+      "content": "SQL Server lehnt SUM/AVG über einen Ausdruck ab, der eine Unterabfrage oder eine Fensterfunktion enthält (Fehler 130: 'Eine Aggregatfunktion kann auf einem Ausdruck, der ein Aggregat oder eine Unterabfrage enthält, nicht ausgeführt werden'). Typische Fälle: SUM(CASE WHEN EXISTS(...) THEN 1 END) oder MAX(CASE WHEN d = MAX(d) OVER (...) THEN x END). Lösung: den Ausdruck in einer abgeleiteten Tabelle/CTE als Spalte vorberechnen (z. B. CASE WHEN EXISTS(...) THEN 1 ELSE 0 END AS Flag bzw. ROW_NUMBER() OVER (...) AS rn) und erst in der äußeren Abfrage aggregieren.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Bundesland aus PLZ herleiten (Vertriebsregionen)",
+      "content": "JTL füllt cBundesland in den Adressen nicht – das Bundesland muss aus LEFT(cPLZ,2) über eine CASE-Klassifikation hergeleitet werden (Referenz: Mappings 'Cockpit – Umsatz nach Region' und 'Vertrieb – Auftragseingang je Bundesland', identische Zuordnung verwenden, damit Auswertungen vergleichbar bleiben). Vorher auf Inland prüfen (UPPER(cLand) IN ('','DE','D','DEU','DEUTSCHLAND','GERMANY')), sonst '(Ausland)'. Adressquelle: Verkauf.vAuftragRechnungsadresse bzw. Rechnung.vRechnungRechnungsadresse.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Vertrieb – Marktdurchdringung je Bundesland",
+      "content": "Schwachstellen in Regionen erkennt man über den Vergleich Umsatzanteil zu Bevölkerungsanteil des Bundeslands (Einwohneranteile fest hinterlegt, Destatis 2024). Marktdurchdringung = Umsatzanteil / Bevölkerungsanteil: 1,0 = so stark vertreten wie die Region groß ist, unter 0,8 unterrepräsentiert, unter 0,5 deutlich unterrepräsentiert. Zusatzpotenzial = (Bevölkerungsanteil − Umsatzanteil)/100 × Inlandsumsatz. WICHTIG: Das ist ein FAKTOR, kein Prozentwert – in KI-Prompts ausdrücklich erklären, sonst formulieren Modelle '0,2 Prozent Marktdurchdringung'. Die Kennzahl ist eine Orientierung, kein echter Marktanteil (Branchenschwerpunkte weichen regional ab).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "KI-Handlungsempfehlung: Kandidaten aus dem SQL vorgeben",
+      "content": "Bei KI-Empfehlungen zu Regionen/Kunden immer die konkreten Namen (Betrieb, Ort, Rückgangsbetrag) als fertige Liste aus dem SQL mitgeben – z. B. per FOR XML PATH aggregiert – und dem Modell verbieten, Namen zu erfinden. Alle Kennzahlen werden serverseitig deterministisch berechnet (/api/ai/recommend-action, Arten customer_winback / article_liquidation / region_potential) und als meta-Event vorab gesendet; das Modell formuliert nur die Prosa.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – cHAN ist oft die eigene Artikelnummer, keine Herstellernummer",
+      "content": "In tArtikel.cHAN steht bei vielen Beständen nicht die Nummer des Herstellers, sondern eine Kopie der eigenen cArtNr (gemessen: 1.510 von 2.818 aktiven Artikeln). Für Abgleiche mit Herstellerdaten ist cHAN deshalb nur brauchbar, wenn cHAN <> cArtNr gilt. Bei manchen Herstellern steht dort auch ein Produktname statt einer Nummer (z. B. 'rhenus FY 122 L'), und derselbe cHAN kann mehrere Artikel abdecken (Gebindegrößen, Farben, Konfektionsgrößen).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – Artikelbeschreibungen und ihre Felder",
+      "content": "Beschreibungstexte liegen in dbo.tArtikelBeschreibung: cName (Artikelname), cBeschreibung (Langtext) und cKurzBeschreibung. Join über kArtikel mit kSprache=1, kPlattform=1, kShop=0. In der Praxis enthält cKurzBeschreibung häufig die eigentlichen technischen Daten (Maße, Material, Verpackungsstaffel), während cBeschreibung leer ist — beim Erzeugen von Texten ist die Kurzbeschreibung deshalb die wichtigste Quelle im Artikelstamm.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Lagerbestand kommt aus tlagerbestand, nicht aus tArtikel",
+      "content": "tArtikel.nLagerbestand ist in lagergeführten Beständen durchgehend 0. Der reale Bestand steht in dbo.tlagerbestand und muss je Artikel summiert werden: (SELECT kArtikel, SUM(fLagerbestand) AS Bestand FROM dbo.tlagerbestand GROUP BY kArtikel). Gilt für alle Auswertungen, die nach Bestand priorisieren oder Kapitalbindung rechnen.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Pflichtfelder der Intrastat-Meldung im Artikelstamm",
+      "content": "Eine Intrastat-Meldezeile braucht drei Angaben aus dbo.tArtikel: cTaric (achtstellige Warennummer der Kombinierten Nomenklatur), cHerkunftsland (Ursprungsland, seit 2022 auch bei der Versendung Pflicht) und das Gewicht als Eigenmasse — dabei fGewicht prüfen und auf fArtGewicht ausweichen, denn gepflegt ist mal das eine, mal das andere. Fehlt eines davon, ist die Zeile nicht meldefähig. Artikel mit cHerkunftsland NOT IN ('', 'DE') sind die vorrangigen Kandidaten für die Pflege.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – Ziel ohne Feldliste erzeugt leere Zeilen",
+      "content": "Wird ein Mapping per Skript angelegt und bekommt targets[0].fields nicht gefüllt, liefert execute_mapping zu jeder echten Zeile eine zusätzliche leere ({}). Die Feldliste muss je Ausgabespalte einen Eintrag haben: source_field/target_field = Spaltenname, target_type 'string' bzw. 'float', source_dataset_id '__sql__<knoten-id>' und transformer {'type':'direct','source_field': <name>}. Zusätzlich deckelt execute_mapping Vorschauläufe hart auf 50 Zeilen — für vollständige Listen row_cap übergeben.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Bestandshistorie liegt in dbo.vArtikelHistorie",
+      "content": "Die Lagerbewegungen stehen in der View dbo.vArtikelHistorie. Eine Tabelle dbo.tLagerbewegung gibt es NICHT – wer danach sucht, hält die Bestandshistorie fälschlich für nicht vorhanden. Spalten: dGebucht, cTyp (Eingang/Ausgang), kArtikel, fAnzahl (VORZEICHENBEHAFTET, Ausgang negativ), cBuchungsart/kBuchungsart, fLagerBestandGesamt (laufender Bestand nach der Buchung), fLagerBestandPlatz, kWarenLagerPlatz, fEKNetto (EK zum Buchungszeitpunkt), kBenutzer, cChargenNr, dMHD sowie die Verknüpfungen kAuftragPos, kLieferscheinPos, kLieferantenBestellungPos, kWarenLagerEingang, cLieferscheinNr.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Bestand zu einem Stichtag rekonstruieren",
+      "content": "Bestand(Stichtag) = SUM(fAnzahl) aus dbo.vArtikelHistorie WHERE dGebucht < DATEADD(DAY,1,:stichtag), gruppiert je kArtikel. Gegen die echte DB geprüft: das Ergebnis deckt sich bei 2817 von 2817 aktiven Artikeln exakt mit dbo.tlagerbestand.fLagerbestand (Toleranz 0,01). Damit sind Stichtagsbewertung, Lagerwertverlauf und Umschlag aus echten Warenausgängen möglich. Für eine Monatskurve die Stichtage als kleine Monats-CTE erzeugen und per CROSS APPLY je Stichtag aggregieren – 12 Stichtage laufen in rund zwei Sekunden.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Lagerbewertung zum historischen Einkaufspreis",
+      "content": "Für stichtagsfeste Zahlen NICHT mit tArtikel.fEKNetto rechnen (der ändert rückwirkend die Vergangenheit), sondern mit dem historischen EK: für BESTÄNDE der fEKNetto der letzten Eingangsbuchung bis zum Stichtag (ROW_NUMBER() OVER (PARTITION BY kArtikel ORDER BY dGebucht DESC) über cTyp='Eingang' AND fEKNetto>0), für BEWEGUNGEN der fEKNetto der Buchungszeile selbst. Fallback nur, wenn nie ein EK gebucht wurde: COALESCE(hist.fEKNetto, A.fEKNetto, 0) – und die Zahl der Fallback-Fälle als eigene Kennzahl ausweisen. fEKNetto ist auf 98–99 % der Zeilen gefüllt. Größenordnung des Unterschieds an der Prüf-DB: 862 T€ historisch gegen 840 T€ mit heutigem EK.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – Buchungsarten der Bestandshistorie",
+      "content": "cBuchungsart in dbo.vArtikelHistorie: Warenausgang und Wareneingang (die Masse), Korrekturbuchung, Lagerumbuchung, 'JTL-Ameise Import', Inventurdifferenzbuchung, Retouren, Sonstige. Korrekturbuchung und Inventurdifferenzbuchung sind GETRENNTE Arten – für Schwund/Inventur beide zusammen auswerten. Lagerumbuchungen erzeugen je eine Ein- und eine Ausgangszeile, die sich in der Summe exakt aufheben; sie verfälschen den Bestand also nicht, sind aber aus Bewegungsanalysen auszuschließen. Ein dauerhaft negativer Korrektursaldo ist ein Hinweis auf Schwund oder Pflegefehler, keine Buchungsgröße für die Buchhaltung.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Bestand je Warenlager",
+      "content": "Ein Lagerbezug fehlt in dbo.tlagerbestand (dort steht der Bestand nur je Artikel). Je Lager geht es über die Historie: dbo.vArtikelHistorie.kWarenLagerPlatz → dbo.tWarenLagerPlatz.kWarenLager → dbo.tWarenLager.cName. In der Praxis liegt fast alles im 'Standardlager', daneben existieren kleine Außen-/Kommissionslager.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Dispositionsdaten in dbo.tlagerbestand",
+      "content": "dbo.tlagerbestand führt je Artikel nicht nur fLagerbestand, sondern die ganze Dispositionssicht: fVerfuegbar (frei verfügbar), fInAuftraegen (reserviert), fZulauf (aus offenen Bestellungen erwartet), fAufEinkaufsliste, dLieferdatum (erwarteter Zulauftermin), fLagerbestandEigen. Fehlmenge = fInAuftraegen > fLagerbestand, überreserviert = fVerfuegbar < 0. WICHTIG: Diese Felder gibt es NUR als aktuellen Stand, nicht in der Historie – Dispo-Auswertungen sind damit immer Momentaufnahmen und dürfen keinen Zeitraumfilter vortäuschen.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "fact",
+      "title": "JTL – Stolperfelder im Artikelstamm (Lager)",
+      "content": "dbo.tArtikel.nMidestbestand ist im JTL-Schema FALSCH GESCHRIEBEN (kein 'n' nach 'Mi') – 'nMindestbestand' gibt es nicht. Zudem ist das Feld meist kaum gepflegt (an der Prüf-DB 149 von 2817 Artikeln), taugt also als Zusatzspalte, nicht als tragende Auswertung. cLagerArtikel = 'Y' trifft dort 0 Artikel und ist als Filter für 'Lagerartikel' unbrauchbar.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – EK-Preisverlauf eines Artikels gegen den VK",
+      "content": "Preisverlauf je Artikel aus den Eingangsbuchungen: je Monatsstichtag den zuletzt gebuchten fEKNetto per TOP 1 ... ORDER BY dGebucht DESC fortschreiben (sonst entstehen Lücken in Monaten ohne Wareneingang). Den Verkaufspreis daneben als AVG(POS.fVkNetto) der im selben Monat berechneten Rechnungspositionen; Monate ohne Verkauf bleiben leer. Beide Reihen in einem Liniendiagramm zeigen die Margenentwicklung. Den Lieferanten zu einer Eingangsbuchung über kLieferantenBestellungPos → tLieferantenBestellung → tlieferant auflösen.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Dashboard – Drilldown verdrahten (Schlüsselspalte, Fallen)",
+      "content": "Ein Tabellen-Drilldown braucht config.drilldown = {mapping_id, key_column, param, title, hidden_columns?, levels?[]} und eine SCHLÜSSELSPALTE in der Liste (kKunde, kAuftrag, kLieferant …), die per config.hidden_columns ausgeblendet wird – sie bleibt in den Zeilendaten erhalten und taucht in CSV/E-Mail/PDF nicht auf. Drei Fallen: (1) Die Schlüsselspalte IMMER hinten anhängen, weil manche Listen über Spaltennummern sortieren (ORDER BY 7 DESC). (2) Bei Unterabfragen/CTEs muss der Schlüssel von innen nach außen durchgereicht werden – zwei Stellen. (3) Ist am selben Widget config.ai_action gesetzt, schluckt die KI-Aktion den Zeilenklick; ein zusätzlicher Drilldown wäre tote Konfiguration.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Mapping – row_cap hebt hartkodierte TOP-Werte an",
+      "content": "_apply_row_cap deckelt nicht nur, es HEBT ein TOP N im SQL auf row_cap AN. Ein 'SELECT TOP 50' in einem Detail-Mapping ist deshalb nur beratend – der Drilldown-Endpunkt ruft mit row_cap 200 auf und bekommt bis zu 200 Zeilen. Wer wirklich begrenzen will, muss im SQL filtern (WHERE/HAVING), nicht über TOP.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "Datenmonster – Formulare beim Template-Install nicht überschrieben",
+      "content": "Der Template-Installer gleicht MAPPINGS über den Namen ab und bringt sie auf den Stand des Templates. Gleichnamige FORMULARE lässt er dagegen unangetastet, damit im Betrieb ergänzte Reiter und Widgets nicht verloren gehen. Folge: Änderungen an der Verdrahtung eines bereits installierten Dashboards (neue Drilldowns, neue Widgets) müssen direkt am Formular gepatcht werden – ein erneuter Template-Install genügt nicht. Deshalb Mappings, die sich mehrere Cockpits teilen, neutral benennen (z. B. 'Cockpit – Auftragspositionen (Detail)' statt 'Vertrieb – …'), sonst legt der Installer Doppel an.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Offene Aufträge: welche Statusfelder wirklich zählen",
+      "content": "Ein Auftrag ist offen bei Verkauf.tAuftrag.nType = 1 AND nStorno = 0 AND nKomplettAusgeliefert = 0. nStorno ist verlässlich – Verkauf.tAuftragStorno enthält keine Stornos, die im Auftrag nicht markiert wären. ABER: kVorgangsstatus = 2 sind MUSTER-Vorgänge (siehe Verkauf.tVorgangsstatus), die mit Auftragswert 0,00 in jeder Bestandsliste mitzählen – bei PPS 53 von 260. Filter: AND ISNULL(A.kVorgangsstatus, 1) <> 2 (NULL muss drin bleiben). nKomplettAusgeliefert hat auch den Wert 2 (versendet, Sonderfall). Ohne Zeitgrenze besteht der Bestand fast nur aus Karteileichen: bei PPS sind nur 9 von 260 offenen Aufträgen jünger als 30 Tage, 141 sind 1–3 Jahre alt. Laufend/Altbestand immer trennen, und „überfällig\" nur auf Liefertermine der letzten 12 Monate rechnen – sonst meldet die Warnung ewig dieselben Altfälle.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – tAuftragEckdaten: fOffenerWert ist ZAHLUNG, nicht Lieferung",
+      "content": "Verkauf.tAuftragEckdaten.fOffenerWert = fWertBrutto - fZahlung - fGutschrift (geprüft: stimmt bei 16.946 von 16.946 Aufträgen). Das ist der offene ZAHLBETRAG. Der offene LIEFERwert kommt aus Verkauf.tAuftragPositionEckdaten.fAnzahlOffen * tAuftragPosition.fVkNetto. In einer Liste „Offene Aufträge\" die beiden nie verwechseln.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – nLieferstatus: die echten Werte",
+      "content": "Verkauf.tAuftragEckdaten.nLieferstatus (aus den Daten abgeleitet über Versanddatum + Anteil gelieferter Menge): 1 = nichts geliefert, 2 = teilgeliefert/nicht versendet, 3 = komplett kommissioniert/nicht versendet, 4 = teilversendet, 5 = komplett versendet, 6 = komplett geliefert, 7 = abgeschlossen (Sonderfall, nKomplettAusgeliefert = 2). Den Wert 0 gibt es NICHT, und 3 heißt NICHT „teilgeliefert\". In offenen Aufträgen kommen nur 1, 2 und 4 vor.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Kundenname: cFirma allein reicht nicht",
+      "content": "cFirma trägt bei vielen Kunden nur eine Gattung – bei PPS steht dort 21.474-mal nur 'Zahnarztpraxis', 'Praxis' oder sogar 'Frau'. Der eigentliche Name steckt im Firmenzusatz. JEDE Kundenabfrage muss beide Felder zusammensetzen: LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END) – die CHARINDEX-Bedingung verhindert 'Zahnarztpraxis Uwe Göselt Uwe Göselt', wenn der Zusatz schon im Firmennamen steht. Das Feld heißt cZusatz in tAdresse/vRechnungRechnungsadresse/vAuftragRechnungsadresse/RM.lvRetoure, aber cFirmenZusatz in dbo.tLieferant. cAdressZusatz ist etwas anderes (Hinterhaus o. ä.) und gehört NICHT in den Namen. Achtung RM.lvRetoure: cFirma ist dort die EIGENE Firma, der Kunde steht in cKundeFirma.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "table",
+      "title": "JTL – Wo der Verkaufspreis steht (vier Ebenen)",
+      "content": "Es gibt KEINEN einzelnen Preis je Artikel. Der gültige Nettopreis entsteht aus vier Ebenen: (1) dbo.tArtikel.fVKNetto als Grundpreis/Fallback, (2) dbo.tPreis (Kopf: kArtikel, kKundenGruppe, kShop, kKunde) + dbo.tPreisDetail (Beträge: nAnzahlAb, fNettoPreis) als Gruppen-/Kundenpreis, (3) dbo.tPreisDetail.nAnzahlAb > 0 als Mengenstaffel, (4) dbo.tArtikelSonderpreis + dbo.tSonderpreise als befristete Aktion. Konventionen: kShop = 0 gilt für alle Kanäle, kShop > 0 überschreibt ihn; kKunde > 0 (mit kKundenGruppe = 0) ist ein individueller Kundenpreis; nAnzahlAb = 0 ist der Festpreis der Gruppe. fProzent und nProzentualePreisStaffelAktiv sind unbenutzt. Alle Preistabellen führen NETTO; Brutto über tArtikel.kSteuerklasse -> dbo.tSteuersatz (Inland: Klasse 1 = 19 %, 2 = 7 %, 3 = 0 %).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Preisauflösung nicht selbst bauen",
+      "content": "JTL liefert die Auflösung als View mit: Preisliste.vIndividuellePreise löst tPreis/tPreisDetail inkl. Shop-Fallback auf, Preisliste.vPreislisteNetto ergänzt den Fallback auf tArtikel.fVKNetto für jede Kombination Artikel x Kundengruppe x Shop. Diese Views benutzen statt eigener CASE-Kaskaden – bei PPS 118.721 Zeilen in 0,3 s. Sonderpreise sind darin NICHT enthalten, die kommen aus DbeS.vArtikelSonderpreis (gilt nur bei nAktiv = 1 und, falls nIstDatum = 1, innerhalb dStart/dEnde).",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Preise schreiben: Wertänderung gehört in tPreisDetail",
+      "content": "Der Trigger tgr_tPreisDetail_INSUP feuert bei Änderung von fNettoPreis/nAnzahlAb und erledigt den kompletten Abgleich selbst: Sync.tEntityTracking für POS, tArtikelShop.nAktion |= 2 (Artikel geht neu an die Webshops) und Amazon-B2B-Preise. Direkt schreiben ist also gleichwertig zur Änderung von Hand in der Wawi. ABER: der Trigger auf dbo.tPreis feuert NUR bei Änderung der Zuordnung (kArtikel/kKundenGruppe/kShop/kKunde) – eine reine Preisänderung dort käme nie im Shop an. Ein neuer Gruppenpreis braucht Kopf in tPreis UND eine Zeile mit nAnzahlAb = 0 in tPreisDetail. jtlActionValidator_tPreis lehnt nichts ab, er räumt nur nach DELETE auf. bRowversion gibt es auf allen vier Preistabellen für die Kollisionserkennung.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – Sonderpreise: aktiv heißt nicht wirksam",
+      "content": "dbo.tArtikelSonderpreis ist der Kopf je Artikel (nAktiv, dStart/dEnde mit Schalter nIstDatum, nAnzahl mit Schalter nIstAnzahl), die Beträge je Kundengruppe und Shop stehen in dbo.tSonderpreise. Ein Kopf ohne Zeile in tSonderpreise ist wirkungslos, auch wenn nAktiv = 1 – bei HaKo trifft das auf 495 von 502 'aktiven' Sonderpreisen zu. Und abgelaufene Aktionen bleiben auf nAktiv = 1 stehen: bei PPS 90 von 439. Jede Sonderpreis-Auswertung muss deshalb auf Preiszeile UND Zeitraum prüfen; Dashboard.vAbgelaufeneSonderpreise gibt es dafür fertig.",
+      "always_include": false,
+      "scope": "global"
+    },
+    {
+      "category": "rule",
+      "title": "JTL – \"gekauft\" heißt Rechnung, nicht Auftrag",
+      "content": "Umgangssprachliche Kundenfragen meinen RECHNUNGEN: \"was hat der Kunde gekauft\", \"Kauf\", \"Käufe\", \"letzter Kauf\", \"Kunden die nichts mehr kaufen\", \"schlafende Kunden\", \"Kundenrückgang\", \"Kundenumsatz\". Quelle ist immer Rechnung.vRechnung (Belegdatum dErstellt, Storno ausschließen mit ISNULL(nStorno,0) = 0), NICHT Verkauf.tAuftrag. \"Datum des letzten Kaufs\" = MAX(vRechnung.dErstellt) je Kunde. Verkauf.tAuftrag nimmst du nur, wenn ausdrücklich von Auftrag, Auftragseingang, Bestellung, Angebot oder offenen Positionen die Rede ist — dort steht der Frühindikator, nicht der Umsatz.",
+      "always_include": true,
+      "scope": "global"
+    },
+    {
+      "category": "field_mapping",
+      "title": "JTL – Kundennummer, Nachname, Vorname",
+      "content": "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen wertlos. Die Kundennummer ist cKundennr in Rechnung.vRechnung (in dbo.tkunde heißt dasselbe Feld cKundenNr) und ist lückenlos gefüllt (bei PPS 0 Leerwerte). Nachname und Vorname stehen NICHT in dbo.tkunde, sondern in Rechnung.vRechnungRechnungsadresse (Join kRechnung): cName = Nachname, cVorname = Vorname, dazu cFirma. Bei Firmenkunden sind cVorname/cName oft leer — dann trägt cFirma den Namen (siehe Eintrag zum Firmenzusatz). Für Aufträge gilt dasselbe mit Verkauf.vAuftragRechnungsadresse.",
+      "always_include": true,
+      "scope": "global"
+    }
+  ],
+  "version": "1.51"
+}
