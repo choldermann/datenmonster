@@ -370,7 +370,12 @@ EINTRAEGE = [
      "Nicht filtern dagegen bei: Auswertungen über Rechnungspositionen (Väter kommen dort "
      "nie vor, geprüft: 0 Treffer), Pflege-/To-do-Listen wie fehlende Beschreibungen "
      "(die werden am Vater gepflegt, 189 von 212 haben eine) und Drilldowns auf einen "
-     "einzelnen Artikel."),
+     "einzelnen Artikel. "
+     "FALSCHER FILTER, häufige Verwechslung: A.kVaterArtikel = 0 schließt nicht die "
+     "Väter aus, sondern die KINDER – also genau die echten Artikel. Im Lager-Cockpit "
+     "sah man dadurch nur 100 statt 268 Ladenhüter und 12 statt 17 Fehlmengen; "
+     "487 Variationskinder fehlten in jeder Umschlag- und Ladenhüter-Auswertung. "
+     "Der richtige Filter ist immer ISNULL(A.nIstVater, 0) = 0."),
 
     ("field_mapping", "JTL – Kundennummer, Nachname, Vorname",
      "\"Kundennummer\" ist NIE kKunde — das ist der interne Schlüssel und für Menschen "
