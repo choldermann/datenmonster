@@ -341,6 +341,29 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
     return score
 
 
+# Schemata und Tabellen, die zwar namensähnlich sind, aber nicht zur Fachauswertung
+# gehören: Austauschtabellen mit fremden Nummernkreisen (DbeS), Altlasten, Protokolle.
+# Ohne Abwertung landet DbeS.tRechnungadresse vor Rechnung.tRechnungAdresse und
+# verdrängt bei knappem Platz die richtige Tabelle aus dem Prompt.
+_NEBEN_SCHEMATA = {"dbes", "deprecated", "sync", "fulfillmentnetwork", "pf", "bi"}
+_NEBEN_ENDUNGEN = ("_log", "_history", "_alt", "_backup", "_tmp", "_temp")
+
+
+def _nebenschauplatz_malus(full_name: str, score: int) -> int:
+    """Halbiert den Treffer-Score von Austausch-, Protokoll- und Altlast-Tabellen,
+    damit die Fachtabellen zuerst im Prompt landen. Ausschließen wäre falsch –
+    manchmal will jemand genau dort hineinsehen –, aber der Vortritt gehört den
+    Belegtabellen."""
+    if score <= 0:
+        return score
+    teile = full_name.lower().split(".")
+    schema = teile[0] if len(teile) > 1 else ""
+    name = teile[-1]
+    if schema in _NEBEN_SCHEMATA or name.endswith(_NEBEN_ENDUNGEN):
+        return max(1, score // 2)
+    return score
+
+
 def filter_schema_with_fk_expansion(
     schema_json: dict, keywords: list[str], max_tables: int = 15
 ) -> tuple[dict, list[dict]]:
@@ -359,6 +382,7 @@ def filter_schema_with_fk_expansion(
     for tbl in all_tables:
         col_str = " ".join(c["name"].lower() for c in tbl.get("columns", []))
         score = sum(_kw_score_against(kw, tbl["full_name"], col_str) for kw in kw_lower)
+        score = _nebenschauplatz_malus(tbl["full_name"], score)
         if score > 0:
             kw_scored[tbl["full_name"]] = score
 
@@ -440,21 +464,90 @@ def filter_schema_by_keywords(schema_json: dict, keywords: list[str], max_tables
     return {**schema_json, "tables": filtered}
 
 
+# Geschäftsdeutsch → Tabellen-Vokabular. Nutzer fragen nach "Verkäufen nach
+# Postleitzahl"; die Tabellen heißen tRechnung und cPLZ. Ohne diese Brücke
+# gewinnt bei der Stichwortsuche irgendeine Tabelle mit zufälliger Namensähnlichkeit
+# (gemessen: "Verkäufe … Postleitzahl" traf in einer JTL-DB dbo.ebay_itemcomp_bike),
+# das Modell sieht die richtige Tabelle nie und erfindet daraufhin Spaltennamen.
+_FACHBEGRIFFE: dict[str, tuple[str, ...]] = {
+    "verkauf":       ("rechnung", "auftrag"),
+    "verkäufe":      ("rechnung", "auftrag"),
+    "verkaeufe":     ("rechnung", "auftrag"),
+    "umsatz":        ("rechnung", "eckdaten"),
+    "erlös":         ("rechnung",),
+    "erloes":        ("rechnung",),
+    "beleg":         ("rechnung", "auftrag"),
+    "gutschrift":    ("gutschrift", "rechnung"),
+    "storno":        ("rechnung",),
+    "postleitzahl":  ("adresse", "plz"),
+    "plz":           ("adresse", "plz"),
+    "ort":           ("adresse",),
+    "stadt":         ("adresse",),
+    "land":          ("adresse",),
+    "region":        ("adresse",),
+    "bundesland":    ("adresse",),
+    "anschrift":     ("adresse",),
+    "straße":        ("adresse",),
+    "strasse":       ("adresse",),
+    "kunde":         ("kunde", "adresse"),
+    "kunden":        ("kunde", "adresse"),
+    "käufer":        ("kunde", "adresse"),
+    "lieferant":     ("lieferant",),
+    "lieferanten":   ("lieferant",),
+    "artikel":       ("artikel",),
+    "produkt":       ("artikel",),
+    "ware":          ("artikel",),
+    "bestand":       ("lager", "bestand", "artikel"),
+    "lagerbestand":  ("lager", "bestand"),
+    "bestellung":    ("bestellung", "auftrag"),
+    "einkauf":       ("bestellung", "lieferant"),
+    "angebot":       ("auftrag",),
+    "retoure":       ("retoure", "rma"),
+    "rücksendung":   ("retoure", "rma"),
+    "versand":       ("versand", "lieferschein"),
+    "lieferung":     ("lieferschein", "versand"),
+    "zahlung":       ("zahlung",),
+    "zahlungen":     ("zahlung",),
+    "mahnung":       ("mahnung", "eckdaten"),
+    "betrag":        ("netto", "brutto", "wert"),
+    "rechnungsbetrag": ("rechnung", "netto", "wert"),
+    "preis":         ("preis",),
+    "menge":         ("anzahl", "menge"),
+    "anzahl":        ("anzahl",),
+    "mitarbeiter":   ("benutzer", "mitarbeiter"),
+    "verkäufer":     ("benutzer", "vertreter"),
+}
+
+
 def extract_keywords(text: str) -> list[str]:
-    """Extract meaningful words from a description for schema filtering."""
+    """Extract meaningful words from a description for schema filtering.
+
+    Ergänzt deutsche Fachbegriffe um die Wortstämme, unter denen die Tabellen
+    tatsächlich geführt werden – siehe _FACHBEGRIFFE.
+    """
     import re
     # Split on whitespace and punctuation, keep words >= 3 chars
     words = re.split(r"[\s,;.()\[\]{}\"'/\\|+\-=<>!?@#$%^&*]+", text)
     # Deduplicate, lowercase, filter short/stop words
     STOP = {"und", "oder", "die", "der", "das", "mit", "für", "von", "aus", "alle",
-            "the", "and", "for", "with", "from", "all", "bitte", "nach", "eine", "einen"}
+            "the", "and", "for", "with", "from", "all", "bitte", "nach", "eine", "einen",
+            "dieses", "diesem", "diesen", "jahr", "jahres", "monat", "heute", "gruppiert",
+            "sortiert", "möchte", "moechte", "brauche", "zeige", "liste", "summe"}
     seen = set()
     result = []
     for w in words:
         wl = w.lower()
-        if len(wl) >= 3 and wl not in STOP and wl not in seen:
-            seen.add(wl)
+        if len(wl) < 3 or wl in seen:
+            continue
+        seen.add(wl)
+        # Fachbegriffe zählen auch dann, wenn sie sonst als Stoppwort gälten
+        treffer = _FACHBEGRIFFE.get(wl) or _FACHBEGRIFFE.get(wl.rstrip("n"))
+        if wl not in STOP:
             result.append(wl)
+        for ersatz in (treffer or ()):
+            if ersatz not in seen:
+                seen.add(ersatz)
+                result.append(ersatz)
     return result
 
 

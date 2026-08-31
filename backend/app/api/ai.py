@@ -2320,6 +2320,9 @@ VERFÜGBARE NODE-TYPEN (node_type + Felder):
   sql_description: EIN Satz auf Deutsch, WAS die Abfrage liefern soll – welche Tabelle(n),
         welcher Filter/Zeitraum, welche Spalten. Schreibe hier KEIN SQL!
         Das SQL erzeugt danach ein eigener Schritt, der das Datenbankschema kennt.
+        ZEITANGABEN WÖRTLICH ÜBERNEHMEN: aus "dieses Jahr" wird "dieses Jahr",
+        NICHT eine ausgerechnete Jahreszahl. Du weißt nicht, welches Jahr heute ist –
+        der SQL-Schritt weiß es. Dasselbe gilt für "letzter Monat", "seit gestern" usw.
   output_field: Ausgabefeldname (nur bei mode "scalar"/"column")
 
 REGELN:
@@ -2328,6 +2331,8 @@ REGELN:
   Canvas, dann nimm GENAU EINEN "sql"-Node mit mode "transform".
 - Erfinde keine Feldnamen für Datenbankspalten – dafür ist die sql_description da.
 - Lieber wenige, richtige Nodes als viele geratene.
+- Die sql_description darf den Auftrag nur zerlegen, nie umdeuten: keine Zeiträume,
+  Filter oder Spalten hinzufügen, die der Nutzer nicht genannt hat.
 
 ANTWORT (genau dieses JSON, nichts anderes):
 {"nodes":[...],"explanation":"Kurze Erklärung auf Deutsch was erstellt wurde"}\
@@ -2402,6 +2407,45 @@ def _leer_diagnose(con, sql_text: str) -> str:
             "JOIN-Bedingung (verknüpfte Schlüssel passen nicht zusammen) oder "
             "am WHERE-Filter:")
     return kopf + "\n" + "\n".join(zeilen)
+
+
+def _spalten_nachschlag(connection_id: Optional[int], sql_text: str) -> str:
+    """Die echten Spalten der im SQL verwendeten Tabellen, wörtlich aus dem
+    Katalog. Bei "Ungültiger Spaltenname" ist das die zielgenaue Antwort: das
+    stichwortbasierte Schema trifft die Tabelle vielleicht gar nicht, hier steht
+    sie garantiert – samt dem Beweis, dass die gesuchte Spalte dort fehlt."""
+    if not connection_id:
+        return ""
+    tabellen = _tabellen_aus_sql(sql_text)
+    if not tabellen:
+        return ""
+    try:
+        import sqlalchemy as _sa
+        from app.services.mapping_service import _get_sql_engine
+        engine = _get_sql_engine(connection_id)
+        bloecke = []
+        with engine.connect() as con:
+            for tab in tabellen:
+                teile = [t.strip("[]") for t in tab.split(".")]
+                schema, name = (teile[-2], teile[-1]) if len(teile) > 1 else (None, teile[-1])
+                sql = ("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                       "WHERE TABLE_NAME = :n" + (" AND TABLE_SCHEMA = :s" if schema else "")
+                       + " ORDER BY ORDINAL_POSITION")
+                werte = {"n": name} | ({"s": schema} if schema else {})
+                try:
+                    spalten = [r[0] for r in con.execute(_sa.text(sql), werte)]
+                except Exception:
+                    continue
+                if spalten:
+                    bloecke.append(f"  {tab}: {', '.join(spalten)}")
+        if not bloecke:
+            return ""
+        return ("Die tatsächlichen Spalten der von dir verwendeten Tabellen:\n"
+                + "\n".join(bloecke)
+                + "\nSteht die gesuchte Spalte hier nicht, liegt sie in einer ANDEREN "
+                  "Tabelle – suche sie im Schema, statt den Namen zu raten.")
+    except Exception:
+        return ""
 
 
 def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
@@ -2493,6 +2537,14 @@ async def generate_nodes(
     if body.connection_id:
         ds_info += ("Eine Datenbankverbindung ist eingerichtet – Daten aus der Datenbank "
                     "holst du mit einem \"sql\"-Node (mode \"transform\").\n")
+    # Ohne Datum rät das Modell das Jahr aus seinen Trainingsdaten: aus "dieses Jahr"
+    # wurde eine sql_description "für das Jahr 2023", und der SQL-Schritt baute
+    # gehorsam YEAR(GETDATE()) - 3 daraus. Der Zeitbezug soll wörtlich durchgereicht
+    # werden – das Datum steht hier nur als Sicherheitsnetz.
+    from datetime import date as _date
+    _heute = _date.today()
+    ds_info += (f"Heutiges Datum: {_heute.strftime('%d.%m.%Y')} – \"dieses Jahr\" ist also "
+                f"{_heute.year}. Trotzdem: Zeitangaben wörtlich weiterreichen, nicht ausrechnen.\n")
     user_msg = f"{ds_info}\nAufgabe: {body.description}"
 
     async def generate():
@@ -2529,8 +2581,17 @@ async def generate_nodes(
             if not isinstance(n, dict) or n.get("node_type") != "sql":
                 continue
             n.setdefault("mode", "transform")
-            beschreibung = (n.get("sql_description") or body.description).strip()
-            yield f"data: {json.dumps({'progress': f'SQL wird erzeugt: {beschreibung[:80]}'})}\n\n"
+            # Stufe 1 formuliert die Aufgabe um und kann sie dabei verfälschen (aus
+            # "dieses Jahr" wurde schon "das Jahr 2023"). Der Wortlaut des Nutzers
+            # bleibt deshalb immer dabei und hat im Zweifel Vorrang.
+            praezisierung = (n.get("sql_description") or "").strip()
+            original = (body.description or "").strip()
+            if praezisierung and praezisierung.lower() != original.lower():
+                beschreibung = (f"{original}\n\nPräzisierung aus dem Bauplan (nachrangig – "
+                                f"bei Widerspruch gilt der Auftrag oben): {praezisierung}")
+            else:
+                beschreibung = praezisierung or original
+            yield f"data: {json.dumps({'progress': f'SQL wird erzeugt: {(praezisierung or original)[:80]}'})}\n\n"
 
             sql_system, sql_ctx = ctx.sql_generate_context(
                 beschreibung, body.connection_id, body.mapping_id)
@@ -2556,12 +2617,21 @@ async def generate_nodes(
                 befund = fehler or leer
                 lage = "SQL-Fehler" if fehler else "Abfrage bleibt leer"
                 yield f"data: {json.dumps({'progress': f'{lage}, Reparaturversuch {versuch}: {befund[:110]}'})}\n\n"
+                # Bei einem Spaltenfehler zählt Genauigkeit mehr als Sparsamkeit:
+                # die echten Spalten der verwendeten Tabellen kommen sofort dazu,
+                # dazu das passende Schema – die gesuchte Spalte liegt ja meist in
+                # einer Tabelle, die im SQL noch gar nicht vorkommt.
+                spaltenfehler = bool(fehler) and bool(_re.search(
+                    r"Ungültiger Spaltenname|Invalid column name|Ungültiger Objektname|Invalid object name",
+                    fehler))
                 nachschlag = ""
-                if versuch == 2 and body.connection_id:
+                if spaltenfehler:
+                    nachschlag = "\n\n" + _spalten_nachschlag(body.connection_id, sql_text)
+                if (versuch == 2 or spaltenfehler) and body.connection_id:
                     conn_obj = ctx._get_conn(body.connection_id)
                     if conn_obj:
                         from app.services.ai_context_builder import _schema_fuer_aufgabe
-                        nachschlag = "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {befund}")
+                        nachschlag += "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {befund}")
                 if fehler:
                     urteil = (f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
                               "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und "
