@@ -628,3 +628,187 @@ async def ai_suggest(
             yield f"data: {json.dumps({'error': str(exc)[:300]})}\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# ── Schema-Erkundung ─────────────────────────────────────────────────────────
+# Die Wissensdatenbank von Hand zu füllen skaliert nicht. Automatisieren lässt
+# sich aber nur das MESSEN — was ein Sprachmodell aus bloßen Spaltennamen
+# ableitet, klingt plausibel und ist regelmäßig falsch. Deshalb drei getrennte
+# Schritte: messen (ohne KI), formulieren (KI, nur aus Messwerten), übernehmen
+# (der Benutzer wählt aus).
+
+class ErkundenIn(BaseModel):
+    schemas:     List[str] = []      # leer = alle Fachschemata
+    tables:      List[str] = []      # noch enger: einzelne Objekte
+    max_objekte: int = 60
+
+
+@router.post("/api/schema-catalog/{conn_id}/erkunden")
+async def schema_erkunden(
+    conn_id: int,
+    body: ErkundenIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stufe A: misst die gewählten Objekte gegen die echte Datenbank.
+
+    Läuft je nach Umfang Minuten, deshalb als Ereignisstrom mit Fortschritt —
+    ein gewöhnlicher POST liefe in den Timeout des Browsers.
+    """
+    import asyncio, queue
+    from app.services.schema_erkundung import erkunde
+
+    _get_conn(conn_id, db, user)
+    meldungen: "queue.Queue" = queue.Queue()
+
+    def melde(objekt, i, n):
+        meldungen.put({"progress": {"objekt": objekt, "i": i + 1, "n": n}})
+
+    async def strom():
+        aufgabe = asyncio.create_task(asyncio.to_thread(
+            erkunde, conn_id,
+            body.schemas or None, body.tables or None,
+            max(1, min(body.max_objekte, 500)), melde,
+        ))
+        while True:
+            try:
+                yield f"data: {json.dumps(meldungen.get_nowait())}\n\n"
+                continue
+            except queue.Empty:
+                pass
+            if aufgabe.done():
+                break
+            await asyncio.sleep(0.2)
+        try:
+            ergebnis = await aufgabe
+        except Exception as e:
+            log.exception("Schema-Erkundung fehlgeschlagen")
+            yield f"data: {json.dumps({'error': str(e)[:300]})}\n\n"
+            yield "data: [DONE]\n\n"
+            return
+        while not meldungen.empty():
+            yield f"data: {json.dumps(meldungen.get_nowait())}\n\n"
+        yield f"data: {json.dumps({'result': ergebnis})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(strom(), media_type="text/event-stream")
+
+
+class EntwerfenIn(BaseModel):
+    befunde:    List[dict]
+    hoechstens: int = 12
+    provider:   Optional[str] = None
+
+
+@router.post("/api/schema-catalog/{conn_id}/erkunden/wissen")
+async def erkundung_wissen(
+    conn_id: int,
+    body: EntwerfenIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stufe B: aus Messwerten werden Wissensentwürfe. Speichert nichts."""
+    from app.services.ai_service import build_ai_service
+    from app.services.schema_erkundung import wissen_entwerfen
+
+    _get_conn(conn_id, db, user)
+    if not body.befunde:
+        return {"entwuerfe": []}
+
+    svc = build_ai_service(db, provider=body.provider)
+    if not svc:
+        raise HTTPException(400, "KI-Integration ist nicht aktiviert")
+    svc.timeout = 300
+    try:
+        entwuerfe = await wissen_entwerfen(db, body.befunde, svc, body.hoechstens)
+    except ValueError as e:
+        raise HTTPException(502, str(e))
+    return {"entwuerfe": entwuerfe}
+
+
+class UebernehmenIn(BaseModel):
+    eintraege:   List[dict] = []     # {kategorie, titel, inhalt}
+    beziehungen: List[dict] = []     # {von, von_spalte, nach, nach_spalte, quote}
+    scope:       str = "global"
+    scope_id:    Optional[str] = None
+
+
+@router.post("/api/schema-catalog/{conn_id}/erkunden/uebernehmen")
+def erkundung_uebernehmen(
+    conn_id: int,
+    body: UebernehmenIn,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Stufe C: übernimmt, was der Benutzer ausgewählt hat.
+
+    Wissen wandert nach Titel per Upsert in die Wissensdatenbank, gemessene
+    Beziehungen zusätzlich in den Schema-Katalog — davon profitieren auch die
+    Join-Vorschläge im Mapping-Editor, nicht nur die KI.
+    """
+    from app.models.ai_memory import AiMemoryKnowledge
+
+    _get_conn(conn_id, db, user)
+    neu = akt = 0
+    for e in body.eintraege:
+        titel  = (e.get("titel") or "").strip()
+        inhalt = (e.get("inhalt") or "").strip()
+        if not titel or not inhalt:
+            continue
+        kategorie = e.get("kategorie") if e.get("kategorie") in (
+            "table", "field_mapping", "rule", "format", "other") else "rule"
+        row = db.query(AiMemoryKnowledge).filter(AiMemoryKnowledge.title == titel).first()
+        if row:
+            row.content, row.category, row.enabled = inhalt, kategorie, True
+            akt += 1
+        else:
+            db.add(AiMemoryKnowledge(
+                scope=body.scope, scope_id=body.scope_id, category=kategorie,
+                title=titel, content=inhalt, enabled=True, always_include=False))
+            neu += 1
+
+    vorhanden = {
+        (r.from_table, r.from_col, r.to_table, r.to_col)
+        for r in db.query(SchemaRelationMeta).filter_by(connection_id=conn_id).all()
+    }
+    rel_neu = 0
+    for b in body.beziehungen:
+        schluessel = (b.get("von"), b.get("von_spalte"), b.get("nach"), b.get("nach_spalte"))
+        if not all(schluessel) or schluessel in vorhanden:
+            continue
+        vorhanden.add(schluessel)
+        db.add(SchemaRelationMeta(
+            connection_id=conn_id,
+            from_table=schluessel[0], from_col=schluessel[1],
+            to_table=schluessel[2], to_col=schluessel[3],
+            description=f"gemessen: {b.get('quote')} % Trefferquote"))
+        rel_neu += 1
+
+    db.commit()
+    return {"wissen_neu": neu, "wissen_aktualisiert": akt, "beziehungen_neu": rel_neu}
+
+
+@router.get("/api/schema-catalog/{conn_id}/schemata")
+def schemata_auflisten(
+    conn_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Die Schemata der Datenbank mit Objektzahl — die Auswahl für die Erkundung."""
+    from sqlalchemy import text as _text
+    from app.services.mapping_service import _get_sql_engine
+    from app.services.schema_erkundung import UNINTERESSANT
+
+    _get_conn(conn_id, db, user)
+    with _get_sql_engine(conn_id).connect() as con:
+        rows = con.execute(_text(
+            "SELECT TABLE_SCHEMA, "
+            "  SUM(CASE WHEN TABLE_TYPE='BASE TABLE' THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN TABLE_TYPE='VIEW' THEN 1 ELSE 0 END) "
+            "FROM INFORMATION_SCHEMA.TABLES GROUP BY TABLE_SCHEMA ORDER BY TABLE_SCHEMA"
+        )).fetchall()
+    return {"schemata": [
+        {"name": r[0], "tabellen": int(r[1] or 0), "views": int(r[2] or 0),
+         "empfohlen": r[0].lower() not in UNINTERESSANT}
+        for r in rows
+    ]}

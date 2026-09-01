@@ -34,6 +34,24 @@ const QUELLE_LABEL: Record<string, { text: string; farbe: string; titel: string 
   unsicher:   { text: "unsicher",  farbe: "#fbbf24", titel: "Mehrere Tabellen kommen als Ziel in Frage" },
 };
 
+interface SchemaInfo { name: string; tabellen: number; views: number; empfohlen: boolean; }
+interface Befund {
+  art: string; objekt: string; titel: string; beleg: string;
+  zahlen: Record<string, any>; gewicht: number;
+}
+interface Beziehung {
+  von: string; von_spalte: string; nach: string; nach_spalte: string;
+  quote: number; treffer: number; geprueft: number;
+}
+interface Entwurf {
+  kategorie: string; objekt: string; titel: string; inhalt: string; zeichen: number;
+  ungedeckte_zahlen: string[]; titel_existiert: boolean; zu_lang: boolean;
+}
+const ART_FARBE: Record<string, string> = {
+  leer: "#f87171", ohne_treffer: "#f87171", beziehung: "#34d399",
+  statuswerte: "#60a5fa", zeitraum: "#fbbf24",
+};
+
 export default function SchemaCatalog({ connectionId }: { connectionId: number }) {
   const [tables, setTables]       = useState<TableMeta[]>([]);
   const [relations, setRelations] = useState<Relation[]>([]);
@@ -42,7 +60,24 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [suggesting, setSuggesting] = useState(false);
   const [suggestProgress, setSuggestProgress] = useState<{done: number; total: number} | null>(null);
-  const [activeTab, setActiveTab] = useState<"tables" | "relations">("tables");
+  const [activeTab, setActiveTab] = useState<"tables" | "relations" | "erkunden">("tables");
+  // ── Schema-Erkundung ───────────────────────────────────────────────────────
+  const [schemata, setSchemata]     = useState<SchemaInfo[] | null>(null);
+  const [erkSchemas, setErkSchemas] = useState<Set<string>>(new Set());
+  const [erkGrenze, setErkGrenze]   = useState(60);
+  const [erkLaeuft, setErkLaeuft]   = useState(false);
+  const [erkFortschritt, setErkFortschritt] = useState<{ objekt: string; i: number; n: number } | null>(null);
+  const [befunde, setBefunde]       = useState<Befund[] | null>(null);
+  const [beziehungen, setBeziehungen] = useState<Beziehung[]>([]);
+  const [erkDauer, setErkDauer]     = useState<number | null>(null);
+  const [entwerfend, setEntwerfend] = useState(false);
+  const [entwuerfe, setEntwuerfe]   = useState<Entwurf[] | null>(null);
+  // Vorschläge starten IMMER unausgewählt — der Benutzer entscheidet aktiv,
+  // was in die Wissensdatenbank wandert.
+  const [wahlWissen, setWahlWissen] = useState<Set<number>>(new Set());
+  const [wahlBez, setWahlBez]       = useState<Set<number>>(new Set());
+  const [uebernehmend, setUebernehmend] = useState(false);
+  const [erkErgebnis, setErkErgebnis]   = useState<string | null>(null);
   const [newRel, setNewRel]       = useState({ from_table: "", from_col: "", to_table: "", to_col: "", description: "" });
   const [addingRel, setAddingRel] = useState(false);
   const [deriving, setDeriving]   = useState(false);
@@ -179,6 +214,87 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
     await load();
   };
 
+  // ── Schema-Erkundung ───────────────────────────────────────────────────────
+  const schemataLaden = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/api/schema-catalog/${connectionId}/schemata`);
+      setSchemata(data.schemata || []);
+    } catch { setSchemata([]); }
+  }, [connectionId]);
+
+  useEffect(() => { if (activeTab === "erkunden" && !schemata) schemataLaden(); },
+           [activeTab, schemata, schemataLaden]);
+
+  const erkunden = async () => {
+    setErkLaeuft(true); setBefunde(null); setEntwuerfe(null); setErkErgebnis(null);
+    setErkFortschritt(null);
+    try {
+      const token = localStorage.getItem("dm_token") || "";
+      const resp = await fetch(`/api/schema-catalog/${connectionId}/erkunden`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ schemas: [...erkSchemas], max_objekte: erkGrenze }),
+      });
+      const reader = resp.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop()!;
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue;
+          const roh = line.slice(5).trim();
+          if (!roh || roh === "[DONE]") continue;
+          const msg = JSON.parse(roh);
+          if (msg.error) { alert("Erkundung fehlgeschlagen: " + msg.error); continue; }
+          if (msg.progress) setErkFortschritt(msg.progress);
+          if (msg.result) {
+            setBefunde(msg.result.befunde || []);
+            setBeziehungen(msg.result.beziehungen || []);
+            setErkDauer(msg.result.dauer_sek);
+          }
+        }
+      }
+    } finally { setErkLaeuft(false); setErkFortschritt(null); }
+  };
+
+  const entwerfen = async () => {
+    if (!befunde) return;
+    setEntwerfend(true); setErkErgebnis(null);
+    try {
+      // Nur die berichtenswerten Befunde — der Rest bläht den Prompt auf.
+      const wichtig = befunde.filter(b => b.gewicht >= 2).slice(0, 80);
+      const { data } = await api.post(
+        `/api/schema-catalog/${connectionId}/erkunden/wissen`,
+        { befunde: wichtig, hoechstens: 12, provider });
+      setEntwuerfe(data.entwuerfe || []);
+      setWahlWissen(new Set());
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Entwurf fehlgeschlagen");
+    } finally { setEntwerfend(false); }
+  };
+
+  const erkUebernehmen = async () => {
+    setUebernehmend(true);
+    try {
+      const { data } = await api.post(
+        `/api/schema-catalog/${connectionId}/erkunden/uebernehmen`, {
+          eintraege:   [...wahlWissen].map(i => entwuerfe![i]),
+          beziehungen: [...wahlBez].map(i => belegteBeziehungen[i]),
+        });
+      setErkErgebnis(
+        `${data.wissen_neu} Regeln neu, ${data.wissen_aktualisiert} aktualisiert, ` +
+        `${data.beziehungen_neu} Beziehungen in den Katalog übernommen.`);
+      setWahlWissen(new Set()); setWahlBez(new Set());
+      await load();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Übernehmen fehlgeschlagen");
+    } finally { setUebernehmend(false); }
+  };
+
   const handleExport = async () => {
     const token = localStorage.getItem("dm_token") || "";
     const resp  = await fetch(`/api/schema-catalog/${connectionId}/export`, {
@@ -223,6 +339,18 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
 
   const toggleExpand = (name: string) =>
     setExpanded(s => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
+
+  // Nur belegte Beziehungen taugen für den Katalog; je Quellspalte die beste.
+  const belegteBeziehungen = (() => {
+    const beste = new Map<string, Beziehung>();
+    for (const b of beziehungen) {
+      if (b.quote < 99) continue;
+      const k = `${b.von}.${b.von_spalte}`;
+      const alt = beste.get(k);
+      if (!alt || b.quote > alt.quote) beste.set(k, b);
+    }
+    return [...beste.values()];
+  })();
 
   const described = tables.filter(t => t.description).length;
   const undescribed = tables.filter(t => !t.description).length;
@@ -294,7 +422,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 2, marginBottom: 12, borderBottom: `1px solid ${S.border}` }}>
-        {(["tables", "relations"] as const).map(tab => (
+        {(["tables", "relations", "erkunden"] as const).map(tab => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{
             background: "none", border: "none", cursor: "pointer", padding: "6px 12px",
             fontSize: 11, fontWeight: activeTab === tab ? 700 : 400,
@@ -302,7 +430,9 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
             borderBottom: activeTab === tab ? `2px solid ${S.accent}` : "2px solid transparent",
             marginBottom: -1,
           }}>
-            {tab === "tables" ? `Tabellen (${tables.length})` : `Beziehungen (${relations.length})`}
+            {tab === "tables" ? `Tabellen (${tables.length})`
+              : tab === "relations" ? `Beziehungen (${relations.length})`
+              : "Erkunden"}
           </button>
         ))}
       </div>
@@ -578,6 +708,200 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === "erkunden" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ color: S.textDim, lineHeight: 1.6, fontSize: 11,
+            backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 6, padding: "8px 10px" }}>
+            Die Erkundung <b>misst</b> die gewählten Objekte gegen die Datenbank — Füllstand,
+            Trefferquoten der Schlüssel, tatsächlich vorkommende Statuswerte, Zeitspannen.
+            Erst danach formuliert die KI daraus Regeln, und zwar ausschließlich aus diesen
+            Messwerten. Views werden mitgemessen; der Schema-Cache kennt nur Tabellen.
+          </div>
+
+          {/* Auswahl */}
+          <div>
+            <div style={{ color: S.textBright, fontWeight: 700, marginBottom: 6 }}>
+              Wo soll gemessen werden?
+              <span style={{ color: S.textDim, fontWeight: 400, marginLeft: 6 }}>
+                (nichts gewählt = alle Fachschemata; Ziele einer Beziehung kommen immer aus der ganzen DB)
+              </span>
+            </div>
+            {!schemata ? (
+              <div style={{ color: S.textDim, display: "flex", gap: 6, alignItems: "center" }}>
+                <Loader2 size={12} className="animate-spin" /> Schemata werden geladen…
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5, maxHeight: 150, overflowY: "auto" }}>
+                {schemata.filter(sc => sc.empfohlen && sc.tabellen + sc.views > 0).map(sc => {
+                  const an = erkSchemas.has(sc.name);
+                  return (
+                    <button key={sc.name} onClick={() => setErkSchemas(m => {
+                      const n = new Set(m); n.has(sc.name) ? n.delete(sc.name) : n.add(sc.name); return n;
+                    })} style={{
+                      border: `1px solid ${an ? S.accent : S.border}`, borderRadius: 5,
+                      backgroundColor: an ? "rgba(252,228,153,0.14)" : S.bgEl,
+                      color: an ? S.textBright : S.textDim, padding: "3px 8px",
+                      fontSize: 11, cursor: "pointer",
+                    }}>
+                      {sc.name} <span style={{ opacity: 0.6 }}>{sc.tabellen + sc.views}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <label style={{ color: S.textDim }}>
+              höchstens
+              <input type="number" min={1} max={500} value={erkGrenze}
+                onChange={e => setErkGrenze(Math.max(1, Math.min(500, +e.target.value || 1)))}
+                style={{ ...inp({ width: 64, display: "inline-block", margin: "0 6px" }) }} />
+              Objekte
+            </label>
+            <button onClick={erkunden} disabled={erkLaeuft}
+              style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.accent,
+                color: "#111", border: "none", borderRadius: 6, padding: "6px 12px",
+                fontWeight: 700, cursor: erkLaeuft ? "not-allowed" : "pointer", fontSize: 11 }}>
+              {erkLaeuft ? <Loader2 size={12} className="animate-spin" /> : <Search size={12} />}
+              {erkLaeuft ? "Messe…" : "Messen"}
+            </button>
+            {erkFortschritt && (
+              <span style={{ color: S.textDim }}>
+                {erkFortschritt.i}/{erkFortschritt.n} · {erkFortschritt.objekt}
+              </span>
+            )}
+            {befunde && !erkLaeuft && (
+              <span style={{ color: S.textDim }}>
+                {befunde.length} Befunde in {erkDauer}s
+              </span>
+            )}
+          </div>
+
+          {/* Befunde */}
+          {befunde && befunde.length > 0 && (
+            <div>
+              <div style={{ color: S.textBright, fontWeight: 700, marginBottom: 6 }}>Messwerte</div>
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "flex",
+                flexDirection: "column", gap: 4 }}>
+                {befunde.map((b, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start",
+                    padding: "5px 8px", backgroundColor: S.bgEl, borderRadius: 5,
+                    border: `1px solid ${S.border}`, lineHeight: 1.45 }}>
+                    <span style={{ color: ART_FARBE[b.art] || S.textDim, fontSize: 10,
+                      fontWeight: 700, minWidth: 86 }}>{b.art}</span>
+                    <span style={{ color: S.textDim }}>{b.beleg}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Belegte Beziehungen für den Katalog */}
+          {belegteBeziehungen.length > 0 && (
+            <div>
+              <div style={{ color: S.textBright, fontWeight: 700, marginBottom: 6 }}>
+                Belegte Beziehungen ({belegteBeziehungen.length}) — für den Schema-Katalog
+              </div>
+              <div style={{ maxHeight: 180, overflowY: "auto", display: "flex",
+                flexDirection: "column", gap: 3 }}>
+                {belegteBeziehungen.map((b, i) => (
+                  <label key={i} style={{ display: "flex", gap: 8, alignItems: "center",
+                    padding: "4px 8px", backgroundColor: S.bgEl, borderRadius: 5,
+                    border: `1px solid ${S.border}`, cursor: "pointer" }}>
+                    <input type="checkbox" checked={wahlBez.has(i)}
+                      onChange={() => setWahlBez(m => {
+                        const n = new Set(m); n.has(i) ? n.delete(i) : n.add(i); return n;
+                      })} />
+                    <span style={{ fontFamily: "monospace", fontSize: 11 }}>
+                      {b.von}.<span style={{ color: "#fbbf24" }}>{b.von_spalte}</span>
+                      {" → "}{b.nach}.<span style={{ color: "#fbbf24" }}>{b.nach_spalte}</span>
+                    </span>
+                    <span style={{ color: "#34d399", fontSize: 10, marginLeft: "auto" }}>
+                      {b.treffer}/{b.geprueft}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Entwürfe */}
+          {befunde && befunde.length > 0 && (
+            <button onClick={entwerfen} disabled={entwerfend}
+              style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6,
+                backgroundColor: S.bgEl, color: S.textBright, border: `1px solid ${S.border}`,
+                borderRadius: 6, padding: "6px 12px", fontSize: 11,
+                cursor: entwerfend ? "not-allowed" : "pointer" }}>
+              {entwerfend ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {entwerfend ? "KI formuliert…" : "Regeln daraus formulieren"}
+            </button>
+          )}
+
+          {entwuerfe && (
+            <div>
+              <div style={{ color: S.textBright, fontWeight: 700, marginBottom: 6 }}>
+                Entwürfe ({entwuerfe.length}) — nichts wird gespeichert, bevor du es auswählst
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                {entwuerfe.map((e, i) => {
+                  const warnung = e.ungedeckte_zahlen.length > 0 || e.zu_lang || e.titel_existiert;
+                  return (
+                    <label key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start",
+                      padding: "7px 9px", backgroundColor: S.bgEl, borderRadius: 6,
+                      border: `1px solid ${warnung ? "#e0a070" : S.border}`, cursor: "pointer" }}>
+                      <input type="checkbox" checked={wahlWissen.has(i)} style={{ marginTop: 2 }}
+                        onChange={() => setWahlWissen(m => {
+                          const n = new Set(m); n.has(i) ? n.delete(i) : n.add(i); return n;
+                        })} />
+                      <div style={{ minWidth: 0, lineHeight: 1.5 }}>
+                        <div style={{ color: S.textBright, fontWeight: 600 }}>
+                          {e.titel}
+                          <span style={{ color: S.textDim, fontWeight: 400, marginLeft: 6 }}>
+                            {e.kategorie} · {e.zeichen} Z.
+                          </span>
+                        </div>
+                        <div style={{ color: S.textDim }}>{e.inhalt}</div>
+                        {e.ungedeckte_zahlen.length > 0 && (
+                          <div style={{ color: "#e0a070", fontSize: 10, marginTop: 3 }}>
+                            ⚠ Nicht gemessene Zahlen: {e.ungedeckte_zahlen.join(", ")} — bitte prüfen.
+                          </div>
+                        )}
+                        {e.titel_existiert && (
+                          <div style={{ color: "#e0a070", fontSize: 10, marginTop: 3 }}>
+                            ⚠ Ein Eintrag mit diesem Titel existiert und würde überschrieben.
+                          </div>
+                        )}
+                        {e.zu_lang && (
+                          <div style={{ color: "#e0a070", fontSize: 10, marginTop: 3 }}>
+                            ⚠ Über 800 Zeichen — kommt im Prompt oft nicht mehr ins Budget.
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(wahlWissen.size > 0 || wahlBez.size > 0) && (
+            <button onClick={erkUebernehmen} disabled={uebernehmend}
+              style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6,
+                backgroundColor: S.accent, color: "#111", border: "none", borderRadius: 6,
+                padding: "7px 14px", fontWeight: 700, fontSize: 11,
+                cursor: uebernehmend ? "not-allowed" : "pointer" }}>
+              {uebernehmend ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+              {wahlWissen.size} Regeln und {wahlBez.size} Beziehungen übernehmen
+            </button>
+          )}
+
+          {erkErgebnis && (
+            <div style={{ color: "#34d399", fontSize: 11 }}>{erkErgebnis}</div>
           )}
         </div>
       )}
