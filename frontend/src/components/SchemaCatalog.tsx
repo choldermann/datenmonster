@@ -87,6 +87,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const [gewaehlt, setGewaehlt]   = useState<Set<number>>(new Set());
   const [dirty, setDirty]         = useState<Record<string, TableMeta>>({});
   const [importing, setImporting] = useState(false);
+  const [cacheBaut, setCacheBaut]  = useState(false);
   const importRef = useRef<HTMLInputElement>(null);
   // Anbieterwahl: nur sichtbar, wenn die Lizenz Guthaben hat. Vorbelegt ist der
   // eingestellte Anbieter — der Schalter gilt nur für diesen Katalog.
@@ -212,6 +213,22 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
     await api.post(`/api/schema-catalog/${connectionId}/relations/bulk`, { relations: auswahl });
     setKandidaten(null); setGewaehlt(new Set()); setDeriveInfo(null);
     await load();
+  };
+
+  // Ohne Schema-Cache bleiben Tabellen- und Beziehungsreiter leer. Statt den
+  // Katalog dann ganz zu verstecken (dann findet niemand das Erkunden), wird
+  // hier angeboten, ihn aufzubauen.
+  const cacheAufbauen = async () => {
+    setCacheBaut(true);
+    try {
+      await api.post(`/api/connections/${connectionId}/rebuild-schema-cache`);
+      // Der Aufbau läuft im Hintergrund — kurz warten, dann nachladen.
+      await new Promise(r => setTimeout(r, 6000));
+      await api.post(`/api/schema-catalog/${connectionId}/sync`);
+      await load();
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Schema-Cache konnte nicht aufgebaut werden");
+    } finally { setCacheBaut(false); }
   };
 
   // ── Schema-Erkundung ───────────────────────────────────────────────────────
@@ -436,6 +453,26 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
           </button>
         ))}
       </div>
+
+      {activeTab === "tables" && tables.length === 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+          backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 6,
+          color: S.textDim, lineHeight: 1.6 }}>
+          <span>
+            Für diese Verbindung gibt es noch keinen Schema-Cache — deshalb sind Tabellen
+            und Beziehungen leer. Der Reiter <b>Erkunden</b> funktioniert trotzdem, er misst
+            direkt gegen die Datenbank.
+          </span>
+          <button onClick={cacheAufbauen} disabled={cacheBaut}
+            style={{ marginLeft: "auto", whiteSpace: "nowrap", display: "flex", alignItems: "center",
+              gap: 6, backgroundColor: S.accent, color: "#111", border: "none", borderRadius: 6,
+              padding: "6px 12px", fontWeight: 700, fontSize: 11,
+              cursor: cacheBaut ? "not-allowed" : "pointer" }}>
+            {cacheBaut ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+            {cacheBaut ? "Baue auf…" : "Schema-Cache aufbauen"}
+          </button>
+        </div>
+      )}
 
       {activeTab === "tables" && (
         <>

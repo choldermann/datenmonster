@@ -609,13 +609,17 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                     title="Schema analysieren">
                     <Search size={10} />
                   </button>
-                  {conn.schema_cached_at && (
-                    <button onClick={() => setCatalogConn(conn)} className="text-xs px-2 py-0.5 rounded"
-                      style={{ backgroundColor: S.bgEl, color: "#34d399", border: `1px solid rgba(52,211,153,0.3)` }}
-                      title="Schema-Katalog">
-                      <BookOpen size={10} />
-                    </button>
-                  )}
+                  {/* Immer sichtbar: der Katalog kann inzwischen mehr als Cache-Inhalte
+                      anzeigen — der Reiter „Erkunden" misst direkt gegen die Datenbank
+                      und braucht gar keinen Schema-Cache. Solange der Knopf an ihm hing,
+                      war das Erkunden bei einer frischen Verbindung unauffindbar. */}
+                  <button onClick={() => setCatalogConn(conn)} className="text-xs px-2 py-0.5 rounded"
+                    style={{ backgroundColor: S.bgEl, color: "#34d399", border: `1px solid rgba(52,211,153,0.3)` }}
+                    title={conn.schema_cached_at
+                      ? "Schema-Katalog & Erkunden"
+                      : "Schema-Katalog & Erkunden (noch kein Schema-Cache)"}>
+                    <BookOpen size={10} />
+                  </button>
                   <button onClick={() => setAiWizardConn(conn)} className="text-xs px-2 py-0.5 rounded"
                     style={{ backgroundColor: S.bgEl, color: "#fce499", border: `1px solid rgba(252,228,153,0.3)` }}
                     title="KI-Dataset-Assistent">
