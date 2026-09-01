@@ -111,6 +111,46 @@ def _build_schema_json_inner(conn) -> dict:
                         col["fk"] = ref
                     tables[-1]["columns"].append(col)
 
+                # ── Views ──────────────────────────────────────────────────
+                # sys.tables kennt sie nicht, und damit fehlten der KI die
+                # 1.109 Views einer JTL-Wawi vollständig — auch
+                # Preisliste.vPreislisteNetto und Rechnung.vRechnung, auf denen
+                # JTLs eigene Auswertungen laufen und auf die unser Projektwissen
+                # ausdrücklich verweist. Ein zweiter, einfacher Durchgang: Views
+                # haben weder Primär- noch Fremdschlüssel.
+                view_rows = con.execute(text("""
+                    SELECT
+                        s.name  AS schema_name,
+                        v.name  AS table_name,
+                        c.name  AS col_name,
+                        tp.name AS col_type
+                    FROM sys.views v
+                    JOIN sys.schemas s ON v.schema_id = s.schema_id
+                    JOIN sys.columns c ON c.object_id = v.object_id
+                    JOIN sys.types tp  ON c.user_type_id = tp.user_type_id
+                    WHERE s.name NOT IN (
+                        'sys','INFORMATION_SCHEMA','guest','db_owner',
+                        'db_accessadmin','db_securityadmin','db_ddladmin',
+                        'db_backupoperator','db_datareader','db_datawriter',
+                        'db_denydatareader','db_denydatawriter'
+                    )
+                    ORDER BY s.name, v.name, c.column_id
+                """)).fetchall()
+
+                cur_view = None
+                for row in view_rows:
+                    key = f"{row.schema_name}.{row.table_name}"
+                    if key != cur_view:
+                        cur_view = key
+                        tables.append({
+                            "schema":    row.schema_name,
+                            "name":      row.table_name,
+                            "full_name": key,
+                            "is_view":   True,
+                            "columns":   [],
+                        })
+                    tables[-1]["columns"].append({"name": row.col_name, "type": row.col_type})
+
             else:
                 # MySQL / PostgreSQL: use inspector (faster than MSSQL)
                 from sqlalchemy import inspect as _inspect
@@ -150,7 +190,10 @@ def schema_json_to_text(schema_json: dict, max_tables: int = 120) -> str:
 
     lines = [f"Datenbank: {database} ({db_type})"]
     for tbl in tables[:max_tables]:
-        lines.append(f"\nTabelle {tbl['full_name']}:")
+        # „Sicht" statt „Tabelle": das Modell soll wissen, dass die Joins darin
+        # schon erledigt sind — genau dafür hat JTL sie angelegt.
+        art = "Sicht" if tbl.get("is_view") else "Tabelle"
+        lines.append(f"\n{art} {tbl['full_name']}:")
         for c in tbl["columns"]:
             flags = []
             if c.get("pk"):
@@ -353,8 +396,19 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
 # gehören: Austauschtabellen mit fremden Nummernkreisen (DbeS), Altlasten, Protokolle.
 # Ohne Abwertung landet DbeS.tRechnungadresse vor Rechnung.tRechnungAdresse und
 # verdrängt bei knappem Platz die richtige Tabelle aus dem Prompt.
-_NEBEN_SCHEMATA = {"dbes", "deprecated", "sync", "fulfillmentnetwork", "pf", "bi"}
+# „dal" kam mit den Views dazu: 187 Sichten der internen Zugriffsschicht, die
+# jede Fachtabelle noch einmal unter eigenem Namen führen.
+_NEBEN_SCHEMATA = {"dbes", "deprecated", "sync", "fulfillmentnetwork", "pf", "bi",
+                   "dal", "scx", "worker", "maintenance"}
 _NEBEN_ENDUNGEN = ("_log", "_history", "_alt", "_backup", "_tmp", "_temp")
+
+# Höchstanteil der Prompt-Plätze, den Sichten belegen dürfen. Sie sind fachlich
+# oft die richtige Quelle (Preisliste.vPreislisteNetto, vOffenerPostenRechnung),
+# treten aber in Rudeln auf: zu einer Adresse gibt es vStandardRechnungsadresse,
+# …Cache, vRechnungAdresse, vRechnungLieferadresse und vRechnungRechnungsadresse.
+# Gemessen an „Top 20 Kunden nach Umsatz": ohne Deckel verdrängten sie tkunde
+# UND tAdresse aus dem Prompt.
+_VIEW_ANTEIL = 0.5
 
 # Beiwerk-Tabellen: Übersetzungen, freie Attribute, Drucktexte, Shop-Zuordnungen.
 # Sie tragen den Namen der Fachtabelle im eigenen (tKundenGruppeSprache,
@@ -370,7 +424,10 @@ _BEIWERK_NAMENSTEILE = ("sprache", "attribut", "drucktext", "shopmapping",
                         # tPreiskalkulationSetting, tPreiskonfiguration. Sie
                         # tragen die Fachnamen im eigenen, enthalten aber keine
                         # auswertbaren Daten.
-                        "vorlage", "setting", "konfig", "import", "export")
+                        "vorlage", "setting", "konfig", "import", "export",
+                        # Mit den Views dazugekommen: „…Cache"-Sichten sind
+                        # Kopien der Sicht daneben und besetzen nur Plätze.
+                        "cache")
 
 
 def _nebenschauplatz_malus(full_name: str, score: int) -> int:
@@ -429,8 +486,15 @@ def filter_schema_with_fk_expansion(
 
     result: list[dict] = []
 
+    view_deckel = max(1, int(max_tables * _VIEW_ANTEIL))
+    view_platz = 0
+
     for key, score in sorted(kw_scored.items(), key=lambda x: -x[1]):
         if key in table_by_key:
+            if table_by_key[key].get("is_view"):
+                if view_platz >= view_deckel:
+                    continue
+                view_platz += 1
             t = _filter_system_columns(table_by_key[key])
             result.append({**t, "_match_type": "keyword", "_score": score})
 
