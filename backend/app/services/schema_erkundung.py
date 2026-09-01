@@ -164,7 +164,11 @@ def _namensnaehe(spalte: str, tabelle: str) -> int:
     sechs Tabellen Primärschlüssel. Ohne diese Reihung misst man zuerst
     Artikel.tArtikelMehrzweckGutschein und nie dbo.tArtikel.
     """
-    kern = spalte.lower().lstrip("k")
+    # NICHT lstrip("k"): das entfernt jedes führende k, aus „kKunde" würde
+    # „unde" und aus „kKundengruppe" „undengruppe" — beide fänden dann ihre
+    # eigene Tabelle nicht mehr und wurden nur zufällig richtig einsortiert.
+    roh = spalte.lower()
+    kern = roh[1:] if roh.startswith("k") else roh
     name = tabelle.split(".")[-1].lower()
     rumpf = name[1:] if name[:1] in "tv" else name
     if rumpf == kern:
@@ -308,9 +312,15 @@ def erkunde(
                     continue
                 # Zwei Quellen: Objekte, die so heißen wie der Schlüssel (auch
                 # Views), und Tabellen, in denen er Primärschlüssel ist.
-                kandidaten = list(dict.fromkeys(
-                    [z for z in namensziele.get(sp.lower(), []) if z != voll]
-                    + [z for z in ziele.get(sp.lower(), []) if z != voll]))
+                kandidaten = [
+                    z for z in dict.fromkeys(
+                        [z for z in namensziele.get(sp.lower(), []) if z != voll]
+                        + [z for z in ziele.get(sp.lower(), []) if z != voll])
+                    # Austausch- und Altlastschemata sind nie das fachliche Ziel.
+                    # DbeS.vSprache trifft zu 100 %, weil kSprache = 1 überall
+                    # vorkommt — als Beziehung wäre das eine falsche Fährte.
+                    if z.split(".")[0].lower() not in UNINTERESSANT
+                ]
                 if not kandidaten:
                     continue
                 # Nach Namensnähe reihen und nur die besten prüfen: eine Messung
@@ -318,7 +328,12 @@ def erkunde(
                 # fast immer vorn.
                 kandidaten.sort(key=lambda z: _zielrang(sp, z, objekt_typ.get(z, False)),
                                 reverse=True)
-                bester = None
+                # Reihenfolge schlägt Trefferquote: kPlattform gehört zu
+                # dbo.tPlattform, auch wenn dbo.tArtikelBeschreibung (wo
+                # kPlattform nur Teil des Schlüssels ist) zufällig 100 % trifft.
+                # Erst wenn kein gut platzierter Kandidat die Schwelle erreicht,
+                # entscheidet die Quote.
+                gemessen = []
                 for ziel in kandidaten[:3]:
                     q = _trefferquote(con, voll, sp, ziel, sp)
                     if not q:
@@ -327,8 +342,10 @@ def erkunde(
                                "nach_spalte": sp, **q,
                                "namensnaehe": _namensnaehe(sp, ziel)}
                     beziehungen.append(eintrag)
-                    if bester is None or q["quote"] > bester["quote"]:
-                        bester = eintrag
+                    gemessen.append(eintrag)
+                bester = next((e for e in gemessen if e["quote"] >= 99), None)
+                if bester is None and gemessen:
+                    bester = max(gemessen, key=lambda e: e["quote"])
                 if not bester:
                     continue
                 if bester["quote"] >= 99:
