@@ -58,6 +58,11 @@ _META_WOERTER = {
     "tabelle", "tabellen", "spalte", "spalten", "feld", "felder", "wert", "werte",
     "daten", "datenbank", "abfrage", "query", "liefert", "liefern", "zeige",
     "zeigen", "brauche", "nehme", "nutze", "verwende", "finde", "suche",
+    # Sprache der Anweisung selbst, nicht der Frage: Stufe 1 des Baumodus hängt
+    # eine „Präzisierung aus dem Bauplan (nachrangig …)" an, deren Wörter sonst
+    # als Fachbegriffe gelesen werden.
+    "präzisierung", "praezisierung", "bauplan", "nachrangig", "widerspruch",
+    "wortlaut", "inklusive", "erstelle", "mapping",
 }
 
 # Wissen zum eigenen Projekt schlägt bei gleicher Punktzahl das globale.

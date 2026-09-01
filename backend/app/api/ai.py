@@ -1,4 +1,5 @@
 import logging
+import re as _regex
 import httpx
 import time
 from fastapi import APIRouter, Depends, HTTPException
@@ -2448,6 +2449,49 @@ def _spalten_nachschlag(connection_id: Optional[int], sql_text: str) -> str:
         return ""
 
 
+# JTL benennt Schlüsselspalten nach der Entität: kArtikel, kKunde, kRechnung.
+# Ein Join zwischen zwei VERSCHIEDENEN Entitäten ist deshalb fast immer erfunden
+# — und die gefährlichste Sorte Fehler, weil er weder einen SQL-Fehler noch ein
+# leeres Ergebnis erzeugt: ein Modell jointe tArtikelSonderpreis.kArtikel gegen
+# tkunde.kKunde, und weil sich die Nummernkreise zufällig überlappen, kamen zwei
+# Zeilen heraus und die Abfrage sah fertig aus.
+#
+# Zwei Paare sind in der JTL-DB trotz verschiedener Namen richtig: die
+# Lieferschein-Tabellen tragen den Auftrag noch unter seinem alten Namen
+# „Bestellung" (geprüft: alle 28.039 tLieferschein.kBestellung treffen einen
+# kAuftrag). Gemessen an den 218 SQL-Nodes der laufenden Mappings schlägt die
+# Prüfung mit diesen Ausnahmen bei keiner einzigen echten Abfrage an.
+_SCHLUESSEL_SYNONYME = frozenset({
+    frozenset({"auftrag", "bestellung"}),
+    frozenset({"auftragposition", "bestellpos"}),
+})
+
+_JOIN_PAAR = _regex.compile(r"\b(\w+)\.(k\w+)\s*=\s*(\w+)\.(k\w+)", _regex.I)
+
+
+def _verdaechtige_joins(sql_text: str) -> list[str]:
+    """Joins, die zwei verschiedene Entitätsschlüssel gleichsetzen."""
+    treffer: list[str] = []
+    for a, sa, b, sb in _JOIN_PAAR.findall(sql_text or ""):
+        x, y = sa.lower().lstrip("k"), sb.lower().lstrip("k")
+        # kVaterArtikel = kArtikel ist in Ordnung: der eine Name steckt im anderen.
+        if x == y or x in y or y in x:
+            continue
+        if frozenset({x, y}) in _SCHLUESSEL_SYNONYME:
+            continue
+        treffer.append(f"{a}.{sa} = {b}.{sb}")
+    return treffer
+
+
+def _joinbefund(sql_text: str) -> Optional[str]:
+    """Der Verdacht als Satz — oder None, wenn die Joins plausibel sind."""
+    treffer = _verdaechtige_joins(sql_text)
+    if not treffer:
+        return None
+    return ("Die Abfrage verbindet Schlüssel verschiedener Entitäten: "
+            + "; ".join(treffer))
+
+
 def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
                  canvas_nodes: list[dict] | None = None) -> tuple[list[str], Optional[str], Optional[str]]:
     """Führt die Abfrage aus und liefert (Spalten, Fehlermeldung, Leer-Befund).
@@ -2587,8 +2631,12 @@ async def generate_nodes(
             praezisierung = (n.get("sql_description") or "").strip()
             original = (body.description or "").strip()
             if praezisierung and praezisierung.lower() != original.lower():
+                # „gilt der Auftrag oben" hieß hier die Anweisung, das Wort landete
+                # aber in der Stichwortsuche und zog Verkauf.tAuftrag, tAuftragAdresse
+                # und die Regel „gekauft heißt Rechnung, nicht Auftrag" in einen
+                # Prompt über Preise. Der Zusatz darf kein Fachwort enthalten.
                 beschreibung = (f"{original}\n\nPräzisierung aus dem Bauplan (nachrangig – "
-                                f"bei Widerspruch gilt der Auftrag oben): {praezisierung}")
+                                f"bei Widerspruch gilt der Wortlaut oben): {praezisierung}")
             else:
                 beschreibung = praezisierung or original
             yield f"data: {json.dumps({'progress': f'SQL wird erzeugt: {(praezisierung or original)[:80]}'})}\n\n"
@@ -2604,18 +2652,22 @@ async def generate_nodes(
             sql_text = _sql_saeubern(await svc.complete_with_context(
                 auftrag, sql_system, params=sql_params))
             columns, fehler, leer = _sql_pruefen(db, sql_text, body.connection_id, body.canvas_nodes)
+            verdacht = _joinbefund(sql_text) if not fehler else None
 
-            # Reparaturläufe mit dem echten Befund der Datenbank. Zwei Sorten
-            # Befund: abgelehnt (erfundene Tabelle/Spalte) oder angenommen, aber
-            # ohne jede Zeile. Der zweite Fall ist der heimtückische – ein
-            # falscher Join sieht bis zur Vorschau wie eine fertige Abfrage aus.
+            # Reparaturläufe mit dem echten Befund der Datenbank. Drei Sorten
+            # Befund: abgelehnt (erfundene Tabelle/Spalte), angenommen aber ohne
+            # jede Zeile, oder angenommen mit Zeilen aus einem Join, der zwei
+            # fremde Entitätsschlüssel gleichsetzt. Die letzten beiden sind die
+            # heimtückischen – sie sehen bis zur Vorschau wie fertige Abfragen aus.
             # Ein Versuch reicht oft nicht: der zweite Anlauf bekommt zusätzlich
             # das Schema der bemängelten Tabelle nachgereicht.
             for versuch in (1, 2):
-                if not fehler and not leer:
+                if not fehler and not leer and not verdacht:
                     break
-                befund = fehler or leer
-                lage = "SQL-Fehler" if fehler else "Abfrage bleibt leer"
+                befund = fehler or leer or verdacht
+                lage = ("SQL-Fehler" if fehler
+                        else "Abfrage bleibt leer" if leer
+                        else "Join verbindet fremde Schlüssel")
                 yield f"data: {json.dumps({'progress': f'{lage}, Reparaturversuch {versuch}: {befund[:110]}'})}\n\n"
                 # Bei einem Spaltenfehler zählt Genauigkeit mehr als Sparsamkeit:
                 # die echten Spalten der verwendeten Tabellen kommen sofort dazu,
@@ -2636,6 +2688,15 @@ async def generate_nodes(
                     urteil = (f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
                               "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und "
                               "Spalten, die oben im Schema stehen.")
+                elif verdacht and not leer:
+                    urteil = (f"{verdacht}\n\n"
+                              "In dieser Datenbank ist eine Schlüsselspalte nach ihrer Entität "
+                              "benannt: kArtikel zeigt auf einen Artikel, kKunde auf einen Kunden. "
+                              "Zwei verschiedene davon gleichzusetzen verbindet zusammenhanglose "
+                              "Zeilen — die Abfrage liefert dann Treffer, die nur aus überlappenden "
+                              "Nummernkreisen entstehen. Suche im Schema oben die Tabelle, die "
+                              "beide Seiten wirklich verbindet, und schreibe die Abfrage neu. "
+                              "Gibt es keine, gehört die Tabelle nicht in die Abfrage.")
                 else:
                     urteil = (f"{leer}\n\n"
                               "Das ist fast immer ein Join über zwei Schlüssel, die nichts "
@@ -2655,6 +2716,7 @@ async def generate_nodes(
                 # Eine Reparatur, die zwar läuft, aber weiterhin leer bleibt, ist
                 # keine Verschlechterung – der neue Stand wird übernommen.
                 sql_text, columns, fehler, leer = sql_neu, columns_neu, fehler_neu, leer_neu
+                verdacht = _joinbefund(sql_text) if not fehler else None
 
             n["sql"] = sql_text
             n["columns"] = columns
@@ -2666,6 +2728,10 @@ async def generate_nodes(
                 # dem Übernehmen sehen und entscheiden, statt einen leeren Node
                 # ins Mapping zu bekommen.
                 n["sql_leer"] = leer
+            elif verdacht:
+                # Läuft und liefert Zeilen, aber der Join ist nicht plausibel —
+                # sichtbar machen statt stillschweigend übernehmen.
+                n["sql_warnung"] = verdacht
 
         print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
         yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"

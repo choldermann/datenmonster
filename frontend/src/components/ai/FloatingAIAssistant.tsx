@@ -1138,7 +1138,7 @@ export default function FloatingAIAssistant() {
                 // Ein Node, der abgelehnt wurde oder im Probelauf leer blieb, darf
                 // nicht mit einem beiläufigen Klick ins Mapping wandern.
                 const hatBefund = genResult.nodes.some(
-                  (x: any) => x.sql_error || x.sql_leer);
+                  (x: any) => x.sql_error || x.sql_leer || x.sql_warnung);
                 return (
                 <>
                   {genResult.explanation && (
@@ -1187,6 +1187,15 @@ export default function FloatingAIAssistant() {
                             <div style={{ marginTop: 5, fontSize: 10, color: "#e0a070", lineHeight: 1.45 }}>
                               ⚠ Die Datenbank lehnt diese Abfrage ab: {node.sql_error}
                               <br />Der Node wird trotzdem angelegt – SQL im Editor korrigieren.
+                            </div>
+                          )}
+                          {node.sql_warnung && (
+                            <div style={{ marginTop: 5, fontSize: 10, color: "#e0a070", lineHeight: 1.45 }}>
+                              ⚠ {node.sql_warnung}. In dieser Datenbank ist jede Schlüsselspalte
+                              nach ihrer Entität benannt — <b>kArtikel</b> zeigt auf einen Artikel,
+                              <b> kKunde</b> auf einen Kunden. Zwei verschiedene gleichzusetzen
+                              liefert Treffer aus zufällig überlappenden Nummernkreisen.
+                              <br />Bitte den Join vor dem Übernehmen prüfen.
                             </div>
                           )}
                           {node.sql_leer && (
