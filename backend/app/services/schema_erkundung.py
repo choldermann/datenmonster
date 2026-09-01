@@ -360,9 +360,14 @@ def erkunde(
                     befunde.append(Befund(
                         art="ohne_treffer", objekt=voll,
                         titel=f"{voll}.{sp} zeigt ins Leere",
-                        beleg=f"Nur {bester['treffer']} von {bester['geprueft']} geprüften Zeilen "
-                              f"({bester['quote']} %) finden einen Satz in {bester['nach']}. "
-                              f"Dieser Join sieht richtig aus, liefert aber praktisch nichts.",
+                        # Die Quellspalte MUSS in den Belegtext: ohne sie formulierte
+                        # die KI Regeln wie „Nur 127 von 5000 Zeilen finden einen
+                        # Satz in dbo.tlieferant" — ohne zu sagen, welcher Join
+                        # gemeint ist, und damit wertlos.
+                        beleg=f"Der Join {voll}.{sp} = {bester['nach']}.{sp} ist tot: nur "
+                              f"{bester['treffer']} von {bester['geprueft']} geprüften Zeilen "
+                              f"({bester['quote']} %) finden einen Satz. Er sieht richtig aus, "
+                              f"liefert aber praktisch nichts.",
                         zahlen=bester, gewicht=3))
                 elif bester["quote"] < 5:
                     # Kein Ziel gefunden, das den Namen trägt — das ist ein
@@ -372,9 +377,10 @@ def erkunde(
                     befunde.append(Befund(
                         art="beziehung", objekt=voll,
                         titel=f"{voll}.{sp} → {bester['nach']} (lückenhaft)",
-                        beleg=f"{bester['quote']} % der geprüften Zeilen finden einen Satz in "
-                              f"{bester['nach']}; {bester['geprueft'] - bester['treffer']} von "
-                              f"{bester['geprueft']} nicht. Ein INNER JOIN verliert diese Zeilen.",
+                        beleg=f"Beim Join {voll}.{sp} = {bester['nach']}.{sp} finden "
+                              f"{bester['quote']} % der geprüften Zeilen einen Satz; "
+                              f"{bester['geprueft'] - bester['treffer']} von {bester['geprueft']} "
+                              f"nicht. Ein INNER JOIN verliert diese Zeilen.",
                         zahlen=bester, gewicht=2))
 
             # ── Statusspalten ──────────────────────────────────────────────
