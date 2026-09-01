@@ -313,6 +313,10 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
     tname_lower = full_name.lower()
     score = 0
 
+    table_core = tname_lower.split(".")[-1]              # "trechnung" from "dbo.trechnung"
+    if len(table_core) > 2 and table_core[0] in "tvk":
+        table_core = table_core[1:]                      # "rechnung"
+
     # 1. Forward: keyword (or stem up to -4 chars) in table name
     matched_name = False
     for stem_len in range(len(kl), max(3, len(kl) - 4), -1):
@@ -322,12 +326,16 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
             matched_name = True
             break
 
-    # 2. Reverse: table core (strip schema + leading single-char prefix like t/v) found inside keyword
+    # 1b. Volltreffer: die Tabelle HEISST so. „Artikel" meint dbo.tArtikel und
+    #     nicht tArtikelMindestLagerbestandProLager, in dem das Wort auch nur
+    #     vorkommt. Ohne diesen Vorzug verdrängen die langen Zusammensetzungen
+    #     die Stammtabelle aus dem Prompt (gemessen an „Lagerbestand je Artikel").
+    if table_core == kl:
+        score += 6
+
+    # 2. Reverse: table core found inside keyword
     #    catches compound keywords: "lieferantendaten" contains "lieferant" from "tLieferant"
     if not matched_name:
-        table_core = tname_lower.split(".")[-1]           # "trechnung" from "dbo.trechnung"
-        if len(table_core) > 2 and table_core[0] in "tvk":
-            table_core = table_core[1:]                   # "rechnung"
         if len(table_core) >= 4 and table_core in kl:
             score += 4
 
@@ -348,6 +356,22 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
 _NEBEN_SCHEMATA = {"dbes", "deprecated", "sync", "fulfillmentnetwork", "pf", "bi"}
 _NEBEN_ENDUNGEN = ("_log", "_history", "_alt", "_backup", "_tmp", "_temp")
 
+# Beiwerk-Tabellen: Übersetzungen, freie Attribute, Drucktexte, Shop-Zuordnungen.
+# Sie tragen den Namen der Fachtabelle im eigenen (tKundenGruppeSprache,
+# tKundenGruppeAttribute, tShopMappingKundengruppe) und verdrängen deshalb bei
+# einer Kundenfrage reihenweise die Tabellen, in denen die Fachdaten stehen.
+# Gemessen an „alle Kunden mit kundenindividuellen Sonderpreisen": sechs der
+# fünfzehn Prompt-Plätze gingen an solche Tabellen, tPreis war nicht dabei —
+# das Modell griff daraufhin zu tKundenGruppeAttribute und zählte Attribute
+# statt Preise.
+_BEIWERK_NAMENSTEILE = ("sprache", "attribut", "drucktext", "shopmapping",
+                        "ranking", "merkmal",
+                        # Einstell- und Austauschtabellen: tPreisImportVorlage,
+                        # tPreiskalkulationSetting, tPreiskonfiguration. Sie
+                        # tragen die Fachnamen im eigenen, enthalten aber keine
+                        # auswertbaren Daten.
+                        "vorlage", "setting", "konfig", "import", "export")
+
 
 def _nebenschauplatz_malus(full_name: str, score: int) -> int:
     """Halbiert den Treffer-Score von Austausch-, Protokoll- und Altlast-Tabellen,
@@ -360,6 +384,8 @@ def _nebenschauplatz_malus(full_name: str, score: int) -> int:
     schema = teile[0] if len(teile) > 1 else ""
     name = teile[-1]
     if schema in _NEBEN_SCHEMATA or name.endswith(_NEBEN_ENDUNGEN):
+        return max(1, score // 2)
+    if any(teil in name for teil in _BEIWERK_NAMENSTEILE):
         return max(1, score // 2)
     return score
 
@@ -381,7 +407,10 @@ def filter_schema_with_fk_expansion(
     kw_scored: dict[str, int] = {}
     for tbl in all_tables:
         col_str = " ".join(c["name"].lower() for c in tbl.get("columns", []))
-        score = sum(_kw_score_against(kw, tbl["full_name"], col_str) for kw in kw_lower)
+        score = sum(
+            _kw_score_against(kw, tbl["full_name"], col_str) * (2 if kw in _LEITBEGRIFFE else 1)
+            for kw in kw_lower
+        )
         score = _nebenschauplatz_malus(tbl["full_name"], score)
         if score > 0:
             kw_scored[tbl["full_name"]] = score
@@ -451,7 +480,10 @@ def filter_schema_by_keywords(schema_json: dict, keywords: list[str], max_tables
     scored = []
     for tbl in schema_json.get("tables", []):
         col_str = " ".join(c["name"].lower() for c in tbl.get("columns", []))
-        score = sum(_kw_score_against(kw, tbl["full_name"], col_str) for kw in kw_lower)
+        score = sum(
+            _kw_score_against(kw, tbl["full_name"], col_str) * (2 if kw in _LEITBEGRIFFE else 1)
+            for kw in kw_lower
+        )
         if score > 0:
             scored.append((score, tbl))
 
@@ -511,12 +543,48 @@ _FACHBEGRIFFE: dict[str, tuple[str, ...]] = {
     "mahnung":       ("mahnung", "eckdaten"),
     "betrag":        ("netto", "brutto", "wert"),
     "rechnungsbetrag": ("rechnung", "netto", "wert"),
-    "preis":         ("preis",),
+    "preis":         ("preis", "preisdetail"),
+    "preisliste":    ("preis", "preisdetail"),
+    "verkaufspreis": ("preis", "preisdetail"),
+    "sonderpreis":   ("sonderpreis", "preis", "preisdetail"),
+    "aktionspreis":  ("sonderpreis", "preis"),
+    "kundenpreis":   ("preis", "preisdetail"),
+    "staffel":       ("preisdetail", "preis"),
+    "staffelpreis":  ("preisdetail", "preis"),
+    "kundenindividuell": ("preis", "preisdetail"),
+    "individualpreis":   ("preis", "preisdetail"),
+    "rabatt":        ("preis", "kundengruppe"),
     "menge":         ("anzahl", "menge"),
     "anzahl":        ("anzahl",),
     "mitarbeiter":   ("benutzer", "mitarbeiter"),
     "verkäufer":     ("benutzer", "vertreter"),
 }
+
+# Die Zielbegriffe der Brücke oben. Wer „Sonderpreise" schreibt, meint die
+# Preistabellen und nicht irgendeine Tabelle, in deren Namen zufällig „Kunden"
+# vorkommt — deshalb wiegt ein solcher Treffer beim Ranking doppelt.
+_LEITBEGRIFFE: frozenset[str] = frozenset(
+    b for ziele in _FACHBEGRIFFE.values() for b in ziele
+)
+
+# Deutsche Beugung: „Sonderpreise", „Sonderpreisen", „Kundenpreises" sollen
+# denselben Eintrag treffen wie „Sonderpreis". rstrip() allein reichte nicht —
+# es entfernt nur wiederholte Einzelzeichen, „preise" blieb dadurch ungebrückt
+# und die Preistabellen fehlten im Prompt.
+_NACHSILBEN = ("", "n", "en", "e", "s", "es", "er", "em", "ne", "nen")
+
+
+def _fachbegriff(wort: str) -> tuple[str, ...] | None:
+    """Sucht den Fachbegriff zu einem Wort, auch in gebeugter Form."""
+    treffer = _FACHBEGRIFFE.get(wort)
+    if treffer:
+        return treffer
+    for silbe in _NACHSILBEN:
+        if silbe and wort.endswith(silbe):
+            treffer = _FACHBEGRIFFE.get(wort[: -len(silbe)])
+            if treffer:
+                return treffer
+    return None
 
 
 def extract_keywords(text: str) -> list[str]:
@@ -541,7 +609,7 @@ def extract_keywords(text: str) -> list[str]:
             continue
         seen.add(wl)
         # Fachbegriffe zählen auch dann, wenn sie sonst als Stoppwort gälten
-        treffer = _FACHBEGRIFFE.get(wl) or _FACHBEGRIFFE.get(wl.rstrip("n"))
+        treffer = _fachbegriff(wl)
         if wl not in STOP:
             result.append(wl)
         for ersatz in (treffer or ()):

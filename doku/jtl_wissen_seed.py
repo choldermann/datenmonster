@@ -398,6 +398,49 @@ EINTRAEGE = [
      "Statistik.*, dbo.*. Adressdaten zu einer Rechnung (cPLZ, cOrt, cLand, cStrasse) "
      "kommen aus Rechnung.vRechnungRechnungsadresse über kRechnung, die Lieferanschrift "
      "aus Rechnung.vRechnungLieferadresse.", True),
+
+    # ── Preise ──────────────────────────────────────────────────────────────
+    ("table", "JTL – Kundenindividuelle Preise stehen in dbo.tPreis (kKunde > 0)",
+     "Ein Preis, der nur für EINEN Kunden gilt, steht in dbo.tPreis mit kKunde > 0; "
+     "kKundenGruppe ist dann 0 (geprüft: 572 von 572 Sätzen bei HaKo, 290 von 290 bei "
+     "PPS). dbo.tPreis ist nur der Kopf (kPreis, kArtikel, kKundenGruppe, kShop, kKunde), "
+     "die Beträge stehen in dbo.tPreisDetail, das GENAU FÜNF Spalten hat: kPreis, "
+     "nAnzahlAb, fNettoPreis, fProzent, bRowversion. In tPreisDetail gibt es KEIN "
+     "kArtikel und kein kKunde — beide stehen nur im Kopf tPreis. nAnzahlAb = 0 ist der "
+     "Festpreis, nAnzahlAb > 0 eine Mengenstaffel. Für „wie viele Preise hat der Kunde\" "
+     "wird tPreisDetail deshalb gar nicht gebraucht: COUNT(DISTINCT P.kArtikel) auf dem "
+     "Kopf zählen, sonst zählt man Staffelstufen statt Artikel mit. "
+     "Muster für „Kunden mit kundenindividuellen Preisen\": "
+     "FROM dbo.tPreis P JOIN dbo.tkunde K ON K.kKunde = P.kKunde "
+     "LEFT JOIN dbo.tAdresse RA ON RA.kKunde = K.kKunde AND RA.nTyp = 1 AND RA.nStandard = 1 "
+     "WHERE P.kKunde > 0. "
+     "FALSCHE FÄHRTEN: dbo.tKundenGruppeAttribute enthält freie Attribute der "
+     "Kundengruppe und KEINE Preise. Verkauf.tAuftragAdresse ist die Adresse je Auftrag "
+     "und vervielfacht jeden Kunden — Kundenstammdaten kommen aus dbo.tAdresse."),
+
+    ("rule", "JTL – Sonderpreise gelten je Kundengruppe, nicht je Kunde",
+     "dbo.tArtikelSonderpreis ist der befristete Aktionskopf JE ARTIKEL (nAktiv, "
+     "dStart/dEnde mit Schalter nIstDatum, nAnzahl mit Schalter nIstAnzahl), die Beträge "
+     "hängen in dbo.tSonderpreise je kKundenGruppe × kShop. Einen Sonderpreis für einen "
+     "EINZELNEN Kunden gibt es dort nicht — wer nach kundenindividuellen Preisen fragt, "
+     "meint dbo.tPreis mit kKunde > 0. Ein Sonderpreis wirkt nur, wenn nAktiv = 1 ist, "
+     "das heutige Datum bei nIstDatum = 1 in dStart/dEnde liegt UND eine Zeile in "
+     "tSonderpreise für die Kundengruppe existiert: bei HaKo haben 495 von 502 "
+     "„aktiven\" Sonderpreisen gar keine Preiszeile und sind wirkungslos, bei PPS sind "
+     "90 von 439 abgelaufen (JTL hat dafür die View Dashboard.vAbgelaufeneSonderpreise). "
+     "Fertig verbunden: DbeS.vArtikelSonderpreis."),
+
+    ("field_mapping", "JTL – Gültigen Verkaufspreis nicht selbst zusammenbauen",
+     "Der gültige Nettopreis entsteht aus vier Ebenen: dbo.tArtikel.fVKNetto (Fallback) → "
+     "dbo.tPreis + dbo.tPreisDetail (Gruppen-, Shop-, Kundenpreis) → Staffel über "
+     "nAnzahlAb → Sonderpreis. Die Auflösung liefert JTL mit: "
+     "Preisliste.vIndividuellePreise (löst tPreis/tPreisDetail inkl. Shop-Fallback auf) "
+     "und Preisliste.vPreislisteNetto (dasselbe plus fVKNetto-Fallback je Artikel × "
+     "Kundengruppe × Shop, 118.721 Zeilen in 0,3 s). Diese Views verwenden statt die "
+     "Logik nachzubauen; Sonderpreise sind darin NICHT enthalten. kShop = 0 gilt für alle "
+     "Kanäle, kShop > 0 überschreibt ihn. Alle Preistabellen führen netto; ob der Kunde "
+     "brutto sieht, steht in dbo.tkundenGruppe.nNettoPreise. Volle Referenz: "
+     "doku/jtl-preis-schema.md."),
 ]
 
 db = SessionLocal()

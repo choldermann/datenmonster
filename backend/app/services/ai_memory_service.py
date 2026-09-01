@@ -65,6 +65,16 @@ _META_WOERTER = {
 # Unpassendes über die Schwelle hebt.
 _SCOPE_BONUS = {"project": 2, "datasource": 1, "global": 0}
 
+# Höchstanteil des Budgets, den die Grundregeln (`always_include`) belegen
+# dürfen. Gemessen am 2026-09-01: sieben Grundregeln zu 3.117 Zeichen füllten
+# das knappe Budget von 3.500 fast vollständig, und die zur Frage passenden
+# Einträge fielen reihenweise heraus — bei „Kunden mit kundenindividuellen
+# Preisen" auch der bestbewertete (138 Punkte, 1.020 Zeichen). Eine Grundregel
+# ist eine Grundregel, aber sie darf das Wissen zur gestellten Frage nicht
+# verdrängen. Was über dem Anteil liegt, muss sich wie alles andere über die
+# Punktzahl qualifizieren.
+_IMMER_ANTEIL = 0.6
+
 
 # ── Kontext-Builder ───────────────────────────────────────────────────────────
 
@@ -187,8 +197,19 @@ def _auswaehlen(
     immer   = [r for r in rows if getattr(r, "always_include", False)]
     uebrige = [r for r in rows if not getattr(r, "always_include", False)]
 
-    verbraucht = sum(_laenge(r) for r in immer)
-    gewaehlt   = list(immer)
+    # Grundregeln zuerst, aber nur bis zum reservierten Anteil — und innerhalb
+    # davon die zur Frage passendste zuerst, damit bei einer Preisfrage nicht
+    # die Umsatzregel den Platz der Kundennummern-Regel bekommt.
+    immer.sort(key=lambda r: (-_punkte(r, woerter, bezeichner), r.id))
+    immer_deckel = int(budget * _IMMER_ANTEIL)
+    gewaehlt, verbraucht = [], 0
+    for r in immer:
+        if verbraucht + _laenge(r) > immer_deckel and gewaehlt:
+            uebrige.append(r)        # muss sich über die Punktzahl qualifizieren
+            continue
+        gewaehlt.append(r)
+        verbraucht += _laenge(r)
+    immer_gewaehlt = len(gewaehlt)
 
     if woerter:
         bewertet = []
@@ -215,7 +236,7 @@ def _auswaehlen(
 
     stats = {
         "kandidaten": len(rows),
-        "immer":      len(immer),
+        "immer":      immer_gewaehlt,
         "passend":    len(rangliste),
         "gewaehlt":   len(gewaehlt),
         "verworfen":  verworfen,
