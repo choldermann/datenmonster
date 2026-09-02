@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock } from "lucide-react";
+import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock, Filter } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
 import ReportBuilder from "../../forms/ReportBuilder";
 import ReportScheduleModal from "../../forms/ReportScheduleModal";
+import QueryBuilder from "../../query/QueryBuilder";
 
 export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   const navigate = useNavigate();
@@ -15,6 +16,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   // Bausteine ändern und Zustellplan. Beide halten hier die Form-ID.
   const [bausteineVon, setBausteineVon] = useState(null);
   const [zustellplanVon, setZustellplanVon] = useState(null);
+  const [abfrage, setAbfrage] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -62,6 +64,12 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
         </div>
         {canEdit && (
           <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setAbfrage(true)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
+                backgroundColor: "transparent", border: `1px solid ${S.border}`,
+                color: S.textMain, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              <Filter size={13} /> Eigene Abfrage
+            </button>
             <button onClick={() => setBaukasten(true)}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
                 backgroundColor: "transparent", border: `1px solid ${S.border}`,
@@ -77,6 +85,10 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
           </div>
         )}
       </div>
+
+      {abfrage && (
+        <QueryBuilder projectId={projectId} onClose={() => setAbfrage(false)} />
+      )}
 
       {baukasten && (
         <ReportBuilder projectId={projectId} onClose={() => setBaukasten(false)}

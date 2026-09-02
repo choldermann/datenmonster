@@ -548,6 +548,8 @@ from app.api import backup as backup_api
 app.include_router(backup_api.router)
 from app.api import reports as reports_api
 app.include_router(reports_api.router)
+from app.api import query_builder as query_builder_api
+app.include_router(query_builder_api.router)
 
 
 @app.get("/api/health")
