@@ -148,6 +148,20 @@ def _baum(knoten: dict, aufloesen, binde: _Binder, tiefe: int = 0) -> str:
                       knoten.get("wert"), binde)
 
 
+def _gruppe_einsetzen(sql: str, gruppe: list, binde: _Binder) -> str:
+    """Ersetzt den Platzhalter der Vergleichsgruppe durch gebundene Werte.
+
+    Die IDs laufen durch denselben Binder wie jeder andere Wert – im
+    Literalmodus also durch float(), womit nur Zahlen durchkommen.
+    """
+    if katalog.GRUPPE not in sql:
+        return sql
+    if not gruppe:
+        raise AbfrageFehler("Für diese Kennzahl fehlt die Vergleichsgruppe.")
+    platz = ", ".join(binde(g, "zahl") for g in gruppe)
+    return sql.replace(katalog.GRUPPE, platz)
+
+
 def bauen(definition: dict, literal: bool = False) -> dict:
     """Gibt {sql, params, spalten} zurück. Wirft AbfrageFehler bei Unsinn.
 
@@ -160,6 +174,9 @@ def bauen(definition: dict, literal: bool = False) -> dict:
         raise AbfrageFehler(f"Unbekannte Körnung „{kname}“.")
 
     binde = _Binder(literal=literal)
+
+    gruppe = [g for g in ((definition.get("vergleichsgruppe") or {}).get("kunden") or [])
+              if str(g).strip() != ""]
 
     # Alles ausser „Kunde" folgt der Zeilen-Bauart (Liste bzw. GROUP BY).
     if kname != "kunde":
@@ -185,7 +202,7 @@ def bauen(definition: dict, literal: bool = False) -> dict:
         m = katalog.kennzahl(kname, key)
         if not m:
             raise AbfrageFehler(f"Unbekannte Kennzahl „{key}“.")
-        spalten.append(f'{m["sql"]} AS {key}')
+        spalten.append(f'{_gruppe_einsetzen(m["sql"], gruppe, binde)} AS {key}')
         namen.append({"name": key, "label": m["label"], "typ": m["typ"],
                       "decimals": m.get("decimals")})
 
@@ -206,7 +223,7 @@ def bauen(definition: dict, literal: bool = False) -> dict:
         m = katalog.kennzahl(kname, key)
         if not m:
             raise AbfrageFehler(f"Unbekannte Kennzahl „{key}“ im Kennzahlfilter.")
-        spalten.append(f'{m["sql"]} AS {key}')
+        spalten.append(f'{_gruppe_einsetzen(m["sql"], gruppe, binde)} AS {key}')
         namen.append({"name": key, "label": m["label"], "typ": m["typ"],
                       "decimals": m.get("decimals")})
 
@@ -218,6 +235,11 @@ def bauen(definition: dict, literal: bool = False) -> dict:
         return f["sql"], f["typ"]
 
     wo = _baum(definition.get("zeilenfilter") or {}, _feld_aufloesen, binde)
+
+    # Die Vergleichsgruppe gehört nicht in ihre eigene Ergebnisliste.
+    if gruppe and k.get("gruppe_ausschluss"):
+        ausschluss = _gruppe_einsetzen(k["gruppe_ausschluss"], gruppe, binde)
+        wo = f"{wo} AND {ausschluss}" if wo else ausschluss
 
     # ── Kennzahlfilter (äußeres WHERE über den Aliasnamen) ──
     def _kennzahl_aufloesen(key):

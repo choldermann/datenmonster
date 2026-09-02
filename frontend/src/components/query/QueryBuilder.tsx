@@ -3,6 +3,7 @@ import { X, Play, Code2, AlertTriangle, Loader2, Save, CheckCircle2, Trash2 } fr
 import api from "../../api/client";
 import { S } from "../dashboard/constants";
 import BedingungsBlock from "./BedingungsBlock";
+import Vergleichsgruppe from "./Vergleichsgruppe";
 
 /**
  * Abfrage-Generator: Körnung → Zeilenfilter → Kennzahlen → Kennzahlfilter.
@@ -42,6 +43,7 @@ export default function QueryBuilder({ projectId, onClose }) {
   const [kennzahlen, setKennzahlen] = useState([]);
   const [kennzahlfilter, setKennzahlfilter] = useState(leer);
   const [gruppierung, setGruppierung] = useState("");
+  const [vglGruppe, setVglGruppe] = useState([]);
   const [monate, setMonate] = useState(12);
   const [ergebnis, setErgebnis] = useState(null);
   const [laeuft, setLaeuft] = useState(false);
@@ -79,13 +81,14 @@ export default function QueryBuilder({ projectId, onClose }) {
     koernung, zeilenfilter, gruppierung: gruppierung || undefined,
     kennzahlen: verdichtet ? kennzahlen : [],
     kennzahlfilter: verdichtet ? kennzahlfilter : leer,
+    vergleichsgruppe: vglGruppe.length ? { kunden: vglGruppe } : undefined,
     sortierung: kennzahlen[0] ? { key: kennzahlen[0], richtung: "desc" } : undefined,
   });
 
   const zuruecksetzen = () => {
     setOffeneId(""); setName(""); setKoernung("kunde"); setGruppierung("");
     setZeilenfilter(leer); setKennzahlen([]); setKennzahlfilter(leer);
-    setErgebnis(null); setGespeichert(null); setFehler("");
+    setVglGruppe([]); setErgebnis(null); setGespeichert(null); setFehler("");
   };
 
   const oeffnen = async (id) => {
@@ -101,6 +104,7 @@ export default function QueryBuilder({ projectId, onClose }) {
       setZeilenfilter(d.zeilenfilter || leer);
       setKennzahlen(d.kennzahlen || []);
       setKennzahlfilter(d.kennzahlfilter || leer);
+      setVglGruppe((d.vergleichsgruppe || {}).kunden || []);
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
     }
@@ -213,6 +217,7 @@ export default function QueryBuilder({ projectId, onClose }) {
                   {schema.koernungen.map((x) => (
                     <button key={x.key} onClick={() => {
                         setKoernung(x.key); setZeilenfilter(leer); setGruppierung("");
+                        setVglGruppe([]);
                         setKennzahlen([]); setKennzahlfilter(leer); setErgebnis(null);
                       }}
                       style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
@@ -238,6 +243,18 @@ export default function QueryBuilder({ projectId, onClose }) {
                   zweiWerte={schema.zwei_werte} liste={schema.liste}
                   onChange={setZeilenfilter} />
               </div>
+
+              {/* Vergleichsgruppe – nur wo die Körnung sie kennt */}
+              {k?.vergleichsgruppe && (
+                <div style={abschnitt}>
+                  <p style={titel}>
+                    {k.vergleichsgruppe.label} <span style={{ fontWeight: 400,
+                      color: S.textDim }}>· optional</span>
+                  </p>
+                  <Vergleichsgruppe projectId={projectId} gewaehlt={vglGruppe}
+                    onChange={setVglGruppe} hinweis={k.vergleichsgruppe.beschreibung} />
+                </div>
+              )}
 
               {/* 3 — Gruppierung (nur Zeilen-Körnungen) */}
               {hatGruppen && (
@@ -288,12 +305,17 @@ export default function QueryBuilder({ projectId, onClose }) {
                   pointerEvents: verdichtet ? "auto" : "none" }}>
                   {(k?.kennzahlen || []).map((m) => {
                     const an = kennzahlen.includes(m.key);
+                    // Ohne Vergleichsgruppe hätten diese Kennzahlen keine Bezugsmenge.
+                    const gesperrt = m.braucht_gruppe && !vglGruppe.length;
                     return (
-                      <button key={m.key}
+                      <button key={m.key} disabled={gesperrt}
+                        title={gesperrt ? "Erst oben eine Vergleichsgruppe wählen"
+                                        : (m.hinweis || "")}
                         onClick={() => setKennzahlen((alt) => an
                           ? alt.filter((x) => x !== m.key) : [...alt, m.key])}
                         style={{ padding: "5px 11px", borderRadius: 5, fontSize: 11.5,
-                          cursor: "pointer",
+                          cursor: gesperrt ? "not-allowed" : "pointer",
+                          opacity: gesperrt ? 0.4 : 1,
                           backgroundColor: an ? "rgba(252,228,153,0.15)" : "transparent",
                           border: `1px solid ${an ? "rgba(252,228,153,0.4)" : S.border}`,
                           color: an ? "var(--accent)" : S.textMain }}>

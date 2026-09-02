@@ -359,6 +359,69 @@ JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung""",
 }
 
 
+# ── Vergleichsgruppe ─────────────────────────────────────────────────────────
+# „Welche Kunden kaufen dieselben Artikel wie …" ist keine Filterfrage, sondern
+# eine abgeleitete Menge: erst das Sortiment einer Kundengruppe bestimmen, dann
+# andere Kunden dagegen halten. Umgesetzt als zwei zusätzliche Kennzahlen der
+# Körnung „Kunde", die nur verfügbar sind, wenn eine Gruppe gewählt wurde.
+#
+# GRUPPE ist der Platzhalter für die Kundenliste; der SQL-Bauer setzt sie als
+# gebundene bzw. typgeprüfte Werte ein.
+GRUPPE = "@@GRUPPE@@"
+
+# Das Sortiment der Gruppe kommt aus den AUFTRAGSpositionen, nicht aus den
+# Rechnungen: genau die interessanten Fälle bekommen Ware ohne Rechnung, ihr
+# Sortiment stünde sonst gar nicht in den Daten.
+#
+# BEWUSSTE ASYMMETRIE: Für die Gruppe gilt KEIN Zeitfenster – ihr Sortiment ist
+# eine Eigenschaft, keine Periodenzahl. Hygiene Daheim wurde zuletzt 2024/25
+# beliefert; mit Fenster wäre die Artikelmenge leer und das ganze Merkmal still
+# wirkungslos. Für den geprüften Kunden gilt das Fenster sehr wohl.
+_GRUPPEN_ARTIKEL = f"""(SELECT DISTINCT bp9.tArtikel_kArtikel
+                        FROM dbo.tBestellung b9
+                        JOIN dbo.tBestellPos bp9
+                          ON bp9.tBestellung_kBestellung = b9.kBestellung
+                        WHERE b9.tKunde_kKunde IN ({GRUPPE})
+                          AND ISNULL(b9.nStorno,0) = 0
+                          AND bp9.tArtikel_kArtikel > 0)"""
+
+VERGLEICHS_KENNZAHLEN = [
+    {"key": "gemeinsame_artikel", "label": "Gemeinsame Artikel", "typ": "zahl",
+     "decimals": 0, "braucht_gruppe": True,
+     "hinweis": "Artikel, die dieser Kunde gekauft hat und die die Vergleichsgruppe ebenfalls bezieht.",
+     "sql": f"""(SELECT COUNT(DISTINCT rp9.kArtikel)
+                 FROM Rechnung.vRechnung r9
+                 JOIN Rechnung.vRechnungRechnungsadresse ra9 ON ra9.kRechnung = r9.kRechnung
+                 JOIN Rechnung.tRechnungPosition rp9 ON rp9.kRechnung = r9.kRechnung
+                 WHERE ra9.kKunde = k.kKunde AND ISNULL(r9.nStorno,0) = 0
+                   AND {_fenster("r9.dErstellt")}
+                   AND rp9.kArtikel IN {_GRUPPEN_ARTIKEL})"""},
+
+    {"key": "gemeinsamer_umsatz", "label": "Umsatz mit diesen Artikeln", "typ": "geld",
+     "decimals": 2, "braucht_gruppe": True,
+     "hinweis": "Netto-Umsatz dieses Kunden mit dem Sortiment der Vergleichsgruppe.",
+     "sql": f"""(SELECT CAST(ISNULL(SUM(rp9.fAnzahl * rp9.fVkNetto), 0) AS DECIMAL(18,2))
+                 FROM Rechnung.vRechnung r9
+                 JOIN Rechnung.vRechnungRechnungsadresse ra9 ON ra9.kRechnung = r9.kRechnung
+                 JOIN Rechnung.tRechnungPosition rp9 ON rp9.kRechnung = r9.kRechnung
+                 WHERE ra9.kKunde = k.kKunde AND ISNULL(r9.nStorno,0) = 0
+                   AND {_fenster("r9.dErstellt")}
+                   AND rp9.kArtikel IN {_GRUPPEN_ARTIKEL})"""},
+]
+
+KOERNUNGEN["kunde"]["kennzahlen"].extend(VERGLEICHS_KENNZAHLEN)
+# Die Gruppe selbst gehört nicht in ihre eigene Ergebnisliste – sonst stünde
+# Hygiene Daheim an der Spitze der Kunden, die kaufen wie Hygiene Daheim.
+KOERNUNGEN["kunde"]["gruppe_ausschluss"] = f"k.kKunde NOT IN ({GRUPPE})"
+KOERNUNGEN["kunde"]["vergleichsgruppe"] = {
+    "lookup": "kunde",
+    "label": "Vergleichsgruppe",
+    "beschreibung": ("Kunden, deren Sortiment als Maßstab dient. Ihr Sortiment wird "
+                     "ohne Zeitfenster bestimmt und sie selbst aus dem Ergebnis "
+                     "genommen."),
+}
+
+
 # ── Vergleiche je Feldtyp ────────────────────────────────────────────────────
 # Die Schlüssel sind Teil des Vertrags mit der Oberfläche; der SQL-Bauer kennt
 # genau diese und weist alles andere ab.
@@ -395,6 +458,7 @@ def schema() -> dict:
             # Verlauf gibt es dort, wo eine Gruppierung „je Monat" existiert.
             "verlauf": any(g.get("verlauf") for g in k.get("gruppierungen") or []),
             "verlauf_grund": k.get("verlauf_grund"),
+            "vergleichsgruppe": k.get("vergleichsgruppe"),
             "gruppierungen": [{"key": g["key"], "label": g["label"],
                                "verlauf": bool(g.get("verlauf"))}
                               for g in k.get("gruppierungen") or []],

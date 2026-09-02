@@ -32,6 +32,23 @@ LOOKUP_QUERIES = {
     "plattform":   "SELECT nTyp AS value, MIN(cName) AS label "
                    "FROM dbo.tPlattform WHERE nInet = 0 AND nTyp IS NOT NULL "
                    "GROUP BY nTyp ORDER BY MIN(cName)",
+    # Kunden für die Vergleichsgruppe des Abfrage-Generators. Auf Kunden mit
+    # Bewegung in 24 Monaten begrenzt (3.301 statt 22.495) – eine Auswahlliste
+    # über den ganzen Stamm wäre unbedienbar. Name wie überall aus Firma plus
+    # Firmenzusatz, weil cFirma bei PPS meist nur die Gattung trägt.
+    "kunde":       "SELECT k.kKunde AS value, "
+                   "  ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(a.cFirma,'')) "
+                   "    + CASE WHEN ISNULL(a.cZusatz,'') = '' "
+                   "      OR CHARINDEX(LTRIM(RTRIM(a.cZusatz)), ISNULL(a.cFirma,'')) > 0 THEN '' "
+                   "      ELSE ' ' + LTRIM(RTRIM(a.cZusatz)) END), ''), "
+                   "    LTRIM(RTRIM(ISNULL(a.cVorname,'') + ' ' + ISNULL(a.cName,'')))) "
+                   "  + ISNULL(' – ' + NULLIF(a.cOrt,''), '') AS label "
+                   "FROM dbo.tKunde k "
+                   "JOIN dbo.tAdresse a ON a.kKunde = k.kKunde AND a.nTyp = 1 AND a.nStandard = 1 "
+                   "WHERE EXISTS (SELECT 1 FROM dbo.tBestellung b "
+                   "              WHERE b.tKunde_kKunde = k.kKunde "
+                   "                AND b.dErstellt >= DATEADD(MONTH, -24, GETDATE())) "
+                   "ORDER BY 2",
     # Lieferanten (Einkauf). Gelöschte/inaktive (cAktiv = 'N') bleiben außen vor.
     # cFirma trägt oft nur ein Kürzel, der Rest steckt im Firmenzusatz –
     # deshalb dasselbe Zusammensetzen wie in den Cockpit-Abfragen
