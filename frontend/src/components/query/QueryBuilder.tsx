@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, Play, Code2, AlertTriangle, Loader2, Save, CheckCircle2 } from "lucide-react";
+import { X, Play, Code2, AlertTriangle, Loader2, Save, CheckCircle2, Trash2 } from "lucide-react";
 import api from "../../api/client";
 import { S } from "../dashboard/constants";
 import BedingungsBlock from "./BedingungsBlock";
@@ -50,12 +50,17 @@ export default function QueryBuilder({ projectId, onClose }) {
   const [name, setName] = useState("");
   const [speichert, setSpeichert] = useState(false);
   const [gespeichert, setGespeichert] = useState(null);
+  const [bestand, setBestand] = useState([]);      // gespeicherte Auswertungen
+  const [offeneId, setOffeneId] = useState("");    // "" = neue Abfrage
 
   useEffect(() => {
     api.get("/api/query/schema")
       .then(({ data }) => setSchema(data))
       .catch((e) => setFehler(e.response?.data?.detail || e.message));
-  }, []);
+    api.get("/api/query/list", { params: projectId ? { project_id: projectId } : {} })
+      .then(({ data }) => setBestand(data || []))
+      .catch(() => {});
+  }, [projectId]);
 
   const k = useMemo(
     () => schema?.koernungen.find((x) => x.key === koernung), [schema, koernung]);
@@ -77,14 +82,58 @@ export default function QueryBuilder({ projectId, onClose }) {
     sortierung: kennzahlen[0] ? { key: kennzahlen[0], richtung: "desc" } : undefined,
   });
 
+  const zuruecksetzen = () => {
+    setOffeneId(""); setName(""); setKoernung("kunde"); setGruppierung("");
+    setZeilenfilter(leer); setKennzahlen([]); setKennzahlfilter(leer);
+    setErgebnis(null); setGespeichert(null); setFehler("");
+  };
+
+  const oeffnen = async (id) => {
+    if (!id) return zuruecksetzen();
+    setFehler(""); setErgebnis(null); setGespeichert(null);
+    try {
+      const { data } = await api.get(`/api/query/${id}`);
+      const d = data.definition || {};
+      setOffeneId(id);
+      setName(data.name || "");
+      setKoernung(d.koernung || "kunde");
+      setGruppierung(d.gruppierung || "");
+      setZeilenfilter(d.zeilenfilter || leer);
+      setKennzahlen(d.kennzahlen || []);
+      setKennzahlfilter(d.kennzahlfilter || leer);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
+  const loeschen = async () => {
+    if (!offeneId) return;
+    const treffer = bestand.find((b) => String(b.id) === String(offeneId));
+    if (!window.confirm(`Auswertung „${treffer?.name || ""}“ mitsamt ihren `
+      + `Bausteinen löschen? Reports, die sie verwenden, verlieren diese Kacheln.`)) return;
+    setSpeichert(true);
+    try {
+      await api.delete(`/api/query/${offeneId}`);
+      setBestand((b) => b.filter((x) => String(x.id) !== String(offeneId)));
+      zuruecksetzen();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally { setSpeichert(false); }
+  };
+
   const speichern = async () => {
     setSpeichert(true); setFehler(""); setGespeichert(null);
     try {
-      const { data } = await api.post("/api/query/save", {
-        name: name.trim(), definition: definition(),
-        project_id: projectId || null,
-      });
+      const rumpf = { name: name.trim(), definition: definition(),
+                      project_id: projectId || null };
+      const { data } = offeneId
+        ? await api.put(`/api/query/${offeneId}`, rumpf)
+        : await api.post("/api/query/save", rumpf);
       setGespeichert(data);
+      setOffeneId(data.id);
+      setBestand((b) => b.some((x) => x.id === data.id)
+        ? b.map((x) => (x.id === data.id ? { ...x, name: data.name } : x))
+        : [{ id: data.id, name: data.name }, ...b]);
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
     } finally { setSpeichert(false); }
@@ -132,8 +181,22 @@ export default function QueryBuilder({ projectId, onClose }) {
               Bedingungen zusammenklicken – die Joins sitzen fest im Hintergrund
             </p>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none",
-            color: S.textDim, cursor: "pointer", padding: 4 }}><X size={18} /></button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {bestand.length > 0 && (
+              <select value={offeneId} onChange={(e) => oeffnen(e.target.value)}
+                title="Gespeicherte Auswertung öffnen"
+                style={{ padding: "6px 10px", borderRadius: 6, fontSize: 11.5,
+                  backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
+                  color: S.textMain, maxWidth: 260 }}>
+                <option value="">Neue Abfrage …</option>
+                {bestand.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={onClose} style={{ background: "none", border: "none",
+              color: S.textDim, cursor: "pointer", padding: 4 }}><X size={18} /></button>
+          </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: 20,
@@ -359,7 +422,8 @@ export default function QueryBuilder({ projectId, onClose }) {
             <span style={{ display: "flex", alignItems: "center", gap: 5,
               fontSize: 11.5, color: "#4ade80" }}>
               <CheckCircle2 size={13} />
-              Gespeichert – steht im Report-Baukasten unter „{gespeichert.form_name}“.
+              {offeneId && gespeichert.id === offeneId ? "Übernommen" : "Gespeichert"}
+              {" – steht im Report-Baukasten unter „"}{gespeichert.form_name}{"“."}
             </span>
           )}
           <button onClick={speichern}
@@ -368,8 +432,16 @@ export default function QueryBuilder({ projectId, onClose }) {
             style={{ ...knopf(false), display: "flex", alignItems: "center", gap: 6,
               opacity: (speichert || !name.trim() || !ergebnis) ? 0.4 : 1,
               cursor: (speichert || !name.trim() || !ergebnis) ? "not-allowed" : "pointer" }}>
-            <Save size={12} /> {speichert ? "Speichert…" : "Als Baustein speichern"}
+            <Save size={12} /> {speichert ? "Speichert…"
+              : offeneId ? "Änderungen übernehmen" : "Als Baustein speichern"}
           </button>
+          {offeneId && (
+            <button onClick={loeschen} disabled={speichert} title="Auswertung löschen"
+              style={{ ...knopf(false), padding: "8px 10px",
+                cursor: speichert ? "not-allowed" : "pointer" }}>
+              <Trash2 size={13} />
+            </button>
+          )}
           <button onClick={onClose} style={knopf(false)}>Schließen</button>
           <button onClick={ausfuehren} disabled={laeuft || !schema}
             style={{ ...knopf(true), display: "flex", alignItems: "center", gap: 6,

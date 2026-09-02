@@ -220,6 +220,14 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
         if any(x["id"] == a for x in schema["actions"]) and a not in tab["action_ids"]:
             tab["action_ids"].append(a)
 
+    # Aufräumen statt Sonderfälle jagen: Wird eine Auswertung umbenannt, ändern
+    # sich die abgeleiteten IDs, und die alte Aktion bliebe als Waise zurück –
+    # sie würde bei jedem Lauf mitgerechnet, ohne dass etwas davon zu sehen ist.
+    _benutzt = {w.get("action_id") for w in schema["widgets"]}
+    schema["actions"] = [a for a in schema["actions"] if a.get("id") in _benutzt]
+    for t in schema["result_tabs"]:
+        t["action_ids"] = [a for a in t.get("action_ids") or [] if a in _benutzt]
+
     f.schema = schema
     flag_modified(f, "schema")
 
@@ -229,3 +237,38 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
     return {"mapping": m, "form": f, "action_id": aid,
             "verlauf_mapping_id": verlauf_mapping_id,
             "widget_ids": widgets, "spalten": gebaut["spalten"]}
+
+
+def entfernen(db, vorhandene) -> dict:
+    """Entfernt Bausteine, Aktionen und Mappings einer gespeicherten Auswertung.
+
+    Das Sammelformular bleibt stehen, auch wenn es leer wird – es ist der Ort,
+    an dem die nächste Auswertung landet.
+    """
+    entfernt = {"widgets": 0, "mappings": 0}
+    f = db.query(Form).filter(Form.id == vorhandene.form_id).first()
+    if f:
+        schema = dict(f.schema or {})
+        alte = set(vorhandene.widget_ids or [])
+        vorher = len(schema.get("widgets") or [])
+        schema["widgets"] = [w for w in (schema.get("widgets") or [])
+                             if w.get("id") not in alte]
+        entfernt["widgets"] = vorher - len(schema["widgets"])
+        benutzt = {w.get("action_id") for w in schema["widgets"]}
+        schema["actions"] = [a for a in (schema.get("actions") or [])
+                             if a.get("id") in benutzt]
+        for t in schema.get("result_tabs") or []:
+            t["action_ids"] = [a for a in t.get("action_ids") or [] if a in benutzt]
+        f.schema = schema
+        flag_modified(f, "schema")
+
+    for mid in (vorhandene.mapping_id, vorhandene.verlauf_mapping_id):
+        if not mid:
+            continue
+        m = db.query(Mapping).filter(Mapping.id == mid).first()
+        if m:
+            db.delete(m)
+            entfernt["mappings"] += 1
+
+    db.delete(vorhandene)
+    return entfernt

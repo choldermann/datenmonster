@@ -166,3 +166,74 @@ def speichern(data: SpeichernRequest, db: Session = Depends(get_db),
     return {**_abfrage_out(q),
             "form_name": gebaut["form"].name,
             "spalten": len(gebaut["spalten"])}
+
+
+@router.get("/{query_id}")
+def holen(query_id: int, db: Session = Depends(get_db),
+          user: User = Depends(get_current_user)):
+    """Die gespeicherte Definition, um den Generator damit zu öffnen."""
+    _check_editor(user)
+    from app.models.report import AdHocQuery
+    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
+    if not q:
+        raise HTTPException(404, "Auswertung nicht gefunden")
+    return _abfrage_out(q)
+
+
+@router.put("/{query_id}")
+def aktualisieren(query_id: int, data: SpeichernRequest,
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Ändert eine gespeicherte Auswertung.
+
+    Mapping und Bausteine werden ersetzt, nicht danebengelegt – ein Report, der
+    den Baustein schon verwendet, zeigt danach die neue Fassung.
+    """
+    _check_editor(user)
+    from app.core.database import safe_commit
+    from app.models.report import AdHocQuery
+    from app.services import mandant_service
+    from app.services.query_builder import erzeugen
+
+    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
+    if not q:
+        raise HTTPException(404, "Auswertung nicht gefunden")
+
+    mandant_id = data.mandant_id or mandant_service.aktiver(q.project_id, user, db)
+    if not mandant_id:
+        raise HTTPException(400, "Kein Mandant gewählt.")
+
+    try:
+        gebaut = erzeugen.speichern(db, data.name or q.name, data.definition,
+                                    q.project_id, mandant_id, vorhandene=q)
+    except sql_bauer.AbfrageFehler as e:
+        raise HTTPException(400, str(e))
+
+    q.name = (data.name or q.name).strip()
+    q.definition = data.definition or {}
+    q.koernung = (data.definition or {}).get("koernung") or q.koernung
+    q.mapping_id = gebaut["mapping"].id
+    q.verlauf_mapping_id = gebaut.get("verlauf_mapping_id")
+    q.form_id = gebaut["form"].id
+    q.widget_ids = gebaut["widget_ids"]
+    safe_commit(db)
+    db.refresh(q)
+    return {**_abfrage_out(q), "form_name": gebaut["form"].name}
+
+
+@router.delete("/{query_id}")
+def loeschen(query_id: int, db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    """Entfernt die Auswertung samt Bausteinen und Mappings."""
+    _check_editor(user)
+    from app.core.database import safe_commit
+    from app.models.report import AdHocQuery
+    from app.services.query_builder import erzeugen
+
+    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
+    if not q:
+        raise HTTPException(404, "Auswertung nicht gefunden")
+    name = q.name
+    entfernt = erzeugen.entfernen(db, q)
+    safe_commit(db)
+    return {"ok": True, "name": name, **entfernt}
