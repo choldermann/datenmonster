@@ -905,8 +905,16 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             scope_id = eintrag.get("scope_id")
             if scope == "project":
                 scope_id = str(body.project_id)
+            # Titel + Geltungsbereich als Schlüssel, nicht der Titel allein:
+            # Titel wie „Rechnung – Statuswerte" vergibt die Schema-Erkundung in
+            # jeder Installation. Ein Upsert nur nach Titel überschriebe damit die
+            # gemessenen Werte des Kunden mit denen aus dem Template.
             best = (db.query(AiMemoryKnowledge)
-                    .filter(AiMemoryKnowledge.title == titel).first())
+                    .filter(AiMemoryKnowledge.title == titel,
+                            AiMemoryKnowledge.scope == scope,
+                            AiMemoryKnowledge.scope_id.is_(None) if scope_id is None
+                            else AiMemoryKnowledge.scope_id == scope_id)
+                    .first())
             if best is not None:
                 best.content = inhalt
                 best.category = eintrag.get("category") or best.category
@@ -1303,11 +1311,21 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
     # ── Projektwissen exportieren ─────────────────────────────────────────────
     # Ohne das passende Wissen schreibt die KI zu den mitgelieferten Auswertungen
     # falsches SQL — es gehört also mit ins Bündel, nicht daneben.
+    wissen_uebersprungen: List[str] = []
     if body.knowledge_ids:
         from app.models.ai_memory import AiMemoryKnowledge
         for w in (db.query(AiMemoryKnowledge)
                   .filter(AiMemoryKnowledge.id.in_(body.knowledge_ids))
                   .order_by(AiMemoryKnowledge.id).all()):
+            # Wissen mit Geltungsbereich „datasource" beschreibt die DATENLAGE
+            # einer bestimmten Installation — „1.170 von 2.074 Objekten sind leer",
+            # „nMahnstop: True 303 mal". Beim Empfänger ist das schlicht falsch, und
+            # er merkt es nicht: ein Join auf ein bei ihm gefülltes Objekt liefert ja
+            # etwas. Zudem hängt die scope_id am hiesigen Verbindungsnamen und passt
+            # dort auf nichts. Solche Einträge gehen deshalb nicht mit ins Bündel.
+            if (w.scope or "global") == "datasource":
+                wissen_uebersprungen.append(w.title)
+                continue
             content["knowledge"].append({
                 "category": w.category or "rule",
                 "title": w.title,
@@ -1349,7 +1367,8 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
     db.add(t)
     db.commit()
     db.refresh(t)
-    return {"ok": True, "template_id": tid, "id": t.id}
+    return {"ok": True, "template_id": tid, "id": t.id,
+            "knowledge_skipped": wissen_uebersprungen}
 
 
 @router.delete('/{template_id}')

@@ -112,7 +112,21 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
         form_ids: [...selectedForms],
         knowledge_ids: [...selectedKnowledge],
       };
-      await api.post("/api/templates/create", payload);
+      const { data } = await api.post("/api/templates/create", payload);
+      // Mandantenwissen (Geltungsbereich „datasource") beschreibt die Datenlage
+      // DIESER Installation und wandert bewusst nicht ins Bündel. Das muss der
+      // Ersteller erfahren — sonst fehlt es beim Empfänger unbemerkt.
+      const weg: string[] = data?.knowledge_skipped || [];
+      if (weg.length) {
+        alert(
+          `${weg.length} Wissenseintrag${weg.length === 1 ? "" : "e"} wurde` +
+          `${weg.length === 1 ? "" : "n"} NICHT mitgenommen, weil er nur für eine ` +
+          `bestimmte Datenbank-Verbindung gilt und beim Empfänger falsch wäre:\n\n` +
+          weg.map(t => `• ${t}`).join("\n") +
+          `\n\nWissen, das in jeder JTL-Wawi stimmt, muss dafür auf ` +
+          `Geltungsbereich „global" stehen.`
+        );
+      }
       onSaved();
     } catch (e) {
       alert(e.response?.data?.detail || e.message);
