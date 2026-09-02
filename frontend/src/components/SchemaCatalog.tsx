@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Fragment } from "react";
 import { BookOpen, ChevronDown, ChevronRight, Download, Link2, Loader2, Sparkles, Plus, Trash2, Search, Star, StarOff, Upload } from "lucide-react";
 import { useRef } from "react";
 import api from "../api/client";
@@ -361,17 +361,29 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const toggleExpand = (name: string) =>
     setExpanded(s => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n; });
 
-  // Nur belegte Beziehungen taugen für den Katalog; je Quellspalte die beste.
+  // Belegte Beziehungen für den Katalog; je Quellspalte die beste.
+  //
+  // Die Grenze liegt bei 50 %, nicht bei 99 %: ein OPTIONALER Fremdschlüssel
+  // erreicht die hohe Hürde nie. Rechnung.tRechnung.kShop trifft zu 34 %, weil
+  // zwei Drittel der Rechnungen keine Shop-Bestellungen sind — der Join ist
+  // richtig, er braucht nur ein LEFT JOIN. Mit der 99-%-Grenze verlor jeder
+  // Lauf genau diese Joins (bei PPS 13 brauchbare, darunter
+  // tArtikel.kWarengruppe und tArtikel.kHersteller).
+  //
+  // Sortiert: sichere zuerst, danach die optionalen — die Anzeige trennt sie,
+  // damit niemand einen 60-%-Join für einen Pflichtjoin hält.
   const belegteBeziehungen = (() => {
     const beste = new Map<string, Beziehung>();
     for (const b of beziehungen) {
-      if (b.quote < 99) continue;
+      if (b.quote < 50) continue;
       const k = `${b.von}.${b.von_spalte}`;
       const alt = beste.get(k);
       if (!alt || b.quote > alt.quote) beste.set(k, b);
     }
-    return [...beste.values()];
+    return [...beste.values()].sort((a, b) => b.quote - a.quote);
   })();
+  const ersterOptionale = belegteBeziehungen.findIndex(b => b.quote < 99);
+  const anzahlSicher = ersterOptionale < 0 ? belegteBeziehungen.length : ersterOptionale;
 
   const described = tables.filter(t => t.description).length;
   const undescribed = tables.filter(t => !t.description).length;
@@ -851,9 +863,23 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
               <div style={{ maxHeight: 180, overflowY: "auto", display: "flex",
                 flexDirection: "column", gap: 3 }}>
                 {belegteBeziehungen.map((b, i) => (
-                  <label key={i} style={{ display: "flex", gap: 8, alignItems: "center",
+                  <Fragment key={i}>
+                  {i === 0 && anzahlSicher > 0 && (
+                    <div style={{ color: S.textDim, fontSize: 10, textTransform: "uppercase",
+                      letterSpacing: "0.06em", marginTop: 2 }}>
+                      Sicher ({anzahlSicher}) — trifft bei fast jeder Zeile
+                    </div>
+                  )}
+                  {i === anzahlSicher && (
+                    <div style={{ color: "#e0a070", fontSize: 10, textTransform: "uppercase",
+                      letterSpacing: "0.06em", marginTop: 6 }}>
+                      Optional ({belegteBeziehungen.length - anzahlSicher}) — Spalte ist oft leer,
+                      im SQL LEFT JOIN nehmen
+                    </div>
+                  )}
+                  <label style={{ display: "flex", gap: 8, alignItems: "center",
                     padding: "4px 8px", backgroundColor: S.bgEl, borderRadius: 5,
-                    border: `1px solid ${S.border}`, cursor: "pointer" }}>
+                    border: `1px solid ${b.quote < 99 ? "#e0a070" : S.border}`, cursor: "pointer" }}>
                     <input type="checkbox" checked={wahlBez.has(i)}
                       onChange={() => setWahlBez(m => {
                         const n = new Set(m); n.has(i) ? n.delete(i) : n.add(i); return n;
@@ -862,10 +888,12 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                       {b.von}.<span style={{ color: "#fbbf24" }}>{b.von_spalte}</span>
                       {" → "}{b.nach}.<span style={{ color: "#fbbf24" }}>{b.nach_spalte}</span>
                     </span>
-                    <span style={{ color: "#34d399", fontSize: 10, marginLeft: "auto" }}>
-                      {b.treffer}/{b.geprueft}
+                    <span style={{ color: b.quote < 99 ? "#e0a070" : "#34d399",
+                      fontSize: 10, marginLeft: "auto" }}>
+                      {b.quote} % ({b.treffer}/{b.geprueft})
                     </span>
                   </label>
+                  </Fragment>
                 ))}
               </div>
             </div>

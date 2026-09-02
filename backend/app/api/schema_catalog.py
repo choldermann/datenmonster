@@ -798,11 +798,20 @@ def erkundung_uebernehmen(
         if not all(schluessel) or schluessel in vorhanden:
             continue
         vorhanden.add(schluessel)
+        # Unter 99 % ist der Join nicht falsch, sondern optional: die Spalte ist
+        # bei einem Teil der Zeilen leer (Rechnung.tRechnung.kShop trifft zu
+        # 34 %, weil zwei Drittel der Rechnungen keine Shop-Bestellungen sind).
+        # Der Hinweis muss mit in den Katalog, sonst baut die KI einen INNER
+        # JOIN und verliert stillschweigend Zeilen.
+        quote = b.get("quote")
+        beschreibung = f"gemessen: {quote} % Trefferquote"
+        if isinstance(quote, (int, float)) and quote < 99:
+            beschreibung += " — optionaler Schlüssel, LEFT JOIN nötig"
         db.add(SchemaRelationMeta(
             connection_id=conn_id,
             from_table=schluessel[0], from_col=schluessel[1],
             to_table=schluessel[2], to_col=schluessel[3],
-            description=f"gemessen: {b.get('quote')} % Trefferquote"))
+            description=beschreibung))
         rel_neu += 1
 
     db.commit()
