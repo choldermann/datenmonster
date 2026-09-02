@@ -7,18 +7,56 @@ _sql_engine_cache: dict = {}
 
 import re as _re_mod
 _ISO_DATE_RE = _re_mod.compile(r"^\d{4}-\d{2}-\d{2}$")
+# Datum mit Uhrzeit, ISO-Schreibweise: Trennzeichen T oder Leerzeichen, Sekunden
+# und Bruchteile freiwillig, Zeitzone (Z oder ±hh:mm) freiwillig.
+_ISO_DT_RE = _re_mod.compile(
+    r"^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)"
+    r"(Z|[+-]\d{2}:?\d{2})?$")
+# Deutsche Schreibweise, mit oder ohne Uhrzeit: 31.07.2026, 31.07.2026 14:30
+_DE_DATE_RE = _re_mod.compile(
+    r"^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:[ T](\d{2}:\d{2}(?::\d{2})?))?$")
 
 
 def _coerce_param(val):
-    """Wandelt reine ISO-Datumsstrings (YYYY-MM-DD) in echte date-Objekte um, damit
-    der DB-Treiber sie als DATE bindet statt als nvarchar. Sonst interpretiert z.B.
-    MS SQL Server unter deutscher Spracheinstellung »2026-07-31« als Tag/Monat-
-    vertauscht → »Monat 31« → Fehler 242 (22007, out of range). Andere Werte bleiben
-    unverändert."""
-    if isinstance(val, str) and _ISO_DATE_RE.match(val):
-        import datetime
+    """Wandelt Datumsangaben in echte date/datetime-Objekte um, damit der Treiber
+    sie als DATE/DATETIME bindet statt als nvarchar.
+
+    Warum das sein muss: bleibt der Wert Text, legt MS SQL Server ihn unter
+    deutscher Spracheinstellung als »yyyy-dd-mm« aus. »2026-07-31« wird dann zu
+    »Monat 31« → Fehler 242 (22007). Tückischer ist der Fall darunter: bei einem
+    Tag ≤ 12 gibt es keinen Fehler, sondern stumm einen anderen Zeitraum —
+    »2026-09-02« als von-Wert liest sich als 2. Februar, und die Auswertung zeigt
+    eine plausible, aber falsche Zahl (gemessen: 464,27 € statt 3.526,72 €).
+
+    Erkannt werden YYYY-MM-DD, ISO mit Uhrzeit (T oder Leerzeichen) und die
+    deutsche Schreibweise TT.MM.JJJJ, jeweils mit oder ohne Uhrzeit. Eine
+    Zeitzonenangabe wird abgeschnitten, nicht umgerechnet: die Zielspalten sind
+    zeitzonenlos, und gemeint ist die Wanduhrzeit — »2026-01-01T00:00:00+01:00«
+    soll der 1. Januar bleiben und nicht zum 31. Dezember werden. Alles andere
+    bleibt unverändert."""
+    if not isinstance(val, str):
+        return val
+    import datetime
+    if _ISO_DATE_RE.match(val):
         try:
             return datetime.date.fromisoformat(val)
+        except ValueError:
+            return val
+    m = _ISO_DT_RE.match(val)
+    if m:
+        try:
+            return datetime.datetime.fromisoformat(f"{m.group(1)}T{m.group(2)}")
+        except ValueError:
+            return val
+    m = _DE_DATE_RE.match(val)
+    if m:
+        tag, monat, jahr, zeit = m.groups()
+        try:
+            d = datetime.date(int(jahr), int(monat), int(tag))
+            if not zeit:
+                return d
+            std = [int(x) for x in zeit.split(":")]
+            return datetime.datetime(d.year, d.month, d.day, *std)
         except ValueError:
             return val
     return val
