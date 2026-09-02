@@ -69,6 +69,7 @@ class AdHocQuery(Base):
     koernung    = Column(String, default="kunde")
     definition  = Column(JSON, default=dict)     # das, was der Generator schickt
     mapping_id  = Column(Integer, nullable=True) # erzeugtes Mapping (Liste)
+    verlauf_mapping_id = Column(Integer, nullable=True)  # zweites Mapping „je Monat“
     form_id     = Column(Integer, nullable=True) # Sammelformular „Eigene Auswertungen"
     widget_ids  = Column(JSON, default=list)     # angelegte Bausteine
     created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))

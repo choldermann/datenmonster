@@ -161,6 +161,10 @@ def bauen(definition: dict, literal: bool = False) -> dict:
 
     binde = _Binder(literal=literal)
 
+    # Alles ausser „Kunde" folgt der Zeilen-Bauart (Liste bzw. GROUP BY).
+    if kname != "kunde":
+        return _zeilenkoernung(definition, k, kname, binde)
+
     # ── Spalten: Standardausgabe des Feldkatalogs plus gewählte Kennzahlen ──
     spalten, namen = [], []
     schluessel = k["schluessel"]
@@ -252,3 +256,118 @@ def bauen(definition: dict, literal: bool = False) -> dict:
            + (order if order else "")).strip()
 
     return {"sql": sql, "params": binde.werte, "spalten": namen}
+
+
+def _zeilenkoernung(definition: dict, k: dict, kname: str, binde: _Binder) -> dict:
+    """Die vier Zeilen-Körnungen: Liste, oder mit Gruppierung verdichtet.
+
+    Beide Formen bauen auf derselben Zwischenebene auf – innen die Rohwerte je
+    Zeile, außen bei Bedarf Gruppierung und Aggregate. Das ist notwendig, nicht
+    nur ordentlich: MSSQL verbietet SUM(<Unterabfrage>), und der Auftrags- wie
+    der Rechnungswert IST eine Unterabfrage.
+
+    Anders als bei „Kunde" kann es hier keine Nullfälle geben. Ein GROUP BY über
+    Rechnungen liefert für einen Kunden ohne Rechnung nie eine Zeile — deshalb
+    beantwortet nur die Kundenkörnung Fragen der Form „… = 0".
+    """
+    def _feld_aufloesen(key):
+        f = katalog.feld(kname, key)
+        if not f:
+            raise AbfrageFehler(f"Unbekanntes Feld „{key}“.")
+        return f["sql"], f["typ"]
+
+    wo = _baum(definition.get("zeilenfilter") or {}, _feld_aufloesen, binde)
+    bedingungen = " AND ".join(t for t in (k.get("grundfilter"), wo) if t)
+
+    # Die Zwischenebene trägt Schlüssel und ALLE Felder – auch die, die nicht
+    # ausgegeben werden: Gruppierungen und Kennzahlen rechnen mit ihren Aliasen.
+    schluessel = k["schluessel"]
+    innen_spalten = [f'{schluessel["sql"]} AS {schluessel["name"]}']
+    for f in k["felder"]:
+        innen_spalten.append(f'{f["sql"]} AS {f["key"].replace(".", "_")}')
+    innen = ",\n         ".join(innen_spalten)
+    basis = (f"  SELECT {innen}\n  {k['basis']}\n"
+             + (f"  WHERE {bedingungen}\n" if bedingungen else ""))
+
+    gkey = definition.get("gruppierung") or ""
+    g = katalog.gruppierung(kname, gkey) if gkey else None
+    if gkey and not g:
+        raise AbfrageFehler(f"Unbekannte Gruppierung „{gkey}“.")
+
+    try:
+        limit = int(definition.get("limit") or 500)
+    except (TypeError, ValueError):
+        limit = 500
+    limit = max(1, min(limit, MAX_LIMIT))
+
+    if not g:
+        if (definition.get("kennzahlfilter") or {}).get("kinder"):
+            raise AbfrageFehler("Bedingungen an Kennzahlen brauchen eine Gruppierung – "
+                                "ohne sie gibt es keine verdichteten Zahlen.")
+        namen = [{"name": schluessel["name"], "typ": "zahl", "schluessel": True}]
+        aussen = [f'x.{schluessel["name"]}']
+        for f in k["felder"]:
+            if not f.get("ausgabe"):
+                continue
+            alias = f["key"].replace(".", "_")
+            aussen.append(f"x.{alias}")
+            namen.append({"name": alias, "label": f["label"], "typ": f["typ"]})
+        gruppen_sql = having = ""
+    else:
+        namen, aussen, gruppen_ausdruecke = [], [], []
+        for ausdruck, alias in g["sql"]:
+            aussen.append(f"{ausdruck} AS {alias}")
+            namen.append({"name": alias, "label": alias, "typ": "text"})
+            # Ein bereits aggregierter Ausdruck (MAX(…)) darf nicht ins GROUP BY.
+            if not ausdruck.upper().lstrip().startswith(("MAX(", "MIN(", "SUM(", "COUNT(")):
+                gruppen_ausdruecke.append(ausdruck)
+        gruppen_sql = ", ".join(gruppen_ausdruecke)
+
+        gewaehlt = list(definition.get("kennzahlen") or [])
+        gefiltert = set()
+        _sammle(definition.get("kennzahlfilter") or {}, gefiltert)
+        if not gewaehlt and not gefiltert:
+            raise AbfrageFehler("Bitte mindestens eine Kennzahl wählen.")
+        for key in gewaehlt + sorted(gefiltert - set(gewaehlt)):
+            m = katalog.kennzahl(kname, key)
+            if not m:
+                raise AbfrageFehler(f"Unbekannte Kennzahl „{key}“.")
+            aussen.append(f'{m["sql"]} AS {key}')
+            namen.append({"name": key, "label": m["label"], "typ": m["typ"],
+                          "decimals": m.get("decimals")})
+
+        def _kennzahl_aufloesen(key):
+            m = katalog.kennzahl(kname, key)
+            if not m:
+                raise AbfrageFehler(f"Unbekannte Kennzahl „{key}“.")
+            # HAVING rechnet mit dem Ausdruck, nicht mit dem Alias.
+            return m["sql"], m["typ"]
+
+        having = _baum(definition.get("kennzahlfilter") or {}, _kennzahl_aufloesen, binde)
+
+    sort = definition.get("sortierung") or {}
+    sort_key = sort.get("key")
+    if sort_key and sort_key not in {n["name"] for n in namen}:
+        sort_key = None
+    if not sort_key:
+        sort_key = namen[-1]["name"] if g else (namen[1]["name"] if len(namen) > 1 else None)
+    richtung = "DESC" if str(sort.get("richtung", "desc")).lower() == "desc" else "ASC"
+    order = f"ORDER BY {sort_key} {richtung}" if sort_key else ""
+
+    sql = (f"SELECT TOP ({limit}) " + ",\n       ".join(aussen) + "\n"
+           + f"FROM (\n{basis}) x\n"
+           + (f"GROUP BY {gruppen_sql}\n" if gruppen_sql else "")
+           + (f"HAVING {having}\n" if having else "")
+           + order).strip()
+
+    return {"sql": sql, "params": binde.werte, "spalten": namen}
+
+
+def _sammle(knoten, raus):
+    if not isinstance(knoten, dict):
+        return
+    if "op" in knoten:
+        for kind in (knoten.get("kinder") or []):
+            _sammle(kind, raus)
+    elif knoten.get("key"):
+        raus.add(knoten["key"])

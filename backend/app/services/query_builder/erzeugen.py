@@ -123,6 +123,7 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
     definition.pop("limit", None)
     # literal=True: der Report gibt später nur :von/:bis mit. Ein verbliebenes
     # :p0 bliebe ungebunden und die Auswertung wäre stumm leer.
+    koernung = definition.get("koernung") or "kunde"
     gebaut = sql_bauer.bauen(definition, literal=True)
 
     alt_mapping = None
@@ -164,15 +165,67 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
                    "hidden_columns": [schluessel_spalte] if schluessel_spalte else []},
     })
 
+    # ── Zeitverlauf ──────────────────────────────────────────────────────────
+    # Dieselbe Abfrage, nur „je Monat" verdichtet. Bei der Körnung „Kunde" gibt es
+    # ihn nicht: ein Kunde hat kein Datum, und „wie viele Kunden hatten in Monat X
+    # keine Rechnung" wäre eine rollierende Neuberechnung – eine andere Frage.
+    verlauf_gruppe = next((g["key"] for g in (katalog.KOERNUNGEN[koernung].get("gruppierungen") or [])
+                           if g.get("verlauf")), None)
+    verlauf_mapping_id = None
+    w_verlauf = f"w_q_{basis}_verlauf"
+    aid_verlauf = f"act_q_{basis}_verlauf"
+    schema["widgets"] = [w for w in schema["widgets"] if w.get("id") != w_verlauf]
+    schema["actions"] = [a for a in schema["actions"] if a.get("id") != aid_verlauf]
+
+    if verlauf_gruppe:
+        v_def = dict(definition)
+        v_def["gruppierung"] = verlauf_gruppe
+        # Ohne Kennzahl gäbe es nichts zu zeichnen; die erste des Katalogs ist
+        # immer eine Zählung und damit die sinnvollste Vorgabe.
+        if not v_def.get("kennzahlen"):
+            v_def["kennzahlen"] = [katalog.KOERNUNGEN[koernung]["kennzahlen"][0]["key"]]
+        v_def["kennzahlfilter"] = definition.get("kennzahlfilter") or {}
+        v_def["sortierung"] = {"key": "Monat", "richtung": "asc"}
+        try:
+            v_gebaut = sql_bauer.bauen(v_def, literal=True)
+        except sql_bauer.AbfrageFehler:
+            v_gebaut = None
+        if v_gebaut:
+            alt_v = None
+            if vorhandene and (vorhandene.widget_ids or []) and vorhandene.verlauf_mapping_id:
+                alt_v = db.query(Mapping).filter(
+                    Mapping.id == vorhandene.verlauf_mapping_id).first()
+            mv = _mapping_bauen(db, f"{name} – Verlauf", project_id, connection_id,
+                                v_gebaut, alt_v)
+            db.flush()
+            verlauf_mapping_id = mv.id
+            schema["actions"].append({
+                "id": aid_verlauf, "type": "run_mapping", "mapping_id": mv.id,
+                "pipeline_id": None, "label": f"{name} – Verlauf",
+            })
+            wert_spalte = next((s["name"] for s in v_gebaut["spalten"]
+                                if s["name"] != "Monat"), None)
+            schema["widgets"].append({
+                "id": w_verlauf, "type": "line", "label": f"{name} – Verlauf",
+                "action_id": aid_verlauf,
+                "config": {"width": 12, "x_column": "Monat", "curved": True,
+                           "y_columns": [wert_spalte] if wert_spalte else []},
+            })
+
     tab = next((t for t in schema["result_tabs"] if t.get("id") == "tab_eigene"), None)
     if not tab:
         tab = {"id": "tab_eigene", "label": SAMMELFORMULAR, "action_ids": []}
         schema["result_tabs"].append(tab)
-    if aid not in tab["action_ids"]:
-        tab["action_ids"].append(aid)
+    for a in (aid, aid_verlauf):
+        if any(x["id"] == a for x in schema["actions"]) and a not in tab["action_ids"]:
+            tab["action_ids"].append(a)
 
     f.schema = schema
     flag_modified(f, "schema")
 
+    widgets = [w_kpi, w_tab]
+    if any(w["id"] == w_verlauf for w in schema["widgets"]):
+        widgets.append(w_verlauf)
     return {"mapping": m, "form": f, "action_id": aid,
-            "widget_ids": [w_kpi, w_tab], "spalten": gebaut["spalten"]}
+            "verlauf_mapping_id": verlauf_mapping_id,
+            "widget_ids": widgets, "spalten": gebaut["spalten"]}

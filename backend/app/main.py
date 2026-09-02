@@ -117,6 +117,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE price_rulesets ADD COLUMN last_message TEXT",
             "ALTER TABLE price_rulesets ADD COLUMN ende_bei_verkauf BOOLEAN DEFAULT 0",
             "ALTER TABLE price_rulesets ADD COLUMN ende_ab_menge FLOAT DEFAULT 1",
+            # Abfrage-Generator: zweites Mapping für den Zeitverlauf
+            "ALTER TABLE adhoc_queries ADD COLUMN verlauf_mapping_id INTEGER",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,

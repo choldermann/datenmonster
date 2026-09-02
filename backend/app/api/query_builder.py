@@ -155,7 +155,8 @@ def speichern(data: SpeichernRequest, db: Session = Depends(get_db),
         project_id=data.project_id,
         koernung=(data.definition or {}).get("koernung") or "kunde",
         definition=data.definition or {},
-        mapping_id=gebaut["mapping"].id, form_id=gebaut["form"].id,
+        mapping_id=gebaut["mapping"].id, verlauf_mapping_id=gebaut.get("verlauf_mapping_id"),
+        form_id=gebaut["form"].id,
         widget_ids=gebaut["widget_ids"], created_by=user.id,
     )
     db.add(q)

@@ -1259,7 +1259,11 @@ def execute_mapping(
                     elif is_preview:
                         import re as _re2
                         _dialect = ext_engine.dialect.name
-                        _has_limit = bool(_re2.search(r'TOP\s+\d+|LIMIT\s+\d+', _exec_sql, _re2.IGNORECASE))
+                        # TOP (n) mit Klammern ist gültiges T-SQL und muss hier
+                        # mitgezählt werden – sonst wird ein zweites TOP davorgesetzt,
+                        # das SQL ist ungültig und die Abfrage liefert stumm nichts.
+                        _has_limit = bool(_re2.search(r'TOP\s*\(?\s*\d+|LIMIT\s+\d+',
+                                                      _exec_sql, _re2.IGNORECASE))
                         if not _has_limit:
                             if _dialect == 'mssql':
                                 # TOP muss NACH einem evtl. DISTINCT stehen

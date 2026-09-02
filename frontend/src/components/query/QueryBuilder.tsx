@@ -41,6 +41,7 @@ export default function QueryBuilder({ projectId, onClose }) {
   const [zeilenfilter, setZeilenfilter] = useState(leer);
   const [kennzahlen, setKennzahlen] = useState([]);
   const [kennzahlfilter, setKennzahlfilter] = useState(leer);
+  const [gruppierung, setGruppierung] = useState("");
   const [monate, setMonate] = useState(12);
   const [ergebnis, setErgebnis] = useState(null);
   const [laeuft, setLaeuft] = useState(false);
@@ -65,8 +66,14 @@ export default function QueryBuilder({ projectId, onClose }) {
     () => (k?.kennzahlen || []).filter((m) => kennzahlen.includes(m.key)),
     [k, kennzahlen]);
 
+  // „kunde" rechnet immer verdichtet; die übrigen brauchen dafür eine Gruppierung.
+  const hatGruppen = (k?.gruppierungen || []).length > 0;
+  const verdichtet = !hatGruppen || !!gruppierung;
+
   const definition = () => ({
-    koernung, zeilenfilter, kennzahlen, kennzahlfilter,
+    koernung, zeilenfilter, gruppierung: gruppierung || undefined,
+    kennzahlen: verdichtet ? kennzahlen : [],
+    kennzahlfilter: verdichtet ? kennzahlfilter : leer,
     sortierung: kennzahlen[0] ? { key: kennzahlen[0], richtung: "desc" } : undefined,
   });
 
@@ -142,7 +149,7 @@ export default function QueryBuilder({ projectId, onClose }) {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {schema.koernungen.map((x) => (
                     <button key={x.key} onClick={() => {
-                        setKoernung(x.key); setZeilenfilter(leer);
+                        setKoernung(x.key); setZeilenfilter(leer); setGruppierung("");
                         setKennzahlen([]); setKennzahlfilter(leer); setErgebnis(null);
                       }}
                       style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
@@ -169,15 +176,53 @@ export default function QueryBuilder({ projectId, onClose }) {
                   onChange={setZeilenfilter} />
               </div>
 
-              {/* 3 — Kennzahlen */}
-              <div style={abschnitt}>
-                <p style={titel}>3 · Welche Zahlen sollen dazu berechnet werden?</p>
+              {/* 3 — Gruppierung (nur Zeilen-Körnungen) */}
+              {hatGruppen && (
+                <div style={abschnitt}>
+                  <p style={titel}>3 · Verdichten?</p>
+                  <p style={unter}>
+                    Ohne Verdichtung ist das Ergebnis eine Liste. Mit Verdichtung
+                    entstehen Kennzahlen, auf die sich dann Bedingungen stellen lassen.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button onClick={() => { setGruppierung(""); setKennzahlfilter(leer); }}
+                      style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
+                        cursor: "pointer",
+                        backgroundColor: !gruppierung ? "rgba(252,228,153,0.15)" : "transparent",
+                        border: `1px solid ${!gruppierung ? "rgba(252,228,153,0.4)" : S.border}`,
+                        color: !gruppierung ? "var(--accent)" : S.textMain }}>
+                      Einzelne Zeilen
+                    </button>
+                    {(k?.gruppierungen || []).map((gr) => (
+                      <button key={gr.key} onClick={() => setGruppierung(gr.key)}
+                        style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
+                          cursor: "pointer",
+                          backgroundColor: gruppierung === gr.key ? "rgba(252,228,153,0.15)" : "transparent",
+                          border: `1px solid ${gruppierung === gr.key ? "rgba(252,228,153,0.4)" : S.border}`,
+                          color: gruppierung === gr.key ? "var(--accent)" : S.textMain }}>
+                        {gr.label}{gr.verlauf ? " ↗" : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4 — Kennzahlen */}
+              <div style={{ ...abschnitt, opacity: verdichtet ? 1 : 0.5 }}>
+                <p style={titel}>{hatGruppen ? "4" : "3"} · Welche Zahlen sollen dazu berechnet werden?</p>
+                {!verdichtet && (
+                  <p style={unter}>
+                    Eine Liste einzelner Zeilen trägt keine verdichteten Zahlen –
+                    oben eine Verdichtung wählen.
+                  </p>
+                )}
                 <p style={unter}>
                   Alle Kennzahlen zählen nur im gewählten Zeitfenster. Ohne Fenster
                   wäre „Rechnungen = 0“ wertlos – über die ganze Historie trifft es
                   fast niemanden.
                 </p>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap",
+                  pointerEvents: verdichtet ? "auto" : "none" }}>
                   {(k?.kennzahlen || []).map((m) => {
                     const an = kennzahlen.includes(m.key);
                     return (
@@ -208,14 +253,16 @@ export default function QueryBuilder({ projectId, onClose }) {
               </div>
 
               {/* 4 — Kennzahlfilter */}
-              <div style={{ ...abschnitt, opacity: kennzahlen.length ? 1 : 0.5 }}>
-                <p style={titel}>4 · Bedingungen an diese Zahlen</p>
+              <div style={{ ...abschnitt, opacity: (verdichtet && kennzahlen.length) ? 1 : 0.5 }}>
+                <p style={titel}>{hatGruppen ? "5" : "4"} · Bedingungen an diese Zahlen</p>
                 <p style={unter}>
-                  {kennzahlen.length
-                    ? "Hier wird nach dem Rechnen gefiltert – z. B. „Lieferscheine ≥ 1 UND Rechnungen = 0“."
-                    : "Erst oben Kennzahlen wählen."}
+                  {!verdichtet
+                    ? "Erst eine Verdichtung wählen."
+                    : kennzahlen.length
+                      ? "Hier wird nach dem Rechnen gefiltert – z. B. „Anzahl Lieferscheine ≥ 1 UND Anzahl Rechnungen = 0“."
+                      : "Erst oben Kennzahlen wählen."}
                 </p>
-                {kennzahlen.length > 0 && (
+                {verdichtet && kennzahlen.length > 0 && (
                   <BedingungsBlock knoten={kennzahlfilter} felder={kennzahlFelder}
                     vergleiche={schema.vergleiche} ohneWert={schema.ohne_wert}
                     zweiWerte={schema.zwei_werte} liste={schema.liste}
