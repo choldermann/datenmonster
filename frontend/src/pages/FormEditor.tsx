@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff, Inbox } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff, Inbox, CalendarClock } from "lucide-react";
 import api from "../api/client";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
@@ -11,6 +11,7 @@ import ActionsEditor from "../components/forms/ActionsEditor";
 import WidgetsEditor from "../components/forms/WidgetsEditor";
 import FormPreview from "../components/forms/FormPreview";
 import FormSubmissions from "../components/forms/FormSubmissions";
+import ReportScheduleModal from "../components/forms/ReportScheduleModal";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -52,6 +53,7 @@ export default function FormEditor() {
   const [selectedFieldId, setSelectedFieldId]   = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(false);
+  const [showSchedule, setShowSchedule] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [users, setUsers] = useState([]);
 
@@ -222,6 +224,16 @@ export default function FormEditor() {
                 borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent",
                 color: S.textDim, cursor: "pointer", fontSize: 11 }}>
               <Inbox size={11} /> Einträge
+            </button>
+          )}
+
+          {/* Zustellplan */}
+          {id && id !== "new" && (
+            <button onClick={() => setShowSchedule(true)} title="Regelmäßig per Mail zustellen"
+              style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px",
+                borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent",
+                color: S.textDim, cursor: "pointer", fontSize: 11 }}>
+              <CalendarClock size={11} /> Zustellplan
             </button>
           )}
 
@@ -473,6 +485,16 @@ export default function FormEditor() {
         <FormSubmissions
           formId={id}
           onClose={() => setShowSubmissions(false)}
+        />
+      )}
+
+      {/* ── Zustellplan ── */}
+      {showSchedule && id && id !== "new" && (
+        <ReportScheduleModal
+          formId={Number(id)}
+          formName={name}
+          projectId={projectId}
+          onClose={() => setShowSchedule(false)}
         />
       )}
     </div>

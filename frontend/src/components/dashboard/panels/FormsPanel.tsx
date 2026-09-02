@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink } from "lucide-react";
+import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
+import ReportBuilder from "../../forms/ReportBuilder";
 
 export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   const navigate = useNavigate();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [baukasten, setBaukasten] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -54,14 +56,27 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
           </p>
         </div>
         {canEdit && (
-          <button onClick={createForm}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
-              backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
-              color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-            <Plus size={13} /> Neues Formular
-          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setBaukasten(true)}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
+                backgroundColor: "transparent", border: `1px solid ${S.border}`,
+                color: S.textMain, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              <LayoutGrid size={13} /> Report zusammenstellen
+            </button>
+            <button onClick={createForm}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
+                backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
+                color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+              <Plus size={13} /> Neues Formular
+            </button>
+          </div>
         )}
       </div>
+
+      {baukasten && (
+        <ReportBuilder projectId={projectId} onClose={() => setBaukasten(false)}
+          onCreated={(r) => { setBaukasten(false); navigate(`/forms/${r.id}`); }} />
+      )}
 
       {forms.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 0" }}>

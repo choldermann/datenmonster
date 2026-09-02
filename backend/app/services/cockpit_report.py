@@ -1093,7 +1093,8 @@ SECTION_ASSESSMENT = "__assessment__"
 async def generate_report(form, params: dict, db, precomputed_summary: str | None = None,
                           sections: Optional[list] = None,
                           provider: Optional[str] = None,
-                          user=None) -> bytes:
+                          user=None, mandant_id: Optional[int] = None,
+                          out_results: Optional[dict] = None) -> bytes:
     """sections: Auswahl aus dem Report-Dialog – Reiter-IDs plus die Pseudo-IDs
     SECTION_SUMMARY / SECTION_ASSESSMENT. None = kompletter Report (wie bisher)."""
     from app.services import mandant_service
@@ -1104,8 +1105,10 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
     # Mandant bestimmt außerdem, aus welcher WaWi die Firmenanschrift des
     # Deckblatts kommt – ein Report mit dem Briefkopf des anderen Betriebs wäre
     # der peinlichste denkbare Fehler dieses Features.
+    # mandant_id kommt gesetzt vom Zeitplan (dort gibt es keinen angemeldeten
+    # Benutzer, aus dem sich der aktive Mandant ableiten ließe).
     params, mandant_id = mandant_service.lauf_vorbereiten(
-        params or {}, _project_id, db, user)
+        params or {}, _project_id, db, user, mandant_id=mandant_id)
     conn_id = mandant_id or _resolve_conn_id(schema, db)
     company = _fetch_company(conn_id)
 
@@ -1159,6 +1162,12 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
             results[_a["id"]] = {"columns": [], "rows": _lauf.get("alerts") or []}
         except Exception:
             results[_a["id"]] = {"columns": [], "rows": []}
+
+    # Der Zeitplan braucht dieselben Zahlen für die Kurzfassung im Mailtext.
+    # Durchreichen statt ein zweites Mal rechnen – ein Cockpit-Lauf kostet
+    # zweistellige Sekunden.
+    if out_results is not None:
+        out_results.update(results)
     # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
     # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
     if not want_summary:

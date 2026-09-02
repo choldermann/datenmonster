@@ -603,3 +603,163 @@ def reload_all_alert_jobs():
         logger.error(f"Warnungs-Zeitpläne konnten nicht geladen werden: {e}")
     finally:
         db.close()
+
+
+# ── Geplante Reports ─────────────────────────────────────────────────────────
+
+def _run_report(schedule_id: int, triggered_by: str = "scheduler"):
+    """Rechnet einen geplanten Report durch und stellt ihn zu."""
+    import asyncio
+    from app.core.database import SessionLocal, safe_commit
+    from app.models.report import ReportSchedule
+    from app.models.form import Form
+    from app.models.project import Project
+    from app.services import cockpit_report, report_notify, zeitraum as zr
+
+    db = SessionLocal()
+    try:
+        plan = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+        if not plan:
+            logger.warning(f"Report-Zeitplan {schedule_id} nicht gefunden")
+            return
+        if not plan.active and triggered_by == "scheduler":
+            return
+
+        form = db.query(Form).filter(Form.id == plan.form_id).first()
+        if not form:
+            raise ValueError(f"Report-Formular {plan.form_id} existiert nicht mehr")
+
+        # Die Vorgaben der Filterfelder zuerst: der Browser füllt sie beim Öffnen,
+        # ein Zeitplan tut das nicht – ein fehlender Filter macht die Abfrage nicht
+        # etwa unbeschränkt, sondern stumm leer.
+        from app.services import report_catalog
+        params = report_catalog.standardparameter(form.schema or {})
+        params.update(plan.params or {})
+        # Der Zeitraum wird bei JEDEM Lauf neu berechnet – "Dieses Jahr" heißt
+        # Jahresanfang bis heute, nicht bis zum Tag, an dem der Plan angelegt wurde.
+        params.update(zr.berechne(plan.zeitraum_preset))
+        zeitraum_text = zr.klartext(plan.zeitraum_preset, params)
+
+        from app.services import mandant_service
+        mandant_id = getattr(plan, "mandant_id", None)
+
+        results: dict = {}
+        pdf = asyncio.run(cockpit_report.generate_report(
+            form, params, db, sections=(plan.sections or None),
+            mandant_id=mandant_id, out_results=results,
+        ))
+
+        projekt_name = None
+        if plan.project_id:
+            p = db.query(Project).filter(Project.id == plan.project_id).first()
+            projekt_name = p.name if p else None
+        # Mandantenname in den Betreff: sonst stehen zwei gleich aussehende Mails
+        # im Postfach und niemand weiß, welcher Betrieb gemeint ist.
+        _mname = mandant_service.name_von(mandant_id, db)
+        if _mname:
+            projekt_name = f"{projekt_name} · {_mname}" if projekt_name else _mname
+
+        versand = {"sent": False, "grund": "kein Versand konfiguriert"}
+        try:
+            versand = report_notify.send_report_email(
+                db, plan.email_to, plan.name or form.name, zeitraum_text,
+                form.schema or {}, results, pdf, projekt_name,
+                betreff=plan.email_subject, bis=params.get("bis", ""),
+            )
+        except Exception as e:
+            # Der Report ist gerechnet; nur die Zustellung ist schiefgegangen.
+            # Das darf den Lauf nicht als Totalausfall erscheinen lassen.
+            logger.error(f"Report-Mail konnte nicht versendet werden: {e}")
+            versand = {"sent": False, "grund": f"Mailfehler: {e}"}
+
+        meldung = (f"{len(pdf)//1024} kB PDF, {zeitraum_text}; " +
+                   ("Mail an " + ", ".join(versand.get("empfaenger", []))
+                    if versand.get("sent") else f"keine Mail ({versand.get('grund')})"))
+
+        plan.last_run_at = datetime.now(timezone.utc)
+        plan.last_status = "success"
+        plan.last_message = meldung[:1000]
+        safe_commit(db)
+        logger.info(f"✓ Report (Zeitplan {schedule_id}"
+                    + (f", Mandant {_mname}" if _mname else "") + f"): {meldung}")
+        return {"pdf_bytes": len(pdf), "versand": versand}
+
+    except Exception as e:
+        logger.error(f"✗ Report (Zeitplan {schedule_id}) fehlgeschlagen: {e}")
+        try:
+            from app.models.report import ReportSchedule as _RS
+            plan = db.query(_RS).filter(_RS.id == schedule_id).first()
+            if plan:
+                plan.last_run_at = datetime.now(timezone.utc)
+                plan.last_status = "error"
+                plan.last_message = str(e)[:1000]
+                safe_commit(db)
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def register_report_job(schedule_id: int, cron_expr: str):
+    """Registriert den Zustellplan eines Reports."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"report_{schedule_id}"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+
+    if not cron_expr or not cron_expr.strip():
+        return
+
+    parts = cron_expr.strip().split()
+    if len(parts) != 5:
+        logger.warning(f"Ungültiger Cron-Ausdruck für Report-Zeitplan {schedule_id}: {cron_expr}")
+        return
+    try:
+        trigger = CronTrigger(
+            minute=parts[0], hour=parts[1],
+            day=parts[2], month=parts[3], day_of_week=parts[4],
+            timezone="Europe/Berlin",
+        )
+        sched.add_job(_run_report, trigger=trigger, id=job_id,
+                      args=[schedule_id], replace_existing=True)
+        logger.info(f"Report-Zeitplan {schedule_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von Report-Zeitplan {schedule_id}: {e}")
+
+
+def unregister_report_job(schedule_id: int):
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"report_{schedule_id}")
+        logger.info(f"Report-Zeitplan {schedule_id} entfernt")
+    except Exception:
+        pass
+
+
+def trigger_report_now(schedule_id: int):
+    """„Jetzt ausführen" – läuft im Thread, damit die Oberfläche nicht wartet."""
+    import threading
+    t = threading.Thread(target=_run_report, args=[schedule_id, "manuell"], daemon=True)
+    t.start()
+
+
+def reload_all_report_jobs():
+    """Beim Start: alle aktiven Report-Zeitpläne registrieren."""
+    from app.core.database import SessionLocal
+    from app.models.report import ReportSchedule
+    db = SessionLocal()
+    try:
+        plaene = db.query(ReportSchedule).filter(ReportSchedule.active.is_(True)).all()
+        for p in plaene:
+            register_report_job(p.id, p.cron_expr)
+        logger.info(f"✓ {len(plaene)} Report-Zeitplan/-pläne geladen")
+    except Exception as e:
+        logger.error(f"Report-Zeitpläne konnten nicht geladen werden: {e}")
+    finally:
+        db.close()
