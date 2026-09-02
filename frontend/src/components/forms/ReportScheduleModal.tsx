@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Trash2, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
 import api from "../../api/client";
 import { S } from "../dashboard/constants";
@@ -43,6 +43,9 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
   const [meldung, setMeldung] = useState(null);   // {art: "ok"|"warn"|"fehler", text}
   const [eigenerTakt, setEigenerTakt] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Die nachfassenden Statusabfragen laufen per setTimeout und sähen sonst
+  // immer die plan-Fassung von dem Moment, in dem der Test gestartet wurde.
+  const planIdRef = useRef(null);
 
   useEffect(() => {
     (async () => {
@@ -64,6 +67,8 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
       } finally { setLaedt(false); }
     })();
   }, [formId]);
+
+  useEffect(() => { planIdRef.current = plan?.id ?? null; }, [plan?.id]);
 
   const setzen = (k, v) => setPlan((p) => ({ ...p, [k]: v }));
 
@@ -89,7 +94,11 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
       const { data } = await api.post(`/api/reports/schedules/${plan.id}/run-now`);
       setMeldung(data.hinweis
         ? { art: "warn", text: data.hinweis }
-        : { art: "ok", text: "Lauf gestartet. Das Ergebnis steht gleich unten im Status." });
+        : { art: "ok", text: "Lauf gestartet – das Ergebnis erscheint gleich unten." });
+      // Der Lauf läuft im Hintergrund; ohne Nachfassen bliebe die Meldung
+      // „gestartet" stehen und der Anwender wüsste nie, ob es geklappt hat.
+      // Ein Cockpit-Lauf braucht je nach Umfang einige Sekunden.
+      [3000, 8000, 15000, 30000].forEach((ms) => setTimeout(status, ms));
     } catch (e) {
       setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
     } finally { setBusy(false); }
@@ -101,11 +110,17 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
     onClose();
   };
 
+  /** Holt NUR den Laufstatus nach. Den Rest des Plans anzufassen wäre falsch:
+   *  der Anwender kann währenddessen schon weitergetippt haben. */
   const status = async () => {
-    if (!plan.id) return;
-    const { data } = await api.get("/api/reports/schedules", { params: { form_id: formId } });
-    const akt = (data || []).find((s) => s.id === plan.id);
-    if (akt) setPlan(akt);
+    const pid = planIdRef.current;
+    if (!pid) return;
+    try {
+      const { data } = await api.get("/api/reports/schedules", { params: { form_id: formId } });
+      const akt = (data || []).find((s) => s.id === pid);
+      if (akt) setPlan((p) => ({ ...p, last_run_at: akt.last_run_at,
+        last_status: akt.last_status, last_message: akt.last_message }));
+    } catch { /* der nächste Versuch kommt gleich */ }
   };
 
   const farbe = { ok: "#4ade80", warn: "var(--accent)", fehler: "#f87171" };
