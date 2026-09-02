@@ -135,10 +135,20 @@ def create_schedule(data: ScheduleIn, db: Session = Depends(get_db),
     if not f:
         raise HTTPException(404, "Report-Formular nicht gefunden")
 
+    # Ohne ausdrückliche Wahl gilt der Mandant, den der Anlegende gerade offen
+    # hat. Sonst fiele der Plan stumm auf den Projekt-Standard zurück und
+    # verschickte Woche für Woche die Zahlen des falschen Betriebs — die
+    # Zahlen wären in sich korrekt und der Fehler damit praktisch unsichtbar.
+    pid = data.project_id if data.project_id is not None else f.project_id
+    mandant_id = data.mandant_id
+    if mandant_id is None:
+        from app.services import mandant_service
+        mandant_id = mandant_service.aktiver(pid, user, db)
+
     s = ReportSchedule(
         name=(data.name or f.name), form_id=data.form_id,
-        project_id=data.project_id if data.project_id is not None else f.project_id,
-        mandant_id=data.mandant_id,
+        project_id=pid,
+        mandant_id=mandant_id,
         cron_expr=data.cron_expr or "0 6 * * 1",
         active=bool(data.active),
         zeitraum_preset=data.zeitraum_preset or "this_month",

@@ -46,11 +46,17 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
   // Die nachfassenden Statusabfragen laufen per setTimeout und sähen sonst
   // immer die plan-Fassung von dem Moment, in dem der Test gestartet wurde.
   const planIdRef = useRef(null);
+  const [mandanten, setMandanten] = useState([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get("/api/reports/schedules", { params: { form_id: formId } });
+        const [{ data }, md] = await Promise.all([
+          api.get("/api/reports/schedules", { params: { form_id: formId } }),
+          api.get("/api/mandanten", { params: projectId ? { project_id: projectId } : {} })
+            .catch(() => ({ data: { mandanten: [], aktiv: null } })),
+        ]);
+        setMandanten(md.data?.mandanten || []);
         const vorhanden = (data || [])[0];
         if (vorhanden) {
           setPlan(vorhanden);
@@ -58,6 +64,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
         } else {
           setPlan({
             name: formName, form_id: formId, project_id: projectId || null,
+            mandant_id: md.data?.aktiv ?? null,
             cron_expr: "0 6 * * 1", active: false, zeitraum_preset: "this_month",
             email_to: "", email_subject: "", sections: [], params: {},
           });
@@ -158,6 +165,26 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
                 Zeitplan aktiv
               </span>
             </label>
+
+            {mandanten.length > 1 && (
+              <div>
+                <label style={label}>Mandant – dessen Zahlen und Briefkopf</label>
+                <select value={plan.mandant_id ?? ""}
+                  onChange={(e) => setzen("mandant_id",
+                    e.target.value === "" ? null : Number(e.target.value))}
+                  style={feld}>
+                  {mandanten.map((m) => (
+                    <option key={m.connection_id} value={m.connection_id}>
+                      {m.name}{m.ist_standard ? " (Standard)" : ""}
+                    </option>
+                  ))}
+                </select>
+                <p style={{ fontSize: 10.5, color: S.textDim, marginTop: 4 }}>
+                  Der Zeitplan läuft ohne angemeldeten Benutzer – der Betrieb muss
+                  hier festgelegt sein, nicht aus der Sitzung geraten werden.
+                </p>
+              </div>
+            )}
 
             <div>
               <label style={label}>Takt</label>
