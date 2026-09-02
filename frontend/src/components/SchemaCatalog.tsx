@@ -78,6 +78,8 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
   const [wahlBez, setWahlBez]       = useState<Set<number>>(new Set());
   const [uebernehmend, setUebernehmend] = useState(false);
   const [erkErgebnis, setErkErgebnis]   = useState<string | null>(null);
+  // Für welche Wawi die Messwerte gelten — kommt vom Server (Verbindungsname).
+  const [geltungsbereich, setGeltungsbereich] = useState<string | null>(null);
   const [newRel, setNewRel]       = useState({ from_table: "", from_col: "", to_table: "", to_col: "", description: "" });
   const [addingRel, setAddingRel] = useState(false);
   const [deriving, setDeriving]   = useState(false);
@@ -288,6 +290,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
         `/api/schema-catalog/${connectionId}/erkunden/wissen`,
         { befunde: wichtig, hoechstens: 12, provider });
       setEntwuerfe(data.entwuerfe || []);
+      setGeltungsbereich(data.geltungsbereich || null);
       setWahlWissen(new Set());
     } catch (err: any) {
       alert(err.response?.data?.detail || "Entwurf fehlgeschlagen");
@@ -304,7 +307,8 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
         });
       setErkErgebnis(
         `${data.wissen_neu} Regeln neu, ${data.wissen_aktualisiert} aktualisiert, ` +
-        `${data.beziehungen_neu} Beziehungen in den Katalog übernommen.`);
+        `${data.beziehungen_neu} Beziehungen in den Katalog übernommen` +
+        (data.geltungsbereich ? ` — Wissen gilt für „${data.geltungsbereich}".` : "."));
       setWahlWissen(new Set()); setWahlBez(new Set());
       await load();
     } catch (err: any) {
@@ -884,6 +888,13 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
               <div style={{ color: S.textBright, fontWeight: 700, marginBottom: 6 }}>
                 Entwürfe ({entwuerfe.length}) — nichts wird gespeichert, bevor du es auswählst
               </div>
+              {geltungsbereich && (
+                <div style={{ color: S.textDim, fontSize: 11, marginBottom: 6 }}>
+                  Gilt nur für „{geltungsbereich}" — Messwerte einer Wawi sind über
+                  einer anderen falsch. Bestehendes Wissen anderer Verbindungen
+                  bleibt unberührt.
+                </div>
+              )}
               <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                 {entwuerfe.map((e, i) => {
                   const warnung = e.ungedeckte_zahlen.length > 0 || e.zu_lang || e.titel_existiert;

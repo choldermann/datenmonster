@@ -537,7 +537,9 @@ def _eintraege_lesen(roh: str) -> Optional[list[dict]]:
     return gefunden or None
 
 
-async def wissen_entwerfen(db, befunde: list[dict], svc, hoechstens: int = 12) -> list[dict]:
+async def wissen_entwerfen(db, befunde: list[dict], svc, hoechstens: int = 12,
+                           scope: str = "datasource",
+                           scope_id: str | None = None) -> list[dict]:
     """Macht aus Befunden Wissensentwürfe. Speichert nichts."""
     import json as _json
     from app.models.ai_memory import AiMemoryKnowledge
@@ -545,10 +547,14 @@ async def wissen_entwerfen(db, befunde: list[dict], svc, hoechstens: int = 12) -
     if not befunde:
         return []
 
-    vorhandene_titel = {
-        (t or "").lower()
-        for (t,) in db.query(AiMemoryKnowledge.title).all()
-    }
+    # „Titel existiert schon" warnt vor dem Überschreiben — und überschrieben
+    # wird nur innerhalb desselben Geltungsbereichs. Ohne diese Einschränkung
+    # meldete die Erkundung der zweiten Wawi jeden Titel als Konflikt, obwohl
+    # dort nichts überschrieben wird.
+    q = db.query(AiMemoryKnowledge.title).filter(AiMemoryKnowledge.scope == scope)
+    q = q.filter(AiMemoryKnowledge.scope_id.is_(None) if scope_id is None
+                 else AiMemoryKnowledge.scope_id == scope_id)
+    vorhandene_titel = {(t or "").lower() for (t,) in q.all()}
 
     belege = "\n".join(f"- {b['beleg']}" for b in befunde)
     prompt = (

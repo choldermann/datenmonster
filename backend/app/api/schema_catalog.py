@@ -711,7 +711,7 @@ async def erkundung_wissen(
     from app.services.ai_service import build_ai_service
     from app.services.schema_erkundung import wissen_entwerfen
 
-    _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user)
     if not body.befunde:
         return {"entwuerfe": []}
 
@@ -720,16 +720,23 @@ async def erkundung_wissen(
         raise HTTPException(400, "KI-Integration ist nicht aktiviert")
     svc.timeout = 300
     try:
-        entwuerfe = await wissen_entwerfen(db, body.befunde, svc, body.hoechstens)
+        entwuerfe = await wissen_entwerfen(
+            db, body.befunde, svc, body.hoechstens,
+            scope="datasource", scope_id=conn.name)
     except ValueError as e:
         raise HTTPException(502, str(e))
-    return {"entwuerfe": entwuerfe}
+    # Der Geltungsbereich gehört sichtbar an die Entwürfe: der Anwender soll vor
+    # dem Übernehmen wissen, für welche Wawi diese Messwerte gelten.
+    return {"entwuerfe": entwuerfe, "geltungsbereich": conn.name}
 
 
 class UebernehmenIn(BaseModel):
     eintraege:   List[dict] = []     # {kategorie, titel, inhalt}
     beziehungen: List[dict] = []     # {von, von_spalte, nach, nach_spalte, quote}
-    scope:       str = "global"
+    # Ohne Angabe gilt das Wissen für die vermessene Verbindung, nicht für alle.
+    # Erkundungswissen sind Messwerte EINES Mandanten — „1003 von 2070 Objekten
+    # leer" ist über einer anderen Wawi schlicht falsch.
+    scope:       Optional[str] = None
     scope_id:    Optional[str] = None
 
 
@@ -748,7 +755,13 @@ def erkundung_uebernehmen(
     """
     from app.models.ai_memory import AiMemoryKnowledge
 
-    _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user)
+    # scope_id ist der VerbindungsNAME (so sucht ai_context_builder das Wissen
+    # später wieder heraus), nicht die Id — mehrere Verbindungen auf dieselbe
+    # Wawi teilen sich damit von selbst einen Wissensstand.
+    scope    = body.scope or "datasource"
+    scope_id = body.scope_id or (conn.name if scope == "datasource" else None)
+
     neu = akt = 0
     for e in body.eintraege:
         titel  = (e.get("titel") or "").strip()
@@ -757,13 +770,21 @@ def erkundung_uebernehmen(
             continue
         kategorie = e.get("kategorie") if e.get("kategorie") in (
             "table", "field_mapping", "rule", "format", "other") else "rule"
-        row = db.query(AiMemoryKnowledge).filter(AiMemoryKnowledge.title == titel).first()
+        # Der Titel allein taugt nicht als Schlüssel: die Erkundung vergibt für
+        # jede Wawi dieselben Titel („Rechnung – Statuswerte"), und ein Upsert
+        # nur nach Titel überschriebe damit die Messwerte des anderen Mandanten.
+        row = (db.query(AiMemoryKnowledge)
+                 .filter(AiMemoryKnowledge.title == titel,
+                         AiMemoryKnowledge.scope == scope,
+                         AiMemoryKnowledge.scope_id.is_(None) if scope_id is None
+                         else AiMemoryKnowledge.scope_id == scope_id)
+                 .first())
         if row:
             row.content, row.category, row.enabled = inhalt, kategorie, True
             akt += 1
         else:
             db.add(AiMemoryKnowledge(
-                scope=body.scope, scope_id=body.scope_id, category=kategorie,
+                scope=scope, scope_id=scope_id, category=kategorie,
                 title=titel, content=inhalt, enabled=True, always_include=False))
             neu += 1
 
@@ -785,7 +806,8 @@ def erkundung_uebernehmen(
         rel_neu += 1
 
     db.commit()
-    return {"wissen_neu": neu, "wissen_aktualisiert": akt, "beziehungen_neu": rel_neu}
+    return {"wissen_neu": neu, "wissen_aktualisiert": akt, "beziehungen_neu": rel_neu,
+            "geltungsbereich": scope_id or "alle Verbindungen"}
 
 
 @router.get("/api/schema-catalog/{conn_id}/schemata")
