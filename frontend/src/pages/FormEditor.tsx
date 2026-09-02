@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff, Inbox, CalendarClock } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Globe, GlobeLock, Link, Eye, EyeOff, Inbox, CalendarClock, LayoutGrid } from "lucide-react";
 import api from "../api/client";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
@@ -12,6 +12,7 @@ import WidgetsEditor from "../components/forms/WidgetsEditor";
 import FormPreview from "../components/forms/FormPreview";
 import FormSubmissions from "../components/forms/FormSubmissions";
 import ReportScheduleModal from "../components/forms/ReportScheduleModal";
+import ReportBuilder from "../components/forms/ReportBuilder";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -54,6 +55,7 @@ export default function FormEditor() {
   const [showPreview, setShowPreview] = useState(false);
   const [showSubmissions, setShowSubmissions] = useState(false);
   const [showSchedule, setShowSchedule] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
   const [showIconPicker, setShowIconPicker] = useState(false);
   const [users, setUsers] = useState([]);
 
@@ -224,6 +226,17 @@ export default function FormEditor() {
                 borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: "transparent",
                 color: S.textDim, cursor: "pointer", fontSize: 11 }}>
               <Inbox size={11} /> Einträge
+            </button>
+          )}
+
+          {/* Bausteine ändern – nur bei zusammengeklickten Reports */}
+          {id && id !== "new" && schema?.report_builder && (
+            <button onClick={() => setShowBuilder(true)} title="Bausteine des Reports ändern"
+              style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px",
+                borderRadius: 5, border: "1px solid rgba(252,228,153,0.35)",
+                backgroundColor: "rgba(252,228,153,0.08)", color: "var(--accent)",
+                cursor: "pointer", fontSize: 11 }}>
+              <LayoutGrid size={11} /> Bausteine
             </button>
           )}
 
@@ -486,6 +499,13 @@ export default function FormEditor() {
           formId={id}
           onClose={() => setShowSubmissions(false)}
         />
+      )}
+
+      {/* ── Bausteine ändern ── */}
+      {showBuilder && id && id !== "new" && (
+        <ReportBuilder projectId={projectId} formId={Number(id)}
+          onClose={() => setShowBuilder(false)}
+          onCreated={() => { setShowBuilder(false); window.location.reload(); }} />
       )}
 
       {/* ── Zustellplan ── */}

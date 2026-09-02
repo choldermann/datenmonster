@@ -69,6 +69,11 @@ def build_catalog(db, project_id: Optional[int] = None) -> list:
         widgets = schema.get("widgets") or []
         if not widgets:
             continue
+        # Fertige Reports sind keine Quelle. Sonst stünde jede übernommene
+        # Kachel zweimal im Katalog – einmal im Cockpit, einmal im Report – und
+        # eine Auswahl daraus zöge eine Kopie der Kopie nach sich.
+        if schema.get("report_builder"):
+            continue
 
         actions = {a.get("id"): a for a in (schema.get("actions") or [])}
         tabs = _tab_je_action(schema)
@@ -170,11 +175,17 @@ def standardparameter(schema: dict) -> dict:
 
 
 def assemble(db, name: str, entries: list, zeitraum_preset: str = "this_month",
-             project_id: Optional[int] = None) -> dict:
-    """Baut aus gewählten Katalog-Einträgen ein neues Formular-Schema.
+             project_id: Optional[int] = None, bestehend: Optional[dict] = None) -> dict:
+    """Baut aus gewählten Katalog-Einträgen ein Formular-Schema.
 
     entries: [{form_id, widget_id}, …] in der Reihenfolge, in der der Anwender
     sie gewählt hat.
+
+    bestehend: das Schema eines Reports, der nachbearbeitet wird. Bausteine, die
+    darin schon stecken und weiterhin gewählt sind, werden **aus dem Report
+    übernommen, nicht neu aus dem Cockpit geholt**. Sonst verlöre der Anwender
+    bei jeder Änderung der Auswahl alles, was er am Report von Hand nachgezogen
+    hat – umbenannte Beschriftungen, angepasste Nachkommastellen, Hinweistexte.
 
     Gibt {schema, project_id, uebersprungen} zurück; das Speichern macht der
     Aufrufer, damit diese Funktion testbar bleibt.
@@ -198,12 +209,25 @@ def assemble(db, name: str, entries: list, zeitraum_preset: str = "this_month",
                          "zu einem Report verbinden")
     ziel_projekt = project_id if project_id is not None else next(iter(projekte))
 
+    # Was der bestehende Report schon hat, nach Herkunft aufgeschlüsselt.
+    alt_widgets: dict = {}       # (form_id, quell_widget_id) -> widget-dict
+    alt_actions: dict = {}       # ziel_action_id -> action-dict
+    if bestehend:
+        for h in (bestehend.get("report_builder") or {}).get("entries") or []:
+            wid_im_report = h.get("ziel_widget_id")
+            treffer = next((w for w in (bestehend.get("widgets") or [])
+                            if w.get("id") == wid_im_report), None)
+            if treffer:
+                alt_widgets[(int(h["form_id"]), h["widget_id"])] = treffer
+        alt_actions = {a.get("id"): a for a in (bestehend.get("actions") or [])}
+
     neue_actions: dict = {}      # ziel_action_id -> action-dict
     herkunft: dict = {}          # ziel_action_id -> (form_id, quell_action_id)
     id_map: dict = {}            # (form_id, quell_action_id) -> ziel_action_id
     tabs: dict = {}              # form_id -> tab-dict
     tab_reihenfolge: list = []
     widgets: list = []
+    herkunft_liste: list = []
     uebersprungen: list = []
 
     for e in entries:
@@ -220,10 +244,17 @@ def assemble(db, name: str, entries: list, zeitraum_preset: str = "this_month",
                                   "grund": NICHT_UEBERNEHMBAR[w["type"]]})
             continue
 
-        w = copy.deepcopy(w)
+        # Die Herkunft steht immer im Quell-Cockpit: im Report zeigt action_id
+        # bereits auf die (womöglich umbenannte) Ziel-ID und taugt hier nicht.
         quell_aid = w.get("action_id")
         action = next((a for a in (schema.get("actions") or [])
                        if a.get("id") == quell_aid), None)
+
+        # Die im Report gepflegte Fassung schlägt die Vorlage aus dem Cockpit –
+        # sonst wären von Hand nachgezogene Beschriftungen bei jeder
+        # Auswahländerung wieder weg.
+        vorhanden = alt_widgets.get((fid, wid))
+        w = copy.deepcopy(vorhanden if vorhanden is not None else w)
 
         if action:
             ziel_aid = quell_aid
@@ -259,6 +290,11 @@ def assemble(db, name: str, entries: list, zeitraum_preset: str = "this_month",
             cfg["width"] = 12
 
         widgets.append(w)
+        # Herkunft festhalten: nur damit lässt sich der Baukasten später mit der
+        # bisherigen Auswahl wieder öffnen. Aus dem fertigen Schema allein wäre
+        # sie nicht mehr abzuleiten (Widget-IDs werden bei Kollision umbenannt).
+        herkunft_liste.append({"form_id": fid, "widget_id": wid,
+                               "ziel_widget_id": ziel_wid})
 
         if fid not in tabs:
             tabs[fid] = {"id": f"tab_f{fid}", "label": f.name or f"Cockpit {fid}",
@@ -307,6 +343,13 @@ def assemble(db, name: str, entries: list, zeitraum_preset: str = "this_month",
         "widgets":     widgets,
         "result_tabs": [tabs[fid] for fid in tab_reihenfolge],
         "show_ai_assistant": False,
+        # Der Bauzettel: Herkunft jedes Bausteins plus die Zeitraum-Vorgabe.
+        # Damit kann der Baukasten den Report später zum Nachbessern öffnen,
+        # ohne dass der Anwender je den Formular-Designer sehen muss.
+        "report_builder": {
+            "entries": herkunft_liste,
+            "zeitraum_preset": zeitraum_preset or "this_month",
+        },
     }
     return {"schema": schema, "project_id": ziel_projekt,
             "uebersprungen": uebersprungen}

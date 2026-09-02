@@ -1,15 +1,20 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid } from "lucide-react";
+import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock } from "lucide-react";
 import api from "../../../api/client";
 import { S } from "../constants";
 import ReportBuilder from "../../forms/ReportBuilder";
+import ReportScheduleModal from "../../forms/ReportScheduleModal";
 
 export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   const navigate = useNavigate();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [baukasten, setBaukasten] = useState(false);
+  // Bei zusammengeklickten Reports führen zwei Wege am Designer vorbei:
+  // Bausteine ändern und Zustellplan. Beide halten hier die Form-ID.
+  const [bausteineVon, setBausteineVon] = useState(null);
+  const [zustellplanVon, setZustellplanVon] = useState(null);
 
   const load = async () => {
     setLoading(true);
@@ -78,6 +83,17 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
           onCreated={(r) => { setBaukasten(false); navigate(`/forms/${r.id}`); }} />
       )}
 
+      {bausteineVon && (
+        <ReportBuilder projectId={projectId} formId={bausteineVon.id}
+          onClose={() => setBausteineVon(null)}
+          onCreated={() => { setBausteineVon(null); load(); }} />
+      )}
+
+      {zustellplanVon && (
+        <ReportScheduleModal formId={zustellplanVon.id} formName={zustellplanVon.name}
+          projectId={projectId} onClose={() => setZustellplanVon(null)} />
+      )}
+
       {forms.length === 0 ? (
         <div style={{ textAlign: "center", padding: "60px 0" }}>
           <FileText size={40} style={{ color: S.textDim, opacity: 0.3, marginBottom: 12 }} />
@@ -98,6 +114,9 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
             const fieldCount = (schema.fields || []).length;
             const actionCount = (schema.actions || []).length;
             const widgetCount = (schema.widgets || []).length;
+            // Nur mit dem Baukasten gebaute Reports lassen sich dort ändern;
+            // ein von Hand gebautes Formular würde er überschreiben.
+            const istReport = !!schema.report_builder;
             return (
               <div key={f.id}
                 style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 8,
@@ -145,6 +164,26 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                         onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}>
                         <ExternalLink size={11} />
                       </button>
+                    )}
+                    {canEdit && istReport && (
+                      <>
+                        <button onClick={() => setBausteineVon(f)} title="Bausteine ändern"
+                          style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                            borderRadius: 5, border: "1px solid rgba(252,228,153,0.3)",
+                            backgroundColor: "rgba(252,228,153,0.08)", color: "var(--accent)", cursor: "pointer" }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.18)"}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"}>
+                          <LayoutGrid size={11} />
+                        </button>
+                        <button onClick={() => setZustellplanVon(f)} title="Regelmäßig zustellen"
+                          style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
+                            borderRadius: 5, border: `1px solid ${S.border}`,
+                            backgroundColor: "transparent", color: S.textDim, cursor: "pointer" }}
+                          onMouseEnter={e => e.currentTarget.style.color = S.textBright}
+                          onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
+                          <CalendarClock size={11} />
+                        </button>
+                      </>
                     )}
                     {canEdit && (
                       <>

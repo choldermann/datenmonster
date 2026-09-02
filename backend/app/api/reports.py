@@ -82,6 +82,71 @@ def build(data: BuildRequest, db: Session = Depends(get_db),
     }
 
 
+@router.get("/selection/{form_id}")
+def selection(form_id: int, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """Die Bauteil-Auswahl eines Reports, um den Baukasten damit zu öffnen."""
+    _check_editor(user)
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    bau = (f.schema or {}).get("report_builder") or {}
+    zeitraum = next((fd.get("config", {}).get("default")
+                     for fd in (f.schema or {}).get("fields") or []
+                     if fd.get("type") == "daterange"), None)
+    return {
+        "form_id": f.id, "name": f.name, "project_id": f.project_id,
+        # Ohne Bauzettel ist es ein von Hand gebautes Formular. Der Baukasten
+        # darf es dann nicht anfassen – er würde alles überschreiben.
+        "gebaut": bool(bau),
+        "entries": [{"form_id": e.get("form_id"), "widget_id": e.get("widget_id")}
+                    for e in (bau.get("entries") or [])],
+        "zeitraum_preset": zeitraum or bau.get("zeitraum_preset") or "this_month",
+    }
+
+
+@router.put("/build/{form_id}")
+def rebuild(form_id: int, data: BuildRequest, db: Session = Depends(get_db),
+            user: User = Depends(get_current_user)):
+    """Ändert die Bausteine eines bestehenden Reports.
+
+    Name, Adresse, Veröffentlichung und Zeitplan des Reports bleiben, damit ein
+    verschickter Link und ein laufender Zustellplan nicht ins Leere zeigen.
+    """
+    _check_editor(user)
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    if not ((f.schema or {}).get("report_builder")):
+        raise HTTPException(400, "Dieses Formular wurde nicht mit dem Baukasten "
+                                 "gebaut und lässt sich hier nicht ändern.")
+
+    try:
+        gebaut = report_catalog.assemble(
+            db, data.name or f.name,
+            [e.model_dump() for e in data.entries],
+            zeitraum_preset=data.zeitraum_preset or "this_month",
+            project_id=f.project_id,
+            bestehend=f.schema or {},
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    f.schema = gebaut["schema"]
+    if (data.name or "").strip():
+        f.name = data.name.strip()
+    f.version = (f.version or 1) + 1
+    safe_commit(db)
+
+    return {
+        "id": f.id, "name": f.name, "project_id": f.project_id,
+        "widgets": len(gebaut["schema"]["widgets"]),
+        "actions": len(gebaut["schema"]["actions"]),
+        "reiter": len(gebaut["schema"]["result_tabs"]),
+        "uebersprungen": gebaut["uebersprungen"],
+    }
+
+
 # ── Zeitpläne ────────────────────────────────────────────────────────────────
 
 class ScheduleIn(BaseModel):

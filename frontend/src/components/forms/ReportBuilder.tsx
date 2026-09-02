@@ -44,7 +44,8 @@ const btn = (primary) => ({
   color: primary ? "var(--accent)" : S.textMain,
 });
 
-export default function ReportBuilder({ projectId, onClose, onCreated }) {
+export default function ReportBuilder({ projectId, onClose, onCreated, formId = null }) {
+  const aendern = formId != null;
   const [cockpits, setCockpits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [fehler, setFehler] = useState("");
@@ -59,16 +60,29 @@ export default function ReportBuilder({ projectId, onClose, onCreated }) {
   useEffect(() => {
     (async () => {
       try {
-        const { data } = await api.get("/api/reports/catalog",
-          { params: projectId ? { project_id: projectId } : {} });
-        setCockpits(data.cockpits || []);
-        // Das erste Cockpit aufgeklappt, damit die Übersicht nicht leer wirkt.
-        if (data.cockpits?.[0]) setOffen({ [data.cockpits[0].form_id]: true });
+        const [kat, sel] = await Promise.all([
+          api.get("/api/reports/catalog", { params: projectId ? { project_id: projectId } : {} }),
+          aendern ? api.get(`/api/reports/selection/${formId}`) : Promise.resolve(null),
+        ]);
+        const liste = kat.data.cockpits || [];
+        setCockpits(liste);
+
+        if (sel?.data) {
+          setGewaehlt(sel.data.entries || []);
+          setName(sel.data.name || "");
+          setZeitraum(sel.data.zeitraum_preset || "this_month");
+          // Beim Ändern die Cockpits aufklappen, aus denen etwas drin ist –
+          // sonst sucht der Anwender seine Auswahl hinter zugeklappten Zeilen.
+          const drin = new Set((sel.data.entries || []).map((e) => e.form_id));
+          setOffen(Object.fromEntries([...drin].map((id) => [id, true])));
+        } else if (liste[0]) {
+          setOffen({ [liste[0].form_id]: true });
+        }
       } catch (e) {
         setFehler(e.response?.data?.detail || e.message);
       } finally { setLoading(false); }
     })();
-  }, [projectId]);
+  }, [projectId, formId]);
 
   const key = (e) => `${e.form_id}:${e.widget_id}`;
   const gewaehltSet = useMemo(
@@ -105,10 +119,11 @@ export default function ReportBuilder({ projectId, onClose, onCreated }) {
   const erstellen = async () => {
     setFehler(""); setSpeichert(true);
     try {
-      const { data } = await api.post("/api/reports/build", {
-        name: name.trim(), entries: gewaehlt,
-        zeitraum_preset: zeitraum, project_id: projectId || null,
-      });
+      const rumpf = { name: name.trim(), entries: gewaehlt,
+                      zeitraum_preset: zeitraum, project_id: projectId || null };
+      const { data } = aendern
+        ? await api.put(`/api/reports/build/${formId}`, rumpf)
+        : await api.post("/api/reports/build", rumpf);
       onCreated?.(data);
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
@@ -128,10 +143,12 @@ export default function ReportBuilder({ projectId, onClose, onCreated }) {
           display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
             <h2 style={{ fontSize: 15, fontWeight: 700, color: S.textBright, margin: 0 }}>
-              Report zusammenstellen
+              {aendern ? "Bausteine ändern" : "Report zusammenstellen"}
             </h2>
             <p style={{ fontSize: 11, color: S.textDim, marginTop: 3 }}>
-              Kacheln, Tabellen und Grafiken aus allen Cockpits auswählen
+              {aendern
+                ? "Haken setzen oder entfernen – der Report wird angepasst"
+                : "Kacheln, Tabellen und Grafiken aus allen Cockpits auswählen"}
             </p>
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none",
@@ -258,7 +275,8 @@ export default function ReportBuilder({ projectId, onClose, onCreated }) {
             <button onClick={erstellen} disabled={!bereit}
               style={{ ...btn(true), opacity: bereit ? 1 : 0.4,
                 cursor: bereit ? "pointer" : "not-allowed" }}>
-              {speichert ? "Wird gebaut…" : `Report erstellen (${gewaehlt.length})`}
+              {speichert ? "Wird gebaut…"
+                : `${aendern ? "Änderungen übernehmen" : "Report erstellen"} (${gewaehlt.length})`}
             </button>
           </div>
 
