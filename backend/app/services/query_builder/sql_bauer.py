@@ -28,18 +28,50 @@ class AbfrageFehler(ValueError):
     """Die Definition ist unbrauchbar. Der Text geht an den Anwender."""
 
 
-class _Binder:
-    """Vergibt Parameternamen und sammelt die Werte."""
+MAX_TEXT = 400
 
-    def __init__(self):
+
+class _Binder:
+    """Setzt Werte ins SQL – gebunden (Vorschau) oder als Literal (gespeichert).
+
+    Warum zwei Wege: Die Vorschau führt das SQL selbst aus und kann Parameter
+    mitgeben. Ein **gespeichertes** Mapping wird später vom Report ausgeführt,
+    der nur :von/:bis kennt – ein dort verbliebenes :p0 bliebe ungebunden und
+    die Abfrage lieferte **stumm null Zeilen**. Genau das ist beim ersten
+    Speichern passiert.
+
+    Die Literalfassung ist deshalb sicher, weil sie nichts durchreicht: Zahlen
+    laufen durch float(), Text wird auf Länge geprüft, von Steuerzeichen befreit
+    und mit verdoppelten Hochkommata in N'…' gesetzt. Feld- und Vergleichsnamen
+    stammen ohnehin aus dem serverseitigen Katalog.
+    """
+
+    def __init__(self, literal: bool = False):
         self.werte: dict = {}
+        self.literal = literal
         self._n = 0
 
-    def __call__(self, wert) -> str:
-        name = f"p{self._n}"
-        self._n += 1
-        self.werte[name] = wert
-        return f":{name}"
+    def __call__(self, wert, typ: str = "text") -> str:
+        if not self.literal:
+            name = f"p{self._n}"
+            self._n += 1
+            self.werte[name] = wert
+            return f":{name}"
+
+        if typ in ("zahl", "geld", "ja_nein"):
+            try:
+                f = float(wert)
+            except (TypeError, ValueError):
+                raise AbfrageFehler(f"„{wert}“ ist keine Zahl.")
+            return str(int(f)) if f == int(f) else repr(f)
+
+        s = str(wert)
+        if len(s) > MAX_TEXT:
+            raise AbfrageFehler(f"Werte dürfen höchstens {MAX_TEXT} Zeichen haben.")
+        # Steuerzeichen raus – sie haben in einem Filterwert nichts zu suchen und
+        # könnten ein Statement optisch zerlegen.
+        s = "".join(c for c in s if c == " " or c.isprintable())
+        return "N'" + s.replace("'", "''") + "'"
 
 
 def _bedingung(ausdruck: str, typ: str, vergleich: str, wert, binde: _Binder) -> str:
@@ -56,7 +88,7 @@ def _bedingung(ausdruck: str, typ: str, vergleich: str, wert, binde: _Binder) ->
     if vergleich == "zwischen":
         if not isinstance(wert, (list, tuple)) or len(wert) != 2:
             raise AbfrageFehler("„zwischen“ braucht genau zwei Werte.")
-        return f"({ausdruck} >= {binde(wert[0])} AND {ausdruck} <= {binde(wert[1])})"
+        return f"({ausdruck} >= {binde(wert[0], typ)} AND {ausdruck} <= {binde(wert[1], typ)})"
 
     if vergleich == "in":
         werte = wert if isinstance(wert, (list, tuple)) else [wert]
@@ -66,13 +98,13 @@ def _bedingung(ausdruck: str, typ: str, vergleich: str, wert, binde: _Binder) ->
             return "(1 = 1)"
         if len(werte) > MAX_LISTE:
             raise AbfrageFehler(f"Höchstens {MAX_LISTE} Werte je Auswahl.")
-        platz = ", ".join(binde(w) for w in werte)
+        platz = ", ".join(binde(w, typ) for w in werte)
         return f"({ausdruck} IN ({platz}))"
 
     if vergleich == "enthaelt":
-        return f"({ausdruck} LIKE {binde('%' + str(wert) + '%')})"
+        return f"({ausdruck} LIKE {binde('%' + str(wert) + '%', 'text')})"
     if vergleich == "beginnt":
-        return f"({ausdruck} LIKE {binde(str(wert) + '%')})"
+        return f"({ausdruck} LIKE {binde(str(wert) + '%', 'text')})"
 
     if wert is None or wert == "":
         raise AbfrageFehler(f"Für den Vergleich „{vergleich}“ fehlt der Wert.")
@@ -84,8 +116,8 @@ def _bedingung(ausdruck: str, typ: str, vergleich: str, wert, binde: _Binder) ->
     # Anwender aber, dass leere Werte mitkommen – sonst verschwinden Zeilen,
     # ohne dass er es merkt.
     if vergleich == "<>":
-        return f"({ausdruck} IS NULL OR {ausdruck} <> {binde(wert)})"
-    return f"({ausdruck} {vergleich} {binde(wert)})"
+        return f"({ausdruck} IS NULL OR {ausdruck} <> {binde(wert, typ)})"
+    return f"({ausdruck} {vergleich} {binde(wert, typ)})"
 
 
 def _baum(knoten: dict, aufloesen, binde: _Binder, tiefe: int = 0) -> str:
@@ -116,14 +148,18 @@ def _baum(knoten: dict, aufloesen, binde: _Binder, tiefe: int = 0) -> str:
                       knoten.get("wert"), binde)
 
 
-def bauen(definition: dict) -> dict:
-    """Gibt {sql, params, spalten} zurück. Wirft AbfrageFehler bei Unsinn."""
+def bauen(definition: dict, literal: bool = False) -> dict:
+    """Gibt {sql, params, spalten} zurück. Wirft AbfrageFehler bei Unsinn.
+
+    literal=True für das gespeicherte Mapping: Filterwerte werden eingesetzt
+    statt gebunden, weil der Report später nur :von/:bis mitgibt.
+    """
     kname = definition.get("koernung") or "kunde"
     k = katalog.KOERNUNGEN.get(kname)
     if not k:
         raise AbfrageFehler(f"Unbekannte Körnung „{kname}“.")
 
-    binde = _Binder()
+    binde = _Binder(literal=literal)
 
     # ── Spalten: Standardausgabe des Feldkatalogs plus gewählte Kennzahlen ──
     spalten, namen = [], []

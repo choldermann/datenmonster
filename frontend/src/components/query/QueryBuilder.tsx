@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, Play, Code2, AlertTriangle, Loader2 } from "lucide-react";
+import { X, Play, Code2, AlertTriangle, Loader2, Save, CheckCircle2 } from "lucide-react";
 import api from "../../api/client";
 import { S } from "../dashboard/constants";
 import BedingungsBlock from "./BedingungsBlock";
@@ -46,6 +46,9 @@ export default function QueryBuilder({ projectId, onClose }) {
   const [laeuft, setLaeuft] = useState(false);
   const [fehler, setFehler] = useState("");
   const [sqlOffen, setSqlOffen] = useState(false);
+  const [name, setName] = useState("");
+  const [speichert, setSpeichert] = useState(false);
+  const [gespeichert, setGespeichert] = useState(null);
 
   useEffect(() => {
     api.get("/api/query/schema")
@@ -62,6 +65,24 @@ export default function QueryBuilder({ projectId, onClose }) {
     () => (k?.kennzahlen || []).filter((m) => kennzahlen.includes(m.key)),
     [k, kennzahlen]);
 
+  const definition = () => ({
+    koernung, zeilenfilter, kennzahlen, kennzahlfilter,
+    sortierung: kennzahlen[0] ? { key: kennzahlen[0], richtung: "desc" } : undefined,
+  });
+
+  const speichern = async () => {
+    setSpeichert(true); setFehler(""); setGespeichert(null);
+    try {
+      const { data } = await api.post("/api/query/save", {
+        name: name.trim(), definition: definition(),
+        project_id: projectId || null,
+      });
+      setGespeichert(data);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally { setSpeichert(false); }
+  };
+
   const ausfuehren = async () => {
     setLaeuft(true); setFehler(""); setErgebnis(null);
     const bis = new Date();
@@ -69,9 +90,7 @@ export default function QueryBuilder({ projectId, onClose }) {
     const iso = (d) => d.toISOString().slice(0, 10);
     try {
       const { data } = await api.post("/api/query/preview", {
-        definition: { koernung, zeilenfilter, kennzahlen, kennzahlfilter,
-                      sortierung: kennzahlen[0]
-                        ? { key: kennzahlen[0], richtung: "desc" } : undefined },
+        definition: definition(),
         project_id: projectId || null,
         von: iso(von), bis: iso(bis),
       });
@@ -283,7 +302,27 @@ export default function QueryBuilder({ projectId, onClose }) {
         </div>
 
         <div style={{ padding: "14px 20px", borderTop: `1px solid ${S.border}`,
-          display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="Name der Auswertung, z. B. Lieferung ohne Rechnung"
+            style={{ flex: "1 1 260px", padding: "7px 10px", borderRadius: 6,
+              backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
+              color: S.textMain, fontSize: 12 }} />
+          {gespeichert && (
+            <span style={{ display: "flex", alignItems: "center", gap: 5,
+              fontSize: 11.5, color: "#4ade80" }}>
+              <CheckCircle2 size={13} />
+              Gespeichert – steht im Report-Baukasten unter „{gespeichert.form_name}“.
+            </span>
+          )}
+          <button onClick={speichern}
+            disabled={speichert || !name.trim() || !ergebnis}
+            title={!ergebnis ? "Erst eine Vorschau rechnen" : ""}
+            style={{ ...knopf(false), display: "flex", alignItems: "center", gap: 6,
+              opacity: (speichert || !name.trim() || !ergebnis) ? 0.4 : 1,
+              cursor: (speichert || !name.trim() || !ergebnis) ? "not-allowed" : "pointer" }}>
+            <Save size={12} /> {speichert ? "Speichert…" : "Als Baustein speichern"}
+          </button>
           <button onClick={onClose} style={knopf(false)}>Schließen</button>
           <button onClick={ausfuehren} disabled={laeuft || !schema}
             style={{ ...knopf(true), display: "flex", alignItems: "center", gap: 6,

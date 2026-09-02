@@ -64,12 +64,12 @@ _KUNDE_FELDER = [
 ]
 
 _KUNDE_KENNZAHLEN = [
-    {"key": "auftraege", "label": "Aufträge", "typ": "zahl", "decimals": 0,
+    {"key": "auftraege", "label": "Anzahl Aufträge", "typ": "zahl", "decimals": 0,
      "sql": """(SELECT COUNT(*) FROM dbo.tBestellung b
                 WHERE b.tKunde_kKunde = k.kKunde AND ISNULL(b.nStorno,0) = 0
                   AND """ + _fenster("b.dErstellt") + ")"},
 
-    {"key": "auftragswert", "label": "Auftragswert netto", "typ": "geld", "decimals": 2,
+    {"key": "auftragswert", "label": "Summe Auftragswert netto", "typ": "geld", "decimals": 2,
      "sql": """(SELECT CAST(ISNULL(SUM(bp.nAnzahl * bp.fVkNetto), 0) AS DECIMAL(18,2))
                 FROM dbo.tBestellung b
                 JOIN dbo.tBestellPos bp ON bp.tBestellung_kBestellung = b.kBestellung
@@ -78,20 +78,20 @@ _KUNDE_KENNZAHLEN = [
 
     # Lieferscheine sind die einzige Möglichkeit, „Ware raus, aber nicht
     # berechnet" zu erkennen. Ohne sie bleibt die Ausgangsfrage unbeantwortbar.
-    {"key": "lieferscheine", "label": "Lieferscheine", "typ": "zahl", "decimals": 0,
+    {"key": "lieferscheine", "label": "Anzahl Lieferscheine", "typ": "zahl", "decimals": 0,
      "sql": """(SELECT COUNT(DISTINCT l.kLieferschein)
                 FROM dbo.tLieferschein l
                 JOIN dbo.tBestellung b ON b.kBestellung = l.kBestellung
                 WHERE b.tKunde_kKunde = k.kKunde AND """ + _fenster("l.dErstellt") + ")"},
 
-    {"key": "rechnungen", "label": "Rechnungen", "typ": "zahl", "decimals": 0,
+    {"key": "rechnungen", "label": "Anzahl Rechnungen", "typ": "zahl", "decimals": 0,
      "sql": """(SELECT COUNT(DISTINCT r.kRechnung)
                 FROM Rechnung.vRechnung r
                 JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung
                 WHERE ra.kKunde = k.kKunde AND ISNULL(r.nStorno,0) = 0
                   AND """ + _fenster("r.dErstellt") + ")"},
 
-    {"key": "umsatz", "label": "Umsatz netto", "typ": "geld", "decimals": 2,
+    {"key": "umsatz", "label": "Summe Umsatz netto", "typ": "geld", "decimals": 2,
      "sql": """(SELECT CAST(ISNULL(SUM(rp.fAnzahl * rp.fVkNetto), 0) AS DECIMAL(18,2))
                 FROM Rechnung.vRechnung r
                 JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung
@@ -102,7 +102,7 @@ _KUNDE_KENNZAHLEN = [
     # Der Zähler allein hätte Hygiene Daheim nicht gefunden: deren Schatten-
     # lieferungen liefen über Rechnungen ÜBER NULL EURO. Erkennungsmerkmal ist
     # der Wert, nicht die Anzahl.
-    {"key": "positionen_zu_null", "label": "Rechnungspositionen zu 0 €", "typ": "zahl",
+    {"key": "positionen_zu_null", "label": "Anzahl Rechnungspositionen zu 0 €", "typ": "zahl",
      "decimals": 0,
      "sql": """(SELECT COUNT(*)
                 FROM Rechnung.vRechnung r

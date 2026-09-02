@@ -50,3 +50,28 @@ class ReportSchedule(Base):
     updated_at      = Column(DateTime, default=lambda: datetime.now(timezone.utc),
                              onupdate=lambda: datetime.now(timezone.utc))
     created_by      = Column(Integer, nullable=True)
+
+
+class AdHocQuery(Base):
+    """Eine mit dem Abfrage-Generator gebaute Auswertung.
+
+    Gespeichert wird die **Definition**, nicht das erzeugte SQL. Nur damit lässt
+    sich die Abfrage später wieder im Generator öffnen und ändern — dieselbe
+    Lehre wie beim Report-Baukasten: aus dem Ergebnis allein ist der Bauzettel
+    nicht mehr rekonstruierbar.
+    """
+    __tablename__ = "adhoc_queries"
+
+    id          = Column(Integer, primary_key=True, index=True)
+    name        = Column(String, nullable=False)
+    beschreibung = Column(Text, nullable=True)
+    project_id  = Column(Integer, nullable=True, index=True)
+    koernung    = Column(String, default="kunde")
+    definition  = Column(JSON, default=dict)     # das, was der Generator schickt
+    mapping_id  = Column(Integer, nullable=True) # erzeugtes Mapping (Liste)
+    form_id     = Column(Integer, nullable=True) # Sammelformular „Eigene Auswertungen"
+    widget_ids  = Column(JSON, default=list)     # angelegte Bausteine
+    created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                         onupdate=lambda: datetime.now(timezone.utc))
+    created_by  = Column(Integer, nullable=True)

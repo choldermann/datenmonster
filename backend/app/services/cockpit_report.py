@@ -242,18 +242,49 @@ def _render_chart(widget: dict, result: dict) -> Optional[str]:
 
 
 # ── Widget-HTML ───────────────────────────────────────────────────────────────
+def _aggregat(rows: list, spalte: str, methode: str = "first"):
+    """Wie `aggregate` im KpiWidget des Frontends – beide müssen dasselbe rechnen.
+
+    Vorher nahm der Report immer rows[0] und ignorierte die Methode: eine Kachel
+    mit „count" zeigte am Bildschirm die Trefferzahl, im PDF aber den Wert der
+    ersten Zeile. Betraf sechs Kacheln des Intrastat-Formulars.
+    """
+    if not spalte:
+        return None
+    werte = [r.get(spalte) for r in rows]
+    werte = [v for v in werte if v not in (None, "")]
+    if not werte:
+        return None
+    try:
+        if methode == "count":
+            return len(werte)
+        if methode == "sum":
+            return sum(float(v) for v in werte)
+        if methode == "avg":
+            return sum(float(v) for v in werte) / len(werte)
+        if methode == "max":
+            return max(float(v) for v in werte)
+        if methode == "min":
+            return min(float(v) for v in werte)
+    except (TypeError, ValueError):
+        return werte[0]
+    return werte[0]
+
+
 def _kpi_cell(widget: dict, result: dict) -> str:
     cfg = widget.get("config", {})
     rows = result.get("rows", [])
     col = cfg.get("column")
-    val = rows[0].get(col) if rows and col else None
+    agg = cfg.get("aggregation", "first")
+    val = _aggregat(rows, col, agg) if rows else None
     dec = int(cfg.get("decimals", 0))
     txt = f"{cfg.get('prefix','')}{_fmt(val, dec)}{cfg.get('suffix','')}" if val is not None else "–"
     delta = ""
     cc = cfg.get("compare_column")
-    if cc and rows and rows[0].get(cc) not in (None, 0, "") and val is not None:
+    vergleich = _aggregat(rows, cc, agg) if (cc and rows) else None
+    if vergleich not in (None, 0, "") and val is not None:
         try:
-            base = float(rows[0][cc]); cur = float(val)
+            base = float(vergleich); cur = float(val)
             pct = 100.0 * (cur - base) / base if base else 0
             up = pct >= 0
             good = up != bool(cfg.get("invert_delta"))
