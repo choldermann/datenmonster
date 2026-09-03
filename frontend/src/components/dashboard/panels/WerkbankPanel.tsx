@@ -3,6 +3,7 @@ import { Wand2, Loader2, Play, Hammer, Trash2, RotateCcw, CheckCircle2,
          AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info,
          Building2, Inbox, Unlink, Package, Plus } from "lucide-react";
 import api from "../../../api/client";
+import { useAIAssistant } from "../../../contexts/AIAssistantContext";
 import MandantWaehler from "../../MandantWaehler";
 import { onMandantChange } from "../../../services/mandant";
 
@@ -74,6 +75,13 @@ export default function WerkbankPanel({ projectId, canEdit }) {
 
   const eingabeRef = useRef(null);
   const q = projectId ? `?project_id=${projectId}` : "";
+
+  // Der schwebende Assistent verschwindet, solange die Werkbank offen ist: sie
+  // IST derselbe Assistent, nur ganzseitig. Zwei Einstiege nebeneinander sind
+  // kein Angebot, sondern eine Frage, die der Anwender nicht beantworten kann.
+  const { setVersteckt } = useAIAssistant();
+  useEffect(() => { setVersteckt(true); return () => setVersteckt(false); },
+            [setVersteckt]);
 
   const listeLaden = useCallback(async () => {
     setLaden(true);

@@ -32,6 +32,12 @@ interface AIAssistantContextType {
   // ihn per schema.show_ai_assistant wieder einblenden.
   formAiAllowed: boolean;
   setFormAiAllowed: (v: boolean) => void;
+  // Einzelne Bereiche blenden den schwebenden Assistenten aus, weil sie ihn
+  // selbst ersetzen – die KI-Werkbank ist derselbe Assistent, nur ganzseitig.
+  // Zwei Einstiege nebeneinander sind kein Angebot, sondern eine Frage an den
+  // Anwender, die er nicht beantworten kann.
+  versteckt: boolean;
+  setVersteckt: (v: boolean) => void;
 }
 
 const AIAssistantContext = createContext<AIAssistantContextType>({
@@ -49,6 +55,8 @@ const AIAssistantContext = createContext<AIAssistantContextType>({
   triggerExplainError: () => {},
   formAiAllowed: false,
   setFormAiAllowed: () => {},
+  versteckt: false,
+  setVersteckt: () => {},
 });
 
 export function AIAssistantProvider({ children }: { children: ReactNode }) {
@@ -56,6 +64,7 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
   const [formAiAllowed, setFormAiAllowed] = useState(false);
+  const [versteckt, setVersteckt] = useState(false);
   const generateNodesCallbackRef = useRef<((result: any) => void) | null>(null);
   const suggestTablesCallbackRef = useRef<((result: any) => void) | null>(null);
 
@@ -93,7 +102,7 @@ export function AIAssistantProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AIAssistantContext.Provider value={{ pageContext, setPageContext, setPageContextActions, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError, formAiAllowed, setFormAiAllowed }}>
+    <AIAssistantContext.Provider value={{ pageContext, setPageContext, setPageContextActions, isOpen, setIsOpen, setGenerateNodesCallback, callGenerateNodes, setSuggestTablesCallback, callSuggestTables, pendingMessage, setPendingMessage, triggerExplainError, formAiAllowed, setFormAiAllowed, versteckt, setVersteckt }}>
       {children}
     </AIAssistantContext.Provider>
   );

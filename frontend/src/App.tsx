@@ -21,7 +21,13 @@ import PortalRunner from "./pages/PortalRunner";
  *  schema.show_ai_assistant ausdrücklich einblendet. Sonst ist er überall aktiv. */
 function AiAssistantGate() {
   const location = useLocation();
-  const { formAiAllowed } = useAIAssistant();
+  const { formAiAllowed, versteckt } = useAIAssistant();
+  const { user } = useAuth();
+  // Vor der Anmeldung gibt es keinen Kontext, keine Berechtigung und nichts zu
+  // fragen – der Assistent hätte dort nur einen Knopf ohne Funktion angeboten.
+  if (!user || location.pathname === "/login") return null;
+  // Bereiche, die den Assistenten selbst ersetzen (KI-Werkbank).
+  if (versteckt) return null;
   const onFormRoute = /\/forms\/[^/]+\/run$/.test(location.pathname)
     || location.pathname.startsWith("/app/");
   if (onFormRoute && !formAiAllowed) return null;
