@@ -405,9 +405,12 @@ async def lifespan(app: FastAPI):
     reload_all_jobs()
     reload_all_dataset_jobs()
     reload_all_alert_jobs()
-    from app.services.scheduler_service import reload_all_price_jobs, reload_all_report_jobs
+    from app.services.scheduler_service import (reload_all_price_jobs,
+                                                 reload_all_report_jobs,
+                                                 reload_all_rest_jobs)
     reload_all_price_jobs()
     reload_all_report_jobs()
+    reload_all_rest_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()

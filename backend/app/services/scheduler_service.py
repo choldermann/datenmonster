@@ -351,6 +351,144 @@ def reload_all_dataset_jobs():
 
 
 # ---------------------------------------------------------------------------
+# REST-Quellen: geplanter Abruf in ein Dataset
+#
+# `cron_expr`, `dataset_id` und `active` standen am Modell und in der Oberfläche,
+# aber niemand hat je einen Job dafür registriert – der Zeitplan war Zierde, und
+# ein REST-Dataset veraltete stillschweigend. Der Ablauf ist derselbe wie beim
+# Dataset-Requery, nur ist die Quelle eine Schnittstelle statt einer Datenbank.
+# ---------------------------------------------------------------------------
+
+def _run_rest_import(rest_source_id: int):
+    """Holt eine REST-Quelle ab und schreibt sie in ihr Ziel-Dataset."""
+    import time
+    from datetime import datetime, timezone
+
+    from app.core.database import SessionLocal
+    from app.models.dataset import Dataset
+    from app.models.rest_source import RestSource
+    from app.services.db_logger import log as _dblog
+    from app.services.file_service import dataframe_to_storage, infer_column_types
+    from app.services.rest_service import fetch_rest_source
+
+    db = SessionLocal()
+    started = time.time()
+    try:
+        src = db.query(RestSource).filter(RestSource.id == rest_source_id).first()
+        if not src or not src.dataset_id:
+            logger.error(f"REST-Import: Quelle {rest_source_id} fehlt oder hat kein Ziel")
+            return
+        ds = db.query(Dataset).filter(Dataset.id == src.dataset_id).first()
+        if not ds:
+            logger.error(f"REST-Import: Ziel-Dataset {src.dataset_id} nicht gefunden")
+            return
+
+        df = fetch_rest_source(src)
+        if df.empty:
+            src.last_run_at = datetime.now(timezone.utc)
+            src.last_run_status = "ok"
+            src.last_run_msg = "Leere Antwort – Dataset unverändert"
+            db.commit()
+            return
+
+        if (src.dataset_mode or "replace") == "append":
+            import pandas as _pd
+
+            from app.services.file_service import _load_parquet
+            try:
+                df = _pd.concat([_load_parquet(ds.id), df], ignore_index=True)
+            except FileNotFoundError:
+                pass
+
+        ds.row_count = len(df)
+        ds.columns = list(df.columns)
+        ds.column_types = infer_column_types(df)
+        ds.updated_at = datetime.now(timezone.utc)
+        src.last_run_at = datetime.now(timezone.utc)
+        src.last_run_status = "ok"
+        src.last_run_msg = f"{len(df)} Zeilen geholt"
+        src.last_rows = len(df)
+        db.commit()
+        dataframe_to_storage(df, ds.id)
+
+        dauer = round(time.time() - started, 2)
+        _dblog(db, "success", "rest_sources", "auto_import",
+               f"REST-Quelle '{src.name}' aktualisiert: {len(df)} Zeilen in {dauer}s",
+               project_id=src.project_id, rows_processed=len(df),
+               details={"rest_source_id": rest_source_id, "dataset_id": ds.id})
+        logger.info(f"✓ REST-Import {rest_source_id} '{src.name}': {len(df)} Zeilen in {dauer}s")
+    except Exception as e:
+        logger.error(f"✗ REST-Import {rest_source_id} fehlgeschlagen: {e}")
+        try:
+            from datetime import datetime, timezone
+            src = db.query(RestSource).filter(RestSource.id == rest_source_id).first()
+            if src:
+                src.last_run_at = datetime.now(timezone.utc)
+                src.last_run_status = "error"
+                src.last_run_msg = str(e)[:300]
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+
+def register_rest_job(rest_source_id: int, cron_expr: str):
+    """Registriert den geplanten Abruf einer REST-Quelle."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"rest_{rest_source_id}"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+    if not cron_expr or not cron_expr.strip():
+        return
+    teile = cron_expr.strip().split()
+    if len(teile) != 5:
+        logger.warning(f"Ungültiger Cron-Ausdruck für REST-Quelle {rest_source_id}: {cron_expr}")
+        return
+    try:
+        sched.add_job(
+            _run_rest_import,
+            trigger=CronTrigger(minute=teile[0], hour=teile[1], day=teile[2],
+                                month=teile[3], day_of_week=teile[4],
+                                timezone="Europe/Berlin"),
+            id=job_id, args=[rest_source_id], replace_existing=True,
+        )
+        logger.info(f"REST-Job {rest_source_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von REST-Job {rest_source_id}: {e}")
+
+
+def unregister_rest_job(rest_source_id: int):
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"rest_{rest_source_id}")
+        logger.info(f"REST-Job {rest_source_id} entfernt")
+    except Exception:
+        pass
+
+
+def reload_all_rest_jobs():
+    """Beim Start: alle aktiven REST-Quellen mit Takt und Ziel-Dataset laden."""
+    from app.core.database import SessionLocal
+    from app.models.rest_source import RestSource
+    db = SessionLocal()
+    try:
+        quellen = [s for s in db.query(RestSource).filter(RestSource.active == 1).all()
+                   if (s.cron_expr or "").strip() and s.dataset_id]
+        for s in quellen:
+            register_rest_job(s.id, s.cron_expr)
+        logger.info(f"✓ {len(quellen)} REST-Import-Jobs geladen")
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
 # Nächtlicher Warnungslauf
 # ---------------------------------------------------------------------------
 

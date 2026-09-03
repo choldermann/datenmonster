@@ -265,6 +265,7 @@ def update_rest_source(
     for k, v in data.items():
         setattr(s, k, v)
     db.commit(); db.refresh(s)
+    _sync_rest_scheduler(s)
     return source_out(s)
 
 
@@ -276,8 +277,23 @@ def delete_rest_source(
 ):
     s = _get(source_id, db)
     require_editor(s.project_id, user, db)
+    from app.services.scheduler_service import unregister_rest_job
+    unregister_rest_job(s.id)
     db.delete(s); db.commit()
     return {"ok": True}
+
+
+def _sync_rest_scheduler(s: RestSource) -> None:
+    """Zeitplan der Quelle mit dem Scheduler abgleichen.
+
+    Ein Takt ohne Ziel-Dataset ergibt keinen Job – der Abruf hätte nichts, wohin
+    er schreiben könnte, und liefe jede Nacht ins Leere.
+    """
+    from app.services.scheduler_service import register_rest_job, unregister_rest_job
+    if s.active and (s.cron_expr or "").strip() and s.dataset_id:
+        register_rest_job(s.id, s.cron_expr)
+    else:
+        unregister_rest_job(s.id)
 
 
 # ── Test ──────────────────────────────────────────────────────────────────────
