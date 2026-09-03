@@ -111,6 +111,35 @@ def _build_schema_json_inner(conn) -> dict:
                         col["fk"] = ref
                     tables[-1]["columns"].append(col)
 
+                # ── Zeilenzahlen ──────────────────────────────────────────
+                # Aus sys.partitions, nicht per COUNT(*): das liest die
+                # Verwaltungsdaten und rührt keine Tabelle an – bei 2.000
+                # Tabellen der Unterschied zwischen Millisekunden und Minuten.
+                # Wozu: In einer JTL-Wawi ist rund die Hälfte aller Objekte leer.
+                # Ohne Füllstand landen sechs leere Ticketsystem-Tabellen im
+                # Prompt und verdrängen die gefüllten Fachtabellen – genau so
+                # ist eine Frage nach dem Sendungsstatus ins Leere gelaufen.
+                try:
+                    zeilen_map = {
+                        f"{r.schema_name}.{r.table_name}": int(r.zeilen or 0)
+                        for r in con.execute(text("""
+                            SELECT s.name AS schema_name, t.name AS table_name,
+                                   SUM(p.rows) AS zeilen
+                            FROM sys.tables t
+                            JOIN sys.schemas s ON s.schema_id = t.schema_id
+                            JOIN sys.partitions p ON p.object_id = t.object_id
+                                                 AND p.index_id IN (0, 1)
+                            GROUP BY s.name, t.name
+                        """)).fetchall()
+                    }
+                    for t in tables:
+                        if t["full_name"] in zeilen_map:
+                            t["rows"] = zeilen_map[t["full_name"]]
+                except Exception as e:
+                    # Ohne Zeilenzahlen funktioniert alles wie bisher – nur die
+                    # Bevorzugung gefüllter Tabellen entfällt.
+                    log.warning(f"Zeilenzahlen nicht ermittelbar: {e}")
+
                 # ── Views ──────────────────────────────────────────────────
                 # sys.tables kennt sie nicht, und damit fehlten der KI die
                 # 1.109 Views einer JTL-Wawi vollständig — auch
@@ -193,7 +222,14 @@ def schema_json_to_text(schema_json: dict, max_tables: int = 120) -> str:
         # „Sicht" statt „Tabelle": das Modell soll wissen, dass die Joins darin
         # schon erledigt sind — genau dafür hat JTL sie angelegt.
         art = "Sicht" if tbl.get("is_view") else "Tabelle"
-        lines.append(f"\n{art} {tbl['full_name']}:")
+        # Der Füllstand gehört in den Prompt: „0 Zeilen" ist die knappste Art,
+        # dem Modell zu sagen, dass es diese Tabelle nicht brauchen kann. Ohne
+        # das rät es Spalten in Tabellen zusammen, in denen nie etwas stand.
+        n = tbl.get("rows")
+        fuellstand = f" ({n:,} Zeilen)".replace(",", ".") if isinstance(n, int) else ""
+        if n == 0:
+            fuellstand = " (LEER – enthält keine Daten)"
+        lines.append(f"\n{art} {tbl['full_name']}:{fuellstand}")
         for c in tbl["columns"]:
             flags = []
             if c.get("pk"):
@@ -400,7 +436,12 @@ def _kw_score_against(kw: str, full_name: str, col_str: str) -> int:
 # jede Fachtabelle noch einmal unter eigenem Namen führen.
 _NEBEN_SCHEMATA = {"dbes", "deprecated", "sync", "fulfillmentnetwork", "pf", "bi",
                    "dal", "scx", "worker", "maintenance"}
-_NEBEN_ENDUNGEN = ("_log", "_history", "_alt", "_backup", "_tmp", "_temp")
+# „Old" ohne Unterstrich ist JTLs Schreibweise für abgelöste Tabellen:
+# Shipping.tPackageOld und tStateOld tragen MEHR Zeilen als die aktuellen und
+# gewinnen deshalb jede Bevorzugung nach Füllstand. Wer nach dem Sendungsstatus
+# fragt, meint aber die laufenden Daten.
+_NEBEN_ENDUNGEN = ("_log", "_history", "_alt", "_backup", "_tmp", "_temp",
+                   "old", "archiv", "archive")
 
 # Höchstanteil der Prompt-Plätze, den Sichten belegen dürfen. Sie sind fachlich
 # oft die richtige Quelle (Preisliste.vPreislisteNetto, vOffenerPostenRechnung),
@@ -489,7 +530,20 @@ def filter_schema_with_fk_expansion(
     view_deckel = max(1, int(max_tables * _VIEW_ANTEIL))
     view_platz = 0
 
-    for key, score in sorted(kw_scored.items(), key=lambda x: -x[1]):
+    def _rang(eintrag):
+        """Gefüllte Tabellen zuerst, innerhalb davon nach Treffer-Güte.
+
+        Zwei Ebenen statt Punkteabzug: Ein leeres Objekt soll nicht *etwas*
+        schlechter dastehen, sondern erst dann einen Platz bekommen, wenn keine
+        gefüllte Tabelle mehr wartet. Ausschließen wäre falsch – manchmal fragt
+        jemand genau danach –, aber der Vortritt gehört dem, wo Daten liegen.
+        """
+        key, score = eintrag
+        n = (table_by_key.get(key) or {}).get("rows")
+        leer = (n == 0)
+        return (0 if leer else 1, score)
+
+    for key, score in sorted(kw_scored.items(), key=_rang, reverse=True):
         if key in table_by_key:
             if table_by_key[key].get("is_view"):
                 if view_platz >= view_deckel:
@@ -602,6 +656,30 @@ _FACHBEGRIFFE: dict[str, tuple[str, ...]] = {
     "rücksendung":   ("retoure", "rma"),
     "versand":       ("versand", "lieferschein"),
     "lieferung":     ("lieferschein", "versand"),
+    # Sendungsverfolgung: „Sendung", „zugestellt" und „Paket" trafen vorher
+    # keine einzige Tabelle. Eine Frage nach dem Sendungsstatus bekam deshalb
+    # Lieferschein-Tabellen und das leere Ticketsystem in den Prompt – und die
+    # KI riet einen Statuscode, statt Shipping.tPackage/tState zu benutzen.
+    # „Lieferschein" traf die Tabelle zwar über die Wortstamm-Suche, aber nur mit
+    # halbem Gewicht – bei zwölf Plätzen reichte das nicht gegen ein Dutzend
+    # namensähnlicher Versand-Nebentabellen. Als Fachbegriff zählt er doppelt.
+    "lieferschein":  ("lieferschein", "versand"),
+    "sendung":       ("versand", "package", "lieferschein"),
+    "sendungsstatus": ("versand", "package", "state"),
+    "sendungsverfolgung": ("package", "state", "versand"),
+    "zugestellt":    ("package", "state", "versand"),
+    "zustellung":    ("package", "state", "versand"),
+    "zustelldatum":  ("package", "state"),
+    "paket":         ("package", "versand"),
+    "pakete":        ("package", "versand"),
+    "tracking":      ("package", "state", "tracking"),
+    "trackingnummer": ("package", "versand"),
+    "laufzeit":      ("versand", "package", "state"),
+    "transportzeit": ("versand", "package", "state"),
+    "lieferzeit":    ("versand", "lieferschein", "package"),
+    "logistiker":    ("logistik", "versand"),
+    "versanddienstleister": ("logistik", "versand"),
+    "paketdienst":   ("logistik", "versand"),
     "zahlung":       ("zahlung",),
     "zahlungen":     ("zahlung",),
     "mahnung":       ("mahnung", "eckdaten"),

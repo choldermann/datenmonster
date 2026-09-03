@@ -2384,15 +2384,71 @@ def _tabellen_aus_sql(sql_text: str) -> list[str]:
     return raus[:8]
 
 
+def _geratene_werte(con, sql_text: str, tabellen: list[str]) -> str:
+    """Die echten Werte der Spalten, gegen die das SQL feste Werte vergleicht.
+
+    Der Grund: Ein Modell, das den Sendungsstatus nicht kennt, schreibt
+    `nVersandStatus = 1 -- Angenommen, 1 steht für "Zugestellt"` und liefert
+    null Zeilen. Die Fehlermeldung „leer" allein hilft nicht weiter; die Liste
+    der tatsächlich vorkommenden Werte beendet das Raten sofort.
+
+    Bewusst nur einfache Gleichheitsvergleiche gegen eine Zahl oder einen
+    kurzen Text – alles andere zu zerlegen hieße, SQL zu parsen, und ein
+    falsch geratener Ausdruck wäre schlimmer als keine Auskunft.
+    """
+    import re as _re
+
+    import sqlalchemy as _sa
+
+    treffer = _re.findall(
+        r"(?:\w+\.)?([a-zA-Z_]\w*)\s*=\s*(?:'([^']{0,40})'|(-?\d+))", sql_text)
+    spalten = []
+    for name, _t, _z in treffer:
+        if name.lower() not in {x.lower() for x in spalten}:
+            spalten.append(name)
+    if not spalten:
+        return ""
+
+    berichte = []
+    for spalte in spalten[:4]:
+        for tab in tabellen:
+            try:
+                rows = con.execute(_sa.text(
+                    f"SELECT TOP 6 {spalte} AS w, COUNT(*) AS n FROM {tab} "
+                    f"GROUP BY {spalte} ORDER BY COUNT(*) DESC")).fetchall()
+            except Exception:
+                continue                       # Spalte gehört nicht zu dieser Tabelle
+            if not rows:
+                continue
+            werte = ", ".join(f"{r.w} ({r.n}×)" for r in rows)
+            berichte.append(f"  {tab}.{spalte} enthält tatsächlich: {werte}")
+            break
+        if len(berichte) >= 2:
+            break
+    if not berichte:
+        return ""
+    return ("\nDiese Werte kommen in den Spalten wirklich vor – der Vergleich im "
+            "WHERE trifft offenbar keinen davon:\n" + "\n".join(berichte))
+
+
 def _leer_diagnose(con, sql_text: str) -> str:
     """Warum liefert eine syntaktisch gültige Abfrage keine Zeile? Zählt die
     beteiligten Tabellen einzeln. Eine leere Tabelle ist eine andere Geschichte
     als ein Join, der ins Leere greift – und das Modell braucht diesen
-    Unterschied, sonst repariert es an der falschen Stelle."""
+    Unterschied, sonst repariert es an der falschen Stelle.
+
+    **Keine Ursache behaupten, die nicht geprüft wurde.** Die frühere Fassung
+    schloss aus „alle Tabellen gefüllt" auf „also ein Join- oder Filterfehler"
+    und ließ die dritte, häufigste Möglichkeit weg: die Abfrage sieht in den
+    falschen Tabellen nach. Bei einer Frage nach dem Sendungsstatus stand
+    genau das im Befund – und der Reparaturlauf drehte an den Joins, während
+    die richtige Tabelle nie im Prompt gewesen war.
+    """
     import sqlalchemy as _sa
     zeilen = []
     leer_dabei = False
-    for tab in _tabellen_aus_sql(sql_text):
+    tabellen = _tabellen_aus_sql(sql_text)
+    for tab in tabellen:
         try:
             n = con.execute(_sa.text(f"SELECT COUNT(*) FROM {tab}")).scalar()
         except Exception:
@@ -2402,12 +2458,20 @@ def _leer_diagnose(con, sql_text: str) -> str:
             leer_dabei = True
     if not zeilen:
         return ""
-    kopf = ("Eine der beteiligten Tabellen ist selbst leer:"
-            if leer_dabei else
-            "Alle beteiligten Tabellen sind gefüllt – es liegt also an einer "
-            "JOIN-Bedingung (verknüpfte Schlüssel passen nicht zusammen) oder "
-            "am WHERE-Filter:")
-    return kopf + "\n" + "\n".join(zeilen)
+    if leer_dabei:
+        kopf = ("Eine der beteiligten Tabellen ist selbst leer – dort gibt es "
+                "die gesuchten Daten in dieser Datenbank nicht:")
+    else:
+        kopf = ("Die beteiligten Tabellen sind gefüllt. Drei Ursachen kommen in "
+                "Frage, in dieser Reihenfolge zu prüfen:\n"
+                "  1. Der WHERE-Filter vergleicht gegen einen Wert, den es so "
+                "nicht gibt (geratener Status- oder Typcode).\n"
+                "  2. Die Abfrage sieht in den FALSCHEN Tabellen nach – die "
+                "fachlich richtige steht vielleicht gar nicht im Schema oben.\n"
+                "  3. Eine JOIN-Bedingung verknüpft Schlüssel, die nicht "
+                "zusammengehören.\nBeteiligt sind:")
+    return kopf + "\n" + "\n".join(zeilen) + (
+        _geratene_werte(con, sql_text, tabellen) if not leer_dabei else "")
 
 
 def _spalten_nachschlag(connection_id: Optional[int], sql_text: str) -> str:

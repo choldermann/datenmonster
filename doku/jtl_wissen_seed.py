@@ -126,7 +126,16 @@ EINTRAEGE = [
      "dbo.tLieferschein.kBestellung = Verkauf.tAuftrag.kAuftrag (Feldname 'kBestellung' meint "
      "den Auftrag!). Versanddatum: tVersand.dVersendet bzw. tLieferscheinEckdaten.dVersendet "
      "(dort auch nAnzahlPakete, fVersandGewicht). Durchlaufzeit = DATEDIFF(HOUR, "
-     "tAuftrag.dErstellt, tVersand.dVersendet). Lieferscheine ohne dVersendet = Versandrückstand."),
+     "tAuftrag.dErstellt, tVersand.dVersendet). Lieferscheine ohne dVersendet = Versandrückstand. "
+     "ZUSTELLSTATUS steht NICHT im Lieferschein: tLieferscheinEckdaten.nVersandStatus ist "
+     "NICHT die Rückmeldung des Paketdienstes – dort nie einen Statuscode raten. Die "
+     "Sendungsverfolgung liegt in Shipping.tPackage (Join über kVersand) und "
+     "Shipping.tState (über kPackage); ZUGESTELLT = tState.nStateType = 6. Sind beide "
+     "Tabellen leer, führt dieser Betrieb kein Track and Trace und die Frage nach dem "
+     "Sendungsstatus ist dort nicht beantwortbar. "
+     "ZUSTELLDATUM = Shipping.tState.dDate der Zeile mit nStateType = 6. "
+     "Zustelldauer also DATEDIFF(DAY, tVersand.dVersendet, tState.dDate) – NICHT "
+     "ab tLieferschein.dErstellt, das misst nur Anlage bis Versand."),
 
     # ── Stammdatenqualität ──────────────────────────────────────────────────
     ("rule", "JTL – Prüfbasis für Stammdaten-Checks",
@@ -451,6 +460,37 @@ EINTRAEGE = [
      "Kanäle, kShop > 0 überschreibt ihn. Alle Preistabellen führen netto; ob der Kunde "
      "brutto sieht, steht in dbo.tkundenGruppe.nNettoPreise. Volle Referenz: "
      "doku/jtl-preis-schema.md."),
+
+    ("table",
+     "JTL \u2013 Sendungsstatus, Zustellung, Paket-Tracking (Track & Trace)",
+     "Sendungsverfolgung liegt NICHT im Lieferschein. Der Weg ist "
+     "dbo.tLieferschein \u2192 dbo.tVersand (\u00fcber kLieferschein) \u2192 "
+     "Shipping.tPackage (\u00fcber kVersand, eine Zeile je Paket, mit cTrackingId) "
+     "\u2192 Shipping.tState (\u00fcber kPackage, der Statusverlauf). "
+     "tLieferscheinEckdaten enth\u00e4lt KEINEN Zustellstatus \u2013 nVersandStatus "
+     "dort ist nicht die R\u00fcckmeldung des Paketdienstes.\n"
+     "ZUSTELLUNG = Shipping.tState.nStateType = 6. Nachgemessen bei Hygiene "
+     "Daheim: Typ 6 kommt bei 23.120 von 23.666 Paketen genau einmal vor. cText "
+     "ist meist leer, die Bedeutung steckt allein im Typ; Typ 4 und 9 tragen die "
+     "Texte \u201eEmpf\u00e4nger nicht angetroffen\u201c.\n"
+     "FALLE: Typ 7 ist eine manuelle Notiz bzw. Auftragsdaten\u00fcbertragung und "
+     "liegt zeitlich NACH der Zustellung. Der j\u00fcngste Eintrag je Paket ist "
+     "deshalb NICHT verl\u00e4sslich der Endzustand (Typ 7 bei 15.076 Paketen, Typ 6 "
+     "nur bei 8.265). F\u00fcr \u201ezugestellt\u201c gezielt auf nStateType = 6 "
+     "filtern, niemals auf den letzten Eintrag.\n"
+     "LAUFZEIT: Shipping.tPackage.dRegisteredAt ist leer, als Startpunkt taugt nur "
+     "dbo.tVersand.dVersendet. Vorsicht bei der Auslegung \u2013 der Schnitt liegt "
+     "damit bei 6,85 Tagen, was f\u00fcr Paketversand in Deutschland hoch ist; "
+     "m\u00f6glicherweise wird dVersendet schon beim Anlegen des Versands gesetzt "
+     "und nicht bei der \u00dcbergabe. Laufzeiten also als Obergrenze lesen.\n"
+     "F\u00dcLLSTAND ZUERST PR\u00dcFEN: Track & Trace ist nicht \u00fcberall aktiv. "
+     "Hygiene Daheim hat 23.666 Pakete und 210.566 Statuseintr\u00e4ge, HaKo hat "
+     "beide Tabellen leer, PPS nur 15 Testpakete, deren 20 Statuseintr\u00e4ge samt "
+     "und sonders Abmeldungen sind (DEREGISTERED). Sind tPackage/tState leer, ist "
+     "die Frage nach dem Sendungsstatus in dieser Datenbank NICHT beantwortbar "
+     "\u2013 das sagen, statt eine Abfrage zu bauen.\n"
+     "Shipping.tTrackingLogs ist trotz des Namens KEIN Sendungsverlauf, sondern das "
+     "Fehlerprotokoll des Tracking-Dienstes (cMessage/cStackTrace)."),
 ]
 
 db = SessionLocal()

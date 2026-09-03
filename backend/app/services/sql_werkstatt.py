@@ -26,7 +26,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-REPARATURVERSUCHE = (1, 2)
+REPARATURVERSUCHE = (1, 2, 3)
 
 
 def beschreibung_zusammensetzen(original: str, praezisierung: str) -> str:
@@ -59,13 +59,24 @@ def _urteil(fehler: Optional[str], leer: Optional[str], verdacht: Optional[str])
                 "Nummernkreisen entstehen. Suche im Schema oben die Tabelle, die "
                 "beide Seiten wirklich verbindet, und schreibe die Abfrage neu. "
                 "Gibt es keine, gehört die Tabelle nicht in die Abfrage.")
+    # Keine Ursache behaupten, die der Befund nicht hergibt: `leer` nennt die
+    # geprüften Tabellen, ihre Zeilenzahl und – wo möglich – die Werte, die in
+    # den gefilterten Spalten wirklich vorkommen. Der frühere Text schrieb
+    # darüber pauschal „fast immer ein Join-Fehler" und schickte das Modell
+    # damit an den Joins herumbessern, während in Wahrheit ein geratener
+    # Statuscode oder schlicht die falsche Tabelle das Problem war.
     return (f"{leer}\n\n"
-            "Das ist fast immer ein Join über zwei Schlüssel, die nichts "
-            "miteinander zu tun haben – etwa eine Bestell-ID gegen eine "
-            "Rechnungs-ID, oder eine Schnittstellentabelle statt der "
-            "Belegtabelle. Prüfe jeden JOIN einzeln: verbinden die beiden "
-            "Spalten wirklich denselben Schlüssel? Suche im Schema oben "
-            "nach der passenden Tabelle und schreibe die Abfrage neu.")
+            "Gehe der Reihe nach vor:\n"
+            "1. Stehen oben die tatsächlichen Werte einer gefilterten Spalte? "
+            "Dann war der Vergleichswert geraten – nimm einen der echten Werte "
+            "oder lass den Filter weg.\n"
+            "2. Passt die Tabelle überhaupt zur Frage? Sieh im Schema oben nach, "
+            "ob es eine Tabelle gibt, die den gesuchten Sachverhalt WIRKLICH "
+            "führt. Ein Statuscode in einer Belegtabelle ist selten die "
+            "Rückmeldung eines externen Dienstes.\n"
+            "3. Erst danach die JOINs prüfen: verbinden die Spalten wirklich "
+            "denselben Schlüssel?\n"
+            "Schreibe die Abfrage neu.")
 
 
 def _lage(fehler, leer, verdacht) -> str:
