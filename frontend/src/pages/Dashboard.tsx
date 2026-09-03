@@ -107,6 +107,7 @@ export default function Dashboard() {
   const [pipelinesCount, setPipelinesCount] = useState(0);
   const [exportsCount, setExportsCount] = useState(0);
   const [pluginsCount, setPluginsCount] = useState(0);
+  const [alertsCount, setAlertsCount] = useState(0);
   const [datasetSearch, setDatasetSearch] = useState("");
   const [mappingSearch, setMappingSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -183,6 +184,7 @@ export default function Dashboard() {
       api.get(`/api/forms/${pq}`).then(r => setFormsCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get(`/api/exports/${pq}`).then(r => setExportsCount(Array.isArray(r.data) ? r.data.length : 0)),
       api.get("/api/plugins/").then(r => setPluginsCount(Array.isArray(r.data) ? r.data.length : 0)),
+      api.get(`/api/alerts/rules${pq}`).then(r => setAlertsCount(Array.isArray(r.data) ? r.data.length : 0)),
     ]);
   }, [projectId]);
 
@@ -247,7 +249,15 @@ export default function Dashboard() {
     { id: "exports",     label: "Exporte",         icon: HardDrive,   badge: exportsCount, dividerAfter: true },
     { id: "monitoring",  label: "Monitoring",      icon: Activity,    badge: 0 },
     { id: "plugins",     label: "Plugins",         icon: Puzzle,      badge: pluginsCount, dividerAfter: true },
-    { id: "alerts",      label: "Warnungen",       icon: ShieldAlert, badge: 0 },
+    // Warnungen sind kein Grundbaustein der Plattform, sondern entstehen erst mit
+    // einer Auswertung, die etwas zu melden hat – meist über ein Cockpit-Template
+    // oder die KI-Werkbank. Ein Projekt an einer beliebigen Datenbank hat null
+    // Regeln; dort stand hier bisher ein Menüpunkt, hinter dem ausschließlich
+    // JTL-Schwellwerte ohne Wirkung lagen. Er erscheint jetzt, sobald es etwas
+    // zu zeigen gibt (und bleibt stehen, solange er offen ist).
+    ...(alertsCount > 0 || tab === "alerts"
+        ? [{ id: "alerts", label: "Warnungen", icon: ShieldAlert, badge: alertsCount }]
+        : []),
     { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
     { id: "license",     label: "Lizenz",           icon: KeyRound,    badge: 0 },
   ];

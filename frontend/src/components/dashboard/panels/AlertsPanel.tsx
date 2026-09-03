@@ -169,6 +169,43 @@ export default function AlertsPanel({ projectId, canEdit }) {
   const gruppen = [...new Set(thresholds.map(t => t.gruppe))];
   const kategorien = [...new Set(rules.map(r => r.category))];
 
+  // Ohne eine einzige Regel steuern die Schwellwerte nichts. Sie trotzdem zu
+  // zeigen, füllt den Bildschirm mit Zahlen ohne Wirkung – und weil sie aus
+  // einer festen Liste stammen (Umsatzrückgang, Angebot nachfassen …), sieht ein
+  // Projekt an einer beliebigen Datenbank dort lauter Begriffe, die es gar nicht
+  // kennt. Stattdessen der Hinweis, woher Warnungen überhaupt kommen.
+  if (!laden && rules.length === 0) {
+    return (
+      <div style={{ maxWidth: 680 }}>
+        <h2 style={{ fontSize: 15, fontWeight: 700, color: S.textBright,
+          display: "flex", alignItems: "center", gap: 8, margin: 0 }}>
+          <ShieldAlert size={16} style={{ color: S.accent }} /> Warnungen
+        </h2>
+        <p style={{ fontSize: 12.5, color: S.textDim, margin: "10px 0 0",
+                    lineHeight: 1.65 }}>
+          In diesem Projekt ist noch keine Warnung eingerichtet. Eine Warnung
+          hängt immer an einer Auswertung: Die Zahl kommt aus der Abfrage, die
+          Regel legt nur fest, ab wann daraus eine Meldung wird.
+        </p>
+        <p style={{ fontSize: 12.5, color: S.textDim, margin: "10px 0 0",
+                    lineHeight: 1.65 }}>
+          Zwei Wege dorthin: Ein <b style={{ color: S.textMain }}>Cockpit-Template</b>{" "}
+          bringt fertige Warnungen mit, oder du beschreibst in der{" "}
+          <b style={{ color: S.textMain }}>KI-Werkbank</b>, worüber du Bescheid
+          bekommen willst — sie baut Auswertung und Warnung zusammen.
+        </p>
+        <p style={{ fontSize: 11.5, color: S.textDim, margin: "14px 0 0",
+                    lineHeight: 1.6 }}>
+          Die Schwellwerte für die Warnungen erscheinen hier, sobald es Regeln
+          gibt, die sie benutzen.
+        </p>
+        {fehler && (
+          <p style={{ fontSize: 12, color: "#e05656", marginTop: 12 }}>{fehler}</p>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
