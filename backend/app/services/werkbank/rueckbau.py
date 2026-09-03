@@ -27,8 +27,8 @@ logger = logging.getLogger(__name__)
 # Beim Abbau zuerst das Äußere, dann das Tragende. Innerhalb eines Schritts
 # entscheidet diese Reihenfolge; über Schritte hinweg gilt „rückwärts".
 _ABBAU_RANG = {
-    "portal": 6, "report_schedule": 5, "alert_rule": 4,
-    "form": 3, "adhoc_query": 2, "mapping": 1, "widget": 0,
+    "portal": 8, "report_schedule": 7, "pipeline": 6, "alert_rule": 5,
+    "form": 4, "adhoc_query": 3, "widget": 2, "mapping": 1,
 }
 
 
@@ -60,7 +60,8 @@ def _mappings_eines_artefakts(db, a: VorhabenArtefakt) -> list:
     return db.query(Mapping).filter(Mapping.id.in_(ids)).all()
 
 
-def _mapping_verwender(db, m, eigene_form_ids: set, eigene_regel_ids: set) -> list:
+def _mapping_verwender(db, m, eigene_form_ids: set, eigene_regel_ids: set,
+                       eigene_pipeline_ids: set = frozenset()) -> list:
     """Wer benutzt dieses Mapping – außer uns selbst?"""
     from app.models.alert import AlertRule
     from app.models.form import Form
@@ -88,6 +89,13 @@ def _mapping_verwender(db, m, eigene_form_ids: set, eigene_regel_ids: set) -> li
         treffer.append({"art": "Zeitplan", "name": j.name, "id": j.id})
 
     for pl in db.query(Pipeline).all():
+        # Die eigene Pipeline zählt nicht: sie wird in derselben Runde abgebaut,
+        # und zwar VOR dem Mapping. Ohne diese Ausnahme blockiert ein Vorhaben
+        # aus Abfrage plus Pipeline sich selbst und ließe sich nie zu Ende
+        # zurückbauen – die Prüfung läuft einmal am Anfang, gegen den Zustand
+        # vor dem Abbau.
+        if pl.id in eigene_pipeline_ids:
+            continue
         if _pipeline_nutzt(pl, m.id):
             treffer.append({"art": "Pipeline", "name": pl.name, "id": pl.id})
 
@@ -175,8 +183,12 @@ def pruefen(db, v: Vorhaben) -> dict:
     eigene_regel_ids = {a.ziel_id for a in rows if a.art == "alert_rule" and a.ziel_id}
     eigene_schedule_ids = {a.ziel_id for a in rows
                            if a.art == "report_schedule" and a.ziel_id}
+    eigene_pipeline_ids = {a.ziel_id for a in rows
+                           if a.art == "pipeline" and a.ziel_id}
     eigene_abfrage_ids = [a.ziel_id for a in rows
                           if a.art == "adhoc_query" and a.ziel_id]
+    # Auch das Formular, in dem unsere freien Bausteine liegen, gehört uns.
+    eigene_form_ids |= {a.ziel_id for a in rows if a.art == "widget" and a.ziel_id}
 
     # Die Bausteine, die dieses Vorhaben im Sammelformular abgelegt hat.
     unsere_bausteine = {}
@@ -204,7 +216,8 @@ def pruefen(db, v: Vorhaben) -> dict:
         # Was hängt daran?
         for m in _mappings_eines_artefakts(db, a):
             eintrag["verwender"].extend(
-                _mapping_verwender(db, m, eigene_form_ids, eigene_regel_ids))
+                _mapping_verwender(db, m, eigene_form_ids, eigene_regel_ids,
+                                   eigene_pipeline_ids))
         if a.art == "adhoc_query":
             # Die Prüfung gehört an DIESES Artefakt, nicht an das Sammelformular:
             # hier werden die Bausteine tatsächlich entfernt. Ein fremder Report,
@@ -215,6 +228,9 @@ def pruefen(db, v: Vorhaben) -> dict:
             if q:
                 eintrag["verwender"].extend(_widget_verwender(
                     db, q.form_id, q.widget_ids or [], eigene_form_ids))
+        if a.art == "widget":
+            eintrag["verwender"].extend(_widget_verwender(
+                db, a.ziel_id, (a.ziel_key or "").split(","), eigene_form_ids))
         if a.art == "form":
             eintrag["verwender"].extend(
                 _form_verwender(db, a.ziel_id, eigene_form_ids, eigene_schedule_ids))
@@ -242,6 +258,32 @@ def _satz(loeschen: list, bereinigen: list, blockiert: list) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Ausführen
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _bausteine_entfernen(db, form_id: int, widget_ids: list) -> None:
+    """Bausteine aus einem Formular nehmen und die Reste aufräumen.
+
+    Dieselbe Reihenfolge wie in `erzeugen.entfernen`: erst die Bausteine, dann
+    die Aktionen, die keiner mehr benutzt, dann die Reiter-Verweise darauf. Eine
+    zurückgelassene Aktion liefe bei jedem Formularlauf weiter mit, ohne dass
+    etwas davon zu sehen wäre.
+    """
+    from app.models.form import Form
+
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        return
+    schema = dict(f.schema or {})
+    weg = set(widget_ids or [])
+    schema["widgets"] = [w for w in (schema.get("widgets") or [])
+                         if w.get("id") not in weg]
+    benutzt = {w.get("action_id") for w in schema["widgets"]}
+    schema["actions"] = [x for x in (schema.get("actions") or [])
+                         if x.get("id") in benutzt]
+    for t in schema.get("result_tabs") or []:
+        t["action_ids"] = [x for x in t.get("action_ids") or [] if x in benutzt]
+    f.schema = schema
+    flag_modified(f, "schema")
+
 
 def _abbauen(db, a: VorhabenArtefakt) -> None:
     """Ein einzelnes Artefakt zurückbauen."""
@@ -284,6 +326,24 @@ def _abbauen(db, a: VorhabenArtefakt) -> None:
             f.slug = a.vorher.get("slug")
             f.portal_config = a.vorher.get("portal_config") or {}
             flag_modified(f, "portal_config")
+
+    elif a.art == "widget" and a.erzeugt:
+        _bausteine_entfernen(db, a.ziel_id, (a.ziel_key or "").split(","))
+
+    elif a.art == "pipeline" and a.erzeugt:
+        from app.models.pipeline import Pipeline
+        p = db.query(Pipeline).filter(Pipeline.id == a.ziel_id).first()
+        if p:
+            # Erst den Cron-Job abmelden, dann löschen: eine Pipeline, die aus
+            # der Datenbank verschwindet, während ihr Job noch registriert ist,
+            # schlägt beim nächsten Takt fehl statt einfach nicht zu laufen.
+            p.active = False
+            try:
+                from app.api.pipelines import _sync_pipeline_scheduler
+                _sync_pipeline_scheduler(p)
+            except Exception:
+                logger.warning("Cron-Job der Pipeline %s ließ sich nicht abmelden", p.id)
+            db.delete(p)
 
     elif a.art == "mapping" and a.erzeugt:
         m = db.query(Mapping).filter(Mapping.id == a.ziel_id).first()

@@ -146,6 +146,7 @@ def _abfrage_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
     bisher.setdefault("bausteine", []).extend(
         {"form_id": gebaut["form"].id, "widget_id": w} for w in gebaut["widget_ids"])
     bisher.setdefault("mapping_namen", []).append(gebaut["mapping"].name)
+    bisher.setdefault("mapping_ids", []).append(gebaut["mapping"].id)
     bisher["letzte_abfrage"] = {"name": name, "mapping_id": gebaut["mapping"].id,
                                 "spalten": gebaut["spalten"]}
 
@@ -413,6 +414,263 @@ def _nachsehen_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 7 · Freie Abfrage (SQL von der KI)
+#
+# Der Rückfall, wenn der Katalog des Abfrage-Generators die Frage nicht abdeckt.
+# Das SQL entsteht schon beim Planen, nicht beim Bauen: es durchläuft dort die
+# Prüfkette aus `sql_werkstatt` (gegen die echte Verbindung ausführen, bis zu
+# zwei Reparaturläufe, Leer- und Join-Befund). Was hier ankommt, ist geprüft –
+# und ein Befund daran ist sichtbar, statt stillschweigend mitzureisen.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _sql_zusammenfassung(eingabe: dict) -> str:
+    spalten = eingabe.get("spalten") or []
+    teile = [f"Freies SQL · {len(spalten)} Spalte(n)"]
+    if eingabe.get("fehler"):
+        teile.append("FEHLERHAFT")
+    elif eingabe.get("leer"):
+        teile.append("liefert keine Zeilen")
+    elif eingabe.get("warnung"):
+        teile.append("Join fraglich")
+    return " · ".join(teile)
+
+
+def _sql_ausfuehren(mandant_id: int, sql: str, von: str, bis: str, limit: int = 50) -> list:
+    """Das freie SQL zur Ansicht laufen lassen – gedeckelt, mit Zeitfenster."""
+    from sqlalchemy import text as _text
+
+    from app.services.sql_helpers import _get_sql_engine, _resolve_sql_run_params
+
+    fertig, gebunden = _resolve_sql_run_params(sql, {"von": von, "bis": bis})
+    eng = _get_sql_engine(mandant_id)
+    with eng.connect() as con:
+        # fetchmany statt fetchall: eine Abfrage ohne TOP kann Hunderttausende
+        # Zeilen liefern, und für die Ansicht reichen die ersten.
+        return [dict(r) for r in con.execute(_text(fertig), gebunden).mappings().fetchmany(limit)]
+
+
+def _sql_vorschau(db, ctx: dict, eingabe: dict, bisher: dict) -> dict:
+    sql = (eingabe.get("sql") or "").strip()
+    if not sql:
+        raise WerkzeugFehler("Für diesen Schritt gibt es noch kein SQL.")
+    if eingabe.get("fehler"):
+        raise WerkzeugFehler(f"Die Datenbank lehnt das erzeugte SQL ab: {eingabe['fehler']}")
+
+    von, bis = _zeitfenster(eingabe.get("zeitraum_preset"))
+    try:
+        zeilen = _sql_ausfuehren(ctx["mandant_id"], sql, von, bis)
+    except Exception as e:
+        raise WerkzeugFehler(f"Abfrage fehlgeschlagen: {str(e)[:300]}")
+
+    spalten = [{"name": c} for c in (eingabe.get("spalten") or [])] or \
+              [{"name": k} for k in (zeilen[0].keys() if zeilen else [])]
+    erg = {"zeilen": zeilen, "spalten": spalten, "anzahl": len(zeilen),
+           "gedeckelt": len(zeilen) >= 50, "sql": sql,
+           "zeitraum": {"von": von, "bis": bis}}
+    if not zeilen:
+        erg["befund"] = ("Das SQL läuft, liefert aber keine Zeile. Bei freiem SQL ist "
+                         "das fast immer ein Join über zwei Schlüssel, die nicht "
+                         "zusammengehören – oder ein zu enger Zeitraum.")
+    else:
+        tote = _tote_kennzahlen(zeilen)
+        if tote:
+            erg["befund"] = (
+                f"Die Abfrage liefert Zeilen, aber {', '.join(tote)} "
+                f"{'ist' if len(tote) == 1 else 'sind'} in jeder davon 0 oder leer. "
+                f"Das heißt meist: die Spalte trägt in dieser Datenbank nicht die "
+                f"Zahl, nach der gesucht wird.")
+        elif eingabe.get("warnung"):
+            erg["befund"] = eingabe["warnung"]
+    return erg
+
+
+def _tote_kennzahlen(zeilen: list, grenze: int = 3) -> list:
+    """Zahlenspalten, die in JEDER Zeile 0 oder leer sind.
+
+    Der dritte blinde Fleck des freien SQL, den die Prüfkette nicht abdeckt: Die
+    Abfrage läuft, liefert Zeilen und hat plausible Joins – aber sie zieht die
+    falsche Spalte, und die ist in dieser Datenbank durchweg 0. „Die 20 Artikel
+    mit dem höchsten Lagerwert" kam so mit lauter Nullen zurück, weil der
+    Bestand nicht in `tArtikel` steht. Das ist kein Fehler, den die Datenbank
+    melden könnte – nur einer, den man an den Zahlen sieht.
+    """
+    if len(zeilen) < 2:
+        return []
+    from decimal import Decimal
+
+    def zahl(w) -> bool:
+        # MSSQL liefert DECIMAL als decimal.Decimal, nicht als float – ohne diesen
+        # Fall übersieht die Prüfung ausgerechnet die Geldspalten.
+        return isinstance(w, (int, float, Decimal)) and not isinstance(w, bool)
+
+    tote = []
+    for spalte in zeilen[0].keys():
+        werte = [z.get(spalte) for z in zeilen]
+        if not any(zahl(w) for w in werte):
+            continue
+        if not all(w is None or (zahl(w) and w == 0) for w in werte):
+            continue
+        tote.append(f"„{spalte}“")
+    # Sind ALLE Zahlenspalten leer, ist die Meldung wertlos ausführlich; und
+    # Schlüsselspalten (kArtikel, kKunde) sind nie 0, also stören sie hier nicht.
+    return tote[:grenze]
+
+
+def _bausteine_anlegen(db, project_id, name: str, mapping, spalten: list) -> dict:
+    """Aktion und Tabellen-Baustein im Sammelformular – wie beim Abfrage-Generator.
+
+    Ohne Baustein wäre das Mapping im Report-Baukasten unsichtbar und der
+    Report-Schritt fände nichts zum Zusammenstellen.
+    """
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from app.services.query_builder import erzeugen
+
+    f = erzeugen._sammelformular(db, project_id)
+    schema = dict(f.schema or {})
+    schema.setdefault("actions", [])
+    schema.setdefault("widgets", [])
+    schema.setdefault("result_tabs", [])
+
+    basis = erzeugen._schluessel(name)
+    aid, w_tab = f"act_sql_{basis}", f"w_sql_{basis}_tab"
+    schema["widgets"] = [w for w in schema["widgets"] if w.get("id") != w_tab]
+    schema["actions"] = [a for a in schema["actions"] if a.get("id") != aid]
+
+    schema["actions"].append({"id": aid, "type": "run_mapping", "mapping_id": mapping.id,
+                              "pipeline_id": None, "label": name})
+    schema["widgets"].append({"id": w_tab, "type": "table", "label": name,
+                              "action_id": aid,
+                              "config": {"width": 12, "full_rows": True}})
+
+    tab = next((t for t in schema["result_tabs"] if t.get("id") == "tab_eigene"), None)
+    if not tab:
+        tab = {"id": "tab_eigene", "label": erzeugen.SAMMELFORMULAR, "action_ids": []}
+        schema["result_tabs"].append(tab)
+    if aid not in tab["action_ids"]:
+        tab["action_ids"].append(aid)
+
+    f.schema = schema
+    flag_modified(f, "schema")
+    db.flush()
+    return {"form": f, "action_id": aid, "widget_ids": [w_tab]}
+
+
+def _sql_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
+    from app.services.query_builder import erzeugen
+
+    name = (eingabe.get("name") or "").strip()
+    if not name:
+        raise WerkzeugFehler("Die freie Abfrage braucht einen Namen.")
+    sql = (eingabe.get("sql") or "").strip()
+    if not sql:
+        raise WerkzeugFehler("Für diesen Schritt gibt es kein SQL.")
+    if eingabe.get("fehler"):
+        raise WerkzeugFehler("Das erzeugte SQL läuft nicht und wird nicht gebaut: "
+                             + str(eingabe["fehler"])[:200])
+
+    spalten = [{"name": c, "typ": "text"} for c in (eingabe.get("spalten") or [])]
+    if not spalten:
+        raise WerkzeugFehler("Die Abfrage hat keine geprüften Spalten – ohne sie "
+                             "bliebe das Mapping in der Oberfläche leer.")
+
+    m = erzeugen.mapping_bauen(db, name, ctx["project_id"], ctx["mandant_id"],
+                               {"sql": sql, "spalten": spalten})
+    db.flush()
+    gebaut = _bausteine_anlegen(db, ctx["project_id"], name, m, spalten)
+
+    bisher.setdefault("bausteine", []).extend(
+        {"form_id": gebaut["form"].id, "widget_id": w} for w in gebaut["widget_ids"])
+    bisher.setdefault("mapping_namen", []).append(m.name)
+    bisher.setdefault("mapping_ids", []).append(m.id)
+
+    return [
+        {"art": "mapping", "ziel_id": m.id, "erzeugt": True,
+         "label": f"Mapping „{name}“ aus freiem SQL ({len(spalten)} Spalten)"},
+        {"art": "widget", "ziel_id": gebaut["form"].id,
+         "ziel_key": ",".join(gebaut["widget_ids"]), "erzeugt": True,
+         "eltern_art": "form", "eltern_id": gebaut["form"].id,
+         "label": f"Baustein „{name}“ im Sammelformular"},
+        {"art": "form", "ziel_id": gebaut["form"].id, "erzeugt": False,
+         "label": f"Sammelformular „{gebaut['form'].name}“ (bleibt stehen)"},
+    ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8 · Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _pipeline_zusammenfassung(eingabe: dict) -> str:
+    takt = dict(TAKTE).get(eingabe.get("cron_expr") or "0 6 * * 1",
+                           eingabe.get("cron_expr") or "manuell")
+    n = len(eingabe.get("mapping_ids") or [])
+    ziel = f"{n} Mapping(s)" if n else "die Mappings dieses Vorhabens"
+    mail = f" · Meldung an {eingabe['email_to']}" if eingabe.get("email_to") else ""
+    return f"{takt} · {ziel}{mail}"
+
+
+def _pipeline_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
+    from app.models.mapping import Mapping
+    from app.models.pipeline import Pipeline
+
+    name = (eingabe.get("name") or "").strip()
+    if not name:
+        raise WerkzeugFehler("Die Pipeline braucht einen Namen.")
+    cron = eingabe.get("cron_expr") or "0 6 * * 1"
+    if cron not in TAKT_KEYS:
+        raise WerkzeugFehler(f"Unbekannter Takt „{cron}“.")
+
+    ids = [int(i) for i in (eingabe.get("mapping_ids") or bisher.get("mapping_ids") or [])]
+    if not ids:
+        raise WerkzeugFehler("Die Pipeline hat nichts auszuführen – sie braucht einen "
+                             "Abfrage-Schritt davor oder ausdrücklich gewählte Mappings.")
+    vorhanden = {m.id: m for m in db.query(Mapping).filter(Mapping.id.in_(ids)).all()}
+    fehlend = [i for i in ids if i not in vorhanden]
+    if fehlend:
+        raise WerkzeugFehler(f"Mapping(s) nicht gefunden: {fehlend}")
+
+    schluessel = _schluessel(name, "pipeline")
+    knoten = [{"id": f"trg_{schluessel}", "type": "trigger", "x": 120, "y": 140,
+               "config": {"trigger_mode": "schedule", "cron": cron}}]
+    verbindungen = []
+    vorher = knoten[0]["id"]
+    for i, mid in enumerate(ids):
+        nid = f"map_{schluessel}_{i}"
+        knoten.append({"id": nid, "type": "mapping", "x": 440 + i * 320, "y": 140,
+                       "config": {"mapping_id": mid, "on_error": "stop"}})
+        verbindungen.append({"from_node": vorher, "from_port": "out",
+                             "to_node": nid, "to_port": "in"})
+        vorher = nid
+
+    if eingabe.get("email_to"):
+        nid = f"eml_{schluessel}"
+        knoten.append({"id": nid, "type": "email", "x": 440 + len(ids) * 320, "y": 140,
+                       "config": {"to": eingabe["email_to"],
+                                  "subject": f"{name}: Lauf abgeschlossen",
+                                  "body": f"Die Pipeline „{name}“ wurde ausgeführt.\n"
+                                          f"Zeilen und etwaige Fehler stehen im "
+                                          f"Monitoring von Datenmonster.",
+                                  "send_on": eingabe.get("send_on") or "always"}})
+        verbindungen.append({"from_node": vorher, "from_port": "out",
+                             "to_node": nid, "to_port": "in"})
+
+    p = Pipeline(name=name, project_id=ctx["project_id"],
+                 active=bool(eingabe.get("aktiv", True)),
+                 nodes=knoten, connections=verbindungen)
+    db.add(p)
+    db.flush()
+
+    # Ohne diesen Aufruf steht die Pipeline zwar da, läuft aber nie: der
+    # Cron-Job entsteht erst beim Abgleich mit dem Scheduler.
+    from app.api.pipelines import _sync_pipeline_scheduler
+    _sync_pipeline_scheduler(p)
+
+    bisher["pipeline_id"] = p.id
+    return [{"art": "pipeline", "ziel_id": p.id, "erzeugt": True,
+             "label": f"Pipeline „{name}“ – {_pipeline_zusammenfassung(eingabe)}"}]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -438,6 +696,18 @@ WERKZEUGE = {
         "vorschau": _abfrage_vorschau,
         "bauen": _abfrage_bauen,
     },
+    "mapping_frei": {
+        "key": "mapping_frei", "label": "Freie Abfrage (SQL)",
+        "wofuer": ("Der Rückfall, wenn „abfrage“ die Frage nicht abdeckt: alles "
+                   "außerhalb von Kunden, Aufträgen und Rechnungen – Artikel, Lager, "
+                   "Bestellungen, Retouren, Zahlungen. Die KI schreibt SQL, das gegen "
+                   "die echte Datenbank geprüft und bei Fehlern repariert wird. "
+                   "NIEMALS zusätzlich zu „abfrage“ für dieselbe Frage."),
+        "baut_objekte": True,
+        "zusammenfassung": _sql_zusammenfassung,
+        "vorschau": _sql_vorschau,
+        "bauen": _sql_bauen,
+    },
     "report": {
         "key": "report", "label": "Report zusammenstellen",
         "wofuer": ("Aus den Bausteinen ein eigenes Formular bauen, das man ansehen, "
@@ -457,6 +727,17 @@ WERKZEUGE = {
         "zusammenfassung": _zustellplan_zusammenfassung,
         "vorschau": None,
         "bauen": _zustellplan_bauen,
+    },
+    "pipeline": {
+        "key": "pipeline", "label": "Als Pipeline einplanen",
+        "wofuer": ("Die Mappings regelmäßig laufen lassen – für Datenwege, die "
+                   "etwas schreiben oder exportieren, nicht bloß anzeigen. Für einen "
+                   "Report, der per Mail kommen soll, ist „zustellplan“ richtig, "
+                   "nicht dieses Werkzeug."),
+        "baut_objekte": True,
+        "zusammenfassung": _pipeline_zusammenfassung,
+        "vorschau": None,
+        "bauen": _pipeline_bauen,
     },
     "warnung": {
         "key": "warnung", "label": "Als Warnung überwachen",
@@ -482,8 +763,8 @@ WERKZEUGE = {
 # Reihenfolge, in der Schritte sinnvoll aufeinander folgen. Der Planer darf
 # Werkzeuge weglassen, aber nicht umsortieren – ein Zustellplan vor dem Report
 # hätte nichts zuzustellen.
-REIHENFOLGE = ["nachsehen", "abfrage", "report", "veroeffentlichen",
-               "zustellplan", "warnung"]
+REIHENFOLGE = ["nachsehen", "abfrage", "mapping_frei", "report",
+               "veroeffentlichen", "zustellplan", "warnung", "pipeline"]
 
 
 def sortiert(schritte: list) -> list:

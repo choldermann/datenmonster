@@ -21,7 +21,7 @@ from app.models.user import User
 from app.models.vorhaben import Vorhaben, VorhabenArtefakt
 from app.services import mandant_service
 from app.services.werkbank import bauen as bauen_service
-from app.services.werkbank import plan_ki, rueckbau, werkzeuge
+from app.services.werkbank import adoptieren, plan_ki, rueckbau, werkzeuge
 from app.services.werkbank.werkzeuge import WerkzeugFehler
 
 logger = logging.getLogger(__name__)
@@ -206,6 +206,26 @@ def aendern(vorhaben_id: int, data: VorhabenPatch, db: Session = Depends(get_db)
     return _out(db, v, mit_artefakten=True)
 
 
+@router.post("/vorhaben/{vorhaben_id}/aufloesen")
+def aufloesen(vorhaben_id: int, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """Hebt die Zuordnung auf, **ohne irgendetwas zu löschen**.
+
+    Der Gegenzug zur Übernahme aus dem Bestand: Wer versehentlich etwas
+    übernommen hat, muss es wieder herauslösen können, ohne dass dabei die
+    Auswertung selbst verschwindet. Ein Rückbau wäre dafür das falsche Werkzeug –
+    er löscht.
+    """
+    _check_editor(user)
+    v = _hole(db, vorhaben_id)
+    n = (db.query(VorhabenArtefakt)
+           .filter(VorhabenArtefakt.vorhaben_id == v.id).delete())
+    db.delete(v)
+    safe_commit(db)
+    return {"aufgeloest": True, "artefakte": n,
+            "hinweis": "Die Objekte selbst sind unverändert erhalten."}
+
+
 @router.delete("/vorhaben/{vorhaben_id}/eintrag")
 def eintrag_loeschen(vorhaben_id: int, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
@@ -225,6 +245,39 @@ def eintrag_loeschen(vorhaben_id: int, db: Session = Depends(get_db),
     db.delete(v)
     safe_commit(db)
     return {"geloescht": True}
+
+
+# ── Bestand übernehmen ───────────────────────────────────────────────────────
+
+@router.get("/adoptieren")
+def adoptieren_vorschau(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """Vorhandene Auswertungen und Reports, die noch zu keinem Vorhaben gehören."""
+    _check_editor(user)
+    eintraege = adoptieren.finden(db, project_id)
+    return {"eintraege": eintraege, "anzahl": len(eintraege)}
+
+
+class AdoptionRequest(BaseModel):
+    auswahl: List[dict]
+    project_id: Optional[int] = None
+
+
+@router.post("/adoptieren")
+def adoptieren_ausfuehren(data: AdoptionRequest, db: Session = Depends(get_db),
+                          user: User = Depends(get_current_user)):
+    """Stempelt die gewählten Objekte nachträglich als Vorhaben.
+
+    Ändert an den Objekten selbst nichts – sie bekommen nur eine Herkunft und
+    damit Rückbau und Fremdnutzungsprüfung.
+    """
+    _check_editor(user)
+    try:
+        return adoptieren.uebernehmen(db, data.auswahl, data.project_id, user.id)
+    except Exception as e:
+        db.rollback()
+        logger.exception("Übernahme fehlgeschlagen")
+        raise HTTPException(500, f"Übernahme fehlgeschlagen: {str(e)[:300]}")
 
 
 # ── Vorschau und Bauen ───────────────────────────────────────────────────────

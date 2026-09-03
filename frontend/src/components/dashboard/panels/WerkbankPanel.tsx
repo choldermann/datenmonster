@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Wand2, Loader2, Play, Hammer, Trash2, RotateCcw, CheckCircle2,
-         AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info } from "lucide-react";
+         AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info,
+         Building2, Inbox, Unlink } from "lucide-react";
 import api from "../../../api/client";
 import MandantWaehler from "../../MandantWaehler";
 import { onMandantChange } from "../../../services/mandant";
@@ -49,6 +50,9 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   const [aktiv, setAktiv] = useState(null);
   const [werkzeuge, setWerkzeuge] = useState(null);
   const [abfrageSchema, setAbfrageSchema] = useState(null);
+  const [mandanten, setMandanten] = useState([]);
+  const [adoption, setAdoption] = useState(null);     // {eintraege, anzahl}
+  const [adoptionOffen, setAdoptionOffen] = useState(false);
   const [laden, setLaden] = useState(true);
   const [fehler, setFehler] = useState(null);
 
@@ -85,6 +89,28 @@ export default function WerkbankPanel({ projectId, canEdit }) {
     api.get("/api/werkbank/werkzeuge").then(r => setWerkzeuge(r.data)).catch(() => {});
     api.get("/api/query/schema").then(r => setAbfrageSchema(r.data)).catch(() => {});
   }, []);
+  useEffect(() => {
+    api.get(`/api/mandanten${q}`).then(r => setMandanten(r.data?.mandanten || []))
+       .catch(() => setMandanten([]));
+  }, [q]);
+
+  const adoptionLaden = useCallback(() => {
+    api.get(`/api/werkbank/adoptieren${q}`).then(r => setAdoption(r.data))
+       .catch(() => setAdoption(null));
+  }, [q]);
+  useEffect(() => { adoptionLaden(); }, [adoptionLaden]);
+
+  const uebernehmen = async (auswahl) => {
+    try {
+      await api.post("/api/werkbank/adoptieren",
+        { auswahl, project_id: projectId ?? null });
+      setAdoptionOffen(false);
+      adoptionLaden();
+      listeLaden();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
   // Ein Vorhaben gehört einem Mandanten. Nach dem Wechsel stünden sonst die
   // Zahlen des einen Betriebs unter dem Namen des anderen.
   useEffect(() => onMandantChange(() => { listeLaden(); setVorschau(null); }), [listeLaden]);
@@ -237,6 +263,17 @@ export default function WerkbankPanel({ projectId, canEdit }) {
     }
   };
 
+  const aufloesen = async (id) => {
+    try {
+      await api.post(`/api/werkbank/vorhaben/${id}/aufloesen`);
+      if (aktiv?.id === id) setAktiv(null);
+      adoptionLaden();
+      listeLaden();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
   const eintragLoeschen = async (id) => {
     try {
       await api.delete(`/api/werkbank/vorhaben/${id}/eintrag`);
@@ -251,6 +288,24 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   const istGebaut = aktiv?.status === "installiert";
 
   return (
+    <div>
+      {/* Der Betrieb gehört ohne Klick sichtbar – wer eine Zahl liest, muss
+          wissen, von welcher Warenwirtschaft sie stammt. Er steht deshalb
+          dauerhaft im Kopf, nicht nur auf dem Startbildschirm. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16,
+          paddingBottom: 12, borderBottom: `1px solid ${S.border}` }}>
+        <Wand2 size={16} style={{ color: S.accent }} />
+        <div style={{ flex: 1 }}>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: S.textBright }}>
+            KI-Werkbank
+          </p>
+          <p style={{ margin: 0, fontSize: 11, color: S.textDim }}>
+            Neue Vorhaben werden für den hier gewählten Betrieb gebaut
+          </p>
+        </div>
+        <MandantWaehler projectId={projectId} />
+      </div>
+
     <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
       {/* ── Vorhabenliste ── */}
       <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column",
@@ -260,6 +315,18 @@ export default function WerkbankPanel({ projectId, canEdit }) {
           style={{ ...knopf(true), width: "100%", justifyContent: "center" }}>
           <Sparkles size={13} /> Neues Vorhaben
         </button>
+
+        {/* Wer den Abfrage-Generator oder den Baukasten schon benutzt hat, hat
+            Objekte im Bestand, die von der Werkbank nichts wissen – und damit
+            keinen sicheren Rückbau. */}
+        {adoption?.anzahl > 0 && (
+          <button onClick={() => setAdoptionOffen(true)}
+            style={{ ...knopfLeer, width: "100%", justifyContent: "center",
+                     fontSize: 11.5, color: S.accent,
+                     borderColor: "rgba(252,228,153,0.35)" }}>
+            <Inbox size={13} /> {adoption.anzahl} aus dem Bestand übernehmen
+          </button>
+        )}
 
         <div style={{ maxHeight: "calc(100vh - 260px)", overflowY: "auto",
                       display: "flex", flexDirection: "column", gap: 4 }}>
@@ -285,6 +352,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
                   <span style={{ width: 6, height: 6, borderRadius: "50%",
                                  backgroundColor: st.farbe }} />
                   {st.label} · {(v.bauplan || []).filter(s => s.aktiv).length} Schritt(e)
+                  {v.mandant ? ` · ${v.mandant}` : ""}
                 </span>
               </button>
             );
@@ -307,7 +375,9 @@ export default function WerkbankPanel({ projectId, canEdit }) {
             eingabeRef={eingabeRef} canEdit={canEdit} projectId={projectId} />
         ) : (
           <>
-            <Kopf v={aktiv} onUmbenennen={n => planSpeichern(aktiv.bauplan, { name: n })} />
+            <Kopf v={aktiv} mandanten={mandanten} gebaut={istGebaut}
+              onUmbenennen={n => planSpeichern(aktiv.bauplan, { name: n })}
+              onMandant={id => planSpeichern(aktiv.bauplan, { mandant_id: id })} />
 
             {rueckfragen.length > 0 && (
               <div style={{ margin: "0 0 14px", padding: "12px 14px", borderRadius: 6,
@@ -389,6 +459,13 @@ export default function WerkbankPanel({ projectId, canEdit }) {
                   <X size={12} /> Eintrag entfernen
                 </button>
               )}
+              {istGebaut && (
+                <button onClick={() => aufloesen(aktiv.id)} style={{
+                  ...knopfLeer, marginLeft: "auto", fontSize: 11 }}
+                  title="Nimmt dem Vorhaben nur die Zuordnung – Auswertung, Report und Zeitplan bleiben unverändert bestehen">
+                  <Unlink size={12} /> Zuordnung aufheben
+                </button>
+              )}
             </div>
 
             {/* Was gebaut wurde */}
@@ -422,11 +499,17 @@ export default function WerkbankPanel({ projectId, canEdit }) {
         )}
       </div>
 
+      {adoptionOffen && adoption && (
+        <AdoptionModal eintraege={adoption.eintraege || []}
+          onClose={() => setAdoptionOffen(false)} onUebernehmen={uebernehmen} />
+      )}
+
       {rueckbauPlan && (
         <RueckbauModal plan={rueckbauPlan} laeuft={rueckbauLaeuft}
           onClose={() => setRueckbauPlan(null)}
           onAusfuehren={rueckbauAusfuehren} />
       )}
+    </div>
     </div>
   );
 }
@@ -449,7 +532,6 @@ function Beschreiben({ value, onChange, onSubmit, laeuft, fortschritt, eingabeRe
         <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: S.textBright }}>
           Was möchtest du sehen?
         </h2>
-        <div style={{ marginLeft: "auto" }}><MandantWaehler projectId={projectId} /></div>
       </div>
       <p style={{ fontSize: 12.5, color: S.textDim, margin: "0 0 14px", lineHeight: 1.6 }}>
         Ein Satz genügt. Die Werkbank schlägt vor, was dafür gebaut werden muss –
@@ -488,7 +570,7 @@ function Beschreiben({ value, onChange, onSubmit, laeuft, fortschritt, eingabeRe
 }
 
 
-function Kopf({ v, onUmbenennen }) {
+function Kopf({ v, mandanten, gebaut, onUmbenennen, onMandant }) {
   const [name, setName] = useState(v.name);
   useEffect(() => setName(v.name), [v.id, v.name]);
   const st = STATUS[v.status] || STATUS.entwurf;
@@ -505,8 +587,33 @@ function Kopf({ v, onUmbenennen }) {
       </div>
       <p style={{ margin: "4px 0 0 6px", fontSize: 12, color: S.textDim, lineHeight: 1.5 }}>
         „{v.beschreibung}“
-        {v.mandant && <span style={{ marginLeft: 8 }}>· Betrieb: {v.mandant}</span>}
       </p>
+      {/* Der Betrieb ist Teil des Vorhabens, nicht der Sitzung: gerechnet und
+          später auch nachts zugestellt wird gegen genau diese Warenwirtschaft.
+          Nach dem Bauen festgezurrt – ein Wechsel würde die schon gebauten
+          Objekte gegen einen anderen Betrieb laufen lassen. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "8px 0 0 6px" }}>
+        <Building2 size={13} style={{ color: S.textDim }} />
+        <span style={{ fontSize: 11.5, color: S.textDim }}>Betrieb</span>
+        {gebaut || (mandanten || []).length < 2 ? (
+          <span style={{ fontSize: 12, color: S.textMain, fontWeight: 600 }}>
+            {v.mandant || "—"}
+            {gebaut && (mandanten || []).length > 1 && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: S.textDim,
+                             fontWeight: 400 }}>
+                (nach dem Bauen nicht mehr wechselbar)
+              </span>
+            )}
+          </span>
+        ) : (
+          <select value={v.mandant_id || ""} onChange={e => onMandant(Number(e.target.value))}
+            style={{ ...inp, width: "auto", minWidth: 140, fontSize: 12 }}>
+            {(mandanten || []).map(m => (
+              <option key={m.connection_id} value={m.connection_id}>{m.name}</option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   );
 }
@@ -684,6 +791,71 @@ function Einstellungen({ s, gebaut, werkzeuge, abfrageSchema, onEingabe }) {
     );
   }
 
+  if (s.werkzeug === "mapping_frei") {
+    const befund = e.fehler || e.leer || e.warnung;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={reihe}>
+          {feld("Name", <input value={e.name || ""} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("name", ev.target.value)} />)}
+          {feld("Zeitraum der Vorschau", (
+            <select value={e.zeitraum_preset || "months_12"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("zeitraum_preset", ev.target.value)}>
+              {zeit.map(z => <option key={z.key} value={z.key}>{z.label}</option>)}
+            </select>
+          ))}
+        </div>
+        {befund && (
+          <div style={{ padding: "9px 12px", borderRadius: 5,
+              background: e.fehler ? "rgba(224,86,86,0.08)" : "rgba(232,145,58,0.09)",
+              border: `1px solid ${e.fehler ? "rgba(224,86,86,0.25)" : "rgba(232,145,58,0.3)"}` }}>
+            <p style={{ margin: 0, fontSize: 11.5,
+                        color: e.fehler ? "#e05656" : "#e8913a" }}>
+              {e.fehler ? "Die Datenbank lehnt das SQL ab: " : ""}{befund}
+            </p>
+          </div>
+        )}
+        {/* Das SQL steht sichtbar da: wer es lesen kann, prüft es; wer nicht,
+            sieht wenigstens, dass nichts gezaubert wird. */}
+        <div>
+          <p style={{ margin: "0 0 5px", fontSize: 10.5, color: S.textDim,
+              textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Erzeugtes SQL {(e.spalten || []).length > 0
+              ? `· ${e.spalten.length} geprüfte Spalten` : ""}
+          </p>
+          <pre style={{ margin: 0, padding: "10px 12px", borderRadius: 5,
+              backgroundColor: S.bgMain, border: `1px solid ${S.border}`,
+              fontSize: 11, lineHeight: 1.5, color: S.textMain,
+              overflowX: "auto", maxHeight: 220, whiteSpace: "pre" }}>
+            {e.sql || "(noch kein SQL)"}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
+  if (s.werkzeug === "pipeline") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={reihe}>
+          {feld("Name", <input value={e.name || ""} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("name", ev.target.value)} />)}
+          {feld("Takt", (
+            <select value={e.cron_expr || "0 6 * * 1"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("cron_expr", ev.target.value)}>
+              {takte.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          ))}
+        </div>
+        {feld("Meldung nach dem Lauf an (leer = keine Mail)", (
+          <input value={e.email_to || ""} disabled={gebaut} style={inp}
+            placeholder="name@firma.de"
+            onChange={ev => onEingabe("email_to", ev.target.value)} />
+        ))}
+      </div>
+    );
+  }
+
   if (s.werkzeug === "report") {
     return (
       <div style={reihe}>
@@ -853,6 +1025,80 @@ function Definition({ d, schema, gebaut, onChange }) {
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+
+/**
+ * Bestand übernehmen. Die Häkchen starten bewusst LEER – hier wird fremder
+ * Bestand angefasst, und was übernommen wird, entscheidet der Anwender aktiv.
+ */
+function AdoptionModal({ eintraege, onClose, onUebernehmen }) {
+  const [gewaehlt, setGewaehlt] = useState([]);
+  const schluessel = (e) => `${e.art}:${e.id}`;
+  const an = (e) => gewaehlt.includes(schluessel(e));
+  const um = (e) => setGewaehlt(g => an(e)
+    ? g.filter(x => x !== schluessel(e)) : [...g, schluessel(e)]);
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300,
+        backgroundColor: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 20 }}>
+      <div onClick={ev => ev.stopPropagation()} style={{ backgroundColor: S.bgCard,
+          border: `1px solid ${S.border}`, borderRadius: 10, width: "100%",
+          maxWidth: 620, maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${S.border}` }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: S.textBright }}>
+            Bestand übernehmen
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: S.textDim,
+                      lineHeight: 1.55 }}>
+            Diese Auswertungen und Reports gehören zu keinem Vorhaben. Übernommen
+            bekommen sie eine Herkunft – und damit Rückbau samt Prüfung, ob
+            inzwischen jemand anders daran hängt. An den Objekten selbst ändert
+            sich nichts.
+          </p>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px",
+            display: "flex", flexDirection: "column", gap: 5 }}>
+          {eintraege.map(e => (
+            <label key={schluessel(e)} style={{ display: "flex", gap: 10,
+                alignItems: "flex-start", padding: "9px 11px", borderRadius: 5,
+                backgroundColor: S.bgEl, border: `1px solid ${an(e) ? S.accent : S.border}`,
+                cursor: "pointer" }}>
+              <input type="checkbox" checked={an(e)} onChange={() => um(e)}
+                style={{ accentColor: S.accent, marginTop: 2 }} />
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 12.5, fontWeight: 600,
+                               color: S.textBright }}>{e.name}</span>
+                <span style={{ display: "block", fontSize: 11, color: S.textDim,
+                               marginTop: 2 }}>
+                  {e.art === "adhoc_query" ? "Eigene Auswertung" : "Report"}
+                  {(e.teile || []).length ? ` · ${e.teile.join(" · ")}` : ""}
+                  {e.mandant_id ? "" : " · Betrieb unbekannt, Projekt-Standard wird gesetzt"}
+                </span>
+              </span>
+            </label>
+          ))}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${S.border}`,
+            display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center" }}>
+          <span style={{ flex: 1, fontSize: 11.5, color: S.textDim }}>
+            {gewaehlt.length} von {eintraege.length} gewählt
+          </span>
+          <button onClick={onClose} style={knopfLeer}>Abbrechen</button>
+          <button disabled={!gewaehlt.length} style={knopf(!!gewaehlt.length)}
+            onClick={() => onUebernehmen(gewaehlt.map(k => {
+              const [art, id] = k.split(":");
+              return { art, id: Number(id) };
+            }))}>
+            <Inbox size={13} /> Übernehmen
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

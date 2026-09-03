@@ -20,6 +20,7 @@ import json
 import logging
 from datetime import date
 
+from app.services import sql_werkstatt
 from app.services.query_builder import katalog
 
 from . import werkzeuge
@@ -160,6 +161,13 @@ spätere Schritte.
 Regeln:
 - Wähle so wenige Werkzeuge wie möglich.
 - „abfrage" ist fast immer der erste bauende Schritt: sie liefert die Zahlen.
+  Sie kann NUR Kunden, Aufträge, Auftragspositionen, Rechnungen und
+  Rechnungspositionen. Geht es um etwas anderes – Artikel, Lager, Bestellungen,
+  Lieferanten, Retouren, Zahlungen –, nimm stattdessen „mapping_frei".
+- „abfrage" und „mapping_frei" schließen einander aus. Nie beide für dieselbe
+  Frage.
+- „pipeline" NUR, wenn Daten regelmäßig verarbeitet, geschrieben oder exportiert
+  werden sollen. Soll ein Report per Mail kommen, ist „zustellplan" richtig.
 - „report" nur, wenn das Ergebnis angesehen, als PDF gebraucht, veröffentlicht
   oder zugestellt werden soll.
 - „zustellplan" NUR, wenn im Wunsch ein Takt vorkommt (täglich, montags,
@@ -440,7 +448,17 @@ async def bauzettel_stufen(db, svc, wunsch: str, ctx: dict):
             gewaehlt.append({"werkzeug": key, "warum": grund})
             hinweise.append(grund)
 
-    if "zustellplan" in gesehen or "warnung" in gesehen or "veroeffentlichen" in gesehen:
+    # Beide Abfragewege gleichzeitig wäre dieselbe Frage zweimal gebaut – der
+    # geprüfte Katalogweg gewinnt, freies SQL ist nur der Rückfall.
+    if "abfrage" in gesehen and "mapping_frei" in gesehen:
+        gesehen.discard("mapping_frei")
+        gewaehlt = [g for g in gewaehlt if g["werkzeug"] != "mapping_frei"]
+        hinweise.append("Der Katalogweg deckt die Frage ab – freies SQL wurde "
+                        "weggelassen.")
+
+    hat_quelle = bool({"abfrage", "mapping_frei"} & gesehen)
+    if not hat_quelle and ({"zustellplan", "warnung", "veroeffentlichen", "report",
+                            "pipeline"} & gesehen):
         _sicherstellen("abfrage", "Ohne Abfrage gäbe es nichts zu zeigen – ergänzt.")
     if "zustellplan" in gesehen or "veroeffentlichen" in gesehen:
         _sicherstellen("report", "Zugestellt und veröffentlicht wird ein Report – ergänzt.")
@@ -448,7 +466,7 @@ async def bauzettel_stufen(db, svc, wunsch: str, ctx: dict):
         _sicherstellen("abfrage", "Als Einstieg immer eine Abfrage.")
 
     details = {}
-    if {"report", "zustellplan", "warnung"} & gesehen:
+    if {"report", "zustellplan", "warnung", "pipeline", "mapping_frei"} & gesehen:
         yield {"fortschritt": "Zeitraum, Takt und Schwelle …"}
         try:
             details = await _stufe2c_details(svc, wunsch)
@@ -503,6 +521,42 @@ async def bauzettel_stufen(db, svc, wunsch: str, ctx: dict):
             if not kennzahlen:
                 rueckfragen.append("Welche Kennzahl soll die Auswertung zeigen? "
                                    "Die KI hat keine passende gefunden.")
+
+        elif key == "mapping_frei":
+            # Das SQL entsteht HIER, nicht beim Bauen: nur so durchläuft es die
+            # Prüfkette (gegen die Datenbank ausführen, reparieren, Leer- und
+            # Join-Befund) und der Anwender sieht das Urteil im Bauzettel.
+            yield {"fortschritt": "SQL schreiben und gegen die Datenbank prüfen …"}
+            erg = None
+            async for schritt in sql_werkstatt.erzeugen_stufen(
+                    db, svc, wunsch, ctx.get("mandant_id")):
+                if "ergebnis" in schritt:
+                    erg = schritt["ergebnis"]
+                else:
+                    yield schritt
+            erg = erg or {}
+            eingabe = {
+                "name": name, "beschreibung": wunsch,
+                "zeitraum_preset": details.get("zeitraum_preset") or "months_12",
+                "sql": erg.get("sql") or "",
+                "spalten": erg.get("columns") or [],
+                "fehler": erg.get("fehler"), "leer": erg.get("leer"),
+                "warnung": erg.get("warnung"),
+            }
+            if erg.get("fehler"):
+                rueckfragen.append("Das erzeugte SQL läuft nicht — die Frage bitte "
+                                   "genauer stellen oder im Mapping-Editor nachbessern.")
+            elif erg.get("leer"):
+                hinweise.append("Das SQL läuft, liefert aber keine Zeile: "
+                                + str(erg["leer"])[:160])
+            elif erg.get("warnung"):
+                hinweise.append(str(erg["warnung"])[:200])
+
+        elif key == "pipeline":
+            eingabe = {"name": name,
+                       "cron_expr": details.get("cron_expr") or "0 6 * * 1",
+                       "mapping_ids": [], "email_to": ctx.get("email") or "",
+                       "aktiv": True}
 
         elif key == "report":
             eingabe = {"name": name,

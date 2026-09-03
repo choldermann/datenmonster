@@ -2620,118 +2620,41 @@ async def generate_nodes(
         # Ein kleines Modell kann nicht gleichzeitig die JSON-Struktur UND
         # korrektes SQL treffen. Stufe 1 beschreibt nur, Stufe 2 schreibt das
         # SQL mit vollem Schema- und Projektwissen und prüft es gegen die DB.
-        ctx = AIContextBuilder(db)
+        # Die Kette selbst steht in services/sql_werkstatt.py – die KI-Werkbank
+        # benutzt dieselbe, damit beide Wege dieselben Prüfungen durchlaufen.
+        from app.services import sql_werkstatt
         for n in nodes:
             if not isinstance(n, dict) or n.get("node_type") != "sql":
                 continue
             n.setdefault("mode", "transform")
-            # Stufe 1 formuliert die Aufgabe um und kann sie dabei verfälschen (aus
-            # "dieses Jahr" wurde schon "das Jahr 2023"). Der Wortlaut des Nutzers
-            # bleibt deshalb immer dabei und hat im Zweifel Vorrang.
-            praezisierung = (n.get("sql_description") or "").strip()
-            original = (body.description or "").strip()
-            if praezisierung and praezisierung.lower() != original.lower():
-                # „gilt der Auftrag oben" hieß hier die Anweisung, das Wort landete
-                # aber in der Stichwortsuche und zog Verkauf.tAuftrag, tAuftragAdresse
-                # und die Regel „gekauft heißt Rechnung, nicht Auftrag" in einen
-                # Prompt über Preise. Der Zusatz darf kein Fachwort enthalten.
-                beschreibung = (f"{original}\n\nPräzisierung aus dem Bauplan (nachrangig – "
-                                f"bei Widerspruch gilt der Wortlaut oben): {praezisierung}")
-            else:
-                beschreibung = praezisierung or original
-            yield f"data: {json.dumps({'progress': f'SQL wird erzeugt: {(praezisierung or original)[:80]}'})}\n\n"
+            beschreibung = sql_werkstatt.beschreibung_zusammensetzen(
+                body.description, n.get("sql_description") or "")
 
-            sql_system, sql_ctx = ctx.sql_generate_context(
-                beschreibung, body.connection_id, body.mapping_id)
-            auftrag = f"{sql_ctx}\n\nAufgabe: {beschreibung}" if sql_ctx else f"Aufgabe: {beschreibung}"
-
-            from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
-            sql_params = params_fuer_prompt(len(sql_system) + len(auftrag))
-            svc.timeout = timeout_fuer_prompt(len(sql_system) + len(auftrag), svc.timeout)
-
-            sql_text = _sql_saeubern(await svc.complete_with_context(
-                auftrag, sql_system, params=sql_params))
-            columns, fehler, leer = _sql_pruefen(db, sql_text, body.connection_id, body.canvas_nodes)
-            verdacht = _joinbefund(sql_text) if not fehler else None
-
-            # Reparaturläufe mit dem echten Befund der Datenbank. Drei Sorten
-            # Befund: abgelehnt (erfundene Tabelle/Spalte), angenommen aber ohne
-            # jede Zeile, oder angenommen mit Zeilen aus einem Join, der zwei
-            # fremde Entitätsschlüssel gleichsetzt. Die letzten beiden sind die
-            # heimtückischen – sie sehen bis zur Vorschau wie fertige Abfragen aus.
-            # Ein Versuch reicht oft nicht: der zweite Anlauf bekommt zusätzlich
-            # das Schema der bemängelten Tabelle nachgereicht.
-            for versuch in (1, 2):
-                if not fehler and not leer and not verdacht:
-                    break
-                befund = fehler or leer or verdacht
-                lage = ("SQL-Fehler" if fehler
-                        else "Abfrage bleibt leer" if leer
-                        else "Join verbindet fremde Schlüssel")
-                yield f"data: {json.dumps({'progress': f'{lage}, Reparaturversuch {versuch}: {befund[:110]}'})}\n\n"
-                # Bei einem Spaltenfehler zählt Genauigkeit mehr als Sparsamkeit:
-                # die echten Spalten der verwendeten Tabellen kommen sofort dazu,
-                # dazu das passende Schema – die gesuchte Spalte liegt ja meist in
-                # einer Tabelle, die im SQL noch gar nicht vorkommt.
-                spaltenfehler = bool(fehler) and bool(_re.search(
-                    r"Ungültiger Spaltenname|Invalid column name|Ungültiger Objektname|Invalid object name",
-                    fehler))
-                nachschlag = ""
-                if spaltenfehler:
-                    nachschlag = "\n\n" + _spalten_nachschlag(body.connection_id, sql_text)
-                if (versuch == 2 or spaltenfehler) and body.connection_id:
-                    conn_obj = ctx._get_conn(body.connection_id)
-                    if conn_obj:
-                        from app.services.ai_context_builder import _schema_fuer_aufgabe
-                        nachschlag += "\n\n" + _schema_fuer_aufgabe(conn_obj, f"{beschreibung} {befund}")
-                if fehler:
-                    urteil = (f"Die Datenbank lehnt es ab:\n{fehler}\n\n"
-                              "Korrigiere die Abfrage. Verwende ausschließlich Tabellen und "
-                              "Spalten, die oben im Schema stehen.")
-                elif verdacht and not leer:
-                    urteil = (f"{verdacht}\n\n"
-                              "In dieser Datenbank ist eine Schlüsselspalte nach ihrer Entität "
-                              "benannt: kArtikel zeigt auf einen Artikel, kKunde auf einen Kunden. "
-                              "Zwei verschiedene davon gleichzusetzen verbindet zusammenhanglose "
-                              "Zeilen — die Abfrage liefert dann Treffer, die nur aus überlappenden "
-                              "Nummernkreisen entstehen. Suche im Schema oben die Tabelle, die "
-                              "beide Seiten wirklich verbindet, und schreibe die Abfrage neu. "
-                              "Gibt es keine, gehört die Tabelle nicht in die Abfrage.")
+            erg = None
+            async for schritt in sql_werkstatt.erzeugen_stufen(
+                    db, svc, beschreibung, body.connection_id,
+                    mapping_id=body.mapping_id, canvas_nodes=body.canvas_nodes):
+                if "ergebnis" in schritt:
+                    erg = schritt["ergebnis"]
                 else:
-                    urteil = (f"{leer}\n\n"
-                              "Das ist fast immer ein Join über zwei Schlüssel, die nichts "
-                              "miteinander zu tun haben – etwa eine Bestell-ID gegen eine "
-                              "Rechnungs-ID, oder eine Schnittstellentabelle statt der "
-                              "Belegtabelle. Prüfe jeden JOIN einzeln: verbinden die beiden "
-                              "Spalten wirklich denselben Schlüssel? Suche im Schema oben "
-                              "nach der passenden Tabelle und schreibe die Abfrage neu.")
-                reparatur = (
-                    f"{auftrag}{nachschlag}\n\nDieses SQL wurde erzeugt:\n{sql_text}\n\n"
-                    f"{urteil}\n\nAntworte NUR mit dem korrigierten SQL."
-                )
-                sql_neu = _sql_saeubern(await svc.complete_with_context(
-                    reparatur, sql_system, params=sql_params))
-                columns_neu, fehler_neu, leer_neu = _sql_pruefen(
-                    db, sql_neu, body.connection_id, body.canvas_nodes)
-                # Eine Reparatur, die zwar läuft, aber weiterhin leer bleibt, ist
-                # keine Verschlechterung – der neue Stand wird übernommen.
-                sql_text, columns, fehler, leer = sql_neu, columns_neu, fehler_neu, leer_neu
-                verdacht = _joinbefund(sql_text) if not fehler else None
+                    yield f"data: {json.dumps({'progress': schritt['fortschritt']})}\n\n"
+            if erg is None:
+                continue
 
-            n["sql"] = sql_text
-            n["columns"] = columns
+            n["sql"] = erg["sql"]
+            n["columns"] = erg["columns"]
             n["connection_id"] = body.connection_id
-            if fehler:
-                n["sql_error"] = fehler
-            elif leer:
+            if erg["fehler"]:
+                n["sql_error"] = erg["fehler"]
+            elif erg["leer"]:
                 # Kein Fehler, aber auch kein Ergebnis: der Nutzer soll das vor
                 # dem Übernehmen sehen und entscheiden, statt einen leeren Node
                 # ins Mapping zu bekommen.
-                n["sql_leer"] = leer
-            elif verdacht:
+                n["sql_leer"] = erg["leer"]
+            elif erg["warnung"]:
                 # Läuft und liefert Zeilen, aber der Join ist nicht plausibel —
                 # sichtbar machen statt stillschweigend übernehmen.
-                n["sql_warnung"] = verdacht
+                n["sql_warnung"] = erg["warnung"]
 
         print(f"[AI generate-nodes] {len(nodes)} nodes, explanation={explanation[:80]}", flush=True)
         yield f"data: {json.dumps({'result': {'nodes': nodes, 'explanation': explanation}})}\n\n"

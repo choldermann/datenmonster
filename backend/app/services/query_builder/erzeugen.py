@@ -33,9 +33,16 @@ def _schluessel(name: str) -> str:
     return s[:40] or "abfrage"
 
 
-def _mapping_bauen(db, name: str, project_id, connection_id: int,
-                   gebaut: dict, vorhandenes: Mapping | None = None) -> Mapping:
-    """Legt das Mapping an oder aktualisiert es."""
+def mapping_bauen(db, name: str, project_id, connection_id: int,
+                  gebaut: dict, vorhandenes: Mapping | None = None) -> Mapping:
+    """Legt das Mapping an oder aktualisiert es.
+
+    `gebaut` braucht nur `sql` und `spalten` ([{name, typ}]) – deshalb baut auch
+    die KI-Werkbank ihr Mapping aus freiem SQL hierüber, statt den Knoten- und
+    Zielaufbau ein zweites Mal zu schreiben. Ein zweiter Bauweg wäre die sichere
+    Art, dass einer davon irgendwann die Zielfelder vergisst und das Mapping
+    stumm nichts ausgibt.
+    """
     spalten = gebaut["spalten"]
 
     sql_node = {
@@ -129,7 +136,7 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
     alt_mapping = None
     if vorhandene and vorhandene.mapping_id:
         alt_mapping = db.query(Mapping).filter(Mapping.id == vorhandene.mapping_id).first()
-    m = _mapping_bauen(db, name, project_id, connection_id, gebaut, alt_mapping)
+    m = mapping_bauen(db, name, project_id, connection_id, gebaut, alt_mapping)
     db.flush()
 
     f = _sammelformular(db, project_id)
@@ -195,8 +202,8 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
             if vorhandene and (vorhandene.widget_ids or []) and vorhandene.verlauf_mapping_id:
                 alt_v = db.query(Mapping).filter(
                     Mapping.id == vorhandene.verlauf_mapping_id).first()
-            mv = _mapping_bauen(db, f"{name} – Verlauf", project_id, connection_id,
-                                v_gebaut, alt_v)
+            mv = mapping_bauen(db, f"{name} – Verlauf", project_id, connection_id,
+                               v_gebaut, alt_v)
             db.flush()
             verlauf_mapping_id = mv.id
             schema["actions"].append({
