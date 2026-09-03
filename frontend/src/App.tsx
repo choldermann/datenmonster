@@ -19,18 +19,46 @@ import PortalRunner from "./pages/PortalRunner";
 /** Blendet den schwebenden KI-Assistenten in Formular-Runnern aus (Editor-Run
  *  /forms/:id/run und Portal /app/:slug), sofern das Formular ihn nicht per
  *  schema.show_ai_assistant ausdrücklich einblendet. Sonst ist er überall aktiv. */
+/**
+ * Orte, an denen der schwebende Assistent etwas kann – die Editoren.
+ *
+ * Bewusst eine Erlaubnisliste statt einer Verbotsliste: Sonst taucht er bei
+ * jeder neuen Seite von selbst wieder auf, und jemand muss ihn einzeln wieder
+ * abschalten. Maßstab ist, ob die Seite ihm Arbeitskontext gibt – der
+ * Mapping-Editor meldet ihm den aktiven Knoten, lässt ihn Fehler erklären und
+ * ganze Knoten bauen; der Formular-Editor hinterlegt ihm Aktionen. Auf
+ * Übersichtsseiten hätte er nur allgemeine Auskunft gegeben, und dafür gibt es
+ * jetzt die KI-Werkbank als eigenen Bereich.
+ *
+ * `/forms/:id/run` fällt bewusst NICHT darunter (das `$` verhindert es) – der
+ * Formularlauf hat seine eigene Regel weiter unten.
+ */
+const ARBEITSORTE = [
+  /^\/mappings\/[^/]+$/,
+  /^\/pipelines\/[^/]+$/,
+  /^\/forms\/new$/,
+  /^\/forms\/[^/]+$/,
+];
+
 function AiAssistantGate() {
   const location = useLocation();
   const { formAiAllowed, versteckt } = useAIAssistant();
   const { user } = useAuth();
+  const pfad = location.pathname;
+
   // Vor der Anmeldung gibt es keinen Kontext, keine Berechtigung und nichts zu
-  // fragen – der Assistent hätte dort nur einen Knopf ohne Funktion angeboten.
-  if (!user || location.pathname === "/login") return null;
+  // fragen – dort wäre es nur ein Knopf ohne Funktion.
+  if (!user) return null;
   // Bereiche, die den Assistenten selbst ersetzen (KI-Werkbank).
   if (versteckt) return null;
-  const onFormRoute = /\/forms\/[^/]+\/run$/.test(location.pathname)
-    || location.pathname.startsWith("/app/");
-  if (onFormRoute && !formAiAllowed) return null;
+
+  // Formularlauf und Portal: nur, wenn das Formular ihn ausdrücklich einblendet
+  // (schema.show_ai_assistant). Dort sitzen auch Anwender ohne Editor-Rechte.
+  if (/^\/forms\/[^/]+\/run$/.test(pfad) || pfad.startsWith("/app/")) {
+    return formAiAllowed ? <FloatingAIAssistant /> : null;
+  }
+
+  if (!ARBEITSORTE.some(r => r.test(pfad))) return null;
   return <FloatingAIAssistant />;
 }
 
