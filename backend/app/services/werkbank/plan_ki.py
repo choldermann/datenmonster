@@ -168,6 +168,11 @@ Regeln:
   Frage.
 - „pipeline" NUR, wenn Daten regelmäßig verarbeitet, geschrieben oder exportiert
   werden sollen. Soll ein Report per Mail kommen, ist „zustellplan" richtig.
+- „app" NUR, wenn der Anwender selbst etwas EINGEBEN soll – suchen, nachschlagen,
+  eine Nummer eintippen, aus einer Liste wählen. Eine Auswertung, die man nur
+  ansieht, ist „abfrage" oder „mapping_frei", niemals „app".
+- „app" schließt „abfrage", „mapping_frei" und „report" aus: die App bringt ihre
+  eigene Maske und ihre eigene Tabelle mit.
 - „report" nur, wenn das Ergebnis angesehen, als PDF gebraucht, veröffentlicht
   oder zugestellt werden soll.
 - „zustellplan" NUR, wenn im Wunsch ein Takt vorkommt (täglich, montags,
@@ -407,6 +412,72 @@ async def _stufe2c_details(svc, wunsch: str) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Stufe 2d · Eingabefelder einer App
+# ─────────────────────────────────────────────────────────────────────────────
+
+_FELD_SYSTEM = """Du entwirfst die Eingabefelder einer kleinen Suchmaske.
+
+Regeln:
+- So wenige Felder wie möglich. Meist genügt EINES.
+- „name" ist der technische Parametername in snake_case, ohne Doppelpunkt.
+- „beispiel" ist ein plausibler Wert aus echten Daten – daran wird die Maske
+  probeweise ausgeführt. Bei einem Zeitraumfeld bleibt es leer.
+- Typ „daterange" nur, wenn ein Zeitraum eingegrenzt werden soll; er setzt die
+  Parameter :von und :bis.
+Antworte ausschließlich mit JSON."""
+
+
+async def _stufe2d_felder(svc, wunsch: str) -> list:
+    schema = {
+        "type": "object",
+        "properties": {
+            "felder": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "label": {"type": "string"},
+                        "typ": {"type": "string",
+                                "enum": list(werkzeuge.FELDTYPEN)},
+                        "pflicht": {"type": "boolean"},
+                        "beispiel": {"type": "string"},
+                    },
+                },
+            },
+        },
+    }
+    auftrag = (f"{_heute_satz()}\n\nWunsch des Anwenders (wörtlich):\n„{wunsch}“\n\n"
+               f"Welche Eingabefelder braucht die Maske?")
+    erg = await _json(svc, _FELD_SYSTEM, auftrag, schema)
+    felder = erg.get("felder") or []
+    return [f for f in felder if isinstance(f, dict) and f.get("name")][:5]
+
+
+def _app_auftrag(wunsch: str, felder: list) -> str:
+    """Der SQL-Auftrag einer App – mit der Pflicht, die Felder als Parameter zu nutzen.
+
+    Ohne diesen Zusatz schreibt das Modell eine Abfrage mit fest eingesetztem
+    Wert. Die liefe zwar, aber die Maske hätte keine Wirkung: Eingaben gingen
+    ins Leere, und niemand sähe warum.
+    """
+    if not felder:
+        return wunsch
+    zeilen = []
+    for f in felder:
+        if f.get("typ") == "daterange":
+            zeilen.append(f"- :von und :bis (Zeitraum „{f.get('label') or 'Zeitraum'}“)")
+        else:
+            zeilen.append(f"- :{f['name']} ({f.get('typ') or 'text'}, "
+                          f"„{f.get('label') or f['name']}“)")
+    return (f"{wunsch}\n\nDie Abfrage gehört zu einer Eingabemaske. Sie MUSS "
+            f"folgende Parameter verwenden, damit die Eingaben wirken:\n"
+            + "\n".join(zeilen)
+            + "\nSetze die Werte NICHT fest ein, sondern benutze die "
+              "Doppelpunkt-Platzhalter im WHERE.")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Der ganze Bauzettel
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -456,17 +527,29 @@ async def bauzettel_stufen(db, svc, wunsch: str, ctx: dict):
         hinweise.append("Der Katalogweg deckt die Frage ab – freies SQL wurde "
                         "weggelassen.")
 
-    hat_quelle = bool({"abfrage", "mapping_frei"} & gesehen)
+    # Eine App ist eine eigene Maske mit eigener Tabelle. Daneben noch eine
+    # Auswertung und einen Report zu bauen, hieße dieselbe Frage zweimal zu
+    # beantworten – und der Report fände die Bausteine der App ohnehin nicht,
+    # weil sie nicht im Sammelformular liegen.
+    if "app" in gesehen:
+        weg = {"abfrage", "mapping_frei", "report"} & gesehen
+        if weg:
+            gesehen -= weg
+            gewaehlt = [g for g in gewaehlt if g["werkzeug"] not in weg]
+            hinweise.append("Die App bringt Maske und Tabelle selbst mit – "
+                            + ", ".join(sorted(weg)) + " wurde weggelassen.")
+
+    hat_quelle = bool({"abfrage", "mapping_frei", "app"} & gesehen)
     if not hat_quelle and ({"zustellplan", "warnung", "veroeffentlichen", "report",
                             "pipeline"} & gesehen):
         _sicherstellen("abfrage", "Ohne Abfrage gäbe es nichts zu zeigen – ergänzt.")
-    if "zustellplan" in gesehen or "veroeffentlichen" in gesehen:
+    if ("zustellplan" in gesehen or "veroeffentlichen" in gesehen) and "app" not in gesehen:
         _sicherstellen("report", "Zugestellt und veröffentlicht wird ein Report – ergänzt.")
     if not gesehen:
         _sicherstellen("abfrage", "Als Einstieg immer eine Abfrage.")
 
     details = {}
-    if {"report", "zustellplan", "warnung", "pipeline", "mapping_frei"} & gesehen:
+    if {"report", "zustellplan", "warnung", "pipeline", "mapping_frei", "app"} & gesehen:
         yield {"fortschritt": "Zeitraum, Takt und Schwelle …"}
         try:
             details = await _stufe2c_details(svc, wunsch)
@@ -551,6 +634,34 @@ async def bauzettel_stufen(db, svc, wunsch: str, ctx: dict):
                                 + str(erg["leer"])[:160])
             elif erg.get("warnung"):
                 hinweise.append(str(erg["warnung"])[:200])
+
+        elif key == "app":
+            yield {"fortschritt": "Welche Eingabefelder braucht die Maske?"}
+            felder = await _stufe2d_felder(svc, wunsch)
+            yield {"fortschritt": "SQL für die Maske schreiben und prüfen …"}
+            erg = None
+            async for schritt in sql_werkstatt.erzeugen_stufen(
+                    db, svc, _app_auftrag(wunsch, felder), ctx.get("mandant_id")):
+                if "ergebnis" in schritt:
+                    erg = schritt["ergebnis"]
+                else:
+                    yield schritt
+            erg = erg or {}
+            eingabe = {
+                "name": name, "beschreibung": wunsch,
+                "knopf": "Anzeigen",
+                "zeitraum_preset": details.get("zeitraum_preset") or "months_12",
+                "felder": felder,
+                "sql": erg.get("sql") or "", "spalten": erg.get("columns") or [],
+                "fehler": erg.get("fehler"), "leer": erg.get("leer"),
+                "warnung": erg.get("warnung"),
+            }
+            if erg.get("fehler"):
+                rueckfragen.append("Das SQL der Maske läuft nicht — die Frage bitte "
+                                   "genauer stellen.")
+            # Deckungslücken zwischen Feldern und `:parametern` sind der Fehler,
+            # der eine App unbedienbar macht. Sie gehören in den Bauzettel.
+            hinweise.extend(werkzeuge._app_pruefen(eingabe))
 
         elif key == "pipeline":
             eingabe = {"name": name,

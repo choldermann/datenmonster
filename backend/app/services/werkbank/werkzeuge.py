@@ -671,6 +671,227 @@ def _pipeline_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 9 · App (Formular mit Eingabefeldern)
+#
+# Der Sprung von „anzeigen" zu „bedienen": Der Anwender gibt etwas ein, und die
+# Abfrage antwortet darauf. Technisch ist das ein ganz normales Formular mit
+# `fields`, einem Knopf und einer Tabelle – die Plattform kann das längst, es
+# fehlte nur der Weg dorthin über einen Satz.
+#
+# **Der Knackpunkt sind die Parameter.** Jedes Eingabefeld setzt einen
+# Laufzeitwert `:name`, und jeder `:name` im SQL MUSS durch ein Feld gedeckt
+# sein. Fehlt die Deckung, bleibt der Platzhalter ungebunden und die Abfrage
+# schlägt fehl – oder, bei einem Listenparameter, liefert stumm null Zeilen.
+# Deshalb werden Felder und SQL zusammen geplant und hier gegeneinander geprüft.
+# ─────────────────────────────────────────────────────────────────────────────
+
+FELDTYPEN = {
+    "text":      {"label": "Text", "ziel": "string"},
+    "number":    {"label": "Zahl", "ziel": "float"},
+    "date":      {"label": "Datum", "ziel": "string"},
+    "dropdown":  {"label": "Auswahl", "ziel": "string"},
+    "daterange": {"label": "Zeitraum", "ziel": "string"},
+}
+
+
+def _app_felder(eingabe: dict) -> list:
+    """Die Eingabefelder, auf gültige Typen und Namen beschnitten."""
+    raus, gesehen = [], set()
+    for f in (eingabe.get("felder") or []):
+        name = _schluessel(f.get("name") or f.get("label") or "", "")
+        typ = f.get("typ") if f.get("typ") in FELDTYPEN else "text"
+        if not name or name in gesehen:
+            continue
+        gesehen.add(name)
+        raus.append({"name": name, "typ": typ,
+                     "label": f.get("label") or name,
+                     "pflicht": bool(f.get("pflicht")),
+                     "beispiel": f.get("beispiel"),
+                     "optionen": [o for o in (f.get("optionen") or []) if str(o).strip()]})
+    return raus
+
+
+def _app_parameter(felder: list) -> set:
+    """Welche `:namen` die Felder abdecken. Ein Zeitraum deckt zwei ab."""
+    raus = set()
+    for f in felder:
+        if f["typ"] == "daterange":
+            raus |= {"von", "bis"}
+        else:
+            raus.add(f["name"])
+    return raus
+
+
+def _sql_parameter(sql: str) -> set:
+    """Alle `:namen` im SQL – ohne die automatisch mitgebundenen `_empty`-Flags."""
+    gefunden = set(re.findall(r":([a-zA-Z_][a-zA-Z0-9_]*)", sql or ""))
+    return {p for p in gefunden if not p.endswith("_empty")}
+
+
+def _app_zusammenfassung(eingabe: dict) -> str:
+    felder = _app_felder(eingabe)
+    teile = [f"{len(felder)} Eingabefeld(er)"]
+    if felder:
+        teile.append(", ".join(f["label"] for f in felder[:3])
+                     + ("…" if len(felder) > 3 else ""))
+    if eingabe.get("fehler"):
+        teile.append("SQL FEHLERHAFT")
+    return " · ".join(teile)
+
+
+def _app_pruefen(eingabe: dict) -> list:
+    """Deckungslücken zwischen SQL-Parametern und Feldern – als Klartext."""
+    felder = _app_felder(eingabe)
+    gedeckt = _app_parameter(felder)
+    gebraucht = _sql_parameter(eingabe.get("sql") or "")
+    fehlend = sorted(gebraucht - gedeckt)
+    unbenutzt = sorted(gedeckt - gebraucht - {"von", "bis"})
+    befunde = []
+    if fehlend:
+        befunde.append("Das SQL erwartet " + ", ".join(f"„:{p}“" for p in fehlend)
+                       + ", aber kein Eingabefeld liefert das. Ungebunden bleibt die "
+                         "Abfrage stehen oder liefert stumm nichts.")
+    if unbenutzt:
+        befunde.append("Die Felder " + ", ".join(f"„{p}“" for p in unbenutzt)
+                       + " werden im SQL nicht verwendet – sie hätten keine Wirkung.")
+    return befunde
+
+
+def _app_vorschau(db, ctx: dict, eingabe: dict, bisher: dict) -> dict:
+    sql = (eingabe.get("sql") or "").strip()
+    if not sql:
+        raise WerkzeugFehler("Für die App gibt es noch kein SQL.")
+    if eingabe.get("fehler"):
+        raise WerkzeugFehler(f"Die Datenbank lehnt das erzeugte SQL ab: {eingabe['fehler']}")
+
+    felder = _app_felder(eingabe)
+    luecken = _app_pruefen(eingabe)
+    von, bis = _zeitfenster(eingabe.get("zeitraum_preset"))
+
+    # Mit den Beispielwerten rechnen: eine Maske ohne Eingabe liefert
+    # naturgemäß nichts, und „null Zeilen" wäre dann kein Befund, sondern der
+    # Normalfall. Erst mit plausiblen Werten sagt die Vorschau etwas aus.
+    werte = {"von": von, "bis": bis}
+    for f in felder:
+        if f["typ"] == "daterange":
+            continue
+        if f.get("beispiel") not in (None, ""):
+            werte[f["name"]] = f["beispiel"]
+
+    zeilen, lauffehler = [], None
+    try:
+        from sqlalchemy import text as _text
+
+        from app.services.sql_helpers import _get_sql_engine, _resolve_sql_run_params
+        fertig, gebunden = _resolve_sql_run_params(sql, werte)
+        eng = _get_sql_engine(ctx["mandant_id"])
+        with eng.connect() as con:
+            zeilen = [dict(r) for r in con.execute(_text(fertig), gebunden)
+                      .mappings().fetchmany(30)]
+    except Exception as e:
+        lauffehler = str(e)[:300]
+
+    erg = {"zeilen": zeilen, "anzahl": len(zeilen), "sql": sql,
+           "spalten": [{"name": c} for c in (eingabe.get("spalten") or [])]
+                      or [{"name": k} for k in (zeilen[0].keys() if zeilen else [])],
+           "felder": [{"label": f["label"], "typ": FELDTYPEN[f["typ"]]["label"],
+                       "name": f["name"], "beispiel": f.get("beispiel")} for f in felder],
+           "beispielwerte": {k: v for k, v in werte.items() if k not in ("von", "bis")},
+           "zeitraum": {"von": von, "bis": bis}}
+
+    if luecken:
+        erg["befund"] = " ".join(luecken)
+    elif lauffehler:
+        erg["befund"] = f"Probelauf mit den Beispielwerten fehlgeschlagen: {lauffehler}"
+    elif not zeilen:
+        erg["befund"] = ("Mit den Beispielwerten kommt nichts zurück. Das kann am "
+                         "Beispiel liegen und muss kein Fehler sein – prüfe es mit "
+                         "einem Wert, den es in den Daten wirklich gibt.")
+    return erg
+
+
+def _app_bauen(db, ctx: dict, eingabe: dict, bisher: dict) -> list:
+    from app.models.form import Form
+    from app.services.query_builder import erzeugen
+
+    name = (eingabe.get("name") or "").strip()
+    if not name:
+        raise WerkzeugFehler("Die App braucht einen Namen.")
+    sql = (eingabe.get("sql") or "").strip()
+    if not sql:
+        raise WerkzeugFehler("Für die App gibt es kein SQL.")
+    if eingabe.get("fehler"):
+        raise WerkzeugFehler("Das erzeugte SQL läuft nicht und wird nicht gebaut: "
+                             + str(eingabe["fehler"])[:200])
+    luecken = _app_pruefen(eingabe)
+    if any("erwartet" in l for l in luecken):
+        # Ein ungedeckter Parameter ist kein Schönheitsfehler: die App wäre
+        # unbedienbar und meldete es beim Anwender, nicht hier.
+        raise WerkzeugFehler(luecken[0])
+
+    spalten = [{"name": c, "typ": "text"} for c in (eingabe.get("spalten") or [])]
+    if not spalten:
+        raise WerkzeugFehler("Die Abfrage hat keine geprüften Spalten – ohne sie "
+                             "bliebe die App leer.")
+
+    m = erzeugen.mapping_bauen(db, name, ctx["project_id"], ctx["mandant_id"],
+                               {"sql": sql, "spalten": spalten})
+    db.flush()
+
+    felder = _app_felder(eingabe)
+    aid = f"act_app_{_schluessel(name, 'app')}"
+    schema_felder, zeile = [], 0
+    for i, f in enumerate(felder):
+        if f["typ"] == "daterange":
+            eintrag = {"id": f"f_{f['name']}", "type": "daterange", "name": f["name"],
+                       "label": f["label"], "action_ids": [aid],
+                       "config": {"param_from": "von", "param_to": "bis",
+                                  "default": eingabe.get("zeitraum_preset") or "months_12",
+                                  "auto_run": False}}
+        else:
+            eintrag = {"id": f"f_{f['name']}", "type": f["typ"], "name": f["name"],
+                       "label": f["label"], "required": f["pflicht"],
+                       "default": "", "placeholder": "",
+                       "options": [{"value": o, "label": o} for o in f["optionen"]]}
+        eintrag["row"] = i // 3
+        eintrag["colSpan"] = 4
+        zeile = eintrag["row"]
+        schema_felder.append(eintrag)
+
+    schema_felder.append({"id": "f_knopf", "type": "button", "row": zeile + 1,
+                          "colSpan": 4, "label": eingabe.get("knopf") or "Anzeigen",
+                          "action_id": aid})
+
+    schema = {
+        "fields": schema_felder, "layout": [],
+        "actions": [{"id": aid, "type": "run_mapping", "mapping_id": m.id,
+                     "pipeline_id": None, "label": eingabe.get("knopf") or "Anzeigen"}],
+        "widgets": [{"id": "w_app_tab", "type": "table", "label": name,
+                     "action_id": aid, "config": {"width": 12, "full_rows": True}}],
+        "result_tabs": [{"id": "tab_app", "label": name, "action_ids": [aid]}],
+        "show_ai_assistant": False,
+    }
+
+    f = Form(name=name, project_id=ctx["project_id"], schema=schema,
+             created_by=ctx.get("user_id"))
+    db.add(f)
+    db.flush()
+
+    bisher["app_form_id"] = f.id
+    bisher.setdefault("mapping_ids", []).append(m.id)
+    bisher.setdefault("mapping_namen", []).append(m.name)
+    # Eine App ist ein eigenes Formular – sie wandert NICHT ins Sammelformular
+    # und ist damit auch keine Quelle für den Report-Schritt.
+    return [
+        {"art": "mapping", "ziel_id": m.id, "erzeugt": True,
+         "label": f"Mapping „{name}“ ({len(spalten)} Spalten, "
+                  f"{len(felder)} Parameter)"},
+        {"art": "form", "ziel_id": f.id, "erzeugt": True,
+         "label": f"App „{name}“ mit {len(felder)} Eingabefeld(ern)"},
+    ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Registry
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -707,6 +928,18 @@ WERKZEUGE = {
         "zusammenfassung": _sql_zusammenfassung,
         "vorschau": _sql_vorschau,
         "bauen": _sql_bauen,
+    },
+    "app": {
+        "key": "app", "label": "App mit Eingabefeldern",
+        "wofuer": ("Eine Maske, in die der Anwender etwas eingibt und die darauf "
+                   "antwortet: „gib mir eine Kundennummer und zeig alle Rechnungen "
+                   "dazu“. Nur wenn im Wunsch eine EINGABE vorkommt – suchen, "
+                   "eingeben, auswählen, nachschlagen. Eine reine Auswertung ohne "
+                   "Eingabe ist „abfrage“ oder „mapping_frei“."),
+        "baut_objekte": True,
+        "zusammenfassung": _app_zusammenfassung,
+        "vorschau": _app_vorschau,
+        "bauen": _app_bauen,
     },
     "report": {
         "key": "report", "label": "Report zusammenstellen",
@@ -763,7 +996,7 @@ WERKZEUGE = {
 # Reihenfolge, in der Schritte sinnvoll aufeinander folgen. Der Planer darf
 # Werkzeuge weglassen, aber nicht umsortieren – ein Zustellplan vor dem Report
 # hätte nichts zuzustellen.
-REIHENFOLGE = ["nachsehen", "abfrage", "mapping_frei", "report",
+REIHENFOLGE = ["nachsehen", "abfrage", "mapping_frei", "app", "report",
                "veroeffentlichen", "zustellplan", "warnung", "pipeline"]
 
 

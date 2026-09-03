@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
-from typing import Optional, List, Any
+from typing import Optional, List, Any, Dict
 from pydantic import BaseModel
 import json
 import re
@@ -182,6 +182,30 @@ def _resolve_conn_ids_install(obj, config: dict):
     if isinstance(obj, list):
         return [_resolve_conn_ids_install(i, config) for i in obj]
     return obj
+
+
+def _form_auf_bausteine_kuerzen(schema: dict, widget_ids: List[str]) -> dict:
+    """Ein Formular auf die genannten Bausteine eindampfen.
+
+    Dieselbe Aufräumreihenfolge wie überall in dieser Plattform: erst die
+    Bausteine, dann die Aktionen, die keiner mehr benutzt, dann die Verweise der
+    Reiter und Filterfelder darauf. Eine zurückbleibende Aktion liefe beim
+    Empfänger bei jedem Formularlauf mit, ohne dass etwas davon zu sehen wäre.
+    """
+    behalten = set(widget_ids or [])
+    schema["widgets"] = [w for w in (schema.get("widgets") or [])
+                         if w.get("id") in behalten]
+    benutzt = {w.get("action_id") for w in schema["widgets"]}
+    schema["actions"] = [a for a in (schema.get("actions") or [])
+                         if a.get("id") in benutzt]
+    for t in (schema.get("result_tabs") or []):
+        t["action_ids"] = [a for a in (t.get("action_ids") or []) if a in benutzt]
+    schema["result_tabs"] = [t for t in (schema.get("result_tabs") or [])
+                             if t.get("action_ids")]
+    for f in (schema.get("fields") or []):
+        if f.get("action_ids"):
+            f["action_ids"] = [a for a in f["action_ids"] if a in benutzt]
+    return schema
 
 
 def _rewrite_ids_export(obj, int_to_str: dict):
@@ -1131,6 +1155,11 @@ class CreateTemplateBody(BaseModel):
     mapping_ids: Optional[List[int]] = []
     pipeline_ids: Optional[List[int]] = []
     form_ids: Optional[List[int]] = []
+    # Optional je Formular-ID (als String) die Bausteine, die mit sollen. Ohne
+    # Eintrag wandert das ganze Formular mit. Gebraucht für Sammelformulare, in
+    # denen mehrere Auswertungen nebeneinander liegen: dort darf ein Export nicht
+    # die Bausteine fremder Auswertungen mitnehmen.
+    form_widgets: Optional[Dict[str, List[str]]] = None
     report_ids: Optional[List[int]] = []
     knowledge_ids: Optional[List[int]] = []
 
@@ -1261,6 +1290,11 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
             continue
         schema = fo.schema if isinstance(fo.schema, dict) else json.loads(fo.schema or "{}")
         schema = copy.deepcopy(schema or {})
+        nur = (body.form_widgets or {}).get(str(form_id))
+        if nur is not None:
+            schema = _form_auf_bausteine_kuerzen(schema, nur)
+            if not schema.get("widgets"):
+                continue
         for a in schema.get("actions", []) or []:
             mid = a.get("mapping_id")
             if isinstance(mid, int) and mid in mapping_real_to_tpl:

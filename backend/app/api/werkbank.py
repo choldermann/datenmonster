@@ -21,7 +21,7 @@ from app.models.user import User
 from app.models.vorhaben import Vorhaben, VorhabenArtefakt
 from app.services import mandant_service
 from app.services.werkbank import bauen as bauen_service
-from app.services.werkbank import adoptieren, plan_ki, rueckbau, werkzeuge
+from app.services.werkbank import adoptieren, betrieb, plan_ki, rueckbau, werkzeuge
 from app.services.werkbank.werkzeuge import WerkzeugFehler
 
 logger = logging.getLogger(__name__)
@@ -84,6 +84,19 @@ def werkzeugkasten(user: User = Depends(get_current_user)):
     }
 
 
+@router.get("/betrieb")
+def betrieb_lesen(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Gegen welche Datenbank die Werkbank in diesem Projekt bauen würde.
+
+    Eigener Endpunkt, weil die Oberfläche das **immer** anzeigen soll – auch dort,
+    wo es gar keine Mandantenwahl gibt. Wer eine Zahl liest, muss ohne Klick
+    wissen, aus welcher Datenbank sie stammt.
+    """
+    _check_editor(user)
+    return betrieb.aufloesen(db, project_id, user)
+
+
 # ── Verstehen ────────────────────────────────────────────────────────────────
 
 class VerstehenRequest(BaseModel):
@@ -100,10 +113,13 @@ async def verstehen(data: VerstehenRequest, db: Session = Depends(get_db),
     from app.api.ai import _require_ai
 
     svc = _require_ai(db)
-    mandant_id = data.mandant_id or mandant_service.aktiver(data.project_id, user, db)
+    # Nicht „Mandant" verlangen, sondern eine Datenbank auflösen: ein Projekt kann
+    # eine ganz normale Verbindung haben, ohne dass jemand sie als Mandant
+    # markiert hat. Vorher scheiterte die Werkbank genau daran.
+    wahl = betrieb.aufloesen(db, data.project_id, user, data.mandant_id)
+    mandant_id = wahl["connection_id"]
     if not mandant_id:
-        raise HTTPException(400, "Kein Mandant gewählt – es ist unklar, gegen welche "
-                                 "Warenwirtschaft gebaut werden soll.")
+        raise HTTPException(400, wahl["hinweis"] or "Keine Datenbankverbindung gefunden.")
 
     ctx = {"project_id": data.project_id, "mandant_id": mandant_id,
            "email": getattr(user, "email", None) or ""}
@@ -183,9 +199,10 @@ def aendern(vorhaben_id: int, data: VorhabenPatch, db: Session = Depends(get_db)
     if data.beschreibung is not None:
         v.beschreibung = data.beschreibung
     if data.mandant_id is not None:
-        if not mandant_service.darf_nutzen(data.mandant_id, user, db):
-            raise HTTPException(403, "Dieser Mandant ist nicht freigegeben.")
-        v.mandant_id = data.mandant_id
+        wahl = betrieb.aufloesen(db, v.project_id, user, data.mandant_id)
+        if not wahl["connection_id"]:
+            raise HTTPException(403, wahl["hinweis"] or "Verbindung nicht erlaubt.")
+        v.mandant_id = wahl["connection_id"]
     if data.bauplan is not None:
         gesaeubert = []
         for s in data.bauplan:
@@ -331,6 +348,83 @@ def neu_bauen(vorhaben_id: int, db: Session = Depends(get_db),
         logger.exception("Neubau fehlgeschlagen")
         raise HTTPException(500, f"Neubau fehlgeschlagen: {str(e)[:300]}")
     return {**erg, "vorhaben": _out(db, v, mit_artefakten=True)}
+
+
+# ── Als Template ausgeben ────────────────────────────────────────────────────
+
+class TemplateRequest(BaseModel):
+    name: Optional[str] = None
+    beschreibung: Optional[str] = None
+    kategorie: str = "werkbank"
+    version: str = "1.0"
+
+
+@router.post("/vorhaben/{vorhaben_id}/als-template")
+def als_template(vorhaben_id: int, data: TemplateRequest,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Bündelt alles, was dieses Vorhaben gebaut hat, als installierbares Template.
+
+    Kein zweiter Exportweg: gebaut wird über denselben Code, der ein Template aus
+    Projektinhalten macht — samit gelten dieselben Regeln für Verbindungs-
+    Platzhalter, ID-Umschreibung und das Weglassen von Zugangsdaten. Ein eigener
+    Weg würde irgendwann eine dieser Regeln vergessen, und das Ergebnis trüge
+    Zugangsdaten nach draußen.
+    """
+    _check_editor(user)
+    from app.api.templates import CreateTemplateBody, create_template_from_project
+    from app.models.report import AdHocQuery
+
+    v = _hole(db, vorhaben_id)
+    if v.status != "installiert":
+        raise HTTPException(400, "Nur ein gebautes Vorhaben lässt sich ausgeben.")
+
+    rows = db.query(VorhabenArtefakt).filter(
+        VorhabenArtefakt.vorhaben_id == v.id).all()
+
+    mapping_ids, form_ids, pipeline_ids = [], [], []
+    form_widgets: dict = {}
+
+    for a in rows:
+        if a.art == "mapping" and a.erzeugt:
+            mapping_ids.append(a.ziel_id)
+        elif a.art == "pipeline" and a.erzeugt:
+            pipeline_ids.append(a.ziel_id)
+        elif a.art == "form" and a.erzeugt:
+            form_ids.append(a.ziel_id)
+        elif a.art == "widget" and a.erzeugt and a.ziel_id:
+            # Bausteine in einem geteilten Formular: nur unsere dürfen mit.
+            form_widgets.setdefault(str(a.ziel_id), []).extend(
+                [w for w in (a.ziel_key or "").split(",") if w])
+            if a.ziel_id not in form_ids:
+                form_ids.append(a.ziel_id)
+        elif a.art == "adhoc_query":
+            q = db.query(AdHocQuery).filter(AdHocQuery.id == a.ziel_id).first()
+            if not q:
+                continue
+            mapping_ids.extend([i for i in (q.mapping_id, q.verlauf_mapping_id) if i])
+            if q.form_id:
+                form_widgets.setdefault(str(q.form_id), []).extend(q.widget_ids or [])
+                if q.form_id not in form_ids:
+                    form_ids.append(q.form_id)
+
+    if not mapping_ids and not form_ids:
+        raise HTTPException(400, "Dieses Vorhaben hat nichts, was sich ausgeben ließe.")
+
+    body = CreateTemplateBody(
+        name=(data.name or v.name).strip(),
+        description=data.beschreibung or v.beschreibung or "",
+        category=data.kategorie or "werkbank", version=data.version or "1.0",
+        project_id=v.project_id,
+        dataset_ids=[], mapping_ids=sorted(set(mapping_ids)),
+        pipeline_ids=sorted(set(pipeline_ids)), form_ids=sorted(set(form_ids)),
+        form_widgets={k: sorted(set(w)) for k, w in form_widgets.items()},
+        report_ids=[], knowledge_ids=[],
+    )
+    erg = create_template_from_project(body, db, user)
+    return {**(erg if isinstance(erg, dict) else {}),
+            "mappings": len(set(mapping_ids)), "forms": len(set(form_ids)),
+            "pipelines": len(set(pipeline_ids))}
 
 
 # ── Rückbau ──────────────────────────────────────────────────────────────────

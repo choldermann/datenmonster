@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Wand2, Loader2, Play, Hammer, Trash2, RotateCcw, CheckCircle2,
          AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info,
-         Building2, Inbox, Unlink } from "lucide-react";
+         Building2, Inbox, Unlink, Package, Plus } from "lucide-react";
 import api from "../../../api/client";
 import MandantWaehler from "../../MandantWaehler";
 import { onMandantChange } from "../../../services/mandant";
@@ -51,6 +51,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   const [werkzeuge, setWerkzeuge] = useState(null);
   const [abfrageSchema, setAbfrageSchema] = useState(null);
   const [mandanten, setMandanten] = useState([]);
+  const [betrieb, setBetrieb] = useState(null);       // gegen welche DB gebaut wird
+  const [betriebWahl, setBetriebWahl] = useState(null);
   const [adoption, setAdoption] = useState(null);     // {eintraege, anzahl}
   const [adoptionOffen, setAdoptionOffen] = useState(false);
   const [laden, setLaden] = useState(true);
@@ -65,6 +67,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   const [vorschauLaeuft, setVorschauLaeuft] = useState(false);
   const [baut, setBaut] = useState(false);
   const [offen, setOffen] = useState({});          // Schritt-Index → aufgeklappt
+  const [templateOffen, setTemplateOffen] = useState(false);
+  const [templateErg, setTemplateErg] = useState(null);
   const [rueckbauPlan, setRueckbauPlan] = useState(null);
   const [rueckbauLaeuft, setRueckbauLaeuft] = useState(false);
 
@@ -94,6 +98,12 @@ export default function WerkbankPanel({ projectId, canEdit }) {
        .catch(() => setMandanten([]));
   }, [q]);
 
+  const betriebLaden = useCallback(() => {
+    api.get(`/api/werkbank/betrieb${q}`).then(r => { setBetrieb(r.data);
+      setBetriebWahl(null); }).catch(() => setBetrieb(null));
+  }, [q]);
+  useEffect(() => { betriebLaden(); }, [betriebLaden]);
+
   const adoptionLaden = useCallback(() => {
     api.get(`/api/werkbank/adoptieren${q}`).then(r => setAdoption(r.data))
        .catch(() => setAdoption(null));
@@ -113,7 +123,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   };
   // Ein Vorhaben gehört einem Mandanten. Nach dem Wechsel stünden sonst die
   // Zahlen des einen Betriebs unter dem Namen des anderen.
-  useEffect(() => onMandantChange(() => { listeLaden(); setVorschau(null); }), [listeLaden]);
+  useEffect(() => onMandantChange(() => { listeLaden(); betriebLaden(); setVorschau(null); }),
+            [listeLaden, betriebLaden]);
 
   const oeffnen = async (id) => {
     setVorschau(null); setRueckfragen([]); setFehler(null);
@@ -139,7 +150,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${localStorage.getItem("dm_token") || ""}`,
         },
-        body: JSON.stringify({ beschreibung: text, project_id: projectId ?? null }),
+        body: JSON.stringify({ beschreibung: text, project_id: projectId ?? null,
+                               mandant_id: betriebWahl ?? betrieb?.connection_id ?? null }),
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({}));
@@ -238,6 +250,17 @@ export default function WerkbankPanel({ projectId, canEdit }) {
     }
   };
 
+  const alsTemplate = async (angaben) => {
+    try {
+      const { data } = await api.post(
+        `/api/werkbank/vorhaben/${aktiv.id}/als-template`, angaben);
+      setTemplateErg(data);
+      setTemplateOffen(false);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
   const rueckbauPruefen = async () => {
     try {
       const { data } = await api.post(
@@ -303,8 +326,21 @@ export default function WerkbankPanel({ projectId, canEdit }) {
             Neue Vorhaben werden für den hier gewählten Betrieb gebaut
           </p>
         </div>
-        <MandantWaehler projectId={projectId} />
+        <BetriebAnzeige betrieb={betrieb} wahl={betriebWahl} onWahl={setBetriebWahl}
+          projectId={projectId} />
       </div>
+
+      {betrieb?.hinweis && betrieb.quelle !== "einzige_verbindung" && (
+        <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 6,
+            background: betrieb.connection_id ? "rgba(252,228,153,0.07)"
+                                              : "rgba(232,145,58,0.1)",
+            border: `1px solid ${betrieb.connection_id ? "rgba(252,228,153,0.25)"
+                                                       : "rgba(232,145,58,0.35)"}` }}>
+          <p style={{ margin: 0, fontSize: 12, color: S.textMain, lineHeight: 1.55 }}>
+            {betrieb.hinweis}
+          </p>
+        </div>
+      )}
 
     <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
       {/* ── Vorhabenliste ── */}
@@ -372,7 +408,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
         {!aktiv ? (
           <Beschreiben value={beschreibung} onChange={setBeschreibung}
             onSubmit={verstehen} laeuft={planLaeuft} fortschritt={fortschritt}
-            eingabeRef={eingabeRef} canEdit={canEdit} projectId={projectId} />
+            eingabeRef={eingabeRef} projectId={projectId}
+            canEdit={canEdit && !!(betriebWahl ?? betrieb?.connection_id)} />
         ) : (
           <>
             <Kopf v={aktiv} mandanten={mandanten} gebaut={istGebaut}
@@ -446,6 +483,11 @@ export default function WerkbankPanel({ projectId, canEdit }) {
                     {baut ? <Loader2 size={13} className="animate-spin" />
                           : <RotateCcw size={13} />} Neu bauen
                   </button>
+                  <button onClick={() => { setTemplateErg(null); setTemplateOffen(true); }}
+                    disabled={!canEdit} style={knopfLeer}
+                    title="Bündelt Mappings, Formulare und Pipelines dieses Vorhabens als installierbares Template">
+                    <Package size={13} /> Als Template
+                  </button>
                   <button onClick={rueckbauPruefen} disabled={!canEdit}
                     style={{ ...knopfLeer, color: "#e05656",
                              borderColor: "rgba(224,86,86,0.4)" }}>
@@ -467,6 +509,19 @@ export default function WerkbankPanel({ projectId, canEdit }) {
                 </button>
               )}
             </div>
+
+            {templateErg && (
+              <div style={{ marginTop: 14, padding: "11px 14px", borderRadius: 6,
+                  background: "rgba(110,231,183,0.09)",
+                  border: "1px solid rgba(110,231,183,0.3)" }}>
+                <p style={{ margin: 0, fontSize: 12, color: S.textMain, lineHeight: 1.55 }}>
+                  Template angelegt: <b>{templateErg.template_id}</b> —{" "}
+                  {templateErg.mappings} Mapping(s), {templateErg.forms} Formular(e),
+                  {" "}{templateErg.pipelines} Pipeline(s). Es steht jetzt unter
+                  „Templates" zum Installieren und Herunterladen bereit.
+                </p>
+              </div>
+            )}
 
             {/* Was gebaut wurde */}
             {(aktiv.artefakte || []).length > 0 && (
@@ -498,6 +553,11 @@ export default function WerkbankPanel({ projectId, canEdit }) {
           </>
         )}
       </div>
+
+      {templateOffen && aktiv && (
+        <TemplateModal vorhaben={aktiv} onClose={() => setTemplateOffen(false)}
+          onErzeugen={alsTemplate} />
+      )}
 
       {adoptionOffen && adoption && (
         <AdoptionModal eintraege={adoption.eintraege || []}
@@ -856,6 +916,74 @@ function Einstellungen({ s, gebaut, werkzeuge, abfrageSchema, onEingabe }) {
     );
   }
 
+  if (s.werkzeug === "app") {
+    const felder = e.felder || [];
+    const feldAendern = (i, feld, wert) => onEingabe("felder",
+      felder.map((f, idx) => idx === i ? { ...f, [feld]: wert } : f));
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={reihe}>
+          {feld("Name", <input value={e.name || ""} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("name", ev.target.value)} />)}
+          {feld("Beschriftung des Knopfes", (
+            <input value={e.knopf || "Anzeigen"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("knopf", ev.target.value)} />
+          ))}
+        </div>
+
+        <div>
+          <p style={{ margin: "0 0 5px", fontSize: 10.5, color: S.textDim,
+              textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Eingabefelder der Maske
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {felder.map((f, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "center",
+                  padding: "6px 9px", borderRadius: 4, backgroundColor: S.bgEl,
+                  border: `1px solid ${S.border}`, flexWrap: "wrap" }}>
+                <input value={f.label || ""} disabled={gebaut} placeholder="Beschriftung"
+                  style={{ ...inp, width: 150 }}
+                  onChange={ev => feldAendern(i, "label", ev.target.value)} />
+                <span style={{ fontFamily: "monospace", fontSize: 11,
+                               color: S.textDim }}>:{f.name}</span>
+                <span style={{ fontSize: 11, color: S.textDim }}>{f.typ}</span>
+                <input value={f.beispiel ?? ""} disabled={gebaut}
+                  placeholder="Beispielwert für die Vorschau"
+                  style={{ ...inp, width: 200, marginLeft: "auto" }}
+                  onChange={ev => feldAendern(i, "beispiel", ev.target.value)} />
+              </div>
+            ))}
+            {!felder.length && (
+              <p style={{ margin: 0, fontSize: 11.5, color: S.textDim }}>
+                Keine Eingabefelder – die Maske zeigt dann immer dasselbe.
+              </p>
+            )}
+          </div>
+          <p style={{ margin: "6px 0 0", fontSize: 11, color: S.textDim,
+                      lineHeight: 1.5 }}>
+            Der Beispielwert wird nur für die Vorschau benutzt. Er muss in den
+            echten Daten vorkommen, sonst kommt nichts zurück – das ist dann kein
+            Fehler der Maske.
+          </p>
+        </div>
+
+        <div>
+          <p style={{ margin: "0 0 5px", fontSize: 10.5, color: S.textDim,
+              textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            Erzeugtes SQL {(e.spalten || []).length > 0
+              ? `· ${e.spalten.length} geprüfte Spalten` : ""}
+          </p>
+          <pre style={{ margin: 0, padding: "10px 12px", borderRadius: 5,
+              backgroundColor: S.bgMain, border: `1px solid ${S.border}`,
+              fontSize: 11, lineHeight: 1.5, color: S.textMain,
+              overflowX: "auto", maxHeight: 200, whiteSpace: "pre" }}>
+            {e.sql || "(noch kein SQL)"}
+          </pre>
+        </div>
+      </div>
+    );
+  }
+
   if (s.werkzeug === "report") {
     return (
       <div style={reihe}>
@@ -1026,6 +1154,104 @@ function Definition({ d, schema, gebaut, onChange }) {
         </div>
       )}
     </div>
+  );
+}
+
+
+/** Vorhaben als installierbares Template ausgeben. */
+function TemplateModal({ vorhaben, onClose, onErzeugen }) {
+  const [name, setName] = useState(vorhaben.name);
+  const [beschreibung, setBeschreibung] = useState(vorhaben.beschreibung || "");
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300,
+        backgroundColor: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 20 }}>
+      <div onClick={ev => ev.stopPropagation()} style={{ backgroundColor: S.bgCard,
+          border: `1px solid ${S.border}`, borderRadius: 10, width: "100%",
+          maxWidth: 520 }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${S.border}` }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: S.textBright }}>
+            Als Template ausgeben
+          </p>
+          <p style={{ margin: "4px 0 0", fontSize: 12, color: S.textDim,
+                      lineHeight: 1.55 }}>
+            Bündelt Mappings, Formulare und Pipelines dieses Vorhabens zu einer
+            installierbaren Datei. Die Datenbankverbindung wird als Platzhalter
+            abgelegt – Zugangsdaten wandern nie mit.
+          </p>
+        </div>
+        <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column",
+                      gap: 12 }}>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10.5, color: S.textDim, textTransform: "uppercase",
+                           letterSpacing: "0.05em" }}>Name im Katalog</span>
+            <input value={name} onChange={e => setName(e.target.value)} style={inp} />
+          </label>
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 10.5, color: S.textDim, textTransform: "uppercase",
+                           letterSpacing: "0.05em" }}>Beschreibung</span>
+            <textarea value={beschreibung} rows={3}
+              onChange={e => setBeschreibung(e.target.value)}
+              style={{ ...inp, resize: "vertical" }} />
+          </label>
+        </div>
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${S.border}`,
+            display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={knopfLeer}>Abbrechen</button>
+          <button disabled={!name.trim()} style={knopf(!!name.trim())}
+            onClick={() => onErzeugen({ name: name.trim(), beschreibung })}>
+            <Package size={13} /> Template erzeugen
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+/**
+ * Gegen welche Datenbank gebaut wird – immer sichtbar.
+ *
+ * Drei Fälle: Gibt es als Mandant markierte Verbindungen, ist der gewohnte
+ * Umschalter richtig. Gibt es mehrere unmarkierte, muss der Anwender hier
+ * wählen. Gibt es genau eine, steht sie einfach da – eine Wahl wäre Schikane.
+ */
+function BetriebAnzeige({ betrieb, wahl, onWahl, projectId }) {
+  const hatMandanten = (betrieb?.auswahl || []).some(a => a.ist_mandant);
+  if (hatMandanten) return <MandantWaehler projectId={projectId} />;
+
+  if (betrieb?.quelle === "mehrdeutig") {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <Building2 size={13} style={{ color: S.textDim }} />
+        <select value={wahl ?? ""} onChange={e => onWahl(Number(e.target.value) || null)}
+          style={{ ...inp, width: "auto", minWidth: 170 }}>
+          <option value="">— Datenbank wählen —</option>
+          {(betrieb.auswahl || []).map(a => (
+            <option key={a.connection_id} value={a.connection_id}>{a.name}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  if (betrieb?.connection_id) {
+    return (
+      <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12,
+          color: S.textMain, border: `1px solid ${S.border}`, borderRadius: 5,
+          padding: "5px 10px" }}>
+        <Building2 size={13} style={{ color: S.textDim }} />
+        {betrieb.name}
+      </span>
+    );
+  }
+
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12,
+        color: "#e8913a" }}>
+      <AlertTriangle size={13} /> keine Datenbank
+    </span>
   );
 }
 
