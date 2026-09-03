@@ -2591,9 +2591,23 @@ def _sql_pruefen(db, sql_text: str, connection_id: Optional[int],
                     con.connection.timeout = 30
                 except Exception:
                     pass
-                res = con.execute(_sa.text(grenze.format(q=probe)))
-                spalten = list(res.keys())
-                treffer = len(res.fetchall())
+                try:
+                    res = con.execute(_sa.text(grenze.format(q=probe)))
+                    spalten = list(res.keys())
+                    treffer = len(res.fetchall())
+                except Exception as e:
+                    # Die Hülle „SELECT TOP 5 * FROM (…) __q" verlangt für JEDE
+                    # Spalte der Unterabfrage einen Namen. Ein unbenanntes
+                    # Aggregat – SELECT COUNT(*) FROM … – bricht daran (MSSQL
+                    # 8155), obwohl die Abfrage tadellos ist. Ohne diesen
+                    # Rückfall meldet der Wächter gültiges SQL als kaputt und
+                    # schickt das Modell auf eine Reparatur, die es nicht gibt.
+                    if "8155" not in str(e) and "olumn name" not in str(e) \
+                       and "Spaltenname" not in str(e):
+                        raise
+                    res = con.execute(_sa.text(probe))
+                    spalten = list(res.keys())
+                    treffer = len(res.fetchmany(5))
                 if treffer or hat_parameter:
                     return spalten, None, None
                 return spalten, None, (
