@@ -25,6 +25,7 @@ from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaR
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 # Muss VOR create_all importiert sein, sonst fehlt die Tabelle beim ersten Start.
 from app.models.report import Report, ReportSchedule, AdHocQuery
+from app.models.vorhaben import Vorhaben, VorhabenArtefakt
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
@@ -552,6 +553,8 @@ from app.api import reports as reports_api
 app.include_router(reports_api.router)
 from app.api import query_builder as query_builder_api
 app.include_router(query_builder_api.router)
+from app.api import werkbank as werkbank_api
+app.include_router(werkbank_api.router)
 
 
 @app.get("/api/health")

@@ -1,0 +1,943 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Wand2, Loader2, Play, Hammer, Trash2, RotateCcw, CheckCircle2,
+         AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info } from "lucide-react";
+import api from "../../../api/client";
+import MandantWaehler from "../../MandantWaehler";
+import { onMandantChange } from "../../../services/mandant";
+
+const S = {
+  bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
+  border: "var(--border)", textMain: "var(--text-main)", textDim: "var(--text-dim)",
+  textBright: "var(--text-bright)", accent: "var(--accent)",
+};
+
+const STATUS = {
+  entwurf:        { farbe: "var(--accent)", label: "Entwurf" },
+  installiert:    { farbe: "#5cb85c",       label: "Gebaut" },
+  teilrueckbau:   { farbe: "#e8913a",       label: "Teilweise zurückgebaut" },
+  zurueckgebaut:  { farbe: "#777",          label: "Zurückgebaut" },
+};
+
+const inp = {
+  backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4,
+  color: S.textMain, fontSize: 12, padding: "6px 8px", outline: "none", width: "100%",
+};
+
+const knopf = (aktiv = true) => ({
+  fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 5,
+  border: "none", cursor: aktiv ? "pointer" : "not-allowed",
+  backgroundColor: S.accent, color: "#111", opacity: aktiv ? 1 : 0.5,
+  display: "inline-flex", alignItems: "center", gap: 6,
+});
+
+const knopfLeer = {
+  fontSize: 12, padding: "7px 14px", borderRadius: 5, cursor: "pointer",
+  border: `1px solid ${S.border}`, background: "transparent", color: S.textDim,
+  display: "inline-flex", alignItems: "center", gap: 6,
+};
+
+/**
+ * KI-Werkbank: aus einem Satz ein Bauvorhaben.
+ *
+ * Vier Schritte – Beschreiben, Bauzettel prüfen, Vorschau, Übernehmen. Die
+ * Häkchen am Bauzettel sind bewusst VORBELEGT statt vorgeschaltet: „Mapping
+ * oder Report?" ist die Frage der Plattform, nicht die des Anwenders. Er sagt,
+ * was er sehen will; korrigieren kann er trotzdem alles.
+ */
+export default function WerkbankPanel({ projectId, canEdit }) {
+  const [vorhaben, setVorhaben] = useState([]);
+  const [aktiv, setAktiv] = useState(null);
+  const [werkzeuge, setWerkzeuge] = useState(null);
+  const [abfrageSchema, setAbfrageSchema] = useState(null);
+  const [laden, setLaden] = useState(true);
+  const [fehler, setFehler] = useState(null);
+
+  const [beschreibung, setBeschreibung] = useState("");
+  const [planLaeuft, setPlanLaeuft] = useState(false);
+  const [fortschritt, setFortschritt] = useState("");
+  const [rueckfragen, setRueckfragen] = useState([]);
+
+  const [vorschau, setVorschau] = useState(null);
+  const [vorschauLaeuft, setVorschauLaeuft] = useState(false);
+  const [baut, setBaut] = useState(false);
+  const [offen, setOffen] = useState({});          // Schritt-Index → aufgeklappt
+  const [rueckbauPlan, setRueckbauPlan] = useState(null);
+  const [rueckbauLaeuft, setRueckbauLaeuft] = useState(false);
+
+  const eingabeRef = useRef(null);
+  const q = projectId ? `?project_id=${projectId}` : "";
+
+  const listeLaden = useCallback(async () => {
+    setLaden(true);
+    try {
+      const { data } = await api.get(`/api/werkbank/vorhaben${q}`);
+      setVorhaben(data || []);
+      setFehler(null);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally {
+      setLaden(false);
+    }
+  }, [q]);
+
+  useEffect(() => { listeLaden(); }, [listeLaden]);
+  useEffect(() => {
+    api.get("/api/werkbank/werkzeuge").then(r => setWerkzeuge(r.data)).catch(() => {});
+    api.get("/api/query/schema").then(r => setAbfrageSchema(r.data)).catch(() => {});
+  }, []);
+  // Ein Vorhaben gehört einem Mandanten. Nach dem Wechsel stünden sonst die
+  // Zahlen des einen Betriebs unter dem Namen des anderen.
+  useEffect(() => onMandantChange(() => { listeLaden(); setVorschau(null); }), [listeLaden]);
+
+  const oeffnen = async (id) => {
+    setVorschau(null); setRueckfragen([]); setFehler(null);
+    try {
+      const { data } = await api.get(`/api/werkbank/vorhaben/${id}`);
+      setAktiv(data);
+      setOffen({ 0: true });
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
+  // ── Bauzettel erzeugen (Datenstrom) ────────────────────────────────────────
+  const verstehen = async () => {
+    const text = beschreibung.trim();
+    if (!text) return;
+    setPlanLaeuft(true); setFehler(null); setFortschritt("Anfrage läuft …");
+    setVorschau(null); setRueckfragen([]);
+    try {
+      const resp = await fetch("/api/werkbank/verstehen", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("dm_token") || ""}`,
+        },
+        body: JSON.stringify({ beschreibung: text, project_id: projectId ?? null }),
+      });
+      if (!resp.ok) {
+        const e = await resp.json().catch(() => ({}));
+        throw new Error(e.detail || `Backend-Fehler (HTTP ${resp.status})`);
+      }
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let puffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        puffer += decoder.decode(value, { stream: true });
+        const zeilen = puffer.split("\n");
+        puffer = zeilen.pop();
+        for (const z of zeilen) {
+          if (!z.startsWith("data:")) continue;
+          const roh = z.slice(5).trim();
+          if (roh === "[DONE]") continue;
+          let msg;
+          try { msg = JSON.parse(roh); } catch { continue; }
+          if (msg.fortschritt) setFortschritt(msg.fortschritt);
+          if (msg.fehler) throw new Error(msg.fehler);
+          if (msg.vorhaben) {
+            setAktiv({ ...msg.vorhaben, artefakte: [] });
+            setRueckfragen(msg.rueckfragen || []);
+            setBeschreibung("");
+            setOffen({ 0: true });
+            listeLaden();
+          }
+        }
+      }
+    } catch (e) {
+      setFehler(e.message);
+    } finally {
+      setPlanLaeuft(false); setFortschritt("");
+    }
+  };
+
+  // ── Bauplan ändern ─────────────────────────────────────────────────────────
+  const planSpeichern = async (bauplan, extra = {}) => {
+    if (!aktiv) return null;
+    try {
+      const { data } = await api.put(`/api/werkbank/vorhaben/${aktiv.id}`,
+        { bauplan, ...extra });
+      setAktiv(data);
+      listeLaden();
+      return data;
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+      return null;
+    }
+  };
+
+  const schrittAendern = (i, aenderung) => {
+    const plan = (aktiv.bauplan || []).map((s, idx) =>
+      idx === i ? { ...s, ...aenderung } : s);
+    setAktiv({ ...aktiv, bauplan: plan });        // sofort sichtbar
+    return plan;
+  };
+
+  const eingabeAendern = (i, feld, wert) => {
+    const s = aktiv.bauplan[i];
+    schrittAendern(i, { eingabe: { ...(s.eingabe || {}), [feld]: wert } });
+  };
+
+  const vorschauLaufen = async () => {
+    if (!aktiv) return;
+    setVorschauLaeuft(true); setFehler(null);
+    const gespeichert = await planSpeichern(aktiv.bauplan);
+    if (!gespeichert) { setVorschauLaeuft(false); return; }
+    try {
+      const { data } = await api.post(`/api/werkbank/vorhaben/${aktiv.id}/vorschau`);
+      setVorschau(data.schritte || []);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally {
+      setVorschauLaeuft(false);
+    }
+  };
+
+  const bauenLaufen = async (neu = false) => {
+    if (!aktiv) return;
+    setBaut(true); setFehler(null);
+    const gespeichert = await planSpeichern(aktiv.bauplan);
+    if (!gespeichert) { setBaut(false); return; }
+    try {
+      const pfad = neu ? "neu-bauen" : "bauen";
+      const { data } = await api.post(`/api/werkbank/vorhaben/${aktiv.id}/${pfad}`);
+      setAktiv(data.vorhaben);
+      setVorschau(null);
+      listeLaden();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally {
+      setBaut(false);
+    }
+  };
+
+  const rueckbauPruefen = async () => {
+    try {
+      const { data } = await api.post(
+        `/api/werkbank/vorhaben/${aktiv.id}/rueckbau/vorschau`);
+      setRueckbauPlan(data);
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
+  const rueckbauAusfuehren = async (nurUngenutzte) => {
+    setRueckbauLaeuft(true);
+    try {
+      await api.delete(`/api/werkbank/vorhaben/${aktiv.id}` +
+        `?nur_ungenutzte=${nurUngenutzte ? "true" : "false"}`);
+      setRueckbauPlan(null);
+      await oeffnen(aktiv.id);
+      listeLaden();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally {
+      setRueckbauLaeuft(false);
+    }
+  };
+
+  const eintragLoeschen = async (id) => {
+    try {
+      await api.delete(`/api/werkbank/vorhaben/${id}/eintrag`);
+      if (aktiv?.id === id) setAktiv(null);
+      listeLaden();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    }
+  };
+
+  // ────────────────────────────────────────────────────────────────────────────
+  const istGebaut = aktiv?.status === "installiert";
+
+  return (
+    <div style={{ display: "flex", gap: 18, alignItems: "flex-start" }}>
+      {/* ── Vorhabenliste ── */}
+      <div style={{ width: 260, flexShrink: 0, display: "flex", flexDirection: "column",
+                    gap: 10, position: "sticky", top: 0 }}>
+        <button onClick={() => { setAktiv(null); setVorschau(null); setRueckfragen([]);
+                                 setTimeout(() => eingabeRef.current?.focus(), 50); }}
+          style={{ ...knopf(true), width: "100%", justifyContent: "center" }}>
+          <Sparkles size={13} /> Neues Vorhaben
+        </button>
+
+        <div style={{ maxHeight: "calc(100vh - 260px)", overflowY: "auto",
+                      display: "flex", flexDirection: "column", gap: 4 }}>
+          {laden && <p style={{ fontSize: 12, color: S.textDim }}>Lade …</p>}
+          {!laden && vorhaben.length === 0 && (
+            <p style={{ fontSize: 12, color: S.textDim, lineHeight: 1.6, margin: 0 }}>
+              Noch kein Vorhaben. Beschreibe rechts, was du sehen willst.
+            </p>
+          )}
+          {vorhaben.map(v => {
+            const st = STATUS[v.status] || STATUS.entwurf;
+            const gewaehlt = aktiv?.id === v.id;
+            return (
+              <button key={v.id} onClick={() => oeffnen(v.id)}
+                style={{ textAlign: "left", padding: "9px 10px", borderRadius: 6,
+                  border: `1px solid ${gewaehlt ? S.accent : S.border}`,
+                  backgroundColor: gewaehlt ? "rgba(252,228,153,0.07)" : S.bgCard,
+                  cursor: "pointer", display: "flex", flexDirection: "column", gap: 4 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: S.textBright,
+                               lineHeight: 1.3 }}>{v.name}</span>
+                <span style={{ fontSize: 10.5, color: S.textDim, display: "flex",
+                               alignItems: "center", gap: 5 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%",
+                                 backgroundColor: st.farbe }} />
+                  {st.label} · {(v.bauplan || []).filter(s => s.aktiv).length} Schritt(e)
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Arbeitsfläche ── */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        {fehler && (
+          <div style={{ marginBottom: 12, padding: "10px 14px", borderRadius: 6,
+              background: "rgba(224,86,86,0.1)", border: "1px solid rgba(224,86,86,0.3)" }}>
+            <p style={{ margin: 0, fontSize: 12, color: "#e05656" }}>{fehler}</p>
+          </div>
+        )}
+
+        {!aktiv ? (
+          <Beschreiben value={beschreibung} onChange={setBeschreibung}
+            onSubmit={verstehen} laeuft={planLaeuft} fortschritt={fortschritt}
+            eingabeRef={eingabeRef} canEdit={canEdit} projectId={projectId} />
+        ) : (
+          <>
+            <Kopf v={aktiv} onUmbenennen={n => planSpeichern(aktiv.bauplan, { name: n })} />
+
+            {rueckfragen.length > 0 && (
+              <div style={{ margin: "0 0 14px", padding: "12px 14px", borderRadius: 6,
+                  background: "rgba(252,228,153,0.07)",
+                  borderLeft: `3px solid ${S.accent}` }}>
+                <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700,
+                            color: S.textBright }}>Bevor gebaut wird</p>
+                {rueckfragen.map((r, i) => (
+                  <p key={i} style={{ margin: "0 0 4px", fontSize: 12, color: S.textMain }}>
+                    · {r}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {(aktiv.hinweise || []).length > 0 && (
+              <div style={{ margin: "0 0 14px", padding: "10px 14px", borderRadius: 6,
+                  backgroundColor: S.bgCard, border: `1px solid ${S.border}` }}>
+                {aktiv.hinweise.map((h, i) => (
+                  <p key={i} style={{ margin: "0 0 3px", fontSize: 11.5, color: S.textDim,
+                                      display: "flex", gap: 6 }}>
+                    <Info size={12} style={{ flexShrink: 0, marginTop: 2 }} /> {h}
+                  </p>
+                ))}
+              </div>
+            )}
+
+            {/* Bauzettel */}
+            <p style={{ fontSize: 11, fontWeight: 700, color: S.textDim, margin: "0 0 8px",
+                        textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              Bauzettel
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6,
+                          marginBottom: 16 }}>
+              {(aktiv.bauplan || []).map((s, i) => (
+                <Schritt key={i} s={s} i={i} offen={!!offen[i]} gebaut={istGebaut}
+                  werkzeuge={werkzeuge} abfrageSchema={abfrageSchema}
+                  vorschau={(vorschau || []).find(x => x.werkzeug === s.werkzeug)}
+                  onToggle={() => setOffen(o => ({ ...o, [i]: !o[i] }))}
+                  onAktiv={a => schrittAendern(i, { aktiv: a })}
+                  onEingabe={(f, w) => eingabeAendern(i, f, w)} />
+              ))}
+            </div>
+
+            {/* Aktionen */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center",
+                          paddingTop: 12, borderTop: `1px solid ${S.border}` }}>
+              {!istGebaut && (
+                <>
+                  <button onClick={vorschauLaufen} disabled={vorschauLaeuft || !canEdit}
+                    style={knopfLeer}>
+                    {vorschauLaeuft ? <Loader2 size={13} className="animate-spin" />
+                                    : <Play size={13} />} Vorschau mit echten Zahlen
+                  </button>
+                  <button onClick={() => bauenLaufen(false)}
+                    disabled={baut || !canEdit} style={knopf(!baut && canEdit)}>
+                    {baut ? <Loader2 size={13} className="animate-spin" />
+                          : <Hammer size={13} />} Übernehmen
+                  </button>
+                </>
+              )}
+              {istGebaut && (
+                <>
+                  <button onClick={() => bauenLaufen(true)} disabled={baut || !canEdit}
+                    style={knopfLeer}>
+                    {baut ? <Loader2 size={13} className="animate-spin" />
+                          : <RotateCcw size={13} />} Neu bauen
+                  </button>
+                  <button onClick={rueckbauPruefen} disabled={!canEdit}
+                    style={{ ...knopfLeer, color: "#e05656",
+                             borderColor: "rgba(224,86,86,0.4)" }}>
+                    <Trash2 size={13} /> Zurückbauen
+                  </button>
+                </>
+              )}
+              {(aktiv.status === "zurueckgebaut" || aktiv.status === "entwurf") && (
+                <button onClick={() => eintragLoeschen(aktiv.id)} style={{
+                  ...knopfLeer, marginLeft: "auto", fontSize: 11 }}>
+                  <X size={12} /> Eintrag entfernen
+                </button>
+              )}
+            </div>
+
+            {/* Was gebaut wurde */}
+            {(aktiv.artefakte || []).length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: S.textDim,
+                    margin: "0 0 8px", textTransform: "uppercase",
+                    letterSpacing: "0.05em" }}>Angelegt</p>
+                <div style={{ border: `1px solid ${S.border}`, borderRadius: 6,
+                              overflow: "hidden" }}>
+                  {aktiv.artefakte.map(a => (
+                    <div key={a.id} style={{ padding: "8px 12px",
+                        borderBottom: `1px solid ${S.border}`, display: "flex",
+                        alignItems: "center", gap: 10, backgroundColor: S.bgCard }}>
+                      <span style={{ fontSize: 10, fontFamily: "monospace",
+                          color: S.textDim, width: 108, flexShrink: 0 }}>{a.art}</span>
+                      <span style={{ fontSize: 12, color: S.textMain, flex: 1 }}>
+                        {a.label}
+                      </span>
+                      {!a.erzeugt && (
+                        <span style={{ fontSize: 10, color: S.textDim,
+                            border: `1px solid ${S.border}`, borderRadius: 3,
+                            padding: "1px 6px" }}>nur ergänzt</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {rueckbauPlan && (
+        <RueckbauModal plan={rueckbauPlan} laeuft={rueckbauLaeuft}
+          onClose={() => setRueckbauPlan(null)}
+          onAusfuehren={rueckbauAusfuehren} />
+      )}
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Schritt 1: Beschreiben. Kein leeres Feld – die Beispiele sind der Einstieg. */
+function Beschreiben({ value, onChange, onSubmit, laeuft, fortschritt, eingabeRef,
+                       canEdit, projectId }) {
+  const beispiele = [
+    "Zeig mir jeden Montag die Kunden, die Ware bekommen haben, aber keine Rechnung",
+    "Welche Kunden haben letztes Jahr gekauft und dieses Jahr nicht mehr?",
+    "Warne mich, wenn ein Kunde mehr als 5.000 € offen hat",
+  ];
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <Wand2 size={18} style={{ color: S.accent }} />
+        <h2 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: S.textBright }}>
+          Was möchtest du sehen?
+        </h2>
+        <div style={{ marginLeft: "auto" }}><MandantWaehler projectId={projectId} /></div>
+      </div>
+      <p style={{ fontSize: 12.5, color: S.textDim, margin: "0 0 14px", lineHeight: 1.6 }}>
+        Ein Satz genügt. Die Werkbank schlägt vor, was dafür gebaut werden muss –
+        du prüfst es, siehst eine Vorschau mit echten Zahlen und entscheidest dann.
+        Alles Gebaute lässt sich später mit einem Klick wieder zurückbauen.
+      </p>
+
+      <textarea ref={eingabeRef} value={value} onChange={e => onChange(e.target.value)}
+        rows={3} placeholder="z. B. Zeig mir jeden Montag die Kunden ohne Rechnung"
+        onKeyDown={e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit(); }}
+        style={{ ...inp, resize: "vertical", lineHeight: 1.5, fontSize: 13 }} />
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 10 }}>
+        <button onClick={onSubmit} disabled={laeuft || !value.trim() || !canEdit}
+          style={knopf(!laeuft && !!value.trim() && canEdit)}>
+          {laeuft ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+          Bauzettel erstellen
+        </button>
+        {laeuft && <span style={{ fontSize: 12, color: S.textDim }}>{fortschritt}</span>}
+      </div>
+
+      <p style={{ fontSize: 11, fontWeight: 700, color: S.textDim, margin: "26px 0 8px",
+                  textTransform: "uppercase", letterSpacing: "0.05em" }}>Beispiele</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {beispiele.map((b, i) => (
+          <button key={i} onClick={() => onChange(b)}
+            style={{ textAlign: "left", padding: "9px 12px", borderRadius: 6,
+              border: `1px solid ${S.border}`, backgroundColor: S.bgCard,
+              color: S.textMain, fontSize: 12, cursor: "pointer", lineHeight: 1.4 }}>
+            {b}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+function Kopf({ v, onUmbenennen }) {
+  const [name, setName] = useState(v.name);
+  useEffect(() => setName(v.name), [v.id, v.name]);
+  const st = STATUS[v.status] || STATUS.entwurf;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <input value={name} onChange={e => setName(e.target.value)}
+          onBlur={() => name.trim() && name !== v.name && onUmbenennen(name.trim())}
+          style={{ ...inp, fontSize: 15, fontWeight: 700, color: S.textBright,
+                   background: "transparent", border: "1px solid transparent",
+                   padding: "4px 6px", flex: 1 }} />
+        <span style={{ fontSize: 11, color: st.farbe, border: `1px solid ${st.farbe}40`,
+            borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap" }}>{st.label}</span>
+      </div>
+      <p style={{ margin: "4px 0 0 6px", fontSize: 12, color: S.textDim, lineHeight: 1.5 }}>
+        „{v.beschreibung}“
+        {v.mandant && <span style={{ marginLeft: 8 }}>· Betrieb: {v.mandant}</span>}
+      </p>
+    </div>
+  );
+}
+
+
+/** Eine Zeile des Bauzettels: Häkchen, Klartext, aufklappbare Einstellungen. */
+function Schritt({ s, i, offen, gebaut, werkzeuge, abfrageSchema, vorschau,
+                   onToggle, onAktiv, onEingabe }) {
+  const wz = (werkzeuge?.werkzeuge || []).find(w => w.key === s.werkzeug);
+  const aus = !s.aktiv;
+  return (
+    <div style={{ border: `1px solid ${S.border}`, borderRadius: 6,
+                  backgroundColor: S.bgCard, opacity: aus ? 0.5 : 1 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px" }}>
+        <input type="checkbox" checked={!!s.aktiv} disabled={gebaut}
+          onChange={e => onAktiv(e.target.checked)}
+          style={{ accentColor: S.accent, cursor: gebaut ? "default" : "pointer" }} />
+        <button onClick={onToggle} style={{ background: "none", border: "none",
+            padding: 0, cursor: "pointer", color: S.textDim, display: "flex" }}>
+          {offen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        </button>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: S.textBright }}>
+            {s.titel || wz?.label || s.werkzeug}
+          </p>
+          <p style={{ margin: "2px 0 0", fontSize: 11.5, color: S.textDim,
+                      overflow: "hidden", textOverflow: "ellipsis",
+                      whiteSpace: "nowrap" }}>
+            {s.zusammenfassung || wz?.wofuer}
+          </p>
+        </div>
+        {vorschau && <VorschauMarke v={vorschau} />}
+      </div>
+
+      {offen && (
+        <div style={{ padding: "0 12px 12px 46px", display: "flex",
+                      flexDirection: "column", gap: 10 }}>
+          {s.warum && (
+            <p style={{ margin: 0, fontSize: 11.5, color: S.textDim, lineHeight: 1.5,
+                        fontStyle: "italic" }}>{s.warum}</p>
+          )}
+          <Einstellungen s={s} gebaut={gebaut} werkzeuge={werkzeuge}
+            abfrageSchema={abfrageSchema} onEingabe={onEingabe} />
+          {vorschau && <VorschauInhalt v={vorschau} />}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function VorschauMarke({ v }) {
+  if (v.fehler) return (
+    <span style={{ fontSize: 11, color: "#e05656", display: "flex", alignItems: "center",
+                   gap: 4, whiteSpace: "nowrap" }}>
+      <AlertTriangle size={12} /> Fehler
+    </span>
+  );
+  const anzahl = v.ergebnis?.anzahl;
+  if (anzahl === undefined || anzahl === null) return null;
+  const leer = anzahl === 0;
+  return (
+    <span style={{ fontSize: 11, whiteSpace: "nowrap",
+        color: leer ? "#e8913a" : "#5cb85c", display: "flex", alignItems: "center",
+        gap: 4 }}>
+      {leer ? <AlertTriangle size={12} /> : <CheckCircle2 size={12} />}
+      {anzahl} Zeile{anzahl === 1 ? "" : "n"}
+    </span>
+  );
+}
+
+
+/** Die Vorschau zeigt echte Zahlen – Struktur allein sagt nichts über Richtigkeit. */
+function VorschauInhalt({ v }) {
+  if (v.fehler) return (
+    <div style={{ padding: "9px 12px", borderRadius: 5,
+        background: "rgba(224,86,86,0.08)", border: "1px solid rgba(224,86,86,0.25)" }}>
+      <p style={{ margin: 0, fontSize: 11.5, color: "#e05656" }}>{v.fehler}</p>
+    </div>
+  );
+  const e = v.ergebnis;
+  if (!e) return null;
+
+  if (e.treffer) {
+    return (
+      <div style={{ fontSize: 11.5, color: S.textDim }}>
+        <p style={{ margin: "0 0 6px" }}>{e.hinweis}</p>
+        {e.treffer.map((t, i) => (
+          <p key={i} style={{ margin: "0 0 3px", color: S.textMain }}>
+            · {t.label} <span style={{ color: S.textDim }}>({t.cockpit} → {t.reiter})</span>
+          </p>
+        ))}
+      </div>
+    );
+  }
+
+  if (!e.zeilen) {
+    return <p style={{ margin: 0, fontSize: 11.5, color: S.textDim }}>{e.hinweis}</p>;
+  }
+
+  const spalten = (e.spalten || []).filter(s => !s.schluessel).slice(0, 6);
+  return (
+    <div>
+      {e.befund && (
+        <div style={{ marginBottom: 8, padding: "9px 12px", borderRadius: 5,
+            background: "rgba(232,145,58,0.09)", border: "1px solid rgba(232,145,58,0.3)" }}>
+          <p style={{ margin: 0, fontSize: 11.5, color: "#e8913a" }}>{e.befund}</p>
+        </div>
+      )}
+      <p style={{ margin: "0 0 6px", fontSize: 11, color: S.textDim }}>
+        {e.anzahl} Zeile(n){e.gedeckelt ? " (gedeckelt)" : ""} · Betrieb {e.mandant}
+        {e.zeitraum ? ` · ${e.zeitraum.von} bis ${e.zeitraum.bis}` : ""}
+      </p>
+      {e.zeilen.length > 0 && (
+        <div style={{ overflowX: "auto", border: `1px solid ${S.border}`,
+                      borderRadius: 5 }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 11.5 }}>
+            <thead>
+              <tr>{spalten.map(c => (
+                <th key={c.name} style={{ textAlign: "left", padding: "6px 10px",
+                    color: S.textDim, fontWeight: 500, whiteSpace: "nowrap",
+                    borderBottom: `1px solid ${S.border}` }}>{c.label || c.name}</th>
+              ))}</tr>
+            </thead>
+            <tbody>
+              {e.zeilen.slice(0, 5).map((z, i) => (
+                <tr key={i}>{spalten.map(c => (
+                  <td key={c.name} style={{ padding: "6px 10px", color: S.textMain,
+                      borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap",
+                      maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {String(z[c.name] ?? "")}
+                  </td>
+                ))}</tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/** Die Stellschrauben eines Schritts – bewusst wenige, alle mit fester Auswahl. */
+function Einstellungen({ s, gebaut, werkzeuge, abfrageSchema, onEingabe }) {
+  const e = s.eingabe || {};
+  const zeit = werkzeuge?.zeitraeume || [];
+  const takte = werkzeuge?.takte || [];
+  const feld = (label, kind) => (
+    <label style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1,
+                    minWidth: 150 }}>
+      <span style={{ fontSize: 10.5, color: S.textDim, textTransform: "uppercase",
+                     letterSpacing: "0.05em" }}>{label}</span>
+      {kind}
+    </label>
+  );
+  const reihe = { display: "flex", gap: 10, flexWrap: "wrap" };
+
+  if (s.werkzeug === "abfrage") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={reihe}>
+          {feld("Name", <input value={e.name || ""} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("name", ev.target.value)} />)}
+          {feld("Zeitraum der Vorschau", (
+            <select value={e.zeitraum_preset || "months_12"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("zeitraum_preset", ev.target.value)}>
+              {zeit.map(z => <option key={z.key} value={z.key}>{z.label}</option>)}
+            </select>
+          ))}
+        </div>
+        <Definition d={e.definition} schema={abfrageSchema} gebaut={gebaut}
+          onChange={d => onEingabe("definition", d)} />
+      </div>
+    );
+  }
+
+  if (s.werkzeug === "report") {
+    return (
+      <div style={reihe}>
+        {feld("Name", <input value={e.name || ""} disabled={gebaut} style={inp}
+          onChange={ev => onEingabe("name", ev.target.value)} />)}
+        {feld("Zeitraum-Vorgabe", (
+          <select value={e.zeitraum_preset || "months_12"} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("zeitraum_preset", ev.target.value)}>
+            {zeit.map(z => <option key={z.key} value={z.key}>{z.label}</option>)}
+          </select>
+        ))}
+      </div>
+    );
+  }
+
+  if (s.werkzeug === "zustellplan") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={reihe}>
+          {feld("Takt", (
+            <select value={e.cron_expr || "0 6 * * 1"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("cron_expr", ev.target.value)}>
+              {takte.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+            </select>
+          ))}
+          {feld("Zeitraum je Lauf", (
+            <select value={e.zeitraum_preset || "last_month"} disabled={gebaut} style={inp}
+              onChange={ev => onEingabe("zeitraum_preset", ev.target.value)}>
+              {zeit.map(z => <option key={z.key} value={z.key}>{z.label}</option>)}
+            </select>
+          ))}
+        </div>
+        {feld("Empfänger (kommagetrennt)", (
+          <input value={e.email_to || ""} disabled={gebaut} style={inp}
+            placeholder="name@firma.de"
+            onChange={ev => onEingabe("email_to", ev.target.value)} />
+        ))}
+      </div>
+    );
+  }
+
+  if (s.werkzeug === "warnung") {
+    return (
+      <div style={reihe}>
+        {feld("Melden ab … Treffern", (
+          <input type="number" min={1} value={e.schwelle ?? 1} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("schwelle", Number(ev.target.value))} />
+        ))}
+        {feld("Dringlichkeit", (
+          <select value={e.severity || "warnung"} disabled={gebaut} style={inp}
+            onChange={ev => onEingabe("severity", ev.target.value)}>
+            {(werkzeuge?.dringlichkeiten || []).map(d =>
+              <option key={d} value={d}>{d}</option>)}
+          </select>
+        ))}
+      </div>
+    );
+  }
+
+  if (s.werkzeug === "veroeffentlichen") {
+    return feld("Beschreibung im Portal", (
+      <input value={e.beschreibung || ""} disabled={gebaut} style={inp}
+        onChange={ev => onEingabe("beschreibung", ev.target.value)} />
+    ));
+  }
+
+  if (s.werkzeug === "nachsehen") {
+    return feld("Suchbegriffe", (
+      <input value={e.suchtext || ""} disabled={gebaut} style={inp}
+        onChange={ev => onEingabe("suchtext", ev.target.value)} />
+    ));
+  }
+  return null;
+}
+
+
+/**
+ * Die Abfrage im Klartext. Bedingungen lassen sich entfernen – genau das
+ * braucht man, wenn die KI eine zu viel gesetzt hat. Zum Hinzufügen führt der
+ * Weg über den Abfrage-Generator; hier soll niemand einen Baum bauen müssen.
+ */
+function Definition({ d, schema, gebaut, onChange }) {
+  if (!d) return null;
+  const koernung = (schema?.koernungen || []).find(k => k.key === d.koernung);
+
+  const eintrag = (key, art) => {
+    const liste = art === "kennzahl" ? (koernung?.kennzahlen || []) : (koernung?.felder || []);
+    return liste.find(x => x.key === key) || {};
+  };
+  const beschriften = (key, art) => eintrag(key, art).label || key;
+
+  // Das Vergleichs-Label hängt am TYP des Feldes: „=" heißt bei Text „ist",
+  // bei einer Zahl aber „=". Ohne den Typ gewinnt die erste Gruppe, und aus
+  // „Anzahl Rechnungen = 0" wurde „Anzahl Rechnungen ist 0".
+  const vergleichLabel = (key, art, feldKey) => {
+    const typ = eintrag(feldKey, art).typ;
+    const gruppen = schema?.vergleiche || {};
+    const suchreihe = typ && gruppen[typ] ? [gruppen[typ]] : Object.values(gruppen);
+    for (const gruppe of suchreihe) {
+      const t = gruppe.find(v => v.key === key);
+      if (t) return t.label;
+    }
+    return key;
+  };
+
+  const entfernen = (feldName, index) => {
+    const baum = d[feldName] || {};
+    const kinder = (baum.kinder || []).filter((_, i) => i !== index);
+    onChange({ ...d, [feldName]: kinder.length ? { ...baum, kinder } : {} });
+  };
+
+  const block = (feldName, ueberschrift, art) => {
+    const kinder = (d[feldName] || {}).kinder || [];
+    if (!kinder.length) return null;
+    const op = (d[feldName] || {}).op || "UND";
+    return (
+      <div>
+        <p style={{ margin: "0 0 5px", fontSize: 10.5, color: S.textDim,
+            textTransform: "uppercase", letterSpacing: "0.05em" }}>
+          {ueberschrift} <span style={{ opacity: 0.7 }}>({op})</span>
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {kinder.map((b, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8,
+                padding: "5px 9px", borderRadius: 4, backgroundColor: S.bgEl,
+                border: `1px solid ${S.border}` }}>
+              <span style={{ fontSize: 11.5, color: S.textMain, flex: 1 }}>
+                <b style={{ fontWeight: 600 }}>{beschriften(b.key, art)}</b>{" "}
+                {vergleichLabel(b.vergleich, art, b.key)}{" "}
+                {b.wert !== undefined && <b style={{ fontWeight: 600 }}>{String(b.wert)}</b>}
+              </span>
+              {!gebaut && (
+                <button onClick={() => entfernen(feldName, i)} title="Bedingung entfernen"
+                  style={{ background: "none", border: "none", cursor: "pointer",
+                           color: S.textDim, display: "flex", padding: 0 }}>
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const kennzahlen = d.kennzahlen || [];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10,
+        padding: "10px 12px", borderRadius: 5, backgroundColor: S.bgMain,
+        border: `1px solid ${S.border}` }}>
+      <p style={{ margin: 0, fontSize: 11.5, color: S.textDim }}>
+        Eine Zeile im Ergebnis ist: <b style={{ color: S.textMain }}>
+          {koernung?.label || d.koernung}</b>
+        {koernung?.beschreibung && (
+          <span style={{ display: "block", marginTop: 3, opacity: 0.85 }}>
+            {koernung.beschreibung}</span>
+        )}
+      </p>
+      {block("zeilenfilter", "Zeilenfilter", "feld")}
+      {block("kennzahlfilter", "Kennzahlfilter (nach dem Zählen)", "kennzahl")}
+      {kennzahlen.length > 0 && (
+        <div>
+          <p style={{ margin: "0 0 5px", fontSize: 10.5, color: S.textDim,
+              textTransform: "uppercase", letterSpacing: "0.05em" }}>Kennzahlen</p>
+          <p style={{ margin: 0, fontSize: 11.5, color: S.textMain }}>
+            {kennzahlen.map(k => beschriften(k, "kennzahl")).join(" · ")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+/**
+ * Die Rückbau-Vorschau ist Pflicht, nicht Zierde: Sie ist die einzige Stelle,
+ * an der jemand sieht, dass an dieser Auswertung inzwischen eine Warnung oder
+ * ein fremder Report hängt.
+ */
+function RueckbauModal({ plan, laeuft, onClose, onAusfuehren }) {
+  const [trotzdem, setTrotzdem] = useState(false);
+  const hatBlockiert = (plan.blockiert || []).length > 0;
+
+  const liste = (eintraege, farbe, titel, hinweis) => eintraege.length > 0 && (
+    <div style={{ marginBottom: 14 }}>
+      <p style={{ margin: "0 0 6px", fontSize: 11, fontWeight: 700, color: farbe,
+          textTransform: "uppercase", letterSpacing: "0.05em" }}>{titel}</p>
+      {hinweis && <p style={{ margin: "0 0 6px", fontSize: 11.5, color: S.textDim,
+          lineHeight: 1.5 }}>{hinweis}</p>}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {eintraege.map(e => (
+          <div key={e.artefakt_id} style={{ padding: "7px 10px", borderRadius: 4,
+              backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+            <p style={{ margin: 0, fontSize: 12, color: S.textMain }}>{e.label || e.art}</p>
+            {(e.verwender || []).map((v, i) => (
+              <p key={i} style={{ margin: "3px 0 0", fontSize: 11, color: "#e8913a" }}>
+                wird benutzt von: {v.art} „{v.name}“
+              </p>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 300,
+        backgroundColor: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center",
+        justifyContent: "center", padding: 20 }}>
+      <div onClick={ev => ev.stopPropagation()} style={{ backgroundColor: S.bgCard,
+          border: `1px solid ${S.border}`, borderRadius: 10, width: "100%",
+          maxWidth: 560, maxHeight: "82vh", display: "flex", flexDirection: "column" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${S.border}` }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: S.textBright }}>
+            Vorhaben zurückbauen
+          </p>
+          <p style={{ margin: "3px 0 0", fontSize: 12, color: S.textDim }}>
+            {plan.zusammenfassung}
+          </p>
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+          {liste(plan.loeschen, "#e05656", "Wird gelöscht")}
+          {liste(plan.bereinigen, S.textDim, "Bleibt stehen",
+                 "Vorgefunden, nicht von diesem Vorhaben angelegt – es wird nur "
+                 + "unsere Ergänzung zurückgenommen.")}
+          {liste(plan.blockiert, "#e8913a", "Wird benutzt",
+                 "Daran hängt noch etwas. Wird das gelöscht, meldet die andere "
+                 + "Stelle keinen Fehler – sie zeigt einfach nichts mehr an.")}
+
+          {hatBlockiert && (
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start",
+                marginTop: 8, cursor: "pointer" }}>
+              <input type="checkbox" checked={trotzdem}
+                onChange={ev => setTrotzdem(ev.target.checked)}
+                style={{ accentColor: "#e05656", marginTop: 2 }} />
+              <span style={{ fontSize: 12, color: S.textMain, lineHeight: 1.5 }}>
+                Auch das Benutzte löschen – mir ist klar, dass die oben genannten
+                Stellen danach leer bleiben.
+              </span>
+            </label>
+          )}
+        </div>
+
+        <div style={{ padding: "14px 20px", borderTop: `1px solid ${S.border}`,
+            display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onClose} style={knopfLeer}>Abbrechen</button>
+          <button onClick={() => onAusfuehren(!trotzdem)} disabled={laeuft}
+            style={{ ...knopf(true), backgroundColor: "#e05656", color: "#fff" }}>
+            {laeuft ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+            {trotzdem ? "Alles löschen" : "Zurückbauen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

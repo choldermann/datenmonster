@@ -53,17 +53,7 @@ def preview(data: VorschauRequest, db: Session = Depends(get_db),
     """
     _check_editor(user)
     from app.services import mandant_service
-    from app.services.sql_helpers import _resolve_sql_run_params, _get_sql_engine
-
-    definition = dict(data.definition or {})
-    # Vorschau immer gedeckelt – eine Abfrage über tKunde ohne Filter trifft
-    # 22.000 Zeilen und macht die Oberfläche unbenutzbar.
-    definition["limit"] = min(int(definition.get("limit") or VORSCHAU_MAX), VORSCHAU_MAX)
-
-    try:
-        gebaut = sql_bauer.bauen(definition)
-    except sql_bauer.AbfrageFehler as e:
-        raise HTTPException(400, str(e))
+    from app.services.query_builder import ausfuehren
 
     # Der Mandant bestimmt, gegen welche Wawi gerechnet wird. Ohne ihn liefe die
     # Vorschau womöglich gegen den anderen Betrieb – Zahlen, die in sich stimmen
@@ -73,30 +63,13 @@ def preview(data: VorschauRequest, db: Session = Depends(get_db),
         raise HTTPException(400, "Kein Mandant gewählt – es ist unklar, gegen welche "
                                  "Warenwirtschaft gerechnet werden soll.")
 
-    bis = data.bis or date.today().isoformat()
-    von = data.von or (date.today() - timedelta(days=365)).isoformat()
-
-    run = dict(gebaut["params"])
-    run.update({"von": von, "bis": bis})
-    sql, gebunden = _resolve_sql_run_params(gebaut["sql"], run)
-
     try:
-        eng = _get_sql_engine(mandant_id)
-        with eng.connect() as con:
-            zeilen = [dict(r) for r in con.execute(text(sql), gebunden).mappings().all()]
-    except Exception as e:
-        logger.error(f"Abfrage-Vorschau fehlgeschlagen: {e}")
-        raise HTTPException(500, f"Abfrage fehlgeschlagen: {str(e)[:300]}")
-
-    return {
-        "zeilen": zeilen,
-        "spalten": gebaut["spalten"],
-        "anzahl": len(zeilen),
-        "gedeckelt": len(zeilen) >= definition["limit"],
-        "sql": gebaut["sql"],
-        "zeitraum": {"von": von, "bis": bis},
-        "mandant": mandant_service.name_von(mandant_id, db),
-    }
+        return ausfuehren.rechnen(db, data.definition or {}, mandant_id,
+                                  von=data.von, bis=data.bis)
+    except sql_bauer.AbfrageFehler as e:
+        raise HTTPException(400, str(e))
+    except ausfuehren.LaufFehler as e:
+        raise HTTPException(500, str(e))
 
 
 # ── Speichern ────────────────────────────────────────────────────────────────
