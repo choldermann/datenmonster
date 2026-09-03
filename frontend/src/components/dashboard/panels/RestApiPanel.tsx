@@ -177,6 +177,10 @@ function RestSourceForm({ initial, projectId, datasets, onSaved, onCancel }) {
     setTesting(true); setTestResult(null); setError("");
     try {
       const { data } = await api.post("/api/rest-sources/test", {
+        // Die ID mitgeben, damit der Server unveränderte Geheimnisse aus dem
+        // gespeicherten Connector nimmt. Ohne sie schickt das Formular die
+        // Maske „***" als Zugangsschlüssel und der Test scheitert immer.
+        source_id: form.id ?? null,
         url: form.url, method: form.method, headers: form.headers,
         query_params: form.query_params, body_type: form.body_type,
         body_content: form.body_content, auth_type: form.auth_type,

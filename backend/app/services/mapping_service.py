@@ -959,8 +959,15 @@ def execute_mapping(
                 limit = (preview_rows * 3) if (is_preview and not joins) else None
                 df = connector.fetch_filtered(filters, limit=limit)
                 pushdown_used = True
-            elif is_preview and not filters and not agg_nodes and not joins:
-                # Reine Vorschau ohne Filter/Agg/Join: nur Vorschauzeilen laden
+            elif (is_preview and not filters and not agg_nodes and not joins
+                  and not has_transform_sql):
+                # Reine Vorschau ohne Filter/Agg/Join: nur Vorschauzeilen laden.
+                # Ein Transform-SQL-Knoten zählt wie eine Aggregation: er rechnet
+                # SUM/COUNT über den ganzen Bestand. Auf einer Stichprobe liefert
+                # er eine plausible, aber falsche Zahl – gemessen an einer
+                # Lexware-Belegliste: 48.135,79 € statt 88.838,96 €, weil nur 145
+                # von 414 Zeilen geladen waren. Kein Fehler, keine Warnung, nur
+                # ein zu kleiner Umsatz.
                 df = connector.fetch_preview(limit=preview_rows * 3)
             else:
                 df = connector.fetch_full()

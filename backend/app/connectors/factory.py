@@ -81,7 +81,10 @@ def get_connector(dataset_id: int) -> BaseConnector:
             if not src:
                 raise ValueError(f"RestSource {rest_source_id} nicht gefunden")
             from app.connectors.rest import RestApiConnector
-            return RestApiConnector(source=src)
+            # dataset_id mitgeben, damit eine importierte Kopie benutzt werden
+            # kann; query_config.live erzwingt den Abruf bei jedem Lesen.
+            return RestApiConnector(source=src, dataset_id=dataset_id,
+                                    live=bool(query_config.get("live")))
 
         # ── Plugin-Quellen (Tier-1 Plugins) ──────────────────────────────────────
         else:

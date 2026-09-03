@@ -89,6 +89,11 @@ class RestSourceUpdate(RestSourceCreate):
 
 
 class TestRequest(BaseModel):
+    # Beim Bearbeiten eines gespeicherten Connectors kommen Geheimnisse als
+    # Maske („***") aus dem Formular zurück – der Klartext verlässt den Server
+    # nie. Ohne die Quell-ID würde die Maske als Token verschickt, und ein
+    # gespeicherter Connector ließe sich NIE erfolgreich testen.
+    source_id: Optional[int] = None
     url: str
     method: str = "GET"
     headers: Optional[dict] = {}
@@ -280,11 +285,32 @@ def delete_rest_source(
 @router.post("/test")
 def test_endpoint(
     payload: TestRequest,
+    db: Session = Depends(get_db),
     user: User = Depends(get_current_user),  # Authentifizierung reicht, kein Projektzugriff nötig
 ):
-    """Testet einen Connector ohne zu speichern. Gibt max. 10 Zeilen Vorschau zurück."""
-    result = test_rest_source(payload.model_dump())
-    return result
+    """Testet einen Connector ohne zu speichern. Gibt max. 10 Zeilen Vorschau zurück.
+
+    Geheimnisse, die als Maske zurückkommen, werden aus dem gespeicherten
+    Connector ergänzt. Sonst prüfte der Test bei jedem bereits gespeicherten
+    Connector die Zeichenfolge „***" als Zugangsschlüssel und meldete stets 401 –
+    unabhängig davon, ob der hinterlegte Schlüssel richtig ist.
+    """
+    daten = payload.model_dump()
+    quelle_id = daten.pop("source_id", None)
+    if quelle_id:
+        s = db.query(RestSource).filter(RestSource.id == quelle_id).first()
+        if s:
+            # Lesezugriff auf die Quelle ist Voraussetzung – sonst ließe sich
+            # über eine fremde ID ein hinterlegter Schlüssel gegen eine selbst
+            # gewählte Adresse testen und damit ausleiten.
+            _check_read_access(s, user, db)
+            gespeichert = s.auth_config or {}
+            ac = dict(daten.get("auth_config") or {})
+            for k in _SENSITIVE_AUTH_KEYS:
+                if ac.get(k) == _SECRET_MASK and gespeichert.get(k):
+                    ac[k] = gespeichert[k]
+            daten["auth_config"] = ac
+    return test_rest_source(daten)
 
 
 @router.post("/{source_id}/test")
