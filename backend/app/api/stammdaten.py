@@ -83,21 +83,14 @@ def _connection_aus_mapping(mapping_id: int, user: User, db: Session) -> tuple[i
 
 def _mandant_beruecksichtigen(connection_id: int, project_id: Optional[int],
                               user: User, db: Session) -> int:
-    """Lenkt den Schreibzugriff auf die WaWi, die der Anwender gerade ansieht.
+    """Schreibzugriff auf die WaWi lenken, die der Anwender gerade ansieht.
 
-    Die Artikel-IDs, die die Oberfläche schickt, stammen aus der Datenbank des
-    aktiven Mandanten. Würde hier die im Mapping hinterlegte Standardverbindung
-    gewinnen, schriebe die Übernahme dieselben IDs in die WaWi des anderen
-    Betriebs – und träfe dort völlig andere Artikel. Das ist der eine Fall, in dem
-    ein Schreibpfad dem Mandanten folgen MUSS.
+    Die Artikel-IDs der Oberfläche stammen aus der Datenbank des aktiven
+    Mandanten; die Regel selbst steht in mandant_service.schreibziel, weil auch
+    die Debitorenpflege des DATEV-Exports sie braucht.
     """
     from app.services import mandant_service
-    aktiv = mandant_service.aktiver(project_id, user, db)
-    if aktiv is None or aktiv == connection_id:
-        return connection_id
-    if connection_id not in mandant_service.austauschbare_ids(project_id, db):
-        return connection_id
-    return aktiv
+    return mandant_service.schreibziel(connection_id, project_id, user, db)
 
 
 def _aufloesen(req: PlanRequest, user: User, db: Session) -> tuple[int, Optional[int]]:

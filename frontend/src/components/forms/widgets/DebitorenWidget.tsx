@@ -28,6 +28,10 @@ export default function DebitorenWidget({ widget, baseParams }) {
   const [schreiben, setSchreiben] = useState(false);
   const [fehler, setFehler] = useState(null);
   const [ergebnis, setErgebnis] = useState(null);
+  // Gegen WELCHE Wawi hier gearbeitet wird. Das Backend lenkt den Zugriff auf den
+  // aktiven Mandanten um; ohne diese Anzeige bliebe unsichtbar, wohin geschrieben
+  // wird – bei einem Schreibzugriff die wichtigste Angabe überhaupt.
+  const [wawi, setWawi] = useState(null);
 
   const jahr = Number(baseParams?.year) || new Date().getFullYear();
   const monat = Number(baseParams?.month) || (new Date().getMonth() + 1);
@@ -39,6 +43,7 @@ export default function DebitorenWidget({ widget, baseParams }) {
       const { data } = await api.post("/api/datev/debitoren-offen",
         { connection_id: connId, year: jahr, month: monat });
       setFaelle(data.faelle || []);
+      setWawi(data.wawi || null);
       setWahl({});                     // bewusst nichts vorausgewählt
     } catch (e) {
       setFehler(e.response?.data?.detail || e.message);
@@ -78,6 +83,12 @@ export default function DebitorenWidget({ widget, baseParams }) {
           {laden ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
           Offene Fälle laden ({String(monat).padStart(2, "0")}/{jahr})
         </button>
+        {wawi && (
+          <span style={{ fontSize: 11, color: S.textBright, background: S.bgEl,
+            border: `1px solid ${S.border}`, borderRadius: 6, padding: "4px 9px" }}>
+            Wawi: <b>{wawi}</b>
+          </span>
+        )}
         {faelle && (
           <span style={{ fontSize: 11, color: S.textDim }}>
             {faelle.length} Kunde{faelle.length === 1 ? "" : "n"} ohne Debitorennummer
@@ -189,7 +200,7 @@ export default function DebitorenWidget({ widget, baseParams }) {
               {gewaehlt.length} Nummer{gewaehlt.length === 1 ? "" : "n"} in die Wawi übernehmen
             </button>
             <span style={{ fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
-              Schreibt <b>tkunde.nDebitorennr</b> in der JTL-Wawi. Nur leere Felder werden
+              Schreibt <b>tkunde.nDebitorennr</b>{wawi ? <> in <b>{wawi}</b></> : " in der JTL-Wawi"}. Nur leere Felder werden
               gesetzt, vorhandene bleiben unangetastet – und jede Nummer wird unmittelbar
               vorher noch einmal auf Eindeutigkeit geprüft.
             </span>

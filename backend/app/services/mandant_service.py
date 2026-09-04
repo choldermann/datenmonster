@@ -168,6 +168,26 @@ def darf_nutzen(connection_id: Optional[int], user, db) -> bool:
     return connection_id in erlaubt
 
 
+def schreibziel(connection_id: int, project_id: Optional[int], user, db) -> int:
+    """Lenkt einen SCHREIBZUGRIFF auf die WaWi, die der Anwender gerade ansieht.
+
+    Lesende Mappings biegt `verbindung_ersetzen` um; ein Schreibpfad bekommt seine
+    Verbindung dagegen fest mitgeliefert (aus einem Widget oder einem Mapping).
+    Bliebe es dabei, schriebe er in die Standardverbindung, während der Anwender
+    die Zahlen eines anderen Betriebs vor sich hat — und die IDs, die er anklickt,
+    stammen aus DESSEN Datenbank. Deshalb folgt ein Schreibpfad dem Mandanten.
+
+    Umgelenkt wird nur, was auch austauschbar ist: eine Verbindung, die gar nicht
+    als Mandant geführt wird, bleibt unangetastet.
+    """
+    aktiv = aktiver(project_id, user, db)
+    if aktiv is None or aktiv == connection_id:
+        return connection_id
+    if connection_id not in austauschbare_ids(project_id, db):
+        return connection_id
+    return aktiv
+
+
 # ── Laufzeit: Mapping auf den Mandanten umbiegen ─────────────────────────────
 
 def _umschreiben(nodes: Optional[List[Dict]], ziel_id: int,
