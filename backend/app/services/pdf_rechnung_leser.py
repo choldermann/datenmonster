@@ -313,6 +313,108 @@ def artikel_aus_bestellung(vorlage: list[dict], menge: float, ek: float,
     return None
 
 
+# Zeilen, an denen ein Positionsblock endet: ab hier geht es um den ganzen Beleg,
+# nicht mehr um die einzelne Ware. Bewusst großzügig – lieber ein Ausschnitt zu
+# kurz als einer, der die Rechnungssummen mit in die Position zieht.
+_FUSSZEILE = re.compile(
+    r"nettobetrag|bruttobetrag|mwst|mehrwertsteuer|gesamtbetrag|rechnungsbetrag"
+    r"|zwischensumme|gesamtsumme|zahlungsbedingung|zahlungsziel|umsatzsteuer"
+    r"|endbetrag|total|versandart|lieferbedingung", re.I)
+
+# So viele Zeilen umfasst ein Ausschnitt hoechstens. Drei Folgezeilen decken das
+# ab, was bei den Testrechnungen wirklich zur Position gehört (Zwischensumme,
+# Rabatt, Chargen-/Größenzeile).
+MAX_BLOCKZEILEN = 4
+
+
+def _spaltenkopf(zeilen: list[str], erste_position: int) -> Optional[str]:
+    """Die Spaltenzeile der Positionstabelle, oberhalb der ersten Position.
+
+    Einfach "die Zeile darüber" zu nehmen reicht nicht: bei Voormann stehen
+    dort erst eine Trennlinie aus Gleichheitszeichen und eine Zustellnotiz, die
+    Überschrift kommt vier Zeilen höher. Erkennbar ist sie daran, was eine
+    Überschrift ausmacht — mehrere Beschriftungen nebeneinander, getrennt durch
+    Spaltenabstände. Fließtext und Trennlinien haben das nicht. Findet sich
+    keine, kommt lieber nichts zurueck als die falsche Zeile.
+    """
+    for i in range(erste_position - 1, max(erste_position - 9, -1), -1):
+        gruppen = [g for g in re.split(r"\s{2,}", zeilen[i].strip()) if g]
+        if len(gruppen) >= 3:
+            return zeilen[i].rstrip()
+    return None
+
+
+def belegblock_je_position(txt: str, positionen: list) -> Optional[str]:
+    """Jeder Position den Wortlaut mitgeben, aus dem sie gelesen wurde.
+
+    Anlass ist die Atlas-Rechnung 4581692. Sie führt Konfektionsgroessen als
+    SPALTEN:
+
+        Art.-Nr.  Bezeichnung          40  41  42  43  44  45  46  47  Mg  Preis
+        23200     SL 26 green ESD                               3       3  69,10
+
+    Die Ware ist Größe 46 – erkennbar allein daran, unter welcher Überschrift
+    die 3 steht. In der Rechnung heißt der Artikel 23200, bei uns 23200-46. Wer
+    im Formular nur die ausgelesenen Felder sieht, kann diese Zuordnung nicht
+    treffen; mit dem Originalausschnitt ist sie offensichtlich.
+
+    Gesucht wird über Anker, die schon feststehen (gelesene Artikelnummer,
+    Preis, Bezeichnung) – die KI wird dafuer nicht noch einmal gefragt. Der
+    Ausschnitt ist eine Lesehilfe und wird nirgends gebucht; findet sich eine
+    Zeile nicht wieder, bleibt sie eben ohne. Zurueck kommt die Spaltenzeile der
+    Tabelle, denn die gehört zum Beleg und nicht zu einer einzelnen Position.
+    """
+    zeilen = txt.splitlines()
+    flach = [_ohne_leerraum(z) for z in zeilen]
+
+    def finde(anker: str, ab: int) -> Optional[int]:
+        a = _ohne_leerraum(anker)
+        if len(a) < 3:
+            return None                     # zu kurz, trifft ueberall
+        for i in range(ab, len(zeilen)):
+            if a in flach[i]:
+                return i
+        return None
+
+    # Der Reihe nach suchen: Positionen stehen im Beleg in derselben Reihenfolge
+    # wie in der Auslesung, und so kann keine Zeile den Anker einer spaeteren
+    # an sich ziehen (bei gleichen Preisen sonst leicht moeglich).
+    anker_index: dict[int, int] = {}
+    ab = 0
+    for n, p in enumerate(positionen):
+        for anker in (p.cLieferantenArtNr, p.cArtNr,
+                      f"{p.fEKNetto:.2f}".replace(".", ","), (p.cName or "")[:24]):
+            if not anker:
+                continue
+            i = finde(str(anker), ab)
+            if i is not None:
+                anker_index[n] = i
+                ab = i + 1
+                break
+    if not anker_index:
+        return None
+
+    grenzen = sorted(anker_index.values())
+    tabellenkopf = _spaltenkopf(zeilen, grenzen[0])
+
+    for n, p in enumerate(positionen):
+        i = anker_index.get(n)
+        if i is None:
+            continue
+        naechste = next((g for g in grenzen if g > i), len(zeilen))
+        block: list[str] = []
+        for z in zeilen[i:min(i + MAX_BLOCKZEILEN, naechste, len(zeilen))]:
+            # Eine Leerzeile beendet den Block: was dahinter steht, gehört nicht
+            # mehr zur Ware (bei Voormann folgt dort der Palettenhinweis).
+            if block and (not z.strip() or _FUSSZEILE.search(z)):
+                break
+            block.append(z.rstrip())
+        while block and not block[-1].strip():
+            block.pop()
+        p.belegtext = "\n".join(block)
+    return tabellenkopf
+
+
 def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> int:
     """Zeilen ohne Preistreffer über die MENGE zuordnen.
 
@@ -440,7 +542,7 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
     # Zusatzkosten MUSS die ausgewiesene Nettosumme ergeben. Geht sie nicht auf,
     # ist mindestens eine Zeile falsch gelesen — dann wird neu gefragt.
     #
-    # Das ist keine Schoenfaerberei: geprueft wird gegen eine Zahl aus dem Beleg,
+    # Das ist keine Schönfärberei: geprüft wird gegen eine Zahl aus dem Beleg,
     # nicht gegen eine Erwartung von uns. Und geht es nach drei Versuchen nicht
     # auf, wird der beste Versuch weitergereicht — die Summenkontrolle im Writer
     # blockiert ihn dann ohnehin, aber der Mensch sieht, woran es lag.
@@ -525,10 +627,14 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
     # Was der Preisabgleich offen gelassen hat, jetzt über die Menge versuchen.
     # Bewusst erst hier, auf dem gewählten Versuch: die Zuordnung schaut auf alle
     # Zeilen zugleich und braucht deshalb die endgültige Liste.
-    # Der Hinweis dazu haengt jetzt an der jeweiligen Zeile, nicht am Kopf: er
-    # betrifft genau eine Position, und in der Sammelliste am Fuss des Formulars
+    # Der Hinweis dazu hängt jetzt an der jeweiligen Zeile, nicht am Kopf: er
+    # betrifft genau eine Position, und in der Sammelliste am Fuß des Formulars
     # musste der Anwender die gemeinte Zeile erst wieder suchen.
     ordne_ueber_menge_zu(positionen, positionen_vorlage)
+
+    # Jeder Zeile den Wortlaut mitgeben, aus dem sie stammt. Erst danach, damit
+    # der Ausschnitt zu der Zuordnung passt, die am Ende im Formular steht.
+    tabellenkopf = belegblock_je_position(sichtbarer_text, positionen)
 
     # Zolldaten je Lieferanten-Artikelnummer ablegen. Sie werden nirgends
     # gebucht – das Formular greift nur danach, wenn jemand aus einer nicht
@@ -586,6 +692,7 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
         quelle="pdf_ki",
         leser_hinweise=hinweise,
+        belegtabellenkopf=tabellenkopf,
     )
     if not kopf.cFremdbelegnummer:
         raise ERechnungParseError(

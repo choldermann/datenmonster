@@ -71,6 +71,13 @@ class ERPositionInput:
     # die Zuordnung auch dann hält, wenn das Formular Zeilen umwidmet oder der
     # Beleg zwischen Vorschau und Freigabe hin- und hergereicht wird.
     leser_hinweise: list[str] = field(default_factory=list)
+    # Der Wortlaut aus dem Beleg, aus dem diese Zeile gelesen wurde – reine
+    # Lesehilfe fürs Formular, wird nirgends gebucht. Anlass: die Atlas-Rechnung
+    # führt Größen als SPALTEN ("… 44 45 46 47 …", die Menge steht unter ihrer
+    # Größe), die Artikelnummer im Beleg ist bloß 23200, der Artikel bei uns
+    # aber 23200-46. Aus den ausgelesenen Feldern allein ist das nicht zu
+    # erkennen – aus dem Originalausschnitt sofort.
+    belegtext: Optional[str] = None
 
 
 @dataclass
@@ -120,6 +127,22 @@ class ERKopfInput:
     # Anmerkungen des Auslesers zu Stellen, an denen er nachbessern musste –
     # gehören dem Menschen vor die Augen, nicht in die Datenbank.
     leser_hinweise: list[str] = field(default_factory=list)
+    # Die beiden Haken, die JTL beim Erfassen einer Eingangsrechnung anbietet.
+    # Beide standardmäßig AUS: eine frisch eingelesene Rechnung ist geprüft,
+    # aber noch nicht kaufmännisch abgenommen — das soll ein Mensch entscheiden.
+    #
+    # nStatus ist dabei kein Freitextfeld, sondern JTLs Zustand des Belegs. Die
+    # Bedeutung stammt aus dbo.spEingangsrechnungStatusSetzen, JTLs eigener
+    # Prozedur: sie wechselt ausschließlich zwischen 5 (verbucht, offen) und 20
+    # (verbucht, bezahlt) und lässt 0 immer unangetastet. 0 heißt also "nicht
+    # verbucht", und eine solche Rechnung erreicht JTLs Zahlungslogik nie — ihr
+    # Status bleibt auf "nicht verbucht" stehen, selbst wenn sie bezahlt wird.
+    verbuchen: bool = False
+    zahlung_freigeben: bool = False
+    # Die Spaltenüberschrift der Positionstabelle. Sie gehört zum Beleg, nicht zu
+    # einer Zeile, und steht deshalb hier statt in jeder Position – erst durch sie
+    # ergibt eine Zahl in einer Größenspalte überhaupt Sinn.
+    belegtabellenkopf: Optional[str] = None
 
 
 # ── Ergebnis-Strukturen ─────────────────────────────────────────────────────────
@@ -223,7 +246,7 @@ class ERWritePlan:
                          f"{zk['dWert']} (MwSt {zk['fMwst']}%)")
         if self.summen:
             s = self.summen
-            # None heisst: der Beleg nennt keine eigene Summe, es wurde also gar
+            # None heißt: der Beleg nennt keine eigene Summe, es wurde also gar
             # nicht verglichen. Das darf nicht wie ein gescheiterter Abgleich
             # aussehen – gerechnet haben wir trotzdem.
             amp = {True: "✅", False: "❌"}.get(self.reconciliation_ok, "– kein Vergleich")
@@ -733,9 +756,12 @@ class EingangsrechnungWriter:
                     "cFax": kopf.cFax or lief.get("cFax") or "",
                     "cMobil": "",
                     "cMail": kopf.cMail or lief.get("cEMail") or "",
-                    "nStatus": 0,               # 0 = offen/unbezahlt (Golden-Master)
+                    # 0 = nicht verbucht, 5 = verbucht/offen (siehe ERKopfInput).
+                    # 20 (bezahlt) setzen wir nie selbst — das macht JTL, sobald
+                    # eine Zahlung erfasst ist.
+                    "nStatus": 5 if kopf.verbuchen else 0,
                     "nDeleted": 0,
-                    "nZahlungFreigegeben": 0,
+                    "nZahlungFreigegeben": 1 if kopf.zahlung_freigeben else 0,
                     "dErstellt": datetime.datetime.now(),
                     "nKumuliert": 0,
                     "dBezahlt": None,
@@ -856,6 +882,7 @@ class EingangsrechnungWriter:
                         "_artikel_quelle": artikel_quelle,
                         "_kandidaten": m.get("kandidaten", []),
                         "_meldungen": meldungen,
+                        "_belegtext": pos.belegtext,
                     })
 
                 for h in (kopf.leser_hinweise or []):

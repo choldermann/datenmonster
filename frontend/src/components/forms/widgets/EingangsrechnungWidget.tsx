@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {
   Upload, Loader2, CheckCircle2, AlertTriangle, XCircle, Search, FileText,
+  ChevronRight, ChevronDown,
 } from "lucide-react";
 import api from "../../../api/client";
 
@@ -261,6 +262,9 @@ export default function EingangsrechnungWidget({ widget }) {
   // Vorbelegen beim Neuanlegen benutzt.
   const [befund, setBefund] = useState(null);
   const [neuFuer, setNeuFuer] = useState(null);   // Index der Zeile im Modal
+  // Welche Zeilen ihren Belegausschnitt aufgeklappt haben. Zugeklappt als
+  // Ausgangszustand: die Vorschau soll die Rechnung zeigen, nicht ihr Rohmaterial.
+  const [belegOffen, setBelegOffen] = useState({});
   const fileRef = useRef(null);
 
   const num = (v) => (v == null ? 0 : Number(v));
@@ -268,6 +272,7 @@ export default function EingangsrechnungWidget({ widget }) {
   async function upload(file) {
     if (!file) return;
     setLoading(true); setError(null); setWritten(null); setOverrides({}); setBefund(null);
+    setBelegOffen({});   // neuer Beleg, alte Aufklapp-Zustände passen nicht mehr
     try {
       const fd = new FormData();
       fd.append("connection_id", String(connId));
@@ -431,9 +436,12 @@ export default function EingangsrechnungWidget({ widget }) {
             }
             const needsFix = ["unknown_article", "ambiguous", "unklar"].includes(p.status);
             const meldungen = p._meldungen || [];
+            const belegtext = p._belegtext;
+            const belegAuf = !!belegOffen[i];
+            const hatUnterzeile = meldungen.length > 0 || !!belegtext;
             return (
               <Fragment key={i}>
-              <tr style={meldungen.length ? { borderBottom: "none" } : undefined}>
+              <tr style={hatUnterzeile ? { borderBottom: "none" } : undefined}>
                 <td style={td}>
                   <div style={{ color: S.textBright }}>{p.cName}</div>
                   <div style={{ color: S.textDim, fontSize: 10 }}>
@@ -483,10 +491,10 @@ export default function EingangsrechnungWidget({ widget }) {
                 </td>
               </tr>
               {/* Was an DIESER Zeile hakt, steht unter DIESER Zeile. Vorher lagen
-                  alle Meldungen gesammelt am Fuss des Formulars, und bei einer
+                  alle Meldungen gesammelt am Fuß des Formulars, und bei einer
                   Rechnung mit einem Dutzend Positionen musste man die passende
-                  Zeile darueber erst wieder suchen. */}
-              {meldungen.length > 0 && (
+                  Zeile darüber erst wieder suchen. */}
+              {hatUnterzeile && (
                 <tr>
                   <td colSpan={5} style={{ padding: "0 8px 7px 8px",
                     borderBottom: `1px solid ${S.border}` }}>
@@ -497,6 +505,51 @@ export default function EingangsrechnungWidget({ widget }) {
                         <span>{m}</span>
                       </div>
                     ))}
+                    {/* Der Wortlaut aus dem Beleg, aufklappbar. Er entscheidet
+                        Fälle, die aus den ausgelesenen Feldern allein nicht zu
+                        entscheiden sind: die Atlas-Rechnung führt Größen als
+                        Spalten, die Menge steht unter ihrer Größe. Erst mit
+                        Spaltenkopf wird aus "23200" das Teil "23200-46". */}
+                    {belegtext && (
+                      <div style={{ marginTop: meldungen.length ? 4 : 0 }}>
+                        <button
+                          onClick={() => setBelegOffen(o => ({ ...o, [i]: !o[i] }))}
+                          style={{ display: "flex", alignItems: "center", gap: 3,
+                            background: "none", border: "none", padding: 0,
+                            color: S.textDim, cursor: "pointer", fontSize: 10 }}>
+                          {belegAuf ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+                          So steht es im Beleg
+                        </button>
+                        {belegAuf && (
+                          <div style={{ marginTop: 4, background: S.bgEl,
+                            border: `1px solid ${S.border}`, borderRadius: 6,
+                            padding: "7px 9px", overflowX: "auto" }}>
+                            <pre style={{ margin: 0, fontSize: 10, lineHeight: 1.5,
+                              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                              whiteSpace: "pre", color: S.textMain }}>
+                              {kopf?.belegtabellenkopf
+                                ? <span style={{ color: S.textDim }}>
+                                    {kopf.belegtabellenkopf + "\n"}</span>
+                                : null}
+                              {belegtext}
+                            </pre>
+                            <div style={{ marginTop: 6, paddingTop: 5,
+                              borderTop: `1px solid ${S.border}`, fontSize: 10,
+                              color: S.textDim, lineHeight: 1.6 }}>
+                              Daraus gelesen: {num(p.fMenge)} × {num(p.fEKNetto).toFixed(2)} €
+                              {" "}= {(num(p.fMenge) * num(p.fEKNetto)).toFixed(2)} € netto
+                              {" · "}{num(p.fMwSt).toFixed(0)} % MwSt
+                              {p.cEinheit ? ` · Einheit ${p.cEinheit}` : ""}
+                              {p.cLieferantenArtNr ? ` · Nummer im Beleg ${p.cLieferantenArtNr}` : ""}
+                              {p.cArtNr ? ` · unser Artikel ${p.cArtNr}` : " · kein eigener Artikel zugeordnet"}
+                              {p.kLieferantenBestellungPos
+                                ? ` · Bestellposition ${p.kLieferantenBestellungPos}`
+                                : ""}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </td>
                 </tr>
               )}
@@ -606,6 +659,44 @@ export default function EingangsrechnungWidget({ widget }) {
           </table>
         </div>
       )}
+
+      {/* Die beiden Haken, die JTL beim Erfassen einer Eingangsrechnung anbietet.
+          Beide starten AUS und sind bewusst abgesetzt: sie schreiben keinen
+          Beleg, sondern nehmen ihn kaufmännisch ab. */}
+      <div style={{ marginTop: 14, background: "rgba(234,179,8,0.09)",
+        border: "1px solid rgba(234,179,8,0.4)", borderRadius: 8, padding: "10px 12px" }}>
+        <div style={{ display: "flex", gap: 6, color: "#eab308", fontSize: 11,
+          fontWeight: 600, marginBottom: 7 }}>
+          <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
+          Kaufmännische Abnahme – im Zweifel in der Warenwirtschaft
+        </div>
+        <div style={{ fontSize: 11, color: S.textMain, lineHeight: 1.55, marginBottom: 9 }}>
+          Der Import legt die Rechnung an; ob sie verbucht und zur Zahlung
+          freigegeben wird, ist eine Entscheidung mit Geldfolgen. Sie lässt sich
+          besser in der JTL-Wawi treffen, wo der Beleg im Zusammenhang mit
+          Bestellung und Wareneingang geprüft und von einer zweiten Person
+          abgenommen werden kann. Ohne Haken wird die Rechnung als
+          <b> nicht verbucht</b> angelegt und wartet dort auf ihre Freigabe.
+        </div>
+        {[
+          ["verbuchen", "Verbuchen",
+           "Setzt den Beleg in JTL auf „verbucht“. Ohne das bleibt er auf „nicht verbucht“ stehen – auch dann noch, wenn er längst bezahlt ist."],
+          ["zahlung_freigeben", "Zur Zahlung freigeben",
+           "Kennzeichnet die Rechnung als zur Zahlung freigegeben."],
+        ].map(([feld, label, hilfe]) => (
+          <label key={feld} style={{ display: "flex", gap: 8, alignItems: "flex-start",
+            marginTop: 7, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!kopf?.[feld]}
+              onChange={e => setKopf(k => ({ ...k, [feld]: e.target.checked }))}
+              style={{ marginTop: 2, flexShrink: 0, accentColor: "#eab308" }} />
+            <span>
+              <span style={{ fontSize: 11, color: S.textBright, fontWeight: 600 }}>{label}</span>
+              <span style={{ display: "block", fontSize: 10, color: S.textDim,
+                lineHeight: 1.5 }}>{hilfe}</span>
+            </span>
+          </label>
+        ))}
+      </div>
 
       {/* Warnungen */}
       {plan.warnings?.length > 0 && (
