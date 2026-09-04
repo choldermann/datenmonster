@@ -28,6 +28,8 @@ const WIDGET_TYPES = [
     desc: "Anteile als Kuchen- oder Donut-Diagramm" },
   { type: "eingangsrechnung", label: "Eingangsrechnungs-Freigabe", Icon: Receipt, color: "#f0abfc",
     desc: "E-Rechnung (ZUGFeRD/XRechnung) hochladen, prüfen und nach JTL verbuchen" },
+  { type: "debitoren", label: "Debitorennummern nachpflegen", Icon: Receipt, color: "#a3e635",
+    desc: "Kunden ohne Debitorennummer auflisten und die Nummer per Häkchen in die Wawi schreiben" },
   { type: "ai_summary", label: "KI-Analyse", Icon: Sparkles, color: "#38bdf8",
     desc: "KI formuliert aus dem Ergebnis der Action eine kurze Management-Zusammenfassung" },
   { type: "alerts", label: "Unternehmenswarnungen", Icon: ShieldAlert, color: "#fb923c",
@@ -96,7 +98,7 @@ function WidgetConfig({ widget, actions, onUpdate }) {
 
   const [connections, setConnections] = useState([]);
   useEffect(() => {
-    if (widget.type !== "eingangsrechnung") return;
+    if (widget.type !== "eingangsrechnung" && widget.type !== "debitoren") return;
     api.get("/api/connections/")
       .then(r => setConnections((r.data || []).filter(c => c.db_type === "mssql")))
       .catch(() => {});

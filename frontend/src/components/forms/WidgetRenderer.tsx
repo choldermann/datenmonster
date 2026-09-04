@@ -9,6 +9,7 @@ import BarWidget   from "./widgets/BarWidget";
 import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
+import DebitorenWidget from "./widgets/DebitorenWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
 import HerstellerNavigator from "./widgets/HerstellerNavigator";
 import KostenWidget from "./widgets/KostenWidget";
@@ -26,6 +27,7 @@ const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
   line: "Liniendiagramm", pie: "Kreisdiagramm",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
+  debitoren: "Debitorennummern nachpflegen",
   kostenstruktur: "Kostenstruktur", preisautomatik: "Preisautomatik",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
 };
@@ -33,11 +35,15 @@ const WIDGET_LABELS = {
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research",
-                                                "kostenstruktur", "preisautomatik"]);
+                                                "kostenstruktur", "preisautomatik",
+                                                "debitoren"]);
 
-function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId }) {
+function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, baseParams }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
+  // Braucht Jahr/Monat aus dem Formular – deshalb baseParams.
+  if (widget.type === "debitoren")
+    return <DebitorenWidget widget={widget} baseParams={baseParams} />;
   if (widget.type === "ean_research") return <EanResearchWidget widget={widget} />;
   // Bearbeitbar rendern und das Backend entscheiden lassen: require_editor weist
   // einen Portal-Nutzer beim Speichern ab, die Anzeige bleibt für alle gleich.
@@ -222,7 +228,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
+                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} baseParams={baseParams} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
               </div>
             );
           })}

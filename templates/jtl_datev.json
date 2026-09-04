@@ -1101,6 +1101,13 @@
       ]
      },
      {
+      "id": "tab_pflege",
+      "label": "Konten nachpflegen",
+      "action_ids": [
+       "w_pflege"
+      ]
+     },
+     {
       "id": "tab_er",
       "label": "Eingangsrechnungen",
       "action_ids": [
@@ -1115,7 +1122,18 @@
       ]
      }
     ],
-    "widgets": [],
+    "widgets": [
+     {
+      "id": "w_debitoren",
+      "type": "debitoren",
+      "action_id": "w_pflege",
+      "title": "Debitorennummern nachpflegen",
+      "colSpan": 12,
+      "config": {
+       "connection_id": "{{connection_jtl}}"
+      }
+     }
+    ],
     "layout": {}
    },
    "portal_config": {}
