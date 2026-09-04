@@ -236,13 +236,23 @@ SYSTEM = (
     "6. positionen sind nur die gelieferten Waren, jede Zeile GENAU EINMAL. Fracht, "
     "Zuschläge, Rabatte, Skonto und Pfand gehören NICHT zu den Positionen, sondern "
     "unter zusatzkosten (Rabatte und Gutschriften mit negativem Betrag).\n"
-    "7. Übernimm keine Zwischensummen, Übertragszeilen oder Wiederholungen aus "
-    "einem Seitenkopf als Position. Zeilen mit Betrag 0,00 (etwa 'Freight: 0,00') "
-    "gehören nirgendwohin – weglassen.\n"
-    "8. menge mal einzelpreisNetto muss den Zeilenbetrag der Rechnung ergeben. "
+    "7. Eine Position ist NUR eine Zeile mit eigenem Zeilenbetrag ganz rechts. "
+    "Artikelbeschreibungen laufen oft über mehrere Zeilen weiter; solche "
+    "Fortsetzungszeilen gehören zur Position darüber, auch wenn am Zeilenanfang "
+    "eine Zahl steht (Positionsnummer, Verpackungseinheit, interne Nummer). Lege "
+    "dafür KEINE zweite Position an. Ebenso wenig für Zwischensummen, "
+    "Übertragszeilen, Seitenkopf-Wiederholungen oder Zeilen mit Betrag 0,00.\n"
+    "8. Prüfe zum Schluss: die Summe deiner Positionen plus der Zusatzkosten muss "
+    "die Nettosumme der Rechnung ergeben. Stimmt das nicht, hast du eine Zeile "
+    "doppelt gezählt oder eine Fortsetzungszeile als Position genommen.\n"
+    "9. menge mal einzelpreisNetto muss den Zeilenbetrag der Rechnung ergeben. "
     "Rechnet der Lieferant je Gebinde ab (z. B. '24 Kartons à 20,80'), nimm dessen "
     "Menge und dessen Preis – nicht die Stückzahl im Karton.\n"
-    "9. Die mitgelieferte Bestellung ist die Vorlage: passt eine Rechnungszeile "
+    "10. Der Prozentsatz NEBEN einem Zuschlag ist dessen eigener Satz (z. B. "
+    "'LOGISTIKZUSCHLAG 4,70 % 4,41'), NICHT die Mehrwertsteuer. Zusatzkosten "
+    "tragen denselben Mehrwertsteuersatz wie die Ware, solange die Rechnung nicht "
+    "ausdrücklich einen anderen ausweist.\n"
+    "11. Die mitgelieferte Bestellung ist die Vorlage: passt eine Rechnungszeile "
     "dazu, übernimm deren Artikelnummer unverändert. Erfinde keine Artikelnummer "
     "und übertrage keine Menge oder Preise aus der Bestellung, die nicht auf der "
     "Rechnung stehen."
@@ -387,6 +397,34 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             betrag=abs(betrag), fMwSt=_zahl(z.get("mwstProzent")),
             ist_zuschlag=betrag > 0))
 
+    # Steuersatz der Zusatzkosten notfalls aus der Rechnungssumme herleiten.
+    # Kein Raten: es wird nur übernommen, wenn die vom Lieferanten selbst
+    # ausgewiesene Endsumme damit exakt aufgeht. Anlass war ein Zuschlag, neben
+    # dem „4,70 %" stand – dessen eigener Satz, nicht die Steuer; ausgelesen
+    # wurden 0 %, und der Beleg fehlte um genau die 19 % darauf.
+    hinweise: list[str] = []
+    brutto_rechnung = _zahl(antwort.get("bruttoSumme"))
+    if zusatz and brutto_rechnung:
+        def brutto_mit(zk_saetze: list[float]) -> float:
+            w = sum(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100) for p in positionen)
+            for z, satz in zip(zusatz, zk_saetze):
+                w += (z.betrag if z.ist_zuschlag else -z.betrag) * (1 + satz / 100)
+            return round(w, 2)
+        ist = [z.fMwSt for z in zusatz]
+        if abs(brutto_mit(ist) - brutto_rechnung) >= 0.02:
+            saetze = {p.fMwSt for p in positionen if p.fMwSt}
+            if len(saetze) == 1:
+                waren_satz = saetze.pop()
+                versuch = [waren_satz if not z.fMwSt else z.fMwSt for z in zusatz]
+                if abs(brutto_mit(versuch) - brutto_rechnung) < 0.02:
+                    for z, satz in zip(zusatz, versuch):
+                        z.fMwSt = satz
+                    hinweise.append(
+                        f"Der Steuersatz der Zusatzkosten war nicht ablesbar. Mit "
+                        f"{waren_satz:g} % (dem Satz der Ware) geht die vom Lieferanten "
+                        f"ausgewiesene Endsumme {brutto_rechnung:.2f} exakt auf – "
+                        f"deshalb übernommen. Bitte am Beleg gegenprüfen.")
+
     belegdatum = _datum(antwort.get("belegdatum"))
     if belegdatum is None:
         raise ERechnungParseError(
@@ -404,6 +442,7 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         kLieferant=bestellung["kLieferant"] if bestellung else None,
         bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
         quelle="pdf_ki",
+        leser_hinweise=hinweise,
     )
     if not kopf.cFremdbelegnummer:
         raise ERechnungParseError(

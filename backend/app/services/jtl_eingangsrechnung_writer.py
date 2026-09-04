@@ -112,6 +112,9 @@ class ERKopfInput:
     # fehlt, bei der KI-Auslesung kann er plausibel aussehen und falsch sein.
     # Deshalb reist die Herkunft bis in die Freigabe mit.
     quelle: str = "e-rechnung"
+    # Anmerkungen des Auslesers zu Stellen, an denen er nachbessern musste –
+    # gehören dem Menschen vor die Augen, nicht in die Datenbank.
+    leser_hinweise: list[str] = field(default_factory=list)
 
 
 # ── Ergebnis-Strukturen ─────────────────────────────────────────────────────────
@@ -809,6 +812,8 @@ class EingangsrechnungWriter:
                         "_kandidaten": m.get("kandidaten", []),
                     })
 
+                for h in (kopf.leser_hinweise or []):
+                    plan.warnings.append(h)
                 if kopf.quelle == "pdf_ki":
                     plan.warnings.append(
                         "Diese Rechnung wurde aus einem PDF ausgelesen, nicht aus "
