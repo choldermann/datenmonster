@@ -766,6 +766,20 @@ class EingangsrechnungWriter:
                     if m["kLieferantenBestellungPos"]:
                         used_pos_ids.add(m["kLieferantenBestellungPos"])
 
+                    # Eigene Artikelnummer immer aus dem Artikelstamm holen, sobald
+                    # kArtikel feststeht. Lieferanten drucken ihre eigene Nummer
+                    # ("SI-ART.9000472"), unsere heißt "9000472" – und wer den
+                    # Artikel im Formular von Hand zuordnet, korrigiert die Nummer
+                    # dabei nicht mit. Ohne diesen Schritt stand in der Wawi eine
+                    # eigene Artikelnummer, die es gar nicht gibt. Die gelesene
+                    # Nummer bleibt in cLieferantenArtNr, wo sie hingehört.
+                    kanonisch = None
+                    if kArtikel:
+                        r = conn.execute(text(
+                            "SELECT cArtNr FROM dbo.tArtikel WHERE kArtikel = :k"),
+                            {"k": kArtikel}).first()
+                        kanonisch = r[0] if r else None
+
                     # Status bestimmen
                     if ov.get("platzhalter"):
                         status = "platzhalter"
@@ -794,7 +808,7 @@ class EingangsrechnungWriter:
                         "kEingangsrechnung": "«SCOPE_IDENTITY()»",
                         "kLieferantenbestellung": m["kLieferantenbestellung"],
                         "kArtikel": kArtikel,
-                        "cArtNr": ares["cArtNr"] or pos.cArtNr or "",
+                        "cArtNr": kanonisch or ares["cArtNr"] or pos.cArtNr or "",
                         "cLieferantenArtNr": pos.cLieferantenArtNr or "",
                         "cName": pos.cName,
                         "cLieferantenBezeichnung": pos.cLieferantenBezeichnung or pos.cName,
