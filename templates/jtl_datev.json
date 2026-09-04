@@ -880,37 +880,37 @@
      {
       "id": "a_pruef",
       "type": "run_mapping",
-      "mapping_id": "{{mapping_pruef}}",
+      "mapping_id": "mapping_pruef",
       "label": "Kontrolle"
      },
      {
       "id": "a_er",
       "type": "run_mapping",
-      "mapping_id": "{{mapping_er}}",
+      "mapping_id": "mapping_er",
       "label": "Eingangsrechnungen"
      },
      {
       "id": "a_ar",
       "type": "run_mapping",
-      "mapping_id": "{{mapping_ar}}",
+      "mapping_id": "mapping_ar",
       "label": "Ausgangsrechnungen"
      },
      {
       "id": "a_export_er",
       "type": "export_mapping",
-      "mapping_id": "{{mapping_er}}",
+      "mapping_id": "mapping_er",
       "label": "DATEV-Stapel Eingangsrechnungen"
      },
      {
       "id": "a_export_ar",
       "type": "export_mapping",
-      "mapping_id": "{{mapping_ar}}",
+      "mapping_id": "mapping_ar",
       "label": "DATEV-Stapel Ausgangsrechnungen"
      },
      {
       "id": "a_export_alt",
       "type": "export_mapping",
-      "mapping_id": "{{mapping_er_alt}}",
+      "mapping_id": "mapping_er_alt",
       "label": "Reporting-CSV wie bisher"
      }
     ],
