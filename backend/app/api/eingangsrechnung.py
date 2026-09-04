@@ -85,13 +85,25 @@ async def plan(
     data = await file.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Datei zu groß")
+    # Zuerst der exakte Weg: strukturierte E-Rechnung (ZUGFeRD/Factur-X, XRechnung).
+    # Erst wenn die Datei keine ist, wird das PDF ausgelesen – in dieser
+    # Reihenfolge, weil strukturierte Daten stimmen und die Auslesung nur schätzt.
+    befund = None
     try:
         kopf = parse_erechnung(data, file.filename or "")
-    except ERechnungParseError as e:
-        raise HTTPException(422, f"E-Rechnung nicht lesbar: {e}")
+    except ERechnungParseError as struktur_fehler:
+        if not data[:5] == b"%PDF-":
+            raise HTTPException(422, f"E-Rechnung nicht lesbar: {struktur_fehler}")
+        from app.services.pdf_rechnung_leser import lese_pdf_rechnung
+        try:
+            kopf, befund = await lese_pdf_rechnung(
+                data, file.filename or "", connection_id, db)
+        except ERechnungParseError as pdf_fehler:
+            raise HTTPException(
+                422, f"Weder E-Rechnung noch lesbares PDF: {pdf_fehler}")
     ov = json.loads(overrides) if overrides else None
     p = _writer(connection_id).build_plan(kopf, dry_run=True, overrides=ov)
-    return {"kopf": serialize_kopf(kopf), "plan": p.to_dict()}
+    return {"kopf": serialize_kopf(kopf), "plan": p.to_dict(), "befund": befund}
 
 
 @router.post("/replan")

@@ -106,6 +106,12 @@ class ERKopfInput:
     cFax: Optional[str] = None
     # Bestellreferenz auf Kopfebene (gilt für alle Positionen ohne eigene Referenz)
     bestellnummer: Optional[str] = None
+    # Woher die Daten stammen: "e-rechnung" = strukturiert aus ZUGFeRD/XRechnung
+    # (exakt), "pdf_ki" = aus einem gewöhnlichen PDF ausgelesen. Der Unterschied
+    # ist keine Kleinigkeit: bei einer E-Rechnung ist ein Wert richtig oder er
+    # fehlt, bei der KI-Auslesung kann er plausibel aussehen und falsch sein.
+    # Deshalb reist die Herkunft bis in die Freigabe mit.
+    quelle: str = "e-rechnung"
 
 
 # ── Ergebnis-Strukturen ─────────────────────────────────────────────────────────
@@ -781,6 +787,13 @@ class EingangsrechnungWriter:
                         "_artikel_quelle": artikel_quelle,
                         "_kandidaten": m.get("kandidaten", []),
                     })
+
+                if kopf.quelle == "pdf_ki":
+                    plan.warnings.append(
+                        "Diese Rechnung wurde aus einem PDF ausgelesen, nicht aus "
+                        "strukturierten E-Rechnungsdaten. Beträge und Mengen bitte "
+                        "gegen das PDF prüfen – die Summenkontrolle findet Fehler "
+                        "nur, wenn sie sich in der Summe auswirken.")
 
                 # Zusatzkosten auf die Positionen verteilen (braucht die fertigen
                 # Positionen, muss also nach der Positionsschleife laufen)
