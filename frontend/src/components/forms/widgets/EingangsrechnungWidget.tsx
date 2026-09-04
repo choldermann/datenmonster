@@ -118,6 +118,18 @@ export default function EingangsrechnungWidget({ widget }) {
     setOverrides(next); replan(next);
   }
 
+  // Zusatzkosten einer Kostenart dieser Wawi zuordnen. Eigener Schlüssel, weil
+  // die übrigen Overrides nach Positionsindex gehen – die Kostenarten hängen
+  // aber an den Zusatzkostenzeilen, nicht an den Positionen.
+  function setKostenart(index, kZusatzkosten) {
+    const cur = overrides.zusatzkosten_arten || {};
+    const arten = { ...cur };
+    if (kZusatzkosten) arten[index] = Number(kZusatzkosten);
+    else delete arten[index];
+    const next = { ...overrides, zusatzkosten_arten: arten };
+    setOverrides(next); replan(next);
+  }
+
   async function freigeben() {
     setWriting(true); setError(null);
     try {
@@ -288,14 +300,52 @@ export default function EingangsrechnungWidget({ widget }) {
         </tbody>
       </table>
 
-      {/* Zusatzkosten */}
+      {/* Zusatzkosten – je Zeile die Kostenart dieser Wawi zuordnen.
+          Die Kostenarten-IDs sind installationsspezifisch, deshalb wird nichts
+          geraten: erkennt der Server den Namen nicht, muss hier gewählt werden. */}
       {plan.zusatzkosten?.length > 0 && (
-        <div style={{ marginTop: 10, fontSize: 11, color: S.textDim }}>
-          <b style={{ color: S.textMain }}>Zusatzkosten:</b>{" "}
-          {plan.zusatzkosten.map((z, k) => (
-            <span key={k}>{k > 0 ? " · " : ""}{z.ist_zuschlag ? "+" : "−"}{z.cName} {num(z.betrag).toFixed(2)}</span>
-          ))}
-          <span style={{ color: "#e0a070" }}> (Buchung als Zusatzkosten folgt – aktuell nur informativ)</span>
+        <div style={{ marginTop: 10, fontSize: 11 }}>
+          <b style={{ color: S.textMain }}>Zusatzkosten:</b>
+          <table style={{ width: "100%", marginTop: 4, borderCollapse: "collapse" }}>
+            <tbody>
+              {plan.zusatzkosten.map((z, k) => (
+                <tr key={k}>
+                  <td style={{ padding: "3px 6px 3px 0", color: S.textDim }}>
+                    {z.ist_zuschlag ? "+" : "−"}{z.cName}
+                  </td>
+                  <td style={{ padding: "3px 6px", color: S.textMain, textAlign: "right",
+                               whiteSpace: "nowrap" }}>
+                    {num(z.betrag).toFixed(2)} €
+                    <span style={{ color: S.textDim }}> ({num(z.fMwSt).toFixed(0)} %)</span>
+                  </td>
+                  <td style={{ padding: "3px 0" }}>
+                    <select value={z.kZusatzkosten || ""}
+                      onChange={e => setKostenart(k, e.target.value)}
+                      style={{ background: S.bgEl, color: S.textMain, borderRadius: 6,
+                        fontSize: 11, padding: "3px 6px",
+                        border: `1px solid ${z.kZusatzkosten ? S.border : "#e0a070"}` }}>
+                      <option value="">— Kostenart wählen —</option>
+                      {(plan.kostenarten || []).map(a => (
+                        <option key={a.kZusatzkosten} value={a.kZusatzkosten}>{a.cName}</option>
+                      ))}
+                    </select>
+                    {z.kostenart_quelle && (
+                      <span style={{ marginLeft: 6, color: S.textDim }}>{z.kostenart_quelle}</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {plan.zusatzkosten_zeilen?.length > 0 && (
+            <div style={{ marginTop: 4, color: S.textDim }}>
+              wird mengenproportional auf die Artikelzeilen verteilt
+              {" – "}
+              {plan.zusatzkosten_zeilen
+                .filter(zk => num(zk.dWert) !== 0)
+                .map(zk => num(zk.dWert).toFixed(2)).join(" · ")} €
+            </div>
+          )}
         </div>
       )}
 

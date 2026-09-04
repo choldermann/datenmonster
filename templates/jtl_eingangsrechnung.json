@@ -4,7 +4,7 @@
   "template_name": "JTL Eingangsrechnungs-Import (ZUGFeRD/XRechnung)",
   "description": "Eingangsrechnungen als E-Rechnung einlesen, gegen die Lieferantenbestellung matchen, im Vier-Augen-Prinzip freigeben und direkt in die JTL-Wawi schreiben. Liest ZUGFeRD/Factur-X (PDF/A-3 mit CII-XML) und XRechnung (UBL). DB-Verbindung beim Installieren wählen.",
   "category": "jtl",
-  "version": "1.0",
+  "version": "1.1",
   "author": "christof",
   "hinweise": [
     "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert.",
@@ -14,7 +14,8 @@
     "Erkennt das Programm, dass die vorgeschlagene Bestellposition bereits vollständig berechnet ist, warnt es – das ist die eingebaute Doppelrechnungs-Erkennung. Diese Warnung nicht wegklicken, ohne sie geprüft zu haben.",
     "Mit 'Zuordnung merken' wird eine von Hand gesetzte Artikelzuordnung nach tliefartikel zurückgeschrieben und beim nächsten Mal automatisch gefunden.",
     "Für Portal-Benutzer: Formular veröffentlichen und die Benutzer unter 'allowed_users' freischalten. Ohne veröffentlichtes Formular meldet das Widget 'Kein Zugriff auf diese Verbindung' – das ist die Absicherung, damit ein Portal-Konto nicht in eine fremde Wawi schreiben kann.",
-    "Noch nicht enthalten: Zusatzkosten (Fracht, Zuschläge) werden erkannt und ausgewiesen, aber noch nicht in die JTL-Zusatzkostentabelle geschrieben. Solange blockiert die Freigabe solche Rechnungen bewusst – sonst stünde die Rechnung um den Frachtbetrag zu niedrig in der Wawi und der offene Posten wäre falsch. Diese Rechnungen bitte vorerst von Hand erfassen.",
+    "Zusatzkosten (Fracht, Zuschläge, Rabatte) werden übernommen: Der Betrag wird der passenden Kostenart dieser Wawi zugeordnet (Einkauf → Eingangsrechnungen → Zusatzkosten definieren) und mengenproportional auf die Artikelzeilen verteilt – genau so, wie JTL es selbst macht. Erkennt das Programm den Namen aus der Rechnung nicht, muss die Kostenart im Formular gewählt werden; geraten wird nie, weil dieselbe Nummer je Installation etwas anderes bedeutet.",
+    "Die Rechnung wird bewusst UNVERBUCHT angelegt (nStatus = 0). Das Verbuchen bleibt eine Handlung in JTL – und erst dabei rechnet JTL die Fracht in den durchschnittlichen Netto-EK der Artikel ein. Wir fassen die Bewertung also nicht selbst an.",
     "Noch nicht enthalten: Steuerschlüssel werden als Prozentsatz übernommen, nicht als JTL-Steuerschlüssel gemappt."
   ],
   "config_required": [

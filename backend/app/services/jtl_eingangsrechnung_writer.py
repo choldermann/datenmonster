@@ -114,6 +114,8 @@ class ERWritePlan:
     positionen: list[dict] = field(default_factory=list)   # je Pos: Spalte → Wert (+ _match-Info)
     statements: list[str] = field(default_factory=list)    # parametrisiertes SQL (Anzeige)
     zusatzkosten: list[dict] = field(default_factory=list)  # Fracht/Zuschläge (Dokumentebene)
+    kostenarten: list[dict] = field(default_factory=list)   # Katalog dieser Wawi (fürs Zuordnen)
+    zusatzkosten_zeilen: list[dict] = field(default_factory=list)  # verteilt, je Position
     summen: dict = field(default_factory=dict)             # {rechnung_*, berechnet_*, differenz}
     reconciliation_ok: Optional[bool] = None               # Summen-Abgleich bestanden?
     # nach echtem Write gefüllt:
@@ -183,8 +185,17 @@ class ERWritePlan:
             L.append("\nZusatzkosten (Fracht/Zuschläge):")
             for z in self.zusatzkosten:
                 vz = "＋" if z.get("ist_zuschlag", True) else "－"
+                art = (f"→ Kostenart „{z['kostenart']}“ ({z.get('kostenart_quelle')})"
+                       if z.get("kostenart") else "→ KEINE Kostenart zugeordnet")
                 L.append(f"    {vz} {z['cName']}: {z['betrag']:.2f} (MwSt {z.get('fMwSt',0)}%) "
-                         f"[{z.get('quelle')}]")
+                         f"[{z.get('quelle')}] {art}")
+        if self.zusatzkosten_zeilen:
+            L.append("\nVerteilung auf die Positionen (mengenproportional):")
+            for zk in self.zusatzkosten_zeilen:
+                pos = (self.positionen[zk["_zeile"]].get("cName")
+                       if zk["_zeile"] < len(self.positionen) else "?")
+                L.append(f"    Kostenart {zk['kZusatzkosten']} → {pos}: "
+                         f"{zk['dWert']} (MwSt {zk['fMwst']}%)")
         if self.summen:
             s = self.summen
             amp = "✅" if self.reconciliation_ok else "❌"
@@ -392,17 +403,156 @@ class EingangsrechnungWriter:
         except Exception as e:  # SP-Aufruf im Read-Kontext soll den Dry-Run nicht killen
             return f"(nicht peekbar: {str(e)[:80]})"
 
+    def kostenarten(self, conn=None) -> list[dict]:
+        """Der Zusatzkosten-Katalog dieser Wawi.
+
+        Die Kostenarten sind Stammdaten, die der Anwender in JTL selbst pflegt
+        (Einkauf → Eingangsrechnungen → Zusatzkosten definieren). **Die IDs sind
+        installationsspezifisch:** kZusatzkosten 2 heißt bei einem Kunden
+        „Frachtkosten", beim nächsten „Gefahrgutzuschlag". Deshalb wird niemals
+        eine ID geraten – wir lösen über den Namen auf und lassen den Anwender
+        zuordnen, wenn das nicht eindeutig gelingt.
+
+        `nPreis = 1` heißt „Beeinflusst Gesamtsumme", `nGLD = 1` „Beeinflusst
+        durchschnittlichen Netto-EK".
+        """
+        sql = text("SELECT kZusatzkosten, cName, nGLD, nPreis "
+                   "FROM dbo.tEingangsrechnungZusatzkosten ORDER BY cName")
+        if conn is not None:
+            rows = conn.execute(sql).fetchall()
+        else:
+            with self._engine.connect() as c:
+                rows = c.execute(sql).fetchall()
+        return [{"kZusatzkosten": int(r[0]), "cName": r[1] or "",
+                 "nGLD": int(r[2] or 0), "nPreis": int(r[3] or 0)} for r in rows]
+
+    @staticmethod
+    def _match_kostenart(katalog: list[dict], name: str) -> Optional[dict]:
+        """Kostenart über den Namen finden – exakt, sonst normalisiert."""
+        if not name:
+            return None
+        def norm(s):
+            return "".join(ch for ch in (s or "").lower() if ch.isalnum())
+        gesucht = norm(name)
+        for k in katalog:
+            if (k["cName"] or "").strip().lower() == name.strip().lower():
+                return k
+        treffer = [k for k in katalog if norm(k["cName"]) == gesucht]
+        return treffer[0] if len(treffer) == 1 else None
+
+    @staticmethod
+    def _verteile(betrag: float, positionen: list[dict]) -> dict[int, float]:
+        """Einen Zusatzkostenbetrag mengenproportional auf die Positionen verteilen.
+
+        So macht es JTL (am Golden Master nachgemessen): Grundlage sind **nur die
+        Artikelzeilen** (`nPosTyp = 1`) und deren Menge. Nicht-Artikelzeilen (Skonto,
+        `nPosTyp = 2`) bekommen zwar eine Zeile, aber den Wert 0.
+
+        Der Rundungsrest landet auf der letzten Artikelzeile, damit die Summe der
+        Einzelbeträge **exakt** dem Dokumentbetrag entspricht – daran hängen
+        Rechnungswert und offener Posten (JTL summiert die Einzelwerte, den
+        Dokumentbetrag speichert es nirgends).
+        """
+        artikel = [i for i, p in enumerate(positionen) if p.get("nPosTyp") == 1]
+        anteile = {i: 0.0 for i in range(len(positionen))}
+        gesamt_menge = sum(float(positionen[i]["fMenge"]) for i in artikel)
+        if not artikel or gesamt_menge == 0:
+            return anteile
+        rest = round(betrag, 4)
+        for i in artikel[:-1]:
+            teil = round(betrag * float(positionen[i]["fMenge"]) / gesamt_menge, 4)
+            anteile[i] = teil
+            rest = round(rest - teil, 4)
+        anteile[artikel[-1]] = rest
+        return anteile
+
+    def _plane_zusatzkosten(self, conn, plan: ERWritePlan, arten_override: dict) -> None:
+        """Aus den Zusatzkosten der Rechnung die DB-Zeilen planen.
+
+        Mehrere Rechnungszeilen können auf dieselbe Kostenart fallen (zweimal
+        Fracht). Der Primärschlüssel von tEingangsrechnungPosZusatzkosten ist
+        (kZusatzkosten, kEingangsrechnungPos) – pro Position also **eine** Zeile je
+        Kostenart. Deshalb wird vor dem Verteilen je Kostenart summiert, sonst
+        liefe der zweite INSERT in einen Schlüsselkonflikt.
+        """
+        if not plan.zusatzkosten:
+            return
+        katalog = self.kostenarten(conn)
+        plan.kostenarten = katalog
+        if not katalog:
+            plan.errors.append(
+                "Diese Wawi hat keine Zusatzkostenarten angelegt (Einkauf → "
+                "Eingangsrechnungen → Zusatzkosten definieren). Ohne Kostenart "
+                "können Fracht/Zuschläge nicht gebucht werden.")
+            return
+
+        # Kostenart je Rechnungszeile bestimmen: Zuordnung des Anwenders geht vor.
+        gruppen: dict[int, float] = {}
+        for idx, z in enumerate(plan.zusatzkosten):
+            manuell = arten_override.get(idx, arten_override.get(str(idx)))
+            art = next((k for k in katalog if k["kZusatzkosten"] == int(manuell)), None) \
+                if manuell else self._match_kostenart(katalog, z.get("cName", ""))
+            z["kZusatzkosten"] = art["kZusatzkosten"] if art else None
+            z["kostenart"] = art["cName"] if art else None
+            z["kostenart_quelle"] = ("manuell zugeordnet" if manuell
+                                     else ("über Namen erkannt" if art else None))
+            if art is None:
+                z["status"] = "unmapped"
+                plan.errors.append(
+                    f"Zusatzkosten „{z.get('cName') or '(ohne Name)'}“ "
+                    f"({float(z['betrag']):.2f}) lassen sich keiner Kostenart dieser "
+                    f"Wawi zuordnen – bitte zuordnen. Vorhanden: "
+                    + ", ".join(k["cName"] for k in katalog))
+                continue
+            if not art["nPreis"]:
+                plan.warnings.append(
+                    f"Kostenart „{art['cName']}“ ist in JTL auf „Beeinflusst "
+                    f"Gesamtsumme: Nein“ gestellt – der Betrag zählt dort nicht in "
+                    f"Rechnungswert und offenen Posten.")
+            vorzeichen = 1.0 if z.get("ist_zuschlag", True) else -1.0
+            gruppen[art["kZusatzkosten"]] = round(
+                gruppen.get(art["kZusatzkosten"], 0.0) + vorzeichen * float(z["betrag"]), 4)
+
+        # Verteilen und Zeilen bauen. JTL legt für JEDE Position eine Zeile an,
+        # auch mit Wert 0 (am Golden Master gesehen) – das machen wir nach.
+        for kZusatz, betrag in sorted(gruppen.items()):
+            anteile = self._verteile(betrag, plan.positionen)
+            mwst = next((float(z.get("fMwSt") or 0) for z in plan.zusatzkosten
+                         if z.get("kZusatzkosten") == kZusatz), 0.0)
+            for i, pos in enumerate(plan.positionen):
+                plan.zusatzkosten_zeilen.append({
+                    "kZusatzkosten": kZusatz,
+                    "_zeile": i,                      # Index der Position im Plan
+                    "dWert": round(anteile[i], 4),
+                    "fFremdFaktor": 1.0,
+                    "cWaehrungISO": "EUR",
+                    "fMwst": mwst,
+                })
+
     def _reconcile(self, kopf: ERKopfInput, plan: ERWritePlan) -> None:
         """Summen-Abgleich: berechnete Summe (Pos + Zusatzkosten) vs. Rechnungssumme."""
         if kopf.bruttoSumme is None and kopf.nettoSumme is None:
             return  # keine Rechnungssumme geliefert → kein Gate
         netto_pos = sum(float(p["fMenge"]) * float(p["fEKNetto"]) for p in plan.positionen)
-        netto_zk = sum((z["betrag"] if z.get("ist_zuschlag", True) else -z["betrag"])
-                       for z in plan.zusatzkosten)
         steuer = sum(float(p["fMenge"]) * float(p["fEKNetto"]) * float(p["fMwSt"]) / 100.0
                      for p in plan.positionen)
-        steuer += sum((z["betrag"] if z.get("ist_zuschlag", True) else -z["betrag"])
-                      * float(z.get("fMwSt", 0)) / 100.0 for z in plan.zusatzkosten)
+        # Zusatzkosten zählen genau so mit, wie JTL selbst rechnet: nur Kostenarten
+        # mit nPreis = 1 („Beeinflusst Gesamtsumme"). Nachzulesen in JTLs eigener
+        # Sicht Zahlungsabgleich.vOffenerPostenEingangsrechnung und in
+        # dbo.spEingangsrechnungStatusSetzen – dieselbe Summe treibt dort den
+        # offenen Posten. Solange eine Kostenart noch nicht zugeordnet ist, zählt
+        # sie hier mit (sonst schlüge der Abgleich mit einer irreführenden
+        # Differenz fehl statt mit der eigentlichen Ursache: der fehlenden
+        # Zuordnung, die den Write ohnehin blockiert).
+        zaehlt = {k["kZusatzkosten"] for k in plan.kostenarten if k["nPreis"]}
+        netto_zk = 0.0
+        for z in plan.zusatzkosten:
+            art = z.get("kZusatzkosten")
+            if art is not None and art not in zaehlt:
+                continue
+            betrag = z["betrag"] if z.get("ist_zuschlag", True) else -z["betrag"]
+            netto_zk += betrag
+            steuer += betrag * float(z.get("fMwSt", 0)) / 100.0
         netto_ber = round(netto_pos + netto_zk, 2)
         steuer_ber = round(steuer, 2)
         brutto_ber = round(netto_ber + steuer_ber, 2)
@@ -605,28 +755,13 @@ class EingangsrechnungWriter:
                         "_kandidaten": m.get("kandidaten", []),
                     })
 
+                # Zusatzkosten auf die Positionen verteilen (braucht die fertigen
+                # Positionen, muss also nach der Positionsschleife laufen)
+                self._plane_zusatzkosten(
+                    conn, plan, overrides.get("zusatzkosten_arten") or {})
+
                 # Summen-Abgleich (Gate) – Position + Zusatzkosten gegen Rechnungssumme
                 self._reconcile(kopf, plan)
-
-                # Zusatzkosten gehen noch nicht in die Datenbank (siehe _execute).
-                # Ohne diese Sperre wäre der Abgleich oben eine Falle: er rechnet
-                # die Zusatzkosten mit, die Prüfung geht auf, geschrieben werden
-                # aber nur die Positionen. In JTL stünde die Rechnung dann um den
-                # Frachtbetrag zu niedrig – und weil JTL den offenen Posten nach
-                # derselben Summe berechnet (Zahlungsabgleich.vOffenerPosten-
-                # Eingangsrechnung, spEingangsrechnungStatusSetzen), liefe auch der
-                # Zahlungsabgleich auf einen falschen Betrag. Lieber blockieren als
-                # still zu niedrig buchen.
-                offene_zk = [z for z in plan.zusatzkosten
-                             if abs(float(z.get("betrag") or 0)) >= 0.005]
-                if offene_zk:
-                    namen = ", ".join(f"{z.get('cName', 'Zusatzkosten')} "
-                                      f"{float(z['betrag']):.2f}" for z in offene_zk)
-                    plan.errors.append(
-                        "Zusatzkosten können noch nicht nach JTL geschrieben werden "
-                        f"({namen}). Die Rechnung stünde sonst um diesen Betrag zu "
-                        "niedrig in der Wawi und der offene Posten wäre falsch. "
-                        "Freigabe blockiert – Rechnung bitte vorerst von Hand erfassen.")
 
                 # Freigabe-Policy „manuell zuordnen": unaufgelöste Zeilen blockieren Write
                 offen = [p["cName"] for p in plan.positionen
@@ -664,6 +799,13 @@ class EingangsrechnungWriter:
             collist = ", ".join(["kEingangsrechnung"] + cols)
             vallist = ", ".join(["@kER"] + [f":p{i}_{c}" for c in cols])
             s.append(f"INSERT INTO dbo.tEingangsrechnungPos ({collist})\n  VALUES ({vallist});")
+            s.append(f"DECLARE @kPos{i} INT = SCOPE_IDENTITY();")
+        for zk in plan.zusatzkosten_zeilen:
+            s.append("INSERT INTO dbo.tEingangsrechnungPosZusatzkosten "
+                     "(kZusatzkosten, kEingangsrechnungPos, dWert, fFremdFaktor, "
+                     "cWaehrungISO, fMwst)\n"
+                     f"  VALUES ({zk['kZusatzkosten']}, @kPos{zk['_zeile'] + 1}, "
+                     f"{zk['dWert']}, 1, N'{zk['cWaehrungISO']}', {zk['fMwst']});")
         s.append("COMMIT TRAN;")
         return s
 
@@ -690,14 +832,35 @@ class EingangsrechnungWriter:
                      f"SELECT CAST(SCOPE_IDENTITY() AS INT);"),
                 kopf_vals).scalar()
 
+            # Positions-IDs mitnehmen: die Zusatzkosten hängen an
+            # kEingangsrechnungPos, nicht an der Rechnung. Gleiche Technik wie oben –
+            # SCOPE_IDENTITY() im selben Batch wie das INSERT.
+            pos_ids: list[int] = []
             for p in plan.positionen:
                 pv = {k: p.get(k) for k in POS_DB_COLS}
                 pv["kEingangsrechnung"] = new_id
                 cols = list(pv.keys())
                 collist = ", ".join(cols)
                 vallist = ", ".join(f":{c}" for c in cols)
+                kpos = conn.execute(text(
+                    f"SET NOCOUNT ON; "
+                    f"INSERT INTO dbo.tEingangsrechnungPos ({collist}) VALUES ({vallist}); "
+                    f"SELECT CAST(SCOPE_IDENTITY() AS INT);"), pv).scalar()
+                pos_ids.append(int(kpos))
+
+            for zk in plan.zusatzkosten_zeilen:
                 conn.execute(text(
-                    f"INSERT INTO dbo.tEingangsrechnungPos ({collist}) VALUES ({vallist})"), pv)
+                    "INSERT INTO dbo.tEingangsrechnungPosZusatzkosten "
+                    "(kZusatzkosten, kEingangsrechnungPos, dWert, fFremdFaktor, "
+                    " cWaehrungISO, fMwst) "
+                    "VALUES (:kZusatzkosten, :kEingangsrechnungPos, :dWert, "
+                    "        :fFremdFaktor, :cWaehrungISO, :fMwst)"),
+                    {"kZusatzkosten": zk["kZusatzkosten"],
+                     "kEingangsrechnungPos": pos_ids[zk["_zeile"]],
+                     "dWert": Decimal(str(zk["dWert"])),
+                     "fFremdFaktor": Decimal(str(zk["fFremdFaktor"])),
+                     "cWaehrungISO": zk["cWaehrungISO"],
+                     "fMwst": Decimal(str(zk["fMwst"]))})
 
             plan.kEingangsrechnung = int(new_id)
             plan.kopf_werte["cEigeneRechnungsnummer"] = cEigene

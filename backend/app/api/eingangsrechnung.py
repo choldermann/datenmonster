@@ -133,3 +133,16 @@ def artikel_suche(connection_id: int, q: str, user: User = Depends(get_current_u
     if len(q.strip()) < 2:
         return {"results": []}
     return {"results": _writer(connection_id).search_artikel(q.strip())}
+
+
+@router.get("/kostenarten")
+def kostenarten(connection_id: int, user: User = Depends(get_current_user),
+                db: Session = Depends(get_db)):
+    """Zusatzkosten-Katalog dieser Wawi (fürs manuelle Zuordnen im Formular).
+
+    Die IDs sind installationsspezifisch – dieselbe Nummer heißt bei einem Kunden
+    „Frachtkosten", beim nächsten „Gefahrgutzuschlag". Deshalb bietet das Formular
+    die Namen dieser Wawi an, statt eine ID zu raten.
+    """
+    _check_connection_access(connection_id, user, db)
+    return {"results": _writer(connection_id).kostenarten()}
