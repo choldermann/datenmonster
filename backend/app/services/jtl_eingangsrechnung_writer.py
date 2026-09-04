@@ -608,6 +608,26 @@ class EingangsrechnungWriter:
                 # Summen-Abgleich (Gate) – Position + Zusatzkosten gegen Rechnungssumme
                 self._reconcile(kopf, plan)
 
+                # Zusatzkosten gehen noch nicht in die Datenbank (siehe _execute).
+                # Ohne diese Sperre wäre der Abgleich oben eine Falle: er rechnet
+                # die Zusatzkosten mit, die Prüfung geht auf, geschrieben werden
+                # aber nur die Positionen. In JTL stünde die Rechnung dann um den
+                # Frachtbetrag zu niedrig – und weil JTL den offenen Posten nach
+                # derselben Summe berechnet (Zahlungsabgleich.vOffenerPosten-
+                # Eingangsrechnung, spEingangsrechnungStatusSetzen), liefe auch der
+                # Zahlungsabgleich auf einen falschen Betrag. Lieber blockieren als
+                # still zu niedrig buchen.
+                offene_zk = [z for z in plan.zusatzkosten
+                             if abs(float(z.get("betrag") or 0)) >= 0.005]
+                if offene_zk:
+                    namen = ", ".join(f"{z.get('cName', 'Zusatzkosten')} "
+                                      f"{float(z['betrag']):.2f}" for z in offene_zk)
+                    plan.errors.append(
+                        "Zusatzkosten können noch nicht nach JTL geschrieben werden "
+                        f"({namen}). Die Rechnung stünde sonst um diesen Betrag zu "
+                        "niedrig in der Wawi und der offene Posten wäre falsch. "
+                        "Freigabe blockiert – Rechnung bitte vorerst von Hand erfassen.")
+
                 # Freigabe-Policy „manuell zuordnen": unaufgelöste Zeilen blockieren Write
                 offen = [p["cName"] for p in plan.positionen
                          if p["status"] in ("unknown_article", "ambiguous", "unklar")]

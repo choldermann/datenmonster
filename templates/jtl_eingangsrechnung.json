@@ -14,7 +14,8 @@
     "Erkennt das Programm, dass die vorgeschlagene Bestellposition bereits vollständig berechnet ist, warnt es – das ist die eingebaute Doppelrechnungs-Erkennung. Diese Warnung nicht wegklicken, ohne sie geprüft zu haben.",
     "Mit 'Zuordnung merken' wird eine von Hand gesetzte Artikelzuordnung nach tliefartikel zurückgeschrieben und beim nächsten Mal automatisch gefunden.",
     "Für Portal-Benutzer: Formular veröffentlichen und die Benutzer unter 'allowed_users' freischalten. Ohne veröffentlichtes Formular meldet das Widget 'Kein Zugriff auf diese Verbindung' – das ist die Absicherung, damit ein Portal-Konto nicht in eine fremde Wawi schreiben kann.",
-    "Noch nicht enthalten: Zusatzkosten werden im Plan ausgewiesen, aber noch nicht in die Zusatzkosten-Tabellen geschrieben. Steuerschlüssel werden als Prozentsatz übernommen, nicht als JTL-Steuerschlüssel gemappt."
+    "Noch nicht enthalten: Zusatzkosten (Fracht, Zuschläge) werden erkannt und ausgewiesen, aber noch nicht in die JTL-Zusatzkostentabelle geschrieben. Solange blockiert die Freigabe solche Rechnungen bewusst – sonst stünde die Rechnung um den Frachtbetrag zu niedrig in der Wawi und der offene Posten wäre falsch. Diese Rechnungen bitte vorerst von Hand erfassen.",
+    "Noch nicht enthalten: Steuerschlüssel werden als Prozentsatz übernommen, nicht als JTL-Steuerschlüssel gemappt."
   ],
   "config_required": [
     {
