@@ -45,7 +45,7 @@ ABLAGE = Path("/app/uploads")
 # JTL-Client sie anfasst – beim ersten Lauf gegen die Test-Wawi waren genau das
 # die einzigen Treffer, ohne dass irgendein Vorgang angelegt worden war.
 RAUSCHEN = {"tUserSession", "tUserLayout", "tUserSetting", "tBenutzerEinstellung",
-            "tBenutzer", "tOptions", "tWidgetLayout",
+            "tBenutzer", "tOptions", "tWidgetLayout", "tUserControlSetting",
             "tSuchIndex", "tLogEintrag", "tSystemLog", "tJobqueue", "tWorkflowLog"}
 
 # Tabellen, deren neue Zeilen vollständig ausgegeben werden (Feld für Feld).
@@ -182,10 +182,11 @@ def diff(conn_id: int):
         print(f"NEUE/GEÄNDERTE ZEILEN: {tab}")
         print("=" * 74)
         for z in zeilen:
-            gefuellt = {k: v for k, v in z.items()
-                        if v not in (None, "", 0) or k.startswith("k")}
-            for k, v in gefuellt.items():
-                print(f"   {k:34} {v}")
+            # Bewusst ALLE Felder, auch leere und Nullen: beim Golden Master ist
+            # `nStatus = 0` genauso Beweis wie ein gefuellter Wert – und ob JTL ein
+            # Feld als '' oder als NULL hinterlaesst, muessen wir nachmachen.
+            for k, v in z.items():
+                print(f"   {k:34} {v!r}")
             print("   " + "-" * 60)
 
     ek_bewegt = [{"kArtikel": k, "vorher": ek_alt.get(k), "nachher": v,
