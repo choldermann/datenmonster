@@ -312,13 +312,24 @@ export default function FormFields({ fields, params, setParam, onRunAction, runn
   const gutter = compact ? 6 : 10;
   return (
     <>
-      {rows.map((rowFields, ri) => (
+      {rows.map((rowFields, ri) => {
+        // Ein Knopf trägt keine Beschriftung und beginnt deshalb ganz oben,
+        // während ein Eingabefeld erst unter seinem Label anfängt. Steht beides
+        // in derselben Zeile, hängt der Knopf sonst in der Luft – dann wird er
+        // auf die Grundlinie der Felder gesetzt.
+        const hatBeschriftetes = rowFields.some(
+          x => !LABEL_SKIP.has(x.type) && (x.label || x.name));
+        return (
         <div key={ri} style={{ display: "flex", flexWrap: "wrap", margin: `0 -${gutter}px ${compact ? 10 : 16}px` }}>
           {rowFields.map(f => {
             const width = `${((f.colSpan || 12) / 12) * 100}%`;
+            const aufGrundlinie = hatBeschriftetes && f.type === "button";
             return (
               <div key={f.id || f.name} style={{ flex: `0 0 ${width}`, maxWidth: width,
-                padding: `0 ${gutter}px`, boxSizing: "border-box" }}>
+                padding: `0 ${gutter}px`, boxSizing: "border-box",
+                ...(aufGrundlinie
+                  ? { display: "flex", flexDirection: "column", justifyContent: "flex-end" }
+                  : {}) }}>
                 {!LABEL_SKIP.has(f.type) && (f.label || f.name) && (
                   <label style={{ display: "block", fontSize: compact ? 10 : 12, fontWeight: 600,
                     color: S.textDim, marginBottom: compact ? 4 : 6, textTransform: "uppercase",
@@ -343,7 +354,8 @@ export default function FormFields({ fields, params, setParam, onRunAction, runn
             );
           })}
         </div>
-      ))}
+        );
+      })}
     </>
   );
 }
