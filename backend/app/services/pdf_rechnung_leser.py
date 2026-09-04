@@ -45,6 +45,10 @@ from app.services.jtl_eingangsrechnung_writer import ERKopfInput, ERPositionInpu
 # Layout kommen Ausrichtungs-Leerzeichen dazu, deshalb großzügiger bemessen.
 MAX_TEXT = 32000
 
+# So oft wird die Auslesung wiederholt, solange die gelesenen Zeilen nicht die
+# Nettosumme der Rechnung ergeben (siehe lese_pdf_rechnung).
+VERSUCHE = 3
+
 # Kandidaten für eine Bestellnummer: Buchstabenpräfix mit Ziffern (BST-202614044,
 # PO 12345) oder eine längere reine Ziffernfolge. Bewusst großzügig – die
 # Datenbank sortiert aus, nicht dieser Ausdruck.
@@ -357,52 +361,90 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             f"Bestellnummer {bestellung['cEigeneBestellnummer']} ist NICHT die "
             f"Rechnungsnummer) bei {bestellung['cFirma']}:\n"
             + json.dumps(positionen_vorlage, ensure_ascii=False, indent=1))
-    antwort = await svc.complete_json(
-        [{"role": "system", "content": SYSTEM},
-         {"role": "user", "content": "\n".join(teile)}],
-        json_schema=SCHEMA, temperature=0.0, model=modell)
+    # Die Auslesung streut von Lauf zu Lauf – dreimal derselbe Beleg ergab
+    # dreimal ein anderes Ergebnis. Statt das hinzunehmen, nutzen wir eine Probe,
+    # die die Rechnung selbst mitliefert: die Summe ihrer Positionen und
+    # Zusatzkosten MUSS die ausgewiesene Nettosumme ergeben. Geht sie nicht auf,
+    # ist mindestens eine Zeile falsch gelesen — dann wird neu gefragt.
+    #
+    # Das ist keine Schoenfaerberei: geprueft wird gegen eine Zahl aus dem Beleg,
+    # nicht gegen eine Erwartung von uns. Und geht es nach drei Versuchen nicht
+    # auf, wird der beste Versuch weitergereicht — die Summenkontrolle im Writer
+    # blockiert ihn dann ohnehin, aber der Mensch sieht, woran es lag.
+    async def ein_versuch() -> tuple[list, list, dict]:
+        antwort = await svc.complete_json(
+            [{"role": "system", "content": SYSTEM},
+             {"role": "user", "content": "\n".join(teile)}],
+            json_schema=SCHEMA, temperature=0.0, model=modell)
 
-    positionen = []
-    for p in (antwort.get("positionen") or []):
-        menge = _zahl(p.get("menge"))
-        if menge == 0:
+        pos_liste = []
+        for p in (antwort.get("positionen") or []):
+            menge = _zahl(p.get("menge"))
+            if menge == 0:
+                continue
+            gelesene_nr = (p.get("artikelnummer") or "").strip() or None
+            ek = _zahl(p.get("einzelpreisNetto"))
+            bezeichnung = (p.get("bezeichnung") or "").strip()[:255] or "Position"
+            eigene = artikel_aus_bestellung(positionen_vorlage, menge, ek, bezeichnung)
+            pos_liste.append(ERPositionInput(
+                cName=bezeichnung, fMenge=menge, fEKNetto=ek,
+                fMwSt=_zahl(p.get("mwstProzent")),
+                # Unsere Nummer aus der Bestellung, sonst die gelesene versuchen.
+                cArtNr=eigene or gelesene_nr,
+                # Die gelesene Nummer ist meist die des LIEFERANTEN – so kann der
+                # Writer notfalls über tliefartikel auflösen.
+                cLieferantenArtNr=gelesene_nr,
+                bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
+            ))
+
+        zk_liste = []
+        for z in (antwort.get("zusatzkosten") or []):
+            betrag = _zahl(z.get("betragNetto"))
+            if abs(betrag) < 0.005:
+                continue      # Nullzeilen wie „Freight: 0,00" sind keine Kosten
+            zk_liste.append(ERZusatzkostenInput(
+                cName=(z.get("bezeichnung") or "Zusatzkosten").strip()[:120],
+                betrag=abs(betrag), fMwSt=_zahl(z.get("mwstProzent")),
+                ist_zuschlag=betrag > 0))
+        return pos_liste, zk_liste, antwort
+
+    def netto_summe(pos_liste, zk_liste) -> float:
+        w = sum(p.fMenge * p.fEKNetto for p in pos_liste)
+        w += sum((z.betrag if z.ist_zuschlag else -z.betrag) for z in zk_liste)
+        return round(w, 2)
+
+    hinweise: list[str] = []
+    bester = None
+    for versuch in range(1, VERSUCHE + 1):
+        positionen, zusatz, antwort = await ein_versuch()
+        if not positionen:
             continue
-        gelesene_nr = (p.get("artikelnummer") or "").strip() or None
-        ek = _zahl(p.get("einzelpreisNetto"))
-        bezeichnung = (p.get("bezeichnung") or "").strip()[:255] or "Position"
-        eigene = artikel_aus_bestellung(positionen_vorlage, menge, ek, bezeichnung)
-        positionen.append(ERPositionInput(
-            cName=bezeichnung,
-            fMenge=menge,
-            fEKNetto=ek,
-            fMwSt=_zahl(p.get("mwstProzent")),
-            # Unsere Nummer aus der Bestellung, sonst die gelesene versuchen.
-            cArtNr=eigene or gelesene_nr,
-            # Die gelesene Nummer ist meist die des LIEFERANTEN – so kann der
-            # Writer notfalls über tliefartikel auflösen.
-            cLieferantenArtNr=gelesene_nr,
-            bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
-        ))
-    if not positionen:
+        soll = _zahl(antwort.get("nettoSumme"))
+        abweichung = abs(netto_summe(positionen, zusatz) - soll) if soll else None
+        if bester is None or (abweichung is not None and bester[0] is not None
+                              and abweichung < bester[0]):
+            bester = (abweichung, positionen, zusatz, antwort)
+        if abweichung is None or abweichung < 0.02:
+            if versuch > 1:
+                hinweise.append(
+                    f"Die Auslesung ging erst im {versuch}. Versuch mit der "
+                    f"Rechnungssumme zusammen – die vorherigen Versuche wichen ab.")
+            break
+    if bester is None:
         raise ERechnungParseError(
             "Aus dem PDF ließen sich keine Rechnungspositionen lesen.")
-
-    zusatz = []
-    for z in (antwort.get("zusatzkosten") or []):
-        betrag = _zahl(z.get("betragNetto"))
-        if abs(betrag) < 0.005:
-            continue          # Nullzeilen wie „Freight: 0,00" sind keine Kosten
-        zusatz.append(ERZusatzkostenInput(
-            cName=(z.get("bezeichnung") or "Zusatzkosten").strip()[:120],
-            betrag=abs(betrag), fMwSt=_zahl(z.get("mwstProzent")),
-            ist_zuschlag=betrag > 0))
+    abweichung, positionen, zusatz, antwort = bester
+    if abweichung is not None and abweichung >= 0.02:
+        hinweise.append(
+            f"Auch nach {VERSUCHE} Versuchen ergeben die gelesenen Zeilen nicht die "
+            f"Nettosumme der Rechnung (Abweichung {abweichung:.2f}). Mindestens eine "
+            f"Zeile ist falsch gelesen – bitte am Beleg prüfen.")
 
     # Steuersatz der Zusatzkosten notfalls aus der Rechnungssumme herleiten.
     # Kein Raten: es wird nur übernommen, wenn die vom Lieferanten selbst
     # ausgewiesene Endsumme damit exakt aufgeht. Anlass war ein Zuschlag, neben
     # dem „4,70 %" stand – dessen eigener Satz, nicht die Steuer; ausgelesen
     # wurden 0 %, und der Beleg fehlte um genau die 19 % darauf.
-    hinweise: list[str] = []
     brutto_rechnung = _zahl(antwort.get("bruttoSumme"))
     if zusatz and brutto_rechnung:
         def brutto_mit(zk_saetze: list[float]) -> float:
