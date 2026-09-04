@@ -51,7 +51,12 @@ RAUSCHEN = {"tUserSession", "tUserLayout", "tUserSetting", "tBenutzerEinstellung
 # Tabellen, deren neue Zeilen vollständig ausgegeben werden (Feld für Feld).
 VOLLDUMP = ("tEingangsrechnung", "tEingangsrechnungPos",
             "tEingangsrechnungZusatzkosten", "tEingangsrechnungPosZusatzkosten",
-            "tLaufendeNummern")
+            "tLaufendeNummern",
+            # Wareneingang/Bestellung: hier haengt die Bewertung. Der gleitende
+            # Durchschnitts-EK wird laut spWarenlagerEingangSchreiben ueber
+            # nGLDBerechnungMitEingangsrechnung an tWarenLagerEingang gesteuert.
+            "tWarenLagerEingang", "tLieferantenBestellung", "tLieferantenBestellungPos",
+            "tArtikelHistory")
 
 
 def engine(conn_id: int):
