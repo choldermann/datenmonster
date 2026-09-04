@@ -1345,6 +1345,28 @@ function UserManagement() {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>Benutzer anlegen und verwalten. Nur Administratoren haben Zugriff auf diese Ansicht.</p>
 
+      {/* Wer auf welche Datenbank darf, wird NICHT hier entschieden. Das steht
+          hier, weil man es genau hier sucht – und sonst nirgends erfährt. */}
+      <div style={{ fontSize: 10.5, color: S.textDim, lineHeight: 1.6,
+        background: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 6,
+        padding: "9px 11px" }}>
+        <b style={{ color: S.textMain }}>Auf welche Datenbanken jemand zugreift,
+        wird nicht hier festgelegt</b>, sondern in zwei Schritten:
+        <div style={{ marginTop: 5 }}>
+          1. <b>Projektmitglied machen</b> (im Projekt selbst, Abschnitt „Mitglieder“):
+          damit erreicht der Benutzer die Verbindungen, die diesem Projekt
+          zugeordnet sind – und nur die.
+        </div>
+        <div style={{ marginTop: 3 }}>
+          2. <b>Mandantenfreigabe</b> (Reiter „Mandanten“): schränkt innerhalb eines
+          Projekts weiter ein, zwischen welchen WaWi-Datenbanken er umschalten darf.
+          Das greift nur bei Verbindungen, die als Mandant markiert sind.
+        </div>
+        <div style={{ marginTop: 5, color: S.textDim }}>
+          Administratoren sehen unabhängig davon alles.
+        </div>
+      </div>
+
       {/* Bestehende Benutzer */}
       {users.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>

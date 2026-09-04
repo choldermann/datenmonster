@@ -146,6 +146,9 @@ function ShareProjectModal({ project, onClose }) {
   const [role, setRole] = useState("editor");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // Worauf man jemanden hier eigentlich loslässt: die Datenbanken dieses
+  // Projekts. Ohne diese Angabe gibt man eine Freigabe blind.
+  const [verbindungen, setVerbindungen] = useState([]);
 
   const load = useCallback(async () => {
     const [{ data: u }, { data: m }] = await Promise.all([
@@ -153,6 +156,9 @@ function ShareProjectModal({ project, onClose }) {
       api.get(`/api/projects/${project.id}/members`),
     ]);
     setUsers(u); setMembers(m);
+    api.get("/api/connections/", { params: { project_id: project.id } })
+      .then(({ data }) => setVerbindungen(data || []))
+      .catch(() => setVerbindungen([]));
   }, [project.id]);
 
   useEffect(() => { load(); }, [load]);
@@ -179,6 +185,36 @@ function ShareProjectModal({ project, onClose }) {
   return (
     <Modal title={`„${project.name}" freigeben`} onClose={onClose} width="max-w-lg">
       <div className="flex flex-col gap-5">
+        {/* Was dieses Projekt an Datenbanken erreicht – wer hier Mitglied wird,
+            bekommt genau darauf Zugriff. */}
+        <div style={{ fontSize: 11, color: S.textDim, lineHeight: 1.6,
+          background: S.bgEl,
+          border: `1px solid ${S.border}`, borderRadius: 6, padding: "9px 11px" }}>
+          <b style={{ color: S.textMain }}>Datenbanken dieses Projekts</b>
+          {verbindungen.length === 0 ? (
+            <div style={{ marginTop: 4 }}>
+              Keine zugeordnet – Mitglieder erreichen hier also keine Datenbank.
+              Zuordnen unter „DB-Connectors“ → „Verbindungen zuordnen“.
+            </div>
+          ) : (
+            <div style={{ marginTop: 4 }}>
+              {verbindungen.map(c => (
+                <div key={c.id}>
+                  · {c.name}
+                  <span style={{ color: S.textDim }}> ({c.database})</span>
+                  {c.is_mandant && (
+                    <span style={{ color: S.textDim }}> – Mandant, je Benutzer
+                      einschränkbar unter Systemeinstellungen → Mandanten</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 5 }}>
+            Wer hier Mitglied wird, erreicht genau diese – und keine andere.
+          </div>
+        </div>
+
         {/* Mitglieder hinzufügen */}
         <div>
           <label className="block text-xs uppercase tracking-widest mb-2" style={{ color: S.textDim }}>Benutzer hinzufügen</label>
