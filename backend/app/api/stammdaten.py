@@ -113,7 +113,7 @@ def _aufloesen(req: PlanRequest, user: User, db: Session) -> tuple[int, Optional
         raise HTTPException(404, f"DB-Verbindung #{req.connection_id} nicht gefunden")
     if not can_read_project(conn.project_id, user, db):
         raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
-    if not mandant_service.darf_nutzen(conn.id, user, db):
+    if not mandant_service.darf_nutzen(conn.id, user, db, conn.project_id):
         raise HTTPException(403, "Dieser Mandant ist für Sie nicht freigegeben")
     return _mandant_beruecksichtigen(int(conn.id), conn.project_id, user, db), conn.project_id
 

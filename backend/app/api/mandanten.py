@@ -151,37 +151,55 @@ def _zeitplan_uebernehmen(project_id: Optional[int], mandant_id: int, db) -> int
 # ── Verwaltung: wer darf welchen Mandanten ───────────────────────────────────
 
 @router.get("/freigaben")
-def freigaben(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Je Benutzer die freigegebenen Mandanten. Leere Liste = alle (keine Grenze)."""
+def freigaben(project_id: Optional[int] = None, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """Je Benutzer die freigegebenen Mandanten. Leere Liste = alle (keine Grenze).
+
+    Mit `project_id` die Freigaben dieses Projekts (plus die projektüber-
+    greifenden, die überall gelten); ohne alle projektübergreifenden.
+    """
     _admin(user)
     from app.models.mandant import MandantFreigabe
     je_user: dict = {}
     for r in db.query(MandantFreigabe).all():
-        je_user.setdefault(r.user_id, []).append(r.connection_id)
+        passt = (r.project_id is None if project_id is None
+                 else r.project_id in (None, project_id))
+        if passt:
+            je_user.setdefault(r.user_id, []).append(r.connection_id)
     users = db.query(User).order_by(User.username.asc()).all()
     return [{"user_id": u.id, "username": u.username,
              "is_admin": bool(getattr(u, "is_admin", False)),
-             "mandanten": sorted(je_user.get(u.id, []))} for u in users]
+             "mandanten": sorted(set(je_user.get(u.id, [])))} for u in users]
 
 
 class FreigabeIn(BaseModel):
     user_id: int
     mandanten: List[int] = []
+    project_id: Optional[int] = None
 
 
 @router.put("/freigaben")
 def freigaben_setzen(body: FreigabeIn, db: Session = Depends(get_db),
                      user: User = Depends(get_current_user)):
-    """Freigaben eines Benutzers ersetzen. Leere Liste hebt die Einschränkung auf."""
+    """Freigaben eines Benutzers ersetzen. Leere Liste hebt die Einschränkung auf.
+
+    Mit `project_id` gilt die Änderung NUR für dieses Projekt; die projektüber-
+    greifenden Freigaben bleiben unangetastet. Ohne `project_id` werden die
+    projektübergreifenden gesetzt.
+    """
     _admin(user)
     from app.models.mandant import MandantFreigabe, MandantAuswahl
     ziel = db.query(User).filter(User.id == body.user_id).first()
     if not ziel:
         raise HTTPException(404, "Benutzer nicht gefunden")
 
-    db.query(MandantFreigabe).filter(MandantFreigabe.user_id == body.user_id).delete()
+    q = db.query(MandantFreigabe).filter(MandantFreigabe.user_id == body.user_id)
+    q = q.filter(MandantFreigabe.project_id == body.project_id) \
+        if body.project_id is not None else q.filter(MandantFreigabe.project_id.is_(None))
+    q.delete()
     for cid in dict.fromkeys(body.mandanten or []):
-        db.add(MandantFreigabe(user_id=body.user_id, connection_id=cid))
+        db.add(MandantFreigabe(user_id=body.user_id, connection_id=cid,
+                               project_id=body.project_id))
     # Eine gespeicherte Auswahl, die gerade entzogen wurde, muss weg – sonst
     # zeigte das Cockpit beim nächsten Aufruf noch die alte Wahl an.
     if body.mandanten:

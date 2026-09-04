@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean
+from sqlalchemy import (Column, Integer, String, Text, DateTime, JSON, Boolean,
+                        UniqueConstraint)
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -31,6 +32,27 @@ class Dataset(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
 
+class ProjektVerbindung(Base):
+    """Welche Verbindung darf in welchem Projekt benutzt werden.
+
+    Vorher hing eine Verbindung über `db_connections.project_id` an genau EINEM
+    Projekt. Wer dieselbe WaWi in zwei Projekten brauchte, musste sie zweimal
+    anlegen – mitsamt Zugangsdaten, die dann auch zweimal zu pflegen waren.
+    Diese Tabelle löst das: Verbindungen werden zentral verwaltet und den
+    Projekten nur noch zugeordnet.
+    """
+    __tablename__ = "projekt_verbindungen"
+
+    id            = Column(Integer, primary_key=True, index=True)
+    project_id    = Column(Integer, nullable=False, index=True)
+    connection_id = Column(Integer, nullable=False, index=True)
+    created_at    = Column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("project_id", "connection_id", name="uq_projekt_verbindung"),
+    )
+
+
 class DbConnection(Base):
     __tablename__ = "db_connections"
 
@@ -42,6 +64,11 @@ class DbConnection(Base):
     database = Column(String, nullable=False)
     username = Column(String, nullable=False)
     password = Column(String, nullable=False)
+    # Das Projekt, dem die Verbindung "gehört" (wer sie angelegt hat). Für die
+    # Frage, WER sie nutzen darf, ist inzwischen `projekt_verbindungen`
+    # zuständig – eine Verbindung kann in mehreren Projekten dienen, ohne dass
+    # man Zugangsdaten mehrfach pflegt. Das Feld bleibt als Herkunftsangabe und
+    # damit bestehende Installationen unverändert weiterlaufen.
     project_id      = Column(Integer, nullable=True)
     # ── Mandantenfähigkeit ───────────────────────────────────────────────────
     # Ein Mandant IST eine DB-Verbindung: dieselben Cockpits, andere WaWi-Datenbank.

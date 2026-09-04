@@ -296,12 +296,36 @@ async def lifespan(app: FastAPI):
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 last_hit_at DATETIME
             )""",
+            "ALTER TABLE mandant_freigaben ADD COLUMN project_id INTEGER",
         ]:
             try:
                 conn.execute(text(stmt))
                 conn.commit()
             except Exception:
                 pass
+
+        # ── Verbindungen zentral, Projekte bekommen sie zugeordnet ───────────
+        # Bis hierher hing eine Verbindung über db_connections.project_id an genau
+        # EINEM Projekt; dieselbe WaWi in zwei Projekten hiess: zweimal anlegen,
+        # zweimal Zugangsdaten pflegen. Ab jetzt entscheidet projekt_verbindungen,
+        # wer sie nutzen darf. Damit nach dem Update nichts fehlt, wird die
+        # bisherige Zugehörigkeit einmalig als Zuordnung übernommen.
+        try:
+            leer = conn.execute(text(
+                "SELECT COUNT(*) FROM projekt_verbindungen")).scalar()
+            if not leer:
+                conn.execute(text("""
+                    INSERT INTO projekt_verbindungen (project_id, connection_id)
+                    SELECT project_id, id FROM db_connections
+                    WHERE project_id IS NOT NULL
+                """))
+                conn.commit()
+                n = conn.execute(text(
+                    "SELECT COUNT(*) FROM projekt_verbindungen")).scalar()
+                if n:
+                    print(f"[Migration] {n} Projekt-Verbindungs-Zuordnungen übernommen")
+        except Exception as e:
+            print(f"[Migration] Zuordnungen übersprungen: {e}")
 
         # ── Eindeutigkeit um den Mandanten erweitern ─────────────────────────
         # SQLite kann eine benannte UNIQUE-Bedingung nicht ändern, sie steckt im

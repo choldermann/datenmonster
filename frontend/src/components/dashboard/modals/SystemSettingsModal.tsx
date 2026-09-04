@@ -1123,14 +1123,20 @@ function MandantenSettings() {
   const [benutzer, setBenutzer] = useState([]);
   const [busy, setBusy] = useState(null);
   const [hinweis, setHinweis] = useState(null);
+  // Freigaben gelten je Projekt: derselbe Benutzer darf im einen Projekt eine
+  // andere WaWi sehen als im anderen. "" = projektuebergreifend (gilt ueberall).
+  const [projekte, setProjekte] = useState([]);
+  const [projekt, setProjekt] = useState("");
 
-  const laden = () => Promise.all([
+  const laden = (pid = projekt) => Promise.all([
     api.get("/api/mandanten/verwaltung"),
-    api.get("/api/mandanten/freigaben"),
+    api.get("/api/mandanten/freigaben", { params: pid ? { project_id: pid } : {} }),
   ]).then(([v, f]) => { setVerbindungen(v.data || []); setBenutzer(f.data || []); })
     .catch(() => {});
 
   useEffect(() => { laden(); }, []);
+  useEffect(() => { api.get("/api/projects/").then(r => setProjekte(r.data || [])).catch(() => {}); }, []);
+  useEffect(() => { laden(projekt); }, [projekt]);
 
   const speichern = async (c, patch) => {
     setBusy(c.connection_id); setHinweis(null);
@@ -1157,7 +1163,8 @@ function MandantenSettings() {
       ? u.mandanten.filter(x => x !== cid) : [...u.mandanten, cid];
     setBusy(`u${u.user_id}`);
     try {
-      await api.put("/api/mandanten/freigaben", { user_id: u.user_id, mandanten: neu });
+      await api.put("/api/mandanten/freigaben", { user_id: u.user_id, mandanten: neu,
+        project_id: projekt || null });
       await laden();
     } catch (e) {
       alert(e.response?.data?.detail || "Speichern fehlgeschlagen");
@@ -1223,8 +1230,23 @@ function MandantenSettings() {
       {mandanten.length > 0 && (
         <div style={{ borderTop: `1px solid ${S.border}`, paddingTop: 14 }}>
           <span style={lS}>Wer darf welchen Mandanten</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 0 8px" }}>
+            <span style={{ fontSize: 10.5, color: S.textDim, whiteSpace: "nowrap" }}>
+              Gilt für
+            </span>
+            <select value={projekt} onChange={e => setProjekt(e.target.value)}
+              style={{ ...iS, maxWidth: 260 }}>
+              <option value="">alle Projekte (übergreifend)</option>
+              {projekte.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+          </div>
           <p style={{ fontSize: 10.5, color: S.textDim, margin: "0 0 8px" }}>
             Nichts angekreuzt = alle Mandanten. Administratoren sehen ohnehin alle.
+            {projekt
+              ? " Angezeigt werden die Freigaben dieses Projekts samt den übergreifenden; gespeichert wird nur für dieses Projekt."
+              : " Übergreifende Freigaben gelten in jedem Projekt."}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {benutzer.map(u => (

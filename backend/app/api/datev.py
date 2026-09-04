@@ -50,7 +50,7 @@ def _verbindung_aufloesen(connection_id: int, user: User, db: Session) -> int:
     if not conn:
         raise HTTPException(404, f"Verbindung {connection_id} gibt es nicht")
     ziel = mandant_service.schreibziel(connection_id, conn.project_id, user, db)
-    if not mandant_service.darf_nutzen(ziel, user, db):
+    if not mandant_service.darf_nutzen(ziel, user, db, conn.project_id):
         raise HTTPException(403, "Für diesen Mandanten nicht freigegeben")
     return ziel
 

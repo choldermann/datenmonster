@@ -273,7 +273,7 @@ def put_schedule(body: ScheduleIn, db: Session = Depends(get_db),
     from app.services import mandant_service
     mandant_id = body.mandant_id if body.mandant_id is not None \
         else mandant_service.aktiver(body.project_id, user, db)
-    if not mandant_service.darf_nutzen(mandant_id, user, db):
+    if not mandant_service.darf_nutzen(mandant_id, user, db, body.project_id):
         raise HTTPException(403, "Dieser Mandant ist für Sie nicht freigegeben")
     s = _get_schedule(db, body.project_id, mandant_id)
     if not s:

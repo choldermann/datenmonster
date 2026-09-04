@@ -31,10 +31,15 @@ class MandantFreigabe(Base):
     id            = Column(Integer, primary_key=True, index=True)
     user_id       = Column(Integer, nullable=False, index=True)
     connection_id = Column(Integer, nullable=False, index=True)
+    # Freigaben gelten je Projekt: derselbe Benutzer darf im einen Projekt eine
+    # andere WaWi sehen als im anderen. NULL heißt "projektübergreifend" und ist
+    # der Zustand aller Freigaben, die vor dieser Unterscheidung entstanden sind.
+    project_id    = Column(Integer, nullable=True, index=True)
     created_at    = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        UniqueConstraint("user_id", "connection_id", name="uq_mandant_freigabe"),
+        UniqueConstraint("user_id", "connection_id", "project_id",
+                         name="uq_mandant_freigabe"),
     )
 
 

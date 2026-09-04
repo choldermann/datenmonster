@@ -45,33 +45,59 @@ def mandanten(project_id: Optional[int], db) -> List[dict]:
         return []
     q = db.query(DbConnection).filter(DbConnection.is_mandant.is_(True))
     if project_id is not None:
-        q = q.filter(DbConnection.project_id == project_id)
+        # Über die Zuordnung, nicht über das Eigentum: eine Verbindung kann in
+        # mehreren Projekten dienen, ohne dort noch einmal zu existieren.
+        from app.models.dataset import ProjektVerbindung
+        ids = {r.connection_id for r in db.query(ProjektVerbindung)
+               .filter(ProjektVerbindung.project_id == project_id).all()}
+        ids |= {c.id for c in db.query(DbConnection)
+                .filter(DbConnection.project_id == project_id).all()}
+        if not ids:
+            return []
+        q = q.filter(DbConnection.id.in_(ids))
     rows = q.all()
     rows.sort(key=lambda c: (getattr(c, "mandant_sort", 100) or 100, c.id))
     return [_als_dict(c) for c in rows]
 
 
-def freigegebene_ids(user, db) -> Optional[set]:
+def freigegebene_ids(user, db, project_id: Optional[int] = None) -> Optional[set]:
     """IDs der für diesen Benutzer freigegebenen Verbindungen.
 
     None bedeutet "keine Einschränkung" – das ist der Normalfall und der Zustand
     jeder bestehenden Installation. Erst wer mindestens eine Freigabe einträgt,
     wird auf genau diese beschränkt.
+
+    Freigaben gelten je Projekt: derselbe Benutzer darf im einen Projekt eine
+    andere WaWi sehen als im anderen. Eine Freigabe ohne Projekt (project_id
+    NULL) gilt überall – so sind alle Einträge gemeint, die vor dieser
+    Unterscheidung entstanden sind. Gefragt wird also nach beidem: den
+    projektübergreifenden UND denen dieses Projekts.
     """
     if user is None:
         return None
     if getattr(user, "is_admin", False):
         return None
     from app.models.mandant import MandantFreigabe
-    ids = {r.connection_id for r in db.query(MandantFreigabe)
-           .filter(MandantFreigabe.user_id == user.id).all()}
-    return ids or None
+    alle = db.query(MandantFreigabe).filter(MandantFreigabe.user_id == user.id).all()
+    if not alle:
+        return None                     # gar keine Freigabe = keine Einschränkung
+    if project_id is None:
+        # Ohne Projektkontext die SICHERE Auslegung: der Benutzer bleibt auf die
+        # Summe seiner Freigaben beschränkt. Nur die projektübergreifenden zu
+        # nehmen, könnte eine leere Menge ergeben – und leer hiesse hier
+        # "unbeschränkt", also das Gegenteil des Gewollten.
+        return {r.connection_id for r in alle}
+    ids = {r.connection_id for r in alle
+           if r.project_id is None or r.project_id == project_id}
+    # Der Benutzer HAT Freigaben, nur keine für dieses Projekt: dann darf er hier
+    # nichts – eine leere Menge, nicht None.
+    return ids
 
 
 def erlaubte(project_id: Optional[int], user, db) -> List[dict]:
     """Die Mandanten des Projekts, die dieser Benutzer nutzen darf."""
     alle = mandanten(project_id, db)
-    erlaubt = freigegebene_ids(user, db)
+    erlaubt = freigegebene_ids(user, db, project_id)
     if erlaubt is None:
         return alle
     return [m for m in alle if m["connection_id"] in erlaubt]
@@ -158,11 +184,12 @@ def name_von(connection_id: Optional[int], db) -> Optional[str]:
     return _label(c) if c else None
 
 
-def darf_nutzen(connection_id: Optional[int], user, db) -> bool:
+def darf_nutzen(connection_id: Optional[int], user, db,
+                project_id: Optional[int] = None) -> bool:
     """Darf dieser Benutzer gegen diese Mandanten-Verbindung auswerten?"""
     if connection_id is None:
         return True
-    erlaubt = freigegebene_ids(user, db)
+    erlaubt = freigegebene_ids(user, db, project_id)
     if erlaubt is None:
         return True
     return connection_id in erlaubt

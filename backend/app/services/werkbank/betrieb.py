@@ -48,7 +48,7 @@ def aufloesen(db, project_id: Optional[int], user,
     alle = auswahl(db, project_id)
 
     if gewuenscht is not None:
-        if not mandant_service.darf_nutzen(gewuenscht, user, db):
+        if not mandant_service.darf_nutzen(gewuenscht, user, db, project_id):
             return {"connection_id": None, "name": None, "quelle": "gesperrt",
                     "auswahl": alle,
                     "hinweis": "Diese Verbindung ist für dich nicht freigegeben."}

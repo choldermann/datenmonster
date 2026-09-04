@@ -8,13 +8,38 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.dataset import DbConnection, Dataset
+from app.models.dataset import DbConnection, Dataset, ProjektVerbindung
 from app.services.db_service import test_connection, get_tables, query_preview, query_full, query_full_with_types
 from app.services.file_service import dataframe_to_storage, infer_column_types, classify_db_type
 from app.api.projects import require_editor
 from app.core.security import encrypt_credential, decrypt_credential
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
+
+
+def _nur_admin(user: User) -> None:
+    """Zugangsdaten zu Produktivsystemen ändert nur ein Administrator.
+
+    Verbindungen hängen nicht mehr an einem Projekt, sondern werden zentral
+    gepflegt und den Projekten zugeordnet. Damit wirkt jede Änderung überall –
+    und darf nicht mehr von jedem Projekt-Editor ausgehen.
+    """
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Verbindungen verwaltet nur ein Administrator")
+
+
+def _verbundene_ids(project_id: int, db: Session) -> set:
+    """Alle Verbindungen, die diesem Projekt zur Verfügung stehen.
+
+    Das sind die ausdrücklich zugeordneten plus die, die dem Projekt noch nach
+    altem Muster gehören (db_connections.project_id) – letzteres, damit eine
+    Installation auch dann vollständig bleibt, wenn die Zuordnung fehlt.
+    """
+    ids = {r.connection_id for r in db.query(ProjektVerbindung)
+           .filter(ProjektVerbindung.project_id == project_id).all()}
+    ids |= {c.id for c in db.query(DbConnection)
+            .filter(DbConnection.project_id == project_id).all()}
+    return ids
 
 
 class ConnectionCreate(BaseModel):
@@ -107,22 +132,37 @@ def list_connections(project_id: Optional[int] = None, db: Session = Depends(get
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     q = db.query(DbConnection)
     if project_id is not None:
-        q = q.filter(DbConnection.project_id == project_id)
+        # Was diesem Projekt zugeordnet ist – nicht mehr, was ihm "gehört".
+        erlaubt = _verbundene_ids(project_id, db)
+        if not erlaubt:
+            return []
+        q = q.filter(DbConnection.id.in_(erlaubt))
     else:
         accessible = get_accessible_project_ids(user, db)
         if accessible is not None:
-            q = q.filter((DbConnection.project_id.in_(accessible)) | (DbConnection.project_id.is_(None)))
+            # Administratoren sehen alles; sonst zählt jede Zuordnung zu einem
+            # zugänglichen Projekt, dazu die projektlosen (globalen).
+            zugeordnet = {r.connection_id for r in db.query(ProjektVerbindung)
+                          .filter(ProjektVerbindung.project_id.in_(accessible)).all()}
+            q = q.filter((DbConnection.project_id.in_(accessible))
+                         | (DbConnection.project_id.is_(None))
+                         | (DbConnection.id.in_(zugeordnet) if zugeordnet else False))
     return [conn_out(c) for c in q.order_by(DbConnection.id).all()]
 
 
 @router.post("/")
 def create_connection(data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    require_editor(data.project_id, user, db)
+    _nur_admin(user)
     d = data.model_dump()
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
     conn = DbConnection(**d)
     db.add(conn); db.commit(); db.refresh(conn)
+    # Wird die Verbindung aus einem Projekt heraus angelegt, ist sie dort auch
+    # gleich zugeordnet – sonst müsste man sie danach von Hand einhängen.
+    if d.get("project_id"):
+        db.add(ProjektVerbindung(project_id=d["project_id"], connection_id=conn.id))
+        db.commit()
     return conn_out(conn)
 
 
@@ -899,7 +939,7 @@ def update_connection(conn_id: int, data: ConnectionCreate, db: Session = Depend
     conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
     if not conn:
         raise HTTPException(404, "Verbindung nicht gefunden")
-    require_editor(conn.project_id, user, db)
+    _nur_admin(user)
     for k, v in data.model_dump().items():
         if k == "password":
             if v and v != "••••••••":
@@ -919,9 +959,60 @@ def delete_connection(conn_id: int, db: Session = Depends(get_db), user: User = 
     conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
     if not conn:
         raise HTTPException(404, "Verbindung nicht gefunden")
-    require_editor(conn.project_id, user, db)
+    _nur_admin(user)
+    db.query(ProjektVerbindung).filter(
+        ProjektVerbindung.connection_id == conn_id).delete()
     db.delete(conn)
     db.commit()
     from app.services.sql_helpers import invalidate_sql_engine
     invalidate_sql_engine(conn_id)
     return {"ok": True}
+
+
+# ── Zuordnung Projekt ↔ Verbindung ──────────────────────────────────────────
+
+class ZuordnungIn(BaseModel):
+    project_id: int
+    connection_ids: list[int]
+
+
+@router.get("/zuordnung/{project_id}")
+def zuordnung_lesen(project_id: int, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    """Welche Verbindungen stehen diesem Projekt zur Verfügung – und welche noch.
+
+    Liefert alle Verbindungen mit einem Kennzeichen, ob sie dem Projekt
+    zugeordnet sind. `gehoert` markiert die alte Zugehörigkeit, damit man in der
+    Oberfläche sieht, woher eine Verbindung stammt.
+    """
+    from app.api.projects import can_read_project
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    erlaubt = _verbundene_ids(project_id, db)
+    alle = db.query(DbConnection).order_by(DbConnection.id).all()
+    return [{**conn_out(c), "zugeordnet": c.id in erlaubt,
+             "gehoert": c.project_id == project_id} for c in alle]
+
+
+@router.put("/zuordnung")
+def zuordnung_setzen(body: ZuordnungIn, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Setzt die Verbindungen eines Projekts (ersetzt die bisherige Auswahl).
+
+    Nur Administratoren: welche WaWi ein Projekt erreicht, entscheidet mit
+    darüber, welche Daten dort sichtbar sind und wohin geschrieben wird.
+    """
+    _nur_admin(user)
+    vorhanden = {r.connection_id: r for r in db.query(ProjektVerbindung)
+                 .filter(ProjektVerbindung.project_id == body.project_id).all()}
+    gewuenscht = set(body.connection_ids)
+    for cid in gewuenscht - set(vorhanden):
+        if not db.query(DbConnection).filter(DbConnection.id == cid).first():
+            raise HTTPException(404, f"Verbindung {cid} gibt es nicht")
+        db.add(ProjektVerbindung(project_id=body.project_id, connection_id=cid))
+    for cid, zeile in vorhanden.items():
+        if cid not in gewuenscht:
+            db.delete(zeile)
+    db.commit()
+    return {"ok": True, "project_id": body.project_id,
+            "connection_ids": sorted(gewuenscht)}

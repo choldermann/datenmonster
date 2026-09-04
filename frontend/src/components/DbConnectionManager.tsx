@@ -99,21 +99,42 @@ function ConnectionForm({ initial, projectId, onSaved, onCancel }) {
 }
 
 // ─── Import Connection Modal ──────────────────────────────────────────────────
-function ImportConnectionModal({ projectId, onDone, onCancel }) {
-  const [connections, setConnections] = useState([]);
-  const [loading, setLoading] = useState(true);
+/** Vorhandene Verbindungen diesem Projekt zuordnen.
+ *
+ *  Frueher wurde hier eine Verbindung KOPIERT – daher gab es dieselbe WaWi
+ *  mehrfach, jede mit eigenen Zugangsdaten, die auch mehrfach zu pflegen waren.
+ *  Jetzt wird nur zugeordnet: eine Verbindung, in mehreren Projekten nutzbar.
+ */
+function ZuordnungModal({ projectId, onDone, onCancel }) {
+  const [alle, setAlle] = useState([]);
+  const [gewaehlt, setGewaehlt] = useState(new Set());
+  const [laden, setLaden] = useState(true);
+  const [fehler, setFehler] = useState(null);
+  const [speichern, setSpeichern] = useState(false);
 
   useEffect(() => {
-    api.get("/api/connections/").then(({ data }) => { setConnections(data); setLoading(false); });
-  }, []);
+    api.get(`/api/connections/zuordnung/${projectId}`)
+      .then(({ data }) => {
+        setAlle(data || []);
+        setGewaehlt(new Set((data || []).filter(c => c.zugeordnet).map(c => c.id)));
+      })
+      .catch(e => setFehler(e.response?.data?.detail || e.message))
+      .finally(() => setLaden(false));
+  }, [projectId]);
 
-  const importConn = async (conn) => {
-    await api.post("/api/connections/", {
-      name: conn.name, db_type: conn.db_type, host: conn.host,
-      port: conn.port, database: conn.database, username: conn.username,
-      password: "", project_id: projectId,
-    });
-    onDone();
+  const umschalten = (id) => setGewaehlt(g => {
+    const n = new Set(g); n.has(id) ? n.delete(id) : n.add(id); return n;
+  });
+
+  const sichern = async () => {
+    setSpeichern(true); setFehler(null);
+    try {
+      await api.put("/api/connections/zuordnung",
+        { project_id: projectId, connection_ids: [...gewaehlt] });
+      onDone();
+    } catch (e) {
+      setFehler(e.response?.data?.detail || e.message);
+    } finally { setSpeichern(false); }
   };
 
   const typeLabel = { mssql: "SQL Server", mysql: "MySQL", postgresql: "PostgreSQL" };
@@ -121,21 +142,39 @@ function ImportConnectionModal({ projectId, onDone, onCancel }) {
 
   return (
     <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 8, padding: 20, marginBottom: 20 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>Verbindung importieren</span>
+      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>Verbindungen zuordnen</span>
         <button onClick={onCancel} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer" }}><X size={14} /></button>
       </div>
-      {loading ? <Loader2 size={16} className="animate-spin" /> : connections.filter(c => c.project_id !== projectId).map((conn) => (
-        <div key={conn.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
-          borderRadius: 5, marginBottom: 4, border: `1px solid ${S.border}`, cursor: "pointer" }}
-          onClick={() => importConn(conn)}
-          onMouseEnter={e => e.currentTarget.style.borderColor = S.accent}
-          onMouseLeave={e => e.currentTarget.style.borderColor = S.border}>
+      <div style={{ fontSize: 11, color: S.textDim, marginBottom: 12, lineHeight: 1.5 }}>
+        Verbindungen werden zentral gepflegt und den Projekten nur zugeordnet –
+        dieselbe Datenbank braucht also nicht mehrfach angelegt zu werden.
+      </div>
+      {fehler && (
+        <div style={{ fontSize: 11, color: "#f87171", marginBottom: 10 }}>{fehler}</div>
+      )}
+      {laden ? <Loader2 size={16} className="animate-spin" /> : alle.map((conn) => (
+        <label key={conn.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+          borderRadius: 5, marginBottom: 4, border: `1px solid ${S.border}`, cursor: "pointer" }}>
+          <input type="checkbox" checked={gewaehlt.has(conn.id)}
+            onChange={() => umschalten(conn.id)} />
           <Database size={13} style={{ color: typeColor[conn.db_type], flexShrink: 0 }} />
-          <span style={{ fontSize: 12, color: S.textBright, flex: 1 }}>{conn.name}</span>
+          <span style={{ fontSize: 12, color: S.textBright, flex: 1 }}>
+            {conn.name}
+            <span style={{ color: S.textDim, fontSize: 10 }}> · {conn.host}/{conn.database}</span>
+          </span>
+          {conn.gehoert && (
+            <span style={{ fontSize: 9, color: S.textDim }}>hier angelegt</span>
+          )}
           <span style={{ fontSize: 10, color: typeColor[conn.db_type], backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 3 }}>{typeLabel[conn.db_type]}</span>
-        </div>
+        </label>
       ))}
+      <button onClick={sichern} disabled={speichern}
+        style={{ marginTop: 10, backgroundColor: S.accent, color: "#0b0b0c", border: "none",
+          borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 600,
+          cursor: speichern ? "default" : "pointer" }}>
+        {speichern ? "Speichert…" : "Zuordnung speichern"}
+      </button>
     </div>
   );
 }
@@ -549,7 +588,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
           onCancel={() => setEditingConn(null)} />
       )}
       {showImport && (
-        <ImportConnectionModal projectId={projectId}
+        <ZuordnungModal projectId={projectId}
           onDone={() => { setShowImport(false); load(); }}
           onCancel={() => setShowImport(false)} />
       )}
@@ -592,7 +631,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {canEdit && <NewConnTile label="Neue Verbindung" sub="SQL Server, MySQL, PostgreSQL" icon={Plus}
             onClick={() => { setShowForm(true); setEditingConn(null); }} />}
-          {canEdit && <NewConnTile label="Verbindung importieren" sub="Aus anderem Projekt übernehmen" icon={Upload}
+          {canEdit && <NewConnTile label="Verbindungen zuordnen" sub="Vorhandene diesem Projekt zuweisen" icon={Upload}
             onClick={() => setShowImport(true)} />}
           {connections.map((conn) => (
             <div key={conn.id} className="card group transition-all" style={{ borderColor: S.border }}>

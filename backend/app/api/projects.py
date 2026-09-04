@@ -188,11 +188,17 @@ def delete_project(project_id: int, db: Session = Depends(get_db), user: User = 
                     import logging as _l; _l.getLogger("datenmonster").warning(f"Datei löschen {path}: {_e}")
         db.delete(ds)
 
-    # 7. DB-Verbindungen (+ gecachte Engines verwerfen)
+    # 7. Verbindungen: nur die ZUORDNUNG lösen, die Verbindung selbst bleibt.
+    # Sie wird zentral verwaltet und kann in anderen Projekten in Benutzung sein;
+    # sie mit dem Projekt zu löschen, riss dort die Mappings mit. Eine Verbindung,
+    # die nur diesem Projekt gehörte und nirgends sonst zugeordnet ist, wird
+    # verwaist – das ist gewollt: aufräumen entscheidet ein Administrator.
     from app.services.sql_helpers import invalidate_sql_engine
+    from app.models.dataset import ProjektVerbindung
     for _c in db.query(DbConnection.id).filter(DbConnection.project_id == project_id).all():
         invalidate_sql_engine(_c[0])
-    db.query(DbConnection).filter(DbConnection.project_id == project_id).delete()
+    db.query(ProjektVerbindung).filter(
+        ProjektVerbindung.project_id == project_id).delete()
 
     # 8. Projekt-Mitglieder + Projekt
     db.query(ProjectMember).filter(ProjectMember.project_id == project_id).delete()
