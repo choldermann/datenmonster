@@ -259,7 +259,11 @@ SYSTEM = (
     "11. Die mitgelieferte Bestellung ist die Vorlage: passt eine Rechnungszeile "
     "dazu, übernimm deren Artikelnummer unverändert. Erfinde keine Artikelnummer "
     "und übertrage keine Menge oder Preise aus der Bestellung, die nicht auf der "
-    "Rechnung stehen."
+    "Rechnung stehen.\n"
+    "12. artikelnummer nur, wenn in der Zeile wirklich eine steht. Reine "
+    "Kostenzeilen ('TOOLING COSTS', 'Verpackung') tragen oft keine – dann bleibt "
+    "das Feld leer. Leite niemals eine Nummer aus der Positionsnummer, aus "
+    "Nachbarzeilen oder aus einem Muster ab."
 )
 
 
@@ -288,6 +292,49 @@ def artikel_aus_bestellung(vorlage: list[dict], menge: float, ek: float,
         if len(mit_menge) == 1:
             return mit_menge[0]["cArtNr"]
     return None
+
+
+def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> list[str]:
+    """Zeilen ohne Preistreffer über die MENGE zuordnen.
+
+    Anlass war die Eurostat-Rechnung INV57645: der Lieferant rechnet Ware und
+    Veredelung getrennt ab (Kittel 17,04 + Logodruck 4,50 + Tooling 50,00 auf
+    37 Stück), die Bestellung führt beides in einem Preis zusammen (22,89 — das
+    ist genau 17,04 + 4,50 + 50,00/37). Kein einziger Preis passte, also blieb
+    jede Zeile ohne Artikel, obwohl die Bestellung eindeutig feststand.
+
+    Die Menge ist der zweite belastbare Anker: sie steht auf beiden Seiten und
+    wird unterwegs nicht umgerechnet. Sie ist aber schwächer als der Preis —
+    viele Zeilen haben Menge 1 —, deshalb wird sie nur benutzt, wenn die
+    Zuordnung von BEIDEN Seiten eindeutig ist: genau eine noch offene
+    Bestellposition mit dieser Menge und genau eine noch offene Rechnungszeile
+    mit dieser Menge. Damit kann keine Zeile die Bestellposition einer anderen
+    an sich ziehen; bleibt es mehrdeutig, wird nichts gesetzt und das Formular
+    fragt. Jede so entstandene Zuordnung wird als Hinweis ausgewiesen, denn sie
+    beruht auf weniger Belegen als ein Preistreffer.
+    """
+    if not vorlage or not positionen:
+        return []
+    # Aus der Bestellung stammt eine Nummer genau dann, wenn sie dort vorkommt.
+    # Alles andere in cArtNr ist die vom Lieferanten gedruckte Nummer.
+    aus_bestellung = {v["cArtNr"] for v in vorlage if v["cArtNr"]}
+    vergeben = {p.cArtNr for p in positionen if p.cArtNr in aus_bestellung}
+    offen_best = [v for v in vorlage
+                  if v["cArtNr"] and v["cArtNr"] not in vergeben]
+    offen_pos = [p for p in positionen if p.cArtNr not in aus_bestellung]
+    notizen: list[str] = []
+    for pos in offen_pos:
+        passend = [v for v in offen_best if abs(v["menge"] - pos.fMenge) < 1e-9]
+        konkurrenz = [q for q in offen_pos if abs(q.fMenge - pos.fMenge) < 1e-9]
+        if len(passend) == 1 and len(konkurrenz) == 1:
+            pos.cArtNr = passend[0]["cArtNr"]
+            offen_best.remove(passend[0])
+            notizen.append(f"{pos.cName[:40]} → {pos.cArtNr} (Menge {pos.fMenge:g})")
+    return notizen
+
+
+def _ohne_leerraum(s: str) -> str:
+    return re.sub(r"\s+", "", s or "")
 
 
 def _zahl(v) -> float:
@@ -354,7 +401,9 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             "gebraucht, die KI-Integration ist aber ausgeschaltet "
             "(Systemeinstellungen → KI).")
 
-    teile = [f"RECHNUNGSTEXT:\n{txt[:MAX_TEXT]}"]
+    sichtbarer_text = txt[:MAX_TEXT]
+    txt_flach = _ohne_leerraum(sichtbarer_text)
+    teile = [f"RECHNUNGSTEXT:\n{sichtbarer_text}"]
     if bestellung:
         teile.append(
             f"\nZUGEHÖRIGE BESTELLUNG (nur zum Abgleich der Positionen – die "
@@ -383,6 +432,15 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             if menge == 0:
                 continue
             gelesene_nr = (p.get("artikelnummer") or "").strip() or None
+            # Was der Lieferant nicht gedruckt hat, kann die KI nicht gelesen
+            # haben. Anlass: die Zeile „TOOLING COSTS" trägt gar keine Nummer,
+            # die KI lieferte trotzdem eine – in drei Wiederholungsläufen drei
+            # verschiedene. Folgenlos, weil sie nirgends auflöst, aber eine
+            # erfundene Nummer gehört nicht in ein Buchungsformular. Geprüft
+            # wird gegen den Text, den die KI gesehen hat, ohne Leerraum: PDFs
+            # zerlegen Nummern gern durch Ausrichtungsabstände.
+            if gelesene_nr and _ohne_leerraum(gelesene_nr) not in txt_flach:
+                gelesene_nr = None
             ek = _zahl(p.get("einzelpreisNetto"))
             bezeichnung = (p.get("bezeichnung") or "").strip()[:255] or "Position"
             eigene = artikel_aus_bestellung(positionen_vorlage, menge, ek, bezeichnung)
@@ -439,6 +497,14 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             f"Auch nach {VERSUCHE} Versuchen ergeben die gelesenen Zeilen nicht die "
             f"Nettosumme der Rechnung (Abweichung {abweichung:.2f}). Mindestens eine "
             f"Zeile ist falsch gelesen – bitte am Beleg prüfen.")
+
+    # Was der Preisabgleich offen gelassen hat, jetzt über die Menge versuchen.
+    # Bewusst erst hier, auf dem gewählten Versuch: die Zuordnung schaut auf alle
+    # Zeilen zugleich und braucht deshalb die endgültige Liste.
+    for notiz in ordne_ueber_menge_zu(positionen, positionen_vorlage):
+        hinweise.append(
+            f"Zugeordnet über die Menge, nicht über den Preis: {notiz}. Der "
+            f"Rechnungspreis weicht vom Bestellpreis ab – bitte gegenprüfen.")
 
     # Steuersatz der Zusatzkosten notfalls aus der Rechnungssumme herleiten.
     # Kein Raten: es wird nur übernommen, wenn die vom Lieferanten selbst
