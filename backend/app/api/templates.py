@@ -137,15 +137,37 @@ def _rest_nodes_ohne_zugangsdaten(rest_nodes: list) -> list:
     return sauber
 
 
+def _als_conn_id(v):
+    """Eine echte Verbindungs-ID aus dem Wert holen, sonst None.
+
+    Akzeptiert Zahl und Ziffern-Zeichenkette. `True`/`False` sind in Python
+    Ganzzahlen und dürfen hier nicht durchrutschen; ein bereits gesetzter
+    `{{connection_x}}`-Platzhalter ebensowenig.
+    """
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, int):
+        return v
+    if isinstance(v, str) and v.strip().isdigit():
+        return int(v.strip())
+    return None
+
+
 def _rewrite_conn_export(obj, referenced: set):
     """Ersetzt Integer-Verbindungs-IDs durch {{connection_X}}-Platzhalter und
     sammelt die referenzierten IDs in `referenced`."""
     if isinstance(obj, dict):
         result = {}
         for k, v in obj.items():
-            if k in _CONN_ID_KEYS and isinstance(v, int) and not isinstance(v, bool):
-                referenced.add(v)
-                result[k] = "{{connection_%d}}" % v
+            # Verbindungs-IDs stehen je nach Herkunft als Zahl (Mapping-/Dataset-
+            # Felder) oder als Zeichenkette da: der Widget-Editor schreibt den Wert
+            # eines <select> und der ist immer Text. Beide Formen müssen zum
+            # Platzhalter werden, sonst wandert eine fremde Verbindungs-ID fest
+            # verdrahtet ins Template und der Installer kann sie nicht ersetzen.
+            cid = _als_conn_id(v) if k in _CONN_ID_KEYS else None
+            if cid is not None:
+                referenced.add(cid)
+                result[k] = "{{connection_%d}}" % cid
             else:
                 result[k] = _rewrite_conn_export(v, referenced)
         return result
@@ -856,6 +878,10 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                     hmid = hn.get(schluessel)
                     if isinstance(hmid, str) and hmid in mapping_id_map:
                         hn[schluessel] = mapping_id_map[hmid]
+        # Verbindungs-Platzhalter in Widget-Configs → gewählte Verbindung. Muss
+        # VOR _apply_config_deep laufen, damit die ID als Zahl ankommt und nicht
+        # als Text; danach fasst der Textersatz sie nicht mehr an.
+        schema = _resolve_conn_ids_install(schema, config)
         schema = _apply_config_deep(schema, config)
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),
@@ -1315,6 +1341,11 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                     rmid = ent.get("mapping_id") if isinstance(ent, dict) else None
                     if isinstance(rmid, int) and rmid in mapping_real_to_tpl:
                         ent["mapping_id"] = mapping_real_to_tpl[rmid]
+        # Eigenständige Widgets (Eingangsrechnung, EAN-Recherche …) tragen ihre
+        # Ziel-Verbindung selbst in der Config. Ohne diesen Schritt reiste die
+        # rohe Verbindungs-ID des Absenders mit und zeigte beim Empfänger auf
+        # irgendeine andere Datenbank – oder auf keine.
+        schema = _rewrite_conn_export(schema, referenced_conn_ids)
         portal_config = dict(fo.portal_config or {})
         portal_config.pop("allowed_users", None)  # instanzspezifische User-IDs nicht exportieren
         content["forms"].append({

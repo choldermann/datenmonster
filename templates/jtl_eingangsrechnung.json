@@ -1,0 +1,56 @@
+{
+  "format_version": "1.0",
+  "template_id": "jtl_eingangsrechnung",
+  "template_name": "JTL Eingangsrechnungs-Import (ZUGFeRD/XRechnung)",
+  "description": "Eingangsrechnungen als E-Rechnung einlesen, gegen die Lieferantenbestellung matchen, im Vier-Augen-Prinzip freigeben und direkt in die JTL-Wawi schreiben. Liest ZUGFeRD/Factur-X (PDF/A-3 mit CII-XML) und XRechnung (UBL). DB-Verbindung beim Installieren wählen.",
+  "category": "jtl",
+  "version": "1.0",
+  "author": "christof",
+  "hinweise": [
+    "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert.",
+    "Die gewählte Verbindung ist die ZIEL-Wawi: hier wird beim Freigeben tatsächlich geschrieben (tEingangsrechnung + tEingangsrechnungPos, Rechnungsnummer über die JTL-Prozedur spGetNextNummer). Erste Läufe bitte gegen eine Test-Wawi fahren.",
+    "Ablauf im Formular: Rechnung hochladen → das Programm parst sie, löst Lieferant (USt-IdNr./Name) und Artikel (eigene Artikelnummer, sonst Lieferanten-Artikelnummer über tliefartikel) auf und schlägt die passende Lieferantenbestellung vor → Zeilen prüfen und offene Zuordnungen von Hand setzen → Summen-Ampel muss grün sein → freigeben.",
+    "Freigeben ist erst möglich, wenn jede Position zugeordnet ist und die Summen der Rechnung mit den Positionen übereinstimmen (Abweichung ab 2 Cent blockiert). Positionen, die keine Ware sind (Fracht, Zuschläge), lassen sich je Zeile auf 'Zusatzkosten' umschalten.",
+    "Erkennt das Programm, dass die vorgeschlagene Bestellposition bereits vollständig berechnet ist, warnt es – das ist die eingebaute Doppelrechnungs-Erkennung. Diese Warnung nicht wegklicken, ohne sie geprüft zu haben.",
+    "Mit 'Zuordnung merken' wird eine von Hand gesetzte Artikelzuordnung nach tliefartikel zurückgeschrieben und beim nächsten Mal automatisch gefunden.",
+    "Für Portal-Benutzer: Formular veröffentlichen und die Benutzer unter 'allowed_users' freischalten. Ohne veröffentlichtes Formular meldet das Widget 'Kein Zugriff auf diese Verbindung' – das ist die Absicherung, damit ein Portal-Konto nicht in eine fremde Wawi schreiben kann.",
+    "Noch nicht enthalten: Zusatzkosten werden im Plan ausgewiesen, aber noch nicht in die Zusatzkosten-Tabellen geschrieben. Steuerschlüssel werden als Prozentsatz übernommen, nicht als JTL-Steuerschlüssel gemappt."
+  ],
+  "config_required": [
+    {
+      "key": "connection_jtl",
+      "label": "JTL-Datenbankverbindung (Ziel-Wawi, MS SQL Server)",
+      "type": "connection",
+      "default": ""
+    }
+  ],
+  "datasets": [],
+  "mappings": [],
+  "pipelines": [],
+  "forms": [
+    {
+      "id": "form_eingangsrechnung",
+      "name": "Eingangsrechnungs-Import",
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "actions": [],
+        "widgets": [
+          {
+            "id": "w_eingangsrechnung",
+            "type": "eingangsrechnung",
+            "label": "Eingangsrechnung einlesen und freigeben",
+            "config": {
+              "width": 12,
+              "connection_id": "{{connection_jtl}}",
+              "info": "ZUGFeRD/Factur-X-PDF oder XRechnung-XML hochladen. Zuordnungen prüfen, dann freigeben – erst damit wird in die JTL-Wawi geschrieben."
+            }
+          }
+        ]
+      },
+      "portal_config": {}
+    }
+  ],
+  "alert_rules": [],
+  "reports": []
+}

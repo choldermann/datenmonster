@@ -696,7 +696,19 @@ Mapping laufen muss.
 - **Voraussetzung:** Die KI-Integration muss unter *Systemeinstellungen* aktiv sein (Ollama). Ist sie aus, zeigt das Widget einen Hinweis statt Text. Das Ergebnis wird pro Datenstand gecacht (erneutes Öffnen ist sofort da).
 
 #### Eingangsrechnungs-Freigabe (`eingangsrechnung`)
-Spezial-Widget für den DATEV/JTL-Eingangsrechnungs-Workflow. `config.connection_id` = Ziel-WaWi-Verbindung. Nur verwenden, wenn ausdrücklich gefordert.
+Spezial-Widget für den JTL-Eingangsrechnungs-Workflow: E-Rechnung (ZUGFeRD/Factur-X oder XRechnung) hochladen, gegen die Lieferantenbestellung matchen, freigeben, in die Wawi schreiben.
+
+```json
+{
+  "id": "w_eingangsrechnung", "type": "eingangsrechnung",
+  "label": "Eingangsrechnung einlesen und freigeben",
+  "config": { "width": 12, "connection_id": "{{connection_jtl}}" }
+}
+```
+
+- `config.connection_id` = **Ziel**-Wawi-Verbindung, in die geschrieben wird. Sie gehört wie jede andere Verbindung als `{{connection_…}}`-Platzhalter ins Template, mit passendem `config_required`-Eintrag vom Typ `connection` – **nie** eine feste Zahl. Der Installer setzt die vom Nutzer gewählte Verbindung ein; beim Export eines Formulars wird eine vorhandene ID automatisch wieder zum Platzhalter.
+- Kein `action_id`, kein Mapping: das Widget holt seine Daten selbst über `/api/eingangsrechnung/*`.
+- Fertiges Beispiel: `templates/jtl_eingangsrechnung.json`.
 
 > **Balken-/Linien-/Kreis-Widgets** unterstützen optional `config.drilldown` (Klick auf ein Segment lädt Detaildaten). Für die Erstgenerierung weglassen.
 
