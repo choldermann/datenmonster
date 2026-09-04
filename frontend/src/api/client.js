@@ -25,4 +25,33 @@ api.interceptors.response.use(
   }
 );
 
+/** Fehlermeldung einer API-Antwort als TEXT.
+ *
+ *  FastAPI liefert `detail` je nach Lage als Zeichenkette (HTTPException) oder
+ *  als Liste von Objekten (Validierungsfehler: {type, loc, msg, input}). Wird so
+ *  ein Objekt direkt in JSX gesetzt, wirft React Fehler #31 und reisst die ganze
+ *  Seite ab – aus einem Bedienfehler wird ein Totalausfall. Deshalb geht jede
+ *  Fehlerausgabe durch diese Funktion.
+ */
+export function fehlerText(err, rueckfall = "Unbekannter Fehler") {
+  const d = err?.response?.data?.detail ?? err?.response?.data;
+  const einer = (x) => {
+    if (x == null) return "";
+    if (typeof x === "string") return x;
+    if (typeof x === "object") {
+      const wo = Array.isArray(x.loc) ? x.loc.filter(t => t !== "body").join(".") : "";
+      return [wo, x.msg || x.message || JSON.stringify(x)].filter(Boolean).join(": ");
+    }
+    return String(x);
+  };
+  if (Array.isArray(d)) {
+    const txt = d.map(einer).filter(Boolean).join(" · ");
+    if (txt) return txt;
+  } else {
+    const txt = einer(d);
+    if (txt) return txt;
+  }
+  return err?.message || rueckfall;
+}
+
 export default api;

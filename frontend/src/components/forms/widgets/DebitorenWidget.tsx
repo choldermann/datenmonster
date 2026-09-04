@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { Loader2, CheckCircle2, AlertTriangle, XCircle, RefreshCw } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -46,7 +46,7 @@ export default function DebitorenWidget({ widget, baseParams }) {
       setWawi(data.wawi || null);
       setWahl({});                     // bewusst nichts vorausgewählt
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setLaden(false); }
   }, [connId, jahr, monat]);
 
@@ -62,7 +62,7 @@ export default function DebitorenWidget({ widget, baseParams }) {
       setErgebnis(data);
       if (!data.errors?.length) await laden_();   // Liste frisch ziehen
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSchreiben(false); }
   }
 

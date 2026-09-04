@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BookOpen, CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { S } from "./dashboard/constants";
 import DatabaseAnalyzer from "./DatabaseAnalyzer";
 import AiDatasetWizard from "./AiDatasetWizard";
@@ -34,7 +34,7 @@ function ConnectionForm({ initial, projectId, onSaved, onCancel }) {
       const { data } = await api.post("/api/connections/test", { ...form, id: initial?.id || null });
       setTestResult(data);
     } catch (e) {
-      setTestResult({ success: false, message: e.response?.data?.detail || e.message });
+      setTestResult({ success: false, message: fehlerText(e) });
     } finally { setTesting(false); }
   };
 
@@ -118,7 +118,7 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
         setAlle(data || []);
         setGewaehlt(new Set((data || []).filter(c => c.zugeordnet).map(c => c.id)));
       })
-      .catch(e => setFehler(e.response?.data?.detail || e.message))
+      .catch(e => setFehler(fehlerText(e)))
       .finally(() => setLaden(false));
   }, [projectId]);
 
@@ -133,7 +133,7 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
         { project_id: projectId, connection_ids: [...gewaehlt] });
       onDone();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSpeichern(false); }
   };
 
@@ -233,7 +233,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
       setStep(2);
     } catch (e) {
       const status = e.response?.status;
-      const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
+      const detail = fehlerText(e) || "Unbekannter Fehler";
       if (status === 413) {
         setError(`Datei zu groß für Upload. Bitte nutze den Serverpfad-Modus: Lege die Datei direkt auf dem Server ab und trage den Pfad ein.`);
       } else {

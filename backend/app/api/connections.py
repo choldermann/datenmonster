@@ -933,42 +933,9 @@ def analyze_schema(
         raise HTTPException(400, str(e)[:500])
 
 
-@router.put("/{conn_id}")
-@router.patch("/{conn_id}")
-def update_connection(conn_id: int, data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
-    _nur_admin(user)
-    for k, v in data.model_dump().items():
-        if k == "password":
-            if v and v != "••••••••":
-                setattr(conn, k, encrypt_credential(v))
-        else:
-            setattr(conn, k, v)
-    db.commit()
-    # Gecachte Engine verwerfen, sonst nutzt das laufende Backend weiter die alte
-    # Verbindung (Host/Instanz/Credentials/Port) bis zum Neustart.
-    from app.services.sql_helpers import invalidate_sql_engine
-    invalidate_sql_engine(conn_id)
-    return conn_out(conn)
-
-
-@router.delete("/{conn_id}")
-def delete_connection(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
-    _nur_admin(user)
-    db.query(ProjektVerbindung).filter(
-        ProjektVerbindung.connection_id == conn_id).delete()
-    db.delete(conn)
-    db.commit()
-    from app.services.sql_helpers import invalidate_sql_engine
-    invalidate_sql_engine(conn_id)
-    return {"ok": True}
-
-
+# Diese Routen müssen VOR den /{conn_id}-Routen stehen: FastAPI prüft in
+# Definitionsreihenfolge, und "zuordnung" würde sonst als Verbindungs-ID
+# gelesen (422 statt Treffer).
 # ── Zuordnung Projekt ↔ Verbindung ──────────────────────────────────────────
 
 class ZuordnungIn(BaseModel):
@@ -1016,3 +983,39 @@ def zuordnung_setzen(body: ZuordnungIn, db: Session = Depends(get_db),
     db.commit()
     return {"ok": True, "project_id": body.project_id,
             "connection_ids": sorted(gewuenscht)}
+
+
+@router.put("/{conn_id}")
+@router.patch("/{conn_id}")
+def update_connection(conn_id: int, data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+    if not conn:
+        raise HTTPException(404, "Verbindung nicht gefunden")
+    _nur_admin(user)
+    for k, v in data.model_dump().items():
+        if k == "password":
+            if v and v != "••••••••":
+                setattr(conn, k, encrypt_credential(v))
+        else:
+            setattr(conn, k, v)
+    db.commit()
+    # Gecachte Engine verwerfen, sonst nutzt das laufende Backend weiter die alte
+    # Verbindung (Host/Instanz/Credentials/Port) bis zum Neustart.
+    from app.services.sql_helpers import invalidate_sql_engine
+    invalidate_sql_engine(conn_id)
+    return conn_out(conn)
+
+
+@router.delete("/{conn_id}")
+def delete_connection(conn_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
+    if not conn:
+        raise HTTPException(404, "Verbindung nicht gefunden")
+    _nur_admin(user)
+    db.query(ProjektVerbindung).filter(
+        ProjektVerbindung.connection_id == conn_id).delete()
+    db.delete(conn)
+    db.commit()
+    from app.services.sql_helpers import invalidate_sql_engine
+    invalidate_sql_engine(conn_id)
+    return {"ok": True}
