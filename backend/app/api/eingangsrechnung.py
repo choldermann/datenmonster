@@ -26,13 +26,18 @@ router = APIRouter(prefix="/api/eingangsrechnung", tags=["eingangsrechnung"])
 MAX_UPLOAD = 20 * 1024 * 1024  # 20 MB
 
 
-def _check_connection_access(connection_id: int, user: User, db: Session) -> None:
+def _check_connection_access(connection_id: int, user: User, db: Session,
+                            widget_types: tuple = ("eingangsrechnung",)) -> None:
     """Stellt sicher, dass der Benutzer diese JTL-Verbindung nutzen darf.
 
     Admins und interne Editoren haben ohnehin vollen Connection-Zugriff im Editor.
     Ein reiner Portal-Benutzer (is_portal_only) darf eine Verbindung NUR ansprechen,
-    wenn sie in einem veröffentlichten Formular als Eingangsrechnungs-Widget gebunden
-    ist, auf das er Zugriff hat — sonst könnte er in eine fremde WaWi schreiben.
+    wenn sie in einem veröffentlichten Formular als Widget gebunden ist, auf das er
+    Zugriff hat — sonst könnte er in eine fremde WaWi schreiben. Freigegeben wird
+    also über die Formular-Veröffentlichung, nicht über die Benutzerrolle.
+
+    `widget_types` sagt, welche Widgets als Freigabe zählen; der DATEV-Export
+    nutzt dieselbe Prüfung mit seinem eigenen Typ.
     """
     if getattr(user, "is_admin", False) or not getattr(user, "is_portal_only", False):
         return
@@ -42,7 +47,7 @@ def _check_connection_access(connection_id: int, user: User, db: Session) -> Non
     for f in forms:
         widgets = (f.schema or {}).get("widgets", [])
         bound = {str(w.get("config", {}).get("connection_id"))
-                 for w in widgets if w.get("type") == "eingangsrechnung"}
+                 for w in widgets if w.get("type") in widget_types}
         if str(connection_id) in bound:
             try:
                 _check_portal_access(f, user)

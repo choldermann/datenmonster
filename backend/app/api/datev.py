@@ -20,14 +20,18 @@ from app.services.jtl_kunde_writer import KundeWriter, protokolliere
 router = APIRouter(prefix="/api/datev", tags=["datev"])
 
 
-def _pruefe_zugriff(user: User) -> None:
-    """Stammdaten der Wawi ändert nur, wer auch sonst im System arbeiten darf.
+def _pruefe_zugriff(connection_id: int, user: User, db: Session) -> None:
+    """Wer darf an dieser Wawi Debitorennummern setzen?
 
-    Ein reiner Portal-Benutzer sieht Formulare, aber schreibt nicht in die Wawi –
-    dieselbe Grenze wie beim Artikel-Writer.
+    Gesteuert über die Formular-Veröffentlichung, nicht über die Benutzerrolle:
+    ein Portal-Benutzer darf, wenn ein für ihn freigegebenes Formular diese
+    Verbindung in einem „debitoren“-Widget führt. Dieselbe Prüfung nutzt der
+    Eingangsrechnungs-Import, der ganze Rechnungen in die Wawi schreibt – das
+    Nachpflegen einer Debitorennummer ist der deutlich kleinere Eingriff, und
+    genau die Buchhaltung, die es braucht, arbeitet oft nur im Portal.
     """
-    if getattr(user, "is_portal_only", False) and not getattr(user, "is_admin", False):
-        raise HTTPException(403, "Portal-Benutzer dürfen keine Stammdaten ändern")
+    from app.api.eingangsrechnung import _check_connection_access
+    _check_connection_access(connection_id, user, db, widget_types=("debitoren",))
 
 
 def _writer(connection_id: int) -> KundeWriter:
@@ -58,7 +62,7 @@ class SchreibenRequest(BaseModel):
 def debitoren_offen(req: OffeneRequest, user: User = Depends(get_current_user),
                     db: Session = Depends(get_db)):
     """Kunden mit Umsatz im Zeitraum, die keine Debitorennummer führen."""
-    _pruefe_zugriff(user)
+    _pruefe_zugriff(req.connection_id, user, db)
     return {"faelle": _writer(req.connection_id).offene_faelle(req.year, req.month)}
 
 
@@ -71,7 +75,7 @@ def debitoren_schreiben(req: SchreibenRequest, user: User = Depends(get_current_
     darf keine Nummer haben, die Nummer muss frei sein. Zwischen dem Anzeigen der
     Liste und dem Klick kann in der Wawi gearbeitet worden sein.
     """
-    _pruefe_zugriff(user)
+    _pruefe_zugriff(req.connection_id, user, db)
     w = _writer(req.connection_id)
     kunden = [k.model_dump() for k in req.kunden]
     plan = w.build_plan(kunden, dry_run=not req.bestaetigt)
