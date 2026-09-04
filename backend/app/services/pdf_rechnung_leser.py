@@ -249,6 +249,33 @@ SYSTEM = (
 )
 
 
+def artikel_aus_bestellung(vorlage: list[dict], menge: float, ek: float,
+                           bezeichnung: str) -> Optional[str]:
+    """Unsere eigene Artikelnummer aus der erkannten Bestellung holen.
+
+    Lieferanten drucken ihre eigenen Artikelnummern auf die Rechnung („06353"),
+    nicht unsere („A-100101"). Die KI kann daraus nichts machen, und in
+    `tliefartikel` steht die Zuordnung längst nicht immer. Da die Bestellung aber
+    feststeht, ist der Artikel bereits bekannt — er muss nur zugeordnet werden.
+
+    Zugeordnet wird nur bei **eindeutigem** Treffer: gleicher Einzelpreis, sonst
+    gleicher Preis UND gleiche Menge. Bleiben mehrere Kandidaten oder passt der
+    Preis nicht, wird nichts gesetzt — dann fragt das Formular. Raten wäre hier
+    besonders schädlich, weil eine falsche Artikelnummer den Wareneingang der
+    falschen Bestellposition zuordnet.
+    """
+    if not vorlage:
+        return None
+    genau = [v for v in vorlage if v["cArtNr"] and abs(v["ekNetto"] - ek) < 0.005]
+    if len(genau) == 1:
+        return genau[0]["cArtNr"]
+    if len(genau) > 1:
+        mit_menge = [v for v in genau if abs(v["menge"] - menge) < 1e-9]
+        if len(mit_menge) == 1:
+            return mit_menge[0]["cArtNr"]
+    return None
+
+
 def _zahl(v) -> float:
     if isinstance(v, (int, float)):
         return float(v)
@@ -330,12 +357,20 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         menge = _zahl(p.get("menge"))
         if menge == 0:
             continue
+        gelesene_nr = (p.get("artikelnummer") or "").strip() or None
+        ek = _zahl(p.get("einzelpreisNetto"))
+        bezeichnung = (p.get("bezeichnung") or "").strip()[:255] or "Position"
+        eigene = artikel_aus_bestellung(positionen_vorlage, menge, ek, bezeichnung)
         positionen.append(ERPositionInput(
-            cName=(p.get("bezeichnung") or "").strip()[:255] or "Position",
+            cName=bezeichnung,
             fMenge=menge,
-            fEKNetto=_zahl(p.get("einzelpreisNetto")),
+            fEKNetto=ek,
             fMwSt=_zahl(p.get("mwstProzent")),
-            cArtNr=(p.get("artikelnummer") or "").strip() or None,
+            # Unsere Nummer aus der Bestellung, sonst die gelesene versuchen.
+            cArtNr=eigene or gelesene_nr,
+            # Die gelesene Nummer ist meist die des LIEFERANTEN – so kann der
+            # Writer notfalls über tliefartikel auflösen.
+            cLieferantenArtNr=gelesene_nr,
             bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
         ))
     if not positionen:

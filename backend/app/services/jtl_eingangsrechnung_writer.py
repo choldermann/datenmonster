@@ -328,13 +328,25 @@ class EingangsrechnungWriter:
                     "_match": "kein Artikel → kein Bestell-Match", "kandidaten": [],
                     "warnung": "kein Artikel auflösbar → keine Bestellzuordnung"}
 
+        # `bereits` zaehlt nur Rechnungen mit nDeleted = 0. Eine geloeschte
+        # Eingangsrechnung verschwindet in JTL naemlich NICHT: der Kopf wird nur
+        # markiert, Positionen und Zusatzkosten bleiben stehen. Ohne den Filter
+        # gaelte eine stornierte Rechnung weiter als „bereits berechnet", die
+        # Bestellposition bekaeme -50 Punkte und eine Doppelrechnungs-Warnung –
+        # ausgerechnet beim Neuerfassen nach einer Stornierung, also genau dann,
+        # wenn man die Position wieder braucht. (Positionen loescht JTL dagegen
+        # hart, samt ihrer Zusatzkostenzeile.)
         bestellnr_ref = (pos.bestellnummer or kopf.bestellnummer or "").strip()
         rows = conn.execute(text("""
             SELECT bp.kLieferantenBestellung, bp.kLieferantenBestellungPos,
                    b.cEigeneBestellnummer, b.nStatus, b.dErstellt,
                    bp.fMenge, bp.fEKNetto, ISNULL(bp.fMengeGeliefert,0) AS geliefert,
-                   (SELECT ISNULL(SUM(er.fMenge),0) FROM dbo.tEingangsrechnungPos er
-                     WHERE er.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS bereits,
+                   (SELECT ISNULL(SUM(er.fMenge),0)
+                      FROM dbo.tEingangsrechnungPos er
+                      JOIN dbo.tEingangsrechnung r2
+                        ON r2.kEingangsrechnung = er.kEingangsrechnung
+                     WHERE er.kLieferantenBestellungPos = bp.kLieferantenBestellungPos
+                       AND ISNULL(r2.nDeleted,0) = 0) AS bereits,
                    (SELECT COUNT(*) FROM dbo.tWarenLagerEingang w
                      WHERE w.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS wareneingaenge
             FROM dbo.tLieferantenBestellungPos bp
@@ -687,12 +699,17 @@ class EingangsrechnungWriter:
                     "cStrasse": kopf.cStrasse or lief.get("cStrasse") or "",
                     "cPLZ": kopf.cPLZ or lief.get("cPLZ") or "",
                     "cOrt": kopf.cOrt or lief.get("cOrt") or "",
-                    "cLandISO": kopf.cLandISO or "",
+                    # Land und Mail stehen im Lieferantenstamm unter cISO bzw.
+                    # cEMail. Eine frühere Notiz behauptete, sie kämen dort nicht
+                    # vor – das lag an den Spaltennamen. cISO ist bei allen 257
+                    # Lieferanten gefüllt, cEMail bei 169. Die Rechnung hat
+                    # weiterhin Vorrang, sie ist die Quelle der Wahrheit.
+                    "cLandISO": kopf.cLandISO or lief.get("cISO") or "",
                     "cBundesland": "",
                     "cTel": kopf.cTel or lief.get("cTelZentralle") or lief.get("cTelDurchwahl") or "",
                     "cFax": kopf.cFax or lief.get("cFax") or "",
                     "cMobil": "",
-                    "cMail": kopf.cMail or "",
+                    "cMail": kopf.cMail or lief.get("cEMail") or "",
                     "nStatus": 0,               # 0 = offen/unbezahlt (Golden-Master)
                     "nDeleted": 0,
                     "nZahlungFreigegeben": 0,
@@ -704,10 +721,14 @@ class EingangsrechnungWriter:
                     "nVerteilungsArt": 0,
                     "dBelegdatum": kopf.dBelegdatum,
                 }
-                if not (kopf.cLandISO or "").strip():
-                    plan.warnings.append("cLandISO leer – aus der Rechnung übernehmen (relevant für DATEV/Steuer)")
-                if not (kopf.cMail or "").strip():
-                    plan.warnings.append("cMail leer – tlieferant führt keine Mail; ggf. aus Rechnung übernehmen")
+                if not (plan.kopf_werte.get("cLandISO") or "").strip():
+                    plan.warnings.append(
+                        "cLandISO leer – weder die Rechnung noch der Lieferantenstamm "
+                        "führen ein Land (relevant für DATEV/Steuer)")
+                if not (plan.kopf_werte.get("cMail") or "").strip():
+                    plan.warnings.append(
+                        "cMail leer – weder die Rechnung noch der Lieferantenstamm "
+                        "führen eine Mailadresse")
 
                 # Zusatzkosten aus der Rechnung (Dokumentebene: Fracht/Zuschläge)
                 for z in kopf.zusatzkosten:
