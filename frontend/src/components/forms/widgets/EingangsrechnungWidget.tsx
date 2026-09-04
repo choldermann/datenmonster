@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {
   Upload, Loader2, CheckCircle2, AlertTriangle, XCircle, Search, FileText,
 } from "lucide-react";
@@ -430,8 +430,10 @@ export default function EingangsrechnungWidget({ widget }) {
               );
             }
             const needsFix = ["unknown_article", "ambiguous", "unklar"].includes(p.status);
+            const meldungen = p._meldungen || [];
             return (
-              <tr key={i}>
+              <Fragment key={i}>
+              <tr style={meldungen.length ? { borderBottom: "none" } : undefined}>
                 <td style={td}>
                   <div style={{ color: S.textBright }}>{p.cName}</div>
                   <div style={{ color: S.textDim, fontSize: 10 }}>
@@ -480,6 +482,25 @@ export default function EingangsrechnungWidget({ widget }) {
                   </div>
                 </td>
               </tr>
+              {/* Was an DIESER Zeile hakt, steht unter DIESER Zeile. Vorher lagen
+                  alle Meldungen gesammelt am Fuss des Formulars, und bei einer
+                  Rechnung mit einem Dutzend Positionen musste man die passende
+                  Zeile darueber erst wieder suchen. */}
+              {meldungen.length > 0 && (
+                <tr>
+                  <td colSpan={5} style={{ padding: "0 8px 7px 8px",
+                    borderBottom: `1px solid ${S.border}` }}>
+                    {meldungen.map((m, k) => (
+                      <div key={k} style={{ display: "flex", gap: 5, fontSize: 10,
+                        color: "#e0a070", lineHeight: 1.45 }}>
+                        <AlertTriangle size={11} style={{ flexShrink: 0, marginTop: 2 }} />
+                        <span>{m}</span>
+                      </div>
+                    ))}
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>
@@ -531,6 +552,58 @@ export default function EingangsrechnungWidget({ widget }) {
                 .map(zk => num(zk.dWert).toFixed(2)).join(" · ")} €
             </div>
           )}
+        </div>
+      )}
+
+      {/* Die Rechnung nachrechnen, nicht nur ihr Ergebnis zeigen.
+          Links steht, was WIR aus den Zeilen errechnen, rechts – falls der Beleg
+          sie ausweist – was der Lieferant selbst angibt. Weichen sie ab, blockiert
+          der Summen-Abgleich ohnehin; hier wird sichtbar, an welcher Stufe. */}
+      {summen.berechnet_netto != null && (
+        <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 11, minWidth: 320 }}>
+            <tbody>
+              {[
+                ["Warenwert netto", summen.berechnet_waren_netto, null],
+                ...(num(summen.berechnet_zusatzkosten_netto) !== 0
+                  ? [["Zusatzkosten netto", summen.berechnet_zusatzkosten_netto, null]]
+                  : []),
+                ["Gesamt netto", summen.berechnet_netto, summen.rechnung_netto, true],
+                ["Mehrwertsteuer", summen.berechnet_steuer, summen.rechnung_steuer],
+              ].map(([label, wert, beleg, betont], k) => (
+                <tr key={k}>
+                  <td style={{ padding: "3px 14px 3px 0", color: betont ? S.textMain : S.textDim,
+                    fontWeight: betont ? 600 : 400,
+                    borderTop: betont ? `1px solid ${S.border}` : "none" }}>{label}</td>
+                  <td style={{ padding: "3px 0", textAlign: "right", whiteSpace: "nowrap",
+                    color: betont ? S.textBright : S.textMain, fontWeight: betont ? 600 : 400,
+                    borderTop: betont ? `1px solid ${S.border}` : "none" }}>
+                    {num(wert).toFixed(2)} €</td>
+                  <td style={{ padding: "3px 0 3px 12px", textAlign: "right", fontSize: 10,
+                    whiteSpace: "nowrap", color: S.textDim,
+                    borderTop: betont ? `1px solid ${S.border}` : "none" }}>
+                    {beleg != null && Math.abs(num(beleg) - num(wert)) >= 0.005
+                      ? <span style={{ color: "#e0a070" }}>Beleg {num(beleg).toFixed(2)}</span>
+                      : ""}</td>
+                </tr>
+              ))}
+              <tr>
+                <td style={{ padding: "6px 14px 3px 0", color: S.textBright, fontWeight: 700,
+                  borderTop: `2px solid ${S.border}` }}>Gesamt brutto</td>
+                <td style={{ padding: "6px 0 3px 0", textAlign: "right", whiteSpace: "nowrap",
+                  color: plan.reconciliation_ok === false ? "#f87171" : "#34d399",
+                  fontWeight: 700, fontSize: 13, borderTop: `2px solid ${S.border}` }}>
+                  {num(summen.berechnet_brutto).toFixed(2)} €</td>
+                <td style={{ padding: "6px 0 3px 12px", textAlign: "right", fontSize: 10,
+                  whiteSpace: "nowrap", color: S.textDim, borderTop: `2px solid ${S.border}` }}>
+                  {summen.rechnung_brutto != null
+                    && Math.abs(num(summen.rechnung_brutto) - num(summen.berechnet_brutto)) >= 0.005
+                    ? <span style={{ color: "#f87171" }}>
+                        Beleg {num(summen.rechnung_brutto).toFixed(2)}</span>
+                    : "✓ wie im Beleg"}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       )}
 

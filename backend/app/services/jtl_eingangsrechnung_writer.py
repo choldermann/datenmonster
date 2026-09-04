@@ -66,6 +66,11 @@ class ERPositionInput:
     # Matching-Anker – wenn nicht gesetzt, wird über Scoring gesucht
     kLieferantenbestellung: Optional[int] = None
     kLieferantenBestellungPos: Optional[int] = None
+    # Anmerkungen des Auslesers zu GENAU DIESER Zeile. Sie hängen an der Position
+    # und nicht am Kopf, damit sie im Formular unter ihrer Zeile stehen können und
+    # die Zuordnung auch dann hält, wenn das Formular Zeilen umwidmet oder der
+    # Beleg zwischen Vorschau und Freigabe hin- und hergereicht wird.
+    leser_hinweise: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -191,6 +196,8 @@ class ERWritePlan:
                 if k.startswith("_"):
                     continue
                 L.append(f"    {k:26} = {v!r}")
+            for meldung in (p.get("_meldungen") or []):
+                L.append(f"    ⚠ {meldung}")
             kand = p.get("_kandidaten") or []
             if len(kand) > 1:
                 L.append(f"    Kandidaten ({len(kand)}, für 4-Augen-Freigabe):")
@@ -216,7 +223,10 @@ class ERWritePlan:
                          f"{zk['dWert']} (MwSt {zk['fMwst']}%)")
         if self.summen:
             s = self.summen
-            amp = "✅" if self.reconciliation_ok else "❌"
+            # None heisst: der Beleg nennt keine eigene Summe, es wurde also gar
+            # nicht verglichen. Das darf nicht wie ein gescheiterter Abgleich
+            # aussehen – gerechnet haben wir trotzdem.
+            amp = {True: "✅", False: "❌"}.get(self.reconciliation_ok, "– kein Vergleich")
             L.append(f"\nSummen-Abgleich {amp}:")
             L.append(f"    Rechnung: netto={s.get('rechnung_netto')} steuer={s.get('rechnung_steuer')} "
                      f"brutto={s.get('rechnung_brutto')}")
@@ -578,9 +588,13 @@ class EingangsrechnungWriter:
                 })
 
     def _reconcile(self, kopf: ERKopfInput, plan: ERWritePlan) -> None:
-        """Summen-Abgleich: berechnete Summe (Pos + Zusatzkosten) vs. Rechnungssumme."""
-        if kopf.bruttoSumme is None and kopf.nettoSumme is None:
-            return  # keine Rechnungssumme geliefert → kein Gate
+        """Summen-Abgleich: berechnete Summe (Pos + Zusatzkosten) vs. Rechnungssumme.
+
+        Gerechnet wird IMMER, verglichen nur, wenn die Rechnung eine eigene Summe
+        nennt. Früher stieg die Methode ohne Rechnungssumme sofort aus und ließ
+        `plan.summen` leer – dann hatte das Formular nichts anzuzeigen, obwohl die
+        Zahlen längst feststanden. Das Gate hängt weiterhin allein am Vergleich.
+        """
         netto_pos = sum(float(p["fMenge"]) * float(p["fEKNetto"]) for p in plan.positionen)
         steuer = sum(float(p["fMenge"]) * float(p["fEKNetto"]) * float(p["fMwSt"]) / 100.0
                      for p in plan.positionen)
@@ -608,7 +622,13 @@ class EingangsrechnungWriter:
             "rechnung_netto": kopf.nettoSumme, "rechnung_steuer": kopf.steuerSumme,
             "rechnung_brutto": kopf.bruttoSumme, "berechnet_netto": netto_ber,
             "berechnet_steuer": steuer_ber, "berechnet_brutto": brutto_ber,
+            # Aufgeschlüsselt, damit das Formular die Rechnung zeigen kann, statt
+            # nur ihr Ergebnis: Warenwert + Zusatzkosten = Netto, + MwSt = Brutto.
+            "berechnet_waren_netto": round(netto_pos, 2),
+            "berechnet_zusatzkosten_netto": round(netto_zk, 2),
         }
+        if kopf.bruttoSumme is None and kopf.nettoSumme is None:
+            return          # nichts zu vergleichen – die Zahlen stehen trotzdem
         if kopf.bruttoSumme is not None:
             ref, cmp, label = kopf.bruttoSumme, brutto_ber, "brutto"
         else:
@@ -794,15 +814,26 @@ class EingangsrechnungWriter:
                     else:
                         status = "unklar"
 
-                    # Warnungen (nur wenn nicht per Override bereits gelöst)
+                    # Warnungen (nur wenn nicht per Override bereits gelöst).
+                    #
+                    # Sie hängen an der Position, nicht in der Sammelliste am Fuß
+                    # des Formulars: bei einer Rechnung mit einem Dutzend Zeilen
+                    # musste der Anwender sonst raten, welche Meldung zu welcher
+                    # Zeile gehört, und die Zeile darüber im Kopf wiederfinden.
+                    # Was den ganzen Beleg betrifft (Lieferant, Summen, Hinweise
+                    # der Auslesung), steht weiterhin in plan.warnings.
+                    #
+                    # Zuerst, was der Ausleser zu genau dieser Zeile angemerkt hat –
+                    # das steht schon fest, bevor hier ein Artikel gesucht wird.
+                    meldungen: list[str] = list(pos.leser_hinweise or [])
                     if not ov.get("kArtikel") and ares["warnung"]:
-                        plan.warnings.append(f"Position '{pos.cName}': {ares['warnung']}")
+                        meldungen.append(ares["warnung"])
                     elif status == "unknown_article":
-                        plan.warnings.append(
-                            f"Position '{pos.cName}': Artikel nicht auflösbar "
-                            f"(cArtNr={pos.cArtNr}, Liefer-ArtNr={pos.cLieferantenArtNr})")
+                        meldungen.append(
+                            f"Artikel nicht auflösbar (cArtNr={pos.cArtNr}, "
+                            f"Liefer-ArtNr={pos.cLieferantenArtNr})")
                     if not ov.get("kLieferantenBestellungPos") and m.get("warnung"):
-                        plan.warnings.append(f"Position '{pos.cName}': {m['warnung']}")
+                        meldungen.append(m["warnung"])
 
                     plan.positionen.append({
                         "kEingangsrechnung": "«SCOPE_IDENTITY()»",
@@ -824,6 +855,7 @@ class EingangsrechnungWriter:
                         "_match": m["_match"],
                         "_artikel_quelle": artikel_quelle,
                         "_kandidaten": m.get("kandidaten", []),
+                        "_meldungen": meldungen,
                     })
 
                 for h in (kopf.leser_hinweise or []):

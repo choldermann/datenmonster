@@ -313,7 +313,7 @@ def artikel_aus_bestellung(vorlage: list[dict], menge: float, ek: float,
     return None
 
 
-def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> list[str]:
+def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> int:
     """Zeilen ohne Preistreffer über die MENGE zuordnen.
 
     Anlass war die Eurostat-Rechnung INV57645: der Lieferant rechnet Ware und
@@ -329,11 +329,12 @@ def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> list[str]:
     Bestellposition mit dieser Menge und genau eine noch offene Rechnungszeile
     mit dieser Menge. Damit kann keine Zeile die Bestellposition einer anderen
     an sich ziehen; bleibt es mehrdeutig, wird nichts gesetzt und das Formular
-    fragt. Jede so entstandene Zuordnung wird als Hinweis ausgewiesen, denn sie
-    beruht auf weniger Belegen als ein Preistreffer.
+    fragt. Jede so entstandene Zuordnung wird als Hinweis an IHRER Zeile
+    ausgewiesen, denn sie beruht auf weniger Belegen als ein Preistreffer.
+    Zurück kommt nur, wie viele Zeilen so zugeordnet wurden.
     """
     if not vorlage or not positionen:
-        return []
+        return 0
     # Aus der Bestellung stammt eine Nummer genau dann, wenn sie dort vorkommt.
     # Alles andere in cArtNr ist die vom Lieferanten gedruckte Nummer.
     aus_bestellung = {v["cArtNr"] for v in vorlage if v["cArtNr"]}
@@ -341,15 +342,19 @@ def ordne_ueber_menge_zu(positionen: list, vorlage: list[dict]) -> list[str]:
     offen_best = [v for v in vorlage
                   if v["cArtNr"] and v["cArtNr"] not in vergeben]
     offen_pos = [p for p in positionen if p.cArtNr not in aus_bestellung]
-    notizen: list[str] = []
+    getroffen = 0
     for pos in offen_pos:
         passend = [v for v in offen_best if abs(v["menge"] - pos.fMenge) < 1e-9]
         konkurrenz = [q for q in offen_pos if abs(q.fMenge - pos.fMenge) < 1e-9]
         if len(passend) == 1 and len(konkurrenz) == 1:
             pos.cArtNr = passend[0]["cArtNr"]
             offen_best.remove(passend[0])
-            notizen.append(f"{pos.cName[:40]} → {pos.cArtNr} (Menge {pos.fMenge:g})")
-    return notizen
+            pos.leser_hinweise.append(
+                f"Über die Menge zugeordnet ({pos.fMenge:g} Stück), nicht über den "
+                f"Preis → {pos.cArtNr}. Der Rechnungspreis weicht vom Bestellpreis "
+                f"ab – bitte gegenprüfen.")
+            getroffen += 1
+    return getroffen
 
 
 def _ohne_leerraum(s: str) -> str:
@@ -520,10 +525,10 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
     # Was der Preisabgleich offen gelassen hat, jetzt über die Menge versuchen.
     # Bewusst erst hier, auf dem gewählten Versuch: die Zuordnung schaut auf alle
     # Zeilen zugleich und braucht deshalb die endgültige Liste.
-    for notiz in ordne_ueber_menge_zu(positionen, positionen_vorlage):
-        hinweise.append(
-            f"Zugeordnet über die Menge, nicht über den Preis: {notiz}. Der "
-            f"Rechnungspreis weicht vom Bestellpreis ab – bitte gegenprüfen.")
+    # Der Hinweis dazu haengt jetzt an der jeweiligen Zeile, nicht am Kopf: er
+    # betrifft genau eine Position, und in der Sammelliste am Fuss des Formulars
+    # musste der Anwender die gemeinte Zeile erst wieder suchen.
+    ordne_ueber_menge_zu(positionen, positionen_vorlage)
 
     # Zolldaten je Lieferanten-Artikelnummer ablegen. Sie werden nirgends
     # gebucht – das Formular greift nur danach, wenn jemand aus einer nicht
