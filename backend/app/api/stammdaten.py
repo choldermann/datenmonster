@@ -255,3 +255,93 @@ def write(req: WriteRequest, user: User = Depends(get_current_user),
         logger.exception("Schreibprotokoll konnte nicht gespeichert werden")
 
     return out
+
+
+# ── Artikel neu anlegen ─────────────────────────────────────────────────────────
+#
+# Gedacht für den Fall, dass beim Buchen einer Lieferantenrechnung eine Zeile
+# auftaucht, zu der es noch keinen Artikel gibt. Gleiche zwei Stufen wie oben:
+# /artikel-pruefen schreibt nichts, /artikel-anlegen verlangt bestaetigt=true.
+
+class NeuerArtikelRequest(BaseModel):
+    connection_id: Optional[int] = None
+    mapping_id: Optional[int] = None
+    cArtNr: str
+    cName: str
+    cKurzBeschreibung: Optional[str] = None
+    cBarcode: Optional[str] = None          # EAN
+    cHAN: Optional[str] = None
+    cTaric: Optional[str] = None            # Warentarifnummer
+    cHerkunftsland: Optional[str] = None
+    fGewicht: Optional[Any] = None
+    fVKNetto: Optional[Any] = None
+    lagerAktiv: bool = True
+    # Lieferantenzuordnung – die Bestellnummer beim Lieferanten ist genau das,
+    # wonach die nächste Rechnung dieses Lieferanten sucht.
+    kLieferant: Optional[int] = None
+    cLiefArtNr: Optional[str] = None
+    cLiefName: Optional[str] = None
+    fEKNetto: Optional[Any] = None
+    bestaetigt: bool = False
+
+
+def _anleger(req: NeuerArtikelRequest, user: User, db: Session):
+    from app.services.jtl_artikel_writer import ArtikelAnleger
+    connection_id, project_id = _aufloesen(
+        PlanRequest(aenderungen=[], connection_id=req.connection_id,
+                    mapping_id=req.mapping_id), user, db)
+    try:
+        return ArtikelAnleger(connection_id), connection_id, project_id
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.post("/artikel-pruefen")
+def artikel_pruefen(req: NeuerArtikelRequest, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Vorschau: ließe sich dieser Artikel anlegen? Schreibt nichts."""
+    a, connection_id, _ = _anleger(req, user, db)
+    daten = req.model_dump(exclude={"connection_id", "mapping_id", "bestaetigt"})
+    return {**a.pruefe(daten).to_dict(), "connection_id": connection_id}
+
+
+@router.post("/artikel-anlegen")
+def artikel_anlegen(req: NeuerArtikelRequest, user: User = Depends(get_current_user),
+                    db: Session = Depends(get_db)):
+    """Legt den Artikel wirklich an – nur mit bestaetigt=true.
+
+    Prüft dabei erneut von vorn: geschrieben wird gegen den Zustand der Wawi im
+    Moment des Schreibens, nicht gegen das, was die Oberfläche noch weiß. Ohne
+    diese zweite Prüfung entstünde ein Doppel, wenn jemand die Artikelnummer
+    zwischenzeitlich vergeben hat.
+    """
+    if not req.bestaetigt:
+        raise HTTPException(400, "Ohne ausdrückliche Bestätigung wird nicht angelegt")
+
+    a, connection_id, project_id = _anleger(req, user, db)
+    daten = req.model_dump(exclude={"connection_id", "mapping_id", "bestaetigt"})
+    try:
+        plan = a.lege_an(daten)
+    except Exception as e:
+        logger.exception("Artikel anlegen fehlgeschlagen")
+        raise HTTPException(400, f"Anlegen fehlgeschlagen: {str(e)[:300]}")
+
+    out = {**plan.to_dict(), "connection_id": connection_id}
+    if not plan.ok:
+        return out
+
+    try:
+        from app.services.db_logger import log as _dblog
+        _dblog(db, "success", "jtl_artikel_writer", "artikel_anlegen",
+               f"Artikel {plan.werte.get('cArtNr')} in der Wawi angelegt "
+               f"(kArtikel {plan.kArtikel})",
+               entity_id=connection_id, project_id=project_id, rows_processed=1,
+               details={"benutzer": getattr(user, "username", None)
+                                    or getattr(user, "email", None),
+                        "kArtikel": plan.kArtikel, "werte": plan.werte,
+                        "beschreibung": plan.beschreibung,
+                        "lieferant": plan.lieferant, "hinweise": plan.hinweise})
+    except Exception:   # Protokoll darf ein erfolgreiches Anlegen nie kippen
+        logger.exception("Schreibprotokoll konnte nicht gespeichert werden")
+
+    return out

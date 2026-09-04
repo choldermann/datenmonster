@@ -493,3 +493,270 @@ def build_dry_run(connection_id: int, aenderungen: list[dict],
                   ersetzen: bool = False) -> ArtikelWritePlan:
     """Bequemer Einstieg: Plan bauen, nichts schreiben."""
     return ArtikelWriter(connection_id).build_plan(aenderungen, dry_run=True, ersetzen=ersetzen)
+
+
+# ── Artikel neu anlegen ─────────────────────────────────────────────────────────
+#
+# Anlass: beim Buchen einer Lieferantenrechnung taucht eine Zeile auf, zu der es
+# in der Wawi noch keinen Artikel gibt. Statt den Beleg zu verlassen, soll der
+# Artikel aus dem Formular heraus entstehen — mit den Stammdaten, die auf der
+# Rechnung ohnehin stehen (Warennummer, Herkunftsland, Gewicht, Lieferanten-
+# Artikelnummer, EK).
+#
+# ACHTUNG, das ist der erste INSERT-Pfad dieses Moduls. Alles darüber ändert nur
+# vorhandene Zeilen. Was JTL beim Anlegen eines Artikels tatsächlich schreibt,
+# ist NICHT geraten, sondern am 2026-09-04 in der Test-Wawi (Verbindung 6) mit
+# doku/gm_diff.py gemessen: von Hand Artikel „TEST_DM" angelegt, Datenbank
+# vorher/nachher verglichen. Ergebnis — sechs Tabellen:
+#
+#   tArtikel              +1  die Zeile selbst (kArtikel ist IDENTITY)
+#   tArtikelBeschreibung  +1  kSprache 1 / kPlattform 1 / kShop 0, Name + Kurztext
+#   tliefartikel          +1  Lieferant, dessen ArtNr, EK, cWaehrung, nStandard=1
+#   tlagerbestand         +1  reine Nullzeile
+#   tArtikelSpeicher      +3  JTLs Suchindex: nID 0 = ArtNr, 5 = Name, 8 = Liefer-Nr
+#   tkategorieartikel     +1  nur, weil beim Anlegen eine Kategorie gewählt wurde
+#
+# tlagerbestand und tArtikelSpeicher pflegen JTLs eigene Trigger
+# (tgr_tartikel_INSUP bzw. tgr_tArtikelBeschreibung_INSUP / tgr_tliefartikel_INSUP).
+# Wir schreiben sie deshalb NICHT selbst, sondern prüfen nach dem Anlegen nach und
+# ergänzen nur, was fehlt — sonst entstünden Dubletten im Suchindex, und der
+# Artikel wäre in der Wawi doppelt oder gar nicht auffindbar.
+#
+# Die Kategorie lassen wir weg: sie ist eine Sortierentscheidung des Anwenders,
+# keine Angabe der Rechnung. Der Artikel ist ohne sie vollständig.
+
+# Werte, die JTL beim Anlegen setzt und die NICHT aus dem Spaltenstandard kommen.
+# Ohne sie entstünde ein Artikel, der anders aussieht als ein von Hand angelegter:
+# cAktiv stünde auf 'N' (unsichtbar), fPackeinheit auf 0 (Division!),
+# kSteuerklasse auf 0 (keine gültige Klasse). Alle Werte aus der Messung.
+ANLEGE_VORGABEN = {
+    "cAktiv": "Y", "cNeu": "Y", "cPreisliste": "N", "cTopArtikel": "N",
+    "cInet": "N", "cDelInet": " ", "cLagerArtikel": "N", "cTeilbar": "N",
+    "cLagerKleinerNull": "N", "cLagerVariation": "N",
+    "fPackeinheit": 1.0, "kSteuerklasse": 1, "kVersandklasse": 1,
+    "kZustand": 1, "nEbayAbgleich": 1, "nPuffer": 0, "nIstVater": 0,
+}
+
+# Lagerführung: in dieser Wawi stehen 2.515 von 2.794 aktiven Artikeln auf
+# cLagerAktiv='Y'. Ein Artikel, der über eine Eingangsrechnung hereinkommt, wird
+# eingelagert — deshalb ist 'Y' die Vorgabe. Der von Hand angelegte Testartikel
+# bekam 'N', weil beim Anlegen im Client niemand das Häkchen gesetzt hat; das ist
+# eine Entscheidung des Anwenders und steht im Formular als Schalter.
+LAGER_VORGABE = "Y"
+
+# Was das Formular anbieten darf. Alles andere wird nicht geschrieben — eine
+# Weißliste, wie beim Ändern auch, damit ein manipulierter Aufruf keine fremden
+# Spalten erreicht.
+ANLEGE_FELDER = {
+    # Feld              Spalte            Tabelle    Prüfer
+    "cArtNr":           ("cArtNr",           "A",  _pruefe_text(100)),
+    "cName":            ("cName",            "B",  _pruefe_text(255)),
+    "cKurzBeschreibung": ("cKurzBeschreibung", "B", _pruefe_text(2000)),
+    "cBarcode":         ("cBarcode",         "A",  pruefe_ean),
+    "cHAN":             ("cHAN",             "A",  _pruefe_text(255)),
+    "cTaric":           ("cTaric",           "A",  pruefe_taric),
+    "cHerkunftsland":   ("cHerkunftsland",   "A",  pruefe_iso2),
+    "fGewicht":         ("fGewicht",         "A",  pruefe_gewicht),
+}
+
+
+def _zahl_oder_none(roh):
+    """Freundlich gemeinte Zahl aus dem Formular (auch '17,04')."""
+    if roh is None or str(roh).strip() == "":
+        return None
+    try:
+        return float(str(roh).strip().replace(",", "."))
+    except ValueError:
+        return None
+
+
+@dataclass
+class AnlegePlan:
+    """Was passieren soll, samt allem, was dagegen spricht."""
+    werte: dict = field(default_factory=dict)       # geprüfte Spaltenwerte
+    beschreibung: dict = field(default_factory=dict)
+    lieferant: dict = field(default_factory=dict)
+    fehler: list = field(default_factory=list)      # blockieren
+    hinweise: list = field(default_factory=list)    # nur zur Kenntnis
+    kArtikel: int = 0                               # nach dem Schreiben gesetzt
+
+    @property
+    def ok(self) -> bool:
+        return not self.fehler
+
+    def to_dict(self) -> dict:
+        return {"ok": self.ok, "werte": self.werte, "beschreibung": self.beschreibung,
+                "lieferant": self.lieferant, "fehler": self.fehler,
+                "hinweise": self.hinweise, "kArtikel": self.kArtikel}
+
+
+class ArtikelAnleger(ArtikelWriter):
+    """Legt einen Artikel in der Wawi an. Zweistufig wie das Ändern auch:
+    erst `pruefe` (schreibt nichts), dann `lege_an` (schreibt nur einen
+    geprüften Plan)."""
+
+    def pruefe(self, eingabe: dict) -> AnlegePlan:
+        """Alles prüfen, was sich ohne Schreiben prüfen lässt.
+
+        Blockierend sind nur Dinge, die einen kaputten oder doppelten Artikel
+        ergäben. Ein unlesbares Gewicht ist kein Grund, das Anlegen zu
+        verweigern — dann bleibt das Feld eben leer und wird als Hinweis
+        ausgewiesen. Bei Artikelnummer und Name ist es umgekehrt: ohne sie ist
+        der Artikel in der Wawi nicht benutzbar.
+        """
+        plan = AnlegePlan()
+
+        for feld, (spalte, tabelle, pruefer) in ANLEGE_FELDER.items():
+            roh = eingabe.get(feld)
+            if roh is None or str(roh).strip() == "":
+                continue
+            wert, fehler, hinweis = pruefer(roh)
+            if fehler:
+                # Pflichtfelder blockieren, der Rest wird nur weggelassen.
+                if feld in ("cArtNr", "cName"):
+                    plan.fehler.append(f"{feld}: {fehler}")
+                else:
+                    plan.hinweise.append(f"{feld} nicht übernommen – {fehler}")
+                continue
+            if hinweis:
+                plan.hinweise.append(hinweis)
+            (plan.beschreibung if tabelle == "B" else plan.werte)[spalte] = wert
+
+        if not plan.werte.get("cArtNr"):
+            plan.fehler.append("Ohne Artikelnummer geht es nicht")
+        if not plan.beschreibung.get("cName"):
+            plan.fehler.append("Ohne Artikelname geht es nicht")
+
+        vk = _zahl_oder_none(eingabe.get("fVKNetto"))
+        plan.werte["fVKNetto"] = vk if vk and vk > 0 else 0.0
+        plan.werte["cLagerAktiv"] = (
+            LAGER_VORGABE if eingabe.get("lagerAktiv", True) else "N")
+
+        # Lieferantenzuordnung – nur vollständig oder gar nicht.
+        kLieferant = eingabe.get("kLieferant")
+        if kLieferant:
+            ek = _zahl_oder_none(eingabe.get("fEKNetto"))
+            plan.lieferant = {
+                "kLieferant": int(kLieferant),
+                "cLiefArtNr": str(eingabe.get("cLiefArtNr") or "").strip()[:100],
+                "fEKNetto": ek if ek and ek > 0 else 0.0,
+                "cName": str(eingabe.get("cLiefName")
+                             or plan.beschreibung.get("cName") or "")[:255],
+            }
+            if not plan.lieferant["cLiefArtNr"]:
+                plan.hinweise.append(
+                    "Ohne Lieferanten-Artikelnummer wird die Zuordnung angelegt, "
+                    "aber die Rechnung findet den Artikel beim nächsten Mal nicht "
+                    "automatisch wieder.")
+
+        if plan.fehler:
+            return plan
+
+        # Ab hier wird die Wawi befragt – nur lesend.
+        with self._engine.connect() as conn:
+            vorhanden = conn.execute(text(
+                "SELECT kArtikel FROM dbo.tArtikel WHERE cArtNr = :a"),
+                {"a": plan.werte["cArtNr"]}).first()
+            if vorhanden:
+                plan.fehler.append(
+                    f"Die Artikelnummer '{plan.werte['cArtNr']}' gibt es schon "
+                    f"(kArtikel {vorhanden[0]}). Artikelnummern sind in JTL "
+                    f"eindeutig – bitte den vorhandenen Artikel zuordnen.")
+
+            ean = plan.werte.get("cBarcode")
+            if ean:
+                doppelt = conn.execute(text(
+                    "SELECT TOP 1 kArtikel, cArtNr FROM dbo.tArtikel "
+                    "WHERE cBarcode = :e"), {"e": ean}).first()
+                if doppelt:
+                    # Kein Abbruch: cBarcode hat keinen eindeutigen Index, und
+                    # Gebinde teilen sich in der Praxis eine EAN. Aber sichtbar.
+                    plan.hinweise.append(
+                        f"Die EAN {ean} trägt bereits Artikel {doppelt[1]} "
+                        f"(kArtikel {doppelt[0]}).")
+
+            if plan.lieferant:
+                lief = conn.execute(text(
+                    "SELECT cFirma FROM dbo.tlieferant WHERE kLieferant = :k"),
+                    {"k": plan.lieferant["kLieferant"]}).first()
+                if not lief:
+                    plan.fehler.append(
+                        f"Lieferant {plan.lieferant['kLieferant']} gibt es nicht")
+                else:
+                    plan.lieferant["cFirma"] = lief[0]
+
+        return plan
+
+    def lege_an(self, eingabe: dict) -> AnlegePlan:
+        """Anlegen. Prüft IMMER frisch, schreibt nur einen fehlerfreien Plan.
+
+        Alles in EINER Transaktion: entsteht auf halbem Weg ein Fehler, gibt es
+        auch keinen halben Artikel. JTLs Trigger laufen in derselben Transaktion
+        mit, deshalb steht der Suchindex am Ende schon, wenn sie ihn pflegen.
+        """
+        plan = self.pruefe(eingabe)
+        if not plan.ok:
+            return plan
+
+        spalten = {**ANLEGE_VORGABEN, **plan.werte}
+        jetzt = "SYSDATETIME()"
+        namen = list(spalten)
+        # SET NOCOUNT ON ist Pflicht, nicht Kosmetik: auf tArtikel liegen
+        # Trigger, deren Anweisungen jeweils eine eigene Ergebnismenge
+        # ("n rows affected") erzeugen. Ohne NOCOUNT liefert der Treiber die
+        # erste davon zurueck und SCOPE_IDENTITY() kaeme nie an.
+        sql = (f"SET NOCOUNT ON; INSERT INTO dbo.tArtikel "
+               f"({', '.join(namen)}, dErstelldatum, dMod, dNeuImSortiment) "
+               f"VALUES ({', '.join(':' + n for n in namen)}, {jetzt}, {jetzt}, {jetzt}); "
+               f"SELECT CAST(SCOPE_IDENTITY() AS INT);")
+
+        with self._engine.begin() as conn:
+            # SCOPE_IDENTITY statt @@IDENTITY: auf tArtikel liegen Trigger, und
+            # @@IDENTITY gäbe den Schlüssel zurück, den ein Trigger zuletzt
+            # erzeugt hat – also womöglich eine ganz andere Tabelle.
+            k = conn.execute(text(sql), spalten).scalar()
+            if not k:
+                raise RuntimeError("Die Wawi hat keine kArtikel zurückgegeben")
+            plan.kArtikel = int(k)
+
+            b = {**BESCHREIBUNG_SCHLUESSEL, **plan.beschreibung, "kArtikel": plan.kArtikel}
+            conn.execute(text(
+                f"INSERT INTO dbo.tArtikelBeschreibung ({', '.join(b)}) "
+                f"VALUES ({', '.join(':' + n for n in b)})"), b)
+
+            if plan.lieferant:
+                L = plan.lieferant
+                conn.execute(text("""
+                    INSERT INTO dbo.tliefartikel
+                      (tArtikel_kArtikel, tLieferant_kLieferant, cLiefArtNr,
+                       fEKNetto, fEKBrutto, cWaehrung, nStandard, cName, dLBGeaendert)
+                    VALUES (:ka, :kl, :nr, :ek, :ek, 'EUR', 1, :name, SYSDATETIME())
+                """), {"ka": plan.kArtikel, "kl": L["kLieferant"],
+                       "nr": L["cLiefArtNr"], "ek": L["fEKNetto"], "name": L["cName"]})
+
+            # Nachsehen statt annehmen: die Bestandszeile legen JTLs Trigger an,
+            # aber verlassen wollen wir uns darauf nicht – ein Artikel ohne
+            # tlagerbestand macht in der Wawi Ärger. Nur ergänzen, was fehlt.
+            if not conn.execute(text(
+                    "SELECT 1 FROM dbo.tlagerbestand WHERE kArtikel = :k"),
+                    {"k": plan.kArtikel}).first():
+                conn.execute(text(
+                    "INSERT INTO dbo.tlagerbestand (kArtikel) VALUES (:k)"),
+                    {"k": plan.kArtikel})
+                plan.hinweise.append("Bestandszeile selbst angelegt "
+                                     "(kein Trigger hat sie erzeugt).")
+
+            # Dasselbe für den Suchindex: ohne nID 0 findet die Wawi den Artikel
+            # nicht über seine Nummer.
+            hat = {r[0] for r in conn.execute(text(
+                "SELECT nID FROM dbo.tArtikelSpeicher WHERE kArtikel = :k"),
+                {"k": plan.kArtikel})}
+            if 0 not in hat:
+                conn.execute(text(
+                    "INSERT INTO dbo.tArtikelSpeicher (kArtikel, cNummer, nID, nAktiv) "
+                    "VALUES (:k, :n, 0, 1)"),
+                    {"k": plan.kArtikel, "n": plan.werte["cArtNr"]})
+                plan.hinweise.append("Suchindex-Eintrag der Artikelnummer selbst "
+                                     "angelegt (kein Trigger hat ihn erzeugt).")
+
+        return plan

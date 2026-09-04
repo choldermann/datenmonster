@@ -217,6 +217,20 @@ SCHEMA = _objekt({
         "betragNetto": {"type": "number", "description": "negativ bei Rabatt/Gutschrift"},
         "mwstProzent": {"type": "number"},
     })},
+    # Zolldaten stehen auf Auslandsrechnungen oft je Position dabei („Customs
+    # Code", „Origin", „Unitary Weight"). Sie werden NICHT gebucht, sondern nur
+    # vorgehalten, falls der Anwender aus dem Beleg heraus einen neuen Artikel
+    # anlegt — dann muss er sie nicht abtippen.
+    #
+    # Bewusst ein eigener Block und nicht drei Felder je Position: die
+    # Positionszeilen hängen an der Summenprüfung, die diese Auslesung
+    # verlässlich macht. Was hier danebengeht, kann dort nichts kaputtmachen.
+    "stammdaten": {"type": "array", "items": _objekt({
+        "artikelnummer":  {"type": "string", "description": "wie in der Position"},
+        "warennummer":    {"type": "string", "description": "Zolltarif-/Customs-Code, sonst leer"},
+        "herkunftsland":  {"type": "string", "description": "Ursprungsland, sonst leer"},
+        "gewichtKg":      {"type": "number", "description": "Stückgewicht in kg, sonst 0"},
+    })},
 })
 
 SYSTEM = (
@@ -263,7 +277,12 @@ SYSTEM = (
     "12. artikelnummer nur, wenn in der Zeile wirklich eine steht. Reine "
     "Kostenzeilen ('TOOLING COSTS', 'Verpackung') tragen oft keine – dann bleibt "
     "das Feld leer. Leite niemals eine Nummer aus der Positionsnummer, aus "
-    "Nachbarzeilen oder aus einem Muster ab."
+    "Nachbarzeilen oder aus einem Muster ab.\n"
+    "13. stammdaten NUR füllen, wenn der Beleg die Angaben ausdrücklich nennt "
+    "('Customs Code', 'Zolltarifnummer', 'Origin', 'Ursprungsland', 'Unitary "
+    "Weight', 'Gewicht'). Steht nichts da, lass den Block leer – rate kein "
+    "Ursprungsland aus dem Firmensitz des Lieferanten und kein Gewicht aus der "
+    "Art der Ware."
 )
 
 
@@ -505,6 +524,17 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         hinweise.append(
             f"Zugeordnet über die Menge, nicht über den Preis: {notiz}. Der "
             f"Rechnungspreis weicht vom Bestellpreis ab – bitte gegenprüfen.")
+
+    # Zolldaten je Lieferanten-Artikelnummer ablegen. Sie werden nirgends
+    # gebucht – das Formular greift nur danach, wenn jemand aus einer nicht
+    # zuordenbaren Zeile heraus einen neuen Artikel anlegt.
+    befund["stammdaten"] = {
+        nr: {"warennummer": (s.get("warennummer") or "").strip(),
+             "herkunftsland": (s.get("herkunftsland") or "").strip(),
+             "gewichtKg": _zahl(s.get("gewichtKg")) or None}
+        for s in (antwort.get("stammdaten") or [])
+        if (nr := (s.get("artikelnummer") or "").strip())
+    }
 
     # Steuersatz der Zusatzkosten notfalls aus der Rechnungssumme herleiten.
     # Kein Raten: es wird nur übernommen, wenn die vom Lieferanten selbst
