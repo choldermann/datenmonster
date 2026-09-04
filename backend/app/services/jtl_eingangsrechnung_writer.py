@@ -1,19 +1,26 @@
 """
 Write-Logik für JTL-Eingangsrechnungen (Kopf + Positionen).
 
-Grundlage: Golden-Master-Diff auf der Test-WaWi (2026-07-24). Beim Anlegen einer
-Eingangsrechnung berührt JTL DB-weit nur drei relevante Tabellen:
-  - dbo.tEingangsrechnung      (INSERT, kEingangsrechnung = IDENTITY)
-  - dbo.tEingangsrechnungPos   (INSERT je Position, IDENTITY)
-  - dbo.tLaufendeNummern       (UPDATE des Nummernkreises – NICHT selbst anfassen,
-                                sondern über die JTL-SP dbo.spGetNextNummer)
-Kein Lagerbestand, keine Buchungs-/Export-Queue, keine FiBu – die reine ER ist
-bestand-entkoppelt und hängt nicht zwingend an einem Wareneingang.
+Grundlage: Golden-Master-Diff auf der Test-WaWi (2026-07-24, erweitert 2026-09-04).
+Beim Anlegen einer Eingangsrechnung berührt JTL DB-weit nur diese Tabellen:
+  - dbo.tEingangsrechnung                 (INSERT, kEingangsrechnung = IDENTITY)
+  - dbo.tEingangsrechnungPos              (INSERT je Position, IDENTITY)
+  - dbo.tEingangsrechnungPosZusatzkosten  (INSERT je Position, wenn Fracht/Zuschläge)
+  - dbo.tLaufendeNummern                  (UPDATE des Nummernkreises – NICHT selbst
+                                           anfassen, sondern über dbo.spGetNextNummer)
+Keine Buchungs-/Export-Queue, keine FiBu. Die Rechnung entsteht UNVERBUCHT
+(nStatus = 0) und ist damit bestand-entkoppelt.
+
+Die Bewertung fassen wir bewusst nicht an: erst beim Verbuchen in JTL wandert die
+Fracht über tWarenLagerEingang.fEKEinzel (= Positions-EK + Zusatzkosten/Menge) in
+den durchschnittlichen Netto-EK, den JTL als gewichtetes Mittel der Lagerschichten
+in tArtikel.fEKNetto fortschreibt. Verbuchen setzt zudem einen Wareneingang voraus.
 
 Write-Rezept (eine Transaktion):
   1. EXEC dbo.spGetNextNummer @cName='Eingangsrechnung' → cEigeneRechnungsnummer
   2. INSERT tEingangsrechnung → SCOPE_IDENTITY() = kEingangsrechnung
-  3. INSERT tEingangsrechnungPos (je Position) mit Bestell-Matching
+  3. INSERT tEingangsrechnungPos (je Position) mit Bestell-Matching → SCOPE_IDENTITY()
+  4. INSERT tEingangsrechnungPosZusatzkosten (verteilte Fracht je Position)
 
 Dieser Writer löst zuerst alle Referenzen read-only auf (Lieferant, Artikel,
 Bestellung, Dublette), baut daraus einen Plan und führt im Dry-Run NICHTS aus.
@@ -141,6 +148,8 @@ class ERWritePlan:
             "kopf_werte": _j(self.kopf_werte),
             "positionen": _j(self.positionen),
             "zusatzkosten": _j(self.zusatzkosten),
+            "kostenarten": _j(self.kostenarten),
+            "zusatzkosten_zeilen": _j(self.zusatzkosten_zeilen),
             "summen": _j(self.summen),
             "reconciliation_ok": self.reconciliation_ok,
             "statements": self.statements,
@@ -317,9 +326,11 @@ class EingangsrechnungWriter:
         rows = conn.execute(text("""
             SELECT bp.kLieferantenBestellung, bp.kLieferantenBestellungPos,
                    b.cEigeneBestellnummer, b.nStatus, b.dErstellt,
-                   bp.fMenge, bp.fEKNetto,
+                   bp.fMenge, bp.fEKNetto, ISNULL(bp.fMengeGeliefert,0) AS geliefert,
                    (SELECT ISNULL(SUM(er.fMenge),0) FROM dbo.tEingangsrechnungPos er
-                     WHERE er.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS bereits
+                     WHERE er.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS bereits,
+                   (SELECT COUNT(*) FROM dbo.tWarenLagerEingang w
+                     WHERE w.kLieferantenBestellungPos = bp.kLieferantenBestellungPos) AS wareneingaenge
             FROM dbo.tLieferantenBestellungPos bp
             JOIN dbo.tLieferantenBestellung  b ON b.kLieferantenBestellung = bp.kLieferantenBestellung
             WHERE b.kLieferant = :kl AND bp.kArtikel = :ka AND ISNULL(b.nDeleted,0) = 0
@@ -352,6 +363,17 @@ class EingangsrechnungWriter:
             # Mengen-Match
             if abs(menge_po - menge_inv) < 1e-9:
                 score += 20; why.append("Menge exakt")
+            # Wareneingang: nur gelieferte Positionen lassen sich in JTL verbuchen –
+            # und erst beim Verbuchen rechnet JTL die Zusatzkosten in den
+            # Durchschnitts-EK ein. Eine Bestellposition ohne Lieferung ist damit
+            # zwar zuordenbar, aber die Rechnung bliebe in der Wawi liegen.
+            geliefert = float(r["geliefert"])
+            if geliefert >= menge_inv - 1e-9:
+                score += 30; why.append("geliefert")
+            elif geliefert > 0:
+                score += 10; why.append(f"erst {geliefert:g} geliefert")
+            else:
+                score -= 20; why.append("nicht geliefert")
             # Bestellnummer-Referenz aus der Rechnung → entscheidend
             if bestellnr_ref and r["cEigeneBestellnummer"] \
                     and bestellnr_ref == r["cEigeneBestellnummer"].strip():
@@ -360,6 +382,7 @@ class EingangsrechnungWriter:
                 "kBest": int(r["kLieferantenBestellung"]), "kPos": kpos,
                 "bestellnr": r["cEigeneBestellnummer"], "nStatus": int(r["nStatus"]),
                 "ek": ek_po, "menge": menge_po, "bereits": bereits, "offen": offen,
+                "geliefert": geliefert, "wareneingaenge": int(r["wareneingaenge"]),
                 "score": score, "why": ", ".join(why), "dErstellt": r["dErstellt"],
             })
 
@@ -376,6 +399,10 @@ class EingangsrechnungWriter:
                        "mögliche Doppel-Rechnung, Prüfung nötig")
         elif best["score"] <= 0:
             warnung = ("schwacher Match (Preis abweichend / kaum offen) – Prüfung nötig")
+        elif best["geliefert"] <= 1e-9:
+            warnung = ("Bestellposition ist noch nicht als geliefert gebucht – die "
+                       "Rechnung lässt sich anlegen, in JTL aber erst verbuchen, wenn "
+                       "der Wareneingang erfasst ist")
         elif len(scored) > 1 and (best["score"] - scored[1]["score"]) < 15 \
                 and "Bestellnr-Referenz" not in best["why"]:
             warnung = (f"mehrdeutig: Top-2 nah beieinander "
