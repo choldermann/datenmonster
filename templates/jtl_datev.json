@@ -1,0 +1,1030 @@
+{
+ "format_version": "1.0",
+ "template_id": "jtl_datev",
+ "template_name": "JTL DATEV-Reporting (Eingangs- und Ausgangsrechnungen)",
+ "description": "Erzeugt aus der JTL-Wawi einen DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700) – für Eingangsrechnungen, die JTL selbst nicht exportieren kann, und für Ausgangsrechnungen. Zusätzlich das schlanke Format des bisherigen Access-Werkzeugs, damit der Umstieg vergleichbar bleibt. Monatsweise, mit Kontrollliste vor dem Export.",
+ "category": "jtl",
+ "version": "1.0",
+ "author": "christof",
+ "datasets": [],
+ "mappings": [
+  {
+   "id": "mapping_er",
+   "name": "DATEV Eingangsrechnungen (offizielles Format)",
+   "sql_nodes": [
+    {
+     "id": "sql_er",
+     "x": 110,
+     "y": 30,
+     "connection_id": "{{connection_jtl}}",
+     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchlaeufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Betraege ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN '{{konto_we_19}}'\n                 WHEN p.fMwSt = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN '{{konto_we_19}}'\n                 WHEN z.fMwst = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE fuehrende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehoert ins Feld; \"0.00\" waere Fuellwerk.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
+     "mode": "transform"
+    }
+   ],
+   "joins": [],
+   "calc_nodes": [],
+   "agg_nodes": [],
+   "sort_nodes": [],
+   "lookup_nodes": [],
+   "constant_nodes": [],
+   "switch_nodes": [],
+   "transform_nodes": [],
+   "rest_nodes": [],
+   "canvas_nodes": [],
+   "targets": [
+    {
+     "id": "t_mapping_er",
+     "name": "DATEV-Buchungsstapel EXTF",
+     "target_type": "datev_extf",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {
+      "datev_config": {
+       "berater": "{{datev_berater}}",
+       "mandant": "{{datev_mandant}}",
+       "wj_beginn": "{{datev_wj_beginn}}",
+       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
+       "bezeichnung": "Eingangsrechnungen",
+       "herkunft": "DM",
+       "exportiert_von": "Datenmonster",
+       "waehrung": "EUR",
+       "festschreibung": false,
+       "eigene_ustid": "{{eigene_ustid}}"
+      }
+     },
+     "fields": [
+      {
+       "source_field": "umsatz",
+       "target_field": "umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "umsatz"
+       }
+      },
+      {
+       "source_field": "soll_haben",
+       "target_field": "soll_haben",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "soll_haben"
+       }
+      },
+      {
+       "source_field": "vorzeichen_negativ",
+       "target_field": "vorzeichen_negativ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "vorzeichen_negativ"
+       }
+      },
+      {
+       "source_field": "konto",
+       "target_field": "konto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "konto"
+       }
+      },
+      {
+       "source_field": "gegenkonto",
+       "target_field": "gegenkonto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "gegenkonto"
+       }
+      },
+      {
+       "source_field": "belegdatum",
+       "target_field": "belegdatum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegdatum"
+       }
+      },
+      {
+       "source_field": "belegfeld1",
+       "target_field": "belegfeld1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld1"
+       }
+      },
+      {
+       "source_field": "belegfeld2",
+       "target_field": "belegfeld2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2"
+       }
+      },
+      {
+       "source_field": "datum_kompakt",
+       "target_field": "datum_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "datum_kompakt"
+       }
+      },
+      {
+       "source_field": "belegfeld2_kompakt",
+       "target_field": "belegfeld2_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2_kompakt"
+       }
+      },
+      {
+       "source_field": "partner_ustid",
+       "target_field": "partner_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "partner_ustid"
+       }
+      },
+      {
+       "source_field": "eu_ustid",
+       "target_field": "eu_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_ustid"
+       }
+      },
+      {
+       "source_field": "eu_steuersatz",
+       "target_field": "eu_steuersatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_steuersatz"
+       }
+      },
+      {
+       "source_field": "eigene_ustid",
+       "target_field": "eigene_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigene_ustid"
+       }
+      },
+      {
+       "source_field": "buchungstext",
+       "target_field": "buchungstext",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "buchungstext"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mapping_ar",
+   "name": "DATEV Ausgangsrechnungen (offizielles Format)",
+   "sql_nodes": [
+    {
+     "id": "sql_ar",
+     "x": 110,
+     "y": 30,
+     "connection_id": "{{connection_jtl}}",
+     "sql": "-- Ausgangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Spiegelbild der Eingangsseite: Konto ist der Debitor, Gegenkonto das\n-- Erloeskonto, und der Debitor steht im SOLL (die Forderung entsteht).\n--\n-- Die Debitorennummer wird von der Rechnung selbst genommen (nDebitorennr),\n-- nicht aus dem Kundenstamm: sie ist dort zum Rechnungszeitpunkt festgehalten\n-- und aendert sich nicht mehr, wenn der Kunde spaeter umgeschluesselt wird.\n--\n-- Ausgeschlossen: Stornos, Proformarechnungen und Entwuerfe - nichts davon ist\n-- ein Buchungsvorgang.\nWITH roh AS (\n    SELECT  r.cRechnungsnr, r.dErstellt,\n            DATEADD(day, ISNULL(r.nZahlungszielTage, 0), r.dErstellt) AS faellig,\n            CAST(NULLIF(r.nDebitorennr, 0) AS VARCHAR(20))            AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(r.cKundeUstId, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN rp.fMwSt = 19 THEN '{{konto_erloes_19}}'\n                 WHEN rp.fMwSt = 7  THEN '{{konto_erloes_7}}'\n                 ELSE '{{konto_erloes_null}}' END                     AS gegenkonto,\n            rp.fMwSt                                                  AS steuersatz,\n            ROUND(rp.fAnzahl * rp.fVkNetto * (1 - ISNULL(rp.fRabatt, 0) / 100.0)\n                  * (1 + rp.fMwSt / 100.0), 2)                        AS brutto\n    FROM Rechnung.tRechnung r\n    JOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\n    WHERE ISNULL(r.nStorno, 0) = 0\n      AND ISNULL(r.nIstProforma, 0) = 0\n      AND ISNULL(r.nIstEntwurf, 0) = 0\n      AND YEAR(r.dErstellt) = :year AND MONTH(r.dErstellt) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid,\n           MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid\n    HAVING SUM(brutto) <> 0\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Debitor steht im Soll; eine Rechnungskorrektur dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'S' ELSE 'H' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dErstellt, 'ddMM')                    AS belegdatum,\n    cRechnungsnr                                 AS belegfeld1,\n    FORMAT(faellig, 'ddMM')                      AS belegfeld2,\n    CAST(DAY(dErstellt) AS VARCHAR(2)) + FORMAT(dErstellt, 'MMyy')  AS datum_kompakt,\n    CAST(DAY(faellig) AS VARCHAR(2)) + FORMAT(faellig, 'MMyy')      AS belegfeld2_kompakt,\n    partner_ustid,\n    CASE WHEN gegenkonto = '{{konto_erloes_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehoert ins Feld; \"0.00\" waere Fuellwerk.\n    CASE WHEN gegenkonto = '{{konto_erloes_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    LEFT('AR ' + cRechnungsnr, 60)               AS buchungstext\nFROM gebucht\nORDER BY cRechnungsnr, gegenkonto",
+     "mode": "transform"
+    }
+   ],
+   "joins": [],
+   "calc_nodes": [],
+   "agg_nodes": [],
+   "sort_nodes": [],
+   "lookup_nodes": [],
+   "constant_nodes": [],
+   "switch_nodes": [],
+   "transform_nodes": [],
+   "rest_nodes": [],
+   "canvas_nodes": [],
+   "targets": [
+    {
+     "id": "t_mapping_ar",
+     "name": "DATEV-Buchungsstapel EXTF",
+     "target_type": "datev_extf",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {
+      "datev_config": {
+       "berater": "{{datev_berater}}",
+       "mandant": "{{datev_mandant}}",
+       "wj_beginn": "{{datev_wj_beginn}}",
+       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
+       "bezeichnung": "Ausgangsrechnungen",
+       "herkunft": "DM",
+       "exportiert_von": "Datenmonster",
+       "waehrung": "EUR",
+       "festschreibung": false,
+       "eigene_ustid": "{{eigene_ustid}}"
+      }
+     },
+     "fields": [
+      {
+       "source_field": "umsatz",
+       "target_field": "umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "umsatz"
+       }
+      },
+      {
+       "source_field": "soll_haben",
+       "target_field": "soll_haben",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "soll_haben"
+       }
+      },
+      {
+       "source_field": "vorzeichen_negativ",
+       "target_field": "vorzeichen_negativ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "vorzeichen_negativ"
+       }
+      },
+      {
+       "source_field": "konto",
+       "target_field": "konto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "konto"
+       }
+      },
+      {
+       "source_field": "gegenkonto",
+       "target_field": "gegenkonto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "gegenkonto"
+       }
+      },
+      {
+       "source_field": "belegdatum",
+       "target_field": "belegdatum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegdatum"
+       }
+      },
+      {
+       "source_field": "belegfeld1",
+       "target_field": "belegfeld1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld1"
+       }
+      },
+      {
+       "source_field": "belegfeld2",
+       "target_field": "belegfeld2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2"
+       }
+      },
+      {
+       "source_field": "datum_kompakt",
+       "target_field": "datum_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "datum_kompakt"
+       }
+      },
+      {
+       "source_field": "belegfeld2_kompakt",
+       "target_field": "belegfeld2_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2_kompakt"
+       }
+      },
+      {
+       "source_field": "partner_ustid",
+       "target_field": "partner_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "partner_ustid"
+       }
+      },
+      {
+       "source_field": "eu_ustid",
+       "target_field": "eu_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_ustid"
+       }
+      },
+      {
+       "source_field": "eu_steuersatz",
+       "target_field": "eu_steuersatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_steuersatz"
+       }
+      },
+      {
+       "source_field": "eigene_ustid",
+       "target_field": "eigene_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigene_ustid"
+       }
+      },
+      {
+       "source_field": "buchungstext",
+       "target_field": "buchungstext",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "buchungstext"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mapping_er_alt",
+   "name": "DATEV Eingangsrechnungen (bisheriges Format)",
+   "sql_nodes": [
+    {
+     "id": "sql_er_alt",
+     "x": 110,
+     "y": 30,
+     "connection_id": "{{connection_jtl}}",
+     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchlaeufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Betraege ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN '{{konto_we_19}}'\n                 WHEN p.fMwSt = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN '{{konto_we_19}}'\n                 WHEN z.fMwst = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE fuehrende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehoert ins Feld; \"0.00\" waere Fuellwerk.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
+     "mode": "transform"
+    }
+   ],
+   "joins": [],
+   "calc_nodes": [],
+   "agg_nodes": [],
+   "sort_nodes": [],
+   "lookup_nodes": [],
+   "constant_nodes": [],
+   "switch_nodes": [],
+   "transform_nodes": [],
+   "rest_nodes": [],
+   "canvas_nodes": [],
+   "targets": [
+    {
+     "id": "t_mapping_er_alt",
+     "name": "Reporting-CSV wie bisher",
+     "target_type": "datev_kompakt",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {
+      "datev_config": {
+       "berater": "{{datev_berater}}",
+       "mandant": "{{datev_mandant}}",
+       "wj_beginn": "{{datev_wj_beginn}}",
+       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
+       "bezeichnung": "Eingangsrechnungen",
+       "herkunft": "DM",
+       "exportiert_von": "Datenmonster",
+       "waehrung": "EUR",
+       "festschreibung": false,
+       "eigene_ustid": "{{eigene_ustid}}"
+      }
+     },
+     "fields": [
+      {
+       "source_field": "umsatz",
+       "target_field": "umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "umsatz"
+       }
+      },
+      {
+       "source_field": "soll_haben",
+       "target_field": "soll_haben",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "soll_haben"
+       }
+      },
+      {
+       "source_field": "vorzeichen_negativ",
+       "target_field": "vorzeichen_negativ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "vorzeichen_negativ"
+       }
+      },
+      {
+       "source_field": "konto",
+       "target_field": "konto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "konto"
+       }
+      },
+      {
+       "source_field": "gegenkonto",
+       "target_field": "gegenkonto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "gegenkonto"
+       }
+      },
+      {
+       "source_field": "belegdatum",
+       "target_field": "belegdatum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegdatum"
+       }
+      },
+      {
+       "source_field": "belegfeld1",
+       "target_field": "belegfeld1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld1"
+       }
+      },
+      {
+       "source_field": "belegfeld2",
+       "target_field": "belegfeld2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2"
+       }
+      },
+      {
+       "source_field": "datum_kompakt",
+       "target_field": "datum_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "datum_kompakt"
+       }
+      },
+      {
+       "source_field": "belegfeld2_kompakt",
+       "target_field": "belegfeld2_kompakt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegfeld2_kompakt"
+       }
+      },
+      {
+       "source_field": "partner_ustid",
+       "target_field": "partner_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "partner_ustid"
+       }
+      },
+      {
+       "source_field": "eu_ustid",
+       "target_field": "eu_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_ustid"
+       }
+      },
+      {
+       "source_field": "eu_steuersatz",
+       "target_field": "eu_steuersatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eu_steuersatz"
+       }
+      },
+      {
+       "source_field": "eigene_ustid",
+       "target_field": "eigene_ustid",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigene_ustid"
+       }
+      },
+      {
+       "source_field": "buchungstext",
+       "target_field": "buchungstext",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "buchungstext"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mapping_pruef",
+   "name": "DATEV Kontrolle vor dem Export",
+   "sql_nodes": [
+    {
+     "id": "sql_pruef",
+     "x": 110,
+     "y": 30,
+     "connection_id": "{{connection_jtl}}",
+     "sql": "-- Was den Export unbrauchbar machen wuerde - VOR dem Erzeugen ansehen.\n-- Jede Zeile hier ist etwas, das der Steuerberater sonst zurueckmeldet.\nSELECT 'Lieferant ohne Kreditorenkonto' AS befund,\n       COUNT(DISTINCT e.kEingangsrechnung) AS belege,\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)) AS netto,\n       MAX(l.cFirma) AS beispiel\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nJOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(l.cLieferantID,''))),'') IS NULL\n\nUNION ALL\nSELECT 'Kunde ohne Debitorennummer', COUNT(DISTINCT r.kRechnung),\n       CAST(ROUND(SUM(rp.fAnzahl * rp.fVkNetto), 2) AS DECIMAL(18,2)), MAX(r.cRechnungsnr)\nFROM Rechnung.tRechnung r\nJOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\nWHERE ISNULL(r.nStorno,0)=0 AND ISNULL(r.nIstProforma,0)=0 AND ISNULL(r.nIstEntwurf,0)=0\n  AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND ISNULL(r.nDebitorennr,0) = 0\n\nUNION ALL\nSELECT 'Eingangsrechnung ohne Belegnummer', COUNT(*), NULL, NULL\nFROM dbo.tEingangsrechnung e\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(e.cFremdbelegnummer,''))),'') IS NULL\n\nUNION ALL\nSELECT 'Steuersatz weder 19 % noch 7 % (geht auf das Konto fuer 0 %)',\n       COUNT(DISTINCT e.kEingangsrechnung),\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)), NULL\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND p.fMwSt NOT IN (19, 7)\n\nUNION ALL\n-- Noch NICHT im Export enthalten - hier sichtbar, damit es niemand uebersieht.\nSELECT 'Rechnungskorrekturen/Gutschriften (noch NICHT im Export!)',\n       COUNT(*), CAST(ROUND(SUM(g.fPreis), 2) AS DECIMAL(18,2)), MAX(g.cGutschriftNr)\nFROM dbo.tgutschrift g\nWHERE ISNULL(g.nStorno,0)=0 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n\nUNION ALL\nSELECT 'Stornierte Ausgangsrechnungen (bewusst ausgeschlossen)', COUNT(*), NULL, NULL\nFROM Rechnung.tRechnung r\nWHERE ISNULL(r.nStorno,0)=1 AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month",
+     "mode": "transform"
+    }
+   ],
+   "joins": [],
+   "calc_nodes": [],
+   "agg_nodes": [],
+   "sort_nodes": [],
+   "lookup_nodes": [],
+   "constant_nodes": [],
+   "switch_nodes": [],
+   "transform_nodes": [],
+   "rest_nodes": [],
+   "canvas_nodes": [],
+   "targets": [
+    {
+     "id": "t_pruef",
+     "name": "Pruefliste",
+     "target_type": "csv",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "befund",
+       "target_field": "befund",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_pruef",
+       "transformer": {
+        "type": "direct",
+        "source_field": "befund"
+       }
+      },
+      {
+       "source_field": "belege",
+       "target_field": "belege",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_pruef",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belege"
+       }
+      },
+      {
+       "source_field": "netto",
+       "target_field": "netto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_pruef",
+       "transformer": {
+        "type": "direct",
+        "source_field": "netto"
+       }
+      },
+      {
+       "source_field": "beispiel",
+       "target_field": "beispiel",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_pruef",
+       "transformer": {
+        "type": "direct",
+        "source_field": "beispiel"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "pipelines": [],
+ "forms": [
+  {
+   "id": "form_datev",
+   "name": "DATEV-Export",
+   "schema": {
+    "fields": [
+     {
+      "id": "f_jahr",
+      "type": "number",
+      "row": 0,
+      "colSpan": 3,
+      "label": "Jahr",
+      "name": "year",
+      "required": true,
+      "default": "2026",
+      "options": [],
+      "placeholder": "",
+      "action_id": "",
+      "content": ""
+     },
+     {
+      "id": "f_monat",
+      "type": "dropdown",
+      "row": 0,
+      "colSpan": 3,
+      "label": "Monat",
+      "name": "month",
+      "required": true,
+      "default": "1",
+      "options": [
+       {
+        "value": "1",
+        "label": "Januar"
+       },
+       {
+        "value": "2",
+        "label": "Februar"
+       },
+       {
+        "value": "3",
+        "label": "März"
+       },
+       {
+        "value": "4",
+        "label": "April"
+       },
+       {
+        "value": "5",
+        "label": "Mai"
+       },
+       {
+        "value": "6",
+        "label": "Juni"
+       },
+       {
+        "value": "7",
+        "label": "Juli"
+       },
+       {
+        "value": "8",
+        "label": "August"
+       },
+       {
+        "value": "9",
+        "label": "September"
+       },
+       {
+        "value": "10",
+        "label": "Oktober"
+       },
+       {
+        "value": "11",
+        "label": "November"
+       },
+       {
+        "value": "12",
+        "label": "Dezember"
+       }
+      ],
+      "placeholder": "",
+      "action_id": "",
+      "content": ""
+     },
+     {
+      "id": "f_btn_pruef",
+      "type": "button",
+      "row": 0,
+      "colSpan": 3,
+      "label": "1. Prüfen",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_pruef"
+      ],
+      "action_id": "",
+      "placeholder": "",
+      "content": "",
+      "fullWidth": true
+     },
+     {
+      "id": "f_btn_anzeigen",
+      "type": "button",
+      "row": 0,
+      "colSpan": 3,
+      "label": "2. Buchungen anzeigen",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_er",
+       "a_ar"
+      ],
+      "action_id": "",
+      "placeholder": "",
+      "content": "",
+      "fullWidth": true
+     },
+     {
+      "id": "f_hinweis",
+      "type": "html",
+      "row": 1,
+      "colSpan": 12,
+      "label": "",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_id": "",
+      "placeholder": "",
+      "content": "<div style='border:1px solid rgba(234,179,8,.4);background:rgba(234,179,8,.09);border-radius:8px;padding:10px 12px'><b style='color:#eab308'>Vor dem ersten Versand mit dem Steuerberater abstimmen.</b><br>Der Stapel bucht mit <b>Bruttobeträgen</b> auf Automatikkonten – DATEV rechnet die Steuer selbst heraus. Kontenrahmen, Berater- und Mandantennummer stehen in der Template-Konfiguration; stimmen sie nicht, weist DATEV den Import ab.<br><b>Noch nicht enthalten:</b> Rechnungskorrekturen/Gutschriften. Wie viele im Zeitraum liegen, zeigt „1. Prüfen“.</div>"
+     },
+     {
+      "id": "f_btn_extf_er",
+      "type": "button",
+      "row": 2,
+      "colSpan": 4,
+      "label": "3a. Export DATEV – Eingangsrechnungen",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_export_er"
+      ],
+      "action_id": "",
+      "placeholder": "",
+      "content": "",
+      "fullWidth": true
+     },
+     {
+      "id": "f_btn_extf_ar",
+      "type": "button",
+      "row": 2,
+      "colSpan": 4,
+      "label": "3b. Export DATEV – Ausgangsrechnungen",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_export_ar"
+      ],
+      "action_id": "",
+      "placeholder": "",
+      "content": "",
+      "fullWidth": true
+     },
+     {
+      "id": "f_btn_alt",
+      "type": "button",
+      "row": 2,
+      "colSpan": 4,
+      "label": "3c. Export im bisherigen Format",
+      "name": "",
+      "required": false,
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_export_alt"
+      ],
+      "action_id": "",
+      "placeholder": "",
+      "content": "",
+      "fullWidth": true
+     }
+    ],
+    "actions": [
+     {
+      "id": "a_pruef",
+      "type": "run_mapping",
+      "mapping_id": "{{mapping_pruef}}",
+      "label": "Kontrolle"
+     },
+     {
+      "id": "a_er",
+      "type": "run_mapping",
+      "mapping_id": "{{mapping_er}}",
+      "label": "Eingangsrechnungen"
+     },
+     {
+      "id": "a_ar",
+      "type": "run_mapping",
+      "mapping_id": "{{mapping_ar}}",
+      "label": "Ausgangsrechnungen"
+     },
+     {
+      "id": "a_export_er",
+      "type": "export_mapping",
+      "mapping_id": "{{mapping_er}}",
+      "label": "DATEV-Stapel Eingangsrechnungen"
+     },
+     {
+      "id": "a_export_ar",
+      "type": "export_mapping",
+      "mapping_id": "{{mapping_ar}}",
+      "label": "DATEV-Stapel Ausgangsrechnungen"
+     },
+     {
+      "id": "a_export_alt",
+      "type": "export_mapping",
+      "mapping_id": "{{mapping_er_alt}}",
+      "label": "Reporting-CSV wie bisher"
+     }
+    ],
+    "result_tabs": [
+     {
+      "id": "tab_pruef",
+      "label": "Kontrolle",
+      "action_ids": [
+       "a_pruef"
+      ]
+     },
+     {
+      "id": "tab_er",
+      "label": "Eingangsrechnungen",
+      "action_ids": [
+       "a_er"
+      ]
+     },
+     {
+      "id": "tab_ar",
+      "label": "Ausgangsrechnungen",
+      "action_ids": [
+       "a_ar"
+      ]
+     }
+    ],
+    "widgets": [],
+    "layout": {}
+   },
+   "portal_config": {}
+  }
+ ],
+ "reports": [],
+ "config_required": [
+  {
+   "key": "connection_jtl",
+   "label": "DB-Verbindung „JTL-Wawi“",
+   "type": "connection",
+   "default": ""
+  },
+  {
+   "key": "datev_berater",
+   "label": "DATEV-Beraternummer (vom Steuerberater)",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "datev_mandant",
+   "label": "DATEV-Mandantennummer (vom Steuerberater)",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "datev_wj_beginn",
+   "label": "Beginn des Wirtschaftsjahres (JJJJMMTT, z. B. 20260101)",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "datev_sachkontenlaenge",
+   "label": "Sachkontenlänge (meist 4)",
+   "type": "text",
+   "default": "4"
+  },
+  {
+   "key": "eigene_ustid",
+   "label": "Eigene USt-IdNr. (z. B. DE119494075)",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "konto_we_19",
+   "label": "Wareneingang 19 % (SKR03: 3400)",
+   "type": "text",
+   "default": "3400"
+  },
+  {
+   "key": "konto_we_7",
+   "label": "Wareneingang 7 % (SKR03: 3300)",
+   "type": "text",
+   "default": "3300"
+  },
+  {
+   "key": "konto_we_null",
+   "label": "Wareneingang ohne Steuer / EU-Erwerb (SKR03: 3425)",
+   "type": "text",
+   "default": "3425"
+  },
+  {
+   "key": "konto_erloes_19",
+   "label": "Erlöse 19 % (SKR03: 8400)",
+   "type": "text",
+   "default": "8400"
+  },
+  {
+   "key": "konto_erloes_7",
+   "label": "Erlöse 7 % (SKR03: 8300)",
+   "type": "text",
+   "default": "8300"
+  },
+  {
+   "key": "konto_erloes_null",
+   "label": "Erlöse steuerfrei / EU-Lieferung (SKR03: 8125)",
+   "type": "text",
+   "default": "8125"
+  }
+ ],
+ "hinweise": [
+  "Die Konten sind auf SKR03 voreingestellt. Bei SKR04 sind es andere Nummern (Wareneingang 5400/5300, Erlöse 4400/4300) – vor dem ersten Export mit dem Steuerberater abgleichen.",
+  "Der Stapel bucht BRUTTO auf Automatikkonten; DATEV rechnet die Steuer selbst heraus. Ein BU-Schlüssel wird deshalb nicht gesetzt.",
+  "Konto ist immer das Personenkonto (Kreditor bzw. Debitor), Gegenkonto das Sachkonto – so hält es auch DATEVs eigene Beispieldatei.",
+  "Skontozeilen der Eingangsrechnungen (nPosTyp = 2) laufen mit und mindern den Wareneingang, genau wie im bisherigen Access-Werkzeug.",
+  "Rechnungskorrekturen/Gutschriften sind NOCH NICHT enthalten. Die Kontrollliste zeigt, wie viele im Zeitraum liegen.",
+  "Stornierte Rechnungen, Proformarechnungen und Entwürfe werden bewusst nicht exportiert."
+ ],
+ "knowledge": []
+}

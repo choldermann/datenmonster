@@ -6,6 +6,7 @@ import io
 import csv
 import json
 import re
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from typing import List, Dict, Any, Optional
@@ -296,6 +297,201 @@ def export_destatis_idev(df: pd.DataFrame, config: Optional[dict] = None) -> byt
     with _gzip.GzipFile(fileobj=gz_buf, mode="wb", mtime=now_ms // 1000) as gz:
         gz.write(payload)
     return bytes([0x1D, 0xE5, 0x00, 0x01]) + gz_buf.getvalue()
+
+
+# ─── DATEV Buchungsstapel (EXTF) ────────────────────────────────────────────────
+
+# Die 125 Spalten des Buchungsstapels, Formatversion 700 / Kategorie 21 / Version 13.
+# Reihenfolge und Schreibweise sind gegen eine echte DATEV-Beispieldatei geprüft –
+# geraten werden darf hier nichts: DATEV ordnet die Werte über DIESE Kopfzeile zu,
+# eine verschobene Spalte bucht stillschweigend auf das falsche Feld.
+DATEV_SPALTEN: List[str] = [
+    "Umsatz (ohne Soll/Haben-Kz)", "Soll/Haben-Kennzeichen", "WKZ Umsatz", "Kurs",
+    "Basisumsatz", "WKZ Basisumsatz", "Konto", "Gegenkonto (ohne BU-Schlüssel)",
+    "BU-Schlüssel", "Belegdatum", "Belegfeld 1", "Belegfeld 2", "Skonto",
+    "Buchungstext", "Postensperre", "Diverse Adressnummer", "Geschäftspartnerbank",
+    "Sachverhalt", "Zinssperre", "Beleglink",
+] + [f"Beleginfo – {a} {i}" for i in range(1, 9) for a in ("Art", "Inhalt")] + [
+    "KOST1 – Kostenstelle", "KOST2 – Kostenstelle", "Kost Menge",
+    "EU-Land u. USt-IdNr.", "EU-Steuersatz", "Abw. Versteuerungsart",
+    "Sachverhalt L+L", "Funktionsergänzung L+L", "BU 49 Hauptfunktionstyp",
+    "BU 49 Hauptfunktionsnummer", "BU 49 Funktionsergänzung",
+] + [f"Zusatzinformation – {a} {i}" for i in range(1, 21) for a in ("Art", "Inhalt")] + [
+    "Stück", "Gewicht", "Zahlweise", "Forderungsart", "Veranlagungsjahr",
+    "Zugeordnete Fälligkeit", "Skontotyp", "Auftragsnummer", "Buchungstyp",
+    "USt-Schlüssel (Anzahlungen)", "EU-Mitgliedstaat (Anzahlungen)",
+    "Sachverhalt L+L (Anzahlungen)", "EU-Steuersatz (Anzahlungen)",
+    "Erlöskonto (Anzahlungen)", "Herkunft-Kz", "Leerfeld", "KOST-Datum",
+    "SEPA-Mandatsreferenz", "Skontosperre", "Gesellschaftername",
+    "Beteiligtennummer", "Identifikationsnummer", "Zeichnernummer",
+    "Postensperre bis", "Bezeichnung", "Kennzeichen", "Festschreibung",
+    "Leistungsdatum", "Datum Zuord.", "Fälligkeit", "Generalumkehr", "Steuersatz",
+    "Land", "Abrechnungsreferent", "BVV-Position",
+    "EU-Mitgliedstaat u. UStID (Ursprung)", "EU-Steuersatz (Ursprung)",
+    "Abw. Skontokonto",
+]
+
+# Welche Spalte des Mapping-Ergebnisses in welche DATEV-Spalte geht. Alles, was
+# hier nicht steht, bleibt leer – das ist bei 125 Spalten der Normalfall.
+_DATEV_FELDER = {
+    "umsatz": 1, "soll_haben": 2, "wkz": 3, "konto": 7, "gegenkonto": 8,
+    "bu_schluessel": 9, "belegdatum": 10, "belegfeld1": 11, "belegfeld2": 12,
+    "skonto": 13, "buchungstext": 14, "eu_ustid": 40, "eu_steuersatz": 41,
+    "faelligkeit": 117, "festschreibung": 114,
+}
+
+# Spalten, die DATEV in Anführungszeichen erwartet (Textfelder). Zahlen und
+# Beträge stehen ohne – so hält es auch die Beispieldatei von DATEV.
+_DATEV_TEXTFELDER = {2, 3, 9, 11, 12, 14, 40, 112, 113}
+
+
+def _datev_text(v) -> str:
+    """Feldwert als DATEV-Text: ohne Anführungszeichen, ohne Trenn-/Steuerzeichen."""
+    if v is None:
+        return ""
+    try:
+        if pd.isna(v):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return (str(v).strip().replace('"', "'").replace(";", " ")
+            .replace("\r", " ").replace("\n", " "))
+
+
+def _datev_betrag(v) -> str:
+    """Betrag deutsch mit Komma, zwei Nachkommastellen, IMMER positiv.
+
+    Das Vorzeichen trägt in DATEV nicht der Betrag, sondern das
+    Soll/Haben-Kennzeichen – ein Minus im Umsatzfeld weist die Zeile ab.
+    """
+    s = _datev_text(v).replace(",", ".")
+    if s == "":
+        return ""
+    try:
+        return f"{abs(float(s)):.2f}".replace(".", ",")
+    except (TypeError, ValueError):
+        return ""
+
+
+def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700).
+
+    Aufbau: Kopfzeile (31 Felder) + Spaltenzeile (125 Namen) + je Buchung eine
+    Zeile mit 125 Feldern, ';'-getrennt, **CP1252** und **CRLF** – beides
+    Vorgabe von DATEV, nicht Geschmack. Umlaute in UTF-8 lassen den Import
+    scheitern, deshalb wird bewusst mit Ersatzzeichen kodiert statt zu brechen.
+
+    Erwartete Spalten im df (alles andere wird ignoriert):
+      umsatz            Bruttobetrag. **Brutto ist richtig:** bei Automatikkonten
+                        (SKR03 3400/8400 …) rechnet DATEV die Steuer selbst heraus.
+      soll_haben        "S" oder "H"
+      konto             Personenkonto (Kreditor/Debitor)
+      gegenkonto        Sachkonto (Wareneingang/Erlöse)
+      belegdatum        TTMM, 4-stellig – das Jahr steht in der Kopfzeile
+      belegfeld1        Rechnungsnummer
+      belegfeld2        frei (im Altsystem: Fälligkeit)
+      buchungstext, bu_schluessel, eu_ustid, eu_steuersatz, skonto, faelligkeit
+
+    config: {
+      "berater": "1001", "mandant": "456", "wj_beginn": "20260101",
+      "sachkontenlaenge": 4, "datum_von": "20260801", "datum_bis": "20260831",
+      "bezeichnung": "Eingangsrechnungen 08/2026", "herkunft": "DM",
+      "exportiert_von": "Datenmonster", "festschreibung": False,
+      "waehrung": "EUR", "buchungstyp": 1,
+    }
+    """
+    cfg = config or {}
+
+    def _c(key, default=""):
+        v = cfg.get(key)
+        return default if v is None or str(v).strip() == "" else str(v).strip()
+
+    jetzt = datetime.now().strftime("%Y%m%d%H%M%S") + "000"
+    von, bis = _c("datum_von"), _c("datum_bis")
+    wj = _c("wj_beginn") or (von[:4] + "0101" if len(von) >= 4 else "")
+
+    # Kopfzeile: 31 Felder. Die Positionen sind fix – siehe DATEV-Beispieldatei.
+    kopf = [""] * 31
+    kopf[0] = '"EXTF"'
+    kopf[1] = "700"                                   # Formatversion
+    kopf[2] = "21"                                    # Kategorie Buchungsstapel
+    kopf[3] = '"Buchungsstapel"'
+    kopf[4] = "13"                                    # Version der Kategorie
+    kopf[5] = jetzt                                   # erzeugt am
+    kopf[7] = '"%s"' % _datev_text(_c("herkunft", "DM"))[:2]
+    kopf[8] = '"%s"' % _datev_text(_c("exportiert_von", "Datenmonster"))
+    kopf[10] = _c("berater")
+    kopf[11] = _c("mandant")
+    kopf[12] = wj
+    kopf[13] = _c("sachkontenlaenge", "4")
+    kopf[14] = von
+    kopf[15] = bis
+    kopf[16] = '"%s"' % _datev_text(_c("bezeichnung"))
+    kopf[18] = _c("buchungstyp", "1")                 # 1 = Finanzbuchführung
+    kopf[20] = "1" if str(cfg.get("festschreibung") or "").lower() in ("1", "true", "ja") else "0"
+    kopf[21] = '"%s"' % _c("waehrung", "EUR")
+
+    zeilen: List[str] = [";".join(kopf), ";".join(DATEV_SPALTEN)]
+
+    for _, row in df.iterrows():
+        felder = [""] * len(DATEV_SPALTEN)
+        for quelle, pos in _DATEV_FELDER.items():
+            if quelle not in df.columns:
+                continue
+            wert = row.get(quelle)
+            if quelle in ("umsatz", "skonto"):
+                text = _datev_betrag(wert)
+            else:
+                text = _datev_text(wert)
+            if text == "":
+                continue
+            felder[pos - 1] = '"%s"' % text if pos in _DATEV_TEXTFELDER else text
+        # Ohne Betrag ist die Zeile keine Buchung – DATEV wiese sie zurück.
+        if not felder[0]:
+            continue
+        zeilen.append(";".join(felder))
+
+    # errors="replace": ein einzelnes exotisches Zeichen in einem Buchungstext
+    # darf nicht den ganzen Monatsexport verhindern.
+    return ("\r\n".join(zeilen) + "\r\n").encode("cp1252", errors="replace")
+
+
+def export_datev_kompakt(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """Das schlanke Format des bisherigen Access-Werkzeugs (Reporting Tool v1.2).
+
+    Acht Spalten mit Kopfzeile, ';'-getrennt – so, wie der Steuerberater es seit
+    Jahren bekommt. Bewusst erhalten, damit der Umstieg auf das offizielle
+    Format nicht erzwungen ist und beide Wege vergleichbar bleiben.
+
+    Kopfzeile: Betrag;Gegenkonto;Belegfeld;Belegfeld2;Datum;Konto;Lieferant UST;Eigene UST
+    Das Datum steht hier als TTMMJJ (im offiziellen Format dagegen TTMM).
+    """
+    cfg = config or {}
+    eigene_ustid = _datev_text(cfg.get("eigene_ustid"))
+    kopf = ("Betrag;Gegenkonto;Belegfeld;Belegfeld2;Datum;Konto;"
+            "Lieferant UST;Eigene UST")
+    zeilen: List[str] = [kopf]
+    for _, row in df.iterrows():
+        betrag = _datev_betrag(row.get("umsatz"))
+        if betrag == "":
+            continue
+        # Im Altformat trägt der Betrag das Vorzeichen, es gibt kein S/H-Feld.
+        if _datev_text(row.get("vorzeichen_negativ")) in ("1", "True", "true"):
+            betrag = "-" + betrag
+        zeilen.append(";".join([
+            betrag,
+            _datev_text(row.get("gegenkonto")),
+            _datev_text(row.get("belegfeld1")),
+            _datev_text(row.get("belegfeld2_kompakt")) or _datev_text(row.get("belegfeld2")),
+            _datev_text(row.get("datum_kompakt")) or _datev_text(row.get("belegdatum")),
+            _datev_text(row.get("konto")),
+            # Im Altformat steht die USt-IdNr. des Lieferanten IMMER, nicht nur
+            # beim EU-Erwerb – deshalb eine eigene Spalte mit Rückfall auf die,
+            # die das offizielle Format nur bei EU-Fällen führt.
+            _datev_text(row.get("partner_ustid")) or _datev_text(row.get("eu_ustid")),
+            _datev_text(row.get("eigene_ustid")) or eigene_ustid,
+        ]))
+    return ("\r\n".join(zeilen) + "\r\n").encode("cp1252", errors="replace")
 
 
 # ─── XLSX ─────────────────────────────────────────────────────────────────────
