@@ -406,8 +406,18 @@ def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
         v = cfg.get(key)
         return default if v is None or str(v).strip() == "" else str(v).strip()
 
+    def _aus_spalte(name: str) -> str:
+        """Erster Wert einer Spalte - die Zeitraumgrenzen kommen aus der Abfrage."""
+        if name not in df.columns or df.empty:
+            return ""
+        return _datev_text(df[name].iloc[0])
+
     jetzt = datetime.now().strftime("%Y%m%d%H%M%S") + "000"
-    von, bis = _c("datum_von"), _c("datum_bis")
+    # Der ausgewertete Zeitraum steht nicht in der Konfiguration, sondern im
+    # Formular - die Abfrage reicht ihn deshalb als Spalte mit. DATEV braucht ihn
+    # in der Kopfzeile; leer bleiben darf er nicht.
+    von = _c("datum_von") or _aus_spalte("zeitraum_von")
+    bis = _c("datum_bis") or _aus_spalte("zeitraum_bis")
     wj = _c("wj_beginn") or (von[:4] + "0101" if len(von) >= 4 else "")
 
     # Kopfzeile: 31 Felder. Die Positionen sind fix – siehe DATEV-Beispieldatei.
@@ -426,7 +436,12 @@ def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
     kopf[13] = _c("sachkontenlaenge", "4")
     kopf[14] = von
     kopf[15] = bis
-    kopf[16] = '"%s"' % _datev_text(_c("bezeichnung"))
+    # Bezeichnung um den Zeitraum ergaenzen, damit der Stapel im DATEV-Bestand
+    # unterscheidbar ist ("Eingangsrechnungen 01/2026" statt zwoelfmal gleich).
+    bezeichnung = _c("bezeichnung")
+    if bis and len(bis) >= 6 and bezeichnung and bis[4:6] not in bezeichnung:
+        bezeichnung = f"{bezeichnung} {bis[4:6]}/{bis[:4]}"
+    kopf[16] = '"%s"' % _datev_text(bezeichnung)
     kopf[18] = _c("buchungstyp", "1")                 # 1 = Finanzbuchführung
     kopf[20] = "1" if str(cfg.get("festschreibung") or "").lower() in ("1", "true", "ja") else "0"
     kopf[21] = '"%s"' % _c("waehrung", "EUR")
