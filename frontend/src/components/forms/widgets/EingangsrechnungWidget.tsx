@@ -247,6 +247,41 @@ function NeuerArtikelModal({ connectionId, position, lieferant, stammdaten, onFe
   );
 }
 
+/** Der Wortlaut aus dem Beleg zu einer Zeile, aufklappbar.
+ *
+ *  Er entscheidet Fälle, die aus den ausgelesenen Feldern allein nicht zu
+ *  entscheiden sind: die Atlas-Rechnung führt Größen als Spalten, die Menge
+ *  steht unter ihrer Größe. Erst mit Spaltenkopf wird aus "23200" das Teil
+ *  "23200-46" – deshalb steht der Kopf grau über dem Ausschnitt.
+ */
+function BelegAusschnitt({ text, tabellenkopf, offen, onToggle, felder, abstand }) {
+  if (!text) return null;
+  return (
+    <div style={{ marginTop: abstand ? 4 : 0 }}>
+      <button onClick={onToggle}
+        style={{ display: "flex", alignItems: "center", gap: 3, background: "none",
+          border: "none", padding: 0, color: S.textDim, cursor: "pointer", fontSize: 10 }}>
+        {offen ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        So steht es im Beleg
+      </button>
+      {offen && (
+        <div style={{ marginTop: 4, background: S.bgEl, border: `1px solid ${S.border}`,
+          borderRadius: 6, padding: "7px 9px", overflowX: "auto" }}>
+          <pre style={{ margin: 0, fontSize: 10, lineHeight: 1.5,
+            fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+            whiteSpace: "pre", color: S.textMain }}>
+            {tabellenkopf ? <span style={{ color: S.textDim }}>{tabellenkopf + "\n"}</span> : null}
+            {text}
+          </pre>
+          <div style={{ marginTop: 6, paddingTop: 5, borderTop: `1px solid ${S.border}`,
+            fontSize: 10, color: S.textDim, lineHeight: 1.6 }}>{felder}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 export default function EingangsrechnungWidget({ widget }) {
   const connId = widget?.config?.connection_id ? Number(widget.config.connection_id) : null;
   const [kopf, setKopf] = useState(null);
@@ -419,8 +454,13 @@ export default function EingangsrechnungWidget({ widget }) {
             const p = plan.positionen.find(x => x._zeile === i);
             const ov = overrides[i] || {};
             if (!p) {   // als Zusatzkosten umklassifiziert
+              // Auch hier der Blick in den Beleg: gerade bei einer Zeile, die
+              // keine Ware ist (Maut, Fracht), will man nachlesen können, was
+              // dort wirklich steht. Die Angaben kommen aus der Kopf-Position,
+              // denn im Plan gibt es diese Zeile nicht mehr.
               return (
-                <tr key={i} style={{ opacity: 0.7 }}>
+                <Fragment key={i}>
+                <tr style={{ opacity: 0.7, ...(src.belegtext ? { borderBottom: "none" } : {}) }}>
                   <td style={td}>{src.cName}</td>
                   <td style={td}>{num(src.fMenge)}</td>
                   <td style={td}>{num(src.fEKNetto).toFixed(2)}</td>
@@ -432,6 +472,25 @@ export default function EingangsrechnungWidget({ widget }) {
                       rückgängig</button>
                   </td>
                 </tr>
+                {src.belegtext && (
+                  <tr style={{ opacity: 0.7 }}>
+                    <td colSpan={5} style={{ padding: "0 8px 7px 8px",
+                      borderBottom: `1px solid ${S.border}` }}>
+                      <BelegAusschnitt
+                        text={src.belegtext} tabellenkopf={kopf?.belegtabellenkopf}
+                        offen={!!belegOffen[i]}
+                        onToggle={() => setBelegOffen(o => ({ ...o, [i]: !o[i] }))}
+                        felder={<>
+                          Daraus gelesen: {num(src.fMenge)} × {num(src.fEKNetto).toFixed(2)} €
+                          {" "}= {(num(src.fMenge) * num(src.fEKNetto)).toFixed(2)} € netto
+                          {" · "}{num(src.fMwSt).toFixed(0)} % MwSt
+                          {src.cLieferantenArtNr ? ` · Nummer im Beleg ${src.cLieferantenArtNr}` : ""}
+                          {" · als Zusatzkosten gebucht, nicht als Ware"}
+                        </>} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               );
             }
             const needsFix = ["unknown_article", "ambiguous", "unklar"].includes(p.status);
@@ -505,51 +564,20 @@ export default function EingangsrechnungWidget({ widget }) {
                         <span>{m}</span>
                       </div>
                     ))}
-                    {/* Der Wortlaut aus dem Beleg, aufklappbar. Er entscheidet
-                        Fälle, die aus den ausgelesenen Feldern allein nicht zu
-                        entscheiden sind: die Atlas-Rechnung führt Größen als
-                        Spalten, die Menge steht unter ihrer Größe. Erst mit
-                        Spaltenkopf wird aus "23200" das Teil "23200-46". */}
-                    {belegtext && (
-                      <div style={{ marginTop: meldungen.length ? 4 : 0 }}>
-                        <button
-                          onClick={() => setBelegOffen(o => ({ ...o, [i]: !o[i] }))}
-                          style={{ display: "flex", alignItems: "center", gap: 3,
-                            background: "none", border: "none", padding: 0,
-                            color: S.textDim, cursor: "pointer", fontSize: 10 }}>
-                          {belegAuf ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-                          So steht es im Beleg
-                        </button>
-                        {belegAuf && (
-                          <div style={{ marginTop: 4, background: S.bgEl,
-                            border: `1px solid ${S.border}`, borderRadius: 6,
-                            padding: "7px 9px", overflowX: "auto" }}>
-                            <pre style={{ margin: 0, fontSize: 10, lineHeight: 1.5,
-                              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-                              whiteSpace: "pre", color: S.textMain }}>
-                              {kopf?.belegtabellenkopf
-                                ? <span style={{ color: S.textDim }}>
-                                    {kopf.belegtabellenkopf + "\n"}</span>
-                                : null}
-                              {belegtext}
-                            </pre>
-                            <div style={{ marginTop: 6, paddingTop: 5,
-                              borderTop: `1px solid ${S.border}`, fontSize: 10,
-                              color: S.textDim, lineHeight: 1.6 }}>
-                              Daraus gelesen: {num(p.fMenge)} × {num(p.fEKNetto).toFixed(2)} €
-                              {" "}= {(num(p.fMenge) * num(p.fEKNetto)).toFixed(2)} € netto
-                              {" · "}{num(p.fMwSt).toFixed(0)} % MwSt
-                              {p.cEinheit ? ` · Einheit ${p.cEinheit}` : ""}
-                              {p.cLieferantenArtNr ? ` · Nummer im Beleg ${p.cLieferantenArtNr}` : ""}
-                              {p.cArtNr ? ` · unser Artikel ${p.cArtNr}` : " · kein eigener Artikel zugeordnet"}
-                              {p.kLieferantenBestellungPos
-                                ? ` · Bestellposition ${p.kLieferantenBestellungPos}`
-                                : ""}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <BelegAusschnitt
+                      text={belegtext} tabellenkopf={kopf?.belegtabellenkopf}
+                      offen={belegAuf} abstand={meldungen.length > 0}
+                      onToggle={() => setBelegOffen(o => ({ ...o, [i]: !o[i] }))}
+                      felder={<>
+                        Daraus gelesen: {num(p.fMenge)} × {num(p.fEKNetto).toFixed(2)} €
+                        {" "}= {(num(p.fMenge) * num(p.fEKNetto)).toFixed(2)} € netto
+                        {" · "}{num(p.fMwSt).toFixed(0)} % MwSt
+                        {p.cEinheit ? ` · Einheit ${p.cEinheit}` : ""}
+                        {p.cLieferantenArtNr ? ` · Nummer im Beleg ${p.cLieferantenArtNr}` : ""}
+                        {p.cArtNr ? ` · unser Artikel ${p.cArtNr}` : " · kein eigener Artikel zugeordnet"}
+                        {p.kLieferantenBestellungPos
+                          ? ` · Bestellposition ${p.kLieferantenBestellungPos}` : ""}
+                      </>} />
                   </td>
                 </tr>
               )}
