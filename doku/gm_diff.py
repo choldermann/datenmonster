@@ -41,7 +41,11 @@ ABLAGE = Path("/app/uploads")
 
 # Tabellen, die der JTL-Client beim bloßen Klicken beschreibt. Kein Teil des
 # fachlichen Vorgangs — sonst sucht man sich an der Oberfläche tot.
+# tBenutzer/tOptions/tWidgetLayout stehen hier, weil ein blosses Anmelden am
+# JTL-Client sie anfasst – beim ersten Lauf gegen die Test-Wawi waren genau das
+# die einzigen Treffer, ohne dass irgendein Vorgang angelegt worden war.
 RAUSCHEN = {"tUserSession", "tUserLayout", "tUserSetting", "tBenutzerEinstellung",
+            "tBenutzer", "tOptions", "tWidgetLayout",
             "tSuchIndex", "tLogEintrag", "tSystemLog", "tJobqueue", "tWorkflowLog"}
 
 # Tabellen, deren neue Zeilen vollständig ausgegeben werden (Feld für Feld).
@@ -91,16 +95,31 @@ def _jsonfest(v):
     return v
 
 
+def durchschnitts_ek(con):
+    """Durchschnittlicher Netto-EK je Artikel.
+
+    Zusatzkostenarten tragen in JTL das Kennzeichen „Beeinflusst durchschnittlichen
+    Netto-EK" (Spalte nGLD). Ob und wann JTL diesen Wert tatsächlich fortschreibt,
+    sieht man nur, wenn man ihn vorher kennt: die rowversion verrät, DASS tArtikel
+    angefasst wurde, nicht um wie viel sich der Wert bewegt hat.
+    """
+    return {int(k): (float(v) if v is not None else None) for k, v in con.execute(text(
+        "SELECT kArtikel, fEKNetto FROM dbo.tArtikel")).fetchall()}
+
+
 def baseline(conn_id: int):
     e = engine(conn_id)
     with e.connect() as con:
         dbts = con.execute(text("SELECT CAST(@@DBTS AS BIGINT)")).scalar()
         zahlen = zeilenzahlen(con)
+        ek = durchschnitts_ek(con)
     ziel = ABLAGE / f"gm_baseline_{conn_id}.json"
     ziel.write_text(json.dumps({"conn_id": conn_id, "dbts": int(dbts),
                                 "zeitpunkt": datetime.now().isoformat(),
-                                "zeilen": zahlen}, indent=1))
-    print(f"\nGrundstand gemerkt: @@DBTS = {dbts}, {len(zahlen)} Tabellen")
+                                "zeilen": zahlen,
+                                "ek": {str(k): v for k, v in ek.items()}}, indent=1))
+    print(f"\nGrundstand gemerkt: @@DBTS = {dbts}, {len(zahlen)} Tabellen, "
+          f"{len(ek)} Artikel-EKs")
     print(f"→ {ziel}")
     print("\nJetzt den Vorgang in der JTL-Wawi von Hand anlegen, danach 'diff' laufen lassen.")
 
@@ -118,6 +137,8 @@ def diff(conn_id: int):
     with e.connect() as con:
         neu = zeilenzahlen(con)
         tabellen = rowversion_tabellen(con)
+        ek_alt = {int(k): v for k, v in (grund.get("ek") or {}).items()}
+        ek_neu = durchschnitts_ek(con)
         for tab, rvspalte in sorted(tabellen.items()):
             try:
                 n = con.execute(text(
@@ -167,9 +188,26 @@ def diff(conn_id: int):
                 print(f"   {k:34} {v}")
             print("   " + "-" * 60)
 
+    ek_bewegt = [{"kArtikel": k, "vorher": ek_alt.get(k), "nachher": v,
+                  "differenz": round((v or 0) - (ek_alt.get(k) or 0), 4)}
+                 for k, v in ek_neu.items()
+                 if k in ek_alt and (v or 0) != (ek_alt.get(k) or 0)]
+    print("\n" + "=" * 74)
+    print("DURCHSCHNITTLICHER NETTO-EK (tArtikel.fEKNetto)")
+    print("=" * 74)
+    if not ek_bewegt:
+        print("  unverändert – JTL hat den Durchschnitts-EK bei diesem Vorgang NICHT")
+        print("  fortgeschrieben (trotz „Beeinflusst durchschnittlichen Netto-EK: Ja\")")
+    for b in ek_bewegt[:25]:
+        print(f"   kArtikel {b['kArtikel']:8}  {b['vorher']} → {b['nachher']}  "
+              f"({b['differenz']:+.4f})")
+    if len(ek_bewegt) > 25:
+        print(f"   … und {len(ek_bewegt) - 25} weitere")
+
     ziel = ABLAGE / f"gm_result_{conn_id}.json"
     ziel.write_text(json.dumps({"tabellen": treffer, "rauschen": rauschen,
-                                "zeilen": volldump}, indent=1, ensure_ascii=False))
+                                "zeilen": volldump, "ek_bewegt": ek_bewegt},
+                               indent=1, ensure_ascii=False))
     print(f"\n→ vollständig in {ziel}")
 
 
