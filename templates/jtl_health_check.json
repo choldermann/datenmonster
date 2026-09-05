@@ -4134,7 +4134,7 @@
             "label": "Unbrauchbare EAN",
             "action_id": "act_hc_ean_ungueltig",
             "config": {
-              "width": 6,
+              "width": 12,
               "info": "Geprüft wird auf Ziffern, Länge (8/12/13/14) und die GTIN-Prüfziffer. Solche Nummern werden von Marktplätzen abgelehnt und finden beim Scannen nichts.",
               "full_rows": true,
               "drilldown": {
