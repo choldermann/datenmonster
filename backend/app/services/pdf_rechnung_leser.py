@@ -753,10 +753,14 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
             "Im PDF war kein Belegdatum lesbar – ohne Datum keine Buchung.")
 
     # Der Lieferant wird nur gebraucht, wenn keine Bestellung ihn schon festlegt –
-    # die Bestellung ist ein Schluessel, die Auslesung eine Lesart.
-    gelesener_lieferant = pruefe_lieferant(
-        _lieferant_feld(antwort, "name", 200),
-        _lieferant_feld(antwort, "ustIdNr", 30), eigene, hinweise)
+    # die Bestellung ist ein Schluessel, die Auslesung eine Lesart. Steht sie
+    # fest, wird gar nicht erst geprueft: ein Hinweis auf eine verworfene
+    # Auslesung, die ohnehin niemand benutzt, waere nur Rauschen am Beleg.
+    gelesener_lieferant = {"name": None, "ustIdNr": None}
+    if not bestellung:
+        gelesener_lieferant = pruefe_lieferant(
+            _lieferant_feld(antwort, "name", 200),
+            _lieferant_feld(antwort, "ustIdNr", 30), eigene, hinweise)
 
     kopf = ERKopfInput(
         cFremdbelegnummer=(antwort.get("rechnungsnummer") or "").strip()[:50],
@@ -774,8 +778,8 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         # Lesart. Ohne diese beiden Felder endet jede Rechnung ohne Bestellbezug
         # in "Lieferant nicht aufloesbar" – auch wenn der Name gross auf dem
         # Beleg steht. Aufgeloest wird damit erst im Writer, gegen tlieferant.
-        lieferantName=None if bestellung else gelesener_lieferant["name"],
-        ustIdNr=None if bestellung else gelesener_lieferant["ustIdNr"],
+        lieferantName=gelesener_lieferant["name"],
+        ustIdNr=gelesener_lieferant["ustIdNr"],
         quelle="pdf_ki",
         leser_hinweise=hinweise,
         belegtabellenkopf=tabellenkopf,

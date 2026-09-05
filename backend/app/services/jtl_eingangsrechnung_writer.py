@@ -30,6 +30,7 @@ from __future__ import annotations
 import dataclasses
 import datetime
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
@@ -272,11 +273,21 @@ _RECHTSFORMEN = {
 }
 
 
+# Umlaute und Akzente: der Beleg schreibt „Vajda-Papír Kft.", der Stamm
+# „Vajda-Papir Kft." – gemessen an einer echten Rechnung, und ohne diese
+# Angleichung meldet die Kreuzprobe dort einen Widerspruch, den es nicht gibt.
+_ANGLEICHEN = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
 def _firma_kern(name: Optional[str]) -> str:
     """Firmenname auf das reduziert, was ihn wirklich unterscheidet."""
     if not name:
         return ""
-    roh = re.sub(r"[^\w\s]", " ", str(name).lower())
+    roh = str(name).lower().translate(_ANGLEICHEN)
+    # Alles, was nur ein Akzent auf einem Buchstaben ist, faellt weg (í → i).
+    roh = "".join(z for z in unicodedata.normalize("NFKD", roh)
+                  if not unicodedata.combining(z))
+    roh = re.sub(r"[^\w\s]", " ", roh)
     teile = [t for t in roh.split() if t and t not in _RECHTSFORMEN]
     return " ".join(teile)
 
