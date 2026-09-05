@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.12",
+  "version": "1.13",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -953,6 +953,244 @@
       ]
     },
     {
+      "id": "m_hc_ean_ungueltig",
+      "name": "Health-Check – Unbrauchbare EAN",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "EAN",
+            "Befund",
+            "Hinweis",
+            "HAN",
+            "Warengruppe"
+          ],
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '') AS Artikel, B.B AS EAN,\n    CASE WHEN B.B LIKE '%[^0-9]%' THEN 'Keine reine Ziffernfolge'\n         WHEN LEN(B.B) NOT IN (8, 12, 13, 14) THEN 'Länge ungültig'\n         WHEN B.B NOT LIKE '%[1-9]%' THEN 'Nur Nullen'\n         ELSE 'Prüfziffer falsch' END AS Befund,\n    CASE WHEN B.B LIKE '%[^0-9]%' THEN 'Eine GTIN besteht nur aus Ziffern.'\n         WHEN LEN(B.B) NOT IN (8, 12, 13, 14) THEN CONCAT(LEN(B.B), ' Stellen; erlaubt sind 8, 12, 13 oder 14.')\n         WHEN B.B NOT LIKE '%[1-9]%' THEN 'Platzhalter statt Nummer.'\n         ELSE CONCAT('Letzte Stelle müsste ', S.Pruefziffer, ' sein, steht ', SUBSTRING(G.G, 14, 1), '.') END AS Hinweis,\n    ISNULL(A.cHAN, '') AS HAN, ISNULL(WG.cName, '') AS Warengruppe\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nCROSS APPLY (SELECT LTRIM(RTRIM(ISNULL(A.cBarcode, ''))) AS B) B\nCROSS APPLY (SELECT RIGHT('00000000000000' + B.B, 14) AS G) G\nCROSS APPLY (SELECT (10 - ((\n       3 * TRY_CAST(SUBSTRING(G.G, 1, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 2, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 3, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 4, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 5, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 6, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 7, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 8, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 9, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 10, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 11, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 12, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 13, 1) AS INT)) % 10)) % 10 AS Pruefziffer) S\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND B.B <> '' AND B.B NOT LIKE '+%'\n  AND (B.B LIKE '%[^0-9]%' OR LEN(B.B) NOT IN (8, 12, 13, 14)\n       OR B.B NOT LIKE '%[1-9]%'\n       OR S.Pruefziffer <> TRY_CAST(SUBSTRING(G.G, 14, 1) AS INT))\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – Unbrauchbare EAN",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "Befund",
+              "target_field": "Befund",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Befund"
+              }
+            },
+            {
+              "source_field": "Hinweis",
+              "target_field": "Hinweis",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hinweis"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_hc_ean_hibc",
+      "name": "Health-Check – HIBC statt EAN",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "EAN",
+            "HAN",
+            "Warengruppe"
+          ],
+          "sql": "SELECT TOP 500\n    CAST(A.kArtikel AS VARCHAR(20)) AS kArtikel, A.cArtNr AS ArtNr,\n    ISNULL(AB.cName, '') AS Artikel, B.B AS EAN,\n    ISNULL(A.cHAN, '') AS HAN, ISNULL(WG.cName, '') AS Warengruppe\nFROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe WG ON WG.kWarengruppe = A.kWarengruppe\nCROSS APPLY (SELECT LTRIM(RTRIM(ISNULL(A.cBarcode, ''))) AS B) B\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND B.B LIKE '+%'\nORDER BY A.cArtNr"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – HIBC statt EAN",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "EAN",
+              "target_field": "EAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EAN"
+              }
+            },
+            {
+              "source_field": "HAN",
+              "target_field": "HAN",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "HAN"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "m_hc_kunden_ohne_mail",
       "name": "Health-Check – Kunden ohne E-Mail",
       "canvas_nodes": [],
@@ -1209,7 +1447,7 @@
             "check_key",
             "sort"
           ],
-          "sql": "SELECT\n    CASE WHEN Anzahl = 0 THEN 'gruen'\n         WHEN Anzahl >= Grenze THEN 'rot'\n         ELSE 'gelb' END AS Ampel,\n    Anzahl, Aufgabe, check_key, sort\nFROM (\n\n    SELECT 'artikel_ohne_ean' AS check_key, 'Artikel ohne EAN/Barcode' AS Aufgabe, 1 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_gewicht' AS check_key, 'Artikel ohne Gewicht' AS Aufgabe, 2 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0) AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_ek' AS check_key, 'Artikel ohne Einkaufspreis' AS Aufgabe, 3 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_vk_unter_ek' AS check_key, 'Artikel mit VK unter EK (Verlustgeschäft)' AS Aufgabe, 4 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_warengruppe' AS check_key, 'Artikel ohne Warengruppe' AS Aufgabe, 5 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_name' AS check_key, 'Artikel ohne Bezeichnung' AS Aufgabe, 6 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = '') AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_taric' AS check_key, 'Artikel ohne Warentarifnummer (Intrastat/Zoll)' AS Aufgabe, 7 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_herkunftsland' AS check_key, 'Artikel ohne Herkunftsland (Intrastat/Zoll)' AS Aufgabe, 8 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'ean_doppelt' AS check_key, 'Mehrfach vergebene EAN' AS Aufgabe, 20 AS sort,\n        (SELECT COUNT(*) FROM (SELECT A.cBarcode FROM dbo.tArtikel A\n            WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n              AND ISNULL(A.cBarcode, '') <> ''\n            GROUP BY A.cBarcode HAVING COUNT(*) > 1) X) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_mail' AS check_key, 'Kunden ohne E-Mail-Adresse' AS Aufgabe, 21 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n          WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'kunden_dubletten' AS check_key, 'Mögliche Kundendubletten' AS Aufgabe, 22 AS sort,\n        (SELECT COUNT(*) FROM (\n            SELECT LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))) AS Firma,\n                   LTRIM(RTRIM(ISNULL(AD.cPLZ, ''))) AS PLZ\n            FROM dbo.tkunde K\n            JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n            WHERE ISNULL(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '') <> ''\n            GROUP BY LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))), LTRIM(RTRIM(ISNULL(AD.cPLZ, '')))\n            HAVING COUNT(*) > 1) X) AS Anzahl,\n        10 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_adresse' AS check_key, 'Kunden ohne Rechnungsadresse' AS Aufgabe, 23 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          WHERE NOT EXISTS (SELECT 1 FROM dbo.tAdresse A\n                            WHERE A.kKunde = K.kKunde AND A.nTyp = 1 AND A.nStandard = 1)) AS Anzahl,\n        5 AS Grenze UNION ALL \n    SELECT 'adresse_ohne_kunde' AS check_key, 'Adressen ohne Kunden' AS Aufgabe, 24 AS sort,\n        (SELECT COUNT(*) FROM dbo.tAdresse A\n          WHERE A.kKunde > 0\n            AND NOT EXISTS (SELECT 1 FROM dbo.tkunde K WHERE K.kKunde = A.kKunde)) AS Anzahl,\n        5 AS Grenze\n) X\nORDER BY CASE WHEN Anzahl = 0 THEN 3 WHEN Anzahl >= Grenze THEN 1 ELSE 2 END, sort"
+          "sql": "SELECT\n    CASE WHEN Anzahl = 0 THEN 'gruen'\n         WHEN Anzahl >= Grenze THEN 'rot'\n         ELSE 'gelb' END AS Ampel,\n    Anzahl, Aufgabe, check_key, sort\nFROM (\n\n    SELECT 'artikel_ohne_ean' AS check_key, 'Artikel ohne EAN/Barcode' AS Aufgabe, 1 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cBarcode, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_gewicht' AS check_key, 'Artikel ohne Gewicht' AS Aufgabe, 2 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fGewicht, 0) = 0 AND ISNULL(A.fArtGewicht, 0) = 0) AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_ek' AS check_key, 'Artikel ohne Einkaufspreis' AS Aufgabe, 3 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.fEKNetto, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_vk_unter_ek' AS check_key, 'Artikel mit VK unter EK (Verlustgeschäft)' AS Aufgabe, 4 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND A.fVKNetto > 0 AND A.fEKNetto > 0 AND A.fVKNetto < A.fEKNetto) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_warengruppe' AS check_key, 'Artikel ohne Warengruppe' AS Aufgabe, 5 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.kWarengruppe, 0) = 0) AS Anzahl,\n        50 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_name' AS check_key, 'Artikel ohne Bezeichnung' AS Aufgabe, 6 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(AB.cName, '') = '') AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_taric' AS check_key, 'Artikel ohne Warentarifnummer (Intrastat/Zoll)' AS Aufgabe, 7 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cTaric, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'artikel_ohne_herkunftsland' AS check_key, 'Artikel ohne Herkunftsland (Intrastat/Zoll)' AS Aufgabe, 8 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0 AND ISNULL(A.cHerkunftsland, '') = '') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'ean_ungueltig' AS check_key, 'Unbrauchbare EAN (Format/Prüfziffer)' AS Aufgabe, 18 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nCROSS APPLY (SELECT LTRIM(RTRIM(ISNULL(A.cBarcode, ''))) AS B) B\nCROSS APPLY (SELECT RIGHT('00000000000000' + B.B, 14) AS G) G\nCROSS APPLY (SELECT (10 - ((\n       3 * TRY_CAST(SUBSTRING(G.G, 1, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 2, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 3, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 4, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 5, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 6, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 7, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 8, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 9, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 10, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 11, 1) AS INT) + TRY_CAST(SUBSTRING(G.G, 12, 1) AS INT)\n     + 3 * TRY_CAST(SUBSTRING(G.G, 13, 1) AS INT)) % 10)) % 10 AS Pruefziffer) S\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND B.B <> '' AND B.B NOT LIKE '+%'\n  AND (B.B LIKE '%[^0-9]%' OR LEN(B.B) NOT IN (8, 12, 13, 14)\n       OR B.B NOT LIKE '%[1-9]%'\n       OR S.Pruefziffer <> TRY_CAST(SUBSTRING(G.G, 14, 1) AS INT))) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'ean_hibc' AS check_key, 'Barcode im HIBC-Format statt EAN' AS Aufgabe, 19 AS sort,\n        (SELECT COUNT(*) FROM dbo.tArtikel A\nCROSS APPLY (SELECT LTRIM(RTRIM(ISNULL(A.cBarcode, ''))) AS B) B\nWHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n  AND ISNULL(A.nIstVater, 0) = 0\n  AND B.B LIKE '+%') AS Anzahl,\n        999999 AS Grenze UNION ALL \n    SELECT 'ean_doppelt' AS check_key, 'Mehrfach vergebene EAN' AS Aufgabe, 20 AS sort,\n        (SELECT COUNT(*) FROM (SELECT A.cBarcode FROM dbo.tArtikel A\n            WHERE ISNULL(A.nDelete, 0) = 0 AND ISNULL(A.cAktiv, 'Y') = 'Y'\n              AND ISNULL(A.cBarcode, '') <> ''\n            GROUP BY A.cBarcode HAVING COUNT(*) > 1) X) AS Anzahl,\n        1 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_mail' AS check_key, 'Kunden ohne E-Mail-Adresse' AS Aufgabe, 21 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n          WHERE ISNULL(AD.cMail, '') = '' AND ISNULL(K.cSperre, 'N') <> 'Y') AS Anzahl,\n        100 AS Grenze UNION ALL \n    SELECT 'kunden_dubletten' AS check_key, 'Mögliche Kundendubletten' AS Aufgabe, 22 AS sort,\n        (SELECT COUNT(*) FROM (\n            SELECT LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))) AS Firma,\n                   LTRIM(RTRIM(ISNULL(AD.cPLZ, ''))) AS PLZ\n            FROM dbo.tkunde K\n            JOIN dbo.tAdresse AD ON AD.kKunde = K.kKunde AND AD.nStandard = 1 AND AD.nTyp = 1\n            WHERE ISNULL(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '') <> ''\n            GROUP BY LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), '  ', ' ' + CHAR(7)),\n                       CHAR(7) + ' ', ''), CHAR(7), ''))), LTRIM(RTRIM(ISNULL(AD.cPLZ, '')))\n            HAVING COUNT(*) > 1) X) AS Anzahl,\n        10 AS Grenze UNION ALL \n    SELECT 'kunden_ohne_adresse' AS check_key, 'Kunden ohne Rechnungsadresse' AS Aufgabe, 23 AS sort,\n        (SELECT COUNT(*) FROM dbo.tkunde K\n          WHERE NOT EXISTS (SELECT 1 FROM dbo.tAdresse A\n                            WHERE A.kKunde = K.kKunde AND A.nTyp = 1 AND A.nStandard = 1)) AS Anzahl,\n        5 AS Grenze UNION ALL \n    SELECT 'adresse_ohne_kunde' AS check_key, 'Adressen ohne Kunden' AS Aufgabe, 24 AS sort,\n        (SELECT COUNT(*) FROM dbo.tAdresse A\n          WHERE A.kKunde > 0\n            AND NOT EXISTS (SELECT 1 FROM dbo.tkunde K WHERE K.kKunde = A.kKunde)) AS Anzahl,\n        5 AS Grenze\n) X\nORDER BY CASE WHEN Anzahl = 0 THEN 3 WHEN Anzahl >= Grenze THEN 1 ELSE 2 END, sort"
         }
       ],
       "targets": [
@@ -3435,6 +3673,20 @@
             "label": "Doppelte EAN"
           },
           {
+            "id": "act_hc_ean_ungueltig",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ean_ungueltig",
+            "pipeline_id": null,
+            "label": "Unbrauchbare EAN"
+          },
+          {
+            "id": "act_hc_ean_hibc",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ean_hibc",
+            "pipeline_id": null,
+            "label": "HIBC statt EAN"
+          },
+          {
             "id": "act_hc_ohne_ek",
             "type": "run_mapping",
             "mapping_id": "m_hc_ohne_ek",
@@ -3696,6 +3948,20 @@
                       "kAdresse",
                       "kKunde"
                     ]
+                  },
+                  "ean_ungueltig": {
+                    "mapping_id": "m_hc_ean_ungueltig",
+                    "title": "Unbrauchbare EAN",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
+                  },
+                  "ean_hibc": {
+                    "mapping_id": "m_hc_ean_hibc",
+                    "title": "HIBC statt EAN",
+                    "hidden_columns": [
+                      "kArtikel"
+                    ]
                   }
                 }
               }
@@ -3860,6 +4126,68 @@
                   }
                 ]
               }
+            }
+          },
+          {
+            "id": "w_hc_tbl_ean_ungueltig",
+            "type": "table",
+            "label": "Unbrauchbare EAN",
+            "action_id": "act_hc_ean_ungueltig",
+            "config": {
+              "width": 6,
+              "info": "Geprüft wird auf Ziffern, Länge (8/12/13/14) und die GTIN-Prüfziffer. Solche Nummern werden von Marktplätzen abgelehnt und finden beim Scannen nichts.",
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
+            }
+          },
+          {
+            "id": "w_hc_tbl_ean_hibc",
+            "type": "table",
+            "label": "HIBC statt EAN",
+            "action_id": "act_hc_ean_hibc",
+            "config": {
+              "width": 6,
+              "info": "Barcodes, die mit + beginnen, sind HIBC-Codes aus dem Medizinbereich – richtig gepflegt, aber keine GTIN. Für Marktplätze und den GS1-Abgleich wird zusätzlich eine EAN gebraucht.",
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_hc_artikel_detail",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Artikel-Detail",
+                "hidden_columns": [
+                  "kArtikel"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_hc_artikel_verkaeufe",
+                    "key_column": "kArtikel",
+                    "param": "kArtikel",
+                    "title": "Verkäufe des Artikels"
+                  }
+                ]
+              },
+              "hidden_columns": [
+                "kArtikel"
+              ]
             }
           },
           {
@@ -4163,6 +4491,8 @@
             "action_ids": [
               "act_hc_ohne_ean",
               "act_hc_ean_doppelt",
+              "act_hc_ean_ungueltig",
+              "act_hc_ean_hibc",
               "act_hc_ean_kandidaten",
               "act_hc_beschreibung",
               "act_hc_hersteller"
