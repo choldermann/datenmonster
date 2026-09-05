@@ -412,13 +412,24 @@ def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
             return ""
         return _datev_text(df[name].iloc[0])
 
+    def _stamm(name: str, default: str = "") -> str:
+        """Mandanten-Stammdatum: die Spalte schlaegt die Konfiguration.
+
+        ⭐ Die Reihenfolge ist der Kern der Mandantenfaehigkeit. In der
+        target_options-Konfiguration steht, was beim INSTALLIEREN galt - unter dem
+        Mandanten-Umschalter ist das die Kennung des falschen Betriebs. Die Spalte
+        dagegen kommt aus business_config des gerade aktiven Mandanten und reist
+        mit den Zahlen mit, zu denen sie gehoert. Deshalb gewinnt sie.
+        """
+        return _aus_spalte(name) or _c(name, default)
+
     jetzt = datetime.now().strftime("%Y%m%d%H%M%S") + "000"
     # Der ausgewertete Zeitraum steht nicht in der Konfiguration, sondern im
     # Formular - die Abfrage reicht ihn deshalb als Spalte mit. DATEV braucht ihn
     # in der Kopfzeile; leer bleiben darf er nicht.
     von = _c("datum_von") or _aus_spalte("zeitraum_von")
     bis = _c("datum_bis") or _aus_spalte("zeitraum_bis")
-    wj = _c("wj_beginn") or (von[:4] + "0101" if len(von) >= 4 else "")
+    wj = _stamm("wj_beginn") or (von[:4] + "0101" if len(von) >= 4 else "")
 
     # Kopfzeile: 31 Felder. Die Positionen sind fix – siehe DATEV-Beispieldatei.
     kopf = [""] * 31
@@ -430,10 +441,22 @@ def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
     kopf[5] = jetzt                                   # erzeugt am
     kopf[7] = '"%s"' % _datev_text(_c("herkunft", "DM"))[:2]
     kopf[8] = '"%s"' % _datev_text(_c("exportiert_von", "Datenmonster"))
-    kopf[10] = _c("berater")
-    kopf[11] = _c("mandant")
+    # Ohne Kennung ist der Stapel wertlos: DATEV weist ihn beim Einlesen ab, und
+    # zwar erst beim Steuerberater. Lieber hier abbrechen mit einem Satz, der
+    # sagt, wo man es einträgt.
+    berater, mandant = _stamm("berater"), _stamm("mandant")
+    if not berater or not mandant:
+        offen = [n for n, v in (("Beraternummer", berater),
+                                ("Mandantennummer", mandant)) if not v]
+        raise ValueError(
+            f"{' und '.join(offen)} {'fehlen' if len(offen) > 1 else 'fehlt'} – "
+            "DATEV weist den Buchungsstapel ohne sie ab. "
+            "Einzutragen im Reiter „DATEV-Stammdaten“ (gilt je Mandant).")
+
+    kopf[10] = berater
+    kopf[11] = mandant
     kopf[12] = wj
-    kopf[13] = _c("sachkontenlaenge", "4")
+    kopf[13] = _stamm("sachkontenlaenge", "4")
     kopf[14] = von
     kopf[15] = bis
     # Bezeichnung um den Zeitraum ergaenzen, damit der Stapel im DATEV-Bestand

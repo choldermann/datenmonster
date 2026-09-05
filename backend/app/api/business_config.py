@@ -76,6 +76,64 @@ def reset_threshold(key: str, project_id: Optional[int] = None,
 # Die Standardarten sind vorgeblendet (COST_DEFAULTS) – gepflegt werden nur
 # Betrag und Beginn. Eigene Arten bekommen einen Schlüssel "x_<slug>".
 
+@router.get("/datev")
+def get_datev(project_id: Optional[int] = None, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """DATEV-Stammdaten des AKTIVEN Mandanten.
+
+    Wie bei den Fixkosten wandert der Mandantenname mit: bei zwei Betrieben muss
+    an der Maske stehen, wessen Beraternummer man gerade tippt.
+    """
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    werte = cfg_service.get_datev(project_id, db, mandant_id)
+    felder = [{**meta, "value": werte.get(meta["key"], meta["default"]),
+               "is_default": werte.get(meta["key"], meta["default"]) == meta["default"]}
+              for meta in cfg_service.datev_meta()]
+    return {"project_id": project_id,
+            "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db),
+            "felder": felder,
+            "fehlend": cfg_service.datev_unvollstaendig(werte)}
+
+
+class DatevFeldIn(BaseModel):
+    project_id: Optional[int] = None
+    key: str
+    value: str
+
+
+@router.put("/datev")
+def set_datev(body: DatevFeldIn, db: Session = Depends(get_db),
+              user: User = Depends(get_current_user)):
+    """Ein Stammdatenfeld für den aktiven Mandanten speichern.
+
+    Immer mit mandant_id: ein projektweit abgelegter Wert würde für den zweiten
+    Betrieb mitgelten und ihn unter fremder Kennung buchen lassen.
+    """
+    require_editor(body.project_id, user, db)
+    if body.key not in {m["key"] for m in cfg_service.datev_meta()}:
+        raise HTTPException(400, f"Unbekanntes DATEV-Feld: {body.key}")
+
+    wert = (body.value or "").strip()
+    meta = next(m for m in cfg_service.datev_meta() if m["key"] == body.key)
+    # Nummernfelder dürfen nur Ziffern tragen - DATEV weist den Stapel sonst ab,
+    # und zwar erst beim Steuerberater.
+    if body.key in ("datev_berater", "datev_mandant", "datev_sachkontenlaenge") \
+            and wert and not wert.isdigit():
+        raise HTTPException(400, f"{meta['label']}: nur Ziffern")
+    if body.key == "datev_wj_beginn" and wert and (len(wert) != 8 or not wert.isdigit()):
+        raise HTTPException(400, "Wirtschaftsjahr als JJJJMMTT, z. B. 20260101")
+
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    if wert == "":
+        cfg_service.reset_value(body.project_id, db, "datev", body.key, mandant_id)
+    else:
+        cfg_service.set_value(body.project_id, db, "datev", body.key, wert, mandant_id)
+    return {"key": body.key, "value": wert, "mandant_id": mandant_id}
+
+
 @router.get("/costs")
 def list_costs(project_id: Optional[int] = None, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):

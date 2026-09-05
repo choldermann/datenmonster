@@ -159,6 +159,80 @@ def cost_meta() -> list[dict]:
     return [dict(d) for d in COST_DEFAULTS]
 
 
+# ── DATEV-Stammdaten: je Mandant, nicht je Installation ──────────────────────
+# Warum hier und nicht im Template: Berater- und Mandantennummer gehören zum
+# BETRIEB, nicht zur Auswertung. Wurden sie beim Installieren fest ins Mapping
+# geschrieben, trug ein Export unter dem Mandanten-Umschalter zwar die Zahlen des
+# einen Betriebs, aber die Kennung des anderen – der Stapel landete beim
+# Steuerberater im falschen Mandanten, ohne dass irgendwo etwas auffiel.
+#
+# "identitaet": Felder, die einen Betrieb eindeutig bezeichnen. Sie haben
+# bewusst KEINEN Standardwert und fallen nie auf einen anderen Mandanten zurück –
+# lieber ein leeres Feld, das der Export bemängelt, als eine fremde Nummer.
+# Die Konten dagegen sind Kontenrahmen, kein Eigentum: dort ist SKR03
+# vorbelegt und je Mandant überschreibbar (SKR04 hat andere Nummern).
+DATEV_DEFAULTS: list[dict] = [
+    {"key": "datev_berater", "label": "Beraternummer", "default": "",
+     "gruppe": "Kennung des Mandanten", "identitaet": True,
+     "hinweis": "Vom Steuerberater. Ohne sie weist DATEV den Stapel ab."},
+    {"key": "datev_mandant", "label": "Mandantennummer", "default": "",
+     "gruppe": "Kennung des Mandanten", "identitaet": True,
+     "hinweis": "Vom Steuerberater. Entscheidet, in welchen Mandanten gebucht wird."},
+    {"key": "eigene_ustid", "label": "Eigene USt-IdNr.", "default": "",
+     "gruppe": "Kennung des Mandanten", "identitaet": True,
+     "hinweis": "Z. B. DE119494075 – steht bei innergemeinschaftlichen Umsätzen im Stapel."},
+    {"key": "datev_wj_beginn", "label": "Beginn des Wirtschaftsjahres", "default": "",
+     "gruppe": "Kennung des Mandanten",
+     "hinweis": "JJJJMMTT, z. B. 20260101. Leer = 1. Januar des Auswertungsjahres."},
+    {"key": "datev_sachkontenlaenge", "label": "Sachkontenlänge", "default": "4",
+     "gruppe": "Kennung des Mandanten", "hinweis": "Meist 4, gelegentlich 5."},
+
+    {"key": "konto_we_19", "label": "Wareneingang 19 %", "default": "3400",
+     "gruppe": "Konten Eingangsrechnungen", "hinweis": "SKR03: 3400, SKR04: 5400"},
+    {"key": "konto_we_7", "label": "Wareneingang 7 %", "default": "3300",
+     "gruppe": "Konten Eingangsrechnungen", "hinweis": "SKR03: 3300, SKR04: 5300"},
+    {"key": "konto_we_null", "label": "Wareneingang ohne Steuer / EU-Erwerb",
+     "default": "3425", "gruppe": "Konten Eingangsrechnungen",
+     "hinweis": "SKR03: 3425, SKR04: 5425"},
+
+    {"key": "konto_erloes_19", "label": "Erlöse 19 %", "default": "8400",
+     "gruppe": "Konten Ausgangsrechnungen", "hinweis": "SKR03: 8400, SKR04: 4400"},
+    {"key": "konto_erloes_7", "label": "Erlöse 7 %", "default": "8300",
+     "gruppe": "Konten Ausgangsrechnungen", "hinweis": "SKR03: 8300, SKR04: 4300"},
+    {"key": "konto_erloes_null", "label": "Erlöse steuerfrei / EU-Lieferung",
+     "default": "8125", "gruppe": "Konten Ausgangsrechnungen",
+     "hinweis": "SKR03: 8125, SKR04: 4125"},
+]
+
+_DATEV_BY_KEY = {d["key"]: d for d in DATEV_DEFAULTS}
+
+
+def datev_meta() -> list[dict]:
+    """Beschreibung aller DATEV-Stammdatenfelder für die Oberfläche."""
+    return [dict(d) for d in DATEV_DEFAULTS]
+
+
+def get_datev(project_id, db, mandant_id=None) -> dict:
+    """DATEV-Stammdaten dieses Mandanten als {key: wert}.
+
+    strikt=True ist hier keine Vorsicht, sondern die ganze Idee: ohne sie erbte
+    ein ungepflegter Mandant die Beraternummer des Nachbarn und buchte unter
+    dessen Kennung. Was nicht gepflegt ist, bleibt der eingebaute Standard – bei
+    den Identitätsfeldern also leer.
+    """
+    werte = {d["key"]: d["default"] for d in DATEV_DEFAULTS}
+    for r in _rows(project_id, db, "datev", mandant_id, strikt=True):
+        if r.key in werte:
+            werte[r.key] = "" if r.value is None else str(r.value)
+    return werte
+
+
+def datev_unvollstaendig(werte: dict) -> list[str]:
+    """Welche Identitätsfelder fehlen – Grundlage für die Warnung vor dem Export."""
+    return [d["label"] for d in DATEV_DEFAULTS
+            if d.get("identitaet") and not str(werte.get(d["key"], "")).strip()]
+
+
 
 def default_thresholds() -> dict:
     return {d["key"]: d["default"] for d in THRESHOLD_DEFAULTS}
@@ -432,6 +506,16 @@ def apply_config(run_params: Optional[dict], project_id, db, mandant_id=None) ->
              "monat": monat["gruppen"].get(g["key"], 0.0),
              "zeitraum": je_gruppe.get(g["key"], 0.0)}
             for g in COST_GROUPS]))
+    except Exception:
+        pass
+
+    # DATEV-Stammdaten des Mandanten als :cfg_datev_* / :cfg_konto_*. Die
+    # Abfragen des DATEV-Templates setzen daraus ihre Gegenkonten und geben
+    # Berater-/Mandantennummer als Spalte aus, damit die Kopfzeile des Stapels
+    # denselben Mandanten trägt wie die Zahlen darin.
+    try:
+        for key, wert in get_datev(project_id, db, mandant_id).items():
+            run_params.setdefault(f"cfg_{key}", wert)
     except Exception:
         pass
     return run_params

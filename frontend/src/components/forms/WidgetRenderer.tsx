@@ -13,6 +13,7 @@ import DebitorenWidget from "./widgets/DebitorenWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
 import HerstellerNavigator from "./widgets/HerstellerNavigator";
 import KostenWidget from "./widgets/KostenWidget";
+import DatevStammdatenWidget from "./widgets/DatevStammdatenWidget";
 import PreisautomatikWidget from "./widgets/PreisautomatikWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
@@ -29,6 +30,7 @@ const WIDGET_LABELS = {
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
   debitoren: "Debitorennummern nachpflegen",
   kostenstruktur: "Kostenstruktur", preisautomatik: "Preisautomatik",
+  datev_stammdaten: "DATEV-Stammdaten",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
 };
 
@@ -36,7 +38,7 @@ const WIDGET_LABELS = {
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research",
                                                 "kostenstruktur", "preisautomatik",
-                                                "debitoren"]);
+                                                "debitoren", "datev_stammdaten"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, baseParams }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -51,6 +53,8 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     return <KostenWidget widget={widget} projectId={projectId} />;
   if (widget.type === "preisautomatik")
     return <PreisautomatikWidget widget={widget} projectId={projectId} />;
+  if (widget.type === "datev_stammdaten")
+    return <DatevStammdatenWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",

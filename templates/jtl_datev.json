@@ -4,7 +4,7 @@
  "template_name": "JTL DATEV-Reporting (Eingangs- und Ausgangsrechnungen)",
  "description": "Erzeugt aus der JTL-Wawi einen DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700) – für Eingangsrechnungen, die JTL selbst nicht exportieren kann, und für Ausgangsrechnungen. Zusätzlich das schlanke Format des bisherigen Access-Werkzeugs, damit der Umstieg vergleichbar bleibt. Monatsweise, mit Kontrollliste vor dem Export.",
  "category": "jtl",
- "version": "1.0",
+ "version": "1.1",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -17,7 +17,7 @@
      "x": 110,
      "y": 30,
      "connection_id": "{{connection_jtl}}",
-     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchläufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Beträge ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN '{{konto_we_19}}'\n                 WHEN p.fMwSt = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN '{{konto_we_19}}'\n                 WHEN z.fMwst = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE führende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
+     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchläufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Beträge ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN :cfg_konto_we_19\n                 WHEN p.fMwSt = 7  THEN :cfg_konto_we_7\n                 ELSE :cfg_konto_we_null END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN :cfg_konto_we_19\n                 WHEN z.fMwst = 7  THEN :cfg_konto_we_7\n                 ELSE :cfg_konto_we_null END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE führende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = :cfg_konto_we_null THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = :cfg_konto_we_null AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    :cfg_eigene_ustid                            AS eigene_ustid,\n    -- Kennung des Mandanten aus der Laufzeit-Konfiguration (Reiter\n    -- „DATEV-Stammdaten“). Sie steht bewusst NICHT mehr fest im Mapping:\n    -- unter dem Mandanten-Umschalter truege der Stapel sonst die Zahlen des\n    -- einen und die Beraternummer des anderen Betriebs.\n    :cfg_datev_berater                           AS berater,\n    :cfg_datev_mandant                           AS mandant,\n    :cfg_datev_wj_beginn                         AS wj_beginn,\n    :cfg_datev_sachkontenlaenge                  AS sachkontenlaenge,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
      "mode": "transform"
     }
    ],
@@ -41,16 +41,11 @@
      "target_write_mode": "insert",
      "target_options": {
       "datev_config": {
-       "berater": "{{datev_berater}}",
-       "mandant": "{{datev_mandant}}",
-       "wj_beginn": "{{datev_wj_beginn}}",
-       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
        "bezeichnung": "Eingangsrechnungen",
        "herkunft": "DM",
        "exportiert_von": "Datenmonster",
        "waehrung": "EUR",
-       "festschreibung": false,
-       "eigene_ustid": "{{eigene_ustid}}"
+       "festschreibung": false
       }
      },
      "fields": [
@@ -223,6 +218,46 @@
         "type": "direct",
         "source_field": "zeitraum_bis"
        }
+      },
+      {
+       "source_field": "berater",
+       "target_field": "berater",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "berater"
+       }
+      },
+      {
+       "source_field": "mandant",
+       "target_field": "mandant",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "mandant"
+       }
+      },
+      {
+       "source_field": "wj_beginn",
+       "target_field": "wj_beginn",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "wj_beginn"
+       }
+      },
+      {
+       "source_field": "sachkontenlaenge",
+       "target_field": "sachkontenlaenge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er",
+       "transformer": {
+        "type": "direct",
+        "source_field": "sachkontenlaenge"
+       }
       }
      ]
     }
@@ -237,7 +272,7 @@
      "x": 110,
      "y": 30,
      "connection_id": "{{connection_jtl}}",
-     "sql": "-- Ausgangsseite des Zeitraums als DATEV-Buchungszeilen: Rechnungen UND\n-- Gutschriften (darunter die Stornos).\n--\n-- Spiegelbild der Eingangsseite: Konto ist der Debitor, Gegenkonto das\n-- Erlöskonto. Eine Rechnung stellt die Forderung ins SOLL, eine Gutschrift\n-- nimmt sie im HABEN zurueck - das ergibt sich hier von selbst aus dem\n-- Vorzeichen der Summe.\n--\n-- Die Debitorennummer kommt von der Rechnung selbst (nDebitorennr): dort ist sie\n-- zum Rechnungszeitpunkt festgehalten und ändert sich nicht mehr, wenn der Kunde\n-- später umgeschlüsselt wird.\n--\n-- ⭐ Steht am Beleg aber eine 0, ist das kein eingefrorener Wert, sondern gar\n-- keiner: der Kunde bekam seine Nummer erst nach der Rechnung, und JTL zieht sie\n-- am Beleg nicht nach. Dann gilt der Kundenstamm. Ohne diesen Rückfall wären\n-- allein von Januar bis Juli 2026 alle 224 solcher Belege ohne Konto in den\n-- Stapel gegangen, obwohl die Nummer längst gepflegt ist.\n--\n-- ⭐ WARUM STORNIERTE RECHNUNGEN HIER DRIN BLEIBEN:\n-- JTL fuehrt kein Stornodatum an der Rechnung. Es legt beim Stornieren eine\n-- Gutschrift an (Nummernkreis \"SR...\"), und DEREN Erstelldatum ist der\n-- Stornozeitpunkt - geprüft: alle 305 stornierten Rechnungen haben eine.\n-- Wuerde man stornierte Rechnungen wegfiltern, verschwände eine im Juli\n-- gestellte und im September stornierte Rechnung rückwirkend aus dem\n-- Juli-Stapel, während die Gutschrift im September dagegenbucht - der\n-- Steuerberater hätte eine Korrektur ohne Buchung. Richtig ist: die Rechnung\n-- bleibt in ihrem Monat, der Storno bucht im Monat der Stornierung dagegen.\n-- Fällt beides in denselben Monat, stehen beide Zeilen im selben Stapel und\n-- heben sich auf - so soll es sein.\n--\n-- Ausgeschlossen bleiben nur Proformarechnungen, Entwürfe und stornierte\n-- Gutschriften - nichts davon ist ein Buchungsvorgang.\nWITH roh AS (\n    SELECT  r.cRechnungsnr, r.dErstellt,\n            DATEADD(day, ISNULL(r.nZahlungszielTage, 0), r.dErstellt) AS faellig,\n            CAST(COALESCE(NULLIF(r.nDebitorennr, 0),\n                          NULLIF(rk.nDebitorennr, 0)) AS VARCHAR(20)) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(r.cKundeUstId, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN rp.fMwSt = 19 THEN '{{konto_erloes_19}}'\n                 WHEN rp.fMwSt = 7  THEN '{{konto_erloes_7}}'\n                 ELSE '{{konto_erloes_null}}' END                     AS gegenkonto,\n            rp.fMwSt                                                  AS steuersatz,\n            ROUND(rp.fAnzahl * rp.fVkNetto * (1 - ISNULL(rp.fRabatt, 0) / 100.0)\n                  * (1 + rp.fMwSt / 100.0), 2)                        AS brutto\n    FROM Rechnung.tRechnung r\n    JOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\n    LEFT JOIN dbo.tkunde rk            ON rk.kKunde = r.kKunde\n    WHERE ISNULL(r.nIstProforma, 0) = 0\n      AND ISNULL(r.nIstEntwurf, 0) = 0\n      AND YEAR(r.dErstellt) = :year AND MONTH(r.dErstellt) = :month\n\n    UNION ALL\n\n    -- Gutschriften und Stornos: derselbe Aufbau, nur mit negativem Betrag.\n    -- Der Debitor kommt bevorzugt von der zugehörigen Rechnung (dort zum\n    -- Belegzeitpunkt festgehalten), sonst aus dem Kundenstamm; damit ist er\n    -- für jede Gutschrift des Jahres erreichbar.\n    SELECT  g.cGutschriftNr, g.dErstellt,\n            g.dErstellt,                       -- Gutschriften haben kein Zahlungsziel\n            CAST(COALESCE(NULLIF(r.nDebitorennr, 0),\n                          NULLIF(k.nDebitorennr, 0)) AS VARCHAR(20)),\n            REPLACE(LTRIM(RTRIM(COALESCE(NULLIF(g.cKundeUstId, ''),\n                                         r.cKundeUstId, ''))), ' ', ''),\n            CASE WHEN gp.fMwSt = 19 THEN '{{konto_erloes_19}}'\n                 WHEN gp.fMwSt = 7  THEN '{{konto_erloes_7}}'\n                 ELSE '{{konto_erloes_null}}' END,\n            gp.fMwSt,\n            -ROUND(gp.nAnzahl * gp.fVKNetto * (1 - ISNULL(gp.fRabatt, 0) / 100.0)\n                   * (1 + gp.fMwSt / 100.0), 2)\n    FROM dbo.tgutschrift g\n    JOIN dbo.tGutschriftPos gp        ON gp.tGutschrift_kGutschrift = g.kGutschrift\n    LEFT JOIN Rechnung.tRechnung r    ON r.kRechnung = g.kRechnung\n    LEFT JOIN dbo.tkunde k            ON k.kKunde = g.kKunde\n    WHERE ISNULL(g.nStorno, 0) = 0\n      AND YEAR(g.dErstellt) = :year AND MONTH(g.dErstellt) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid,\n           MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid\n    HAVING SUM(brutto) <> 0\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Debitor steht im Soll; eine Rechnungskorrektur dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'S' ELSE 'H' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dErstellt, 'ddMM')                    AS belegdatum,\n    cRechnungsnr                                 AS belegfeld1,\n    FORMAT(faellig, 'ddMM')                      AS belegfeld2,\n    CAST(DAY(dErstellt) AS VARCHAR(2)) + FORMAT(dErstellt, 'MMyy')  AS datum_kompakt,\n    CAST(DAY(faellig) AS VARCHAR(2)) + FORMAT(faellig, 'MMyy')      AS belegfeld2_kompakt,\n    partner_ustid,\n    CASE WHEN gegenkonto = '{{konto_erloes_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = '{{konto_erloes_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT(CASE WHEN summe < 0 THEN 'GS ' ELSE 'AR ' END + cRechnungsnr, 60) AS buchungstext\nFROM gebucht\nORDER BY cRechnungsnr, gegenkonto",
+     "sql": "-- Ausgangsseite des Zeitraums als DATEV-Buchungszeilen: Rechnungen UND\n-- Gutschriften (darunter die Stornos).\n--\n-- Spiegelbild der Eingangsseite: Konto ist der Debitor, Gegenkonto das\n-- Erlöskonto. Eine Rechnung stellt die Forderung ins SOLL, eine Gutschrift\n-- nimmt sie im HABEN zurueck - das ergibt sich hier von selbst aus dem\n-- Vorzeichen der Summe.\n--\n-- Die Debitorennummer kommt von der Rechnung selbst (nDebitorennr): dort ist sie\n-- zum Rechnungszeitpunkt festgehalten und ändert sich nicht mehr, wenn der Kunde\n-- später umgeschlüsselt wird.\n--\n-- ⭐ Steht am Beleg aber eine 0, ist das kein eingefrorener Wert, sondern gar\n-- keiner: der Kunde bekam seine Nummer erst nach der Rechnung, und JTL zieht sie\n-- am Beleg nicht nach. Dann gilt der Kundenstamm. Ohne diesen Rückfall wären\n-- allein von Januar bis Juli 2026 alle 224 solcher Belege ohne Konto in den\n-- Stapel gegangen, obwohl die Nummer längst gepflegt ist.\n--\n-- ⭐ WARUM STORNIERTE RECHNUNGEN HIER DRIN BLEIBEN:\n-- JTL fuehrt kein Stornodatum an der Rechnung. Es legt beim Stornieren eine\n-- Gutschrift an (Nummernkreis \"SR...\"), und DEREN Erstelldatum ist der\n-- Stornozeitpunkt - geprüft: alle 305 stornierten Rechnungen haben eine.\n-- Wuerde man stornierte Rechnungen wegfiltern, verschwände eine im Juli\n-- gestellte und im September stornierte Rechnung rückwirkend aus dem\n-- Juli-Stapel, während die Gutschrift im September dagegenbucht - der\n-- Steuerberater hätte eine Korrektur ohne Buchung. Richtig ist: die Rechnung\n-- bleibt in ihrem Monat, der Storno bucht im Monat der Stornierung dagegen.\n-- Fällt beides in denselben Monat, stehen beide Zeilen im selben Stapel und\n-- heben sich auf - so soll es sein.\n--\n-- Ausgeschlossen bleiben nur Proformarechnungen, Entwürfe und stornierte\n-- Gutschriften - nichts davon ist ein Buchungsvorgang.\nWITH roh AS (\n    SELECT  r.cRechnungsnr, r.dErstellt,\n            DATEADD(day, ISNULL(r.nZahlungszielTage, 0), r.dErstellt) AS faellig,\n            CAST(COALESCE(NULLIF(r.nDebitorennr, 0),\n                          NULLIF(rk.nDebitorennr, 0)) AS VARCHAR(20)) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(r.cKundeUstId, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN rp.fMwSt = 19 THEN :cfg_konto_erloes_19\n                 WHEN rp.fMwSt = 7  THEN :cfg_konto_erloes_7\n                 ELSE :cfg_konto_erloes_null END                     AS gegenkonto,\n            rp.fMwSt                                                  AS steuersatz,\n            ROUND(rp.fAnzahl * rp.fVkNetto * (1 - ISNULL(rp.fRabatt, 0) / 100.0)\n                  * (1 + rp.fMwSt / 100.0), 2)                        AS brutto\n    FROM Rechnung.tRechnung r\n    JOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\n    LEFT JOIN dbo.tkunde rk            ON rk.kKunde = r.kKunde\n    WHERE ISNULL(r.nIstProforma, 0) = 0\n      AND ISNULL(r.nIstEntwurf, 0) = 0\n      AND YEAR(r.dErstellt) = :year AND MONTH(r.dErstellt) = :month\n\n    UNION ALL\n\n    -- Gutschriften und Stornos: derselbe Aufbau, nur mit negativem Betrag.\n    -- Der Debitor kommt bevorzugt von der zugehörigen Rechnung (dort zum\n    -- Belegzeitpunkt festgehalten), sonst aus dem Kundenstamm; damit ist er\n    -- für jede Gutschrift des Jahres erreichbar.\n    SELECT  g.cGutschriftNr, g.dErstellt,\n            g.dErstellt,                       -- Gutschriften haben kein Zahlungsziel\n            CAST(COALESCE(NULLIF(r.nDebitorennr, 0),\n                          NULLIF(k.nDebitorennr, 0)) AS VARCHAR(20)),\n            REPLACE(LTRIM(RTRIM(COALESCE(NULLIF(g.cKundeUstId, ''),\n                                         r.cKundeUstId, ''))), ' ', ''),\n            CASE WHEN gp.fMwSt = 19 THEN :cfg_konto_erloes_19\n                 WHEN gp.fMwSt = 7  THEN :cfg_konto_erloes_7\n                 ELSE :cfg_konto_erloes_null END,\n            gp.fMwSt,\n            -ROUND(gp.nAnzahl * gp.fVKNetto * (1 - ISNULL(gp.fRabatt, 0) / 100.0)\n                   * (1 + gp.fMwSt / 100.0), 2)\n    FROM dbo.tgutschrift g\n    JOIN dbo.tGutschriftPos gp        ON gp.tGutschrift_kGutschrift = g.kGutschrift\n    LEFT JOIN Rechnung.tRechnung r    ON r.kRechnung = g.kRechnung\n    LEFT JOIN dbo.tkunde k            ON k.kKunde = g.kKunde\n    WHERE ISNULL(g.nStorno, 0) = 0\n      AND YEAR(g.dErstellt) = :year AND MONTH(g.dErstellt) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid,\n           MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cRechnungsnr, dErstellt, faellig, partner_ustid\n    HAVING SUM(brutto) <> 0\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Debitor steht im Soll; eine Rechnungskorrektur dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'S' ELSE 'H' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dErstellt, 'ddMM')                    AS belegdatum,\n    cRechnungsnr                                 AS belegfeld1,\n    FORMAT(faellig, 'ddMM')                      AS belegfeld2,\n    CAST(DAY(dErstellt) AS VARCHAR(2)) + FORMAT(dErstellt, 'MMyy')  AS datum_kompakt,\n    CAST(DAY(faellig) AS VARCHAR(2)) + FORMAT(faellig, 'MMyy')      AS belegfeld2_kompakt,\n    partner_ustid,\n    CASE WHEN gegenkonto = :cfg_konto_erloes_null THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = :cfg_konto_erloes_null AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    :cfg_eigene_ustid                            AS eigene_ustid,\n    -- Kennung des Mandanten aus der Laufzeit-Konfiguration (Reiter\n    -- „DATEV-Stammdaten“). Sie steht bewusst NICHT mehr fest im Mapping:\n    -- unter dem Mandanten-Umschalter truege der Stapel sonst die Zahlen des\n    -- einen und die Beraternummer des anderen Betriebs.\n    :cfg_datev_berater                           AS berater,\n    :cfg_datev_mandant                           AS mandant,\n    :cfg_datev_wj_beginn                         AS wj_beginn,\n    :cfg_datev_sachkontenlaenge                  AS sachkontenlaenge,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT(CASE WHEN summe < 0 THEN 'GS ' ELSE 'AR ' END + cRechnungsnr, 60) AS buchungstext\nFROM gebucht\nORDER BY cRechnungsnr, gegenkonto",
      "mode": "transform"
     }
    ],
@@ -261,16 +296,11 @@
      "target_write_mode": "insert",
      "target_options": {
       "datev_config": {
-       "berater": "{{datev_berater}}",
-       "mandant": "{{datev_mandant}}",
-       "wj_beginn": "{{datev_wj_beginn}}",
-       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
        "bezeichnung": "Ausgangsrechnungen",
        "herkunft": "DM",
        "exportiert_von": "Datenmonster",
        "waehrung": "EUR",
-       "festschreibung": false,
-       "eigene_ustid": "{{eigene_ustid}}"
+       "festschreibung": false
       }
      },
      "fields": [
@@ -443,6 +473,46 @@
         "type": "direct",
         "source_field": "zeitraum_bis"
        }
+      },
+      {
+       "source_field": "berater",
+       "target_field": "berater",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "berater"
+       }
+      },
+      {
+       "source_field": "mandant",
+       "target_field": "mandant",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "mandant"
+       }
+      },
+      {
+       "source_field": "wj_beginn",
+       "target_field": "wj_beginn",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "wj_beginn"
+       }
+      },
+      {
+       "source_field": "sachkontenlaenge",
+       "target_field": "sachkontenlaenge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_ar",
+       "transformer": {
+        "type": "direct",
+        "source_field": "sachkontenlaenge"
+       }
       }
      ]
     }
@@ -457,7 +527,7 @@
      "x": 110,
      "y": 30,
      "connection_id": "{{connection_jtl}}",
-     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchläufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Beträge ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN '{{konto_we_19}}'\n                 WHEN p.fMwSt = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN '{{konto_we_19}}'\n                 WHEN z.fMwst = 7  THEN '{{konto_we_7}}'\n                 ELSE '{{konto_we_null}}' END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE führende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = '{{konto_we_null}}' AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    '{{eigene_ustid}}'                           AS eigene_ustid,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
+     "sql": "-- Eingangsrechnungen des Zeitraums als DATEV-Buchungszeilen.\n--\n-- Aufbau wie im bisherigen Access-Werkzeug, nur in einer Abfrage statt in zwei\n-- Durchläufen: Warenzeilen und Zusatzkosten (Fracht, Maut) werden vereinigt und\n-- dann je Beleg und Gegenkonto summiert. Skontozeilen (nPosTyp = 2, negativ)\n-- laufen bewusst mit: sie treffen dasselbe Gegenkonto und mindern damit den\n-- Wareneingang genau so, wie es das Altsystem tat.\n--\n-- Gerundet wird ZEILENWEISE und danach summiert - ebenfalls wie bisher\n-- (Sum(Round(BetragBrutto, 2))), sonst weichen Cent-Beträge ab.\nWITH roh AS (\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))) AS konto,\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', '') AS partner_ustid,\n            CASE WHEN p.fMwSt = 19 THEN :cfg_konto_we_19\n                 WHEN p.fMwSt = 7  THEN :cfg_konto_we_7\n                 ELSE :cfg_konto_we_null END        AS gegenkonto,\n            p.fMwSt                                  AS steuersatz,\n            ROUND(p.fMenge * p.fEKNetto * (1 + p.fMwSt / 100.0), 2) AS brutto\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n\n    UNION ALL\n\n    -- Zusatzkosten haengen an der Position, tragen aber einen eigenen Steuersatz\n    SELECT  e.cFremdbelegnummer, e.dBelegdatum, e.dZahlungsziel,\n            LTRIM(RTRIM(ISNULL(l.cLieferantID, ''))),\n            REPLACE(LTRIM(RTRIM(ISNULL(l.cUstid, ''))), ' ', ''),\n            CASE WHEN z.fMwst = 19 THEN :cfg_konto_we_19\n                 WHEN z.fMwst = 7  THEN :cfg_konto_we_7\n                 ELSE :cfg_konto_we_null END,\n            z.fMwst,\n            ROUND(z.dWert * (1 + z.fMwst / 100.0), 2)\n    FROM dbo.tEingangsrechnung e\n    JOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\n    JOIN dbo.tEingangsrechnungPosZusatzkosten z\n                                    ON z.kEingangsrechnungPos = p.kEingangsrechnungPos\n    JOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\n    WHERE ISNULL(e.nDeleted, 0) = 0\n      AND YEAR(e.dBelegdatum) = :year AND MONTH(e.dBelegdatum) = :month\n),\ngebucht AS (\n    SELECT konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel,\n           partner_ustid, MAX(steuersatz) AS steuersatz, SUM(brutto) AS summe\n    FROM roh\n    GROUP BY konto, gegenkonto, cFremdbelegnummer, dBelegdatum, dZahlungsziel, partner_ustid\n    HAVING SUM(brutto) <> 0          -- Nullsummen sind keine Buchung\n)\nSELECT\n    ABS(summe)                                   AS umsatz,\n    -- Der Kreditor steht im Haben; eine Gutschrift dreht die Buchung um.\n    CASE WHEN summe >= 0 THEN 'H' ELSE 'S' END   AS soll_haben,\n    CASE WHEN summe < 0 THEN 1 ELSE 0 END        AS vorzeichen_negativ,\n    konto, gegenkonto,\n    FORMAT(dBelegdatum, 'ddMM')                  AS belegdatum,\n    cFremdbelegnummer                            AS belegfeld1,\n    FORMAT(dZahlungsziel, 'ddMM')                AS belegfeld2,\n    -- Das Altformat schreibt TTMMJJ, den Tag OHNE führende Null (so kam es\n    -- aus Access und so kennt es der Steuerberater).\n    CAST(DAY(dBelegdatum) AS VARCHAR(2)) + FORMAT(dBelegdatum, 'MMyy')   AS datum_kompakt,\n    CASE WHEN dZahlungsziel IS NULL THEN ''\n         ELSE CAST(DAY(dZahlungsziel) AS VARCHAR(2)) + FORMAT(dZahlungsziel, 'MMyy')\n    END                                          AS belegfeld2_kompakt,\n    partner_ustid,\n    -- Das offizielle Format will die USt-IdNr. nur beim innergemeinschaftlichen\n    -- Erwerb, das Altformat immer - deshalb zwei Spalten.\n    CASE WHEN gegenkonto = :cfg_konto_we_null THEN partner_ustid ELSE '' END AS eu_ustid,\n    -- Nur ein echter Satz gehört ins Feld; \"0.00\" waere Füllwerk.\n    CASE WHEN gegenkonto = :cfg_konto_we_null AND partner_ustid <> '' AND steuersatz > 0\n         THEN CAST(CAST(steuersatz AS DECIMAL(5,2)) AS VARCHAR(10)) ELSE '' END AS eu_steuersatz,\n    :cfg_eigene_ustid                            AS eigene_ustid,\n    -- Kennung des Mandanten aus der Laufzeit-Konfiguration (Reiter\n    -- „DATEV-Stammdaten“). Sie steht bewusst NICHT mehr fest im Mapping:\n    -- unter dem Mandanten-Umschalter truege der Stapel sonst die Zahlen des\n    -- einen und die Beraternummer des anderen Betriebs.\n    :cfg_datev_berater                           AS berater,\n    :cfg_datev_mandant                           AS mandant,\n    :cfg_datev_wj_beginn                         AS wj_beginn,\n    :cfg_datev_sachkontenlaenge                  AS sachkontenlaenge,\n    -- Zeitraumgrenzen für die DATEV-Kopfzeile (Feld 15/16). Sie stehen nur im\n    -- Formular, nicht in der Konfiguration, und reisen deshalb als Spalte mit.\n    FORMAT(DATEFROMPARTS(:year, :month, 1), 'yyyyMMdd')                AS zeitraum_von,\n    FORMAT(EOMONTH(DATEFROMPARTS(:year, :month, 1)), 'yyyyMMdd')       AS zeitraum_bis,\n    LEFT('ER ' + cFremdbelegnummer, 60)          AS buchungstext\nFROM gebucht\nORDER BY cFremdbelegnummer, gegenkonto",
      "mode": "transform"
     }
    ],
@@ -481,16 +551,11 @@
      "target_write_mode": "insert",
      "target_options": {
       "datev_config": {
-       "berater": "{{datev_berater}}",
-       "mandant": "{{datev_mandant}}",
-       "wj_beginn": "{{datev_wj_beginn}}",
-       "sachkontenlaenge": "{{datev_sachkontenlaenge}}",
        "bezeichnung": "Eingangsrechnungen",
        "herkunft": "DM",
        "exportiert_von": "Datenmonster",
        "waehrung": "EUR",
-       "festschreibung": false,
-       "eigene_ustid": "{{eigene_ustid}}"
+       "festschreibung": false
       }
      },
      "fields": [
@@ -662,6 +727,46 @@
        "transformer": {
         "type": "direct",
         "source_field": "zeitraum_bis"
+       }
+      },
+      {
+       "source_field": "berater",
+       "target_field": "berater",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "berater"
+       }
+      },
+      {
+       "source_field": "mandant",
+       "target_field": "mandant",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "mandant"
+       }
+      },
+      {
+       "source_field": "wj_beginn",
+       "target_field": "wj_beginn",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "wj_beginn"
+       }
+      },
+      {
+       "source_field": "sachkontenlaenge",
+       "target_field": "sachkontenlaenge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_er_alt",
+       "transformer": {
+        "type": "direct",
+        "source_field": "sachkontenlaenge"
        }
       }
      ]
@@ -1120,6 +1225,13 @@
       "action_ids": [
        "a_ar"
       ]
+     },
+     {
+      "id": "tab_stamm",
+      "label": "DATEV-Stammdaten",
+      "action_ids": [
+       "w_stamm"
+      ]
      }
     ],
     "widgets": [
@@ -1132,6 +1244,14 @@
       "config": {
        "connection_id": "{{connection_jtl}}"
       }
+     },
+     {
+      "id": "w_stammdaten",
+      "type": "datev_stammdaten",
+      "action_id": "w_stamm",
+      "title": "DATEV-Stammdaten",
+      "colSpan": 12,
+      "config": {}
      }
     ],
     "layout": {}
@@ -1146,82 +1266,17 @@
    "label": "DB-Verbindung „JTL-Wawi“",
    "type": "connection",
    "default": ""
-  },
-  {
-   "key": "datev_berater",
-   "label": "DATEV-Beraternummer (vom Steuerberater)",
-   "type": "text",
-   "default": ""
-  },
-  {
-   "key": "datev_mandant",
-   "label": "DATEV-Mandantennummer (vom Steuerberater)",
-   "type": "text",
-   "default": ""
-  },
-  {
-   "key": "datev_wj_beginn",
-   "label": "Beginn des Wirtschaftsjahres (JJJJMMTT, z. B. 20260101)",
-   "type": "text",
-   "default": ""
-  },
-  {
-   "key": "datev_sachkontenlaenge",
-   "label": "Sachkontenlänge (meist 4)",
-   "type": "text",
-   "default": "4"
-  },
-  {
-   "key": "eigene_ustid",
-   "label": "Eigene USt-IdNr. (z. B. DE119494075)",
-   "type": "text",
-   "default": ""
-  },
-  {
-   "key": "konto_we_19",
-   "label": "Wareneingang 19 % (SKR03: 3400)",
-   "type": "text",
-   "default": "3400"
-  },
-  {
-   "key": "konto_we_7",
-   "label": "Wareneingang 7 % (SKR03: 3300)",
-   "type": "text",
-   "default": "3300"
-  },
-  {
-   "key": "konto_we_null",
-   "label": "Wareneingang ohne Steuer / EU-Erwerb (SKR03: 3425)",
-   "type": "text",
-   "default": "3425"
-  },
-  {
-   "key": "konto_erloes_19",
-   "label": "Erlöse 19 % (SKR03: 8400)",
-   "type": "text",
-   "default": "8400"
-  },
-  {
-   "key": "konto_erloes_7",
-   "label": "Erlöse 7 % (SKR03: 8300)",
-   "type": "text",
-   "default": "8300"
-  },
-  {
-   "key": "konto_erloes_null",
-   "label": "Erlöse steuerfrei / EU-Lieferung (SKR03: 8125)",
-   "type": "text",
-   "default": "8125"
   }
  ],
  "hinweise": [
-  "Die Konten sind auf SKR03 voreingestellt. Bei SKR04 sind es andere Nummern (Wareneingang 5400/5300, Erlöse 4400/4300) – vor dem ersten Export mit dem Steuerberater abgleichen.",
+  "Berater-/Mandantennummer, USt-IdNr. und die Sachkonten werden NICHT hier eingerichtet, sondern nach der Installation im Reiter „DATEV-Stammdaten“ – und zwar je Mandant. Bei zwei Betrieben an derselben Auswertung trägt der Stapel sonst die Zahlen des einen und die Kennung des anderen.",
   "Der Stapel bucht BRUTTO auf Automatikkonten; DATEV rechnet die Steuer selbst heraus. Ein BU-Schlüssel wird deshalb nicht gesetzt.",
   "Konto ist immer das Personenkonto (Kreditor bzw. Debitor), Gegenkonto das Sachkonto – so hält es auch DATEVs eigene Beispieldatei.",
   "Skontozeilen der Eingangsrechnungen (nPosTyp = 2) laufen mit und mindern den Wareneingang, genau wie im bisherigen Access-Werkzeug.",
   "Gutschriften und Stornos sind enthalten und mindern den Umsatz. Sie buchen im Monat der Gutschrift, nicht im Monat der Rechnung – JTL führt kein Stornodatum, wohl aber zu jedem Storno eine Gutschrift.",
   "Eine stornierte Rechnung bleibt deshalb in ihrem Ursprungsmonat stehen; die Gegenbuchung kommt im Monat der Stornierung. Fällt beides in denselben Monat, heben sich die zwei Zeilen im Stapel auf.",
-  "Proformarechnungen, Entwürfe und stornierte Gutschriften werden nicht exportiert."
+  "Proformarechnungen, Entwürfe und stornierte Gutschriften werden nicht exportiert.",
+  "Die Konten sind auf SKR03 vorbelegt und im Reiter „DATEV-Stammdaten“ je Mandant änderbar (SKR04: Wareneingang 5400/5300, Erlöse 4400/4300)."
  ],
  "knowledge": []
 }
