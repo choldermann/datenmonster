@@ -25,6 +25,7 @@ from app.models.schema_catalog import SchemaTableMeta, SchemaColumnMeta, SchemaR
 from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCorrection, AiPromptCache
 # Muss VOR create_all importiert sein, sonst fehlt die Tabelle beim ersten Start.
 from app.models.report import Report, ReportSchedule, AdHocQuery
+from app.models.er_posteingang import ErPosteingangQuelle, ErPosteingangBeleg
 from app.models.vorhaben import Vorhaben, VorhabenArtefakt
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
@@ -34,6 +35,7 @@ from app.api import plugins as plugins_api
 from app.api import events as events_api
 from app.api import db_write as db_write_api
 from app.api import eingangsrechnung as eingangsrechnung_api
+from app.api import er_posteingang as er_posteingang_api
 from app.api import datev as datev_api
 from app.api import intrastat as intrastat_api
 from app.api import api_studio as api_studio_api
@@ -436,6 +438,8 @@ async def lifespan(app: FastAPI):
     reload_all_price_jobs()
     reload_all_report_jobs()
     reload_all_rest_jobs()
+    from app.services.scheduler_service import reload_all_er_posteingang_jobs
+    reload_all_er_posteingang_jobs()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()
@@ -541,6 +545,7 @@ app.include_router(plugins_api.router)
 app.include_router(events_api.router)
 app.include_router(db_write_api.router)
 app.include_router(eingangsrechnung_api.router)
+app.include_router(er_posteingang_api.router)
 app.include_router(datev_api.router)
 app.include_router(intrastat_api.router)
 app.include_router(api_studio_api.router)

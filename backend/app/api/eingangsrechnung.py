@@ -77,17 +77,52 @@ class WriteRequest(BaseModel):
     learn: Optional[List[dict]] = None      # [{kLieferant, cLiefArtNr, kArtikel}, ...]
 
 
+class _Datei:
+    """Nur der Dateiname – die Leser brauchen ihn, um PDF von XML zu trennen."""
+
+    def __init__(self, filename: str):
+        self.filename = filename
+
+
+def _beleg_aus_posteingang(beleg_id: int, connection_id: int, db: Session):
+    from pathlib import Path as _Pfad
+    from app.models.er_posteingang import ErPosteingangBeleg
+    beleg = db.query(ErPosteingangBeleg).filter(ErPosteingangBeleg.id == beleg_id).first()
+    if not beleg:
+        raise HTTPException(404, "Beleg gibt es nicht")
+    if beleg.mandant_id != connection_id:
+        # Sonst liesse sich ein Beleg des einen Betriebs in die Wawi des
+        # anderen buchen, nur weil jemand die Nummer kennt.
+        raise HTTPException(403, "Der Beleg gehört zu einem anderen Mandanten")
+    pfad = _Pfad(beleg.pfad)
+    if not pfad.is_file():
+        raise HTTPException(410, "Die Datei liegt nicht mehr im Posteingang")
+    return pfad.read_bytes(), beleg.dateiname
+
+
 @router.post("/plan")
 async def plan(
     connection_id: int = Form(...),
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
+    posteingang_id: Optional[int] = Form(None),
     overrides: Optional[str] = Form(None),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """E-Rechnung hochladen → parsen → Dry-Run-Plan. Gibt {kopf, plan} zurück."""
+    """E-Rechnung parsen → Dry-Run-Plan. Gibt {kopf, plan} zurück.
+
+    Der Beleg kommt entweder als Datei (jemand zieht sie herein) oder aus dem
+    Posteingang (dort hat ihn eine Quelle abgelegt). Ab hier ist der Weg
+    derselbe — der Import soll nicht wissen muessen, wie der Beleg ins Haus kam.
+    """
     _check_connection_access(connection_id, user, db)
-    data = await file.read()
+    if posteingang_id:
+        data, dateiname = _beleg_aus_posteingang(posteingang_id, connection_id, db)
+        file = _Datei(dateiname)
+    elif file is None:
+        raise HTTPException(422, "Weder eine Datei noch ein Beleg aus dem Posteingang")
+    else:
+        data = await file.read()
     if len(data) > MAX_UPLOAD:
         raise HTTPException(413, "Datei zu groß")
     # Zuerst der exakte Weg: strukturierte E-Rechnung (ZUGFeRD/Factur-X, XRechnung).

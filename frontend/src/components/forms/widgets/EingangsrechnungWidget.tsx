@@ -285,6 +285,59 @@ function BelegAusschnitt({ text, tabellenkopf, offen, onToggle, felder, abstand 
 }
 
 
+// ── Posteingang ──────────────────────────────────────────────────────────────
+/** Was an Belegen wartet, ohne dass jemand eine Datei hereingezogen haette.
+ *
+ *  Steht bewusst UNTER der Ablageflaeche und nicht daneben: der Posteingang ist
+ *  der Regelfall, sobald Quellen eingerichtet sind, aber die Ablageflaeche
+ *  bleibt der Weg fuer alles, was per Hand kommt.
+ */
+function Posteingang({ belege, holt, onAbholen, onOeffnen, onVerwerfen }) {
+  const kb = (n) => (n ? `${Math.round(n / 1024)} KB` : "");
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: S.textBright }}>
+          Posteingang{belege.length ? ` (${belege.length})` : ""}</div>
+        <button onClick={onAbholen} disabled={holt}
+          style={{ padding: "3px 10px", background: S.bgEl, color: S.textMain,
+            border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 11,
+            cursor: holt ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+          {holt ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
+          Jetzt abholen</button>
+      </div>
+      {belege.length === 0 ? (
+        <div style={{ fontSize: 11, color: S.textDim, padding: "8px 0" }}>
+          Nichts zu tun. Belege, die per Mail oder aus einem Ordner hereinkommen,
+          stehen hier zur Freigabe.</div>
+      ) : (
+        <div style={{ border: `1px solid ${S.border}`, borderRadius: 8, overflow: "hidden" }}>
+          {belege.map((b) => (
+            <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 10,
+              padding: "7px 10px", borderBottom: `1px solid ${S.border}` }}>
+              <FileText size={13} color={S.textDim} />
+              <button onClick={() => onOeffnen(b)}
+                style={{ flex: 1, textAlign: "left", background: "none", border: "none",
+                  cursor: "pointer", color: S.textMain, fontSize: 12, padding: 0,
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {b.dateiname}
+                <span style={{ color: S.textDim, fontSize: 11 }}>
+                  {b.absender ? ` · ${b.absender}` : ""}{b.groesse ? ` · ${kb(b.groesse)}` : ""}</span>
+              </button>
+              <button onClick={() => onVerwerfen(b.id)} title="Verwerfen"
+                style={{ background: "none", border: "none", cursor: "pointer",
+                  color: S.textDim, display: "flex", padding: 2 }}>
+                <X size={13} /></button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Originalbeleg ansehen ────────────────────────────────────────────────────
 /** Zeigt die hochgeladene Datei so, wie sie wirklich aussieht.
  *
@@ -296,21 +349,35 @@ function BelegAusschnitt({ text, tabellenkopf, offen, onToggle, felder, abstand 
  *  Die Blob-Adresse wird beim Schliessen wieder freigegeben, sonst haelt der
  *  Tab jede angesehene Rechnung bis zum Neuladen im Speicher fest.
  */
-function BelegAnsicht({ datei, onSchliessen }) {
-  const istPdf = /\.pdf$/i.test(datei.name || "");
+function BelegAnsicht({ datei, postId, postName, onSchliessen }) {
+  // Zwei Herkuenfte, eine Ansicht: die gerade hereingezogene Datei liegt im
+  // Browser, ein Beleg aus dem Posteingang liegt auf dem Server. Geholt wird er
+  // ueber dieselbe API, die auch die Rechteprüfung macht.
+  const [name, setName] = useState(datei?.name || postName || "Beleg");
+  const [groesse, setGroesse] = useState(datei?.size || 0);
   const [url, setUrl] = useState(null);
   const [xmlText, setXmlText] = useState(null);
 
   useEffect(() => {
-    if (istPdf) {
-      const u = URL.createObjectURL(datei);
-      setUrl(u);
-      return () => URL.revokeObjectURL(u);
-    }
     let gilt = true;
-    datei.text().then((t) => { if (gilt) setXmlText(t); });
-    return () => { gilt = false; };
-  }, [datei, istPdf]);
+    let adresse = null;
+    (async () => {
+      const blob = datei || await api.get(`/api/er-posteingang/belege/${postId}/datei`,
+        { responseType: "blob" }).then(r => r.data);
+      if (!gilt) return;
+      if (!datei) {
+        setGroesse(blob.size || 0);
+        if (blob.type?.includes("pdf")) setName((n) => (/\.pdf$/i.test(n) ? n : `${n}.pdf`));
+      }
+      if (/\.pdf$/i.test(datei?.name || "") || blob.type?.includes("pdf")) {
+        adresse = URL.createObjectURL(blob);
+        setUrl(adresse);
+      } else {
+        setXmlText(await blob.text());
+      }
+    })().catch(() => { if (gilt) setXmlText("Der Beleg lässt sich nicht laden."); });
+    return () => { gilt = false; if (adresse) URL.revokeObjectURL(adresse); };
+  }, [datei, postId]);
 
   useEffect(() => {
     const taste = (e) => { if (e.key === "Escape") onSchliessen(); };
@@ -332,17 +399,17 @@ function BelegAnsicht({ datei, onSchliessen }) {
             <FileText size={13} color={S.textDim} />
             <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {datei.name}</span>
+              {name}</span>
             <span style={{ fontSize: 11, color: S.textDim, whiteSpace: "nowrap" }}>
-              {(datei.size / 1024).toFixed(0)} KB</span>
+              {groesse ? `${(groesse / 1024).toFixed(0)} KB` : ""}</span>
           </div>
-          <button onClick={onSchliessen} title="Schliessen (Esc)"
+          <button onClick={onSchliessen} title="Schließen (Esc)"
             style={{ background: "none", border: "none", cursor: "pointer",
               color: S.textDim, display: "flex", padding: 4 }}>
             <X size={16} /></button>
         </div>
-        {istPdf ? (
-          url && <iframe src={url} title={datei.name}
+        {url ? (
+          url && <iframe src={url} title={name}
             style={{ flex: 1, width: "100%", border: "none", borderRadius: "0 0 10px 10px" }} />
         ) : (
           <pre style={{ flex: 1, margin: 0, padding: 14, overflow: "auto", fontSize: 11,
@@ -378,17 +445,67 @@ export default function EingangsrechnungWidget({ widget }) {
   // laesst sich der Originalbeleg ansehen, ohne ihn erneut vom Server zu holen.
   const [datei, setDatei] = useState(null);
   const [belegAnsicht, setBelegAnsicht] = useState(false);
+  // Der Posteingang: Belege, die eine Quelle abgeholt hat und die auf ihre
+  // Freigabe warten. Wer gerade einen davon bearbeitet, steht in postId –
+  // nach dem Verbuchen wird genau dieser Beleg abgehakt.
+  const [posteingang, setPosteingang] = useState([]);
+  const [postId, setPostId] = useState(null);
+  const [postName, setPostName] = useState("");
+  const [holt, setHolt] = useState(false);
 
   const num = (v) => (v == null ? 0 : Number(v));
 
   const { ueberDerFlaeche, ablageProps } = useDateiAblage(
     (datei) => upload(datei), ENDUNGEN, setError);
 
+  const ladePosteingang = useCallback(async () => {
+    if (!connId) return;
+    try {
+      const { data } = await api.get("/api/er-posteingang/belege",
+        { params: { mandant_id: connId, status: "neu" } });
+      setPosteingang(data || []);
+    } catch { /* ein leerer Posteingang ist kein Fehler, den man anzeigen muss */ }
+  }, [connId]);
+
+  useEffect(() => { ladePosteingang(); }, [ladePosteingang]);
+
+  async function abholen() {
+    setHolt(true); setError(null);
+    try {
+      await api.post("/api/er-posteingang/abholen", null, { params: { mandant_id: connId } });
+      await ladePosteingang();
+    } catch (e) { setError(fehlerText(e, "Abholen fehlgeschlagen")); }
+    finally { setHolt(false); }
+  }
+
+  /** Einen wartenden Beleg in die Vorschau holen – derselbe Weg wie ein Upload. */
+  async function ausPosteingang(beleg) {
+    setLoading(true); setError(null); setWritten(null); setOverrides({}); setBefund(null);
+    setBelegOffen({}); setBelegAnsicht(false); setDatei(null);
+    setPostId(beleg.id); setPostName(beleg.dateiname || "Beleg");
+    try {
+      const fd = new FormData();
+      fd.append("connection_id", String(connId));
+      fd.append("posteingang_id", String(beleg.id));
+      const { data } = await api.post("/api/eingangsrechnung/plan", fd);
+      setKopf(data.kopf); setPlan(data.plan); setBefund(data.befund || null);
+    } catch (e) {
+      setError(fehlerText(e));
+    } finally { setLoading(false); }
+  }
+
+  async function belegStatus(id, status) {
+    try {
+      await api.post(`/api/er-posteingang/belege/${id}/status`, { status });
+      await ladePosteingang();
+    } catch (e) { setError(fehlerText(e)); }
+  }
+
   async function upload(file) {
     if (!file) return;
     setLoading(true); setError(null); setWritten(null); setOverrides({}); setBefund(null);
     setBelegOffen({});   // neuer Beleg, alte Aufklapp-Zustände passen nicht mehr
-    setDatei(file); setBelegAnsicht(false);
+    setDatei(file); setBelegAnsicht(false); setPostId(null);
     try {
       const fd = new FormData();
       fd.append("connection_id", String(connId));
@@ -445,7 +562,19 @@ export default function EingangsrechnungWidget({ widget }) {
       }
       const { data } = await api.post("/api/eingangsrechnung/write",
         { connection_id: connId, kopf, overrides, learn });
-      if (data.ok) setWritten(data);
+      if (data.ok) {
+        setWritten(data);
+        // Der Beleg ist gebucht – er soll nicht morgen wieder im Posteingang
+        // stehen und zum zweiten Mal erfasst werden.
+        if (postId) {
+          try {
+            await api.post(`/api/er-posteingang/belege/${postId}/status`, {
+              status: "erledigt", kEingangsrechnung: data.kEingangsrechnung || null });
+            setPostId(null);
+            await ladePosteingang();
+          } catch { /* die Buchung steht, das Abhaken darf sie nicht kippen */ }
+        }
+      }
       else { setPlan(data); setError("Freigabe nicht möglich – bitte offene Punkte prüfen."); }
     } catch (e) { setError(fehlerText(e)); }
     finally { setWriting(false); }
@@ -494,6 +623,9 @@ export default function EingangsrechnungWidget({ widget }) {
       <input ref={fileRef} type="file" accept=".pdf,.xml" style={{ display: "none" }}
         onChange={e => upload(e.target.files?.[0])} />
       {error && <div style={{ marginTop: 10, color: "#e07070", fontSize: 12 }}>{error}</div>}
+
+      <Posteingang belege={posteingang} holt={holt} onAbholen={abholen}
+        onOeffnen={ausPosteingang} onVerwerfen={(id) => belegStatus(id, "verworfen")} />
     </div>
   );
 
@@ -513,7 +645,7 @@ export default function EingangsrechnungWidget({ widget }) {
             {kopf.ist_gutschrift ? "Gutschrift" : "Rechnung"} {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
             {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}
             {kopf.peppolId ? ` · Peppol ${kopf.peppolId}` : ""}</div>
-          {datei && (
+          {(datei || postId) && (
             <button onClick={() => setBelegAnsicht(true)}
               style={{ marginTop: 6, padding: "3px 9px", background: S.bgCard,
                 color: S.textMain, border: `1px solid ${S.border}`, borderRadius: 5,
@@ -859,8 +991,9 @@ export default function EingangsrechnungWidget({ widget }) {
         </div>
       </div>
 
-      {belegAnsicht && datei && (
-        <BelegAnsicht datei={datei} onSchliessen={() => setBelegAnsicht(false)} />
+      {belegAnsicht && (datei || postId) && (
+        <BelegAnsicht datei={datei} postId={postId} postName={postName}
+          onSchliessen={() => setBelegAnsicht(false)} />
       )}
 
       {neuFuer != null && (

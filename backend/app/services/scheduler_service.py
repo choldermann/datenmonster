@@ -473,6 +473,77 @@ def unregister_rest_job(rest_source_id: int):
         pass
 
 
+def _run_er_posteingang(quelle_id: int):
+    """Eine Posteingangs-Quelle abfragen (geplanter Lauf)."""
+    from app.core.database import SessionLocal
+    from app.models.er_posteingang import ErPosteingangQuelle
+    from app.services import er_posteingang_service
+    db = SessionLocal()
+    try:
+        quelle = (db.query(ErPosteingangQuelle)
+                    .filter(ErPosteingangQuelle.id == quelle_id).first())
+        if not quelle or not quelle.aktiv:
+            return
+        ergebnis = er_posteingang_service.abholen(db, quelle)
+        logger.info(f"Posteingang '{quelle.name}': {ergebnis}")
+    finally:
+        db.close()
+
+
+def register_er_posteingang_job(quelle_id: int, cron_expr: str):
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = f"er_posteingang_{quelle_id}"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+    if not cron_expr or not cron_expr.strip():
+        return
+    teile = cron_expr.strip().split()
+    if len(teile) != 5:
+        logger.warning(f"Ungültiger Cron-Ausdruck für Posteingang {quelle_id}: {cron_expr}")
+        return
+    try:
+        sched.add_job(
+            _run_er_posteingang,
+            trigger=CronTrigger(minute=teile[0], hour=teile[1], day=teile[2],
+                                month=teile[3], day_of_week=teile[4],
+                                timezone="Europe/Berlin"),
+            id=job_id, args=[quelle_id], replace_existing=True,
+        )
+        logger.info(f"Posteingang-Job {quelle_id} registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren von Posteingang-Job {quelle_id}: {e}")
+
+
+def unregister_er_posteingang_job(quelle_id: int):
+    sched = get_scheduler()
+    if not sched:
+        return
+    try:
+        sched.remove_job(f"er_posteingang_{quelle_id}")
+    except Exception:
+        pass
+
+
+def reload_all_er_posteingang_jobs():
+    """Beim Start: alle aktiven Posteingangs-Quellen mit Takt laden."""
+    from app.core.database import SessionLocal
+    from app.models.er_posteingang import ErPosteingangQuelle
+    db = SessionLocal()
+    try:
+        quellen = [q for q in db.query(ErPosteingangQuelle)
+                                .filter(ErPosteingangQuelle.aktiv.is_(True)).all()
+                   if (q.cron_expr or "").strip()]
+        for q in quellen:
+            register_er_posteingang_job(q.id, q.cron_expr)
+        logger.info(f"✓ {len(quellen)} Posteingang-Jobs geladen")
+    finally:
+        db.close()
+
+
 def reload_all_rest_jobs():
     """Beim Start: alle aktiven REST-Quellen mit Takt und Ziel-Dataset laden."""
     from app.core.database import SessionLocal
