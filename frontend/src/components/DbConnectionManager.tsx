@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BookOpen, CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api, { fehlerText } from "../api/client";
+import { useDateiAblage } from "../hooks/useDateiAblage";
 import { S } from "./dashboard/constants";
 import DatabaseAnalyzer from "./DatabaseAnalyzer";
 import AiDatasetWizard from "./AiDatasetWizard";
@@ -8,6 +9,7 @@ import SchemaCatalog from "./SchemaCatalog";
 
 const DEFAULT_PORTS = { mssql: 1433, mysql: 3306, postgresql: 5432 };
 const ACCESS_COLOR = "#fce499";
+const ACCESS_ENDUNGEN = [".mdb", ".accdb"];
 
 // ─── Connection Form ──────────────────────────────────────────────────────────
 function ConnectionForm({ initial, projectId, onSaved, onCancel }) {
@@ -198,6 +200,8 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
   const [importResults, setImportResults] = useState([]);
   const [error, setError] = useState("");
   const fileInputRef = useRef(null);
+  const { ueberDerFlaeche, ablageProps } = useDateiAblage(
+    (datei) => { setUploadFile(datei); setError(""); }, ACCESS_ENDUNGEN, setError);
 
   useEffect(() => {
     api.get("/api/datasets/access/check-mdbtools")
@@ -344,10 +348,11 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
               </div>
 
               {mode === "upload" ? (
-                <div onClick={() => fileInputRef.current?.click()}
-                  style={{ border: `2px dashed ${uploadFile ? ACCESS_COLOR : S.border}`, borderRadius: 6,
+                <div onClick={() => fileInputRef.current?.click()} {...ablageProps}
+                  style={{ border: `2px dashed ${uploadFile || ueberDerFlaeche ? ACCESS_COLOR : S.border}`, borderRadius: 6,
                     padding: "20px", textAlign: "center", cursor: "pointer",
-                    backgroundColor: uploadFile ? `${ACCESS_COLOR}06` : "transparent", marginBottom: 12 }}>
+                    backgroundColor: uploadFile || ueberDerFlaeche ? `${ACCESS_COLOR}06` : "transparent", marginBottom: 12,
+                    transition: "border-color .12s, background-color .12s" }}>
                   <input ref={fileInputRef} type="file" accept=".mdb,.accdb" style={{ display: "none" }}
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) { setUploadFile(f); setError(""); } }} />
                   {uploadFile ? (
@@ -356,7 +361,8 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                       <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>{(uploadFile.size / 1024 / 1024).toFixed(1)} MB</p>
                     </div>
                   ) : (
-                    <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Klicken oder .mdb / .accdb hierher ziehen</p>
+                    <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>
+                      {ueberDerFlaeche ? "Loslassen zum Einlesen" : "Klicken oder .mdb / .accdb hierher ziehen"}</p>
                   )}
                 </div>
               ) : (

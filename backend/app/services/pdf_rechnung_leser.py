@@ -79,7 +79,11 @@ def pdf_text(data: bytes, layout: bool = True) -> str:
     Spalteninformation und müssen bleiben.
     """
     from pypdf import PdfReader
-    reader = PdfReader(io.BytesIO(data))
+    try:
+        reader = PdfReader(io.BytesIO(data))
+    except Exception as e:
+        raise ERechnungParseError(
+            f"Datei lässt sich nicht als PDF öffnen – beschädigt oder unvollständig ({e})") from e
     seiten = []
     for seite in reader.pages:
         roh = None

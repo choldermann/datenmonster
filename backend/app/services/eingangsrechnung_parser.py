@@ -63,7 +63,14 @@ def _is_pdf(data: bytes, filename: str) -> bool:
 def extract_xml_from_pdf(pdf_bytes: bytes) -> bytes:
     """Zieht das eingebettete ZUGFeRD/Factur-X-XML aus einem PDF/A-3."""
     from pypdf import PdfReader
-    reader = PdfReader(io.BytesIO(pdf_bytes))
+    # Beschaedigte oder halb hochgeladene Dateien scheitern schon hier – ohne
+    # diesen Fang kaeme beim Anwender ein "Internal Server Error" an statt der
+    # Auskunft, dass die Datei nicht lesbar ist.
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+    except Exception as e:
+        raise ERechnungParseError(
+            f"Datei lässt sich nicht als PDF öffnen – beschädigt oder unvollständig ({e})") from e
     try:
         attachments = dict(reader.attachments or {})
     except Exception as e:

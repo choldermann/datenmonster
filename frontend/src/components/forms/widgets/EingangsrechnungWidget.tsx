@@ -4,6 +4,9 @@ import {
   ChevronRight, ChevronDown,
 } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
+import { useDateiAblage } from "../../../hooks/useDateiAblage";
+
+const ENDUNGEN = [".pdf", ".xml"];
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -304,6 +307,9 @@ export default function EingangsrechnungWidget({ widget }) {
 
   const num = (v) => (v == null ? 0 : Number(v));
 
+  const { ueberDerFlaeche, ablageProps } = useDateiAblage(
+    (datei) => upload(datei), ENDUNGEN, setError);
+
   async function upload(file) {
     if (!file) return;
     setLoading(true); setError(null); setWritten(null); setOverrides({}); setBefund(null);
@@ -399,13 +405,16 @@ export default function EingangsrechnungWidget({ widget }) {
   // Upload-Ansicht
   if (!plan) return (
     <div style={{ padding: 20 }}>
-      <div onClick={() => fileRef.current?.click()}
-        style={{ border: `2px dashed ${S.border}`, borderRadius: 10, padding: "30px 20px",
-          textAlign: "center", cursor: "pointer", color: S.textDim }}>
+      <div onClick={() => fileRef.current?.click()} {...ablageProps}
+        style={{ border: `2px dashed ${ueberDerFlaeche ? S.accent : S.border}`, borderRadius: 10,
+          padding: "30px 20px", textAlign: "center", cursor: "pointer", color: S.textDim,
+          background: ueberDerFlaeche ? "rgba(252,228,153,0.06)" : "transparent",
+          transition: "border-color .12s, background .12s" }}>
         {loading ? <Loader2 size={26} className="animate-spin" /> : <Upload size={26} />}
         <div style={{ marginTop: 8, fontSize: 13, color: S.textMain }}>
           E-Rechnung hochladen (ZUGFeRD-PDF oder XRechnung-XML)</div>
-        <div style={{ fontSize: 11, marginTop: 3 }}>Klicken oder Datei hierher ziehen</div>
+        <div style={{ fontSize: 11, marginTop: 3 }}>
+          {ueberDerFlaeche ? "Loslassen zum Einlesen" : "Klicken oder Datei hierher ziehen"}</div>
       </div>
       <input ref={fileRef} type="file" accept=".pdf,.xml" style={{ display: "none" }}
         onChange={e => upload(e.target.files?.[0])} />
