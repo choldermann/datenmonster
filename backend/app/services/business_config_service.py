@@ -171,6 +171,41 @@ def cost_meta() -> list[dict]:
 # lieber ein leeres Feld, das der Export bemängelt, als eine fremde Nummer.
 # Die Konten dagegen sind Kontenrahmen, kein Eigentum: dort ist SKR03
 # vorbelegt und je Mandant überschreibbar (SKR04 hat andere Nummern).
+# Kontenrahmen: welche Sachkonten ein Rahmen fuer unsere sechs Faelle vorsieht.
+# Bewusst nur SKR03 und SKR04 mit Zahlen: das sind die beiden, die im Handel
+# vorkommen und die gegen echte Belege geprueft sind. Weitere Rahmen (SKR14
+# Land-/Forstwirtschaft, SKR49 Vereine, SKR51 Kfz …) gehoeren hier NUR hinein,
+# wenn ihre Kontonummern von einem Steuerberater bestaetigt sind - eine geratene
+# Kontonummer bucht still auf ein falsches Konto und faellt niemandem auf.
+# Wer einen anderen Rahmen fuehrt, waehlt "eigen" und traegt die sechs Konten
+# von Hand ein.
+KONTENRAHMEN: dict[str, dict] = {
+    "SKR03": {
+        "label": "SKR03 – Prozessgliederung",
+        "konten": {"konto_we_19": "3400", "konto_we_7": "3300",
+                   "konto_we_null": "3425", "konto_erloes_19": "8400",
+                   "konto_erloes_7": "8300", "konto_erloes_null": "8125"},
+    },
+    "SKR04": {
+        "label": "SKR04 – Abschlussgliederung",
+        "konten": {"konto_we_19": "5400", "konto_we_7": "5300",
+                   "konto_we_null": "5425", "konto_erloes_19": "4400",
+                   "konto_erloes_7": "4300", "konto_erloes_null": "4125"},
+    },
+    "eigen": {
+        "label": "Eigener Kontenrahmen",
+        "konten": {},          # laesst stehen, was gepflegt ist
+    },
+}
+
+KONTENRAHMEN_STANDARD = "SKR03"
+
+
+def kontenrahmen_optionen() -> list[dict]:
+    """Auswahlliste fuer die Oberflaeche, in Anzeigereihenfolge."""
+    return [{"value": k, "label": v["label"]} for k, v in KONTENRAHMEN.items()]
+
+
 DATEV_DEFAULTS: list[dict] = [
     {"key": "datev_berater", "label": "Beraternummer", "default": "",
      "gruppe": "Kennung des Mandanten", "identitaet": True,
@@ -186,6 +221,10 @@ DATEV_DEFAULTS: list[dict] = [
      "hinweis": "JJJJMMTT, z. B. 20260101. Leer = 1. Januar des Auswertungsjahres."},
     {"key": "datev_sachkontenlaenge", "label": "Sachkontenlänge", "default": "4",
      "gruppe": "Kennung des Mandanten", "hinweis": "Meist 4, gelegentlich 5."},
+
+    {"key": "kontenrahmen", "label": "Kontenrahmen", "default": KONTENRAHMEN_STANDARD,
+     "gruppe": "Kontenrahmen", "typ": "auswahl",
+     "hinweis": "Setzt die sechs Konten unten auf die Standardwerte dieses Rahmens."},
 
     {"key": "konto_we_19", "label": "Wareneingang 19 %", "default": "3400",
      "gruppe": "Konten Eingangsrechnungen", "hinweis": "SKR03: 3400, SKR04: 5400"},
@@ -221,9 +260,17 @@ def get_datev(project_id, db, mandant_id=None) -> dict:
     den Identitätsfeldern also leer.
     """
     werte = {d["key"]: d["default"] for d in DATEV_DEFAULTS}
-    for r in _rows(project_id, db, "datev", mandant_id, strikt=True):
-        if r.key in werte:
-            werte[r.key] = "" if r.value is None else str(r.value)
+    gespeichert = {r.key: ("" if r.value is None else str(r.value))
+                   for r in _rows(project_id, db, "datev", mandant_id, strikt=True)
+                   if r.key in werte}
+
+    # Der gewaehlte Kontenrahmen belegt die sechs Konten vor; ein von Hand
+    # eingetragenes Konto gewinnt danach trotzdem - man kann also SKR04 fahren
+    # und ein einzelnes Konto abweichend fuehren.
+    rahmen = gespeichert.get("kontenrahmen") or KONTENRAHMEN_STANDARD
+    werte["kontenrahmen"] = rahmen
+    werte.update(KONTENRAHMEN.get(rahmen, {}).get("konten", {}))
+    werte.update(gespeichert)
     return werte
 
 

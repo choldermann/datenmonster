@@ -88,12 +88,27 @@ def get_datev(project_id: Optional[int] = None, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     mandant_id = mandant_service.aktiver(project_id, user, db)
     werte = cfg_service.get_datev(project_id, db, mandant_id)
-    felder = [{**meta, "value": werte.get(meta["key"], meta["default"]),
-               "is_default": werte.get(meta["key"], meta["default"]) == meta["default"]}
-              for meta in cfg_service.datev_meta()]
+    rahmen = werte.get("kontenrahmen") or cfg_service.KONTENRAHMEN_STANDARD
+    rahmen_konten = cfg_service.KONTENRAHMEN.get(rahmen, {}).get("konten", {})
+
+    felder = []
+    for meta in cfg_service.datev_meta():
+        key = meta["key"]
+        # "Standard" heisst beim Konto: der Wert dieses Kontenrahmens, nicht der
+        # eingebaute SKR03-Wert - sonst zeigte jedes SKR04-Konto faelschlich den
+        # Zuruecksetzen-Knopf.
+        standard = rahmen_konten.get(key, meta["default"])
+        eintrag = {**meta, "value": werte.get(key, standard),
+                   "default": standard,
+                   "is_default": werte.get(key, standard) == standard}
+        if meta.get("typ") == "auswahl":
+            eintrag["optionen"] = cfg_service.kontenrahmen_optionen()
+        felder.append(eintrag)
+
     return {"project_id": project_id,
             "mandant_id": mandant_id,
             "mandant_name": mandant_service.name_von(mandant_id, db),
+            "kontenrahmen": rahmen,
             "felder": felder,
             "fehlend": cfg_service.datev_unvollstaendig(werte)}
 
@@ -126,11 +141,23 @@ def set_datev(body: DatevFeldIn, db: Session = Depends(get_db),
     if body.key == "datev_wj_beginn" and wert and (len(wert) != 8 or not wert.isdigit()):
         raise HTTPException(400, "Wirtschaftsjahr als JJJJMMTT, z. B. 20260101")
 
+    if body.key == "kontenrahmen" and wert and wert not in cfg_service.KONTENRAHMEN:
+        raise HTTPException(400, f"Unbekannter Kontenrahmen: {wert}")
+
     mandant_id = mandant_service.aktiver(body.project_id, user, db)
     if wert == "":
         cfg_service.reset_value(body.project_id, db, "datev", body.key, mandant_id)
     else:
         cfg_service.set_value(body.project_id, db, "datev", body.key, wert, mandant_id)
+
+    # Ein Rahmenwechsel raeumt die von Hand gesetzten Konten weg. Sonst waehlt man
+    # SKR04 und die alten SKR03-Nummern blieben stehen, weil sie ausdruecklich
+    # gespeichert waren - die Auswahl haette sichtbar nichts bewirkt.
+    if body.key == "kontenrahmen":
+        for konto in cfg_service.KONTENRAHMEN.get(
+                cfg_service.KONTENRAHMEN_STANDARD, {}).get("konten", {}):
+            cfg_service.reset_value(body.project_id, db, "datev", konto, mandant_id)
+
     return {"key": body.key, "value": wert, "mandant_id": mandant_id}
 
 

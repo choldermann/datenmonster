@@ -4,7 +4,7 @@
  "template_name": "JTL DATEV-Reporting (Eingangs- und Ausgangsrechnungen)",
  "description": "Erzeugt aus der JTL-Wawi einen DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700) – für Eingangsrechnungen, die JTL selbst nicht exportieren kann, und für Ausgangsrechnungen. Zusätzlich das schlanke Format des bisherigen Access-Werkzeugs, damit der Umstieg vergleichbar bleibt. Monatsweise, mit Kontrollliste vor dem Export.",
  "category": "jtl",
- "version": "1.1",
+ "version": "1.2",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -1276,7 +1276,7 @@
   "Gutschriften und Stornos sind enthalten und mindern den Umsatz. Sie buchen im Monat der Gutschrift, nicht im Monat der Rechnung – JTL führt kein Stornodatum, wohl aber zu jedem Storno eine Gutschrift.",
   "Eine stornierte Rechnung bleibt deshalb in ihrem Ursprungsmonat stehen; die Gegenbuchung kommt im Monat der Stornierung. Fällt beides in denselben Monat, heben sich die zwei Zeilen im Stapel auf.",
   "Proformarechnungen, Entwürfe und stornierte Gutschriften werden nicht exportiert.",
-  "Die Konten sind auf SKR03 vorbelegt und im Reiter „DATEV-Stammdaten“ je Mandant änderbar (SKR04: Wareneingang 5400/5300, Erlöse 4400/4300)."
+  "Im Reiter „DATEV-Stammdaten“ wählt man den Kontenrahmen (SKR03 oder SKR04); er belegt die sechs Sachkonten vor, einzelne lassen sich danach abweichend eintragen. Für andere Kontenrahmen gibt es „Eigener Kontenrahmen“ – dort trägt man die Konten von Hand ein."
  ],
  "knowledge": []
 }

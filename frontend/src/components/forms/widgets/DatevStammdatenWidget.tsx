@@ -64,9 +64,9 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
   // einen Betriebs in die Maske des anderen.
   useEffect(() => onMandantChange(() => { laden_(); }), [laden_]);
 
-  const speichern = async (key) => {
+  const speichern = async (key, sofort = null) => {
     const feld = felder.find(f => f.key === key);
-    const wert = (entwurf[key] ?? "").trim();
+    const wert = (sofort ?? entwurf[key] ?? "").toString().trim();
     if (!feld || wert === (feld.value ?? "")) return;   // nichts geändert
     setSpeichert(key); setFehler(null);
     try {
@@ -122,9 +122,10 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
           <span>
             Kennung und Konten {mandant ? <>von <b>{mandant}</b></> : "dieses Projekts"},
             wie sie in der Kopfzeile des Buchungsstapels stehen. Berater- und
-            Mandantennummer bekommst du vom <b>Steuerberater</b>. Die Konten sind auf
-            SKR03 vorbelegt – bei SKR04 hier überschreiben. Gespeichert wird beim
-            Verlassen des Feldes, <b>getrennt je Mandant</b>.
+            Mandantennummer bekommst du vom <b>Steuerberater</b>. Der{" "}
+            <b>Kontenrahmen</b> belegt die sechs Sachkonten vor – einzelne lassen sich
+            danach abweichend eintragen. Gespeichert wird beim Verlassen des Feldes,{" "}
+            <b>getrennt je Mandant</b>.
           </span>
         </p>
         {mandant && (
@@ -178,6 +179,23 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
                   {gespeichert === f.key && <Check size={12} style={{ color: "#4ade80" }} />}
                 </label>
                 <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                  {f.optionen ? (
+                    /* Der Kontenrahmen fuellt die sechs Konten darunter - deshalb
+                       sofort speichern und neu laden, nicht erst beim Verlassen. */
+                    <select
+                      value={entwurf[f.key] ?? ""}
+                      disabled={!canEdit}
+                      onChange={e => {
+                        setEntwurf(p => ({ ...p, [f.key]: e.target.value }));
+                        speichern(f.key, e.target.value);
+                      }}
+                      style={{ ...inp, fontFamily: "inherit", cursor: "pointer" }}
+                    >
+                      {f.optionen.map(o => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  ) : (
                   <input
                     value={entwurf[f.key] ?? ""}
                     disabled={!canEdit}
@@ -186,10 +204,10 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
                     onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
                     placeholder={f.default || "—"}
                     style={{ ...inp, opacity: canEdit ? 1 : .6 }}
-                  />
+                  />)}
                   {/* Nur bei Konten sinnvoll: sie haben einen echten Standard,
                       auf den man zurueckfallen kann. */}
-                  {canEdit && !f.identitaet && f.default && !f.is_default && (
+                  {canEdit && !f.identitaet && !f.optionen && f.default && !f.is_default && (
                     <button onClick={() => zuruecksetzen(f.key)} title={`Zurück auf ${f.default}`}
                       style={{ background: "none", border: "none", cursor: "pointer",
                         color: S.textDim, padding: 3, display: "flex" }}>
