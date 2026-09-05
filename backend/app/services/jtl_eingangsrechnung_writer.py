@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Optional
@@ -260,6 +261,26 @@ class ERWritePlan:
         return "\n".join(L)
 
 
+
+# Rechtsformen und Schreibweisen, die denselben Lieferanten anders aussehen
+# lassen. Bewusst knapp gehalten: je mehr hier wegfaellt, desto mehr Firmen
+# sehen gleich aus – und eine Verwechslung waere teurer als eine Rueckfrage.
+_RECHTSFORMEN = {
+    "gmbh", "mbh", "ag", "kg", "kgaa", "ohg", "gbr", "ug", "se", "eg", "ek",
+    "co", "cokg", "ltd", "limited", "plc", "inc", "llc", "bv", "nv", "sa",
+    "sarl", "srl", "spa", "as", "ab", "oy", "aps", "sp", "zoo", "doo",
+}
+
+
+def _firma_kern(name: Optional[str]) -> str:
+    """Firmenname auf das reduziert, was ihn wirklich unterscheidet."""
+    if not name:
+        return ""
+    roh = re.sub(r"[^\w\s]", " ", str(name).lower())
+    teile = [t for t in roh.split() if t and t not in _RECHTSFORMEN]
+    return " ".join(teile)
+
+
 class EingangsrechnungWriter:
     def __init__(self, connection_id: int):
         db = SessionLocal()
@@ -287,6 +308,26 @@ class EingangsrechnungWriter:
                 "SELECT * FROM dbo.tlieferant WHERE REPLACE(cUstid,' ','') = :u"),
                 {"u": kopf.ustIdNr.replace(" ", "")}).mappings().first()
             match = "USt-IdNr"
+            # Kreuzprobe: stehen beide Angaben auf dem Beleg, muessen sie auf
+            # denselben Lieferanten zeigen. Auf Belegen mit zwei Anschriften
+            # nebeneinander greift die Auslesung sonst in die falsche Spalte
+            # (gemessen: 2 von 3 Laeufen) – und eine still falsch zugeordnete
+            # Rechnung faellt niemandem auf.
+            if (row is not None and kopf.lieferantName
+                    and _firma_kern(row["cFirma"]) != _firma_kern(kopf.lieferantName)):
+                widerspruch = (
+                    f"Die USt-IdNr {kopf.ustIdNr} gehört zu „{row['cFirma']}“, "
+                    f"als Lieferant steht auf dem Beleg aber „{kopf.lieferantName}“.")
+                if kopf.quelle == "pdf_ki":
+                    # Aus einem PDF gelesen: genau so sieht der Griff in die
+                    # falsche Spalte aus. Nicht buchen, nachfragen.
+                    plan.errors.append(widerspruch + " Bitte von Hand zuordnen.")
+                    return None
+                # Aus einer strukturierten E-Rechnung: Name und USt-IdNr stammen
+                # aus demselben Datensatz, koennen sich also nicht widersprechen.
+                # Dann heisst die Abweichung nur, dass der Stamm anders schreibt.
+                plan.warnings.append(widerspruch + " Der Beleg ist eine E-Rechnung, "
+                                     "die USt-IdNr gilt.")
         if row is None and kopf.lieferantName:
             hits = conn.execute(text(
                 "SELECT * FROM dbo.tlieferant WHERE cFirma = :n"),
@@ -296,8 +337,42 @@ class EingangsrechnungWriter:
             elif len(hits) > 1:
                 plan.errors.append(f"Lieferant '{kopf.lieferantName}': {len(hits)} Treffer – nicht eindeutig")
                 return None
+            else:
+                # Zweiter Versuch ohne Rechtsform und Schreibweise: auf dem Beleg
+                # steht "Pax8 Deutschland GmbH", im Stamm oft "Pax8 Deutschland".
+                # Nur bei GENAU EINEM Treffer – bei mehreren waere jede Wahl
+                # geraten, und am Ende haengt Geld an diesem Namen.
+                gesucht = _firma_kern(kopf.lieferantName)
+                if gesucht:
+                    alle = conn.execute(text(
+                        "SELECT * FROM dbo.tlieferant")).mappings().all()
+                    nah = [r for r in alle if _firma_kern(r["cFirma"]) == gesucht]
+                    if len(nah) == 1:
+                        row, match = nah[0], "Firmenname (angenähert)"
+                        # Sichtbar machen, dass hier eine Schreibweise ueberbrueckt
+                        # wurde – der Anwender soll den Namen einmal ansehen,
+                        # bevor Geld auf diesen Lieferanten laeuft.
+                        plan.warnings.append(
+                            f"Lieferant über den Firmennamen zugeordnet: Beleg nennt "
+                            f"„{kopf.lieferantName}“, im Stamm steht „{row['cFirma']}“.")
+                    elif len(nah) > 1:
+                        namen = ", ".join(sorted({str(r["cFirma"]) for r in nah})[:4])
+                        plan.errors.append(
+                            f"Lieferant '{kopf.lieferantName}': mehrdeutig ({namen})")
+                        return None
         if row is None:
-            plan.errors.append("Lieferant nicht auflösbar (weder kLieferant, USt-IdNr noch Firmenname trafen)")
+            # Sagen, wonach gesucht wurde – sonst sieht der Anwender nur, DASS es
+            # nicht ging, und muss raten, ob der Beleg oder der Stamm schuld ist.
+            gesucht = [t for t in (
+                f"Nummer {kopf.kLieferant}" if kopf.kLieferant else "",
+                f"USt-IdNr {kopf.ustIdNr}" if kopf.ustIdNr else "",
+                f"Firma '{kopf.lieferantName}'" if kopf.lieferantName else "",
+            ) if t]
+            plan.errors.append(
+                "Lieferant nicht auflösbar (gesucht nach: " + ", ".join(gesucht) + ")"
+                if gesucht else
+                "Lieferant nicht auflösbar – der Beleg nennt weder eine "
+                "USt-IdNr noch einen Firmennamen, den wir lesen konnten")
             return None
         d = dict(row)
         d["_match"] = match

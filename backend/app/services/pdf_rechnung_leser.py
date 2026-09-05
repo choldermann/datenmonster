@@ -204,6 +204,12 @@ def _objekt(eigenschaften: dict) -> dict:
 
 SCHEMA = _objekt({
     "rechnungsnummer": {"type": "string"},
+    # Auf jeder Rechnung stehen ZWEI Firmen. Welche die richtige ist, entscheidet
+    # die Regel im Prompt; hier steht nur, dass wir sie ueberhaupt wissen wollen.
+    "lieferant": _objekt({
+        "name":     {"type": "string", "description": "Firmenname des Rechnungsstellers, sonst leer"},
+        "ustIdNr":  {"type": "string", "description": "USt-IdNr des Rechnungsstellers, sonst leer"},
+    }),
     "belegdatum":      {"type": "string", "description": "JJJJ-MM-TT"},
     "zahlungsziel":    {"type": "string", "description": "JJJJ-MM-TT, sonst leerer Text"},
     "nettoSumme":      {"type": "number"},
@@ -253,6 +259,17 @@ SYSTEM = (
     "als rechnungsnummer erscheinen.\n"
     "4. belegdatum ist das Rechnungsdatum, nicht das Lieferdatum, nicht das "
     "Bestelldatum und nicht das Druckdatum.\n"
+    "4a. lieferant ist, WER DIE RECHNUNG STELLT: der Briefkopf, der Absender, "
+    "der Zahlungsempfaenger, wer um Ueberweisung auf SEIN Konto bittet. Auf "
+    "jeder Rechnung stehen zwei Firmen – die andere ist der Rechnungsempfaenger "
+    "('Rechnungsempfaenger', 'Rechnung an', 'Kunde', 'Bill to', die Anschrift "
+    "im Adressfenster). Deren Name und USt-IdNr duerfen NIEMALS im "
+    "Lieferantenfeld stehen. Stehen zwei USt-IdNr auf dem Beleg, nimm die des "
+    "Rechnungsstellers; bist du dir nicht sicher, welche wem gehoert, lass das "
+    "Feld leer. name und ustIdNr muessen zur SELBEN Firma gehoeren – stehen "
+    "die beiden Anschriften nebeneinander, nimm beide Angaben aus demselben "
+    "Block, nicht aus der Spalte daneben. Ein falscher Lieferant bucht Geld "
+    "auf den falschen Namen.\n"
     "5. Alle Beträge NETTO je Stück, ohne Währungszeichen, Punkt als Dezimaltrenner. "
     "Deutsche Schreibweise 1.234,56 bedeutet 1234.56.\n"
     "6. positionen sind nur die gelieferten Waren, jede Zeile GENAU EINMAL. Fracht, "
@@ -288,6 +305,57 @@ SYSTEM = (
     "Ursprungsland aus dem Firmensitz des Lieferanten und kein Gewicht aus der "
     "Art der Ware."
 )
+
+
+def pruefe_lieferant(name: Optional[str], ust_id: Optional[str],
+                     eigene: dict, hinweise: list) -> dict:
+    """Was uns selbst gehoert, wird verworfen – lieber kein Wert als der falsche."""
+    if ust_id and ust_id in eigene.get("ustIds", ()):
+        hinweise.append(
+            f"Die gelesene USt-IdNr {ust_id} ist unsere eigene – sie stand auf dem "
+            "Beleg beim Rechnungsempfänger, nicht beim Lieferanten. Verworfen.")
+        ust_id = None
+    if name and name.strip().lower() in eigene.get("namen", ()):
+        hinweise.append(
+            f"Der gelesene Lieferant „{name}“ ist unsere eigene Firma – verworfen.")
+        name = None
+    return {"name": name, "ustIdNr": ust_id}
+
+
+def eigene_kennungen(conn) -> dict:
+    """USt-IdNr und Firmenname des eigenen Hauses.
+
+    Auf jeder Rechnung stehen zwei Firmen, und die Auslesung greift verlaesslich
+    daneben, wenn beide untereinander im selben Kasten stehen: gemessen an einer
+    Pax8-Rechnung nahm das Modell den Namen aus der rechten Spalte und die
+    USt-IdNr aus der linken – also unsere eigene. Diese Verwechslung laesst sich
+    nicht wegformulieren, aber hart pruefen: was uns selbst gehoert, kann nicht
+    der Lieferant sein.
+    """
+    kennungen: dict = {"ustIds": set(), "namen": set()}
+    try:
+        for r in conn.execute(text("SELECT cUStId FROM dbo.tFirmaUStIdNr")):
+            if r[0]:
+                kennungen["ustIds"].add(str(r[0]).replace(" ", "").upper())
+        for r in conn.execute(text("SELECT cName FROM dbo.tFirma")):
+            if r[0]:
+                kennungen["namen"].add(str(r[0]).strip().lower())
+    except Exception:
+        pass          # Ohne die Pruefung geht es weiter, nur weniger sicher.
+    return kennungen
+
+
+def _lieferant_feld(antwort: dict, feld: str, grenze: int) -> Optional[str]:
+    """Ein Feld aus dem Lieferantenblock der KI-Antwort, sauber oder gar nicht."""
+    wert = ((antwort.get("lieferant") or {}).get(feld) or "").strip()
+    if feld == "ustIdNr":
+        wert = wert.replace(" ", "").replace(".", "").upper()
+        # Eine USt-IdNr faengt mit zwei Buchstaben an und hat mindestens acht
+        # Zeichen. Was das nicht erfuellt, ist eine Steuernummer oder sonst was
+        # vom Beleg – und wuerde in tlieferant nur ins Leere greifen.
+        if len(wert) < 8 or not wert[:2].isalpha():
+            return None
+    return wert[:grenze] or None
 
 
 def artikel_aus_bestellung(vorlage: list[dict], menge: float, ek: float,
@@ -520,6 +588,7 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         if bestellung:
             positionen_vorlage = bestellpositionen(
                 conn, bestellung["kLieferantenBestellung"])
+        eigene = eigene_kennungen(conn)
     befund["bestellung"] = bestellung
     befund["bestellpositionen"] = len(positionen_vorlage)
 
@@ -683,6 +752,12 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         raise ERechnungParseError(
             "Im PDF war kein Belegdatum lesbar – ohne Datum keine Buchung.")
 
+    # Der Lieferant wird nur gebraucht, wenn keine Bestellung ihn schon festlegt –
+    # die Bestellung ist ein Schluessel, die Auslesung eine Lesart.
+    gelesener_lieferant = pruefe_lieferant(
+        _lieferant_feld(antwort, "name", 200),
+        _lieferant_feld(antwort, "ustIdNr", 30), eigene, hinweise)
+
     kopf = ERKopfInput(
         cFremdbelegnummer=(antwort.get("rechnungsnummer") or "").strip()[:50],
         dBelegdatum=belegdatum,
@@ -694,6 +769,13 @@ async def lese_pdf_rechnung(data: bytes, filename: str, connection_id: int,
         bruttoSumme=_zahl(antwort.get("bruttoSumme")) or None,
         kLieferant=bestellung["kLieferant"] if bestellung else None,
         bestellnummer=bestellung["cEigeneBestellnummer"] if bestellung else None,
+        # Nur als RUECKFALL, wenn keine Bestellung den Lieferanten schon
+        # festgelegt hat: die Bestellung ist ein Schluessel, die Auslesung eine
+        # Lesart. Ohne diese beiden Felder endet jede Rechnung ohne Bestellbezug
+        # in "Lieferant nicht aufloesbar" – auch wenn der Name gross auf dem
+        # Beleg steht. Aufgeloest wird damit erst im Writer, gegen tlieferant.
+        lieferantName=None if bestellung else gelesener_lieferant["name"],
+        ustIdNr=None if bestellung else gelesener_lieferant["ustIdNr"],
         quelle="pdf_ki",
         leser_hinweise=hinweise,
         belegtabellenkopf=tabellenkopf,
