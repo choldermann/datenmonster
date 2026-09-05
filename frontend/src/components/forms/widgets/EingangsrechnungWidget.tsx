@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {
   Upload, Loader2, CheckCircle2, AlertTriangle, XCircle, Search, FileText,
-  ChevronRight, ChevronDown,
+  ChevronRight, ChevronDown, Eye, X,
 } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { useDateiAblage } from "../../../hooks/useDateiAblage";
@@ -285,6 +285,76 @@ function BelegAusschnitt({ text, tabellenkopf, offen, onToggle, felder, abstand 
 }
 
 
+// ── Originalbeleg ansehen ────────────────────────────────────────────────────
+/** Zeigt die hochgeladene Datei so, wie sie wirklich aussieht.
+ *
+ *  Die Vorschau erklaert, was der Leser VERSTANDEN hat; hier steht daneben, was
+ *  auf dem Papier steht — bei Zweifeln an einer Zeile ist das der kuerzeste Weg
+ *  zur Antwort. Die Datei liegt schon im Browser, es geht also nichts erneut
+ *  ueber die Leitung.
+ *
+ *  Die Blob-Adresse wird beim Schliessen wieder freigegeben, sonst haelt der
+ *  Tab jede angesehene Rechnung bis zum Neuladen im Speicher fest.
+ */
+function BelegAnsicht({ datei, onSchliessen }) {
+  const istPdf = /\.pdf$/i.test(datei.name || "");
+  const [url, setUrl] = useState(null);
+  const [xmlText, setXmlText] = useState(null);
+
+  useEffect(() => {
+    if (istPdf) {
+      const u = URL.createObjectURL(datei);
+      setUrl(u);
+      return () => URL.revokeObjectURL(u);
+    }
+    let gilt = true;
+    datei.text().then((t) => { if (gilt) setXmlText(t); });
+    return () => { gilt = false; };
+  }, [datei, istPdf]);
+
+  useEffect(() => {
+    const taste = (e) => { if (e.key === "Escape") onSchliessen(); };
+    window.addEventListener("keydown", taste);
+    return () => window.removeEventListener("keydown", taste);
+  }, [onSchliessen]);
+
+  return (
+    <div onClick={onSchliessen} style={{ position: "fixed", inset: 0, zIndex: 110,
+      background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center",
+      justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: S.bgCard,
+        border: `1px solid ${S.border}`, borderRadius: 10, width: "min(1000px, 100%)",
+        height: "90vh", display: "flex", flexDirection: "column",
+        boxShadow: "0 20px 60px rgba(0,0,0,0.5)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "10px 14px", borderBottom: `1px solid ${S.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+            <FileText size={13} color={S.textDim} />
+            <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {datei.name}</span>
+            <span style={{ fontSize: 11, color: S.textDim, whiteSpace: "nowrap" }}>
+              {(datei.size / 1024).toFixed(0)} KB</span>
+          </div>
+          <button onClick={onSchliessen} title="Schliessen (Esc)"
+            style={{ background: "none", border: "none", cursor: "pointer",
+              color: S.textDim, display: "flex", padding: 4 }}>
+            <X size={16} /></button>
+        </div>
+        {istPdf ? (
+          url && <iframe src={url} title={datei.name}
+            style={{ flex: 1, width: "100%", border: "none", borderRadius: "0 0 10px 10px" }} />
+        ) : (
+          <pre style={{ flex: 1, margin: 0, padding: 14, overflow: "auto", fontSize: 11,
+            color: S.textMain, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {xmlText ?? "Wird gelesen…"}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 export default function EingangsrechnungWidget({ widget }) {
   const connId = widget?.config?.connection_id ? Number(widget.config.connection_id) : null;
   const [kopf, setKopf] = useState(null);
@@ -304,6 +374,10 @@ export default function EingangsrechnungWidget({ widget }) {
   // Ausgangszustand: die Vorschau soll die Rechnung zeigen, nicht ihr Rohmaterial.
   const [belegOffen, setBelegOffen] = useState({});
   const fileRef = useRef(null);
+  // Die hochgeladene Datei bleibt liegen, solange die Vorschau offen ist – damit
+  // laesst sich der Originalbeleg ansehen, ohne ihn erneut vom Server zu holen.
+  const [datei, setDatei] = useState(null);
+  const [belegAnsicht, setBelegAnsicht] = useState(false);
 
   const num = (v) => (v == null ? 0 : Number(v));
 
@@ -314,6 +388,7 @@ export default function EingangsrechnungWidget({ widget }) {
     if (!file) return;
     setLoading(true); setError(null); setWritten(null); setOverrides({}); setBefund(null);
     setBelegOffen({});   // neuer Beleg, alte Aufklapp-Zustände passen nicht mehr
+    setDatei(file); setBelegAnsicht(false);
     try {
       const fd = new FormData();
       fd.append("connection_id", String(connId));
@@ -437,6 +512,13 @@ export default function EingangsrechnungWidget({ widget }) {
           <div style={{ fontSize: 11, color: S.textDim, marginTop: 2 }}>
             Rechnung {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
             {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}</div>
+          {datei && (
+            <button onClick={() => setBelegAnsicht(true)}
+              style={{ marginTop: 6, padding: "3px 9px", background: S.bgCard,
+                color: S.textMain, border: `1px solid ${S.border}`, borderRadius: 5,
+                fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+              <Eye size={11} /> Original ansehen</button>
+          )}
         </div>
         {summen.rechnung_brutto != null && (
           <div style={{ textAlign: "right" }}>
@@ -775,6 +857,10 @@ export default function EingangsrechnungWidget({ widget }) {
             Freigeben & verbuchen</button>
         </div>
       </div>
+
+      {belegAnsicht && datei && (
+        <BelegAnsicht datei={datei} onSchliessen={() => setBelegAnsicht(false)} />
+      )}
 
       {neuFuer != null && (
         <NeuerArtikelModal
