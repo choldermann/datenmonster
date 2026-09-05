@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Puzzle, Loader2, RefreshCw, Zap, Database, ArrowRightLeft,
   ChevronDown, ChevronUp, Container, Play, Square, Trash2, Plus, X, Download, Lock } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const CAP_COLOR = {
@@ -52,7 +52,7 @@ function TestModal({ plugin, onClose }) {
       const { data } = await api.post(`/api/plugins/${plugin.id}/test`, { config });
       setResult(data);
     } catch (e) {
-      setResult({ ok: false, message: e.response?.data?.detail || e.message });
+      setResult({ ok: false, message: fehlerText(e) });
     } finally {
       setTesting(false);
     }
@@ -183,7 +183,7 @@ function RegisterPluginModal({ onClose, onSaved }) {
       onSaved();
       onClose();
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally {
       setSaving(false);
     }
@@ -519,7 +519,7 @@ export default function PluginsPanel() {
       await fn();
       await load();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally {
       setBusyFor(id, false);
     }

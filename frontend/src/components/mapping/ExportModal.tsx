@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Check, ChevronDown, ChevronRight, Download, Link2, Loader2, Play, Plus, Server, Settings, X } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S, TARGET_TYPES, TARGET_TYPE_COLORS, JOIN_COLOR } from "./constants";
 
 function TargetConfig({ targetType, targetConnectionId, targetTable, targetWriteMode, connections, onChange }) {
@@ -112,7 +112,7 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
         setResult({ type: "download", ok: true });
       }
     } catch (e) {
-      setResult({ type: "error", message: e.response?.data?.detail || e.message });
+      setResult({ type: "error", message: fehlerText(e) });
     } finally {
       setRunning(false);
     }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Trash2, Save, X, Edit3, Check } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 
 const S = {
   bg:       "var(--bg-card)",
@@ -93,7 +93,7 @@ export default function DatasetRowEditor({ dataset, onClose, onSaved }) {
       setDirty(false);
       onSaved?.();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally {
       setSaving(false);
     }

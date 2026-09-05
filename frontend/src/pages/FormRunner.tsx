@@ -3,7 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
@@ -137,7 +137,7 @@ export default function FormRunner() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setError("Download fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+      setError("Download fehlgeschlagen: " + (fehlerText(e)));
     }
   };
 
@@ -182,7 +182,7 @@ export default function FormRunner() {
     } catch (e) {
       // Fehlermeldung steckt bei Blob-Responses im Blob-Text
       let msg = e.message;
-      try { msg = JSON.parse(await e.response?.data?.text())?.detail || msg; } catch { /* ignore */ }
+      try { msg = fehlerText(JSON.parse(await e.response?.data?.text()), msg); } catch { /* ignore */ }
       setError("PDF-Report fehlgeschlagen: " + msg);
     } finally {
       setReporting(false);
@@ -216,7 +216,7 @@ export default function FormRunner() {
       });
       setResults(data.results || {});
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally {
       setRunning(false);
     }

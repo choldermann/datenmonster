@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Loader2, X, ChevronRight, ChevronLeft, Sparkles } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S } from "../dashboard/constants";
 
 export default function SmartMappingModal({ projectId, connections, onClose, onApply }) {
@@ -34,7 +34,7 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
       setSelectedTables(new Set(data.tables.map(t => t.key)));
       setStep(2);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setLoading(false); }
   };
 

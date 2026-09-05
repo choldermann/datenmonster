@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Loader2, CheckCircle, ChevronRight, ChevronDown, FileText } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 
 const S = {
   accent: "var(--accent)", bgMain: "var(--bg-main)", bgCard: "var(--bg-card)",
@@ -95,7 +95,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
     api.get(`/api/datasets/${dataset.id}/xml-structure`)
       .then(({ data }) => { setStructure(data); setLoadingTree(false); })
       .catch((e) => {
-        setError(e.response?.data?.detail || "Fehler beim Laden der XML-Struktur");
+        setError(fehlerText(e, "Fehler beim Laden der XML-Struktur"));
         setLoadingTree(false);
       });
   }, [dataset.id]);
@@ -119,7 +119,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
       setRefFields(data.fields || []);
       setStep("refs");
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Laden der Referenzfelder");
+      setError(fehlerText(e, "Fehler beim Laden der Referenzfelder"));
     } finally {
       setLoadingRefs(false);
     }
@@ -141,7 +141,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
       });
       onDone();
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Importieren");
+      setError(fehlerText(e, "Fehler beim Importieren"));
       setSaving(false);
     }
   };

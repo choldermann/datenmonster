@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Sparkles, GripVertical, Plus, X, Play, Loader2, ChevronDown, ChevronUp, Database } from "lucide-react";
 import { S } from "./constants";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 
 export const AI_NODE_COLOR = "#a78bfa";
 const DOT = 10;
@@ -111,7 +111,7 @@ export default function AiTransformNode({
       });
       setPreviewResult(data.result);
     } catch (e: any) {
-      setPreviewError(e.response?.data?.detail || e.message);
+      setPreviewError(fehlerText(e));
     } finally {
       setPreviewLoading(false);
     }

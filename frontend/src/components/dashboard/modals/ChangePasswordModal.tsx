@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Check, Loader2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import Modal from "../shared/Modal";
 
@@ -22,7 +22,7 @@ function ChangePasswordModal({ onClose }) {
       setDone(true);
       setTimeout(onClose, 1500);
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Ändern");
+      setError(fehlerText(e, "Fehler beim Ändern"));
     } finally {
       setSaving(false);
     }

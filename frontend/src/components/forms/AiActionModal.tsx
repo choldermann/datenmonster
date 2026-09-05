@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Sparkles, Loader2, AlertCircle, TrendingDown, Copy, Check, RefreshCw, Globe,
   FileText, Upload } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { streamRequest } from "../../services/aiService";
 import { alsText } from "../../utils/html";
 
@@ -121,7 +121,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
         if (abgebrochen) return;
         setRow(factRow);
       } catch (e) {
-        setError(e.response?.data?.detail || e.message); setPhase("error"); return;
+        setError(fehlerText(e)); setPhase("error"); return;
       }
       // 2) Text erzeugen – bei manual wartet das auf den Knopf
       if (manual) { setPhase("ready"); return; }
@@ -159,7 +159,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
         { mapping_id: factsMapping, aenderungen: aenderung() });
       setUebernahme({ plan: data });
     } catch (e) {
-      setUebernahmeFehler(e.response?.data?.detail || e.message);
+      setUebernahmeFehler(fehlerText(e));
     } finally { setUebernahmeLaeuft(false); }
   };
 
@@ -171,7 +171,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
       });
       setUebernahme({ plan: data, fertig: true });
     } catch (e) {
-      setUebernahmeFehler(e.response?.data?.detail || e.message);
+      setUebernahmeFehler(fehlerText(e));
     } finally { setUebernahmeLaeuft(false); }
   };
 

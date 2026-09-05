@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor, Zap } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { useAuth } from "../../../context/AuthContext";
 import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
 import { aiDownloadStore } from "../../../store/aiDownloadStore";
@@ -50,7 +50,7 @@ function EmailSettings() {
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 
@@ -61,12 +61,7 @@ function EmailSettings() {
       const { data } = await api.post("/api/settings/email/test", form);
       setTestResult({ ok: true, msg: data.message || "Test-E-Mail gesendet!" });
     } catch (e) {
-      const detail = e.response?.data?.detail;
-      const msg = typeof detail === "string" ? detail
-        : Array.isArray(detail) ? detail.map(d => d.msg || JSON.stringify(d)).join(", ")
-        : detail ? JSON.stringify(detail)
-        : e.message;
-      setTestResult({ ok: false, msg });
+      setTestResult({ ok: false, msg: fehlerText(e) });
     } finally { setTesting(false); }
   };
 
@@ -291,7 +286,7 @@ function TopUpPanel({ onDone }) {
       setDone(true);
       onDone && onDone();
     } catch (err) {
-      setMsg({ type: "err", text: err?.response?.data?.detail || err.message });
+      setMsg({ type: "err", text: fehlerText(err) });
     } finally {
       setBusy(false);
     }
@@ -513,7 +508,7 @@ function AiSettings() {
       // damit sie beim ersten echten Aufruf bereits im Speicher liegen. Nur Ollama.
       if (form.ai_enabled && form.ai_provider === "ollama") handleWarmup();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 
@@ -854,7 +849,7 @@ function BackupSettings() {
       setFrei(data.speicher_frei);
       setBehalten(data.behalten);
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setLaden(false); }
   };
   useEffect(() => { laden_(); }, []);
@@ -869,7 +864,7 @@ function BackupSettings() {
       setMeldung({ art: "ok", text: `Sicherung angelegt: ${data.name} (${kb(data.groesse)})` });
       await laden_();
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setArbeitet(false); }
   };
 
@@ -881,14 +876,14 @@ function BackupSettings() {
       a.href = url; a.download = name; a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setMeldung({ art: "fehler", text: "Download fehlgeschlagen: " + (e.response?.data?.detail || e.message) });
+      setMeldung({ art: "fehler", text: "Download fehlgeschlagen: " + (fehlerText(e)) });
     }
   };
 
   const loeschen = async (name) => {
     setArbeitet(true);
     try { await api.delete(`/api/backup/${name}`); await laden_(); }
-    catch (e) { setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message }); }
+    catch (e) { setMeldung({ art: "fehler", text: fehlerText(e) }); }
     finally { setArbeitet(false); }
   };
 
@@ -900,7 +895,7 @@ function BackupSettings() {
       const { data } = await api.post(`/api/backup/restore?name=${encodeURIComponent(name)}&bestaetigt=false`);
       setPruefung({ name, inhalt: data.inhalt });
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setArbeitet(false); }
   };
 
@@ -912,7 +907,7 @@ function BackupSettings() {
         `/api/backup/restore?name=${encodeURIComponent(pruefung.name)}&bestaetigt=true`);
       setFertig(data); setPruefung(null); await laden_();
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setArbeitet(false); }
   };
 
@@ -934,7 +929,7 @@ function BackupSettings() {
             + `Zum Übernehmen in der Liste auf „Zurückspielen" klicken.` });
       await laden_();
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setArbeitet(false); ev.target.value = ""; }
   };
 
@@ -1154,7 +1149,7 @@ function MandantenSettings() {
       }
       await laden();
     } catch (e) {
-      alert(e.response?.data?.detail || "Speichern fehlgeschlagen");
+      alert(fehlerText(e, "Speichern fehlgeschlagen"));
     } finally { setBusy(null); }
   };
 
@@ -1167,7 +1162,7 @@ function MandantenSettings() {
         project_id: projekt || null });
       await laden();
     } catch (e) {
-      alert(e.response?.data?.detail || "Speichern fehlgeschlagen");
+      alert(fehlerText(e, "Speichern fehlgeschlagen"));
     } finally { setBusy(null); }
   };
 
@@ -1317,7 +1312,7 @@ function UserManagement() {
       setForm({ username: "", password: "", role: "editor" });
       load();
     } catch (e) {
-      setResult({ ok: false, msg: e.response?.data?.detail || "Fehler beim Anlegen" });
+      setResult({ ok: false, msg: fehlerText(e, "Fehler beim Anlegen") });
     } finally { setCreating(false); }
   };
 
@@ -1327,7 +1322,7 @@ function UserManagement() {
       await api.patch(`/api/auth/users/${u.id}`, roleToFlags(role));
       await load();
     } catch (e) {
-      alert(e.response?.data?.detail || "Rolle ändern fehlgeschlagen");
+      alert(fehlerText(e, "Rolle ändern fehlgeschlagen"));
     } finally { setBusyId(null); }
   };
 
@@ -1337,7 +1332,7 @@ function UserManagement() {
       await api.delete(`/api/auth/users/${id}`);
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || "Löschen fehlgeschlagen");
+      alert(fehlerText(e, "Löschen fehlgeschlagen"));
     }
   };
 
@@ -1846,7 +1841,7 @@ function NetworkSettings() {
       await api.post("/api/settings/egress", form);
       setSaved(true); setTimeout(() => setSaved(false), 2500);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 

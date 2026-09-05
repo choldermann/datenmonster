@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { HardDrive, Download, Trash2, RefreshCw, Inbox, X, Check, Loader2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 function ExportsPanel({ projectId }) {
@@ -53,7 +53,7 @@ function ExportsPanel({ projectId }) {
       const a = document.createElement("a"); a.href = url; a.download = f.file_name; a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(`Fehler: ${e.response?.data?.detail || e.message}`);
+      alert(`Fehler: ${fehlerText(e)}`);
     }
   };
 
@@ -72,7 +72,7 @@ function ExportsPanel({ projectId }) {
       setSelected(new Set());
       await load();
     } catch (e) {
-      alert(`Fehler: ${e.response?.data?.detail || e.message}`);
+      alert(`Fehler: ${fehlerText(e)}`);
     } finally { setDeleting(false); }
   };
 
@@ -82,7 +82,7 @@ function ExportsPanel({ projectId }) {
       await api.delete(`/api/exports/${f.id}`);
       setSelected((prev) => { const next = new Set(prev); next.delete(f.id); return next; });
       await load();
-    } catch (e) { alert(`Fehler: ${e.response?.data?.detail || e.message}`); }
+    } catch (e) { alert(`Fehler: ${fehlerText(e)}`); }
   };
 
   // Drag-to-select: track last hovered row for range selection

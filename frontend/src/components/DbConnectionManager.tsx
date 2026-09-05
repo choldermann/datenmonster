@@ -280,7 +280,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
         await api.post("/api/datasets/access/import", form);
         results.push({ table, name: dsName, ok: true });
       } catch (e) {
-        results.push({ table, name: dsName, ok: false, error: e.response?.data?.detail || "Fehler" });
+        results.push({ table, name: dsName, ok: false, error: fehlerText(e, "Fehler") });
       }
     }
     setImportResults(results);

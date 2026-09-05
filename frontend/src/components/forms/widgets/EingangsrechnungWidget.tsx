@@ -3,7 +3,7 @@ import {
   Upload, Loader2, CheckCircle2, AlertTriangle, XCircle, Search, FileText,
   ChevronRight, ChevronDown,
 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -153,7 +153,7 @@ function NeuerArtikelModal({ connectionId, position, lieferant, stammdaten, onFe
       if (data.ok && data.kArtikel) onFertig(data);
       else { setPruefung(data); setFehler("Anlegen nicht möglich – bitte offene Punkte prüfen."); }
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setBusy(false); }
   }
 
@@ -315,7 +315,7 @@ export default function EingangsrechnungWidget({ widget }) {
       const { data } = await api.post("/api/eingangsrechnung/plan", fd);
       setKopf(data.kopf); setPlan(data.plan); setBefund(data.befund || null);
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally { setLoading(false); }
   }
 
@@ -326,7 +326,7 @@ export default function EingangsrechnungWidget({ widget }) {
       const { data } = await api.post("/api/eingangsrechnung/replan",
         { connection_id: connId, kopf, overrides: ov });
       setPlan(data);
-    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    } catch (e) { setError(fehlerText(e)); }
     finally { setLoading(false); }
   }, [kopf, connId]);
 
@@ -366,7 +366,7 @@ export default function EingangsrechnungWidget({ widget }) {
         { connection_id: connId, kopf, overrides, learn });
       if (data.ok) setWritten(data);
       else { setPlan(data); setError("Freigabe nicht möglich – bitte offene Punkte prüfen."); }
-    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    } catch (e) { setError(fehlerText(e)); }
     finally { setWriting(false); }
   }
 

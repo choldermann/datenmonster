@@ -1,7 +1,7 @@
 import { Fragment, useState, useEffect, useMemo } from "react";
 import { ChevronLeft, ChevronDown, ChevronRight, Globe, GlobeLock, Loader2,
   AlertTriangle, Sparkles, Barcode } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
 import { alsText } from "../../../utils/html";
 import AiActionModal from "../AiActionModal";
@@ -95,7 +95,7 @@ export default function HerstellerNavigator({ widget, result }) {
       });
       setArtikel(data.rows || []);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setLaedt(false); }
   };
 

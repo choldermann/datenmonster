@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Tags, Plus, Trash2, Play, FileDown, CheckCircle2, XCircle,
          RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2, Moon, TrendingUp } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 
 const S = {
@@ -83,7 +83,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
         ? prev : (data.regelwerke?.[0]?.id ?? null));
       setFehler(null);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setLaden(false);
     }
@@ -102,7 +102,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
       setZaehler(data.zaehler || {});
       setAuswahl(new Set());
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   }, []);
 
@@ -125,7 +125,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
   const handeln = async (name, fn) => {
     setArbeitet(name); setFehler(null);
     try { await fn(); }
-    catch (e) { setFehler(e.response?.data?.detail || e.message); }
+    catch (e) { setFehler(fehlerText(e)); }
     finally { setArbeitet(null); }
   };
 

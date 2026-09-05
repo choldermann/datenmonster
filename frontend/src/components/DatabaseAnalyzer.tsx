@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Loader2, X, ZoomIn, ZoomOut, Maximize2, Search, ChevronRight, AlertTriangle, Download } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { S } from "./dashboard/constants";
 
 const TYPE_COLORS = { integer: "#93c5fd", decimal: "#6ee7b7", date: "#fcd34d", boolean: "#c4b5fd", string: "#6a6a6a" };
@@ -156,7 +156,7 @@ export default function DatabaseAnalyzer({ connection, onClose, projectId = null
       setTimeout(() => setPhase("done"), 400);
     } catch (e) {
       timers.forEach(clearTimeout);
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
       setPhase("error");
     }
   }, [connection.id, tableLimit, schemaFilter, startTable, traversalDepth, configMode, whitelistSelected, tableFilter, includeRelated, pathFrom, pathTo, pathVia]);

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Search, Plus, Trash2, Loader2, X, PackageX, AlertCircle } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -34,7 +34,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
     try {
       const { data } = await api.get(`/api/intrastat/exclusions${pq}`);
       setExclusions(Array.isArray(data) ? data : []);
-    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    } catch (e) { setError(fehlerText(e)); }
   }, [pq]);
 
   useEffect(() => { loadExclusions(); }, [loadExclusions]);
@@ -60,7 +60,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
       const { data } = await api.get(`/api/intrastat/articles/search?${p}`);
       setSearchResults(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
       setSearchResults([]);
     } finally { setSearching(false); }
   }, [connId, projectId]);
@@ -85,14 +85,14 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
         name: art.name,
       });
       loadExclusions();
-    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    } catch (e) { setError(fehlerText(e)); }
   };
 
   const removeExclusion = async (id) => {
     try {
       await api.delete(`/api/intrastat/exclusions/${id}`);
       setExclusions(prev => prev.filter(e => e.id !== id));
-    } catch (e) { setError(e.response?.data?.detail || e.message); }
+    } catch (e) { setError(fehlerText(e)); }
   };
 
   return (

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { ShieldAlert, RotateCcw, Play, Loader2, CheckCircle2, AlertCircle,
          Clock, Mail, Save } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import MandantWaehler from "../../MandantWaehler";
 import { onMandantChange } from "../../../services/mandant";
 
@@ -51,7 +51,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
       setRules(r.data || []);
       setFehler(null);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setLaden(false);
     }
@@ -80,7 +80,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
         ? { ...t, value: Number(wert), is_default: Number(wert) === t.default } : t));
       setEntwurf(prev => { const n = { ...prev }; delete n[key]; return n; });
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -108,7 +108,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
       });
       setLauf(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setPruefe(false);
     }
@@ -130,7 +130,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
       });
       setPlan(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setPlanSpeichert(false);
     }
@@ -145,7 +145,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
       const r = await api.get(`/api/alerts/latest${q}`);
       setLauf(r.data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setPlanLaeuft(false);
     }

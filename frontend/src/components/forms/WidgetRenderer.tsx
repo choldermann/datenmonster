@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { AlertCircle, Info } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import DrilldownModal from "./DrilldownModal";
 import AiActionModal from "./AiActionModal";
 import TableWidget from "./widgets/TableWidget";
@@ -135,7 +135,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         ? { ...f, rows: data.rows || [], loading: false, error: data.error || null } : f));
     } catch (e) {
       setStack(prev => prev.map(f => f.id === id
-        ? { ...f, loading: false, error: e.response?.data?.detail || e.message } : f));
+        ? { ...f, loading: false, error: fehlerText(e) } : f));
     }
   };
 

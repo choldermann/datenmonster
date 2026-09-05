@@ -3,7 +3,7 @@ import {
   X, Search, ChevronDown, ChevronRight, Gauge, Table2, BarChart3,
   Sparkles, Lock, Clock,
 } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S } from "../dashboard/constants";
 
 /**
@@ -79,7 +79,7 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
           setOffen({ [liste[0].form_id]: true });
         }
       } catch (e) {
-        setFehler(e.response?.data?.detail || e.message);
+        setFehler(fehlerText(e));
       } finally { setLoading(false); }
     })();
   }, [projectId, formId]);
@@ -126,7 +126,7 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
         : await api.post("/api/reports/build", rumpf);
       onCreated?.(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSpeichert(false); }
   };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Check, ChevronDown, Loader2, Plus, Settings, Trash2, Type, X } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S, TARGET_TYPES, TARGET_TYPE_COLORS, PLUGIN_TARGET_DEFAULT_COLOR } from "./constants";
 
 function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose }) {
@@ -22,7 +22,7 @@ function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose })
           setSelected(new Set(data.columns || []));
         }
       })
-      .catch((e) => setError(e.response?.data?.detail || e.message))
+      .catch((e) => setError(fehlerText(e)))
       .finally(() => setLoading(false));
   }, [connId, table]);
 
@@ -215,7 +215,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
     setTablesError(null);
     api.get(`/api/connections/${connId}/tables-only`)
       .then(({ data }) => setAvailableTables(data.tables || []))
-      .catch((e) => setTablesError(e.response?.data?.detail || "Tabellen konnten nicht geladen werden"))
+      .catch((e) => setTablesError(fehlerText(e, "Tabellen konnten nicht geladen werden")))
       .finally(() => setTablesLoading(false));
   }, [connId, targetType]);
 
@@ -300,7 +300,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
         key_columns: kc,
       })
         .then(({ data }) => setSafetyData(data))
-        .catch((e) => setSafetyData({ checks: [{ id: "err", label: "Prüfung fehlgeschlagen", status: "error", message: e.response?.data?.detail || e.message }], can_proceed: false }))
+        .catch((e) => setSafetyData({ checks: [{ id: "err", label: "Prüfung fehlgeschlagen", status: "error", message: fehlerText(e) }], can_proceed: false }))
         .finally(() => setSafetyLoading(false));
       return;
     }

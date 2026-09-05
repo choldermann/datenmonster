@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { Mail, Send, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 
 /**
  * Wiederverwendbarer "E-Mail"-Button + Popover-Panel: verschickt die aktuell
@@ -43,7 +43,7 @@ export default function EmailTableButton({ columns = [], rows = [], title = "Tab
       setMsg({ ok: true, text: `Gesendet an ${data.recipients.join(", ")} (${data.rows} Zeilen).` });
       setTimeout(() => { setOpen(false); setMsg(null); }, 2500);
     } catch (e) {
-      setMsg({ ok: false, text: e.response?.data?.detail || e.message || "Versand fehlgeschlagen." });
+      setMsg({ ok: false, text: fehlerText(e, "Versand fehlgeschlagen.") });
     } finally { setSending(false); }
   };
 

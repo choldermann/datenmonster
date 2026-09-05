@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Wand2, Loader2, Play, Hammer, Trash2, RotateCcw, CheckCircle2,
          AlertTriangle, ChevronRight, ChevronDown, X, Sparkles, Info,
          Building2, Inbox, Unlink, Package, Plus } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { useAIAssistant } from "../../../contexts/AIAssistantContext";
 import MandantWaehler from "../../MandantWaehler";
 import { onMandantChange } from "../../../services/mandant";
@@ -90,7 +90,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       setVorhaben(data || []);
       setFehler(null);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setLaden(false);
     }
@@ -126,7 +126,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       adoptionLaden();
       listeLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
   // Ein Vorhaben gehört einem Mandanten. Nach dem Wechsel stünden sonst die
@@ -141,7 +141,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       setAktiv(data);
       setOffen({ 0: true });
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -163,7 +163,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       });
       if (!resp.ok) {
         const e = await resp.json().catch(() => ({}));
-        throw new Error(e.detail || `Backend-Fehler (HTTP ${resp.status})`);
+        throw new Error(fehlerText(e, `Backend-Fehler (HTTP ${resp.status})`));
       }
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();
@@ -208,7 +208,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       listeLaden();
       return data;
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
       return null;
     }
   };
@@ -234,7 +234,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       const { data } = await api.post(`/api/werkbank/vorhaben/${aktiv.id}/vorschau`);
       setVorschau(data.schritte || []);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setVorschauLaeuft(false);
     }
@@ -252,7 +252,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       setVorschau(null);
       listeLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setBaut(false);
     }
@@ -265,7 +265,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       setTemplateErg(data);
       setTemplateOffen(false);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -275,7 +275,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
         `/api/werkbank/vorhaben/${aktiv.id}/rueckbau/vorschau`);
       setRueckbauPlan(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -288,7 +288,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       await oeffnen(aktiv.id);
       listeLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setRueckbauLaeuft(false);
     }
@@ -301,7 +301,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       adoptionLaden();
       listeLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -311,7 +311,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
       if (aktiv?.id === id) setAktiv(null);
       listeLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 

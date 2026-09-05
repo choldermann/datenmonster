@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Trash2, Send, AlertTriangle, CheckCircle2 } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S } from "../dashboard/constants";
 
 /**
@@ -70,7 +70,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
           });
         }
       } catch (e) {
-        setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+        setMeldung({ art: "fehler", text: fehlerText(e) });
       } finally { setLaedt(false); }
     })();
   }, [formId]);
@@ -90,7 +90,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
         ? "Gespeichert und eingeplant."
         : "Gespeichert. Der Plan ist noch nicht aktiv." });
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setBusy(false); }
   };
 
@@ -107,7 +107,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
       // Ein Cockpit-Lauf braucht je nach Umfang einige Sekunden.
       [3000, 8000, 15000, 30000].forEach((ms) => setTimeout(status, ms));
     } catch (e) {
-      setMeldung({ art: "fehler", text: e.response?.data?.detail || e.message });
+      setMeldung({ art: "fehler", text: fehlerText(e) });
     } finally { setBusy(false); }
   };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Check, ChevronDown, ChevronRight, Save, Loader2, Database, GitBranch, Workflow } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const ACCENT = "#fce499";
@@ -129,7 +129,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
       }
       onSaved();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally {
       setSaving(false);
     }

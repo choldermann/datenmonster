@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FolderPlus, Users, X, Check, Plus, Pencil, Trash2, Share2, FolderKanban, ChevronDown, AlertCircle, Loader2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import Modal from "../shared/Modal";
 import NewTile from "../shared/NewTile";
@@ -108,7 +108,7 @@ function ProjectModal({ project, onDone, onCancel }) {
       else await api.post("/api/projects/", { name: name.trim(), description: description.trim() });
       onDone();
     } catch (err) {
-      setError(err.response?.data?.detail || "Fehler beim Speichern");
+      setError(fehlerText(err, "Fehler beim Speichern"));
     } finally { setSaving(false); }
   };
 
@@ -169,7 +169,7 @@ function ShareProjectModal({ project, onClose }) {
     try {
       await api.post(`/api/projects/${project.id}/members`, { user_id: Number(selectedUser), role });
       setSelectedUser(""); load();
-    } catch (err) { setError(err.response?.data?.detail || "Fehler"); }
+    } catch (err) { setError(fehlerText(err, "Fehler")); }
     finally { setSaving(false); }
   };
 

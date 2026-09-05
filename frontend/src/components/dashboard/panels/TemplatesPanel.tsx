@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Package, Play, Plus, Upload, Download, Trash2, ChevronDown, ChevronRight, Check, X, Loader2, AlertCircle, ShoppingBag } from "lucide-react";
 import TemplateCreatorModal from "../modals/TemplateCreatorModal";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const ACCENT = "var(--accent)";
@@ -56,7 +56,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
       setInstalled(true);
       setTimeout(() => onInstalled(), 1000);
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally {
       setInstalling(false);
     }
@@ -186,7 +186,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
               try {
                 await api.delete(`/api/templates/${template.template_id}`);
                 onInstalled(); // reload
-              } catch(e) { alert(e.response?.data?.detail || e.message); }
+              } catch(e) { alert(fehlerText(e)); }
             }}
             style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)", color: "#e07070", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}
             onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(224,112,112,0.15)"}
@@ -259,7 +259,7 @@ function StoreSection({ onInstalled }) {
       await load();
       onInstalled();
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally { setBusy(""); }
   };
 
@@ -420,7 +420,7 @@ export default function TemplatesPanel({ projectId, canEdit }) {
       await api.post("/api/templates/upload", form);
       load();
     } catch (err) {
-      alert(err.response?.data?.detail || err.message);
+      alert(fehlerText(err));
     } finally {
       setUploading(false);
       e.target.value = "";

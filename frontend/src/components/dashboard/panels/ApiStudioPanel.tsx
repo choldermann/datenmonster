@@ -4,7 +4,7 @@ import {
   Globe, ChevronRight, ChevronDown, Layers, Check, AlertTriangle, Table2,
   Sparkles, Bug, ShieldCheck, KeyRound, Workflow, FileJson, BookOpen,
 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import {
   KvEditor, AuthEditor, PaginationEditor, REST_AUTH_TYPES, METHODS, BODY_TYPES, TEMPLATE_VARS,
 } from "./RestApiPanel";
@@ -111,7 +111,7 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
       });
       setDaten(data);
       if (data.ki_fehler) setFehler(data.ki_fehler);
-    } catch (e) { setFehler(e.response?.data?.detail || "Analyse fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Analyse fehlgeschlagen")); }
     finally { setzeLaden(false); }
   };
 
@@ -280,7 +280,7 @@ function DebugKasten({ antwort, kontext, onUebernehmen }) {
         error: antwort.error,
       });
       setD(data);
-    } catch (e) { setFehler(e.response?.data?.detail || "KI-Analyse fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "KI-Analyse fehlgeschlagen")); }
     finally { setLaedt(false); }
   };
 
@@ -350,7 +350,7 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
       url: kontext.url, headers: kontext.headers,
       query_params: kontext.query_params, project_id: projectId ?? null,
     }).then(({ data }) => setVorschlaege(data.vorschlaege))
-      .catch(e => setFehler(e.response?.data?.detail || "Vorschläge konnten nicht geholt werden"));
+      .catch(e => setFehler(fehlerText(e, "Vorschläge konnten nicht geholt werden")));
   }, []);
 
   const uebernehmen = async () => {
@@ -372,7 +372,7 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
         ? await api.put(`${BASE}/environments/${ziel.id}`, payload)
         : await api.post(`${BASE}/environments`, payload);
       onFertig(data, auswahl.map(v => ({ ersetzt: v.ersetzt, key: v.key })));
-    } catch (e) { setFehler(e.response?.data?.detail || "Übernehmen fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Übernehmen fehlgeschlagen")); }
     finally { setSpeichert(false); }
   };
 
@@ -470,7 +470,7 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
       setName(data.titel || "API");
       setWerte({});
       setGewaehlt({});
-    } catch (e) { setFehler(e.response?.data?.detail || "Einlesen fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Einlesen fehlgeschlagen")); }
     finally { setLaedt(false); }
   };
 
@@ -487,7 +487,7 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
       });
       setErg(data);
       onFertig();
-    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Anlegen fehlgeschlagen")); }
     finally { setLegtAn(false); }
   };
 
@@ -735,7 +735,7 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
       });
       setVorschau(data);
       if (!name) setName(`${kette[0].name} – Kette`);
-    } catch (e) { setFehler(e.response?.data?.detail || "Vorschau fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Vorschau fehlgeschlagen")); }
     finally { setLaedt(false); }
   };
 
@@ -750,7 +750,7 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
         for_each_max: max,
       });
       setErg(data); onFertig();
-    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Anlegen fehlgeschlagen")); }
     finally { setLegtAn(false); }
   };
 
@@ -946,7 +946,7 @@ function DokuDialog({ sammlung, onClose }) {
     try {
       const { data } = await api.post(`${BASE}/collections/${sammlung.id}/ask`, { frage });
       setErg(data);
-    } catch (e) { setFehler(e.response?.data?.detail || "Frage fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Frage fehlgeschlagen")); }
     finally { setLaedt(false); }
   };
 
@@ -1059,7 +1059,7 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
       });
       setVs(data);
       if (data.ki_fehler) setFehler(data.ki_fehler);
-    } catch (e) { setFehler(e.response?.data?.detail || "Vorschau fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Vorschau fehlgeschlagen")); }
     finally { (mitKi ? setKiLaedt : setLaedt)(false); }
   };
 
@@ -1080,7 +1080,7 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
       });
       setErg(data);
       onFertig();
-    } catch (e) { setFehler(e.response?.data?.detail || "Anlegen fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Anlegen fehlgeschlagen")); }
     finally { setLegtAn(false); }
   };
 
@@ -1365,7 +1365,7 @@ function SammlungsDialog({ initial, projectId, onSaved, onClose }) {
       if (initial?.id) await api.put(`${BASE}/collections/${initial.id}`, payload);
       else await api.post(`${BASE}/collections`, payload);
       onSaved();
-    } catch (e) { setFehler(e.response?.data?.detail || "Fehler beim Speichern"); }
+    } catch (e) { setFehler(fehlerText(e, "Fehler beim Speichern")); }
     finally { setSaving(false); }
   };
 
@@ -1425,7 +1425,7 @@ function UmgebungsDialog({ umgebungen, projectId, onChanged, onClose }) {
       else await api.post(`${BASE}/environments`, payload);
       await onChanged();
       onClose();
-    } catch (e) { setFehler(e.response?.data?.detail || "Fehler beim Speichern"); }
+    } catch (e) { setFehler(fehlerText(e, "Fehler beim Speichern")); }
     finally { setSaving(false); }
   };
 
@@ -1630,7 +1630,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
       setAntwort(data);
       verlaufLaden();
     } catch (e) {
-      setFehler(e.response?.data?.detail || "Request fehlgeschlagen");
+      setFehler(fehlerText(e, "Request fehlgeschlagen"));
     } finally { setSende(false); }
   };
 
@@ -1645,7 +1645,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
         : await api.post("/api/rest-sources/", payload);
       setAktiveId(data.id);
       await laden();
-    } catch (e) { setFehler(e.response?.data?.detail || "Speichern fehlgeschlagen"); }
+    } catch (e) { setFehler(fehlerText(e, "Speichern fehlgeschlagen")); }
     finally { setSpeichere(false); }
   };
 

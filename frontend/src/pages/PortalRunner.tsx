@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check, FileText } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { useAuth } from "../context/AuthContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
@@ -219,7 +219,7 @@ export default function PortalRunner() {
       const { data } = await api.post(`/api/portal/forms/${slug}/run`, body);
       setResults(data.results || {});
     } catch (e) {
-      setRunErr(e.response?.data?.detail || e.message);
+      setRunErr(fehlerText(e));
     } finally { setRunning(false); }
   };
 
@@ -248,7 +248,7 @@ export default function PortalRunner() {
     } catch (e) {
       // Fehlermeldung steckt bei Blob-Responses im Blob-Text
       let msg = e.message;
-      try { msg = JSON.parse(await e.response?.data?.text())?.detail || msg; } catch { /* ignore */ }
+      try { msg = fehlerText(JSON.parse(await e.response?.data?.text()), msg); } catch { /* ignore */ }
       setRunErr("PDF-Report fehlgeschlagen: " + msg);
     } finally {
       setReporting(false);
@@ -268,7 +268,7 @@ export default function PortalRunner() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch (e) {
-      setRunErr("Download fehlgeschlagen: " + (e.response?.data?.detail || e.message));
+      setRunErr("Download fehlgeschlagen: " + (fehlerText(e)));
     }
   };
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { BookOpen, ChevronDown, ChevronRight, Download, Link2, Loader2, Sparkles, Plus, Trash2, Search, Star, StarOff, Upload } from "lucide-react";
 import { useRef } from "react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { S } from "./dashboard/constants";
 
 const CATEGORIES = ["Stammdaten", "Bewegungsdaten", "Konfiguration", "Lookup", "System", "Sonstige"];
@@ -198,7 +198,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       setDeriveInfo({ auswahl: data.auswahl, schon_vorhanden: data.schon_vorhanden });
       setGewaehlt(new Set());
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Ableiten fehlgeschlagen");
+      alert(fehlerText(err, "Ableiten fehlgeschlagen"));
     } finally { setDeriving(false); }
   };
 
@@ -229,7 +229,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       await api.post(`/api/schema-catalog/${connectionId}/sync`);
       await load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Schema-Cache konnte nicht aufgebaut werden");
+      alert(fehlerText(err, "Schema-Cache konnte nicht aufgebaut werden"));
     } finally { setCacheBaut(false); }
   };
 
@@ -293,7 +293,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       setGeltungsbereich(data.geltungsbereich || null);
       setWahlWissen(new Set());
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Entwurf fehlgeschlagen");
+      alert(fehlerText(err, "Entwurf fehlgeschlagen"));
     } finally { setEntwerfend(false); }
   };
 
@@ -312,7 +312,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       setWahlWissen(new Set()); setWahlBez(new Set());
       await load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Übernehmen fehlgeschlagen");
+      alert(fehlerText(err, "Übernehmen fehlgeschlagen"));
     } finally { setUebernehmend(false); }
   };
 
@@ -340,7 +340,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
       await api.post(`/api/schema-catalog/${connectionId}/import`, payload);
       await load();
     } catch (err: any) {
-      alert("Import fehlgeschlagen: " + (err.response?.data?.detail || err.message));
+      alert("Import fehlgeschlagen: " + (fehlerText(err)));
     } finally {
       setImporting(false);
       if (importRef.current) importRef.current.value = "";

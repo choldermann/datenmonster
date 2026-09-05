@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { X, Play, Code2, AlertTriangle, Loader2, Save, CheckCircle2, Trash2 } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S } from "../dashboard/constants";
 import BedingungsBlock from "./BedingungsBlock";
 import Vergleichsgruppe from "./Vergleichsgruppe";
@@ -58,7 +58,7 @@ export default function QueryBuilder({ projectId, onClose }) {
   useEffect(() => {
     api.get("/api/query/schema")
       .then(({ data }) => setSchema(data))
-      .catch((e) => setFehler(e.response?.data?.detail || e.message));
+      .catch((e) => setFehler(fehlerText(e)));
     api.get("/api/query/list", { params: projectId ? { project_id: projectId } : {} })
       .then(({ data }) => setBestand(data || []))
       .catch(() => {});
@@ -106,7 +106,7 @@ export default function QueryBuilder({ projectId, onClose }) {
       setKennzahlfilter(d.kennzahlfilter || leer);
       setVglGruppe((d.vergleichsgruppe || {}).kunden || []);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -121,7 +121,7 @@ export default function QueryBuilder({ projectId, onClose }) {
       setBestand((b) => b.filter((x) => String(x.id) !== String(offeneId)));
       zuruecksetzen();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSpeichert(false); }
   };
 
@@ -139,7 +139,7 @@ export default function QueryBuilder({ projectId, onClose }) {
         ? b.map((x) => (x.id === data.id ? { ...x, name: data.name } : x))
         : [{ id: data.id, name: data.name }, ...b]);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSpeichert(false); }
   };
 
@@ -156,7 +156,7 @@ export default function QueryBuilder({ projectId, onClose }) {
       });
       setErgebnis(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setLaeuft(false); }
   };
 

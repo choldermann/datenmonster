@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { ChevronDown, Check, Search, X } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -69,7 +69,7 @@ export default function DbDropdownField({ field, value, onChange, inp, onRunActi
     let alive = true;
     api.get("/api/lookup/options", { params: { connection_id: cid, kind: cfg.kind } })
       .then(({ data }) => { if (alive) { setOptions(data.options || []); setErr(null); } })
-      .catch(e => { if (alive) setErr(e.response?.data?.detail || e.message); });
+      .catch(e => { if (alive) setErr(fehlerText(e)); });
     return () => { alive = false; };
   }, [cfg.connection_id, cfg.kind]);
 

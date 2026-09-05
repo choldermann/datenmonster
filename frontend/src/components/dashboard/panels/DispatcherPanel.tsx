@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Plus, Pencil, Trash2, Play, Check, X, ChevronDown, GitBranch, Loader2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const DISP_COLOR = "#fce499"; // Akzent-Gold wie im Rest des Dashboards
@@ -53,7 +53,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
       else await api.put(`/api/dispatcher/${form.id}`, form);
       onSave();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 
@@ -268,7 +268,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
       const { data } = await api.post(`/api/dispatcher/${id}/test`);
       setTestResult(prev => ({ ...prev, [id]: { ok: true, msg: data.message } }));
     } catch (e) {
-      setTestResult(prev => ({ ...prev, [id]: { ok: false, msg: e.response?.data?.detail || e.message } }));
+      setTestResult(prev => ({ ...prev, [id]: { ok: false, msg: fehlerText(e) } }));
     }
   };
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Search, X, Users } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import { S } from "../dashboard/constants";
 
 /**
@@ -35,7 +35,7 @@ export default function Vergleichsgruppe({ projectId, gewaehlt, onChange, hinwei
           { params: { connection_id: conn, kind: "kunde" } });
         setAlle(data.options || []);
       } catch (e) {
-        setFehler(e.response?.data?.detail || e.message);
+        setFehler(fehlerText(e));
       } finally { setLaedt(false); }
     })();
   }, [projectId]);

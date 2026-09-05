@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, CheckCircle2, Filter, FolderSync, Loader2, Pencil, Play, Plus, RefreshCw, Server, Trash2, Wifi, WifiOff, X, XCircle } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const CRON_PRESETS = [
@@ -54,7 +54,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
       else await api.put(`/api/ftp-sources/${source.id}`, payload);
       onDone();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 
@@ -65,7 +65,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
       const { data } = await api.post(`/api/ftp-sources/${source.id}/test`);
       setTestResult({ ok: true, files: data.files, count: data.count });
     } catch (e) {
-      setTestResult({ ok: false, msg: e.response?.data?.detail || e.message });
+      setTestResult({ ok: false, msg: fehlerText(e) });
     } finally { setTesting(false); }
   };
 
@@ -311,7 +311,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
       await api.post(`/api/ftp-sources/${id}/trigger`);
       setTimeout(() => { load(); setTriggering((t) => ({ ...t, [id]: false })); }, 2500);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
       setTriggering((t) => ({ ...t, [id]: false }));
     }
   };

@@ -5,7 +5,7 @@ import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
 import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
@@ -212,16 +212,16 @@ export default function Dashboard() {
         loadDatasets();
       } catch (e) {
         if (e.response?.status === 409) {
-          const detail = e.response.data?.detail || "Dataset wird in Mappings verwendet.";
+          const detail = fehlerText(e, "Dataset wird in Mappings verwendet.");
           showConfirm("⚠ Dataset wird verwendet", detail + "\n\nTrotzdem löschen?",
             async () => { await api.delete(`/api/datasets/${id}?force=true`); loadDatasets(); },
             { dangerous: true });
-        } else { alert("Fehler: " + (e.response?.data?.detail || e.message)); }
+        } else { alert("Fehler: " + (fehlerText(e))); }
       }
     }, { dangerous: true });
   };
   const deleteMapping = async (id) => {
-    showConfirm("Mapping löschen", "Mapping wirklich unwiderruflich löschen?", async () => { try { await api.delete(`/api/mappings/${id}`); loadMappings(); } catch (e) { alert(e.response?.data?.detail || e.message); } }, { dangerous: true });
+    showConfirm("Mapping löschen", "Mapping wirklich unwiderruflich löschen?", async () => { try { await api.delete(`/api/mappings/${id}`); loadMappings(); } catch (e) { alert(fehlerText(e)); } }, { dangerous: true });
   };
   const deleteProject = async (id) => {
     showConfirm("Projekt löschen", "Projekt und ALLE zugehörigen Daten (Datasets, Mappings, Jobs, Pipelines) unwiderruflich löschen?",
@@ -230,7 +230,7 @@ export default function Dashboard() {
         await api.delete(`/api/projects/${id}`);
         if (activeProject?.id === id) setActiveProject(null);
         loadProjects();
-      } catch (e) { alert(e.response?.data?.detail || e.message); }
+      } catch (e) { alert(fehlerText(e)); }
     }, { dangerous: true });
   };
 
@@ -458,7 +458,7 @@ export default function Dashboard() {
                       } catch {}
                     }, 2000);
                   } catch (e) {
-                    setUpdateError("Fehler: " + (e.response?.data?.detail || e.message));
+                    setUpdateError("Fehler: " + (fehlerText(e)));
                     setUpdating(false);
                   }
                 }} disabled={updating} style={{

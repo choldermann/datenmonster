@@ -5,7 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, FunctionSquare, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, ShieldCheck, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
 
@@ -1006,7 +1006,7 @@ export default function MappingEditor() {
         }
       } catch (e) {
         if (!abortRef.current) {
-          const detail = e.response?.data?.detail || e.message || "Unbekannter Fehler";
+          const detail = fehlerText(e, "Unbekannter Fehler");
           errors.push({ label: `"${target.name}"`, detail });
         }
       } finally {
@@ -1081,7 +1081,7 @@ export default function MappingEditor() {
         setRunErrorBanner({ errors: ["Debug-Run"], detail: traceErrors.join("\n") });
       }
     } catch (e) {
-      const detail = e.response?.data?.detail || e.message;
+      const detail = fehlerText(e);
       setRunErrorBanner({ errors: ["Debug-Run"], detail });
     } finally {
       setDebugLoading(false);

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, Play, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 export default function PipelinesPanel({ projectId, canEdit }) {
@@ -33,7 +33,7 @@ export default function PipelinesPanel({ projectId, canEdit }) {
       await api.post(`/api/pipelines/${id}/run`);
       load();
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally {
       setRunning(r => ({ ...r, [id]: false }));
     }

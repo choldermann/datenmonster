@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Building2, Loader2, Check, ChevronDown } from "lucide-react";
 import { ladeMandanten, setzeMandant, onMandantChange } from "../services/mandant";
+import { fehlerText } from "../api/client";
 
 const S = {
   border: "var(--border)", textDim: "var(--text-dim)", textBright: "var(--text-bright)",
@@ -53,7 +54,7 @@ export default function MandantWaehler({ projectId, onWechsel = null, kompakt = 
       setAktiv(cid);
       onWechsel?.(cid);
     } catch (e) {
-      alert(e.response?.data?.detail || "Mandant konnte nicht gewechselt werden");
+      alert(fehlerText(e, "Mandant konnte nicht gewechselt werden"));
     } finally {
       setLaedt(false);
     }

@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock, Filter } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import ReportBuilder from "../../forms/ReportBuilder";
 import ReportScheduleModal from "../../forms/ReportScheduleModal";
@@ -39,7 +39,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
       });
       navigate(`/forms/${data.id}`);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     }
   };
 

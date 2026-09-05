@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { X, Sparkles, Loader2, Check, Plus, ChevronDown, ChevronUp, ArrowLeft, Table2, Eye } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import { getTableContext, suggestDatasets, getStatus } from "../services/aiService";
 import { S } from "./dashboard/constants";
 
@@ -361,7 +361,7 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
         });
         res.push({ name: ds.name, ok: true });
       } catch (e) {
-        res.push({ name: ds.name, ok: false, error: e.response?.data?.detail || e.message });
+        res.push({ name: ds.name, ok: false, error: fehlerText(e) });
       }
     }
     setResults(res);

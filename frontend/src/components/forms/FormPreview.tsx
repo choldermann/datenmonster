@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { Play, Loader2, AlertCircle, X } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 import WidgetRenderer from "./WidgetRenderer";
 import FormFields, { validateRequired, PipelineResult } from "./FormFields";
 
@@ -43,7 +43,7 @@ export default function FormPreview({ schema, formId, onClose }) {
       const { data } = await api.post(`/api/forms/${formId}/run`, { params, action_ids: ids });
       setResults(data.results || {});
     } catch (e) {
-      setError(e.response?.data?.detail || e.message);
+      setError(fehlerText(e));
     } finally { setRunning(false); }
   };
 

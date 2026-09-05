@@ -32,9 +32,12 @@ api.interceptors.response.use(
  *  ein Objekt direkt in JSX gesetzt, wirft React Fehler #31 und reisst die ganze
  *  Seite ab – aus einem Bedienfehler wird ein Totalausfall. Deshalb geht jede
  *  Fehlerausgabe durch diese Funktion.
+ *
+ *  Nimmt sowohl axios-Fehler (err.response.data.detail) als auch den bereits
+ *  ausgepackten Antwortkoerper eines fetch-Aufrufs (err.detail).
  */
-export function fehlerText(err, rueckfall = "Unbekannter Fehler") {
-  const d = err?.response?.data?.detail ?? err?.response?.data;
+export function fehlerText(err, rueckfall) {
+  const d = err?.response?.data?.detail ?? err?.response?.data ?? err?.detail;
   const einer = (x) => {
     if (x == null) return "";
     if (typeof x === "string") return x;
@@ -51,7 +54,9 @@ export function fehlerText(err, rueckfall = "Unbekannter Fehler") {
     const txt = einer(d);
     if (txt) return txt;
   }
-  return err?.message || rueckfall;
+  // Ein mitgegebener Rueckfalltext ist der fachliche Satz der Stelle und schlaegt
+  // deshalb die technische Meldung von axios ("Request failed with status code 500").
+  return rueckfall || err?.message || "Unbekannter Fehler";
 }
 
 export default api;

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { Globe, Loader2, MousePointer, Rows3, Plus, Trash2, Eye, Check, X, ChevronDown } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 
 // ── Farben ────────────────────────────────────────────────────────────────────
 const S = {
@@ -162,7 +162,7 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
       setIframeSrc(blobUrl);
       setLoadedUrl(url.trim());
     } catch (e) {
-      setPageError(e.response?.data?.detail || e.message || "Seite konnte nicht geladen werden");
+      setPageError(fehlerText(e, "Seite konnte nicht geladen werden"));
     } finally {
       setPageLoading(false);
     }
@@ -243,7 +243,7 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
       const { data } = await api.post("/api/plugins/web/preview", { config: cfg, limit: 10 });
       setPreview(data);
     } catch (e) {
-      setPreviewError(e.response?.data?.detail || e.message);
+      setPreviewError(fehlerText(e));
     } finally {
       setPreviewLoading(false);
     }

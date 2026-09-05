@@ -1,4 +1,5 @@
 import { getAiProvider } from "./aiProvider";
+import { fehlerText } from "../api/client";
 
 const BASE = "/api/ai";
 
@@ -41,7 +42,7 @@ export async function streamRequest(endpoint, body, onToken, onMeta = null, sign
     if (resp.status === 502 || resp.status === 503) throw new Error("Ollama nicht erreichbar – läuft der Ollama-Dienst?");
     if (resp.status === 504) throw new Error("Anfrage ist abgelaufen (Gateway Timeout)");
     if (resp.status === 401) throw new Error("Nicht authentifiziert – bitte neu anmelden");
-    throw new Error(err.detail || `Backend-Fehler (HTTP ${resp.status})`);
+    throw new Error(fehlerText(err, `Backend-Fehler (HTTP ${resp.status})`));
   }
 
   const reader = resp.body.getReader();
@@ -175,7 +176,7 @@ export async function getTableContext(connectionId, description) {
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${resp.status}`);
+    throw new Error(fehlerText(err, `HTTP ${resp.status}`));
   }
   return resp.json();
 }
@@ -188,7 +189,7 @@ export async function suggestDatasets(connectionId, description, selectedTables,
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${resp.status}`);
+    throw new Error(fehlerText(err, `HTTP ${resp.status}`));
   }
 
   const reader = resp.body.getReader();
@@ -235,7 +236,7 @@ export async function generateNodes(description, availableDatasets, onToken, opt
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${resp.status}`);
+    throw new Error(fehlerText(err, `HTTP ${resp.status}`));
   }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -285,7 +286,7 @@ export async function suggestTables(connectionIds, canvasTables, description, on
   });
   if (!resp.ok) {
     const err = await resp.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${resp.status}`);
+    throw new Error(fehlerText(err, `HTTP ${resp.status}`));
   }
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Wallet, Trash2, Plus, ChevronDown, ChevronRight, AlertCircle,
          Loader2, History, Building2 } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 
 const S = {
@@ -67,7 +67,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
       setSumme(data.summe_monat || { gesamt: 0, gruppen: {} });
       setFehler(null);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setLaden(false);
     }
@@ -100,7 +100,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
         { project_id: projectId ?? null, key, eintraege });
       await laden_();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setSpeichert(null);
     }
@@ -112,7 +112,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
       await api.delete(`/api/business-config/costs/${key}${q}`);
       await laden_();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 
@@ -126,7 +126,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
       setNeu(null);
       await laden_();
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     }
   };
 

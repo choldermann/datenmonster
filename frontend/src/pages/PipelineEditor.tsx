@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 
 import { S } from "../components/pipeline/constants";
 import PipelineHeader from "../components/pipeline/PipelineHeader";
@@ -234,7 +234,7 @@ export default function PipelineEditor() {
         navigate(`/pipelines/${data.id}`, { replace: true });
       }
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setSaving(false); }
   };
 
@@ -254,7 +254,7 @@ export default function PipelineEditor() {
       const { data } = await api.get(`/api/pipelines/${id}/runs?limit=20`);
       setHistory(data.runs || []);
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
       setHistory([]);
     } finally { setHistoryLoading(false); }
   };
@@ -277,7 +277,7 @@ export default function PipelineEditor() {
       setDebugData(data);
       setRunResults(data.results || {});  // Node-Badges gleich mitfüllen
     } catch (e) {
-      alert(e.response?.data?.detail?.message || e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setDebugLoading(false); }
   };
 
@@ -294,7 +294,7 @@ export default function PipelineEditor() {
         alert("Pipeline fertig – Fehler:\n" + errors.join("\n"));
       }
     } catch (e) {
-      alert(e.response?.data?.detail || e.message);
+      alert(fehlerText(e));
     } finally { setExecuting(false); }
   };
 

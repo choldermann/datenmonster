@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Search, ExternalLink, AlertCircle, ShieldCheck, ShieldAlert,
   ShieldX, Eye, ChevronDown, ChevronRight, Check, Upload, AlertTriangle,
   Boxes } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
 const ACCENT = "#fce499";
@@ -236,7 +236,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
       setOhneTreffer(n => start === 0 ? data.ohne_treffer : n + data.ohne_treffer);
       setOffset(data.naechster_offset);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setLaeuft(false); }
   };
 
@@ -254,7 +254,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
       setZeilen(z => [...z.filter(x => x.quelleTyp !== "stamm"), ...neu]);
       setAbgeleitet(neu.length);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setAbleitLaeuft(false); }
   };
 
@@ -278,7 +278,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
       });
       setPlan(data);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setPlanLaeuft(false); }
   };
 
@@ -303,7 +303,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
       setGewaehlt(g => Object.fromEntries(
         Object.entries(g).filter(([k]) => !fertig.has(k))));
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally { setSchreibt(false); }
   };
 

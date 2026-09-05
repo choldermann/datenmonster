@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Clock, Play, Square, CalendarClock, CheckCircle2, XCircle, History, X, Plus, Trash2, Pencil, ChevronDown, Loader2, RefreshCw, Check } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import ToggleChip from "../shared/ToggleChip";
 import Modal from "../shared/Modal";
@@ -105,7 +105,7 @@ function JobFormModal({ mappings, projectId, onClose, onSaved, existing }) {
       }
       onSaved();
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Speichern");
+      setError(fehlerText(e, "Fehler beim Speichern"));
     } finally {
       setSaving(false);
     }

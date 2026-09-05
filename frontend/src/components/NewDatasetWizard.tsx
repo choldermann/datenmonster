@@ -3,7 +3,7 @@ import {
   Upload, Database, X, ChevronRight, ChevronLeft,
   Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle, MousePointer,
 } from "lucide-react";
-import api from "../api/client";
+import api, { fehlerText } from "../api/client";
 import VisualSelectorModal from "./dataset/VisualSelectorModal";
 
 const S = {
@@ -127,7 +127,7 @@ function StepFileUpload({ onDone, projectId }) {
       setSuccess(true);
       setTimeout(onDone, 800);
     } catch (err) {
-      setError(err.response?.data?.detail || "Upload fehlgeschlagen");
+      setError(fehlerText(err, "Upload fehlgeschlagen"));
     } finally {
       setUploading(false);
     }
@@ -382,7 +382,7 @@ function StepPluginSource({ onDone, projectId }) {
       });
       setTestResult(data);
     } catch (err) {
-      setTestResult({ ok: false, message: err.response?.data?.detail || "Verbindung fehlgeschlagen" });
+      setTestResult({ ok: false, message: fehlerText(err, "Verbindung fehlgeschlagen") });
     } finally { setTesting(false); }
   };
 
@@ -401,7 +401,7 @@ function StepPluginSource({ onDone, projectId }) {
       setSuccess(true);
       setTimeout(onDone, 800);
     } catch (err) {
-      setError(err.response?.data?.detail || "Dataset konnte nicht erstellt werden");
+      setError(fehlerText(err, "Dataset konnte nicht erstellt werden"));
     } finally {
       setSaving(false);
     }
@@ -852,7 +852,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
     if (!selectedConn || !sql.trim()) return;
     setLoadingPreview(true); setError(""); setPreview(null);
     try { const { data } = await api.post(`/api/connections/${selectedConn.id}/preview`, { sql: sql.trim() }); setPreview(data); }
-    catch (err) { setError(err.response?.data?.detail || "Abfrage fehlgeschlagen"); }
+    catch (err) { setError(fehlerText(err, "Abfrage fehlgeschlagen")); }
     finally { setLoadingPreview(false); }
   };
 
@@ -870,7 +870,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
       else
         await api.post(`/api/connections/${selectedConn.id}/import`, payload);
       setSuccess(true); setTimeout(onDone, 800);
-    } catch (err) { setError(err.response?.data?.detail || "Import fehlgeschlagen"); }
+    } catch (err) { setError(fehlerText(err, "Import fehlgeschlagen")); }
     finally { setImporting(false); }
   };
 

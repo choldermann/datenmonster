@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, Loader2, AlertCircle, Trash2, Inbox } from "lucide-react";
-import api from "../../api/client";
+import api, { fehlerText } from "../../api/client";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -32,7 +32,7 @@ export default function FormSubmissions({ formId, onClose }) {
     setLoading(true); setError(null);
     api.get(`/api/forms/${formId}/submissions`)
       .then(({ data }) => { setFields(data.fields || []); setSubs(data.submissions || []); })
-      .catch(e => setError(e.response?.data?.detail || e.message))
+      .catch(e => setError(fehlerText(e)))
       .finally(() => setLoading(false));
   }, [formId]);
 
@@ -41,7 +41,7 @@ export default function FormSubmissions({ formId, onClose }) {
   const clearAll = async () => {
     if (!window.confirm("Alle protokollierten Einträge dieses Formulars löschen?")) return;
     try { await api.delete(`/api/forms/${formId}/submissions`); load(); }
-    catch (e) { setError(e.response?.data?.detail || e.message); }
+    catch (e) { setError(fehlerText(e)); }
   };
 
   const th = { padding: "7px 12px", textAlign: "left", borderBottom: `1px solid ${S.border}`,

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Database, FileText, Trash2, RefreshCw, Settings, ChevronRight, Plus, Pencil, X, Check, Upload, ChevronDown, Loader2, Server, Table } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import Modal from "../shared/Modal";
 import NewDatasetWizard from "../../../components/NewDatasetWizard";
@@ -43,7 +43,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
       });
       onDone();
     } catch (e) {
-      alert(e.response?.data?.detail || "Fehler beim Speichern");
+      alert(fehlerText(e, "Fehler beim Speichern"));
     } finally {
       setSavingSchedule(false);
     }
@@ -126,7 +126,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
       }
       onDone();
     } catch (e) {
-      alert(e.response?.data?.detail || "Fehler beim Speichern");
+      alert(fehlerText(e, "Fehler beim Speichern"));
     } finally {
       setSavingCols(false);
     }
@@ -444,7 +444,7 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
       await api.post(`/api/datasets/${dataset.id}/requery`);
       onRequery?.();
     } catch (err) {
-      alert(err.response?.data?.detail || err.message);
+      alert(fehlerText(err));
     } finally { setRequerying(false); }
   };
 
@@ -1078,7 +1078,7 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
       });
       onDone();
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Anlegen");
+      setError(fehlerText(e, "Fehler beim Anlegen"));
     } finally {
       setSaving(false);
     }

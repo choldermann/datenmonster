@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { CheckCircle2, Database, Loader2, Server, Upload, X } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const ACCESS_COLOR = "#fce499"; // passt zum Design-Akzent
@@ -51,7 +51,7 @@ function AccessImportPanel({ projectId, canEdit, onDatasetCreated }) {
       setDatasetName(uploadFile?.name?.replace(/\.(mdb|accdb)$/i, "") || "Access Import");
       setStep(2);
     } catch (e) {
-      setError(e.response?.data?.detail || "Fehler beim Lesen der Tabellenliste");
+      setError(fehlerText(e, "Fehler beim Lesen der Tabellenliste"));
     } finally { setLoading(false); }
   };
 
@@ -88,7 +88,7 @@ function AccessImportPanel({ projectId, canEdit, onDatasetCreated }) {
       setStep(3);
       if (onDatasetCreated) onDatasetCreated();
     } catch (e) {
-      setError(e.response?.data?.detail || "Import fehlgeschlagen");
+      setError(fehlerText(e, "Import fehlgeschlagen"));
     } finally { setLoading(false); }
   };
 

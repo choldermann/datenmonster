@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Wifi, WifiOff, X, Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, Loader2, Check } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const REST_COLOR = "#818cf8";
@@ -188,7 +188,7 @@ function RestSourceForm({ initial, projectId, datasets, onSaved, onCancel }) {
         flatten: form.flatten, pagination: form.pagination,
       });
       setTestResult(data);
-    } catch (e) { setTestResult({ success: false, error: e.response?.data?.detail || "Fehler" }); }
+    } catch (e) { setTestResult({ success: false, error: fehlerText(e, "Fehler") }); }
     finally { setTesting(false); }
   };
 
@@ -199,7 +199,7 @@ function RestSourceForm({ initial, projectId, datasets, onSaved, onCancel }) {
       if (initial?.id) await api.put(`/api/rest-sources/${initial.id}`, payload);
       else await api.post("/api/rest-sources/", payload);
       onSaved();
-    } catch (e) { setError(e.response?.data?.detail || "Fehler beim Speichern"); }
+    } catch (e) { setError(fehlerText(e, "Fehler beim Speichern")); }
     finally { setSaving(false); }
   };
 

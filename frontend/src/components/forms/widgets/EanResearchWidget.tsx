@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Barcode, Loader2, Download, ExternalLink, AlertCircle, Check } from "lucide-react";
-import api from "../../../api/client";
+import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
 const ACCENT = "#fce499";
@@ -34,7 +34,7 @@ export default function EanResearchWidget({ widget }) {
       setOhneTreffer(n => start === 0 ? data.ohne_treffer : n + data.ohne_treffer);
       setOffset(data.naechster_offset);
     } catch (e) {
-      setFehler(e.response?.data?.detail || e.message);
+      setFehler(fehlerText(e));
     } finally {
       setLaeuft(false);
     }
