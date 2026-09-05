@@ -46,10 +46,14 @@ def parse_erechnung(data: bytes, filename: str = "") -> ERKopfInput:
     ln = etree.QName(root).localname
     if ln == "CrossIndustryInvoice":
         return _parse_cii(root)
-    if ln == "Invoice":
-        return _parse_ubl(root)
+    if ln in ("Invoice", "CreditNote"):
+        # Peppol BIS Billing 3.0 verschickt Gutschriften als eigenes Dokument
+        # (CreditNote) mit eigenem Wurzelelement, eigenen Zeilen und eigener
+        # Mengenangabe – sonst identisch aufgebaut.
+        return _parse_ubl(root, gutschrift=(ln == "CreditNote"))
     raise ERechnungParseError(
-        f"Unbekanntes Wurzelelement '{ln}' – weder CII (CrossIndustryInvoice) noch UBL (Invoice)")
+        f"Unbekanntes Wurzelelement '{ln}' – weder CII (CrossIndustryInvoice) "
+        f"noch UBL (Invoice/CreditNote)")
 
 
 def _is_pdf(data: bytes, filename: str) -> bool:
@@ -208,7 +212,21 @@ def _parse_cii(root) -> ERKopfInput:
 
 
 # ── UBL (XRechnung UBL) ───────────────────────────────────────────────────────────
-def _parse_ubl(root) -> ERKopfInput:
+def _peppol_kennung(party) -> Optional[str]:
+    """cbc:EndpointID des Rechnungsstellers als "schema:wert"."""
+    if party is None:
+        return None
+    knoten = party.xpath("./*[local-name()='EndpointID']")
+    if not knoten:
+        return None
+    wert = (knoten[0].text or "").strip()
+    if not wert:
+        return None
+    schema = (knoten[0].get("schemeID") or "").strip()
+    return f"{schema}:{wert}" if schema else wert
+
+
+def _parse_ubl(root, gutschrift: bool = False) -> ERKopfInput:
     inv_no = _txt(root, "./*[local-name()='ID']")
     dBeleg = _iso_date(_txt(root, "./*[local-name()='IssueDate']"))
     dZiel = _iso_date(_txt(root, "./*[local-name()='DueDate']"))
@@ -226,10 +244,21 @@ def _parse_ubl(root) -> ERKopfInput:
     ort = _txt(addr, "./*[local-name()='CityName']")
     land = _txt(addr, ".//*[local-name()='IdentificationCode']")
     mail = _txt(seller, ".//*[local-name()='Contact']/*[local-name()='ElectronicMail']")
+    peppol_id = _peppol_kennung(seller)
+    # Traegt die Kennung eine Umsatzsteuer-IdNr (Schema 9930 u. ae.), taugt sie
+    # direkt als Lieferantenschluessel – dafuer ist kein Schema-Verzeichnis
+    # noetig, die Form genuegt: zwei Buchstaben, dann Ziffern.
+    if not vat and peppol_id:
+        wert = peppol_id.split(":", 1)[-1]
+        if len(wert) >= 8 and wert[:2].isalpha() and wert[2:].isdigit():
+            vat = wert
+
+    zeilen_tag = "CreditNoteLine" if gutschrift else "InvoiceLine"
+    mengen_tag = "CreditedQuantity" if gutschrift else "InvoicedQuantity"
 
     positionen = []
-    for li in root.xpath("./*[local-name()='InvoiceLine']"):
-        qty = _num(_txt(li, "./*[local-name()='InvoicedQuantity']"))
+    for li in root.xpath(f"./*[local-name()='{zeilen_tag}']"):
+        qty = _num(_txt(li, f"./*[local-name()='{mengen_tag}']"))
         item = li.xpath("./*[local-name()='Item']")
         item = item[0] if item else None
         pname = _txt(item, "./*[local-name()='Name']")
@@ -269,4 +298,5 @@ def _parse_ubl(root) -> ERKopfInput:
         ustIdNr=vat, lieferantName=name,
         cLieferant=name, cStrasse=strasse, cPLZ=plz, cOrt=ort, cLandISO=land, cMail=mail,
         bestellnummer=order,
-        nettoSumme=netto, steuerSumme=steuer, bruttoSumme=brutto, zusatzkosten=zusatz)
+        nettoSumme=netto, steuerSumme=steuer, bruttoSumme=brutto, zusatzkosten=zusatz,
+        peppolId=peppol_id, ist_gutschrift=gutschrift)

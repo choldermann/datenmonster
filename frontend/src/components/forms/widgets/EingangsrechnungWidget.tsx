@@ -510,8 +510,9 @@ export default function EingangsrechnungWidget({ widget }) {
           <div style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>
             <FileText size={13} style={{ verticalAlign: -2 }} /> {plan.lieferant?.cFirma || kopf.lieferantName || "—"}</div>
           <div style={{ fontSize: 11, color: S.textDim, marginTop: 2 }}>
-            Rechnung {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
-            {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}</div>
+            {kopf.ist_gutschrift ? "Gutschrift" : "Rechnung"} {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
+            {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}
+            {kopf.peppolId ? ` · Peppol ${kopf.peppolId}` : ""}</div>
           {datei && (
             <button onClick={() => setBelegAnsicht(true)}
               style={{ marginTop: 6, padding: "3px 9px", background: S.bgCard,

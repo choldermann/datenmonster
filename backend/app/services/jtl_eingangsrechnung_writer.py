@@ -145,6 +145,16 @@ class ERKopfInput:
     # einer Zeile, und steht deshalb hier statt in jeder Position – erst durch sie
     # ergibt eine Zahl in einer Größenspalte überhaupt Sinn.
     belegtabellenkopf: Optional[str] = None
+    # Die Peppol-Kennung des Rechnungsstellers (UBL: cbc:EndpointID mit schemeID,
+    # z. B. "9930:DE812345678" oder "0088:4012345000009"). Sie ist die einzige
+    # Lieferantenangabe auf einem Beleg, die niemand abtippt – deshalb der
+    # haerteste Anker, den wir bekommen koennen.
+    peppolId: Optional[str] = None
+    # Eine Gutschrift (UBL CreditNote) kehrt die Richtung um. Sie wird gelesen
+    # und angezeigt, aber NICHT geschrieben: wie JTL eine Eingangs-Gutschrift
+    # ablegt, ist ungeprueft, und ein falsches Vorzeichen faellt in der
+    # Buchhaltung erst spaeter auf.
+    ist_gutschrift: bool = False
 
 
 # ── Ergebnis-Strukturen ─────────────────────────────────────────────────────────
@@ -995,6 +1005,18 @@ class EingangsrechnungWriter:
                     plan.errors.append(
                         "Nicht zugeordnete Positionen (manuelle Zuordnung nötig): "
                         + ", ".join(offen))
+
+            if kopf.ist_gutschrift:
+                # Erst hier, nicht bei der Grund-Validierung: der Beleg soll
+                # vollstaendig durchgerechnet in der Vorschau stehen. Geschrieben
+                # wird er trotzdem nicht — tEingangsrechnung kennt kein Feld, das
+                # eine Gutschrift als solche kennzeichnet, und mit welchem
+                # Vorzeichen JTL sie ablegt, ist ungeprueft. Ein falsches
+                # Vorzeichen faellt erst der Buchhaltung auf.
+                plan.errors.append(
+                    "Das ist eine Gutschrift (CreditNote), keine Rechnung. Sie wird "
+                    "vollständig angezeigt, aber nicht verbucht – bitte in der Wawi "
+                    "erfassen.")
 
             plan.statements = self._render_statements(plan)
             plan.ok = not plan.errors
