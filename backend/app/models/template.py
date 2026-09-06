@@ -16,4 +16,11 @@ class Template(Base):
     # gezielt per ID löschen kann (statt fehleranfällig nach Namen). Siehe delete_template.
     # [{ "project_id": int, "at": iso, "objects": {"datasets":[..], "mappings":[..], ...} }]
     installations = Column(JSON, default=list)
+    # Herkunftsstempel: "store" (lizenzgeprueft von monstersuite), "upload" (Datei von
+    # Hand eingespielt – umgeht Lizenz- und Kaufpruefung), "eigenbau" (aus einem Projekt
+    # erzeugt) oder "unbekannt" fuer Bestand aus der Zeit vor diesem Feld. Beim Support
+    # sieht man sonst nicht, was auf einer Kundeninstallation eigentlich laeuft.
+    herkunft     = Column(String, default="unbekannt")
+    herkunft_am  = Column(DateTime, nullable=True)
+    herkunft_von = Column(String, nullable=True)
     created_at  = Column(DateTime, default=lambda: datetime.now(timezone.utc))

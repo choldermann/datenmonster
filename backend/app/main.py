@@ -85,6 +85,11 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",
             "ALTER TABLE templates ADD COLUMN installations JSON DEFAULT '[]'",
+            # Woher eine Vorlage kam: store / upload / eigenbau. Der Upload-Weg
+            # umgeht die Kaufpruefung des Stores – das soll man spaeter sehen.
+            "ALTER TABLE templates ADD COLUMN herkunft TEXT DEFAULT 'unbekannt'",
+            "ALTER TABLE templates ADD COLUMN herkunft_am DATETIME",
+            "ALTER TABLE templates ADD COLUMN herkunft_von TEXT",
             # API Studio: Requests sind erweiterte rest_sources
             "ALTER TABLE rest_sources ADD COLUMN collection_id INTEGER",
             "ALTER TABLE rest_sources ADD COLUMN description TEXT",
@@ -212,6 +217,10 @@ async def lifespan(app: FastAPI):
                 version TEXT DEFAULT '1.0',
                 author TEXT,
                 content JSON NOT NULL,
+                installations JSON DEFAULT '[]',
+                herkunft TEXT DEFAULT 'unbekannt',
+                herkunft_am DATETIME,
+                herkunft_von TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
             """CREATE TABLE IF NOT EXISTS plugins (

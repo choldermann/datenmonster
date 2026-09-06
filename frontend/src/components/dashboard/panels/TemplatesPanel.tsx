@@ -3,6 +3,7 @@ import { Package, Play, Plus, Upload, Download, Trash2, ChevronDown, ChevronRigh
 import TemplateCreatorModal from "../modals/TemplateCreatorModal";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
+import { useAuth } from "../../../context/AuthContext";
 
 const ACCENT = "var(--accent)";
 // Was ein Template mitbringt – für die Plaketten auf der Karte. [Einzahl, Mehrzahl]
@@ -17,6 +18,14 @@ const INHALT_LABEL = {
 };
 
 const ACCENT_HEX = "#fce499";
+
+// Woher eine Vorlage kam. Beim Support ist das die erste Frage, wenn eine
+// Installation etwas anderes zeigt als erwartet.
+const HERKUNFT_LABEL = {
+  store:    "aus dem Store",
+  upload:   "manuell eingespielt",
+  eigenbau: "Eigenbau",
+};
 
 function TemplateCard({ template, projectId, onInstalled }) {
   const [expanded, setExpanded] = useState(false);
@@ -82,6 +91,17 @@ function TemplateCard({ template, projectId, onInstalled }) {
             </span>
             {template.author && (
               <span style={{ fontSize: 9, color: S.textDim }}>von {template.author}</span>
+            )}
+            {HERKUNFT_LABEL[template.herkunft] && (
+              <span
+                title={[
+                  template.herkunft_von && `durch ${template.herkunft_von}`,
+                  template.herkunft_am && template.herkunft_am.slice(0, 10),
+                ].filter(Boolean).join(" · ")}
+                style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3,
+                  backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}>
+                {HERKUNFT_LABEL[template.herkunft]}
+              </span>
             )}
           </div>
           <p style={{ fontSize: 11, color: S.textDim, margin: "4px 0 0" }}>{template.description}</p>
@@ -394,6 +414,8 @@ function StoreSection({ onInstalled }) {
 }
 
 export default function TemplatesPanel({ projectId, canEdit }) {
+  const { user } = useAuth();
+  const istAdmin = !!user?.is_admin;
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -442,11 +464,14 @@ export default function TemplatesPanel({ projectId, canEdit }) {
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: ACCENT_HEX, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             <Plus size={13} /> Template erstellen
           </button>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: S.textDim, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          {istAdmin && (
+          <label title="Umgeht den Store und dessen Kaufprüfung – nur für Administratoren."
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: S.textDim, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             <Upload size={13} />
             {uploading ? "Lädt..." : "Template hochladen"}
             <input type="file" accept=".json" style={{ display: "none" }} onChange={handleUpload} />
           </label>
+          )}
           </div>
         )}
       </div>

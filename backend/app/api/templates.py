@@ -36,6 +36,9 @@ def template_out(t):
             if content.get(typ)
         },
         "created_at": str(t.created_at or ""),
+        "herkunft": t.herkunft or "unbekannt",
+        "herkunft_am": str(t.herkunft_am or ""),
+        "herkunft_von": t.herkunft_von or "",
     }
 
 
@@ -56,6 +59,24 @@ def get_template(template_id: str, db: Session = Depends(get_db), user: User = D
         raise HTTPException(404, "Template nicht gefunden")
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
     return {**template_out(t), "content": content}
+
+
+def _nur_admin(user: User):
+    """Katalogpflege ist Adminsache.
+
+    Hochladen und Loeschen aendern den Katalog fuer die ganze Installation – ein
+    Portalbenutzer soll eine gekaufte Vorlage nicht entfernen koennen.
+    """
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren dürfen den Vorlagen-Katalog ändern")
+
+
+def _stempel(t, herkunft: str, user: User):
+    """Haelt fest, woher eine Vorlage kam und wer sie hereingeholt hat."""
+    from datetime import datetime, timezone
+    t.herkunft = herkunft
+    t.herkunft_am = datetime.now(timezone.utc)
+    t.herkunft_von = getattr(user, "username", None)
 
 
 class InstallBody(BaseModel):
@@ -1030,7 +1051,12 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
 
 @router.post("/upload")
 async def upload_template(file: UploadFile = File(...), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Lädt ein Template-JSON hoch und registriert es."""
+    """Lädt ein Template-JSON hoch und registriert es.
+
+    Bewusst ohne Lizenz- und Kaufprüfung: der Weg ist der Notnagel, wenn der Store
+    nicht erreichbar ist. Deshalb Adminpflicht und ein Herkunftsstempel.
+    """
+    _nur_admin(user)
     from app.models.template import Template
     content = await file.read()
     try:
@@ -1047,6 +1073,7 @@ async def upload_template(file: UploadFile = File(...), db: Session = Depends(ge
         existing.content = data
         existing.name = data.get("template_name", tid)
         existing.description = data.get("description", "")
+        _stempel(existing, "upload", user)
         db.commit()
         return {"ok": True, "action": "updated", "id": existing.id}
 
@@ -1059,6 +1086,7 @@ async def upload_template(file: UploadFile = File(...), db: Session = Depends(ge
         author=data.get("author", ""),
         content=data,
     )
+    _stempel(t, "upload", user)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -1153,6 +1181,7 @@ def install_from_store(template_id: str, db: Session = Depends(get_db), user: Us
         existing.description = data.get("description", "")
         existing.version = data.get("version", existing.version)
         flag_modified(existing, "content")
+        _stempel(existing, "store", user)
         db.commit()
         return {"ok": True, "action": "updated", "id": existing.id, "template_id": tid}
 
@@ -1165,6 +1194,7 @@ def install_from_store(template_id: str, db: Session = Depends(get_db), user: Us
         author=data.get("author", ""),
         content=data,
     )
+    _stempel(t, "store", user)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -1429,6 +1459,7 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
         author=content["author"],
         content=content,
     )
+    _stempel(t, "eigenbau", user)
     db.add(t)
     db.commit()
     db.refresh(t)
@@ -1438,6 +1469,7 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
 
 @router.delete('/{template_id}')
 def delete_template(template_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    _nur_admin(user)
     from app.models.template import Template
     from app.models.dataset import Dataset
     from app.models.mapping import Mapping
