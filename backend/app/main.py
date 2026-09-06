@@ -387,8 +387,22 @@ async def lifespan(app: FastAPI):
 
     db = SessionLocal()
     try:
-        import os as _os, secrets as _secrets
+        import os as _os, secrets as _secrets, hmac as _hmac, hashlib as _hashlib
+        from app.api.settings import get_setting as _get_setting, set_setting as _set_setting
+        from app.core.config import SECRET_KEY as _SECRET_KEY
+
         _admin_pw_env = _os.environ.get("ADMIN_PASSWORD", "")
+
+        def _pw_fingerprint(pw: str) -> str:
+            """Wiedererkennungswert des Env-Passworts – nie das Passwort selbst.
+
+            Mit SECRET_KEY als Schluessel, damit aus der settings-Tabelle allein
+            kein Rueckschluss auf das Klartextpasswort moeglich ist.
+            """
+            return _hmac.new(_SECRET_KEY.encode("utf-8"), pw.encode("utf-8"),
+                             _hashlib.sha256).hexdigest()
+
+        _FP_KEY = "admin_pw_env_fingerprint"
         _admin = db.query(User).filter(User.username == "admin").first()
         if not _admin:
             if _admin_pw_env:
@@ -402,12 +416,27 @@ async def lifespan(app: FastAPI):
             _admin = User(username="admin", hashed_password=hash_password(_admin_pw), is_admin=True)
             db.add(_admin)
             db.commit()
+            if _admin_pw_env:
+                _set_setting(db, _FP_KEY, _pw_fingerprint(_admin_pw_env))
         else:
+            # ADMIN_PASSWORD ist der Notnagel fuer ein vergessenes Passwort und darf
+            # NUR greifen, wenn in der .env wirklich ein neuer Wert steht. Frueher lief
+            # das bei jedem Start – ein Update hat damit still jede Passwortaenderung
+            # aus der Oberflaeche wieder ueberschrieben.
             _changed = False
             if _admin_pw_env:
-                _admin.hashed_password = hash_password(_admin_pw_env)
-                _changed = True
-                print("Admin-Passwort aus ADMIN_PASSWORD Env aktualisiert")
+                _fp_neu = _pw_fingerprint(_admin_pw_env)
+                _fp_alt = _get_setting(db, _FP_KEY)
+                if _fp_alt is None:
+                    # Bestandsinstallation: Wert nur merken, nicht anwenden – sonst wuerde
+                    # genau der Fall auftreten, den dieser Umbau abstellt.
+                    _set_setting(db, _FP_KEY, _fp_neu)
+                    print("ADMIN_PASSWORD vorgemerkt – zum Zuruecksetzen einen NEUEN Wert eintragen")
+                elif _fp_alt != _fp_neu:
+                    _admin.hashed_password = hash_password(_admin_pw_env)
+                    _changed = True
+                    print("Admin-Passwort aus ADMIN_PASSWORD Env aktualisiert")
+                    _set_setting(db, _FP_KEY, _fp_neu)
             if not getattr(_admin, "is_admin", False):
                 _admin.is_admin = True
                 _changed = True
