@@ -71,6 +71,18 @@ def _nur_admin(user: User):
         raise HTTPException(403, "Nur Administratoren dürfen den Vorlagen-Katalog ändern")
 
 
+def _signatur_pruefen(data: dict, db: Session):
+    """Kostenpflichtige Vorlagen nur mit gültiger, auf diese Lizenz ausgestellter Signatur."""
+    from app.services.template_signatur import pruefe, braucht_signatur
+    if not braucht_signatur((data.get("template_id") or "").strip()):
+        return
+    from app.api.license import get_license_credentials
+    key, _ = get_license_credentials(db)
+    ok, grund = pruefe(data, key or "")
+    if not ok:
+        raise HTTPException(403, grund)
+
+
 def _stempel(t, herkunft: str, user: User):
     """Haelt fest, woher eine Vorlage kam und wer sie hereingeholt hat."""
     from datetime import datetime, timezone
@@ -1068,6 +1080,8 @@ async def upload_template(file: UploadFile = File(...), db: Session = Depends(ge
     if not tid:
         raise HTTPException(400, "template_id fehlt")
 
+    _signatur_pruefen(data, db)
+
     existing = db.query(Template).filter(Template.template_id == tid).first()
     if existing:
         existing.content = data
@@ -1173,6 +1187,10 @@ def install_from_store(template_id: str, db: Session = Depends(get_db), user: Us
     tid = data.get("template_id")
     if not tid:
         raise HTTPException(502, "Template-JSON ohne template_id")
+
+    # Auch die Lieferung vom Server wird geprüft – sonst hinge alles daran, dass
+    # niemand sich zwischen Instanz und monstersuite setzt.
+    _signatur_pruefen(data, db)
 
     existing = db.query(Template).filter(Template.template_id == tid).first()
     if existing:

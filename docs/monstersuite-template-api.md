@@ -75,6 +75,38 @@ Body zusätzlich: `template_id`. Antwort ist die Template-JSON
 | 402 | Lizenz gültig, aber Template nicht erworben (`not_entitled`) |
 | 404 | Template unbekannt oder Datei fehlt im Storage |
 
+### Signatur
+
+Die Antwort trägt bei gesetzter Env `TEMPLATE_SIGNING_KEY` einen Block `signatur`:
+
+```json
+"signatur": {
+  "version": 1,
+  "template_id": "jtl_gf_cockpit",
+  "lizenz": "<Lizenzschlüssel des anfragenden Kunden>",
+  "inhalt_hash": "<sha256 der Vorlage ohne diesen Block>",
+  "erstellt_am": "2026-09-06T12:00:00+00:00",
+  "sig": "<base64, Ed25519 über den kanonisch serialisierten Rest des Blocks>"
+}
+```
+
+Signiert wird mit dem privaten Ed25519-Schlüssel des Herausgebers; Datenmonster prüft
+mit dem eingebauten öffentlichen Gegenpart (`app/services/template_signatur.py`).
+Weil der **Lizenzschlüssel des Käufers mitsigniert** ist, lässt sich eine Datei nicht
+auf eine fremde Installation übertragen.
+
+Kanonische Serialisierung auf beiden Seiten: `json.dumps(obj, sort_keys=True,
+separators=(",", ":"), ensure_ascii=False).encode("utf-8")` — Abweichungen brechen
+die Prüfung.
+
+Vorlagen in `GESCHUETZTE_VORLAGEN` (Datenmonster-seitig gepflegt) werden **ohne
+gültige Signatur mit 403 abgelehnt** — sowohl beim Store-Download als auch beim
+manuellen Upload. Alles andere bleibt unsigniert einspielbar.
+
+⚠️ Ist `TEMPLATE_SIGNING_KEY` auf monstersuite nicht gesetzt, geht die Vorlage
+unsigniert raus und die Gegenseite lehnt sie ab. Beim Ausrollen deshalb **zuerst**
+den Schlüssel auf monstersuite setzen, dann Datenmonster aktualisieren.
+
 ## Admin (Bearer-Token, Reiter „Shop → Template-Dateien")
 
 - `POST /api/admin/template-artifacts/upload` — Multipart: `file` (Template-JSON),

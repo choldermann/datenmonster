@@ -113,3 +113,7 @@ backups/
 # gemountete backend-Ordner – jeder Export landet sonst als unverfolgte Datei
 # mitten im Repo, obwohl die gepflegte Fassung unter templates/ liegt.
 backend/templates_export/
+
+# Signaturschluessel der Vorlagen-Auslieferung – gehoert NIE ins Repository
+vorlagen_signaturschluessel
+*.signaturschluessel
