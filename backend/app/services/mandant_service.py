@@ -287,19 +287,22 @@ def lauf_vorbereiten(run_params: Optional[dict], project_id: Optional[int], db,
     """Ein Aufruf für alles, was ein Lauf vom Mandanten braucht.
 
     Gibt (run_params, mandant_id) zurück: Schwellwerte und Fixkosten des richtigen
-    Mandanten, dessen Ausschlussliste und die Parameter :mandant_id/:mandant_name.
+    Mandanten, dessen Ausschlusslisten (Artikel und Kunden) und die Parameter
+    :mandant_id/:mandant_name.
 
-    Absichtlich gebündelt: die drei Schritte einzeln an sieben Ausführungspfaden zu
+    Absichtlich gebündelt: die Schritte einzeln an sieben Ausführungspfaden zu
     wiederholen ist genau die Sorte Aufgabe, bei der irgendwann einer vergessen wird
     – und ein vergessener Pfad zeigt Zahlen des falschen Betriebs, ohne dass es
     irgendwo knallt.
     """
     from app.services.business_config_service import apply_config
     from app.services.article_exclusion_service import apply_article_exclusions
+    from app.services.customer_exclusion_service import apply_customer_exclusions
 
     if mandant_id is None:
         mandant_id = aktiver(project_id, user, db)
     p = apply_config(run_params or {}, project_id, db, mandant_id)
     p = apply_article_exclusions(p, project_id, db, mandant_id)
+    p = apply_customer_exclusions(p, project_id, db, mandant_id)
     p = laufparameter(p, mandant_id, db)
     return p, mandant_id

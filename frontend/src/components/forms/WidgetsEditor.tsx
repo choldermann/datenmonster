@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags, ClipboardList, Building2 } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -40,6 +40,10 @@ const WIDGET_TYPES = [
     desc: "Berater-/Mandantennummer, USt-IdNr. und Sachkonten je Mandant pflegen" },
   { type: "preisautomatik", label: "Preisautomatik", Icon: Tags, color: "#22d3ee",
     desc: "Ladenhüter automatisch rabattieren: Regeln, Vorschläge, Ameise-Datei und Kontrolle" },
+  { type: "inventur", label: "Inventur zum Stichtag", Icon: ClipboardList, color: "#c4b5fd",
+    desc: "Bestände zum Stichtag einfrieren, abwerten und als Liste für den Steuerberater ausgeben" },
+  { type: "kunden_ausschluss", label: "Verbundene Unternehmen", Icon: Building2, color: "#94a3b8",
+    desc: "Kunden pflegen, die aus den Abfluss-Auswertungen herausfallen (eigene Firma, Schwestergesellschaften)" },
 ];
 
 function LabelRow({ label, children }) {

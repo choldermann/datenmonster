@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.5",
+  "version": "1.6",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -12,7 +12,9 @@
     "Der Reiter „Disposition\" ist eine Momentaufnahme aus dbo.tlagerbestand und ignoriert den Zeitraumfilter: Reservierungen und Zulauf führt die Wawi nur als aktuellen Stand, nicht in der Historie.",
     "Umschlag = Abgang der letzten 12 Monate geteilt durch den mittleren Bestand (Mittel aus Bestand vor 12 Monaten und am Stichtag). Das ist bewusst eine einfache Näherung; sie ist aus der Historie belegt und stabiler als eine Rechnung gegen den Tagesbestand.",
     "Im Reiter „Preishistorie\" wählt das Auswahlfeld den Artikel. Es zeigt nur Artikel, für die überhaupt Einkaufspreise gebucht sind. Der VK ist der mittlere Netto-Verkaufspreis der im jeweiligen Monat berechneten Positionen; Monate ohne Verkauf bleiben leer.",
-    "Korrekturbuchungen und Inventurdifferenzbuchungen sind in JTL getrennte Buchungsarten. Beide zusammen ergeben den Reiter „Inventur & Schwund\"; ein dauerhaft negativer Wert ist ein Hinweis auf Schwund oder Pflegefehler, keine Buchungsgröße für die Buchhaltung."
+    "Korrekturbuchungen und Inventurdifferenzbuchungen sind in JTL getrennte Buchungsarten. Beide zusammen ergeben den Reiter „Inventur & Schwund\"; ein dauerhaft negativer Wert ist ein Hinweis auf Schwund oder Pflegefehler, keine Buchungsgröße für die Buchhaltung.",
+    "Der Reiter „Inventur“ friert Bestände zum Stichtag ein, bewertet sie und gibt eine dokumentierte Liste für den Steuerberater aus. Der Bestandswert wird NICHT in die WaWi zurückgeschrieben – JTL kennt keinen Abwertungswert.",
+    "Der Reiter „Abflüsse je Artikel“ braucht eine Artikelnummer als Eingabe. Eine Vater-Artikelnummer (VAR…) findet alle Größen darunter."
   ],
   "config_required": [
     {
@@ -4211,6 +4213,1058 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_inv_bestand",
+      "name": "Inventur – Bestand zum Stichtag",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH partie AS (\n    SELECT e.kArtikel, e.cChargenNr, e.dMHD,\n           NULLIF(e.fEKEinzel, 0) AS ek_gebucht,\n           COALESCE(NULLIF(e.fEKEinzel, 0), NULLIF(a0.fEKNetto, 0), 0) AS ek,\n           SUM(h.fAnzahl) AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN dbo.tWarenLagerEingang e ON e.kWarenLagerEingang = h.kWarenLagerEingang\n    JOIN dbo.tArtikel a0          ON a0.kArtikel = e.kArtikel\n    WHERE h.dGebucht < DATEADD(DAY, 1, :stichtag)\n    GROUP BY e.kArtikel, e.kWarenLagerEingang, e.cChargenNr, e.dMHD, e.fEKEinzel, a0.fEKNetto\n    HAVING SUM(h.fAnzahl) > 0.0001\n),\npart_art AS (\n    SELECT p.kArtikel,\n           SUM(p.menge)             AS menge_partien,\n           SUM(p.menge * p.ek)      AS wert_partien,\n           SUM(CASE WHEN p.ek_gebucht IS NULL THEN p.menge ELSE 0 END) AS menge_ohne_ek,\n           MIN(p.dMHD)              AS mhd_frueh,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :stichtag THEN p.menge ELSE 0 END)          AS menge_abgelaufen,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :stichtag THEN p.menge * p.ek ELSE 0 END)   AS wert_abgelaufen,\n           -- Der Wert der Partien, die bald ablaufen. Bewusst NICHT der ganze\n           -- Artikelwert: bei zehn Chargen ist meist nur eine betroffen, und\n           -- eine Kennzahl, die den Rest mitzählt, führt zur Überabwertung.\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD >= :stichtag\n                     AND p.dMHD < DATEADD(MONTH, 3, :stichtag) THEN p.menge * p.ek ELSE 0 END)       AS wert_unter3\n    FROM partie p GROUP BY p.kArtikel\n),\n-- Der Gesamtbestand kommt aus tlagerbestand, auf den Stichtag zurückgerechnet.\n-- Nur so ist auch Altbestand erfasst, der vor Beginn der Buchungshistorie\n-- eingelagert wurde und zu keiner Partie gehört. Vaterartikel führen die Summe\n-- ihrer Varianten und hätten den Bestand sonst doppelt gezählt.\nbestand AS (\n    SELECT l.kArtikel,\n           l.fLagerbestand - ISNULL((SELECT SUM(h2.fAnzahl) FROM dbo.vArtikelHistorie h2\n                                     WHERE h2.kArtikel = l.kArtikel\n                                       AND h2.dGebucht >= DATEADD(DAY, 1, :stichtag)), 0) AS menge\n    FROM dbo.tlagerbestand l\n    JOIN dbo.tArtikel a ON a.kArtikel = l.kArtikel\n    WHERE a.nIstVater = 0\n),\nabgang AS (\n    SELECT h.kArtikel, SUM(-h.fAnzahl) AS menge12\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht >= DATEADD(MONTH, -12, :stichtag)\n      AND h.dGebucht <  DATEADD(DAY, 1, :stichtag)\n    GROUP BY h.kArtikel\n),\nletzter AS (\n    SELECT h.kArtikel, MAX(h.dGebucht) AS dLetzter\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht < DATEADD(DAY, 1, :stichtag)\n    GROUP BY h.kArtikel\n)\nSELECT\n    a.kArtikel                                       AS [kArtikel],\n    a.cArtNr                                         AS [ArtNr],\n    ab.cName                                         AS [Artikel],\n    wg.cName                                         AS [Warengruppe],\n    he.cName                                         AS [Hersteller],\n    CAST(b.menge AS decimal(18,3))                   AS [Bestand],\n    CAST(CASE WHEN b.menge > 0 THEN (ISNULL(pa.wert_partien, 0) + (b.menge - ISNULL(pa.menge_partien, 0)) * ISNULL(a.fEKNetto, 0)) / b.menge ELSE 0 END AS decimal(18,4)) AS [EK],\n    CAST(ISNULL(pa.wert_partien, 0) + (b.menge - ISNULL(pa.menge_partien, 0)) * ISNULL(a.fEKNetto, 0) AS decimal(18,2))                    AS [Wert],\n    CONVERT(varchar(10), pa.mhd_frueh, 104)          AS [MHD],\n    CASE WHEN pa.mhd_frueh IS NOT NULL\n         THEN DATEDIFF(DAY, :stichtag, pa.mhd_frueh) END AS [Resttage],\n    CAST(ISNULL(pa.menge_abgelaufen, 0) AS decimal(18,3)) AS [Menge abgelaufen],\n    CAST(ISNULL(pa.wert_abgelaufen, 0) AS decimal(18,2))  AS [Wert abgelaufen],\n    CAST(ISNULL(ag.menge12, 0) AS decimal(18,3))     AS [Abgang 12M],\n    CASE WHEN ISNULL(ag.menge12, 0) > 0\n         THEN CAST(b.menge / (ag.menge12 / 365.0) AS int) END AS [Reichweite Tage],\n    CONVERT(varchar(10), le.dLetzter, 104)           AS [Letzter Abgang],\n    CAST(CASE WHEN b.menge - ISNULL(pa.menge_partien, 0) > 0.0001\n              THEN b.menge - ISNULL(pa.menge_partien, 0) ELSE 0 END AS decimal(18,3)) AS [Menge ohne Charge],\n    -- Die Partien reisen als JSON mit: daraus rechnet der Abwertungsvorschlag\n    -- den betroffenen Wertanteil je Restlaufzeit-Stufe.\n    (SELECT p2.cChargenNr AS charge,\n            CONVERT(varchar(10), p2.dMHD, 104) AS mhd,\n            CAST(p2.menge AS decimal(18,3)) AS menge,\n            CAST(p2.ek AS decimal(18,4)) AS ek\n     FROM partie p2 WHERE p2.kArtikel = a.kArtikel\n     ORDER BY p2.dMHD FOR JSON PATH)                 AS [Chargen]\nFROM bestand b\nJOIN dbo.tArtikel a   ON a.kArtikel = b.kArtikel\nLEFT JOIN part_art pa ON pa.kArtikel = a.kArtikel\nLEFT JOIN abgang ag   ON ag.kArtikel = a.kArtikel\nLEFT JOIN letzter le  ON le.kArtikel = a.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\nLEFT JOIN dbo.tWarengruppe wg ON wg.kWarengruppe = a.kWarengruppe\nLEFT JOIN dbo.tHersteller he  ON he.kHersteller  = a.kHersteller\nWHERE b.menge > 0.0001\n  AND (:excluded_articles_empty = 1 OR a.kArtikel NOT IN (:excluded_articles))\nORDER BY [Wert] DESC",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Inventur – Bestand zum Stichtag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Hersteller",
+              "target_field": "Hersteller",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hersteller"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "MHD",
+              "target_field": "MHD",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MHD"
+              }
+            },
+            {
+              "source_field": "Resttage",
+              "target_field": "Resttage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Resttage"
+              }
+            },
+            {
+              "source_field": "Menge abgelaufen",
+              "target_field": "Menge abgelaufen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge abgelaufen"
+              }
+            },
+            {
+              "source_field": "Wert abgelaufen",
+              "target_field": "Wert abgelaufen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert abgelaufen"
+              }
+            },
+            {
+              "source_field": "Abgang 12M",
+              "target_field": "Abgang 12M",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Abgang 12M"
+              }
+            },
+            {
+              "source_field": "Reichweite Tage",
+              "target_field": "Reichweite Tage",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reichweite Tage"
+              }
+            },
+            {
+              "source_field": "Letzter Abgang",
+              "target_field": "Letzter Abgang",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letzter Abgang"
+              }
+            },
+            {
+              "source_field": "Menge ohne Charge",
+              "target_field": "Menge ohne Charge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge ohne Charge"
+              }
+            },
+            {
+              "source_field": "Chargen",
+              "target_field": "Chargen",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Chargen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_inv_kpi",
+      "name": "Inventur – Kennzahlen zum Stichtag",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH partie AS (\n    SELECT e.kArtikel, e.cChargenNr, e.dMHD,\n           NULLIF(e.fEKEinzel, 0) AS ek_gebucht,\n           COALESCE(NULLIF(e.fEKEinzel, 0), NULLIF(a0.fEKNetto, 0), 0) AS ek,\n           SUM(h.fAnzahl) AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN dbo.tWarenLagerEingang e ON e.kWarenLagerEingang = h.kWarenLagerEingang\n    JOIN dbo.tArtikel a0          ON a0.kArtikel = e.kArtikel\n    WHERE h.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY e.kArtikel, e.kWarenLagerEingang, e.cChargenNr, e.dMHD, e.fEKEinzel, a0.fEKNetto\n    HAVING SUM(h.fAnzahl) > 0.0001\n),\npart_art AS (\n    SELECT p.kArtikel,\n           SUM(p.menge)             AS menge_partien,\n           SUM(p.menge * p.ek)      AS wert_partien,\n           SUM(CASE WHEN p.ek_gebucht IS NULL THEN p.menge ELSE 0 END) AS menge_ohne_ek,\n           MIN(p.dMHD)              AS mhd_frueh,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :bis THEN p.menge ELSE 0 END)          AS menge_abgelaufen,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :bis THEN p.menge * p.ek ELSE 0 END)   AS wert_abgelaufen,\n           -- Der Wert der Partien, die bald ablaufen. Bewusst NICHT der ganze\n           -- Artikelwert: bei zehn Chargen ist meist nur eine betroffen, und\n           -- eine Kennzahl, die den Rest mitzählt, führt zur Überabwertung.\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD >= :bis\n                     AND p.dMHD < DATEADD(MONTH, 3, :bis) THEN p.menge * p.ek ELSE 0 END)       AS wert_unter3\n    FROM partie p GROUP BY p.kArtikel\n),\n-- Der Gesamtbestand kommt aus tlagerbestand, auf den Stichtag zurückgerechnet.\n-- Nur so ist auch Altbestand erfasst, der vor Beginn der Buchungshistorie\n-- eingelagert wurde und zu keiner Partie gehört. Vaterartikel führen die Summe\n-- ihrer Varianten und hätten den Bestand sonst doppelt gezählt.\nbestand AS (\n    SELECT l.kArtikel,\n           l.fLagerbestand - ISNULL((SELECT SUM(h2.fAnzahl) FROM dbo.vArtikelHistorie h2\n                                     WHERE h2.kArtikel = l.kArtikel\n                                       AND h2.dGebucht >= DATEADD(DAY, 1, :bis)), 0) AS menge\n    FROM dbo.tlagerbestand l\n    JOIN dbo.tArtikel a ON a.kArtikel = l.kArtikel\n    WHERE a.nIstVater = 0\n),\nabgang AS (\n    SELECT h.kArtikel, SUM(-h.fAnzahl) AS menge12\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht >= DATEADD(MONTH, -12, :bis)\n      AND h.dGebucht <  DATEADD(DAY, 1, :bis)\n    GROUP BY h.kArtikel\n),\nletzter AS (\n    SELECT h.kArtikel, MAX(h.dGebucht) AS dLetzter\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY h.kArtikel\n)\nSELECT\n    COUNT(*)                                          AS [Artikel],\n    CAST(SUM(b.menge) AS decimal(18,0))               AS [Stueck],\n    CAST(SUM(ISNULL(pa.wert_partien, 0) + (b.menge - ISNULL(pa.menge_partien, 0)) * ISNULL(a.fEKNetto, 0)) AS decimal(18,2))                AS [Bestandswert],\n    CAST(SUM(ISNULL(pa.wert_abgelaufen, 0)) AS decimal(18,2)) AS [WertAbgelaufen],\n    CAST(SUM(ISNULL(pa.wert_unter3, 0)) AS decimal(18,2)) AS [WertUnter3Monate],\n    SUM(CASE WHEN ISNULL(ag.menge12, 0) = 0 THEN 1 ELSE 0 END) AS [OhneAbgang12M],\n    CAST(SUM(CASE WHEN ISNULL(ag.menge12, 0) = 0 THEN ISNULL(pa.wert_partien, 0) + (b.menge - ISNULL(pa.menge_partien, 0)) * ISNULL(a.fEKNetto, 0) ELSE 0 END) AS decimal(18,2)) AS [WertOhneAbgang],\n    SUM(CASE WHEN ISNULL(pa.menge_ohne_ek, 0) > 0 THEN 1 ELSE 0 END) AS [OhneGebuchtenEK],\n    CAST(SUM(CASE WHEN b.menge - ISNULL(pa.menge_partien, 0) > 0.0001\n                  THEN b.menge - ISNULL(pa.menge_partien, 0) ELSE 0 END) AS decimal(18,0)) AS [MengeOhneCharge]\nFROM bestand b\nJOIN dbo.tArtikel a   ON a.kArtikel = b.kArtikel\nLEFT JOIN part_art pa ON pa.kArtikel = a.kArtikel\nLEFT JOIN abgang ag   ON ag.kArtikel = a.kArtikel\nWHERE b.menge > 0.0001\n  AND (:excluded_articles_empty = 1 OR a.kArtikel NOT IN (:excluded_articles))",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Inventur – Kennzahlen zum Stichtag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Stueck",
+              "target_field": "Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stueck"
+              }
+            },
+            {
+              "source_field": "Bestandswert",
+              "target_field": "Bestandswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestandswert"
+              }
+            },
+            {
+              "source_field": "WertAbgelaufen",
+              "target_field": "WertAbgelaufen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertAbgelaufen"
+              }
+            },
+            {
+              "source_field": "WertUnter3Monate",
+              "target_field": "WertUnter3Monate",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertUnter3Monate"
+              }
+            },
+            {
+              "source_field": "OhneAbgang12M",
+              "target_field": "OhneAbgang12M",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneAbgang12M"
+              }
+            },
+            {
+              "source_field": "WertOhneAbgang",
+              "target_field": "WertOhneAbgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertOhneAbgang"
+              }
+            },
+            {
+              "source_field": "OhneGebuchtenEK",
+              "target_field": "OhneGebuchtenEK",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneGebuchtenEK"
+              }
+            },
+            {
+              "source_field": "MengeOhneCharge",
+              "target_field": "MengeOhneCharge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MengeOhneCharge"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_inv_mhd",
+      "name": "Inventur – Bestandswert nach Restlaufzeit",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH partie AS (\n    SELECT e.kArtikel, e.cChargenNr, e.dMHD,\n           NULLIF(e.fEKEinzel, 0) AS ek_gebucht,\n           COALESCE(NULLIF(e.fEKEinzel, 0), NULLIF(a0.fEKNetto, 0), 0) AS ek,\n           SUM(h.fAnzahl) AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN dbo.tWarenLagerEingang e ON e.kWarenLagerEingang = h.kWarenLagerEingang\n    JOIN dbo.tArtikel a0          ON a0.kArtikel = e.kArtikel\n    WHERE h.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY e.kArtikel, e.kWarenLagerEingang, e.cChargenNr, e.dMHD, e.fEKEinzel, a0.fEKNetto\n    HAVING SUM(h.fAnzahl) > 0.0001\n),\npart_art AS (\n    SELECT p.kArtikel,\n           SUM(p.menge)             AS menge_partien,\n           SUM(p.menge * p.ek)      AS wert_partien,\n           SUM(CASE WHEN p.ek_gebucht IS NULL THEN p.menge ELSE 0 END) AS menge_ohne_ek,\n           MIN(p.dMHD)              AS mhd_frueh,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :bis THEN p.menge ELSE 0 END)          AS menge_abgelaufen,\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD < :bis THEN p.menge * p.ek ELSE 0 END)   AS wert_abgelaufen,\n           -- Der Wert der Partien, die bald ablaufen. Bewusst NICHT der ganze\n           -- Artikelwert: bei zehn Chargen ist meist nur eine betroffen, und\n           -- eine Kennzahl, die den Rest mitzählt, führt zur Überabwertung.\n           SUM(CASE WHEN p.dMHD IS NOT NULL AND p.dMHD >= :bis\n                     AND p.dMHD < DATEADD(MONTH, 3, :bis) THEN p.menge * p.ek ELSE 0 END)       AS wert_unter3\n    FROM partie p GROUP BY p.kArtikel\n),\n-- Der Gesamtbestand kommt aus tlagerbestand, auf den Stichtag zurückgerechnet.\n-- Nur so ist auch Altbestand erfasst, der vor Beginn der Buchungshistorie\n-- eingelagert wurde und zu keiner Partie gehört. Vaterartikel führen die Summe\n-- ihrer Varianten und hätten den Bestand sonst doppelt gezählt.\nbestand AS (\n    SELECT l.kArtikel,\n           l.fLagerbestand - ISNULL((SELECT SUM(h2.fAnzahl) FROM dbo.vArtikelHistorie h2\n                                     WHERE h2.kArtikel = l.kArtikel\n                                       AND h2.dGebucht >= DATEADD(DAY, 1, :bis)), 0) AS menge\n    FROM dbo.tlagerbestand l\n    JOIN dbo.tArtikel a ON a.kArtikel = l.kArtikel\n    WHERE a.nIstVater = 0\n),\nabgang AS (\n    SELECT h.kArtikel, SUM(-h.fAnzahl) AS menge12\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht >= DATEADD(MONTH, -12, :bis)\n      AND h.dGebucht <  DATEADD(DAY, 1, :bis)\n    GROUP BY h.kArtikel\n),\nletzter AS (\n    SELECT h.kArtikel, MAX(h.dGebucht) AS dLetzter\n    FROM dbo.vArtikelHistorie h\n    WHERE h.fAnzahl < 0 AND h.cBuchungsart = 'Warenausgang'\n      AND h.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY h.kArtikel\n)\n, klasse AS (\n    SELECT CASE\n             WHEN p.dMHD IS NULL THEN '6 ohne MHD'\n             WHEN p.dMHD <  :bis THEN '1 abgelaufen'\n             WHEN p.dMHD <  DATEADD(MONTH, 3,  :bis) THEN '2 unter 3 Monate'\n             WHEN p.dMHD <  DATEADD(MONTH, 6,  :bis) THEN '3 drei bis sechs Monate'\n             WHEN p.dMHD <  DATEADD(MONTH, 12, :bis) THEN '4 sechs bis zwoelf Monate'\n             ELSE '5 ueber ein Jahr' END AS klasse,\n           p.menge * p.ek AS wert, p.menge, p.kArtikel\n    FROM partie p\n    JOIN dbo.tArtikel a ON a.kArtikel = p.kArtikel\n    WHERE (:excluded_articles_empty = 1 OR p.kArtikel NOT IN (:excluded_articles))\n    UNION ALL\n    -- Altbestand ohne Eingangspartie hat kein MHD, gehört aber in die Summe,\n    -- sonst passt die Klassenverteilung nicht zum Bestandswert.\n    SELECT '6 ohne MHD',\n           (b.menge - ISNULL(pa.menge_partien, 0)) * ISNULL(a.fEKNetto, 0),\n           b.menge - ISNULL(pa.menge_partien, 0), a.kArtikel\n    FROM bestand b\n    JOIN dbo.tArtikel a   ON a.kArtikel = b.kArtikel\n    LEFT JOIN part_art pa ON pa.kArtikel = a.kArtikel\n    WHERE b.menge - ISNULL(pa.menge_partien, 0) > 0.0001\n      AND (:excluded_articles_empty = 1 OR a.kArtikel NOT IN (:excluded_articles))\n)\nSELECT\n    CASE k.klasse\n      WHEN '1 abgelaufen'              THEN 'MHD überschritten'\n      WHEN '2 unter 3 Monate'          THEN 'unter 3 Monate'\n      WHEN '3 drei bis sechs Monate'   THEN '3 bis 6 Monate'\n      WHEN '4 sechs bis zwoelf Monate' THEN '6 bis 12 Monate'\n      WHEN '5 ueber ein Jahr'          THEN 'über 1 Jahr'\n      ELSE 'ohne MHD' END                        AS [Restlaufzeit],\n    COUNT(DISTINCT k.kArtikel)                   AS [Artikel],\n    CAST(SUM(k.menge) AS decimal(18,0))          AS [Stueck],\n    CAST(SUM(k.wert) AS decimal(18,2))           AS [Wert]\nFROM klasse k\nGROUP BY k.klasse\nORDER BY k.klasse",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Inventur – Bestandswert nach Restlaufzeit",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Restlaufzeit",
+              "target_field": "Restlaufzeit",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Restlaufzeit"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Stueck",
+              "target_field": "Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stueck"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_kpi",
+      "name": "Abflüsse – Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    CAST(SUM(z.menge) AS decimal(18,2))              AS [AbgangGesamt],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [AnKunden],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND (:excluded_customers_empty = 0\n                   AND z.kKunde IN (:excluded_customers)) THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [AnVerbundene],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND (:excluded_customers_empty = 1\n                   OR z.kKunde NOT IN (:excluded_customers)) THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [AnFremdkunden],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND z.vk_netto = 0 THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [OhneBerechnung],\n    CAST(SUM(CASE WHEN z.kKunde IS NULL THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [OhneKundenbezug],\n    CAST(SUM(z.menge * z.vk_netto) AS decimal(18,2)) AS [UmsatzNetto],\n    COUNT(DISTINCT CASE WHEN z.kKunde IS NOT NULL AND (:excluded_customers_empty = 1\n                   OR z.kKunde NOT IN (:excluded_customers)) THEN z.kKunde END) AS [Fremdkunden],\n    COUNT(DISTINCT z.kArtikel)                       AS [Artikel]\nFROM zeile z",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "AbgangGesamt",
+              "target_field": "AbgangGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AbgangGesamt"
+              }
+            },
+            {
+              "source_field": "AnKunden",
+              "target_field": "AnKunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnKunden"
+              }
+            },
+            {
+              "source_field": "AnVerbundene",
+              "target_field": "AnVerbundene",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnVerbundene"
+              }
+            },
+            {
+              "source_field": "AnFremdkunden",
+              "target_field": "AnFremdkunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnFremdkunden"
+              }
+            },
+            {
+              "source_field": "OhneBerechnung",
+              "target_field": "OhneBerechnung",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneBerechnung"
+              }
+            },
+            {
+              "source_field": "OhneKundenbezug",
+              "target_field": "OhneKundenbezug",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "OhneKundenbezug"
+              }
+            },
+            {
+              "source_field": "UmsatzNetto",
+              "target_field": "UmsatzNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzNetto"
+              }
+            },
+            {
+              "source_field": "Fremdkunden",
+              "target_field": "Fremdkunden",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fremdkunden"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_kunden",
+      "name": "Abflüsse – je Kunde",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    CASE WHEN z.kKunde IS NULL\n         THEN '(ohne Kundenbezug: ' + ISNULL(z.cBuchungsart, 'unbekannt') + ')'\n         WHEN LTRIM(RTRIM(ISNULL(adr.cFirma, '') + ISNULL(adr.cZusatz, ''))) = ''\n         THEN LTRIM(RTRIM(ISNULL(adr.cVorname, '') + ' ' + ISNULL(adr.cName, '')))\n         ELSE LTRIM(RTRIM(ISNULL(NULLIF(adr.cFirma, ''), '') + ' ' + ISNULL(NULLIF(adr.cZusatz, ''), ''))) END                                AS [Kunde],\n    z.kKunde                                         AS [kKunde],\n    CAST(SUM(z.menge) AS decimal(18,2))              AS [Menge],\n    CAST(SUM(CASE WHEN z.vk_netto > 0 THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [davon berechnet],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND z.vk_netto = 0 THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [davon zum Preis 0],\n    CAST(SUM(z.menge * z.vk_netto) AS decimal(18,2)) AS [Umsatz netto],\n    CAST(CASE WHEN SUM(CASE WHEN z.vk_netto > 0 THEN z.menge ELSE 0 END) > 0\n              THEN SUM(z.menge * z.vk_netto) / SUM(CASE WHEN z.vk_netto > 0 THEN z.menge ELSE 0 END)\n         END AS decimal(18,2))                       AS [Preis je Stueck],\n    CASE WHEN :excluded_customers_empty = 0 AND z.kKunde IN (:excluded_customers)\n         THEN 'verbunden' ELSE '' END                AS [Hinweis]\nFROM zeile z\nOUTER APPLY (SELECT TOP 1 a2.cFirma, a2.cZusatz, a2.cVorname, a2.cName\n             FROM dbo.tAdresse a2 WHERE a2.kKunde = z.kKunde AND a2.nTyp = 1\n             ORDER BY a2.nStandard DESC, a2.kAdresse) adr\nWHERE (:ohne_verbundene = 0 OR :excluded_customers_empty = 1 OR z.kKunde IS NULL OR z.kKunde NOT IN (:excluded_customers))\nGROUP BY z.kKunde, z.cBuchungsart, adr.cFirma, adr.cZusatz, adr.cVorname, adr.cName\nORDER BY [Menge] DESC",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – je Kunde",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "davon berechnet",
+              "target_field": "davon berechnet",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "davon berechnet"
+              }
+            },
+            {
+              "source_field": "davon zum Preis 0",
+              "target_field": "davon zum Preis 0",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "davon zum Preis 0"
+              }
+            },
+            {
+              "source_field": "Umsatz netto",
+              "target_field": "Umsatz netto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz netto"
+              }
+            },
+            {
+              "source_field": "Preis je Stueck",
+              "target_field": "Preis je Stueck",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Preis je Stueck"
+              }
+            },
+            {
+              "source_field": "Hinweis",
+              "target_field": "Hinweis",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hinweis"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_artikel",
+      "name": "Abflüsse – je Artikel und Größe",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    z.cArtNr                                         AS [ArtNr],\n    z.artikelname                                    AS [Artikel],\n    CAST(SUM(z.menge) AS decimal(18,2))              AS [Menge],\n    CAST(SUM(CASE WHEN z.vk_netto > 0 THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [davon berechnet],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND z.vk_netto = 0 THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [davon zum Preis 0],\n    CAST(SUM(CASE WHEN z.kKunde IS NULL THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [ohne Kundenbezug],\n    COUNT(DISTINCT z.kKunde)                         AS [Kunden],\n    CAST(SUM(z.menge * z.vk_netto) AS decimal(18,2)) AS [Umsatz netto]\nFROM zeile z\nWHERE (:ohne_verbundene = 0 OR :excluded_customers_empty = 1 OR z.kKunde IS NULL OR z.kKunde NOT IN (:excluded_customers))\nGROUP BY z.kArtikel, z.cArtNr, z.artikelname\nORDER BY [Menge] DESC",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – je Artikel und Größe",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "davon berechnet",
+              "target_field": "davon berechnet",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "davon berechnet"
+              }
+            },
+            {
+              "source_field": "davon zum Preis 0",
+              "target_field": "davon zum Preis 0",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "davon zum Preis 0"
+              }
+            },
+            {
+              "source_field": "ohne Kundenbezug",
+              "target_field": "ohne Kundenbezug",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ohne Kundenbezug"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "Umsatz netto",
+              "target_field": "Umsatz netto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz netto"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_monat",
+      "name": "Abflüsse – je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    FORMAT(z.dGebucht, 'yyyy-MM')                    AS [Monat],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND (:excluded_customers_empty = 1\n              OR z.kKunde NOT IN (:excluded_customers)) THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [Fremdkunden],\n    CAST(SUM(CASE WHEN z.kKunde IS NOT NULL AND :excluded_customers_empty = 0\n              AND z.kKunde IN (:excluded_customers) THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [Verbundene],\n    CAST(SUM(CASE WHEN z.kKunde IS NULL THEN z.menge ELSE 0 END) AS decimal(18,2)) AS [ohne Kundenbezug]\nFROM zeile z\nGROUP BY FORMAT(z.dGebucht, 'yyyy-MM')\nORDER BY [Monat]",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Fremdkunden",
+              "target_field": "Fremdkunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Fremdkunden"
+              }
+            },
+            {
+              "source_field": "Verbundene",
+              "target_field": "Verbundene",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verbundene"
+              }
+            },
+            {
+              "source_field": "ohne Kundenbezug",
+              "target_field": "ohne Kundenbezug",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ohne Kundenbezug"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_arten",
+      "name": "Abflüsse – nach Buchungsart",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    ISNULL(z.cBuchungsart, 'unbekannt')              AS [Buchungsart],\n    CASE WHEN z.kKunde IS NULL THEN 'ohne Kundenbezug' ELSE 'mit Kundenbezug' END AS [Zuordnung],\n    CAST(SUM(z.menge) AS decimal(18,2))              AS [Menge],\n    COUNT(*)                                         AS [Buchungen]\nFROM zeile z\nGROUP BY z.cBuchungsart, CASE WHEN z.kKunde IS NULL THEN 'ohne Kundenbezug' ELSE 'mit Kundenbezug' END\nORDER BY [Menge] DESC",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – nach Buchungsart",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Buchungsart",
+              "target_field": "Buchungsart",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungsart"
+              }
+            },
+            {
+              "source_field": "Zuordnung",
+              "target_field": "Zuordnung",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zuordnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Buchungen",
+              "target_field": "Buchungen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ab_belege",
+      "name": "Abflüsse – Belege eines Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH treffer AS (\n    SELECT a.kArtikel\n    FROM dbo.tArtikel a\n    LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    WHERE a.nIstVater = 0\n      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''\n      AND (a.cArtNr LIKE :artikel_suche + '%'\n           OR va.cArtNr LIKE :artikel_suche + '%'\n           OR ab.cName LIKE '%' + :artikel_suche + '%')\n),\n-- Abgänge kommen aus der Buchungshistorie, nicht aus Rechnungen: nur so sind\n-- auch unberechnete Lieferungen und Korrekturen sichtbar.\nausgang AS (\n    SELECT h.kArtikel, h.kLieferscheinPos, h.cBuchungsart, h.dGebucht, -h.fAnzahl AS menge\n    FROM dbo.vArtikelHistorie h\n    JOIN treffer t ON t.kArtikel = h.kArtikel\n    WHERE h.fAnzahl < 0\n      AND h.dGebucht >= :von AND h.dGebucht < DATEADD(DAY, 1, :bis)\n),\nzeile AS (\n    SELECT g.menge, g.cBuchungsart, g.dGebucht, g.kArtikel, ls.cLieferscheinNr,\n           a.cArtNr, ab.cName AS artikelname,\n           b.tKunde_kKunde AS kKunde,\n           ISNULL(bp.fVkNetto, 0) AS vk_netto\n    FROM ausgang g\n    JOIN dbo.tArtikel a ON a.kArtikel = g.kArtikel\n    LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\n    LEFT JOIN dbo.tLieferscheinPos lp ON lp.kLieferscheinPos = g.kLieferscheinPos\n    LEFT JOIN dbo.tLieferschein ls    ON ls.kLieferschein = lp.kLieferschein\n    LEFT JOIN dbo.tBestellung b       ON b.kBestellung = ls.kBestellung\n    LEFT JOIN dbo.tBestellPos bp      ON bp.kBestellPos = lp.kBestellPos\n)\nSELECT\n    CONVERT(varchar(10), z.dGebucht, 104)            AS [Datum],\n    z.cLieferscheinNr                                AS [Lieferschein],\n    z.cArtNr                                         AS [ArtNr],\n    z.artikelname                                    AS [Artikel],\n    CAST(z.menge AS decimal(18,2))                   AS [Menge],\n    CAST(z.vk_netto AS decimal(18,2))                AS [Preis netto],\n    CAST(z.menge * z.vk_netto AS decimal(18,2))      AS [Wert],\n    z.cBuchungsart                                   AS [Buchungsart]\nFROM zeile z\nWHERE (:kunde IS NULL OR z.kKunde = :kunde)\nORDER BY z.dGebucht DESC",
+          "mode": "transform"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Abflüsse – Belege eines Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Lieferschein",
+              "target_field": "Lieferschein",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferschein"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Preis netto",
+              "target_field": "Preis netto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Preis netto"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Buchungsart",
+              "target_field": "Buchungsart",
+              "target_type": "text",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungsart"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "forms": [
@@ -4254,6 +5308,81 @@
               "placeholder": "Artikel wählen …",
               "visible_tabs": [
                 "tab_lg_preise"
+              ]
+            }
+          },
+          {
+            "id": "f_artikel_suche",
+            "name": "artikel_suche",
+            "type": "text",
+            "label": "Artikel (Nummer oder Name)",
+            "row": 1,
+            "colSpan": 5,
+            "required": false,
+            "action_ids": [
+              "act_ab_kpi",
+              "act_ab_artikel",
+              "act_ab_kunden",
+              "act_ab_monat",
+              "act_ab_arten"
+            ],
+            "config": {
+              "placeholder": "z. B. VAR80215 oder 80218",
+              "auto_run": false,
+              "visible_tabs": [
+                "tab_abfluesse"
+              ]
+            }
+          },
+          {
+            "id": "f_ohne_verbundene",
+            "name": "ohne_verbundene",
+            "type": "dropdown",
+            "label": "Verbundene Unternehmen",
+            "row": 1,
+            "colSpan": 4,
+            "default": "1",
+            "action_ids": [
+              "act_ab_kpi",
+              "act_ab_artikel",
+              "act_ab_kunden",
+              "act_ab_monat",
+              "act_ab_arten"
+            ],
+            "options": [
+              {
+                "value": "1",
+                "label": "ausblenden"
+              },
+              {
+                "value": "0",
+                "label": "mit anzeigen"
+              }
+            ],
+            "config": {
+              "auto_run": true,
+              "visible_tabs": [
+                "tab_abfluesse"
+              ]
+            }
+          },
+          {
+            "id": "f_ab_start",
+            "name": "",
+            "type": "button",
+            "label": "Abflüsse auswerten",
+            "row": 1,
+            "colSpan": 3,
+            "action_ids": [
+              "act_ab_kpi",
+              "act_ab_artikel",
+              "act_ab_kunden",
+              "act_ab_monat",
+              "act_ab_arten"
+            ],
+            "config": {
+              "visible_tabs": [
+                "tab_abfluesse"
               ]
             }
           }
@@ -4430,6 +5559,48 @@
             "mapping_id": "m_lg_buchungsarten",
             "pipeline_id": null,
             "label": "Lager – Buchungsarten im Zeitraum"
+          },
+          {
+            "id": "act_inv_kpi",
+            "label": "Inventur – Kennzahlen zum Stichtag",
+            "type": "run_mapping",
+            "mapping_id": "m_inv_kpi"
+          },
+          {
+            "id": "act_inv_mhd",
+            "label": "Inventur – Bestandswert nach Restlaufzeit",
+            "type": "run_mapping",
+            "mapping_id": "m_inv_mhd"
+          },
+          {
+            "id": "act_ab_kpi",
+            "label": "Abflüsse – Kennzahlen",
+            "type": "run_mapping",
+            "mapping_id": "m_ab_kpi"
+          },
+          {
+            "id": "act_ab_artikel",
+            "label": "Abflüsse – je Artikel und Größe",
+            "type": "run_mapping",
+            "mapping_id": "m_ab_artikel"
+          },
+          {
+            "id": "act_ab_kunden",
+            "label": "Abflüsse – je Kunde",
+            "type": "run_mapping",
+            "mapping_id": "m_ab_kunden"
+          },
+          {
+            "id": "act_ab_monat",
+            "label": "Abflüsse – je Monat",
+            "type": "run_mapping",
+            "mapping_id": "m_ab_monat"
+          },
+          {
+            "id": "act_ab_arten",
+            "label": "Abflüsse – nach Buchungsart",
+            "type": "run_mapping",
+            "mapping_id": "m_ab_arten"
           }
         ],
         "widgets": [
@@ -5226,6 +6397,240 @@
                 ]
               }
             }
+          },
+          {
+            "id": "w_inv_wert",
+            "type": "kpi",
+            "label": "Bestandswert zum Stichtag",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestandswert",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_inv_abgelaufen",
+            "type": "kpi",
+            "label": "davon MHD überschritten",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertAbgelaufen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2,
+              "info": "Wert der Chargen, deren Mindesthaltbarkeit am Stichtag abgelaufen war."
+            }
+          },
+          {
+            "id": "w_inv_unter3",
+            "type": "kpi",
+            "label": "läuft in unter 3 Monaten ab",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertUnter3Monate",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_inv_ohne_abgang",
+            "type": "kpi",
+            "label": "ohne Abgang seit 12 Monaten",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertOhneAbgang",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2,
+              "breakdown": [
+                {
+                  "label": "Artikel",
+                  "column": "OhneAbgang12M",
+                  "decimals": 0,
+                  "suffix": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_inv_mhd",
+            "type": "bar",
+            "label": "Bestandswert nach Restlaufzeit",
+            "action_id": "act_inv_mhd",
+            "config": {
+              "width": 6,
+              "x_column": "Restlaufzeit",
+              "y_columns": [
+                "Wert"
+              ],
+              "suffix": " €"
+            }
+          },
+          {
+            "id": "w_inv_mhd_tab",
+            "type": "table",
+            "label": "Restlaufzeit im Überblick",
+            "action_id": "act_inv_mhd",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_inventur",
+            "type": "inventur",
+            "label": "Inventur zum Stichtag",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 12,
+              "info": "Bestände einfrieren, bewerten und als Liste an den Steuerberater geben. Eine abgeschlossene Inventur bleibt unverändert."
+            }
+          },
+          {
+            "id": "w_ab_fremd",
+            "type": "kpi",
+            "label": "Abgang an Fremdkunden",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 3,
+              "column": "AnFremdkunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "breakdown": [
+                {
+                  "label": "Kunden",
+                  "column": "Fremdkunden",
+                  "decimals": 0,
+                  "suffix": ""
+                },
+                {
+                  "label": "Umsatz netto",
+                  "column": "UmsatzNetto",
+                  "suffix": " €",
+                  "decimals": 2
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_ab_verbunden",
+            "type": "kpi",
+            "label": "an verbundene Unternehmen",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 3,
+              "column": "AnVerbundene",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Menge an die Kunden aus der Ausschlussliste – hier bewusst sichtbar, in den Listen unten ausgeblendet."
+            }
+          },
+          {
+            "id": "w_ab_ohne_re",
+            "type": "kpi",
+            "label": "geliefert zum Preis 0",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 3,
+              "column": "OhneBerechnung",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Ware, die einem Kunden zugeordnet ist, aber ohne Wert berechnet wurde – der Preis wird außerhalb der WaWi geregelt."
+            }
+          },
+          {
+            "id": "w_ab_ohne_kunde",
+            "type": "kpi",
+            "label": "ohne Kundenbezug",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 3,
+              "column": "OhneKundenbezug",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Korrektur- und Umlagerungsbuchungen. Kein Abverkauf – wer sie als Verkauf liest, plant am Bedarf vorbei."
+            }
+          },
+          {
+            "id": "w_ab_artikel",
+            "type": "table",
+            "label": "Abgang je Artikel und Größe",
+            "action_id": "act_ab_artikel",
+            "config": {
+              "width": 12,
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_ab_kunden",
+            "type": "table",
+            "label": "Wer die Ware bekommen hat",
+            "action_id": "act_ab_kunden",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "kKunde"
+              ],
+              "drilldown": {
+                "mapping_id": "m_ab_belege",
+                "param": "kunde",
+                "key_column": "kKunde",
+                "title": "Belege des Kunden"
+              }
+            }
+          },
+          {
+            "id": "w_ab_monat",
+            "type": "bar",
+            "label": "Abgang je Monat",
+            "action_id": "act_ab_monat",
+            "config": {
+              "width": 6,
+              "x_column": "Monat",
+              "y_columns": [
+                "Fremdkunden",
+                "Verbundene",
+                "ohne Kundenbezug"
+              ]
+            }
+          },
+          {
+            "id": "w_ab_arten",
+            "type": "table",
+            "label": "Woher die Abgänge stammen",
+            "action_id": "act_ab_arten",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_ab_ausschluss",
+            "type": "kunden_ausschluss",
+            "label": "Verbundene Unternehmen",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 12,
+              "info": "Diese Kunden werden aus den Listen oben ausgeblendet. Achtung: Ist ein Betrieb doppelt in der WaWi angelegt, gehören beide Datensätze hier hinein."
+            }
           }
         ],
         "result_tabs": [
@@ -5259,6 +6664,17 @@
             ]
           },
           {
+            "id": "tab_abfluesse",
+            "label": "Abflüsse je Artikel",
+            "action_ids": [
+              "act_ab_kpi",
+              "act_ab_artikel",
+              "act_ab_kunden",
+              "act_ab_monat",
+              "act_ab_arten"
+            ]
+          },
+          {
             "id": "tab_lg_ladenhueter",
             "label": "Ladenhüter",
             "action_ids": [
@@ -5268,8 +6684,16 @@
             ]
           },
           {
+            "id": "tab_inventur",
+            "label": "Inventur zum Stichtag",
+            "action_ids": [
+              "act_inv_kpi",
+              "act_inv_mhd"
+            ]
+          },
+          {
             "id": "tab_lg_schwund",
-            "label": "Inventur & Schwund",
+            "label": "Schwund & Korrekturen",
             "action_ids": [
               "act_lg_schwund_kpi",
               "act_lg_schwund_monat",

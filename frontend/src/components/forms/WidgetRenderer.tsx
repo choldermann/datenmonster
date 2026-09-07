@@ -18,6 +18,8 @@ import PreisautomatikWidget from "./widgets/PreisautomatikWidget";
 import AiSummaryWidget from "./widgets/AiSummaryWidget";
 import TaskListWidget from "./widgets/TaskListWidget";
 import AlertsWidget from "./widgets/AlertsWidget";
+import InventurWidget from "./widgets/InventurWidget";
+import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -32,13 +34,15 @@ const WIDGET_LABELS = {
   kostenstruktur: "Kostenstruktur", preisautomatik: "Preisautomatik",
   datev_stammdaten: "DATEV-Stammdaten",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
+  inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
 // Exportiert, damit die Runner (FormRunner/PortalRunner) sie ohne Result anzeigen.
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research",
                                                 "kostenstruktur", "preisautomatik",
-                                                "debitoren", "datev_stammdaten"]);
+                                                "debitoren", "datev_stammdaten",
+                                                "inventur", "kunden_ausschluss"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, baseParams }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -55,6 +59,10 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     return <PreisautomatikWidget widget={widget} projectId={projectId} />;
   if (widget.type === "datev_stammdaten")
     return <DatevStammdatenWidget widget={widget} projectId={projectId} />;
+  if (widget.type === "inventur")
+    return <InventurWidget widget={widget} projectId={projectId} />;
+  if (widget.type === "kunden_ausschluss")
+    return <KundenAusschlussWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",

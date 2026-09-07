@@ -27,6 +27,8 @@ from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCo
 from app.models.report import Report, ReportSchedule, AdHocQuery
 from app.models.er_posteingang import ErPosteingangQuelle, ErPosteingangBeleg
 from app.models.vorhaben import Vorhaben, VorhabenArtefakt
+from app.models.inventur import InventurLauf, InventurPosition
+from app.models.customer_exclusion import CustomerExclusion
 from app import auth
 from app.api import monitoring as monitoring_api, dispatcher as dispatcher_api, logs as logs_api, pipelines as pipelines_api, templates as templates_api, settings as settings_api, datasets, connections, mappings, projects, scheduler, exports, ftp_sources, rest_sources
 from app.api import smart_mapping as smart_mapping_api
@@ -38,6 +40,8 @@ from app.api import eingangsrechnung as eingangsrechnung_api
 from app.api import er_posteingang as er_posteingang_api
 from app.api import datev as datev_api
 from app.api import intrastat as intrastat_api
+from app.api import inventur as inventur_api
+from app.api import kunden_ausschluss as kunden_ausschluss_api
 from app.api import api_studio as api_studio_api
 
 
@@ -586,6 +590,8 @@ app.include_router(eingangsrechnung_api.router)
 app.include_router(er_posteingang_api.router)
 app.include_router(datev_api.router)
 app.include_router(intrastat_api.router)
+app.include_router(inventur_api.router)
+app.include_router(kunden_ausschluss_api.router)
 app.include_router(api_studio_api.router)
 from app.api import forms as forms_api
 from app.api import portal as portal_api
