@@ -539,7 +539,7 @@ export default function InventurWidget({ widget, projectId }) {
                             <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
                               <thead>
                                 <tr style={{ color: S.textDim }}>
-                                  {["Charge", "MHD", "Menge", "EK", "Wert"].map(h => (
+                                  {["Charge", "MHD", "Menge", "EK", "Wert", "Einlagerungen"].map(h => (
                                     <th key={h} style={{ padding: "3px 12px 3px 0",
                                       textAlign: h === "Charge" || h === "MHD" ? "left" : "right",
                                       fontWeight: 500 }}>{h}</th>
@@ -554,7 +554,17 @@ export default function InventurWidget({ widget, projectId }) {
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{zahl(c.menge)}</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{eur(c.ek)}</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
-                                      {eur((c.menge || 0) * (c.ek || 0))}
+                                      {/* exakt summiert aus der Abfrage – Menge × EK
+                                          wäre um die Rundung des EK daneben */}
+                                      {eur(c.wert ?? (c.menge || 0) * (c.ek || 0))}
+                                    </td>
+                                    {/* JTL legt je Wareneingang einen Satz an, auch bei
+                                        gleicher Charge. Die Zeile ist zusammengefasst –
+                                        die Zahl sagt, aus wie vielen Einlagerungen. */}
+                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right",
+                                      color: S.textDim }}>
+                                      {(c.einlagerungen || 1) > 1
+                                        ? `${zahl(c.einlagerungen)} Einlagerungen` : ""}
                                     </td>
                                   </tr>
                                 ))}
@@ -564,7 +574,7 @@ export default function InventurWidget({ widget, projectId }) {
                                     <td>–</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {zahl(p.menge_ohne_partie)}</td>
-                                    <td colSpan={2} />
+                                    <td colSpan={3} />
                                   </tr>
                                 )}
                               </tbody>

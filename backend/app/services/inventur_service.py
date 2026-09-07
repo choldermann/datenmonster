@@ -338,7 +338,9 @@ def _vorschlag_fuer(pos: InventurPosition, stufen: List[dict],
         if mhd is None:
             continue
         menge = _zahl(c.get("menge"))
-        wert = menge * _zahl(c.get("ek"))
+        # `wert` kommt exakt summiert aus der Abfrage; menge × ek wäre um die
+        # Rundung des angezeigten EK daneben.
+        wert = _zahl(c.get("wert")) or menge * _zahl(c.get("ek"))
         if wert <= 0:
             continue
         resttage = (mhd - stichtag).days

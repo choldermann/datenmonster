@@ -101,11 +101,28 @@ SELECT
               THEN b.menge - ISNULL(pa.menge_partien, 0) ELSE 0 END AS decimal(18,3)) AS [Menge ohne Charge],
     -- Die Partien reisen als JSON mit: daraus rechnet der Abwertungsvorschlag
     -- den betroffenen Wertanteil je Restlaufzeit-Stufe.
+    --
+    -- Zusammengefasst nach Charge + MHD + EK, nicht je Einlagerung: JTL legt für
+    -- JEDEN Wareneingang einen eigenen tWarenLagerEingang-Satz an, auch wenn es
+    -- dieselbe Charge ist. Artikel 80217 bei PPS steht so mit fünf Zeilen
+    -- „P26584" da (586 + 1 + 1 + 1 + 30 Stück), was wie eine Doppelbuchung
+    -- aussieht und keine ist – 31 % aller Partien sind solche Nachbuchungen.
+    -- Der EK bleibt im Schlüssel, weil dieselbe Charge zu unterschiedlichen
+    -- Preisen eingelagert sein kann (131 Fälle); die zusammenzuwerfen würde
+    -- Bewertungsinformation vernichten. `einlagerungen` weist die Bündelung aus.
+    -- Gruppiert wird nach dem auf vier Stellen gerundeten EK, weil sonst
+    -- Rechenrauschen zwei Zeilen erzeugt, die in der Anzeige identisch
+    -- aussehen (bei Artikel 10181: 3,76880000 gegen 3,76884400). `wert` reist
+    -- exakt summiert mit, damit die Rundung des EK die Bewertung nicht
+    -- verschiebt – der Abwertungsvorschlag rechnet damit.
     (SELECT p2.cChargenNr AS charge,
             CONVERT(varchar(10), p2.dMHD, 104) AS mhd,
-            CAST(p2.menge AS decimal(18,3)) AS menge,
-            CAST(p2.ek AS decimal(18,4)) AS ek
+            CAST(SUM(p2.menge) AS decimal(18,3)) AS menge,
+            CAST(SUM(p2.menge * p2.ek) / NULLIF(SUM(p2.menge), 0) AS decimal(18,4)) AS ek,
+            CAST(SUM(p2.menge * p2.ek) AS decimal(18,2)) AS wert,
+            COUNT(*) AS einlagerungen
      FROM partie p2 WHERE p2.kArtikel = a.kArtikel
+     GROUP BY p2.cChargenNr, p2.dMHD, CAST(ROUND(p2.ek, 4) AS decimal(18,4))
      ORDER BY p2.dMHD FOR JSON PATH)                 AS [Chargen]
 FROM bestand b
 JOIN dbo.tArtikel a   ON a.kArtikel = b.kArtikel
