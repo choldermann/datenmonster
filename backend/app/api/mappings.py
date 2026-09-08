@@ -8,6 +8,7 @@ from app.models.user import User
 from app.models.mapping import Mapping
 from app.models.dataset import Dataset
 from app.api.projects import require_editor
+from app.core import kontingent
 
 router = APIRouter(prefix="/api/mappings", tags=["mappings"])
 
@@ -341,6 +342,8 @@ def list_mappings(
 def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     require_editor(data.project_id, user, db)
+    kontingent.pruefe(db, "mappings")
+    kontingent.pruefe_db_ziel(db, None, data.targets, data.target_type)
     m = Mapping(
         name=data.name,
         canvas_nodes=data.canvas_nodes,   joins=data.joins,
@@ -377,6 +380,7 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     if not m:
         raise HTTPException(404, "Mapping nicht gefunden")
     require_editor(m.project_id, user, db)
+    kontingent.pruefe_db_ziel(db, mapping_id, data.targets, data.target_type)
     m.name            = data.name
     m.canvas_nodes    = data.canvas_nodes
     m.joins           = data.joins

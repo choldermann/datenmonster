@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.project import Project, ProjectMember
+from app.core import kontingent
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -126,6 +127,7 @@ def list_projects(db: Session = Depends(get_db), user: User = Depends(get_curren
 
 @router.post("/")
 def create_project(data: ProjectCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    kontingent.pruefe(db, "projekte")
     p = Project(name=data.name, description=data.description, owner_id=user.id)
     db.add(p); db.commit(); db.refresh(p)
     return project_out(p, "owner")

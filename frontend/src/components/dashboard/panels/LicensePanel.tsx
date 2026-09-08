@@ -29,6 +29,14 @@ interface Feature {
   free: boolean;
 }
 
+interface Posten {
+  art: string;
+  label: string;
+  benutzt: number;
+  grenze: number | null;
+  unbegrenzt: boolean;
+}
+
 interface LicenseData {
   status: "free" | "active" | "grace" | "grace_expired" | "expired" | "invalid";
   plan: string;
@@ -126,7 +134,7 @@ function FeatureRow({ feature, active }: { feature: Feature; active: boolean }) 
         {active ? (
           <><Check size={9} /> {feature.free ? "Kostenlos" : "Aktiv"}</>
         ) : (
-          <><Lock size={9} /> Gesperrt</>
+          <><Lock size={9} /> Pro</>
         )}
       </div>
     </div>
@@ -143,6 +151,7 @@ export default function LicensePanel() {
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [kontingent, setKontingent] = useState<Posten[] | null>(null);
   const [showFree, setShowFree] = useState(false);
   const [freeEmail, setFreeEmail] = useState("");
   const [freeBusy, setFreeBusy] = useState(false);
@@ -158,6 +167,9 @@ export default function LicensePanel() {
     setLicense(d);
     setEmail(d.email || "");
     setLoading(false);
+    apiFetch("GET", BASE + "/kontingent")
+      .then(k => setKontingent(k?.posten || null))
+      .catch(() => setKontingent(null));
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -239,11 +251,7 @@ export default function LicensePanel() {
   const mode = license._offline ? "offline" : license.validation_mode;
   const mb = MODE_BADGE[mode] || MODE_BADGE.none;
 
-  const grouped: Record<string, Feature[]> = {};
   const catOrder = license.category_order || [];
-  for (const cat of catOrder) {
-    grouped[cat] = (license.features || []).filter(f => f.category === cat);
-  }
 
   return (
     <div style={{ maxWidth: 780 }}>
@@ -528,29 +536,78 @@ export default function LicensePanel() {
         </div>
       )}
 
-      {/* Feature-Übersicht */}
-      <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-2)", marginBottom: 14, display: "flex", alignItems: "center", gap: 10 }}>
-        <Layers size={16} color="var(--accent)" />
-        Feature-Übersicht
-        <span style={{ fontSize: 11, color: "var(--text-5)", fontWeight: 400 }}>
-          {activeSet.size} / {(license.features || []).length} aktiv
-        </span>
-      </div>
-
-      {catOrder.map(cat => (grouped[cat]?.length ? (
-        <div key={cat} style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-6)", textTransform: "uppercase", letterSpacing: "1.2px", marginBottom: 8 }}>{cat}</div>
-          {(grouped[cat] || []).map(f => (
-            <FeatureRow key={f.id} feature={f} active={activeSet.has(f.id)} />
-          ))}
+      {/* Kontingent — nur wenn es überhaupt Grenzen gibt */}
+      {kontingent && kontingent.some(p => p.grenze !== null) && (
+        <div style={{ marginBottom: 26 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-2)", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+            <Layers size={16} color="var(--accent)" />
+            Was du selbst anlegen kannst
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-5)", marginBottom: 12 }}>
+            Objekte aus installierten Vorlagen zählen nicht mit — gekaufte Auswertungen bleiben unbegrenzt.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+            {kontingent.map(p => {
+              const voll = p.grenze !== null && p.benutzt >= p.grenze;
+              return (
+                <div key={p.art} style={{
+                  background: "var(--bg-card)",
+                  border: `1px solid ${voll ? "#3a2e00" : "var(--border-2)"}`,
+                  borderRadius: 8, padding: "10px 13px",
+                }}>
+                  <div style={{ fontSize: 11, color: "var(--text-5)", marginBottom: 3 }}>{p.label}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: voll ? "#f59e0b" : "var(--text-2)" }}>
+                    {p.benutzt}{p.grenze !== null ? ` / ${p.grenze}` : ""}
+                    {p.unbegrenzt && <span style={{ fontSize: 11, fontWeight: 400, color: "var(--text-5)" }}> · unbegrenzt</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      ) : null))}
+      )}
+
+      {/* Was enthalten ist — und was Pro zusätzlich bringt */}
+      {(() => {
+        const enthalten = (license.features || []).filter(f => activeSet.has(f.id));
+        const inPro     = (license.features || []).filter(f => !activeSet.has(f.id));
+        const block = (titel: string, hinweis: string, liste: Feature[], akt: boolean) => (liste.length ? (
+          <div style={{ marginBottom: 26 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--text-2)", marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+              {akt ? <Check size={15} color="#22c55e" /> : <Lock size={14} color="var(--text-5)" />}
+              {titel}
+              <span style={{ fontSize: 11, color: "var(--text-5)", fontWeight: 400 }}>{liste.length}</span>
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-5)", marginBottom: 12 }}>{hinweis}</div>
+            {catOrder.map(cat => {
+              const teil = liste.filter(f => f.category === cat);
+              return teil.length ? (
+                <div key={cat} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "var(--text-6)", textTransform: "uppercase", letterSpacing: "1.2px", marginBottom: 8 }}>{cat}</div>
+                  {teil.map(f => <FeatureRow key={f.id} feature={f} active={akt} />)}
+                </div>
+              ) : null;
+            })}
+          </div>
+        ) : null);
+        return (
+          <>
+            {block("Das ist enthalten",
+                   hasFull ? "Mit deiner Lizenz freigeschaltet."
+                           : "Gekaufte Vorlagen laufen damit vollständig — ausführen, Zeitpläne, Versand, Portal-Zugänge.",
+                   enthalten, true)}
+            {block("Mit Pro zusätzlich",
+                   "Gesperrt ist ausschließlich das Selbst-Bauen. Installierte Vorlagen bleiben davon unberührt.",
+                   inPro, false)}
+          </>
+        );
+      })()}
 
       {!isActive && (
         <div style={{ marginTop: 8, padding: "14px 18px", background: "var(--bg-input)", border: "1px solid var(--border-2)", borderRadius: 10, fontSize: 12, color: "var(--text-5)", lineHeight: "19px" }}>
           {isGrace
             ? "Die Lizenz ist im Grace-Modus — alle Features bleiben bis zum Ablauf aktiv. Bitte Verbindung zum Lizenzserver prüfen."
-            : <>Lizenzen kaufen und verwalten auf <strong style={{ color: "var(--text-3)" }}>monstersuite.de</strong>. Ohne Lizenz stehen nur die kostenlosen Basis-Features zur Verfügung.</>}
+            : <>Vorlagen kaufen und Pro freischalten auf <strong style={{ color: "var(--text-3)" }}>monstersuite.de</strong>. Gekaufte Vorlagen laufen in der kostenlosen Version ohne Einschränkung.</>}
         </div>
       )}
     </div>

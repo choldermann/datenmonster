@@ -14,6 +14,7 @@ from app.services.file_service import (
 )
 from app.core.config import UPLOAD_DIR
 from app.api.projects import require_editor, get_accessible_project_ids, can_read_project
+from app.core import kontingent
 import pandas as pd
 
 
@@ -172,6 +173,7 @@ def create_dataset_manual(
             pass
 
     # Dataset anlegen
+    kontingent.pruefe(db, "datasets")
     ds = Dataset(
         name=body.name,
         original_filename=None,
@@ -228,6 +230,7 @@ async def upload_file(
     content = await file.read()
 
     if file_type == "xml":
+        kontingent.pruefe(db, "datasets")
         ds = Dataset(name=name, original_filename=file.filename, file_type="xml",
                      xml_configured=0, row_count=0, columns=[], project_id=project_id)
         db.add(ds); db.commit(); db.refresh(ds)
@@ -237,6 +240,7 @@ async def upload_file(
         ds.file_path = raw_path; db.commit()
         return dataset_out(ds)
 
+    kontingent.pruefe(db, "datasets")
     ds = Dataset(name=name, original_filename=file.filename, file_type=file_type,
                  xml_configured=1, row_count=0, columns=[], project_id=project_id)
     db.add(ds); db.commit(); db.refresh(ds)
@@ -475,6 +479,7 @@ def create_plugin_dataset(
     except Exception:
         cols = []
 
+    kontingent.pruefe(db, "datasets")
     ds = Dataset(
         name=body.name,
         original_filename=None,
@@ -560,6 +565,7 @@ def create_dataset_from_mapping(
     df = pd.DataFrame(result["rows"], columns=result["columns"])
     cols = list(df.columns)
 
+    kontingent.pruefe(db, "datasets")
     ds = Dataset(
         name=data.target_name,
         original_filename=None,
@@ -1138,6 +1144,7 @@ async def import_access_table(
         from app.services.file_service import dataframe_to_storage, infer_column_types
         col_types = infer_column_types(df)
 
+        kontingent.pruefe(db, "datasets")
         ds = Dataset(
             name=name,
             original_filename=f"{table}.accdb",

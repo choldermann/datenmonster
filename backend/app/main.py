@@ -575,6 +575,30 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+
+# ─── Lizenz-Sperre fuer die bauenden Endpunkte ────────────────────────────────
+# Regeln in app/core/lizenz_gate.py — dort steht auf einer Seite, was gesperrt ist.
+# Der Lauf-Weg gekaufter Vorlagen bleibt frei; gesperrt wird nur das Selbst-Bauen.
+class LizenzGateMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        from app.core.lizenz_gate import benoetigtes_recht, aktive_rechte, meldung
+        recht = benoetigtes_recht(request.method, request.url.path)
+        if recht:
+            from app.core.database import SessionLocal
+            db = SessionLocal()
+            try:
+                erlaubt = recht in aktive_rechte(db)
+            finally:
+                db.close()
+            if not erlaubt:
+                from fastapi.responses import JSONResponse
+                return JSONResponse({"detail": meldung(recht), "feature": recht},
+                                    status_code=402)
+        return await call_next(request)
+
+
+app.add_middleware(LizenzGateMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,

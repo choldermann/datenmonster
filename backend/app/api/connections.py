@@ -13,6 +13,7 @@ from app.services.db_service import test_connection, get_tables, query_preview, 
 from app.services.file_service import dataframe_to_storage, infer_column_types, classify_db_type
 from app.api.projects import require_editor
 from app.core.security import encrypt_credential, decrypt_credential
+from app.core import kontingent
 
 router = APIRouter(prefix="/api/connections", tags=["connections"])
 
@@ -159,6 +160,7 @@ def list_connections(project_id: Optional[int] = None, db: Session = Depends(get
 @router.post("/")
 def create_connection(data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     _nur_admin(user)
+    kontingent.pruefe(db, "verbindungen")
     d = data.model_dump()
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
@@ -177,6 +179,7 @@ def create_connection(data: ConnectionCreate, db: Session = Depends(get_db), use
 def import_connection(data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kopiert eine bestehende Verbindungskonfiguration in ein neues Projekt."""
     require_editor(data.project_id, user, db)
+    kontingent.pruefe(db, "verbindungen")
     d = data.model_dump()
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
@@ -342,6 +345,7 @@ def import_query(conn_id: int, req: ImportRequest, db: Session = Depends(get_db)
     try:
         df, raw_types = query_full_with_types(conn, req.sql)
         file_type = f"db_{conn.db_type}"
+        kontingent.pruefe(db, "datasets")
         ds = Dataset(
             name=req.dataset_name,
             original_filename=f"{conn.name} – SQL",

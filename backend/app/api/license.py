@@ -342,6 +342,33 @@ def activate(req: ActivateRequest, db: Session = Depends(get_db), _: User = Depe
     return {"ok": True, "plan": result.get("plan"), "mode": "online",
             "features": result.get("features", []), "email": result.get("email")}
 
+@router.get("/kontingent")
+def kontingent_uebersicht(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Wie voll sind die Grenzen der kostenlosen Stufe? Fuer die Anzeige im
+    Lizenz-Bereich — der Anwender soll nicht erst beim Speichern erfahren, dass
+    er am Anschlag ist."""
+    from app.core import kontingent as k
+    beschriftung = {
+        "mappings":     "Eigene Mappings",
+        "datasets":     "Eigene Datasets",
+        "projekte":     "Projekte",
+        "verbindungen": "Mandanten (Verbindungen)",
+        "benutzer":     "Administratoren",
+    }
+    posten = []
+    for art, grenze in k.GRENZEN.items():
+        unbegrenzt = k.hat_recht(db, k.RECHT_FUER[art])
+        posten.append({
+            "art":        art,
+            "label":      beschriftung.get(art, art),
+            "benutzt":    k.eigenbau_anzahl(db, art),
+            "grenze":     None if unbegrenzt else grenze,
+            "unbegrenzt": unbegrenzt,
+        })
+    return {"posten": posten,
+            "hinweis": "Objekte aus installierten Vorlagen zählen nicht mit."}
+
+
 # ─── Kostenlosen Zugang selbst holen ──────────────────────────────────────────
 #
 # Der Kunde soll den Lizenzserver nicht besuchen muessen: er tippt hier seine
@@ -356,6 +383,9 @@ def _speichere_lizenz(db: Session, key: str, email: str, result: dict) -> None:
     _set(db, "license_key",   key)
     _set(db, "license_email", email)
     _save_cache(db, result)
+    # Sonst gilt die alte Rechte-Auskunft noch bis zu 30 Sekunden weiter
+    from app.core.lizenz_gate import cache_leeren
+    cache_leeren()
 
 @router.post("/free-request")
 def free_request(req: FreeRequestBody, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -466,6 +496,8 @@ def deactivate(db: Session = Depends(get_db), _: User = Depends(get_current_user
               "license_free_claim", "license_free_email"):
         _set(db, k, "")
     db.commit()
+    from app.core.lizenz_gate import cache_leeren
+    cache_leeren()
     return {"ok": True}
 
 # ─── Offline-Key-Generator (Entwicklung / Demo) ───────────────────────────────

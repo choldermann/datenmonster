@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.core.database import get_db
 from app.core.security import verify_password, hash_password, create_access_token, get_current_user
 from app.models.user import User
+from app.core import kontingent
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -43,6 +44,7 @@ def register(data: UserCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Passwort mindestens 6 Zeichen")
+    kontingent.pruefe(db, "benutzer")
     user = User(username=data.username, hashed_password=hash_password(data.password))
     db.add(user); db.commit(); db.refresh(user)
     token = create_access_token({"sub": user.username})
