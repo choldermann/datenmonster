@@ -4,6 +4,11 @@ services:
   backend:
     build: ./backend
     pull_policy: never
+    environment:
+      # Update-Weg auf dem Entwicklungsrechner abgeschaltet: der Updater zieht die
+      # GHCR-Images und ersetzt damit den lokalen Build – der gerade bearbeitete
+      # Stand ist danach nicht mehr aktiv. Leere URL = Knopf erscheint erst gar nicht.
+      - UPDATER_URL=
     volumes:
       - ./backend:/app
       - datenmonster-data:/app/uploads
@@ -22,3 +27,6 @@ services:
   updater:
     build: ./updater
     pull_policy: never
+    # Laeuft lokal nicht mit. Zum bewussten Testen des Updaters selbst:
+    #   docker compose --profile updater up -d updater
+    profiles: ["updater"]
