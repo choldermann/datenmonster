@@ -42,26 +42,44 @@ CACHE_TTL_HOURS = 24
 PRODUCT_SLUG    = "datenmonster"
 VERSION         = os.getenv("APP_VERSION", "dev")
 
+# Leitsatz des Lizenzmodells: gesperrt wird der EDITOR, nicht die MASCHINE. Eine gekaufte
+# Vorlage darf alles tun, was ihr Manifest vorsieht — schreiben, verschicken, nachts laufen.
+# Darum sind die frueheren Sammelrechte in Lauf/Bau-Paare geteilt: ein Recht auf "pipelines"
+# haette in der kostenlosen Stufe die Nachtlaeufe gekaufter Cockpits stillgelegt.
+# Die IDs muessen 1:1 zu DM_FEATURES in monstersuite backend/main.py passen.
 ALL_FEATURES = [
-    {"id": "basic_etl",      "name": "Basis-ETL",              "description": "Mappings, 1 Projekt, 3 Datasets, CSV-Export",          "category": "ETL",             "free": True},
-    {"id": "basic_export",   "name": "Basis-Export",           "description": "CSV und Excel Export",                                  "category": "ETL",             "free": True},
-    {"id": "unlimited",      "name": "Unbegrenzte Projekte",   "description": "Beliebig viele Projekte, Datasets und Mappings",        "category": "ETL",             "free": False},
-    {"id": "db_write",       "name": "DB-Schreiben",           "description": "Datenbank als Mapping-Ziel (Insert, Update, Upsert)",   "category": "ETL",             "free": False},
-    {"id": "pipelines",      "name": "Pipelines & Scheduler",  "description": "Visueller Pipeline-Editor mit automatischer Ausführung","category": "Automatisierung", "free": False},
-    {"id": "ftp_sftp",       "name": "FTP / SFTP",             "description": "Dateiübertragung via FTP und SFTP",                     "category": "Konnektoren",     "free": False},
-    {"id": "rest_sources",   "name": "REST API Quellen",       "description": "Externe REST APIs als Datenquellen einbinden",          "category": "Konnektoren",     "free": False},
-    {"id": "mail_connector", "name": "Mail-Anbindung",         "description": "E-Mails als Datenquelle und für Benachrichtigungen",    "category": "Konnektoren",     "free": False},
-    {"id": "ai_assistant",   "name": "KI-Assistent",           "description": "Ollama-basierter KI-Assistent für Mappings & Pipelines","category": "KI",              "free": False},
-    {"id": "ai_memory",      "name": "KI-Wissensdatenbank",    "description": "Projektbezogenes KI-Gedächtnis & Lösungsarchiv",        "category": "KI",              "free": False},
-    {"id": "schema_catalog", "name": "Schema-Katalog",         "description": "KI-gestützte Datenbankdokumentation & Beschreibung",    "category": "KI",              "free": False},
-    {"id": "form_builder",   "name": "Formular-Builder",       "description": "Visuelle Formulare mit Kunden-Portal",                  "category": "Portal",          "free": False},
-    {"id": "plugin_tier2",   "name": "Erweiterte Plugins",     "description": "Tier-2 Plugins für Branchen-Integrationen (JTL etc.)", "category": "Plugins",         "free": False},
-    {"id": "multi_user",     "name": "Mehrere Benutzer",       "description": "Team-Verwaltung mit Rollen und Rechten",                "category": "Verwaltung",      "free": False},
-    {"id": "monitoring",     "name": "Erweitertes Monitoring", "description": "Detaillierte Logs, Metriken und Fehleranalyse",         "category": "Verwaltung",      "free": False},
+    # ── Kostenlos: gekaufte Vorlagen benutzen ─────────────────────────────────────
+    {"id": "basic_etl",         "name": "Basis-ETL",               "description": "Eigene Mappings und Datasets im Rahmen des Kontingents",             "category": "ETL",             "free": True},
+    {"id": "basic_export",      "name": "Basis-Export",            "description": "CSV und Excel Export",                                                "category": "ETL",             "free": True},
+    {"id": "template_install",  "name": "Vorlagen installieren",   "description": "Gekaufte Vorlagen unbegrenzt einspielen und einrichten",              "category": "Vorlagen",        "free": True},
+    {"id": "form_run",          "name": "Auswertungen ausführen",  "description": "Formulare und Cockpits bedienen, Drilldown, PDF-Report",              "category": "Portal",          "free": True},
+    {"id": "pipeline_run",      "name": "Zeitpläne ausführen",     "description": "Nachtläufe und Zeitpläne aus installierten Vorlagen",                 "category": "Automatisierung", "free": True},
+    {"id": "mail_send",         "name": "Versand aus Vorlagen",    "description": "Zustellpläne und Warnungen per E-Mail verschicken",                   "category": "Konnektoren",     "free": True},
+    {"id": "db_write_template", "name": "Schreiben aus Vorlagen",  "description": "In die Ziel-Datenbank schreiben, soweit die Vorlage es vorsieht",     "category": "ETL",             "free": True},
+    {"id": "portal_users",      "name": "Portal-Benutzer",         "description": "Lesende Zugänge für Kollegen im Kunden-Portal",                       "category": "Portal",          "free": True},
+    {"id": "ai_use",            "name": "KI in Vorlagen",          "description": "KI-Analyse und Empfehlungen in Auswertungen (über Credits)",          "category": "KI",              "free": True},
+
+    # ── Pro: selbst bauen ─────────────────────────────────────────────────────────
+    {"id": "unlimited",         "name": "Unbegrenzter Eigenbau",   "description": "Beliebig viele Projekte, Datasets und Mappings",                      "category": "ETL",             "free": False},
+    {"id": "form_build",        "name": "Formular-Editor",         "description": "Eigene Formulare und Dashboards bauen",                               "category": "Portal",          "free": False},
+    {"id": "pipeline_build",    "name": "Pipeline-Editor",         "description": "Eigene Pipelines bauen und einplanen",                                "category": "Automatisierung", "free": False},
+    {"id": "query_build",       "name": "Abfragen & Bausteine",    "description": "Abfrage-Generator und Report-Baukasten",                              "category": "Automatisierung", "free": False},
+    {"id": "api_studio",        "name": "API Studio",              "description": "REST-Schnittstellen erkunden, testen und einbinden",                  "category": "Konnektoren",     "free": False},
+    {"id": "db_write",          "name": "Freies DB-Schreiben",     "description": "Datenbank als Ziel eigener Mappings (Insert, Update, Upsert)",        "category": "ETL",             "free": False},
+    {"id": "ftp_sftp",          "name": "FTP / SFTP",              "description": "Dateiübertragung via FTP und SFTP",                                   "category": "Konnektoren",     "free": False},
+    {"id": "rest_sources",      "name": "REST API Quellen",        "description": "Externe REST APIs als Datenquellen einbinden",                        "category": "Konnektoren",     "free": False},
+    {"id": "mail_connector",    "name": "Mail-Anbindung",          "description": "E-Mails als Datenquelle und eigene Versandwege",                      "category": "Konnektoren",     "free": False},
+    {"id": "ai_build",          "name": "KI-Werkbank",             "description": "Bauaufträge per Chat, KI-Assistent, Text-zu-SQL",                     "category": "KI",              "free": False},
+    {"id": "ai_memory",         "name": "KI-Wissensdatenbank",     "description": "Projektbezogenes KI-Gedächtnis & Lösungsarchiv",                      "category": "KI",              "free": False},
+    {"id": "schema_catalog",    "name": "Schema-Katalog",          "description": "KI-gestützte Datenbankdokumentation & Beschreibung",                  "category": "KI",              "free": False},
+    {"id": "multi_tenant",      "name": "Mehrere Mandanten",       "description": "Mehr als eine Ziel-Verbindung im Mandanten-Umschalter",               "category": "Verwaltung",      "free": False},
+    {"id": "multi_user",        "name": "Mehrere Administratoren", "description": "Team-Verwaltung mit Rollen und Rechten",                              "category": "Verwaltung",      "free": False},
+    {"id": "plugin_tier2",      "name": "Erweiterte Plugins",      "description": "Zusatz-Plugins für Branchen-Integrationen (JTL etc.)",                "category": "Plugins",         "free": False},
+    {"id": "monitoring",        "name": "Erweitertes Monitoring",  "description": "Detaillierte Logs, Metriken und Fehleranalyse",                       "category": "Verwaltung",      "free": False},
 ]
 FREE_FEATURES = {f["id"] for f in ALL_FEATURES if f["free"]}
 
-CATEGORY_ORDER = ["ETL", "Automatisierung", "Konnektoren", "KI", "Portal", "Plugins", "Verwaltung"]
+CATEGORY_ORDER = ["Vorlagen", "Portal", "ETL", "Automatisierung", "Konnektoren", "KI", "Verwaltung", "Plugins"]
 
 # ─── Machine-ID ───────────────────────────────────────────────────────────────
 def _machine_id() -> str:
@@ -188,6 +206,9 @@ def _resolve_license(db: Session) -> dict:
         "active_features": sorted(FREE_FEATURES),
         "features":        ALL_FEATURES,
         "category_order":  CATEGORY_ORDER,
+        # Kostenlos angefordert, aber noch nicht per E-Mail bestaetigt
+        "free_pending":    bool(_get(db, "license_free_claim")),
+        "free_email":      _get(db, "license_free_email") or None,
     }
 
     if not key:
@@ -314,12 +335,112 @@ def activate(req: ActivateRequest, db: Session = Depends(get_db), _: User = Depe
     if not result.get("valid"):
         return {"ok": False, "error": result.get("message") or result.get("error") or "Aktivierung fehlgeschlagen"}
 
-    _set(db, "license_key",   key)
-    _set(db, "license_email", email)
-    _save_cache(db, result)
+    _speichere_lizenz(db, key, email, result)
+    # Von Hand eingetragener Schluessel erledigt eine noch offene Frei-Anforderung
+    _set(db, "license_free_claim", "")
     db.commit()
     return {"ok": True, "plan": result.get("plan"), "mode": "online",
             "features": result.get("features", []), "email": result.get("email")}
+
+# ─── Kostenlosen Zugang selbst holen ──────────────────────────────────────────
+#
+# Der Kunde soll den Lizenzserver nicht besuchen muessen: er tippt hier seine
+# E-Mail ein, bestaetigt sie im Postfach, und diese Installation holt den
+# Schluessel danach selbst ab. Zwischen beiden Schritten koennen Tage liegen —
+# das Abholzeichen bleibt deshalb gespeichert, bis es eingeloest ist.
+
+class FreeRequestBody(BaseModel):
+    email: str
+
+def _speichere_lizenz(db: Session, key: str, email: str, result: dict) -> None:
+    _set(db, "license_key",   key)
+    _set(db, "license_email", email)
+    _save_cache(db, result)
+
+@router.post("/free-request")
+def free_request(req: FreeRequestBody, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Kostenlosen Zugang anfordern — verschickt die Bestaetigungsmail."""
+    email = req.email.strip()
+    if not email:
+        return {"ok": False, "error": "Bitte E-Mail-Adresse eingeben"}
+    if _get(db, "license_key"):
+        return {"ok": False, "error": "Es ist bereits ein Lizenzschlüssel hinterlegt."}
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            r = client.post(f"{LICENSE_SERVER}/api/v1/licenses/free-request",
+                            json={"email":      email,
+                                  "product":    PRODUCT_SLUG,
+                                  "machine_id": _machine_id(),
+                                  "hostname":   socket.gethostname(),
+                                  "version":    VERSION})
+        data = r.json()
+    except Exception as e:
+        logger.warning(f"free-request fehlgeschlagen: {e}")
+        return {"ok": False, "error": f"Lizenzserver ({LICENSE_SERVER}) nicht erreichbar"}
+
+    if not data.get("ok"):
+        return {"ok": False, "error": data.get("message") or "Anforderung wurde abgelehnt"}
+
+    _set(db, "license_free_claim", data.get("claim_token", ""))
+    _set(db, "license_free_email", email)
+    db.commit()
+    return {"ok": True, "pending": True, "email": email,
+            "message": data.get("message") or f"Bestätigungsmail an {email} verschickt."}
+
+@router.post("/free-claim")
+def free_claim(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Nachsehen, ob die E-Mail bestaetigt wurde — und den Schluessel dann eintragen."""
+    token = _get(db, "license_free_claim")
+    if not token:
+        return {"ok": False, "status": "none", "error": "Keine offene Anforderung"}
+
+    try:
+        with httpx.Client(timeout=15) as client:
+            r = client.post(f"{LICENSE_SERVER}/api/v1/licenses/free-claim",
+                            json={"claim_token": token})
+        data = r.json()
+    except Exception as e:
+        logger.warning(f"free-claim fehlgeschlagen: {e}")
+        return {"ok": False, "status": "error",
+                "error": f"Lizenzserver ({LICENSE_SERVER}) nicht erreichbar"}
+
+    status = data.get("status")
+    if status == "pending":
+        return {"ok": True, "status": "pending",
+                "message": "Noch nicht bestätigt — bitte den Link in der E-Mail anklicken."}
+
+    if status != "ready":
+        # Abgelaufen oder zurueckgezogen: Anforderung verwerfen, damit die
+        # Oberflaeche einen sauberen zweiten Versuch anbieten kann.
+        _set(db, "license_free_claim", "")
+        db.commit()
+        return {"ok": False, "status": "invalid",
+                "error": data.get("message") or "Die Anforderung ist nicht mehr gültig."}
+
+    key   = data.get("license_key", "")
+    email = data.get("email") or _get(db, "license_free_email")
+    result = _validate_online(key, email, endpoint="activate")
+    if result is None:
+        return {"ok": False, "status": "error",
+                "error": f"Lizenzserver ({LICENSE_SERVER}) nicht erreichbar"}
+    if not result.get("valid"):
+        return {"ok": False, "status": "error",
+                "error": result.get("message") or result.get("error") or "Aktivierung fehlgeschlagen"}
+
+    _speichere_lizenz(db, key, email, result)
+    _set(db, "license_free_claim", "")
+    db.commit()
+    return {"ok": True, "status": "active", "plan": result.get("plan"),
+            "email": email, "features": result.get("features", [])}
+
+@router.delete("/free-request")
+def free_request_abbrechen(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+    """Offene Anforderung verwerfen (z.B. falsche E-Mail eingetippt)."""
+    _set(db, "license_free_claim", "")
+    _set(db, "license_free_email", "")
+    db.commit()
+    return {"ok": True}
 
 @router.post("/refresh")
 def refresh(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -341,7 +462,8 @@ def refresh(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
 
 @router.delete("/")
 def deactivate(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
-    for k in ("license_key", "license_email", "license_cache_json", "license_cache_at"):
+    for k in ("license_key", "license_email", "license_cache_json", "license_cache_at",
+              "license_free_claim", "license_free_email"):
         _set(db, k, "")
     db.commit()
     return {"ok": True}

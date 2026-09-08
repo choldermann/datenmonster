@@ -41,6 +41,8 @@ interface LicenseData {
   active_features: string[];
   features: Feature[];
   category_order: string[];
+  free_pending?: boolean;
+  free_email?: string | null;
   _offline?: boolean;
 }
 
@@ -62,21 +64,30 @@ const MODE_BADGE: Record<string, { label: string; color: string }> = {
 };
 
 const FEATURE_ICONS: Record<string, typeof Database> = {
-  basic_etl:      Database,
-  basic_export:   Package,
-  unlimited:      Layers,
-  db_write:       Database,
-  pipelines:      Workflow,
-  ftp_sftp:       Server,
-  rest_sources:   Cable,
-  mail_connector: Mail,
-  ai_assistant:   Brain,
-  ai_memory:      BookOpen,
-  schema_catalog: GitBranch,
-  form_builder:   Monitor,
-  plugin_tier2:   Puzzle,
-  multi_user:     Users,
-  monitoring:     Monitor,
+  basic_etl:         Database,
+  basic_export:      Package,
+  template_install:  Package,
+  form_run:          Monitor,
+  pipeline_run:      Workflow,
+  mail_send:         Mail,
+  db_write_template: Database,
+  portal_users:      Users,
+  ai_use:            Brain,
+  unlimited:         Layers,
+  form_build:        Monitor,
+  pipeline_build:    Workflow,
+  query_build:       GitBranch,
+  api_studio:        Cable,
+  db_write:          Database,
+  ftp_sftp:          Server,
+  rest_sources:      Cable,
+  mail_connector:    Mail,
+  ai_build:          Brain,
+  ai_memory:         BookOpen,
+  schema_catalog:    GitBranch,
+  multi_tenant:      Layers,
+  multi_user:        Users,
+  monitoring:        Monitor,
 };
 
 function FeatureRow({ feature, active }: { feature: Feature; active: boolean }) {
@@ -132,6 +143,9 @@ export default function LicensePanel() {
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const notifTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showFree, setShowFree] = useState(false);
+  const [freeEmail, setFreeEmail] = useState("");
+  const [freeBusy, setFreeBusy] = useState(false);
 
   function toast(type: "ok" | "err", msg: string) {
     if (notifTimer.current) clearTimeout(notifTimer.current);
@@ -148,6 +162,12 @@ export default function LicensePanel() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (!license?.free_pending) return;
+    const t = setInterval(() => freeClaim(true), 15000);
+    return () => clearInterval(t);
+  }, [license?.free_pending, freeClaim]);
+
   async function activate() {
     if (!key.trim() || !email.trim()) { toast("err", "Bitte Key und E-Mail eingeben"); return; }
     setSaving(true);
@@ -161,6 +181,34 @@ export default function LicensePanel() {
       toast("err", r.error || "Aktivierung fehlgeschlagen");
     }
     setSaving(false);
+  }
+
+  async function freeRequest() {
+    if (!freeEmail.trim()) { toast("err", "Bitte E-Mail-Adresse eingeben"); return; }
+    setFreeBusy(true);
+    const r = await apiFetch("POST", BASE + "/free-request", { email: freeEmail.trim() });
+    if (r.ok) { toast("ok", r.message || "Bestätigungsmail verschickt"); setShowFree(false); load(); }
+    else      { toast("err", r.error || "Anforderung fehlgeschlagen"); }
+    setFreeBusy(false);
+  }
+
+  // still: laeuft auch im Hintergrund, damit der Zugang von selbst erscheint,
+  // sobald der Kunde im Postfach geklickt hat.
+  const freeClaim = useCallback(async (still = false) => {
+    if (!still) setFreeBusy(true);
+    const r = await apiFetch("POST", BASE + "/free-claim");
+    if (r.ok && r.status === "active") { toast("ok", "Kostenloser Zugang ist aktiv"); load(); }
+    else if (!still) {
+      if (r.status === "pending") toast("err", r.message || "Noch nicht bestätigt — bitte den Link in der E-Mail anklicken");
+      else                        { toast("err", r.error || "Abholen fehlgeschlagen"); load(); }
+    }
+    if (!still) setFreeBusy(false);
+  }, [load]);
+
+  async function freeCancel() {
+    await apiFetch("DELETE", BASE + "/free-request");
+    toast("ok", "Anforderung verworfen");
+    load();
   }
 
   async function refresh() {
@@ -316,17 +364,114 @@ export default function LicensePanel() {
               </button>
             </>
           ) : (
-            <button onClick={() => setShowForm(true)} style={{
-              padding: "9px 18px", background: "var(--accent)",
-              color: "var(--accent-fg)", border: "none", borderRadius: 8,
-              fontSize: 13, fontWeight: 700, cursor: "pointer",
-              display: "flex", alignItems: "center", gap: 6,
-            }}>
-              <Key size={14} /> Lizenz aktivieren
-            </button>
+            <>
+              {!license.free_pending && (
+                <button onClick={() => { setShowFree(true); setShowForm(false); }} style={{
+                  padding: "9px 18px", background: "var(--accent)",
+                  color: "var(--accent-fg)", border: "none", borderRadius: 8,
+                  fontSize: 13, fontWeight: 700, cursor: "pointer",
+                  display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap",
+                }}>
+                  <LockOpen size={14} /> Kostenlos aktivieren
+                </button>
+              )}
+              <button onClick={() => { setShowForm(true); setShowFree(false); }} style={{
+                padding: "7px 14px", background: "transparent",
+                color: "var(--text-3)", border: "1px solid var(--border-3)", borderRadius: 8,
+                fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
+                display: "flex", alignItems: "center", gap: 6,
+              }}>
+                <Key size={12} /> Schlüssel eingeben
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {/* Kostenlosen Zugang anfordern */}
+      {showFree && !license.free_pending && (
+        <div style={{
+          background: "var(--bg-card)", border: "1px solid var(--accent-bd)",
+          borderRadius: 12, padding: "20px 22px", marginBottom: 22,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)" }}>Kostenlos aktivieren</div>
+            <button onClick={() => setShowFree(false)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-5)", padding: 4 }}>
+              <X size={14} />
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-5)", marginBottom: 16, lineHeight: "19px" }}>
+            Der kostenlose Zugang lässt gekaufte Vorlagen unbegrenzt laufen — inklusive Zeitpläne,
+            Versand und Portal-Zugängen. Selbst bauen kannst du im kleinen Rahmen.
+            Wir schicken dir eine Bestätigungsmail; danach wird der Zugang hier automatisch eingetragen.
+          </div>
+          <div style={{ marginBottom: 16, maxWidth: 340 }}>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "var(--text-5)", textTransform: "uppercase", letterSpacing: ".8px", marginBottom: 5 }}>E-Mail</label>
+            <input
+              style={{ width: "100%", padding: "9px 12px", background: "var(--bg-input)", border: "1px solid var(--border-3)", borderRadius: 8, color: "var(--text-3)", fontSize: 13, outline: "none", boxSizing: "border-box", fontFamily: "inherit" }}
+              value={freeEmail} onChange={e => setFreeEmail(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") freeRequest(); }}
+              placeholder="deine@firma.de" autoFocus
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={freeRequest} disabled={freeBusy} style={{
+              padding: "9px 18px", background: "var(--accent)", color: "var(--accent-fg)",
+              border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700,
+              cursor: freeBusy ? "not-allowed" : "pointer",
+              display: "flex", alignItems: "center", gap: 6, opacity: freeBusy ? 0.6 : 1,
+            }}>
+              <Mail size={14} /> {freeBusy ? "Sende…" : "Bestätigungsmail anfordern"}
+            </button>
+            <button onClick={() => setShowFree(false)} style={{
+              padding: "9px 18px", background: "transparent", color: "var(--text-3)",
+              border: "1px solid var(--border-3)", borderRadius: 8, fontSize: 13, cursor: "pointer",
+            }}>
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Warten auf die Bestätigung */}
+      {license.free_pending && (
+        <div style={{
+          background: "var(--bg-card)", border: "1px solid var(--accent-bd)",
+          borderRadius: 12, padding: "18px 22px", marginBottom: 22,
+          display: "flex", gap: 14, alignItems: "flex-start",
+        }}>
+          <Mail size={18} color="var(--accent)" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "var(--accent)", marginBottom: 4 }}>
+              Bestätigungsmail unterwegs
+            </div>
+            <div style={{ fontSize: 12, color: "var(--text-5)", lineHeight: "19px", marginBottom: 14 }}>
+              Wir haben eine E-Mail an{" "}
+              <strong style={{ color: "var(--text-3)" }}>{license.free_email || "deine Adresse"}</strong>{" "}
+              geschickt. Klicke den Link darin — der Zugang erscheint dann hier von selbst.
+              Falls nichts ankommt: Spam-Ordner prüfen, oder die Anforderung verwerfen und
+              mit einer anderen Adresse erneut versuchen.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => freeClaim(false)} disabled={freeBusy} style={{
+                padding: "8px 16px", background: "var(--accent)", color: "var(--accent-fg)",
+                border: "none", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                cursor: freeBusy ? "not-allowed" : "pointer",
+                display: "flex", alignItems: "center", gap: 6, opacity: freeBusy ? 0.6 : 1,
+              }}>
+                <RefreshCw size={12} style={{ animation: freeBusy ? "spin 1s linear infinite" : undefined }} />
+                {freeBusy ? "Prüfe…" : "Ich habe bestätigt"}
+              </button>
+              <button onClick={freeCancel} style={{
+                padding: "8px 16px", background: "transparent", color: "var(--text-5)",
+                border: "1px solid var(--border-3)", borderRadius: 8, fontSize: 12, cursor: "pointer",
+              }}>
+                Anforderung verwerfen
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Aktivierungsformular */}
       {showForm && (
