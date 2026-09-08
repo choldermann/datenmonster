@@ -59,6 +59,9 @@ THRESHOLD_DEFAULTS: list[dict] = [
      "default": 180, "unit": "Tagen Reichweite", "gruppe": "Lager & Artikel"},
     {"key": "marge_min_prozent", "label": "Margenwarnung unter",
      "default": 15, "unit": "%", "gruppe": "Lager & Artikel"},
+    {"key": "marge_verfall_punkte", "label": "Margenverfall meldet ab",
+     "default": 5, "unit": "Punkten", "gruppe": "Lager & Artikel",
+     "hinweis": "Rückgang der Marge gegenüber dem Vorjahreszeitraum in Prozentpunkten."},
 
     # Retouren & Versand
     {"key": "retoure_quote_prozent", "label": "Retourenquote meldet ab",
