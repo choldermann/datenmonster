@@ -31,15 +31,21 @@ def _nur_admin(user: User) -> None:
 def _verbundene_ids(project_id: int, db: Session) -> set:
     """Alle Verbindungen, die diesem Projekt zur Verfügung stehen.
 
-    Das sind die ausdrücklich zugeordneten plus die, die dem Projekt noch nach
-    altem Muster gehören (db_connections.project_id) – letzteres, damit eine
-    Installation auch dann vollständig bleibt, wenn die Zuordnung fehlt.
+    Gibt es für das Projekt Zuordnungen, entscheiden AUSSCHLIESSLICH diese. Die
+    alte Zugehörigkeit (db_connections.project_id) zählt nur, solange das Projekt
+    noch gar keine Zuordnung hat – als Netz für Installationen, bei denen die
+    einmalige Übernahme nicht gelaufen ist.
+
+    Vorher wurden beide Mengen immer vereinigt. Dadurch liess sich die im Projekt
+    angelegte Verbindung im Zuordnen-Dialog zwar abwählen, sie kam über das
+    Eigentum aber sofort zurück – das Häkchen war wirkungslos.
     """
     ids = {r.connection_id for r in db.query(ProjektVerbindung)
            .filter(ProjektVerbindung.project_id == project_id).all()}
-    ids |= {c.id for c in db.query(DbConnection)
+    if ids:
+        return ids
+    return {c.id for c in db.query(DbConnection)
             .filter(DbConnection.project_id == project_id).all()}
-    return ids
 
 
 class ConnectionCreate(BaseModel):
@@ -957,8 +963,14 @@ def zuordnung_lesen(project_id: int, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     erlaubt = _verbundene_ids(project_id, db)
     alle = db.query(DbConnection).order_by(DbConnection.id).all()
+    # is_mandant kommt mit, damit im Dialog steht, was die Zuordnung nebenbei
+    # bewirkt: eine als Mandant gekennzeichnete Verbindung landet mit dem Haken
+    # auch im Umschalter dieses Projekts.
     return [{**conn_out(c), "zugeordnet": c.id in erlaubt,
-             "gehoert": c.project_id == project_id} for c in alle]
+             "gehoert": c.project_id == project_id,
+             "is_mandant": bool(getattr(c, "is_mandant", False)),
+             "mandant_label": getattr(c, "mandant_label", None) or ""}
+            for c in alle]
 
 
 @router.put("/zuordnung")

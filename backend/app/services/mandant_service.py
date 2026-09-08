@@ -47,11 +47,16 @@ def mandanten(project_id: Optional[int], db) -> List[dict]:
     if project_id is not None:
         # Über die Zuordnung, nicht über das Eigentum: eine Verbindung kann in
         # mehreren Projekten dienen, ohne dort noch einmal zu existieren.
+        # Dieselbe Regel wie in connections._verbundene_ids: liegen Zuordnungen
+        # vor, zaehlen nur sie. Sonst waere eine abgewaehlte Verbindung hier
+        # weiterhin als Mandant waehlbar – abgewaehlt im einen Bild, verfuegbar
+        # im anderen.
         from app.models.dataset import ProjektVerbindung
         ids = {r.connection_id for r in db.query(ProjektVerbindung)
                .filter(ProjektVerbindung.project_id == project_id).all()}
-        ids |= {c.id for c in db.query(DbConnection)
-                .filter(DbConnection.project_id == project_id).all()}
+        if not ids:
+            ids = {c.id for c in db.query(DbConnection)
+                   .filter(DbConnection.project_id == project_id).all()}
         if not ids:
             return []
         q = q.filter(DbConnection.id.in_(ids))

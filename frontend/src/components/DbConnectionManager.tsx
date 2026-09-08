@@ -151,6 +151,11 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
       <div style={{ fontSize: 11, color: S.textDim, marginBottom: 12, lineHeight: 1.5 }}>
         Verbindungen werden zentral gepflegt und den Projekten nur zugeordnet –
         dieselbe Datenbank braucht also nicht mehrfach angelegt zu werden.
+        <br />
+        Diese Auswahl bestimmt zugleich die <b style={{ color: S.textMain }}>Mandanten
+        dieses Projekts</b>: Was als Mandant gekennzeichnet und hier angehakt ist,
+        erscheint im Umschalter der Formulare. Ein Projekt je Unternehmen bekommt also
+        genau dessen Verbindung, ein übergreifendes Cockpit alle.
       </div>
       {fehler && (
         <div style={{ fontSize: 11, color: "#f87171", marginBottom: 10 }}>{fehler}</div>
@@ -165,12 +170,29 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
             {conn.name}
             <span style={{ color: S.textDim, fontSize: 10 }}> · {conn.host}/{conn.database}</span>
           </span>
+          {conn.is_mandant && (
+            <span title={`Erscheint mit dem Haken als Mandant „${conn.mandant_label || conn.name}" im Umschalter dieses Projekts`}
+              style={{ fontSize: 9, fontWeight: 700, color: "#6ee7b7", padding: "1px 6px",
+                borderRadius: 3, backgroundColor: "rgba(110,231,183,0.12)",
+                border: "1px solid rgba(110,231,183,0.35)", whiteSpace: "nowrap" }}>
+              Mandant{conn.mandant_label ? ` · ${conn.mandant_label}` : ""}
+            </span>
+          )}
           {conn.gehoert && (
             <span style={{ fontSize: 9, color: S.textDim }}>hier angelegt</span>
           )}
           <span style={{ fontSize: 10, color: typeColor[conn.db_type], backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 3 }}>{typeLabel[conn.db_type]}</span>
         </label>
       ))}
+      {!laden && alle.length > 0 && !alle.some(c => c.is_mandant) && (
+        // Der seltene Fall: zugeordnet ist schnell, aber ohne Kennzeichen bleibt
+        // der Umschalter leer – dann muss man wissen, wo das Kennzeichen sitzt.
+        <div style={{ fontSize: 10.5, color: S.textDim, marginTop: 8, lineHeight: 1.5 }}>
+          Keine dieser Verbindungen ist als Mandant gekennzeichnet – im Umschalter der
+          Formulare erscheint daher keine. Das Kennzeichen setzt ein Administrator unter
+          Systemeinstellungen → Mandanten.
+        </div>
+      )}
       <button onClick={sichern} disabled={speichern}
         style={{ marginTop: 10, backgroundColor: S.accent, color: "#0b0b0c", border: "none",
           borderRadius: 6, padding: "7px 16px", fontSize: 12, fontWeight: 600,
@@ -518,6 +540,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
   const [showForm, setShowForm] = useState(false);
   const [editingConn, setEditingConn] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [zuordenbar, setZuordenbar] = useState(0);  // wie viele gäbe es zuzuordnen
   const [testResults, setTestResults] = useState({});
 
   const [analyzingConn, setAnalyzingConn]   = useState(null);
@@ -565,6 +588,17 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
     const { data } = await api.get(`/api/connections/${params}`);
     setConnections(data);
     setLoading(false);
+    // Ein frisches Projekt hat noch keine Zuordnung und war deshalb einfach leer –
+    // ohne jeden Hinweis, dass zentral längst Verbindungen bereitstehen. Nur dann
+    // nachfragen, wie viele es überhaupt gibt.
+    if (projectId != null && (data || []).length === 0) {
+      try {
+        const { data: alle } = await api.get(`/api/connections/zuordnung/${projectId}`);
+        setZuordenbar((alle || []).length);
+      } catch { setZuordenbar(0); }
+    } else {
+      setZuordenbar(0);
+    }
   }, [projectId]);
 
   useEffect(() => { load(); }, [load]);
@@ -634,6 +668,40 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
           <Loader2 className="animate-spin mr-2" size={16} />
         </div>
       ) : (
+        <>
+        {/* Leeres Projekt: sagen, dass es zentral etwas gibt – und den Weg dahin
+            gleich mitliefern. Verbindungen gelten installationsweit, hängen aber
+            erst nach der Zuordnung an einem Projekt (davon lebt auch der
+            Mandantenumschalter in den Formularen). */}
+        {connections.length === 0 && !showImport && !showForm && zuordenbar > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 14,
+            padding: "12px 14px", borderRadius: 7, backgroundColor: S.bgCard,
+            border: `1px solid ${S.border}` }}>
+            <Database size={18} style={{ color: S.accent, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>
+                Diesem Projekt ist noch keine Verbindung zugeordnet
+              </p>
+              <p style={{ fontSize: 11, color: S.textDim, margin: "3px 0 0", lineHeight: 1.5 }}>
+                {zuordenbar === 1 ? "Eine Verbindung steht" : `${zuordenbar} Verbindungen stehen`}
+                {" "}bereits zur Verfügung. Verbindungen werden zentral gepflegt und den
+                Projekten nur zugeordnet – erst danach lassen sich hier Datasets bauen,
+                und erst dann erscheinen sie im Mandantenumschalter der Formulare.
+              </p>
+            </div>
+            {canEdit ? (
+              <button onClick={() => setShowImport(true)}
+                style={{ flexShrink: 0, backgroundColor: S.accent, color: "#0b0b0c", border: "none",
+                  borderRadius: 6, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Jetzt zuordnen
+              </button>
+            ) : (
+              <span style={{ flexShrink: 0, fontSize: 11, color: S.textDim }}>
+                Zuordnen kann ein Administrator
+              </span>
+            )}
+          </div>
+        )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {canEdit && <NewConnTile label="Neue Verbindung" sub="SQL Server, MySQL, PostgreSQL" icon={Plus}
             onClick={() => { setShowForm(true); setEditingConn(null); }} />}
@@ -723,6 +791,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
             </div>
           ))}
         </div>
+        </>
       )}
 
       {/* Access Import – als aufklappbarer Abschnitt unter den Verbindungen */}
