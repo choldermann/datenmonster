@@ -162,11 +162,6 @@ export default function LicensePanel() {
 
   useEffect(() => { load(); }, [load]);
 
-  useEffect(() => {
-    if (!license?.free_pending) return;
-    const t = setInterval(() => freeClaim(true), 15000);
-    return () => clearInterval(t);
-  }, [license?.free_pending, freeClaim]);
 
   async function activate() {
     if (!key.trim() || !email.trim()) { toast("err", "Bitte Key und E-Mail eingeben"); return; }
@@ -210,6 +205,14 @@ export default function LicensePanel() {
     toast("ok", "Anforderung verworfen");
     load();
   }
+
+  // Muss NACH freeClaim stehen: die Abhaengigkeitsliste wird beim Rendern
+  // ausgewertet, davor ist die Funktion noch nicht initialisiert.
+  useEffect(() => {
+    if (!license?.free_pending) return;
+    const t = setInterval(() => freeClaim(true), 15000);
+    return () => clearInterval(t);
+  }, [license?.free_pending, freeClaim]);
 
   async function refresh() {
     setRefreshing(true);
