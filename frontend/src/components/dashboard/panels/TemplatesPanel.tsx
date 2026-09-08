@@ -38,6 +38,11 @@ function TemplateCard({ template, projectId, onInstalled }) {
 
   const hasConfig = template.config_required?.length > 0;
   const needsConnection = template.config_required?.some(c => c.type === "connection");
+  // Der Katalog gilt für die ganze Installation, ausgerollt wird aber je Projekt.
+  // Deshalb getrennt: hier installiert (grün) oder nur woanders (grau).
+  const stellen = template.installiert_in || [];
+  const inDiesemProjekt = installed || stellen.some(p => p.project_id === projectId);
+  const anderswoInstalliert = stellen.filter(p => p.project_id !== projectId);
 
   useEffect(() => {
     if (expanded && needsConnection && dbConnections.length === 0) {
@@ -101,6 +106,25 @@ function TemplateCard({ template, projectId, onInstalled }) {
                 style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3,
                   backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}>
                 {HERKUNFT_LABEL[template.herkunft]}
+              </span>
+            )}
+            {/* Woran man ohne Aufklappen erkennt, ob das Template ausgerollt ist. */}
+            {inDiesemProjekt ? (
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9,
+                padding: "1px 6px", borderRadius: 3, backgroundColor: "rgba(110,231,183,0.12)",
+                border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7", fontWeight: 700 }}>
+                <Check size={9} /> Installiert
+              </span>
+            ) : anderswoInstalliert.length > 0 ? (
+              <span title={anderswoInstalliert.map(p => p.name).join(", ")}
+                style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3,
+                  backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}>
+                In {anderswoInstalliert.map(p => `„${p.name}"`).join(", ")} installiert
+              </span>
+            ) : (
+              <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3,
+                backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}>
+                Nicht installiert
               </span>
             )}
           </div>
@@ -230,7 +254,8 @@ function TemplateCard({ template, projectId, onInstalled }) {
           <button onClick={handleInstall} disabled={installing || installed}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, backgroundColor: installed ? "rgba(110,231,183,0.15)" : ACCENT_HEX, border: "none", color: installed ? "#6ee7b7" : "#111", cursor: installing || installed ? "default" : "pointer", fontSize: 12, fontWeight: 700 }}>
             {installing ? <Loader2 size={13} className="animate-spin" /> : installed ? <Check size={13} /> : <Play size={13} />}
-            {installing ? "Wird installiert..." : installed ? "Installiert!" : "Template installieren"}
+            {installing ? "Wird installiert..." : installed ? "Installiert!"
+              : inDiesemProjekt ? "Erneut installieren" : "Template installieren"}
           </button>
           </div>
         </div>
@@ -290,7 +315,7 @@ function StoreSection({ onInstalled }) {
   // überhaupt gibt – samt Vorschau, wofür man sonst in den Shop wechseln müsste.
   // Offenes zuerst, damit Handlungsbedarf oben steht.
   const alle = [...(store?.templates || [])].sort((a, b) => {
-    const rang = t => (t.update_available ? 0 : !t.installed ? 1 : 2);
+    const rang = t => (t.update_available ? 0 : !t.im_katalog ? 1 : 2);
     return rang(a) - rang(b) || (a.name || "").localeCompare(b.name || "");
   });
   const noLicense = store?.error === "no_license";
@@ -356,9 +381,16 @@ function StoreSection({ onInstalled }) {
               </div>
               <p style={{ fontSize: 11, color: S.textDim, margin: "3px 0 0" }}>{t.description}</p>
             </div>
-            {t.installed && !t.update_available ? (
-              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6ee7b7", flexShrink: 0 }}>
-                <Check size={12} /> Installiert
+            {t.im_katalog && !t.update_available ? (
+              // Der Store holt nur in den Katalog. Ausgerollt wird je Projekt –
+              // beides „Installiert" zu nennen war die eigentliche Verwirrung.
+              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+                color: t.installiert_in?.length ? "#6ee7b7" : S.textDim, flexShrink: 0 }}
+                title={t.installiert_in?.length
+                  ? `Installiert in: ${t.installiert_in.map(p => p.name).join(", ")}`
+                  : "Liegt im Katalog – unten im Reiter in ein Projekt installieren"}>
+                <Check size={12} />
+                {t.installiert_in?.length ? "Installiert" : "Im Katalog"}
               </span>
             ) : t.entitled ? (
               <button onClick={() => fetchTemplate(t)} disabled={busy === t.template_id}

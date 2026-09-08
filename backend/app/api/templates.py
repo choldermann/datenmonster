@@ -15,9 +15,31 @@ from app.models.user import User
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 
-def template_out(t):
+def _installiert_in(t, projekt_namen: dict) -> list:
+    """In welchen Projekten steckt dieses Template – je Projekt der letzte Lauf.
+
+    Aus `t.installations` (wird bei jedem /install fortgeschrieben). Projekte, die
+    es nicht mehr gibt, fallen raus: sonst meldet der Katalog eine Installation,
+    die niemand mehr finden kann.
+    """
+    je_projekt = {}
+    for rec in (t.installations or []):
+        pid = rec.get("project_id")
+        if pid not in projekt_namen:
+            continue
+        vorher = je_projekt.get(pid)
+        if vorher is None or str(rec.get("at") or "") > str(vorher.get("at") or ""):
+            je_projekt[pid] = rec
+    return [{"project_id": pid, "name": projekt_namen[pid], "at": rec.get("at") or ""}
+            for pid, rec in sorted(je_projekt.items())]
+
+
+def template_out(t, projekt_namen: Optional[dict] = None):
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
     return {
+        # Wo ist es wirklich installiert? Ohne diese Angabe sah man einem Katalog-
+        # Eintrag nicht an, ob er schon in einem Projekt ausgerollt ist.
+        "installiert_in": _installiert_in(t, projekt_namen or {}),
         "id": t.id,
         "template_id": t.template_id,
         "name": t.name,
@@ -45,20 +67,24 @@ def template_out(t):
 @router.get("/")
 def list_templates(category: Optional[str] = None, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from app.models.template import Template
+    from app.models.project import Project
     q = db.query(Template)
     if category:
         q = q.filter(Template.category == category)
-    return [template_out(t) for t in q.order_by(Template.name).all()]
+    projekt_namen = {p.id: p.name for p in db.query(Project).all()}
+    return [template_out(t, projekt_namen) for t in q.order_by(Template.name).all()]
 
 
 @router.get("/{template_id}/detail")
 def get_template(template_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from app.models.template import Template
+    from app.models.project import Project
     t = db.query(Template).filter(Template.template_id == template_id).first()
     if not t:
         raise HTTPException(404, "Template nicht gefunden")
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
-    return {**template_out(t), "content": content}
+    projekt_namen = {p.id: p.name for p in db.query(Project).all()}
+    return {**template_out(t, projekt_namen), "content": content}
 
 
 def _nur_admin(user: User):
@@ -1109,6 +1135,26 @@ async def upload_template(file: UploadFile = File(...), db: Session = Depends(ge
 
 # ── Template-Store (lizenzgeprüfte Auslieferung über monstersuite) ────────────
 
+def _version_teile(v) -> tuple:
+    """»2.15« → (2, 15). Nicht-Zahlen fliegen raus, damit »v1.0b« nicht stolpert."""
+    return tuple(int(x) for x in re.findall(r"\d+", str(v or "")))
+
+
+def _ist_neuer(kandidat, bestand) -> bool:
+    """Ist `kandidat` eine hoehere Version als `bestand`?
+
+    Frueher wurde nur auf Ungleichheit geprueft. Damit galt jede Abweichung als
+    Update – auch der umgekehrte Fall: lokal 2.15, im Store 2.3. Als Text sind die
+    verschieden, der Reihe nach verglichen ist 2.15 aber die neuere. Der Store bot
+    deshalb einen Rueckschritt als »Update« an, und das Template verlor im Katalog
+    seine »Installiert«-Markierung.
+    """
+    a, b = _version_teile(kandidat), _version_teile(bestand)
+    if not a or not b:
+        return str(kandidat or "") != str(bestand or "")
+    return a > b
+
+
 def _store_catalog(db: Session) -> dict:
     """
     Holt den Template-Katalog von monstersuite (Lizenz als Credential) und markiert
@@ -1117,6 +1163,7 @@ def _store_catalog(db: Session) -> dict:
     """
     import httpx
     from app.models.template import Template
+    from app.models.project import Project
     from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER
 
     key, _ = get_license_credentials(db)
@@ -1133,11 +1180,16 @@ def _store_catalog(db: Session) -> dict:
 
     templates = data.get("templates") or []
     local = {t.template_id: t for t in db.query(Template).all()}
+    projekt_namen = {p.id: p.name for p in db.query(Project).all()}
     for t in templates:
         existing = local.get(t.get("template_id"))
-        t["installed"] = existing is not None
+        # "im_katalog" statt "installed": geholt heisst noch nicht ausgerollt.
+        # Ob das Template in einem Projekt steckt, sagt erst "installiert_in".
+        t["im_katalog"] = existing is not None
+        t["installed"] = existing is not None  # Altname, bis Clients nachziehen
+        t["installiert_in"] = _installiert_in(existing, projekt_namen) if existing else []
         t["local_version"] = existing.version if existing else None
-        t["update_available"] = bool(existing and str(existing.version or "") != str(t.get("version") or ""))
+        t["update_available"] = bool(existing and _ist_neuer(t.get("version"), existing.version))
     return {
         "licensed": True,
         "templates": templates,
