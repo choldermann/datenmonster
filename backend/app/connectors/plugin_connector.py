@@ -1,5 +1,5 @@
 """
-PluginConnector – Brücke zwischen einem Tier-1 SourcePlugin und dem BaseConnector-Interface.
+PluginConnector – Brücke zwischen einem eingebautes SourcePlugin und dem BaseConnector-Interface.
 
 Die ConnectorFactory instanziiert diesen Connector wenn file_type in der
 CapabilityRegistry als Plugin-Quelle registriert ist.

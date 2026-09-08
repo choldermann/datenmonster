@@ -1,6 +1,6 @@
-name: Build Tier-2 Plugin Images
+name: Build eigener Dienst Plugin Images
 
-# Baut Tier-2-Plugin-Images und paketiert sie als `docker save`-Tarball.
+# Baut Dienst-Plugin-Images und paketiert sie als `docker save`-Tarball.
 # Auslieferung an Kundeninstanzen erfolgt lizenzgeprüft über monstersuite
 # (Variante 2) — der Upload des Tarballs in den monstersuite-Storage ist ein
 # separater, monstersuite-seitiger Schritt (siehe docs/monstersuite-plugin-api.md).
@@ -9,7 +9,7 @@ on:
   push:
     branches: [main]
     paths:
-      - 'tier2-plugins/**'
+      - 'dienst-plugins/**'
     tags: ['plugin-v*']
   workflow_dispatch:
 
@@ -20,7 +20,7 @@ jobs:
       matrix:
         include:
           - id: estatistik-core
-            context: ./tier2-plugins/estatistik-core
+            context: ./dienst-plugins/estatistik-core
 
     steps:
       - uses: actions/checkout@v4

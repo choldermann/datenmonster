@@ -2,13 +2,13 @@
 
 Dieser Vertrag beschreibt die **serverseitigen** Endpunkte, die auf
 `monstersuite.de` implementiert werden müssen, damit Datenmonster-Instanzen
-kostenpflichtige Tier-2-Plugins (z.B. `estatistik-core`) **lizenzgeprüft**
+kostenpflichtige Dienst-Plugins (z.B. `estatistik-core`) **lizenzgeprüft**
 herunterladen können ("Variante 2": `docker save`-Tarball → `docker load`).
 
 Die **Client-Seite** (Datenmonster Backend + Plugin-Manager + Plugins-Panel) ist
 bereits umgesetzt:
 - `GET  /api/plugins/store` (Backend) ruft `POST /api/v1/plugins/catalog` auf.
-- `POST /api/plugins/tier2/{id}/install` (Backend) ruft `POST /api/v1/plugins/download`
+- `POST /api/plugins/dienst/{id}/install` (Backend) ruft `POST /api/v1/plugins/download`
   auf, streamt das Tarball an den Plugin-Manager (`POST /plugins/{id}/load-image` →
   `docker load`) und registriert das Plugin.
 
@@ -19,7 +19,7 @@ Auth-Modell: **Lizenz-als-Credential**, kein Customer-Login (identisch zu
 
 ## 1. `POST /api/v1/plugins/catalog`
 
-Liefert die für die Lizenz freigeschalteten, installierbaren Tier-2-Plugins mit
+Liefert die für die Lizenz freigeschalteten, installierbaren Dienst-Plugins mit
 vollständigem Manifest.
 
 **Request** (JSON):
@@ -37,7 +37,7 @@ vollständigem Manifest.
 **Prüfung** (analog `_resolve` in `monstersuite/backend/routers/api_v1.py`):
 - Lizenz gültig, nicht suspended/expired.
 - `product`-Slug der Lizenz == `datenmonster`.
-- Feature `plugin_tier2` in den Plan-Features (`_features(lic, db)`), ODER ein
+- Feature `plugin_dienst` in den Plan-Features (`_features(lic, db)`), ODER ein
   per-Plugin-Entitlement (siehe unten).
 
 **Response 200** (JSON) — Liste ODER `{ "plugins": [...] }`; der Client normalisiert beides:
@@ -60,7 +60,7 @@ vollständigem Manifest.
   ]
 }
 ```
-Das Manifest muss **1:1** den Feldern von `Tier2RegisterBody`
+Das Manifest muss **1:1** den Feldern von `DienstPluginBody`
 (`backend/app/api/plugins.py`) entsprechen — der Client registriert damit das Plugin.
 
 **Wichtig:** `docker_image` **muss** dem Image-Tag im ausgelieferten Tarball
@@ -109,7 +109,7 @@ Release-Artefakt bereitgestellt. monstersuite muss dieses Tarball in seinen Stor
 
 ## Entitlement-Optionen
 
-- **Grob:** Feature `plugin_tier2` schaltet alle Tier-2-Plugins frei (einfachster Start).
+- **Grob:** Feature `plugin_dienst` schaltet alle Dienst-Plugins frei (einfachster Start).
 - **Fein:** per-Plugin-Feature (z.B. `plugin_estatistik`) in `ProductFeature`/`ProductPlan`,
   das der Katalog/Download individuell prüft. Empfohlen, sobald es mehrere Paid-Plugins gibt.
 

@@ -86,7 +86,7 @@ def get_connector(dataset_id: int) -> BaseConnector:
             return RestApiConnector(source=src, dataset_id=dataset_id,
                                     live=bool(query_config.get("live")))
 
-        # ── Plugin-Quellen (Tier-1 Plugins) ──────────────────────────────────────
+        # ── Plugin-Quellen (eingebaute Plugins) ──────────────────────────────────────
         else:
             from app.plugins.registry import registry
             plugin = registry.get_source(ds.file_type)

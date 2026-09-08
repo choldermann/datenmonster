@@ -1,6 +1,6 @@
 """
-Datenmonster Tier-2 Plugin: Faker Datengenerator
-Generiert synthetische Testdaten. Implementiert das Tier-2 Plugin-Protokoll.
+Datenmonster eigener Dienst Plugin: Faker Datengenerator
+Generiert synthetische Testdaten. Implementiert das eigener Dienst Plugin-Protokoll.
 
 Konfigurations-Felder:
   locale    – Sprache/Region (de_DE, en_US, fr_FR, ...)
@@ -118,7 +118,7 @@ def _generate_row(fake: Faker, fields: List[str]) -> dict:
     return row
 
 
-# ── Tier-2 Plugin Protokoll ───────────────────────────────────────────────────
+# ── eigener Dienst Plugin Protokoll ───────────────────────────────────────────────────
 
 @app.get("/health")
 def health():

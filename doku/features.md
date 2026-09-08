@@ -252,15 +252,15 @@ Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 
 ## Plugin-System
 
-### Tier-1 Plugins (Python, eingebettet)
+### eingebaut Plugins (Python, eingebettet)
 - Registrierung über `manifest.json` + `connector.py`
 - Capability Registry: Plugins melden Datenquellen, Ziele, Events
 - Dataset-Wizard erkennt Plugin-Quellen automatisch (2026-06-25)
 
-### Tier-2 Plugins (Docker Container)
+### Dienst-Plugins (Docker Container)
 - Plugin Manager Service orchestriert externe Container
 - REST-API-Kommunikation zwischen Core und Plugin
-- Test-Button für Tier-2 Plugin-Karten (2026-06-25)
+- Test-Button für eigener Dienst Plugin-Karten (2026-06-25)
 - Plugins können eigene Events feuern via EventBus (2026-06-25)
 - Beispiel: Faker Datengenerator Plugin (2026-06-25)
 
@@ -271,11 +271,11 @@ Stand: 2026-07-01 | Holdermann IT ETL-Plattform
 ### Verfügbare Plugins
 | Plugin | Typ | Funktion | Seit |
 |---|---|---|---|
-| **Mail/IMAP Connector** | Tier-1 | E-Mails aus IMAP-Postfach als Dataset lesen | 2026-06-25 |
-| **HTML-Reader** | Tier-1 | Tabellen aus HTML-Dokumenten extrahieren | 2026-06-25 |
-| **Visual Selektor** | Tier-1 | CSS-Selektor interaktiv auf HTML-Quelle anwenden | 2026-06-25 |
-| **eSTATISTIK.core** | Tier-1 | Mapping-Ziel für Statistisches Bundesamt eSTATISTIK-Format | 2026-06-25 |
-| **Faker Generator** | Tier-2 | Synthetische Testdaten generieren | 2026-06-25 |
+| **Mail/IMAP Connector** | eingebaut | E-Mails aus IMAP-Postfach als Dataset lesen | 2026-06-25 |
+| **HTML-Reader** | eingebaut | Tabellen aus HTML-Dokumenten extrahieren | 2026-06-25 |
+| **Visual Selektor** | eingebaut | CSS-Selektor interaktiv auf HTML-Quelle anwenden | 2026-06-25 |
+| **eSTATISTIK.core** | eingebaut | Mapping-Ziel für Statistisches Bundesamt eSTATISTIK-Format | 2026-06-25 |
+| **Faker Generator** | eigener Dienst | Synthetische Testdaten generieren | 2026-06-25 |
 
 ---
 

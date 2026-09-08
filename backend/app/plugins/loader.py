@@ -13,7 +13,7 @@ PLUGIN_DIR = Path(__file__).parent.parent.parent / "plugins"
 
 
 def load_builtin_plugins(db=None):
-    """Lädt alle eingebauten Tier-1 Plugins (builtin-Paket)."""
+    """Lädt alle eingebauten eingebaut Plugins (builtin-Paket)."""
     from app.plugins.registry import registry
     from app.plugins.builtin.web import ALL_PLUGINS as WEB_PLUGINS
     from app.plugins.builtin.mail import ALL_PLUGINS as MAIL_PLUGINS
@@ -32,7 +32,7 @@ def load_builtin_plugins(db=None):
 
 
 def load_all_plugins(db=None):
-    """Scannt das Plugin-Verzeichnis und lädt alle Tier-1 Plugins."""
+    """Scannt das Plugin-Verzeichnis und lädt alle eingebaut Plugins."""
     from app.plugins.registry import registry
 
     if not PLUGIN_DIR.exists():
@@ -48,17 +48,17 @@ def load_all_plugins(db=None):
         except Exception as e:
             logger.error(f"Plugin '{plugin_dir.name}' Ladefehler: {e}", exc_info=True)
 
-    logger.info(f"Plugin-Loader: {loaded} Tier-1 Plugin(s) geladen aus {PLUGIN_DIR}")
+    logger.info(f"Plugin-Loader: {loaded} eingebaut Plugin(s) geladen aus {PLUGIN_DIR}")
 
 
-def load_tier2_plugins(db=None):
-    """Lädt Tier-2 Plugin-Metadaten vom Plugin Manager und registriert sie."""
+def load_dienst_plugins(db=None):
+    """Lädt eigener Dienst Plugin-Metadaten vom Plugin Manager und registriert sie."""
     from app.core.config import PLUGIN_MANAGER_URL
     from app.plugins.registry import registry
-    from app.plugins.tier2_proxy import Tier2Plugin
+    from app.plugins.dienst_proxy import DienstPlugin
 
     if not PLUGIN_MANAGER_URL:
-        logger.info("PLUGIN_MANAGER_URL nicht gesetzt – Tier-2 Plugins übersprungen.")
+        logger.info("PLUGIN_MANAGER_URL nicht gesetzt – Dienst-Plugins übersprungen.")
         return
 
     try:
@@ -72,13 +72,13 @@ def load_tier2_plugins(db=None):
     loaded = 0
     for pm_data in plugins_data:
         try:
-            plugin = Tier2Plugin(pm_data, PLUGIN_MANAGER_URL)
+            plugin = DienstPlugin(pm_data, PLUGIN_MANAGER_URL)
             registry.register(plugin, db=db)
             loaded += 1
         except Exception as e:
-            logger.error(f"Tier-2 Plugin '{pm_data.get('id')}' Ladefehler: {e}", exc_info=True)
+            logger.error(f"eigener Dienst Plugin '{pm_data.get('id')}' Ladefehler: {e}", exc_info=True)
 
-    logger.info(f"Plugin-Loader: {loaded} Tier-2 Plugin(s) geladen von {PLUGIN_MANAGER_URL}")
+    logger.info(f"Plugin-Loader: {loaded} eigener Dienst Plugin(s) geladen von {PLUGIN_MANAGER_URL}")
 
 
 def _load_plugin(plugin_dir: Path, registry, db):

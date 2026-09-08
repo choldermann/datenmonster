@@ -179,7 +179,7 @@ function RegisterPluginModal({ onClose, onSaved }) {
     setSaving(true);
     setError("");
     try {
-      await api.post("/api/plugins/tier2", form);
+      await api.post("/api/plugins/dienst", form);
       onSaved();
       onClose();
     } catch (e) {
@@ -333,7 +333,7 @@ function RegisterPluginModal({ onClose, onSaved }) {
   );
 }
 
-// ── Einheitliche Katalog-Karte (ersetzt die getrennten Tier-1/Tier-2-Karten) ──
+// ── Einheitliche Katalog-Karte (ersetzt die getrennten beide Bauarten-Karten) ──
 const STATE_TO_DOT = { active: "active", running: "running", stopped: "exited" };
 
 function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
@@ -484,7 +484,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
   );
 }
 
-// ── Hauptpanel: ein vereinter Katalog statt Tier-1/Tier-2/Store getrennt ──────
+// ── Hauptpanel: ein vereinter Katalog statt Katalog getrennt ──────
 
 export default function PluginsPanel() {
   const [catalog, setCatalog] = useState([]);
@@ -527,15 +527,15 @@ export default function PluginsPanel() {
 
   const activate = (entry) => runAction(entry.id, () => api.post(
     entry.action === "install"
-      ? `/api/plugins/tier2/${entry.id}/install`
-      : `/api/plugins/tier2/${entry.id}/start`,
+      ? `/api/plugins/dienst/${entry.id}/install`
+      : `/api/plugins/dienst/${entry.id}/start`,
   ));
 
-  const stop = (entry) => runAction(entry.id, () => api.post(`/api/plugins/tier2/${entry.id}/stop`));
+  const stop = (entry) => runAction(entry.id, () => api.post(`/api/plugins/dienst/${entry.id}/stop`));
 
   const remove = (entry) => {
     if (!confirm(`Plugin "${entry.name}" wirklich entfernen?\nDer Container wird gestoppt und gelöscht.`)) return;
-    runAction(entry.id, () => api.delete(`/api/plugins/tier2/${entry.id}`));
+    runAction(entry.id, () => api.delete(`/api/plugins/dienst/${entry.id}`));
   };
 
   const active = catalog.filter(e => e.state === "active" || e.state === "running");

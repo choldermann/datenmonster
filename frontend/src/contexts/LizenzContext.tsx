@@ -47,7 +47,7 @@ const KLARTEXT: Record<string, string> = {
   multi_user:     "Weitere Administratoren",
   db_write:       "Eigene Mappings in eine Datenbank schreiben lassen",
   unlimited:      "Unbegrenzter Eigenbau",
-  plugin_tier2:   "Erweiterte Plugins",
+  plugin_dienst:   "Erweiterte Plugins",
 };
 
 const Ctx = createContext<LizenzWert | null>(null);

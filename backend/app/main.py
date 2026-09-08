@@ -519,12 +519,12 @@ async def lifespan(app: FastAPI):
         pipe_db.close()
 
     # Plugins laden und in Capability Registry registrieren
-    from app.plugins.loader import load_builtin_plugins, load_all_plugins, load_tier2_plugins
+    from app.plugins.loader import load_builtin_plugins, load_all_plugins, load_dienst_plugins
     plugin_db = SessionLocal()
     try:
         load_builtin_plugins(db=plugin_db)   # eingebaute Plugins (web, document, mail, ...)
-        load_all_plugins(db=plugin_db)        # externe Tier-1 Plugins aus /plugins/
-        load_tier2_plugins(db=plugin_db)      # Tier-2 Docker-Container-Plugins
+        load_all_plugins(db=plugin_db)        # externe eingebaut Plugins aus /plugins/
+        load_dienst_plugins(db=plugin_db)      # eigener Dienst Docker-Container-Plugins
     finally:
         plugin_db.close()
 

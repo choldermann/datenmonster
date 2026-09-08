@@ -2,7 +2,7 @@
 EventBus – Redis Pub/Sub Wrapper für Datenmonster.
 
 Channels:
-  dm.plugin.trigger  – Tier-2 Plugin signalisiert neue Daten
+  dm.plugin.trigger  – Dienst-Plugin signalisiert neue Daten
   dm.mapping.status  – Mapping-Lauf Status (für künftige WebSocket-Nutzung)
 """
 import json

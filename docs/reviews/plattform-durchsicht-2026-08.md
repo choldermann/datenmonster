@@ -334,7 +334,7 @@ Damit die Durchsicht nicht mehr verspricht, als sie hält:
 - **Das Frontend im Betrieb** – ich habe nicht geklickt, sondern Code gelesen und
   gebaut. Bedienbarkeit, Barrierefreiheit und Verhalten bei Fehlern in der
   Oberfläche sind offen.
-- **Die Plugin-Strecke** (`plugin-manager`, Tier-2-Container) – nur oberflächlich.
+- **Die Plugin-Strecke** (`plugin-manager`, Container-Plugins) – nur oberflächlich.
   Ein Plugin bringt fremden Code auf den Server; das verdient eine eigene Prüfung.
 - **Der KI-Bereich** (`api/ai.py`, 2.393 Zeilen) – nur die Anbieterwahl und
   Guthabenlogik, nicht die Prompt-Behandlung. Ob Nutzereingaben dort sauber vom

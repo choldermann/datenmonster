@@ -8,8 +8,8 @@ from app.plugins.base import SourcePlugin, TargetPlugin
 logger = logging.getLogger(__name__)
 
 
-class Tier2Plugin(SourcePlugin, TargetPlugin):
-    """Tier-2 Plugin – Container-basiert, alle Calls via Plugin Manager proxied."""
+class DienstPlugin(SourcePlugin, TargetPlugin):
+    """eigener Dienst Plugin – Container-basiert, alle Calls via Plugin Manager proxied."""
 
     tier = 2
     source_type_icon = "container"
@@ -54,7 +54,7 @@ class Tier2Plugin(SourcePlugin, TargetPlugin):
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
-            raise RuntimeError(f"Tier-2 Plugin '{self.id}' Proxy-Fehler ({endpoint}): {e}")
+            raise RuntimeError(f"eigener Dienst Plugin '{self.id}' Proxy-Fehler ({endpoint}): {e}")
 
     def test_connection(self, config: dict) -> dict:
         try:

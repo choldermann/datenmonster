@@ -167,7 +167,7 @@ Datenmonster selbst — unabhängig von JTL und den Cockpits.
    Checkliste und Leerzustände stehen; es fehlt das vorinstallierte Beispiel, an
    dem ein neuer Nutzer sofort sieht, was möglich ist.
 7. [ ] **Handbuch: Plugin-Kapitel ist veraltet** — Minuten
-   `Anleitung.md` beschreibt noch die alte Trennung in Tier 1 und Tier 2 — in der
+   `Anleitung.md` beschreibt noch die alte Trennung in eingebaut und eigener Dienst — in der
    Oberfläche gibt es längst einen einzigen Katalog.
 
 ## 8. Plugins, Templates, Vertrieb
@@ -179,7 +179,7 @@ Alles rund um monstersuite als Lizenz- und Verkaufsseite.
    noch nicht sichtbar.
 2. [ ] **Plugin-Store: Verwaltung nachziehen** — 1 Tag
    Offen: Admin-Oberfläche zum Hochladen, Berechtigung je Plugin statt pauschal
-   `plugin_tier2`, und die Tarballs aus der CI automatisch veröffentlichen.
+   `plugin_dienst`, und die Tarballs aus der CI automatisch veröffentlichen.
 3. [ ] **Öffentliches Plugin-Schaufenster** — 1 Tag
    Ein Katalog auf der Homepage, der zeigt, was es gibt — heute sieht man
    Plugins erst nach dem Kauf.

@@ -116,7 +116,7 @@ def register_plugin(body: RegisterBody):
     reg = load_reg()
     reg[body.id] = body.model_dump()
     save_reg(reg)
-    logger.info(f"Tier-2 Plugin registriert: {body.id} ({body.docker_image})")
+    logger.info(f"eigener Dienst Plugin registriert: {body.id} ({body.docker_image})")
     return {"ok": True, "id": body.id}
 
 
@@ -183,13 +183,13 @@ def _ensure_container_started(plugin_id: str) -> str:
         detach=True,
         # Überlebt Host-Neustart und Abstürze, damit Plugin-Writes nicht ins Leere laufen
         restart_policy={"Name": "unless-stopped"},
-        labels={"dm.plugin": "tier2", "dm.plugin.id": plugin_id},
+        labels={"dm.plugin": "dienst", "dm.plugin.id": plugin_id},
         environment={
             "PLUGIN_ID": plugin_id,
             "PLUGIN_MANAGER_URL": PLUGIN_MANAGER_SELF_URL,
         },
     )
-    logger.info(f"Tier-2 Plugin gestartet: {cname(plugin_id)}")
+    logger.info(f"eigener Dienst Plugin gestartet: {cname(plugin_id)}")
     return "starting"
 
 
@@ -228,7 +228,7 @@ def stop_plugin(plugin_id: str):
     try:
         c = _dc().containers.get(cname(plugin_id))
         c.stop(timeout=15)
-        logger.info(f"Tier-2 Plugin gestoppt: {cname(plugin_id)}")
+        logger.info(f"eigener Dienst Plugin gestoppt: {cname(plugin_id)}")
         return {"ok": True}
     except docker.errors.NotFound:
         return {"ok": True, "status": "already_stopped"}
@@ -369,7 +369,7 @@ class EventBody(BaseModel):
 
 @app.post("/plugins/{plugin_id}/event")
 def plugin_event(plugin_id: str, body: EventBody):
-    """Tier-2 Plugin feuert ein Event – wird auf dm.plugin.trigger publiziert."""
+    """eigener Dienst Plugin feuert ein Event – wird auf dm.plugin.trigger publiziert."""
     reg = load_reg()
     if plugin_id not in reg:
         raise HTTPException(404, "Plugin nicht gefunden")

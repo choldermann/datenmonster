@@ -466,7 +466,7 @@ def create_plugin_dataset(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Legt ein Plugin-Quell-Dataset an (Tier-1 oder Tier-2)."""
+    """Legt ein Plugin-Quell-Dataset an (eingebaut oder eigener Dienst)."""
     from app.plugins.registry import registry
     plugin = registry.get_source(body.source_type_id)
     if not plugin:

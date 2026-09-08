@@ -26,7 +26,7 @@ class PluginBase(ABC):
 
 
 class SourcePlugin(PluginBase):
-    """Tier-1 Plugin: Datenquelle (lesen). Wird als Dataset-Typ registriert."""
+    """eingebaut Plugin: Datenquelle (lesen). Wird als Dataset-Typ registriert."""
     source_type_id: str = ""      # z.B. "mongodb" → file_type im Dataset
     source_type_label: str = ""   # z.B. "MongoDB"
     source_type_icon: str = "database"
@@ -55,7 +55,7 @@ class SourcePlugin(PluginBase):
 
 
 class TargetPlugin(PluginBase):
-    """Tier-1 Plugin: Datenziel (schreiben)."""
+    """eingebaut Plugin: Datenziel (schreiben)."""
     target_type_id: str = ""
     target_type_label: str = ""
 
@@ -70,5 +70,5 @@ class TargetPlugin(PluginBase):
 
 
 class ConnectorPlugin(SourcePlugin, TargetPlugin):
-    """Tier-1 Plugin: Bidirektionaler Konnektor (Quelle + Ziel)."""
+    """eingebaut Plugin: Bidirektionaler Konnektor (Quelle + Ziel)."""
     pass

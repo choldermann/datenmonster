@@ -74,7 +74,7 @@ ALL_FEATURES = [
     {"id": "schema_catalog",    "name": "Schema-Katalog",          "description": "KI-gestützte Datenbankdokumentation & Beschreibung",                  "category": "KI",              "free": False},
     {"id": "multi_tenant",      "name": "Mehrere Mandanten",       "description": "Mehr als eine Ziel-Verbindung im Mandanten-Umschalter",               "category": "Verwaltung",      "free": False},
     {"id": "multi_user",        "name": "Mehrere Administratoren", "description": "Team-Verwaltung mit Rollen und Rechten",                              "category": "Verwaltung",      "free": False},
-    {"id": "plugin_tier2",      "name": "Erweiterte Plugins",      "description": "Zusatz-Plugins für Branchen-Integrationen (JTL etc.)",                "category": "Plugins",         "free": False},
+    {"id": "plugin_dienst",      "name": "Erweiterte Plugins",      "description": "Zusatz-Plugins für Branchen-Integrationen (JTL etc.)",                "category": "Plugins",         "free": False},
     {"id": "monitoring",        "name": "Erweitertes Monitoring",  "description": "Detaillierte Logs, Metriken und Fehleranalyse",                       "category": "Verwaltung",      "free": False},
 ]
 FREE_FEATURES = {f["id"] for f in ALL_FEATURES if f["free"]}

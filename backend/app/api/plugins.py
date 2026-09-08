@@ -52,7 +52,7 @@ def _pm_delete(path: str) -> dict:
         raise HTTPException(502, f"Plugin Manager nicht erreichbar: {e}")
 
 
-# ── Tier-1 Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
+# ── eingebaut Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
 
 @router.get("/")
 def list_plugins(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
@@ -104,15 +104,15 @@ def plugin_manager_health(user: User = Depends(get_current_user)):
     return _pm_get("/health")
 
 
-# ── Tier-2 Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
+# ── eigener Dienst Endpunkte (statische Pfade VOR /{plugin_id}) ──────────────────────
 
-@router.get("/tier2")
-def list_tier2_plugins(user: User = Depends(get_current_user)):
-    """Alle beim Plugin Manager registrierten Tier-2 Plugins (mit Container-Status)."""
+@router.get("/dienst")
+def list_dienst_plugins(user: User = Depends(get_current_user)):
+    """Alle beim Plugin Manager registrierten Dienst-Plugins (mit Container-Status)."""
     return _pm_get("/plugins")
 
 
-class Tier2RegisterBody(BaseModel):
+class DienstPluginBody(BaseModel):
     id: str
     name: str
     docker_image: str
@@ -128,37 +128,37 @@ class Tier2RegisterBody(BaseModel):
     target_type_label: str = ""
 
 
-@router.post("/tier2", status_code=201)
-def register_tier2_plugin(body: Tier2RegisterBody, user: User = Depends(get_current_user)):
-    """Tier-2 Plugin beim Plugin Manager registrieren."""
+@router.post("/dienst", status_code=201)
+def register_dienst_plugin(body: DienstPluginBody, user: User = Depends(get_current_user)):
+    """eigener Dienst Plugin beim Plugin Manager registrieren."""
     result = _pm_post("/plugins", body.model_dump())
-    from app.plugins.tier2_proxy import Tier2Plugin
-    plugin = Tier2Plugin(body.model_dump(), PLUGIN_MANAGER_URL)
+    from app.plugins.dienst_proxy import DienstPlugin
+    plugin = DienstPlugin(body.model_dump(), PLUGIN_MANAGER_URL)
     registry.register(plugin)
     return result
 
 
-@router.delete("/tier2/{plugin_id}")
-def unregister_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Tier-2 Plugin entfernen (stoppt und löscht den Container)."""
+@router.delete("/dienst/{plugin_id}")
+def unregister_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """eigener Dienst Plugin entfernen (stoppt und löscht den Container)."""
     return _pm_delete(f"/plugins/{plugin_id}")
 
 
-@router.post("/tier2/{plugin_id}/start")
-def start_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container für ein Tier-2 Plugin starten."""
+@router.post("/dienst/{plugin_id}/start")
+def start_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container für ein eigener Dienst Plugin starten."""
     return _pm_post(f"/plugins/{plugin_id}/start")
 
 
-@router.post("/tier2/{plugin_id}/stop")
-def stop_tier2_plugin(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container für ein Tier-2 Plugin stoppen."""
+@router.post("/dienst/{plugin_id}/stop")
+def stop_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container für ein eigener Dienst Plugin stoppen."""
     return _pm_post(f"/plugins/{plugin_id}/stop")
 
 
-@router.get("/tier2/{plugin_id}/status")
-def tier2_plugin_status(plugin_id: str, user: User = Depends(get_current_user)):
-    """Container-Status eines Tier-2 Plugins abfragen."""
+@router.get("/dienst/{plugin_id}/status")
+def dienst_plugin_status(plugin_id: str, user: User = Depends(get_current_user)):
+    """Container-Status eines Dienst-Plugins abfragen."""
     return _pm_get(f"/plugins/{plugin_id}/status")
 
 
@@ -173,7 +173,7 @@ def _catalog_plugins(catalog) -> list:
 
 def _fetch_store(db) -> dict:
     """
-    Holt den Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft)
+    Holt den Katalog installierbarer Dienst-Plugins von monstersuite (lizenzgeprüft)
     und markiert je Plugin, ob es lokal bereits installiert ist.
     Returns {"licensed": bool, "plugins": [...], "error": str | None}.
     Wirft nie – bei fehlender Lizenz / unerreichbarem Katalog kommt "error" zurück.
@@ -182,7 +182,7 @@ def _fetch_store(db) -> dict:
     from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER, _resolve_license
 
     lic = _resolve_license(db)
-    licensed = "plugin_tier2" in (lic.get("active_features") or [])
+    licensed = "plugin_dienst" in (lic.get("active_features") or [])
     key, _ = get_license_credentials(db)
     if not key:
         return {"licensed": licensed, "plugins": [], "error": "no_license"}
@@ -225,7 +225,7 @@ def _fetch_public_catalog() -> list:
 
 @router.get("/store")
 def plugin_store(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Katalog installierbarer Tier-2 Plugins von monstersuite (lizenzgeprüft)."""
+    """Katalog installierbarer Dienst-Plugins von monstersuite (lizenzgeprüft)."""
     return _fetch_store(db)
 
 
@@ -234,7 +234,7 @@ def plugin_catalog(db: Session = Depends(get_db), user: User = Depends(get_curre
     """
     Vereinter Plugin-Katalog fürs UI: führt geladene Plugins (in-process + Container),
     Container-Status und installierbare Store-Plugins zu EINER normalisierten Liste
-    zusammen. Der Nutzer muss nicht mehr zwischen Tier-1/Tier-2 unterscheiden.
+    zusammen. Der Nutzer muss nicht mehr zwischen beide Bauarten unterscheiden.
 
     Jeder Eintrag hat: kind (builtin|container), state (active|running|stopped|available),
     action (none|start|install) und needs_license. Degradiert graceful: fehlender
@@ -246,7 +246,7 @@ def plugin_catalog(db: Session = Depends(get_db), user: User = Depends(get_curre
     src_map = {s["plugin_id"]: s for s in registry.list_source_types()}
     tgt_map = {t["plugin_id"]: t for t in registry.list_target_types()}
 
-    # Container-Status der Tier-2 Plugins (per id) – PM optional
+    # Container-Status der Dienst-Plugins (per id) – PM optional
     pm_status = {}
     try:
         for p in _pm_get("/plugins"):
@@ -339,14 +339,14 @@ def plugin_catalog(db: Session = Depends(get_db), user: User = Depends(get_curre
     return catalog
 
 
-@router.post("/tier2/{plugin_id}/install", status_code=201)
-def install_tier2_plugin(plugin_id: str, db: Session = Depends(get_db),
-                         _feat=Depends(require_feature("plugin_tier2")),
+@router.post("/dienst/{plugin_id}/install", status_code=201)
+def install_dienst_plugin(plugin_id: str, db: Session = Depends(get_db),
+                         _feat=Depends(require_feature("plugin_dienst")),
                          user: User = Depends(get_current_user)):
     """
-    Installiert ein Tier-2 Plugin lizenzgeprüft von monstersuite:
+    Installiert ein eigener Dienst Plugin lizenzgeprüft von monstersuite:
     Katalog/Manifest holen → Image-Tarball streamen → Plugin-Manager `docker load`
-    → Plugin registrieren. Gated mit Feature `plugin_tier2`.
+    → Plugin registrieren. Gated mit Feature `plugin_dienst`.
     """
     import os, tempfile
     import httpx
@@ -354,7 +354,7 @@ def install_tier2_plugin(plugin_id: str, db: Session = Depends(get_db),
 
     key, _ = get_license_credentials(db)
     if not key:
-        raise HTTPException(402, "Keine Lizenz aktiviert — Tier-2 Plugins erfordern eine gültige Lizenz.")
+        raise HTTPException(402, "Keine Lizenz aktiviert — Dienst-Plugins erfordern eine gültige Lizenz.")
     auth = license_auth_body(db)
 
     # 1. Katalog → Manifest des gewünschten Plugins
@@ -406,11 +406,11 @@ def install_tier2_plugin(plugin_id: str, db: Session = Depends(get_db),
             pass
 
     # 4. Registrieren (Manifest → Plugin-Manager + Backend-Registry)
-    reg_body = {k: manifest.get(k) for k in Tier2RegisterBody.model_fields if manifest.get(k) is not None}
+    reg_body = {k: manifest.get(k) for k in DienstPluginBody.model_fields if manifest.get(k) is not None}
     reg_body["id"] = plugin_id
     _pm_post("/plugins", reg_body)
-    from app.plugins.tier2_proxy import Tier2Plugin
-    registry.register(Tier2Plugin(manifest, PLUGIN_MANAGER_URL))
+    from app.plugins.dienst_proxy import DienstPlugin
+    registry.register(DienstPlugin(manifest, PLUGIN_MANAGER_URL))
     return {"ok": True, "plugin_id": plugin_id, "loaded": load_result}
 
 
