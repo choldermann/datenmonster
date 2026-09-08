@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLizenz } from "../../../contexts/LizenzContext";
 import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock, Filter } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
@@ -8,6 +9,9 @@ import ReportScheduleModal from "../../forms/ReportScheduleModal";
 import QueryBuilder from "../../query/QueryBuilder";
 
 export default function FormsPanel({ projectId, canEdit, onCountChange }) {
+  const lizenz = useLizenz();
+  const sperreFormular = lizenz.sperrgrund("form_build");
+  const sperreAbfrage  = lizenz.sperrgrund("query_build");
   const navigate = useNavigate();
   const [forms, setForms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -64,22 +68,27 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
         </div>
         {canEdit && (
           <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setAbfrage(true)}
+            <button onClick={() => setAbfrage(true)} disabled={!!sperreAbfrage} title={sperreAbfrage}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
                 backgroundColor: "transparent", border: `1px solid ${S.border}`,
-                color: S.textMain, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                color: S.textMain, cursor: sperreAbfrage ? "not-allowed" : "pointer",
+                opacity: sperreAbfrage ? 0.4 : 1, fontSize: 12, fontWeight: 600 }}>
               <Filter size={13} /> Eigene Abfrage
             </button>
-            <button onClick={() => setBaukasten(true)}
+            <button onClick={() => setBaukasten(true)} disabled={!!sperreAbfrage} title={sperreAbfrage}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
                 backgroundColor: "transparent", border: `1px solid ${S.border}`,
-                color: S.textMain, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                color: S.textMain, cursor: sperreAbfrage ? "not-allowed" : "pointer",
+                opacity: sperreAbfrage ? 0.4 : 1, fontSize: 12, fontWeight: 600 }}>
               <LayoutGrid size={13} /> Report zusammenstellen
             </button>
-            <button onClick={createForm}
+            <button onClick={createForm} disabled={!!sperreFormular} title={sperreFormular}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
-                backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
-                color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+                backgroundColor: sperreFormular ? "transparent" : "rgba(252,228,153,0.15)",
+                border: `1px solid ${sperreFormular ? S.border : "rgba(252,228,153,0.4)"}`,
+                color: sperreFormular ? S.textDim : "var(--accent)",
+                cursor: sperreFormular ? "not-allowed" : "pointer",
+                opacity: sperreFormular ? 0.45 : 1, fontSize: 12, fontWeight: 600 }}>
               <Plus size={13} /> Neues Formular
             </button>
           </div>
@@ -199,19 +208,25 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                     )}
                     {canEdit && (
                       <>
-                        <button onClick={() => navigate(`/forms/${f.id}`)} title="Bearbeiten"
+                        <button onClick={() => navigate(`/forms/${f.id}`)}
+                          disabled={!!sperreFormular} title={sperreFormular || "Bearbeiten"}
                           style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                             borderRadius: 5, border: `1px solid ${S.border}`,
-                            backgroundColor: "transparent", color: S.textDim, cursor: "pointer" }}
-                          onMouseEnter={e => e.currentTarget.style.color = S.textBright}
+                            backgroundColor: "transparent", color: S.textDim,
+                            cursor: sperreFormular ? "not-allowed" : "pointer",
+                            opacity: sperreFormular ? 0.35 : 1 }}
+                          onMouseEnter={e => { if (!sperreFormular) e.currentTarget.style.color = S.textBright; }}
                           onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                           <Pencil size={11} />
                         </button>
-                        <button onClick={() => deleteForm(f.id, f.name)} title="Löschen"
+                        <button onClick={() => deleteForm(f.id, f.name)}
+                          disabled={!!sperreFormular} title={sperreFormular || "Löschen"}
                           style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
                             borderRadius: 5, border: "1px solid transparent",
-                            backgroundColor: "transparent", color: S.textDim, cursor: "pointer" }}
-                          onMouseEnter={e => { e.currentTarget.style.color = "#e07070"; e.currentTarget.style.borderColor = "rgba(224,112,112,0.3)"; }}
+                            backgroundColor: "transparent", color: S.textDim,
+                            cursor: sperreFormular ? "not-allowed" : "pointer",
+                            opacity: sperreFormular ? 0.35 : 1 }}
+                          onMouseEnter={e => { if (sperreFormular) return; e.currentTarget.style.color = "#e07070"; e.currentTarget.style.borderColor = "rgba(224,112,112,0.3)"; }}
                           onMouseLeave={e => { e.currentTarget.style.color = S.textDim; e.currentTarget.style.borderColor = "transparent"; }}>
                           <Trash2 size={11} />
                         </button>

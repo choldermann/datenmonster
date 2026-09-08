@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLizenz } from "../../../contexts/LizenzContext";
 import { Wifi, WifiOff, X, Plus, Trash2, Pencil, Play, CheckCircle2, XCircle, Loader2, Check } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
@@ -405,6 +406,7 @@ function RestSourceForm({ initial, projectId, datasets, onSaved, onCancel }) {
 }
 
 function RestApiPanel({ projectId, datasets, canEdit }) {
+  const sperre = useLizenz().sperrgrund("rest_sources");
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -463,8 +465,8 @@ function RestApiPanel({ projectId, datasets, canEdit }) {
           <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>HTTP/REST-APIs als Dataset-Quelle · Auth · Paginierung · Scheduler</p>
         </div>
         {canEdit && !showForm && (
-          <button onClick={() => { setEditSource(null); setShowForm(true); }}
-            style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: "pointer", backgroundColor: `${REST_COLOR}18`, border: `1px solid ${REST_COLOR}44`, color: REST_COLOR }}>
+          <button onClick={() => { setEditSource(null); setShowForm(true); }} disabled={!!sperre} title={sperre}
+            style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: sperre ? "not-allowed" : "pointer", opacity: sperre ? 0.4 : 1, backgroundColor: `${REST_COLOR}18`, border: `1px solid ${REST_COLOR}44`, color: REST_COLOR }}>
             <Plus size={13} /> Neuer Connector
           </button>
         )}

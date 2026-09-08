@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLizenz } from "../../../contexts/LizenzContext";
 import { Check, CheckCircle2, Filter, FolderSync, Loader2, Pencil, Play, Plus, RefreshCw, Server, Trash2, Wifi, WifiOff, X, XCircle } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
@@ -283,6 +284,7 @@ const EMPTY_SOURCE = {
 
 
 function FtpPanel({ projectId, datasets, canEdit }) {
+  const sperre = useLizenz().sperrgrund("ftp_sftp");
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState(null);    // null | "new" | source object
@@ -326,7 +328,9 @@ function FtpPanel({ projectId, datasets, canEdit }) {
           <p style={{ fontSize: 12, color: S.textDim, marginTop: 2 }}>Dateien von FTP/SFTP-Servern automatisch importieren und in Datasets speichern</p>
         </div>
         {canEdit && (
-          <button onClick={() => setEditing("new")} className="btn-primary text-xs"><Plus size={13} /> Neue Quelle</button>
+          <button onClick={() => setEditing("new")} disabled={!!sperre} title={sperre}
+            style={{ opacity: sperre ? 0.4 : 1, cursor: sperre ? "not-allowed" : "pointer" }}
+            className="btn-primary text-xs"><Plus size={13} /> Neue Quelle</button>
         )}
       </div>
 

@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
+import { useLizenz } from "../../../contexts/LizenzContext";
 import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, Play, CheckCircle2, XCircle, Clock, Loader2 } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 export default function PipelinesPanel({ projectId, canEdit }) {
+  const sperre = useLizenz().sperrgrund("pipeline_build");
   const navigate = useNavigate();
   const [pipelines, setPipelines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -54,8 +56,8 @@ export default function PipelinesPanel({ projectId, canEdit }) {
           <p style={{ fontSize: 11, color: S.textDim, marginTop: 4 }}>Visuelle Workflows – FTP → Bedingung → Mapping → Ausgabe</p>
         </div>
         {canEdit && (
-          <button onClick={() => navigate("/pipelines/new")}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: "var(--accent)", cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          <button onClick={() => navigate("/pipelines/new")} disabled={!!sperre} title={sperre}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: "var(--accent)", cursor: sperre ? "not-allowed" : "pointer", opacity: sperre ? 0.4 : 1, fontSize: 12, fontWeight: 600 }}>
             <Plus size={13} /> Neue Pipeline
           </button>
         )}

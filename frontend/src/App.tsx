@@ -4,6 +4,7 @@ import "./hooks/useTheme"; // Theme beim Start sofort anwenden
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProjectProvider } from "./context/ProjectContext";
 import { AIAssistantProvider, useAIAssistant } from "./contexts/AIAssistantContext";
+import { LizenzProvider } from "./contexts/LizenzContext";
 import { aiDownloadStore } from "./store/aiDownloadStore";
 import FloatingAIAssistant from "./components/ai/FloatingAIAssistant";
 import Login from "./pages/Login";
@@ -126,6 +127,7 @@ export default function App() {
       <AuthProvider>
         <ProjectProvider>
           <AIAssistantProvider>
+            <LizenzProvider>
           <BrowserRouter>
             <Routes>
               {/* Public */}
@@ -150,6 +152,7 @@ export default function App() {
             <AiDownloadBanner />
             <AiAssistantGate />
           </BrowserRouter>
+            </LizenzProvider>
           </AIAssistantProvider>
         </ProjectProvider>
       </AuthProvider>

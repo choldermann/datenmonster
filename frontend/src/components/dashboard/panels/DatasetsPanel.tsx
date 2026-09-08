@@ -547,21 +547,26 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
 }
 
 // ─── New Tile (generic) ───────────────────────────────────────────────────────
-function NewTile({ label, sub, icon: Icon, onClick }) {
+// `gesperrt` traegt den Grund als Text — gesetzt heisst: ausgegraut und nicht klickbar.
+function NewTile({ label, sub, icon: Icon, onClick, gesperrt }) {
   const [hovered, setHovered] = useState(false);
+  const an = hovered && !gesperrt;
   return (
-    <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className="card transition-all duration-150 cursor-pointer flex flex-col items-center justify-center gap-3 min-h-[116px]"
+    <div onClick={gesperrt ? undefined : onClick} title={gesperrt}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      className="card transition-all duration-150 flex flex-col items-center justify-center gap-3 min-h-[116px]"
       style={{
-        borderColor: hovered ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
-        backgroundColor: hovered ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
+        borderColor: an ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
+        backgroundColor: an ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
         borderStyle: "dashed",
+        opacity: gesperrt ? 0.4 : 1,
+        cursor: gesperrt ? "not-allowed" : "pointer",
       }}>
-      <div className="rounded-full p-2" style={{ backgroundColor: hovered ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
-        <Icon size={20} style={{ color: hovered ? "#6ee7aa" : "#4ade80" }} />
+      <div className="rounded-full p-2" style={{ backgroundColor: an ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
+        <Icon size={20} style={{ color: an ? "#6ee7aa" : "#4ade80" }} />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium" style={{ color: hovered ? "#6ee7aa" : "#4ade80" }}>{label}</p>
+        <p className="text-sm font-medium" style={{ color: an ? "#6ee7aa" : "#4ade80" }}>{label}</p>
         <p className="text-xs mt-0.5" style={{ color: "rgba(110,231,170,0.5)" }}>{sub}</p>
       </div>
     </div>

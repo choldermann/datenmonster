@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLizenz } from "../contexts/LizenzContext";
 import { BookOpen, CheckCircle, Database, Loader2, Pencil, Plus, RefreshCw, Sparkles, Trash2, Upload, X, XCircle, ChevronDown, ChevronUp, Search } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { useDateiAblage } from "../hooks/useDateiAblage";
@@ -512,21 +513,25 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
 }
 
 // ─── New Connection Tiles ─────────────────────────────────────────────────────
-function NewConnTile({ label, sub, icon: Icon, onClick }) {
+function NewConnTile({ label, sub, icon: Icon, onClick, gesperrt }) {
   const [hovered, setHovered] = useState(false);
+  const an = hovered && !gesperrt;
   return (
-    <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className="card transition-all duration-150 cursor-pointer flex flex-col items-center justify-center gap-3 min-h-[116px]"
+    <div onClick={gesperrt ? undefined : onClick} title={gesperrt}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      className="card transition-all duration-150 flex flex-col items-center justify-center gap-3 min-h-[116px]"
       style={{
-        borderColor: hovered ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
-        backgroundColor: hovered ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
+        borderColor: an ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
+        backgroundColor: an ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
         borderStyle: "dashed",
+        opacity: gesperrt ? 0.4 : 1,
+        cursor: gesperrt ? "not-allowed" : "pointer",
       }}>
-      <div className="rounded-full p-2" style={{ backgroundColor: hovered ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
-        <Icon size={20} style={{ color: hovered ? "#6ee7aa" : "#4ade80" }} />
+      <div className="rounded-full p-2" style={{ backgroundColor: an ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
+        <Icon size={20} style={{ color: an ? "#6ee7aa" : "#4ade80" }} />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium" style={{ color: hovered ? "#6ee7aa" : "#4ade80" }}>{label}</p>
+        <p className="text-sm font-medium" style={{ color: an ? "#6ee7aa" : "#4ade80" }}>{label}</p>
         <p className="text-xs mt-0.5" style={{ color: "rgba(110,231,170,0.5)" }}>{sub}</p>
       </div>
     </div>
@@ -535,6 +540,7 @@ function NewConnTile({ label, sub, icon: Icon, onClick }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function DbConnectionManager({ projectId = null, canEdit = true, onDatasetCreated }) {
+  const lizenz = useLizenz();
   const [connections, setConnections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -704,6 +710,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {canEdit && <NewConnTile label="Neue Verbindung" sub="SQL Server, MySQL, PostgreSQL" icon={Plus}
+            gesperrt={lizenz.kontingentGrund("verbindungen")}
             onClick={() => { setShowForm(true); setEditingConn(null); }} />}
           {canEdit && <NewConnTile label="Verbindungen zuordnen" sub="Vorhandene diesem Projekt zuweisen" icon={Upload}
             onClick={() => setShowImport(true)} />}

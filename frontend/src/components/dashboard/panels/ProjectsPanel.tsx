@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useLizenz } from "../../../contexts/LizenzContext";
 import { FolderPlus, Users, X, Check, Plus, Pencil, Trash2, Share2, FolderKanban, ChevronDown, AlertCircle, Loader2 } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
@@ -7,19 +8,25 @@ import NewTile from "../shared/NewTile";
 
 function NewProjectTile({ onClick }) {
   const [hovered, setHovered] = useState(false);
+  const lizenz = useLizenz();
+  const gesperrt = lizenz.kontingentGrund("projekte");
+  const an = hovered && !gesperrt;
   return (
-    <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
-      className="card transition-all duration-150 cursor-pointer flex flex-col items-center justify-center gap-3 min-h-[120px]"
+    <div onClick={gesperrt ? undefined : onClick} title={gesperrt}
+      onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      className="card transition-all duration-150 flex flex-col items-center justify-center gap-3 min-h-[120px]"
       style={{
-        borderColor: hovered ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
-        backgroundColor: hovered ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
+        borderColor: an ? "rgba(110,231,170,0.6)" : "rgba(110,231,170,0.25)",
+        backgroundColor: an ? "rgba(110,231,170,0.07)" : "rgba(110,231,170,0.03)",
         borderStyle: "dashed",
+        opacity: gesperrt ? 0.4 : 1,
+        cursor: gesperrt ? "not-allowed" : "pointer",
       }}>
-      <div className="rounded-full p-2" style={{ backgroundColor: hovered ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
-        <FolderPlus size={20} style={{ color: hovered ? "#6ee7aa" : "#4ade80" }} />
+      <div className="rounded-full p-2" style={{ backgroundColor: an ? "rgba(110,231,170,0.15)" : "rgba(110,231,170,0.07)" }}>
+        <FolderPlus size={20} style={{ color: an ? "#6ee7aa" : "#4ade80" }} />
       </div>
       <div className="text-center">
-        <p className="text-sm font-medium" style={{ color: hovered ? "#6ee7aa" : "#4ade80" }}>Neues Projekt</p>
+        <p className="text-sm font-medium" style={{ color: an ? "#6ee7aa" : "#4ade80" }}>Neues Projekt</p>
         <p className="text-xs mt-0.5" style={{ color: "rgba(110,231,170,0.5)" }}>Datasets, Mappings, Verbindungen</p>
       </div>
     </div>

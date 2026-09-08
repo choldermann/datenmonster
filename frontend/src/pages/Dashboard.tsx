@@ -3,11 +3,12 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
+import { useLizenz } from "../contexts/LizenzContext";
 import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api, { fehlerText } from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, Lock, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -74,6 +75,7 @@ function ConfirmModal({ modal, onClose }) {
 export default function Dashboard() {
   const { user, logout } = useAuth();
   const { activeProject, setActiveProject } = useProject();
+  const lizenz = useLizenz();
   const navigate = useNavigate();
   const location = useLocation();
   const { setPageContext } = useAIAssistant();
@@ -234,6 +236,16 @@ export default function Dashboard() {
     }, { dangerous: true });
   };
 
+  // Welcher Menuepunkt braucht welches Recht? Alles Nicht-Genannte ist frei.
+  // Ausgegraut, aber weiter anklickbar: man soll sehen duerfen, was es gibt.
+  const NAV_RECHT: Record<string, string> = {
+    werkbank:   "ai_build",
+    ftp:        "ftp_sftp",
+    rest:       "rest_sources",
+    api_studio: "api_studio",
+    ai_memory:  "ai_memory",
+  };
+
   const NAV = [
     { id: "projects",    label: "Projekte",      icon: FolderKanban, badge: projects.length, dividerAfter: true },
     { id: "werkbank",    label: "KI-Werkbank",    icon: Wand2,       badge: 0, dividerAfter: true },
@@ -281,16 +293,24 @@ export default function Dashboard() {
         <nav className="flex-1 min-h-0 overflow-y-auto px-3 py-4 flex flex-col gap-1">
           {NAV.map(({ id, label, icon: Icon, badge, dividerAfter }) => {
             const active = tab === id;
+            const grund  = NAV_RECHT[id] ? lizenz.sperrgrund(NAV_RECHT[id]) : undefined;
             return (
               <div key={id}>
-                <button onClick={() => setTab(id)}
+                <button onClick={() => setTab(id)} title={grund}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-left"
-                  style={active ? { backgroundColor: S.accent, color: "#111" } : { color: S.textDim }}
+                  style={active
+                    ? { backgroundColor: S.accent, color: "#111" }
+                    : { color: S.textDim, opacity: grund ? 0.45 : 1 }}
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
                   <Icon size={15} />
                   <span className="flex-1">{label}</span>
-                  {badge > 0 && (
+                  {grund ? (
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex items-center gap-1"
+                      style={{ backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, letterSpacing: "0.5px" }}>
+                      <Lock size={9} /> PRO
+                    </span>
+                  ) : badge > 0 && (
                     <span className="text-xs font-mono px-1.5 py-0.5 rounded"
                       style={{ backgroundColor: active ? "rgba(0,0,0,0.15)" : "rgba(255,255,255,0.06)", color: active ? "#111" : S.textDim }}>
                       {badge}
@@ -570,8 +590,10 @@ export default function Dashboard() {
               )}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {canEdit && <NewTile label="Neues Dataset" sub="Datei oder SQL-Abfrage" icon={Plus}
+                  gesperrt={lizenz.kontingentGrund("datasets")}
                   onClick={() => setShowWizard(true)} />}
                 {canEdit && <NewTile label="Manuell anlegen" sub="Leeres Dataset mit Spalten" icon={Table}
+                  gesperrt={lizenz.kontingentGrund("datasets")}
                   onClick={() => setShowManualCreate(true)} />}
                 {datasets.map((ds) => (
                   <DatasetCard key={ds.id} dataset={ds} canEdit={canEdit}
@@ -646,6 +668,7 @@ export default function Dashboard() {
             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {canEdit && <NewTile label="Neues Mapping" sub="Felder verbinden und transformieren" icon={GitBranch}
+                gesperrt={lizenz.kontingentGrund("mappings")}
                 onClick={() => navigate(`/mappings/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)} />}
               {mappings.map((m) => (
                 <div key={m.id} className="card group cursor-pointer transition-all"
