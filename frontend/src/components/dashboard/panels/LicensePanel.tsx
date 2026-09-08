@@ -55,7 +55,7 @@ interface LicenseData {
 }
 
 const STATUS_CONFIG: Record<string, { color: string; bg: string; border: string; icon: typeof ShieldCheck; label: string }> = {
-  free:          { color: "#6b7280", bg: "var(--bg-input)",    border: "var(--border-3)",  icon: LockOpen,   label: "Kostenlos" },
+  free:          { color: "#6b7280", bg: "var(--bg-input)",    border: "var(--border-3)",  icon: LockOpen,   label: "Basis" },
   active:        { color: "#22c55e", bg: "#0d1a10",            border: "#1a3a22",           icon: ShieldCheck, label: "Lizenz aktiv" },
   grace:         { color: "#f59e0b", bg: "#1c1500",            border: "#3a2e00",           icon: Shield,      label: "Grace Period" },
   grace_expired: { color: "#ef4444", bg: "#1a0808",            border: "#3a1212",           icon: ShieldOff,   label: "Grace Period abgelaufen" },
@@ -132,7 +132,7 @@ function FeatureRow({ feature, active }: { feature: Feature; active: boolean }) 
         display: "flex", alignItems: "center", gap: 4,
       }}>
         {active ? (
-          <><Check size={9} /> {feature.free ? "Kostenlos" : "Aktiv"}</>
+          <><Check size={9} /> {feature.free ? "Basis" : "Aktiv"}</>
         ) : (
           <><Lock size={9} /> Pro</>
         )}
@@ -204,7 +204,7 @@ export default function LicensePanel() {
   const freeClaim = useCallback(async (still = false) => {
     if (!still) setFreeBusy(true);
     const r = await apiFetch("POST", BASE + "/free-claim");
-    if (r.ok && r.status === "active") { toast("ok", "Kostenloser Zugang ist aktiv"); load(); }
+    if (r.ok && r.status === "active") { toast("ok", "Basis-Zugang ist aktiv"); load(); }
     else if (!still) {
       if (r.status === "pending") toast("err", r.message || "Noch nicht bestätigt — bitte den Link in der E-Mail anklicken");
       else                        { toast("err", r.error || "Abholen fehlgeschlagen"); load(); }
@@ -327,8 +327,8 @@ export default function LicensePanel() {
           )}
           {license.status === "free" && (
             <div style={{ fontSize: 13, color: "var(--text-5)", marginTop: 3 }}>
-              {activeSet.size} / {(license.features || []).length} Features aktiv —{" "}
-              Upgrade auf <strong style={{ color: "var(--text-3)" }}>monstersuite.de</strong>
+              Fertige Auswertungen betreiben — gekaufte Vorlagen laufen unbegrenzt.
+              {" "}Selbst bauen mit <strong style={{ color: "var(--text-3)" }}>Pro</strong>.
             </div>
           )}
           {license.last_check && (
@@ -412,8 +412,9 @@ export default function LicensePanel() {
             </button>
           </div>
           <div style={{ fontSize: 12, color: "var(--text-5)", marginBottom: 16, lineHeight: "19px" }}>
-            Der kostenlose Zugang lässt gekaufte Vorlagen unbegrenzt laufen — inklusive Zeitpläne,
-            Versand und Portal-Zugängen. Selbst bauen kannst du im kleinen Rahmen.
+            <strong style={{ color: "var(--text-3)" }}>Basis</strong> lässt gekaufte Vorlagen
+            unbegrenzt laufen — inklusive Zeitpläne, Versand und Portal-Zugängen, dauerhaft
+            kostenlos. Selbst bauen kannst du im kleinen Rahmen.
             Wir schicken dir eine Bestätigungsmail; danach wird der Zugang hier automatisch eingetragen.
           </div>
           <div style={{ marginBottom: 16, maxWidth: 340 }}>

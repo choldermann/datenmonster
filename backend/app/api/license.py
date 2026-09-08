@@ -6,7 +6,7 @@ Ablauf:
   2. Antwort wird lokal gecacht (system_settings-Tabelle)
   3. Alle 24h: Neuvalidierung gegen Server
   4. Server nicht erreichbar → Grace Period (Standard: 14 Tage)
-  5. Grace Period abgelaufen → Kostenlos-Plan
+  5. Grace Period abgelaufen → Basis-Plan
 
 Offline-Fallback (nur wenn LICENSE_SECRET gesetzt):
   Signierte HMAC-Keys funktionieren auch ohne Server (Entwicklung / Demo).
@@ -196,7 +196,7 @@ def _resolve_license(db: Session) -> dict:
 
     free_response = {
         "status":          "free",
-        "plan":            "Kostenlos",
+        "plan":            "Basis",
         "email":           None,
         "valid_until":     None,
         "last_check":      None,
