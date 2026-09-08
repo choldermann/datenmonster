@@ -3,8 +3,8 @@ package de.datenmonster.plugins.estatistik.model;
 import java.util.List;
 import java.util.Map;
 
-/** Eingehende Anfrage im Datenmonster Tier-2 Protokoll. */
-public class Tier2Request {
+/** Eingehende Anfrage im Datenmonster Dienst-Protokoll. */
+public class DienstRequest {
     private Map<String, Object> config;
     private List<Map<String, Object>> rows;
 

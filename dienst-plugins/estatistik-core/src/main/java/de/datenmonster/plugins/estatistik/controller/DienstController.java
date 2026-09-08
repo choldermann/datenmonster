@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Implementiert das Datenmonster Tier-2 Plugin-Protokoll.
+ * Implementiert das Datenmonster Plugin-Protokoll.
  * Wird durch den Plugin Manager via Proxy aufgerufen.
  */
 @RestController
-public class Tier2Controller {
+public class DienstController {
 
     @Autowired private ConnectionService connectionService;
     @Autowired private GeneratorService generatorService;
@@ -47,18 +47,18 @@ public class Tier2Controller {
     }
 
     @PostMapping("/test")
-    public Map<String, Object> test(@RequestBody Tier2Request req) {
+    public Map<String, Object> test(@RequestBody DienstRequest req) {
         IntrastatConfig config = toConfig(req.getConfig());
         return connectionService.test(config);
     }
 
     @PostMapping("/schema")
-    public Map<String, Object> schema(@RequestBody Tier2Request req) {
+    public Map<String, Object> schema(@RequestBody DienstRequest req) {
         return Map.of("columns", INTRASTAT_FIELDS);
     }
 
     @PostMapping("/fetch")
-    public Map<String, Object> fetch(@RequestBody Tier2Request req) {
+    public Map<String, Object> fetch(@RequestBody DienstRequest req) {
         return Map.of(
             "rows", List.of(),
             "message", "eSTATISTIK.core ist ein Ziel-Plugin – kein Datenabruf möglich"
@@ -66,7 +66,7 @@ public class Tier2Controller {
     }
 
     @PostMapping("/write")
-    public Map<String, Object> write(@RequestBody Tier2Request req) {
+    public Map<String, Object> write(@RequestBody DienstRequest req) {
         IntrastatConfig config = toConfig(req.getConfig());
         List<IntrastatPosition> positions = toPositions(req.getRows());
 
