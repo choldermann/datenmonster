@@ -178,7 +178,10 @@ function ShareProjectModal({ project, onClose }) {
     load();
   };
 
-  const availableUsers = users.filter((u) => !members.find((m) => m.user_id === u.id));
+  // Der Eigentümer gehört nicht in die Auswahl: er hat ohnehin alle Rechte, und
+  // als Mitglied eingetragen taucht sein Projekt zweimal in der Liste auf.
+  const availableUsers = users.filter(
+    (u) => u.id !== project.owner_id && !members.find((m) => m.user_id === u.id));
   const roleColor = { owner: S.accent, editor: "#93c5fd", viewer: "#6ee7b7" };
   const roleLabel = { owner: "Eigentümer", editor: "Bearbeiter", viewer: "Betrachter" };
 

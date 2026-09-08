@@ -342,6 +342,23 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"[Migration] Zuordnungen übersprungen: {e}")
 
+        # ── Eigentümer als eigenes Projektmitglied aufräumen ─────────────────
+        # Trug sich jemand im eigenen Projekt zusätzlich als Mitglied ein, stand
+        # das Projekt danach doppelt in der Liste: einmal als Eigentum, einmal
+        # als Freigabe – beide Einträge zeigten dasselbe Projekt. Der Eintrag
+        # bringt keine Rechte (der Eigentümer hat sie ohnehin), also weg damit.
+        try:
+            weg = conn.execute(text("""
+                DELETE FROM project_members
+                WHERE user_id IN (SELECT owner_id FROM projects
+                                  WHERE projects.id = project_members.project_id)
+            """)).rowcount
+            conn.commit()
+            if weg:
+                print(f"[Migration] {weg} überflüssige Eigentümer-Mitgliedschaft(en) entfernt")
+        except Exception as e:
+            print(f"[Migration] Mitglieder-Aufräumen übersprungen: {e}")
+
         # ── Eindeutigkeit um den Mandanten erweitern ─────────────────────────
         # SQLite kann eine benannte UNIQUE-Bedingung nicht ändern, sie steckt im
         # CREATE TABLE. Ohne diesen Umbau könnten zwei Mandanten nicht dieselbe

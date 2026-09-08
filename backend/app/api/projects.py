@@ -110,8 +110,13 @@ def list_projects(db: Session = Depends(get_db), user: User = Depends(get_curren
     # Own projects
     owned = db.query(Project).filter(Project.owner_id == user.id).all()
     # Shared projects
+    # Wer sein eigenes Projekt zusaetzlich als Mitglied eingetragen hat, bekam es
+    # bisher zweimal in die Liste – einmal als Eigentuemer, einmal als Freigabe.
+    # Beide Eintraege zeigten dasselbe Projekt, daher die identischen Mappings.
+    owned_ids = {p.id for p in owned}
     memberships = db.query(ProjectMember).filter(ProjectMember.user_id == user.id).all()
-    shared_ids = {m.project_id: m.role for m in memberships}
+    shared_ids = {m.project_id: m.role for m in memberships
+                  if m.project_id not in owned_ids}
     shared = db.query(Project).filter(Project.id.in_(shared_ids.keys())).all() if shared_ids else []
 
     result = [project_out(p, "owner") for p in owned]
@@ -226,6 +231,9 @@ def add_member(project_id: int, req: ShareRequest, db: Session = Depends(get_db)
     p = get_accessible_project(project_id, user, db)
     if p.owner_id != user.id:
         raise HTTPException(403, "Nur der Eigentümer kann Mitglieder hinzufügen")
+    if req.user_id == p.owner_id:
+        raise HTTPException(400, "Der Eigentümer hat bereits alle Rechte und "
+                                 "muss nicht als Mitglied eingetragen werden")
     if db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_id == req.user_id).first():
         raise HTTPException(400, "Benutzer ist bereits Mitglied")
     m = ProjectMember(project_id=project_id, user_id=req.user_id, role=req.role)
