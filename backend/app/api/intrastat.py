@@ -31,6 +31,29 @@ def _out(e: ArticleExclusion) -> dict:
     }
 
 
+def _wawi_verbindung(project_id, angefragt, user, db):
+    """Welche WaWi ist hier gemeint – und darf dieser Benutzer sie befragen?
+
+    Der aktive Mandant hat Vorrang vor der Verbindung, die der Aufrufer mitschickt.
+    Diese stammt aus `config.connection_id` des Formularfelds und ist dort beim
+    Installieren eingefroren worden; die Ausschlussliste (`list_exclusions`) filtert
+    dagegen längst nach dem aktiven Mandanten. Ohne diesen Vorrang zeigt die Liste
+    die Artikel des einen Betriebs, während die Suche im anderen sucht – und nach
+    einem Serverwechsel befragt sie eine Datenbank, die es nicht mehr gibt.
+
+    Arbeitet das Projekt ohne Mandanten, bleibt die mitgeschickte Verbindung –
+    dann ist alles wie bisher.
+    """
+    from app.services import mandant_service
+    aktiv = mandant_service.aktiver(project_id, user, db)
+    if aktiv is not None:
+        return aktiv
+    if angefragt is not None and not mandant_service.darf_nutzen(
+            angefragt, user, db, project_id):
+        raise HTTPException(403, "Diese Verbindung ist für Sie nicht freigegeben")
+    return angefragt
+
+
 # ─── Ausschlussliste ──────────────────────────────────────────────────────────
 
 @router.get("/exclusions")
@@ -75,9 +98,9 @@ def add_exclusion(data: ExclusionIn,
     if not (getattr(user, "is_portal_only", False)
             and user_can_access_portal_project(data.project_id, user, db)):
         require_editor(data.project_id, user, db)
-    # Der Ausschluss gehört zu der WaWi, in der die Artikel-ID gilt.
-    from app.services import mandant_service
-    conn_id = data.connection_id or mandant_service.aktiver(data.project_id, user, db)
+    # Der Ausschluss gehört zu der WaWi, in der die Artikel-ID gilt – also zu
+    # derselben, in der die Suche den Artikel gefunden hat.
+    conn_id = _wawi_verbindung(data.project_id, data.connection_id, user, db)
     existing = (db.query(ArticleExclusion)
                 .filter(ArticleExclusion.project_id == data.project_id,
                         ArticleExclusion.k_artikel == data.k_artikel,
@@ -118,10 +141,145 @@ def delete_exclusion(excl_id: int,
     return {"ok": True}
 
 
+# ─── Übernahme aus einer anderen Verbindung ──────────────────────────────────
+# Wechselt ein Betrieb den SQL-Server oder legt jemand die WaWi als neue
+# Verbindung an, sind die gepflegten Ausschlüsse plötzlich unsichtbar und wirkungslos:
+# sie hängen an der alten Verbindung. Sie einfach umzuhängen wäre falsch – kArtikel
+# ist eine interne ID der jeweiligen Datenbank und bezeichnet anderswo einen
+# anderen Artikel. Deshalb wird über die ARTIKELNUMMER neu aufgelöst.
+
+def _andere_ausschluesse(project_id, ziel_conn, user, db):
+    """Ausschlüsse desselben Projekts, die an einer anderen Verbindung hängen.
+
+    Nur aus Verbindungen, die dieser Benutzer auch sehen darf – sonst verriete die
+    Übernahme die Artikelnummern eines Mandanten, für den er nicht freigegeben ist.
+    """
+    from app.services import mandant_service
+    rows = (db.query(ArticleExclusion)
+            .filter(ArticleExclusion.project_id == project_id).all())
+    ist_standard = mandant_service.standard(project_id, db) == ziel_conn
+    fremd = []
+    for r in rows:
+        eigen = (r.connection_id == ziel_conn
+                 or (r.connection_id is None and ist_standard))
+        if eigen:
+            continue
+        if not mandant_service.darf_nutzen(r.connection_id, user, db, project_id):
+            continue
+        fremd.append(r)
+    return fremd
+
+
+@router.get("/exclusions/uebertragbar")
+def uebertragbar(project_id: Optional[int] = None,
+                 connection_id: Optional[int] = None,
+                 db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Liegen Ausschlüsse an einer anderen Verbindung? – für den Hinweis im Panel.
+
+    Gezählt wird nur, was sich auch übernehmen lässt: ohne Artikelnummer gibt es
+    nichts, woran der Artikel in der anderen Datenbank wiederzuerkennen wäre.
+    """
+    if not (can_read_project(project_id, user, db)
+            or user_can_access_portal_project(project_id, user, db)):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    ziel = _wawi_verbindung(project_id, connection_id, user, db)
+    if ziel is None:
+        return {"quellen": [], "gesamt": 0}
+
+    from app.services import mandant_service
+    je_quelle: dict = {}
+    for r in _andere_ausschluesse(project_id, ziel, user, db):
+        if not (r.art_nr or "").strip():
+            continue
+        e = je_quelle.setdefault(r.connection_id, {"connection_id": r.connection_id,
+                                                   "name": None, "anzahl": 0})
+        e["anzahl"] += 1
+    for cid, e in je_quelle.items():
+        e["name"] = mandant_service.name_von(cid, db) or (
+            f"Verbindung {cid}" if cid is not None else "ohne Verbindung")
+    quellen = sorted(je_quelle.values(), key=lambda e: -e["anzahl"])
+    return {"quellen": quellen, "gesamt": sum(e["anzahl"] for e in quellen)}
+
+
+class UebernahmeIn(BaseModel):
+    project_id: Optional[int] = None
+    connection_id: Optional[int] = None           # Ziel; None = aktiver Mandant
+    from_connection_id: Optional[int] = None      # None = alle Quellen
+
+
+@router.post("/exclusions/uebernehmen")
+def uebernehmen(data: UebernahmeIn,
+                db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """Übernimmt Ausschlüsse einer anderen Verbindung in die aktive WaWi.
+
+    Der Abgleich läuft über cArtNr: die Artikelnummer ist das, was in beiden
+    Datenbanken denselben Artikel bezeichnet. Was dort nicht existiert, wird
+    gemeldet statt stillschweigend übergangen – ein Ausschluss, von dem der
+    Anwender glaubt, er greife, ist schlimmer als gar keiner.
+    """
+    if not (getattr(user, "is_portal_only", False)
+            and user_can_access_portal_project(data.project_id, user, db)):
+        require_editor(data.project_id, user, db)
+
+    ziel = _wawi_verbindung(data.project_id, data.connection_id, user, db)
+    if ziel is None:
+        raise HTTPException(400, "Keine JTL-Verbindung aktiv")
+
+    quelle = _andere_ausschluesse(data.project_id, ziel, user, db)
+    if data.from_connection_id is not None:
+        quelle = [r for r in quelle if r.connection_id == data.from_connection_id]
+    nummern = {(r.art_nr or "").strip(): r for r in quelle if (r.art_nr or "").strip()}
+    if not nummern:
+        return {"uebernommen": 0, "schon_vorhanden": 0, "nicht_gefunden": []}
+
+    from sqlalchemy import text as _text, bindparam
+    from app.services.sql_helpers import _get_sql_engine
+    sql = _text(
+        "SELECT a.kArtikel, a.cArtNr, b.cName "
+        "FROM dbo.tArtikel a "
+        "LEFT JOIN dbo.tArtikelBeschreibung b "
+        "  ON b.kArtikel = a.kArtikel "
+        "  AND b.kSprache = 1 AND b.kPlattform = 1 AND b.kShop = 0 "
+        "WHERE a.cArtNr IN :nrs"
+    ).bindparams(bindparam("nrs", expanding=True))
+    try:
+        engine = _get_sql_engine(ziel)
+        with engine.connect() as con:
+            treffer = con.execute(sql, {"nrs": list(nummern.keys())}).fetchall()
+    except Exception as e:
+        raise HTTPException(400, f"Artikel-Abgleich fehlgeschlagen: {str(e)[:200]}")
+
+    from app.services import mandant_service as _ms
+    ziel_ist_standard = _ms.standard(data.project_id, db) == ziel
+    vorhanden = {r.k_artikel for r in db.query(ArticleExclusion)
+                 .filter(ArticleExclusion.project_id == data.project_id).all()
+                 if r.connection_id == ziel
+                 or (r.connection_id is None and ziel_ist_standard)}
+    neu, schon, gefunden = 0, 0, set()
+    for k_artikel, art_nr, name in treffer:
+        nr = (art_nr or "").strip()
+        gefunden.add(nr)
+        if k_artikel in vorhanden:
+            schon += 1
+            continue
+        db.add(ArticleExclusion(project_id=data.project_id, connection_id=ziel,
+                                k_artikel=k_artikel, art_nr=nr,
+                                name=name or nummern[nr].name))
+        vorhanden.add(k_artikel)
+        neu += 1
+    db.commit()
+
+    fehlt = [{"art_nr": nr, "name": r.name} for nr, r in nummern.items()
+             if nr not in gefunden]
+    return {"uebernommen": neu, "schon_vorhanden": schon, "nicht_gefunden": fehlt}
+
+
 # ─── Artikel-Suche gegen die JTL-DB ───────────────────────────────────────────
 
 @router.get("/articles/search")
-def search_articles(connection_id: int,
+def search_articles(connection_id: Optional[int] = None,
                     q: str = Query("", min_length=0),
                     project_id: Optional[int] = None,
                     limit: int = 50,
@@ -135,6 +293,10 @@ def search_articles(connection_id: int,
 
     from sqlalchemy import text as _text
     from app.services.sql_helpers import _get_sql_engine
+
+    connection_id = _wawi_verbindung(project_id, connection_id, user, db)
+    if connection_id is None:
+        raise HTTPException(400, "Keine JTL-Verbindung gewählt")
 
     term = (q or "").strip()
     like = f"%{term}%"

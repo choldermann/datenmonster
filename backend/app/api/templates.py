@@ -265,6 +265,65 @@ def _resolve_conn_ids_install(obj, config: dict):
     return obj
 
 
+def _conn_ids_nachziehen(vorhanden, vorlage, config: dict) -> int:
+    """Zieht die Verbindungs-IDs eines installierten Formular-Schemas nach.
+
+    Ein gleichnamiges Formular wird beim Neu-Installieren bewusst nicht
+    überschrieben – sonst gingen im Betrieb ergänzte Reiter und Widgets verloren.
+    Damit blieb bisher aber auch die Verbindung stehen: wählt der Installierende
+    eine andere WaWi, laufen Mappings und Datasets auf der neuen, während ein
+    Widget oder ein Ausschlussartikel-Feld weiter die alte, womöglich abgeschaltete
+    Datenbank befragt.
+
+    Deshalb wird hier NUR nachgezogen, was der Installer ohnehin selbst gesetzt
+    hat: Felder aus `_CONN_ID_KEYS`, die in der Vorlage einen {{connection_X}}-
+    Platzhalter tragen. Alles andere im Schema bleibt unangetastet – auch eine
+    Verbindung, die jemand von Hand auf ein Fremdsystem gestellt hat, denn die
+    trägt in der Vorlage keinen Platzhalter.
+
+    Zugeordnet wird über `id` (Widgets und Felder tragen eine), nicht über die
+    Position in der Liste: wer im Betrieb ein Widget eingefügt hat, hat damit alle
+    Folgeindizes verschoben.
+    """
+    geaendert = 0
+
+    def _liste_zuordnen(v_liste, t_liste):
+        """Paare (vorhanden, vorlage) – über id, sonst der Reihe nach."""
+        nach_id = {e["id"]: e for e in v_liste
+                   if isinstance(e, dict) and e.get("id") is not None}
+        genutzt = set()
+        for i, t_el in enumerate(t_liste):
+            t_id = t_el.get("id") if isinstance(t_el, dict) else None
+            if t_id is not None and t_id in nach_id:
+                genutzt.add(t_id)
+                yield nach_id[t_id], t_el
+            elif t_id is None and i < len(v_liste):
+                yield v_liste[i], t_el
+
+    def _gehe(v_obj, t_obj):
+        nonlocal geaendert
+        if isinstance(v_obj, dict) and isinstance(t_obj, dict):
+            for k, t_val in t_obj.items():
+                if k in _CONN_ID_KEYS:
+                    if not (isinstance(t_val, str)
+                            and _CONN_PLACEHOLDER_RE.match(t_val.strip())):
+                        continue          # keine vom Installer gesetzte Verbindung
+                    neu = _resolve_conn_value(t_val, config)
+                    if _als_conn_id(neu) is None:
+                        continue          # Platzhalter blieb offen – nichts anfassen
+                    if _als_conn_id(v_obj.get(k)) != _als_conn_id(neu):
+                        v_obj[k] = neu
+                        geaendert += 1
+                elif k in v_obj:
+                    _gehe(v_obj[k], t_val)
+        elif isinstance(v_obj, list) and isinstance(t_obj, list):
+            for v_el, t_el in _liste_zuordnen(v_obj, t_obj):
+                _gehe(v_el, t_el)
+
+    _gehe(vorhanden, vorlage)
+    return geaendert
+
+
 def _form_auf_bausteine_kuerzen(schema: dict, widget_ids: List[str]) -> dict:
     """Ein Formular auf die genannten Bausteine eindampfen.
 
@@ -911,8 +970,18 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         f_name = _apply_config(f_def.get("name", "Formular"), config)
         existing_f = form_by_name.get(f_name)
         if existing_f is not None:
-            created.setdefault("forms", []).append(
-                {"id": existing_f.id, "name": existing_f.name, "reused": True})
+            # Das Schema bleibt, die gewählte Verbindung wird nachgezogen: sonst
+            # laufen Mappings und Datasets nach dem Install auf der neuen WaWi,
+            # während ein Widget oder der Ausschlussartikel-Reiter weiter die alte
+            # befragt – und das fällt erst auf, wenn die alte abgeschaltet wird.
+            eintrag = {"id": existing_f.id, "name": existing_f.name, "reused": True}
+            n = _conn_ids_nachziehen(existing_f.schema or {},
+                                     f_def.get("schema", {}) or {}, config)
+            if n:
+                flag_modified(existing_f, "schema")
+                db.commit()
+                eintrag["verbindung_aktualisiert"] = n
+            created.setdefault("forms", []).append(eintrag)
             continue
         schema = _copy.deepcopy(f_def.get("schema", {}) or {})
         for a in schema.get("actions", []) or []:

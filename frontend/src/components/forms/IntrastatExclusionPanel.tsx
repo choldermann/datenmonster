@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Search, Plus, Trash2, Loader2, X, PackageX, AlertCircle } from "lucide-react";
+import { Search, Plus, Trash2, Loader2, X, PackageX, AlertCircle, ArrowRightLeft } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
+import { ladeMandanten, onMandantChange } from "../../services/mandant";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -21,6 +22,10 @@ const inputStyle = {
 export default function IntrastatExclusionPanel({ projectId, connectionId: fixedConn }) {
   const [connections, setConnections] = useState([]);
   const [connId, setConnId] = useState(fixedConn ?? null);
+  const [mandantAktiv, setMandantAktiv] = useState(null);
+  const [uebertragbar, setUebertragbar] = useState(null);   // { quellen, gesamt }
+  const [uebernehmend, setUebernehmend] = useState(false);
+  const [bericht, setBericht] = useState(null);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -37,7 +42,26 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
     } catch (e) { setError(fehlerText(e)); }
   }, [pq]);
 
-  useEffect(() => { loadExclusions(); }, [loadExclusions]);
+  useEffect(() => { loadExclusions(); }, [loadExclusions, mandantAktiv]);
+
+  // Der aktive Mandant schlägt die Verbindung aus dem Formular-Schema. Diese ist
+  // beim Installieren eingefroren worden und zeigt nach einem Serverwechsel auf
+  // eine WaWi, die es nicht mehr gibt; die Ausschlussliste richtet sich dagegen
+  // immer nach dem Mandanten. Beides muss dieselbe Datenbank meinen, sonst sucht
+  // man im einen Betrieb und sieht die Artikel des anderen.
+  useEffect(() => {
+    let abgemeldet = false;
+    ladeMandanten(projectId).then(({ aktiv }) => {
+      if (!abgemeldet) setMandantAktiv(aktiv ?? null);
+    });
+    const ab = onMandantChange((pid, aktiv) => {
+      if (String(pid ?? "") === String(projectId ?? "")) setMandantAktiv(aktiv ?? null);
+    });
+    return () => { abgemeldet = true; ab(); };
+  }, [projectId]);
+
+  // Die tatsächlich befragte WaWi: Mandant, sonst die Vorgabe aus dem Formular.
+  const effConnId = mandantAktiv ?? connId;
 
   // Verbindungen des Projekts laden (für die Artikel-Suche). Bei genau einer
   // Verbindung automatisch vorauswählen.
@@ -51,11 +75,11 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
   }, [pq, fixedConn]);
 
   const runSearch = useCallback(async (term) => {
-    if (connId == null) { setError("Bitte zuerst eine JTL-Verbindung wählen."); return; }
+    if (effConnId == null) { setError("Bitte zuerst eine JTL-Verbindung wählen."); return; }
     setSearching(true);
     setError(null);
     try {
-      const p = new URLSearchParams({ connection_id: String(connId), q: term });
+      const p = new URLSearchParams({ connection_id: String(effConnId), q: term });
       if (projectId != null) p.set("project_id", String(projectId));
       const { data } = await api.get(`/api/intrastat/articles/search?${p}`);
       setSearchResults(Array.isArray(data) ? data : []);
@@ -63,15 +87,15 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
       setError(fehlerText(e));
       setSearchResults([]);
     } finally { setSearching(false); }
-  }, [connId, projectId]);
+  }, [effConnId, projectId]);
 
   // Debounced Suche bei Eingabe
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!query.trim() || connId == null) { setSearchResults([]); return; }
+    if (!query.trim() || effConnId == null) { setSearchResults([]); return; }
     debounceRef.current = setTimeout(() => runSearch(query.trim()), 350);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [query, connId, runSearch]);
+  }, [query, effConnId, runSearch]);
 
   const excludedIds = new Set(exclusions.map(e => e.k_artikel));
 
@@ -79,7 +103,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
     try {
       await api.post("/api/intrastat/exclusions", {
         project_id: projectId ?? null,
-        connection_id: connId ?? null,
+        connection_id: effConnId ?? null,
         k_artikel: art.k_artikel,
         art_nr: art.art_nr,
         name: art.name,
@@ -93,6 +117,38 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
       await api.delete(`/api/intrastat/exclusions/${id}`);
       setExclusions(prev => prev.filter(e => e.id !== id));
     } catch (e) { setError(fehlerText(e)); }
+  };
+
+  // Ausschlüsse hängen an der Verbindung, aus der sie stammen – kArtikel ist eine
+  // interne ID je WaWi. Nach einem Serverwechsel stehen die gepflegten Artikel
+  // deshalb an der alten Verbindung und wirken nicht mehr. Statt das stillschweigend
+  // hinzunehmen, wird darauf hingewiesen; übernommen wird nur auf Klick.
+  useEffect(() => {
+    if (effConnId == null) { setUebertragbar(null); return; }
+    let ab = false;
+    const p = new URLSearchParams({ connection_id: String(effConnId) });
+    if (projectId != null) p.set("project_id", String(projectId));
+    api.get(`/api/intrastat/exclusions/uebertragbar?${p}`)
+      .then(({ data }) => { if (!ab) setUebertragbar(data?.gesamt ? data : null); })
+      .catch(() => { if (!ab) setUebertragbar(null); });
+    return () => { ab = true; };
+  }, [effConnId, projectId, exclusions.length]);
+
+  const uebernehmen = async () => {
+    setUebernehmend(true);
+    setError(null);
+    setBericht(null);
+    try {
+      const { data } = await api.post("/api/intrastat/exclusions/uebernehmen", {
+        project_id: projectId ?? null,
+        connection_id: effConnId ?? null,
+        from_connection_id: uebertragbar?.quellen?.length === 1
+          ? uebertragbar.quellen[0].connection_id : null,
+      });
+      setBericht(data);
+      loadExclusions();
+    } catch (e) { setError(fehlerText(e)); }
+    finally { setUebernehmend(false); }
   };
 
   return (
@@ -114,8 +170,9 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
         </div>
       )}
 
-      {/* Verbindungsauswahl nur, wenn nicht fix vorgegeben und mehrere vorhanden */}
-      {fixedConn == null && connections.length > 1 && (
+      {/* Verbindungsauswahl nur ohne Mandanten: sonst führt der Umschalter in der
+          Kopfzeile, und zwei Auswahlen für dieselbe Sache widersprechen sich. */}
+      {mandantAktiv == null && fixedConn == null && connections.length > 1 && (
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: 11, color: S.textDim, display: "block", marginBottom: 4 }}>JTL-Verbindung</label>
           <select value={connId ?? ""} onChange={e => setConnId(e.target.value ? Number(e.target.value) : null)}
@@ -123,6 +180,68 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
             <option value="">— Verbindung wählen —</option>
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+        </div>
+      )}
+
+      {/* Hinweis: gepflegte Ausschlüsse hängen an einer anderen Verbindung.
+          Sie sind dann unsichtbar UND wirkungslos – ohne diesen Hinweis merkt das
+          niemand, bis in der Auswertung plötzlich wieder Paletten auftauchen. */}
+      {uebertragbar && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+          borderRadius: 6, marginBottom: 14, backgroundColor: "rgba(240,180,52,0.08)",
+          border: "1px solid rgba(240,180,52,0.3)" }}>
+          <ArrowRightLeft size={14} color="#f0b434" style={{ marginTop: 2, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 12, color: S.textBright, marginBottom: 3 }}>
+              {uebertragbar.gesamt} ausgeschlossene{uebertragbar.gesamt === 1 ? "r Artikel liegt" : " Artikel liegen"}
+              {" "}an {uebertragbar.quellen.length === 1
+                ? <>einer anderen Verbindung (<b>{uebertragbar.quellen[0].name}</b>)</>
+                : <>anderen Verbindungen ({uebertragbar.quellen.map(q => q.name).join(", ")})</>}.
+            </div>
+            <div style={{ fontSize: 11, color: S.textDim, lineHeight: 1.5 }}>
+              Für die aktuelle WaWi gelten sie nicht – die interne Artikel-ID ist je
+              Datenbank eine andere. Bei der Übernahme werden die Artikel über die
+              Artikelnummer neu gesucht; was hier nicht existiert, wird gemeldet.
+              Drüben bleibt alles unverändert stehen.
+            </div>
+          </div>
+          <button onClick={uebernehmen} disabled={uebernehmend}
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 5,
+              fontSize: 11, whiteSpace: "nowrap", flexShrink: 0,
+              cursor: uebernehmend ? "default" : "pointer",
+              backgroundColor: "rgba(240,180,52,0.14)", border: "1px solid rgba(240,180,52,0.4)",
+              color: "#f0b434" }}>
+            {uebernehmend
+              ? <><Loader2 size={12} className="animate-spin" /> Übernehme…</>
+              : <>Artikel übernehmen</>}
+          </button>
+        </div>
+      )}
+
+      {/* Ergebnis der Übernahme. Die nicht gefundenen Artikel stehen namentlich da:
+          nur so weiß der Anwender, was er von Hand nachpflegen muss. */}
+      {bericht && (
+        <div style={{ padding: "10px 12px", borderRadius: 6, marginBottom: 14,
+          backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom:
+            bericht.nicht_gefunden?.length ? 6 : 0 }}>
+            <div style={{ flex: 1, fontSize: 12, color: S.textBright }}>
+              {bericht.uebernommen} übernommen
+              {bericht.schon_vorhanden > 0 && `, ${bericht.schon_vorhanden} waren schon vorhanden`}
+              {bericht.nicht_gefunden?.length > 0 && `, ${bericht.nicht_gefunden.length} nicht gefunden`}
+            </div>
+            <button onClick={() => setBericht(null)} title="Schließen"
+              style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}>
+              <X size={14} />
+            </button>
+          </div>
+          {bericht.nicht_gefunden?.length > 0 && (
+            <div style={{ fontSize: 11, color: S.textDim, lineHeight: 1.6 }}>
+              Diese Artikelnummern gibt es in der aktuellen WaWi nicht – sie bleiben
+              unberücksichtigt:{" "}
+              {bericht.nicht_gefunden.map(a => a.art_nr).join(", ")}
+            </div>
+          )}
         </div>
       )}
 
