@@ -25,6 +25,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
   const [mandantAktiv, setMandantAktiv] = useState(null);
   const [uebertragbar, setUebertragbar] = useState(null);   // { quellen, gesamt }
   const [uebernehmend, setUebernehmend] = useState(false);
+  const [pruefStand, setPruefStand] = useState(0);   // stoesst die Pruefung neu an
   const [bericht, setBericht] = useState(null);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -132,7 +133,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
       .then(({ data }) => { if (!ab) setUebertragbar(data?.gesamt ? data : null); })
       .catch(() => { if (!ab) setUebertragbar(null); });
     return () => { ab = true; };
-  }, [effConnId, projectId, exclusions.length]);
+  }, [effConnId, projectId, exclusions.length, pruefStand]);
 
   const uebernehmen = async () => {
     setUebernehmend(true);
@@ -147,6 +148,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
       });
       setBericht(data);
       loadExclusions();
+      setPruefStand(n => n + 1);
     } catch (e) { setError(fehlerText(e)); }
     finally { setUebernehmend(false); }
   };

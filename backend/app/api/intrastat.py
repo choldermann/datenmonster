@@ -177,8 +177,14 @@ def uebertragbar(project_id: Optional[int] = None,
                  user: User = Depends(get_current_user)):
     """Liegen Ausschlüsse an einer anderen Verbindung? – für den Hinweis im Panel.
 
-    Gezählt wird nur, was sich auch übernehmen lässt: ohne Artikelnummer gibt es
-    nichts, woran der Artikel in der anderen Datenbank wiederzuerkennen wäre.
+    Gezählt wird nur, was hier noch FEHLT. Die Übernahme kopiert bewusst, statt
+    umzuhängen – drüben bleibt alles stehen. Zählte man einfach alle fremden
+    Ausschlüsse, bliebe der Hinweis deshalb auch nach getaner Arbeit für immer
+    stehen und meldete etwas zu tun, wo nichts mehr zu tun ist.
+
+    Abgeglichen wird über die Artikelnummer, denn genau darüber übernimmt der
+    Knopf. Ohne Artikelnummer gibt es nichts, woran der Artikel in der anderen
+    Datenbank wiederzuerkennen wäre – solche Zeilen zählen gar nicht erst mit.
     """
     if not (can_read_project(project_id, user, db)
             or user_can_access_portal_project(project_id, user, db)):
@@ -188,9 +194,22 @@ def uebertragbar(project_id: Optional[int] = None,
         return {"quellen": [], "gesamt": 0}
 
     from app.services import mandant_service
+    # Was an der Zielverbindung schon steht. Ohne Rücksicht auf Groß-/Kleinschreibung:
+    # der Abgleich läuft im MSSQL gegen cArtNr, und dessen Standard-Sortierung
+    # unterscheidet sie nicht – die Übernahme speichert also die Schreibweise der
+    # Ziel-WaWi, die von der Quelle abweichen darf.
+    ziel_ist_standard = mandant_service.standard(project_id, db) == ziel
+    schon_da = {(r.art_nr or "").strip().casefold()
+                for r in db.query(ArticleExclusion)
+                .filter(ArticleExclusion.project_id == project_id).all()
+                if (r.connection_id == ziel
+                    or (r.connection_id is None and ziel_ist_standard))
+                and (r.art_nr or "").strip()}
+
     je_quelle: dict = {}
     for r in _andere_ausschluesse(project_id, ziel, user, db):
-        if not (r.art_nr or "").strip():
+        nr = (r.art_nr or "").strip()
+        if not nr or nr.casefold() in schon_da:
             continue
         e = je_quelle.setdefault(r.connection_id, {"connection_id": r.connection_id,
                                                    "name": None, "anzahl": 0})
