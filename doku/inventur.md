@@ -92,6 +92,14 @@ abgewertet wird. Standard ist MHD überschritten 100 %, unter 3 Monaten 50 %,
   neue Inventur übernimmt die Staffel der letzten desselben Mandanten.
 * **„Vorschläge danach neu berechnen"** (startet aus) setzt die Vorschläge nach der
   neuen Staffel und entfernt die, die sie nicht mehr trägt. Handbewertungen bleiben.
+* **Herkunft je Bewertung** (`inventur_positionen.bewertung_quelle` = `staffel` |
+  `hand`). Sie bleibt nach „Vorschläge übernehmen" erhalten. Neu berechnet werden
+  deshalb auch übernommene Staffel-Bewertungen: ändert sich der Betrag, werden sie
+  wieder zum Vorschlag (neu übernehmen), sonst bleiben sie bestätigt. Anlass
+  (10.09., PPS): alle 49 Bewertungen waren übernommene Vorschläge – die Staffel
+  wirkte danach gar nicht mehr, die Vorschau zeigte überall 0. Altbestand wird beim
+  Start einmalig nachgetragen: Art „Abwertungsbetrag" mit Grundtext „… (x %)" = Staffel,
+  alles andere = Hand.
   Mit PPS geprüft: Standard 63.842 €, „ab 30 Tagen drüber 100 %, bis dahin 50 %,
   unter 3 Monaten 20 %" 47.719 €.
 

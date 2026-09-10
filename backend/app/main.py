@@ -134,6 +134,15 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE adhoc_queries ADD COLUMN verlauf_mapping_id INTEGER",
             # Inventur: Abwertungsstaffel je Lauf (gehört zum Beleg)
             "ALTER TABLE inventur_laeufe ADD COLUMN abwertung_stufen JSON",
+            # Inventur: Herkunft je Bewertung (staffel|hand). Altbestand einmalig
+            # nachtragen – nur wo noch NULL, also idempotent. Staffel erkennt man am
+            # Grundtext „… (100 %)" (Escape '!', sonst wäre das % ein Platzhalter).
+            "ALTER TABLE inventur_positionen ADD COLUMN bewertung_quelle VARCHAR",
+            """UPDATE inventur_positionen SET bewertung_quelle = 'staffel'
+               WHERE bewertung_quelle IS NULL AND bewertung_art = 'betrag'
+                 AND (vorschlag = 1 OR grund LIKE '% !%)' ESCAPE '!')""",
+            """UPDATE inventur_positionen SET bewertung_quelle = 'hand'
+               WHERE bewertung_quelle IS NULL AND bewertung_art IS NOT NULL""",
             """CREATE TABLE IF NOT EXISTS ftp_sources (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,

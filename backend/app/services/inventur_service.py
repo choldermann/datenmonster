@@ -321,6 +321,10 @@ def bewerten(db, pos: InventurPosition, art: str, wert: float,
     pos.wert_neu = neu
     pos.grund = grund
     pos.vorschlag = vorschlag
+    # Herkunft bleibt auch nach „Vorschläge übernehmen" erhalten – nur so kann eine
+    # geänderte Staffel übernommene Staffel-Bewertungen neu rechnen, ohne echte
+    # Handarbeit anzufassen.
+    pos.bewertung_quelle = "staffel" if vorschlag else "hand"
     pos.bewertet_am = _jetzt()
     pos.bewertet_von = benutzer
     db.commit()
@@ -334,6 +338,7 @@ def bewertung_loeschen(db, pos: InventurPosition) -> InventurPosition:
     pos.wert_neu = None
     pos.grund = None
     pos.vorschlag = False
+    pos.bewertung_quelle = None
     pos.bewertet_am = None
     pos.bewertet_von = None
     db.commit()
@@ -505,25 +510,36 @@ def vorschlag_anwenden(db, lauf: InventurLauf, stufen: List[dict] = None,
     stufen = sorted(stufen, key=lambda s: _zahl(s.get("bis_tage"), 0))
 
     q = db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id)
-    gesetzt = entfernt = 0
+    gesetzt = entfernt = unveraendert = 0
     for pos in q.all():
-        if nur_unbewertete and pos.bewertung_art and not pos.vorschlag:
+        # Aus der Staffel stammt, was noch Vorschlag ist ODER übernommen wurde.
+        # Nur echte Handbewertungen sind geschützt (NULL = Altbestand ohne
+        # Herkunft, im Zweifel Handarbeit).
+        aus_staffel = bool(pos.vorschlag) or pos.bewertung_quelle == "staffel"
+        if nur_unbewertete and pos.bewertung_art and not aus_staffel:
             continue
         betrag, grund = _vorschlag_fuer(pos, stufen, lauf.stichtag)
         if betrag <= 0:
-            # Ein Vorschlag, den die jetzige Staffel nicht mehr trägt, muss weg –
-            # sonst bliebe nach einer geänderten Staffel die Abwertung der alten
-            # stehen und die Summe stimmte mit keiner der beiden überein.
-            if pos.vorschlag and pos.bewertung_art:
+            # Eine Staffel-Bewertung, die die jetzige Staffel nicht mehr trägt, muss
+            # weg – sonst bliebe die Abwertung der alten Staffel stehen und die Summe
+            # stimmte mit keiner der beiden überein.
+            if pos.bewertung_art and aus_staffel:
                 bewertung_loeschen(db, pos)
                 entfernt += 1
+            continue
+        if (pos.bewertung_art and aus_staffel and not pos.vorschlag
+                and round(betrag, 2) == round(pos.abwertung_betrag or 0, 2)
+                and grund == pos.grund):
+            # Übernommen und unverändert: bleibt bestätigt. Nur was sich wirklich
+            # ändert, wird wieder zum Vorschlag und muss neu übernommen werden.
+            unveraendert += 1
             continue
         bewerten(db, pos, "betrag", round(betrag, 2), grund=grund,
                  benutzer=benutzer, vorschlag=True)
         gesetzt += 1
 
     summen_neu_rechnen(db, lauf)
-    return {"vorschlaege": gesetzt, "entfernt": entfernt}
+    return {"vorschlaege": gesetzt, "entfernt": entfernt, "unveraendert": unveraendert}
 
 
 def vorschlaege_bestaetigen(db, lauf: InventurLauf, benutzer: str = None) -> dict:

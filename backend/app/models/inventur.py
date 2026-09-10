@@ -129,6 +129,10 @@ class InventurPosition(Base):
     wert_neu         = Column(Float, nullable=True)
     grund            = Column(Text, nullable=True)
     vorschlag        = Column(Boolean, default=False)  # aus der Stufenregel, noch nicht bestätigt
+    # Woher die Bewertung stammt: "staffel" (auch nach dem Übernehmen) oder "hand".
+    # Ohne das wäre eine übernommene Staffel-Bewertung von Handarbeit nicht zu
+    # unterscheiden, und eine geänderte Staffel könnte sie nie mehr neu rechnen.
+    bewertung_quelle = Column(String, nullable=True)
     bewertet_am      = Column(DateTime, nullable=True)
     bewertet_von     = Column(String, nullable=True)
 

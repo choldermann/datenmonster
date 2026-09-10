@@ -267,8 +267,9 @@ export default function InventurStufenModal({ stufen, standard, gesperrt, vorsch
               <span>
                 Vorschläge danach neu berechnen
                 <span style={{ display: "block", fontSize: 10.5, color: S.textDim, marginTop: 1 }}>
-                  Ohne Haken bleiben bestehende Vorschläge wie sie sind, bis du erneut
-                  „Abwertung vorschlagen“ klickst.
+                  Rechnet auch übernommene Staffel-Bewertungen neu: geänderte werden wieder
+                  zu Vorschlägen, unveränderte bleiben bestätigt. Von Hand Bewertetes bleibt.
+                  Ohne Haken passiert das erst beim nächsten „Abwertung vorschlagen“.
                 </span>
               </span>
             </label>

@@ -102,6 +102,7 @@ def _out_pos(p: InventurPosition) -> dict:
         "wert_neu": p.wert_neu if p.wert_neu is not None else p.wert,
         "grund": p.grund,
         "vorschlag": bool(p.vorschlag),
+        "bewertung_quelle": p.bewertung_quelle,   # staffel | hand | None
         "bewertet_am": p.bewertet_am.isoformat() if p.bewertet_am else None,
         "bewertet_von": p.bewertet_von,
     }

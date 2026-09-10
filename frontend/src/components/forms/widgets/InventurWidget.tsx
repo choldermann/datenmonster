@@ -219,14 +219,16 @@ export default function InventurWidget({ widget, projectId }) {
   };
 
   // Was eine Staffel mit dieser Inventur machen würde – dieselbe Rechnung wie
-  // _vorschlag_fuer im Backend: je Charge, Handbewertungen bleiben unberührt.
+  // _vorschlag_fuer im Backend: je Charge. Übernommene Staffel-Bewertungen zählen
+  // mit, nur echte Handbewertungen bleiben unberührt (wie vorschlag_anwenden).
   // Ergebnis in der Reihenfolge der übergebenen Stufen.
   const stufenVorschau = (entwurfStufen) => {
     const reihe = entwurfStufen.map((_, i) => i)
       .sort((a, b) => entwurfStufen[a].bis_tage - entwurfStufen[b].bis_tage);
     const je = entwurfStufen.map(() => ({ chargen: 0, wert: 0, abwertung: 0 }));
     for (const p of positionen) {
-      if (p.bewertung_art && !p.vorschlag) continue;
+      const ausStaffel = p.vorschlag || p.bewertung_quelle === "staffel";
+      if (p.bewertung_art && !ausStaffel) continue;
       const mitMhd = (p.chargen || []).filter(c => alsDatum(c.mhd));
       const teile = mitMhd.length
         ? mitMhd.map(c => ({ rest: resttage(c.mhd, aktiv.stichtag),
@@ -637,6 +639,12 @@ export default function InventurWidget({ widget, projectId }) {
                             <span style={{ marginLeft: 5, fontSize: 9, color: "#e0b070",
                               border: "1px solid rgba(224,176,112,.4)", borderRadius: 3,
                               padding: "0 3px" }}>Vorschlag</span>
+                          )}
+                          {!p.vorschlag && p.bewertung_art && p.bewertung_quelle === "staffel" && (
+                            <span title="Aus der Staffel übernommen – eine geänderte Staffel rechnet sie neu."
+                              style={{ marginLeft: 5, fontSize: 9, color: S.textDim,
+                              border: `1px solid ${S.border}`, borderRadius: 3,
+                              padding: "0 3px" }}>Staffel</span>
                           )}
                         </td>
                         <td style={{ padding: "5px 9px", textAlign: "right",
