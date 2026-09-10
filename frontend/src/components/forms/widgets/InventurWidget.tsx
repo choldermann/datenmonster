@@ -110,6 +110,11 @@ export default function InventurWidget({ widget, projectId }) {
   const [standardStufen, setStandardStufen] = useState([]);
   const [stufenOffen, setStufenOffen] = useState(false);
   const [frage, setFrage] = useState(null);         // offene Rückfrage (BestaetigenModal)
+  const [gruende, setGruende] = useState([]);       // Auswahl für Differenzgründe
+  const [zaehlEntwurf, setZaehlEntwurf] = useState({}); // Eingaben: "id" Ist, "id:i" Charge, "n id" Notiz
+  const [zaehltagEntwurf, setZaehltagEntwurf] = useState(null);
+  const [nurAbweichung, setNurAbweichung] = useState(false);
+  const [nurUngezaehlt, setNurUngezaehlt] = useState(false);
 
   // Die Staffel DIESER Inventur (sie gehört zum Beleg), sonst die Standardstaffel.
   // Aufsteigend sortiert wie im Backend – die engste Stufe gewinnt.
@@ -153,6 +158,9 @@ export default function InventurWidget({ widget, projectId }) {
     api.get("/api/inventur/stufen")
       .then(({ data }) => setStandardStufen(data || []))
       .catch(() => setStandardStufen([]));   // ohne Stufen fehlt nur die Spalte
+    api.get("/api/inventur/differenzgruende")
+      .then(({ data }) => setGruende(data || []))
+      .catch(() => setGruende([]));
   }, []);
 
   // Beim Mandantenwechsel neu laden: die Inventur des einen Betriebs hat in der
@@ -231,10 +239,13 @@ export default function InventurWidget({ widget, projectId }) {
     for (const p of positionen) {
       const ausStaffel = p.vorschlag || p.bewertung_quelle === "staffel";
       if (p.bewertung_art && !ausStaffel) continue;
+      // Artikelzählung: die Partien anteilig zur gezählten Menge (wie _vorschlag_fuer).
+      const faktor = p.zaehlung_ebene === "artikel" && p.bestand_soll > 0.0005
+        ? (p.bestand || 0) / p.bestand_soll : 1;
       const mitMhd = (p.chargen || []).filter(c => alsDatum(c.mhd));
       const teile = mitMhd.length
         ? mitMhd.map(c => ({ rest: resttage(c.mhd, aktiv.stichtag),
-                             wert: c.wert ?? (c.menge || 0) * (c.ek || 0) }))
+                             wert: (c.wert ?? (c.menge || 0) * (c.ek || 0)) * faktor }))
         : (p.resttage !== null && p.resttage !== undefined
             ? [{ rest: p.resttage, wert: p.wert || 0 }] : []);
       for (const t of teile) {
@@ -277,6 +288,46 @@ export default function InventurWidget({ widget, projectId }) {
       setEntwurf(prev => { const n = { ...prev }; delete n[pos.id]; return n; });
     } catch (err) {
       setFehler(fehlerText(err));
+    }
+  };
+
+  // Zählung speichern. `felder` nur mit dem, was sich ändert ({ist}, {grund},
+  // {notiz}, {charge_index, charge_ist}) – der Server lässt den Rest stehen.
+  const zaehlungSpeichern = async (pos, felder) => {
+    try {
+      const { data } = await api.put(`/api/inventur/positionen/${pos.id}/zaehlung`, felder);
+      setPositionen(prev => prev.map(p => p.id === pos.id ? data.position : p));
+      setAktiv(data.lauf);
+    } catch (err) {
+      setFehler(fehlerText(err));
+    }
+  };
+
+  // Eingabe „Ist" übernehmen: leer = nicht gezählt, sonst Zahl (deutsches Komma).
+  const zaehlungUebernehmen = (pos, schluessel, felderFuer) => {
+    const roh = zaehlEntwurf[schluessel];
+    if (roh === undefined) return;
+    setZaehlEntwurf(d => { const n = { ...d }; delete n[schluessel]; return n; });
+    const s = String(roh).trim();
+    const wert = s === "" ? null : alsZahl(s);
+    if (wert !== null && isNaN(wert)) { setFehler("Bitte eine Zahl eintragen."); return; }
+    zaehlungSpeichern(pos, felderFuer(wert));
+  };
+
+  // Zähltag: holt die Buchmengen dieses Tages – Soll steht dann gegen das Regal,
+  // wie es der Zähler sieht; zurückgerechnet wird auf den Stichtag.
+  const zaehltagSetzen = async (wert) => {
+    setArbeitet("zaehltag");
+    try {
+      const { data } = await api.put(`/api/inventur/laeufe/${aktiv.id}/zaehltag`,
+        { zaehltag: wert && wert !== aktiv.stichtag ? wert : null });
+      setAktiv(data.lauf);
+      setZaehltagEntwurf(null);
+      await positionenLaden(aktiv.id);
+    } catch (e) {
+      setFehler(fehlerText(e));
+    } finally {
+      setArbeitet(null);
     }
   };
 
@@ -337,6 +388,12 @@ export default function InventurWidget({ widget, projectId }) {
       offeneVorschlaege > 0
         ? `${zahl(offeneVorschlaege)} offene Vorschläge gelten damit als bestätigt – mit deinem Namen.`
         : "Es gibt keine offenen Vorschläge.",
+      `Gezählt: ${zahl(aktiv.gezaehlte_positionen)} von ${zahl(aktiv.positionen_anzahl)} Positionen `
+        + `(ungezählte mit der Buchmenge) · Inventurdifferenz ${eur(aktiv.differenz_wert)}`,
+      aktiv.abweichungen_ohne_grund > 0
+        ? `${zahl(aktiv.abweichungen_ohne_grund)} Abweichungen haben noch keinen Grund – der `
+          + "Abschluss wird abgelehnt, bis jede einen hat."
+        : null,
       "Danach sind Bewertungen, Staffel und neues Einlesen gesperrt, Löschen ebenfalls. "
         + "Ansehen und Export bleiben möglich.",
     ],
@@ -356,6 +413,7 @@ export default function InventurWidget({ widget, projectId }) {
           + "gehen dabei verloren.",
         "Die Staffel bleibt: „Abwertung vorschlagen“ stellt Staffel-Bewertungen danach wieder "
           + "her, von Hand eingetragene nicht.",
+        "Gezählte Mengen, Gründe und Notizen bleiben erhalten.",
       ],
     });
   };
@@ -408,12 +466,62 @@ export default function InventurWidget({ widget, projectId }) {
     // MHD?". Deshalb hängt der Filter an der abgelaufenen MENGE, nicht daran,
     // ob die Position überhaupt ein MHD trägt.
     if (nurAbgelaufen && !(p.menge_abgelaufen > 0)) return false;
+    if (nurAbweichung && !(p.zaehlung_ebene && Math.abs(p.differenz || 0) > 0.0005)) return false;
+    if (nurUngezaehlt && p.zaehlung_ebene) return false;
     if (!suche.trim()) return true;
     const s = suche.trim().toLowerCase();
     return (p.art_nr || "").toLowerCase().includes(s)
         || (p.artikel || "").toLowerCase().includes(s);
   });
   const vorschlaege = positionen.filter(p => p.vorschlag).length;
+
+  // Differenz + Grund einer gezählten Position. Fehlt der Grund, ist die Auswahl
+  // rot umrandet – so sieht man vor dem Abschluss, was noch offen ist.
+  const diffZelle = (p) => {
+    if (!p.zaehlung_ebene) return <span style={{ color: S.textDim }}>–</span>;
+    const d = p.differenz || 0;
+    if (Math.abs(d) <= 0.0005) return <span style={{ color: "#6ec28e" }}>0</span>;
+    const fehlt = !p.differenz_grund || (p.differenz_grund === "sonstiges" && !p.differenz_notiz);
+    const notizKey = `n${p.id}`;
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+        <span style={{ color: d < 0 ? "#e07070" : "#6ec28e" }}
+              title={p.differenz_wert != null ? `Differenzwert zum Stichtag ${eur(p.differenz_wert)}` : ""}>
+          {d > 0 ? "+" : ""}{zahl(d, 3)}
+        </span>
+        {offen ? (
+          <>
+            <select style={{ ...inp, padding: "2px 4px", fontSize: 10.5, maxWidth: 140,
+                      borderColor: fehlt ? "#e07070" : S.border }}
+                    value={p.differenz_grund || ""}
+                    onChange={ev => zaehlungSpeichern(p, { grund: ev.target.value || null })}>
+              <option value="">Grund …</option>
+              {gruende.map(g => <option key={g.id} value={g.id}>{g.label}</option>)}
+            </select>
+            {p.differenz_grund && (
+              <input style={{ ...inp, padding: "2px 4px", fontSize: 10.5, width: 110,
+                        borderColor: fehlt ? "#e07070" : S.border }}
+                     placeholder={p.differenz_grund === "sonstiges" ? "Notiz (Pflicht)" : "Notiz"}
+                     value={zaehlEntwurf[notizKey] ?? (p.differenz_notiz || "")}
+                     onChange={ev => setZaehlEntwurf(x => ({ ...x, [notizKey]: ev.target.value }))}
+                     onBlur={() => {
+                       const v = zaehlEntwurf[notizKey];
+                       if (v === undefined) return;
+                       setZaehlEntwurf(x => { const n = { ...x }; delete n[notizKey]; return n; });
+                       zaehlungSpeichern(p, { notiz: v });
+                     }}
+                     onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 10.5, color: S.textDim }}>
+            {gruende.find(g => g.id === p.differenz_grund)?.label || p.differenz_grund || "ohne Grund"}
+            {p.differenz_notiz ? ` · ${p.differenz_notiz}` : ""}
+          </span>
+        )}
+      </span>
+    );
+  };
 
   return (
     <div style={{ padding: 14 }}>
@@ -539,6 +647,8 @@ export default function InventurWidget({ widget, projectId }) {
               ["Abwertung", eur(aktiv.abwertung_summe)],
               ["Wert nach Abwertung", eur(aktiv.wert_nach_abwertung)],
               ["bewertet", `${zahl(aktiv.bewertete_positionen)} von ${zahl(aktiv.positionen_anzahl)}`],
+              ["gezählt", `${zahl(aktiv.gezaehlte_positionen)} von ${zahl(aktiv.positionen_anzahl)}`],
+              ["Inventurdifferenz", eur(aktiv.differenz_wert)],
             ].map(([label, wert]) => (
               <div key={label}>
                 <div style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase",
@@ -566,6 +676,40 @@ export default function InventurWidget({ widget, projectId }) {
                 </div>
               ) : null;
             })()}
+          </div>
+
+          {/* ── Zählung: Zähltag und offene Gründe ────────────────────────── */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+            marginBottom: 12, fontSize: 11, color: S.textDim }}>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}
+                   title="Tag, an dem physisch gezählt wird. Liegt er neben dem Stichtag, zeigt „Soll“ die Buchmenge dieses Tages, und die Differenz wird auf den Stichtag zurückgerechnet.">
+              Zähltag
+              <input type="date" style={{ ...inp, padding: "3px 6px" }} max={heuteISO()}
+                     value={zaehltagEntwurf ?? (aktiv.zaehltag || aktiv.stichtag)}
+                     disabled={!offen || arbeitet === "zaehltag"}
+                     onChange={e => setZaehltagEntwurf(e.target.value)} />
+            </label>
+            {offen && zaehltagEntwurf && zaehltagEntwurf !== (aktiv.zaehltag || aktiv.stichtag) && (
+              <button style={{ ...btn, padding: "3px 9px", borderColor: S.accent, color: S.accent }}
+                      onClick={() => zaehltagSetzen(zaehltagEntwurf)} disabled={arbeitet !== null}>
+                {arbeitet === "zaehltag" ? <Loader2 size={12} className="spin" /> : <Check size={12} />}
+                übernehmen
+              </button>
+            )}
+            <span>
+              {arbeitet === "zaehltag"
+                ? "Buchmengen am Zähltag werden aus der Wawi geladen …"
+                : aktiv.zaehltag
+                  ? `Soll = Buchmenge am ${datum(aktiv.zaehltag)}; Differenzen werden auf den Stichtag ${datum(aktiv.stichtag)} zurückgerechnet.`
+                  : "Gezählt wird am Stichtag. Leeres Ist = nicht gezählt, dann gilt Soll."}
+            </span>
+            {aktiv.abweichungen_ohne_grund > 0 && (
+              <span style={{ marginLeft: "auto", color: "#e07070", display: "inline-flex",
+                alignItems: "center", gap: 4 }}>
+                <AlertCircle size={12} /> {zahl(aktiv.abweichungen_ohne_grund)} Abweichungen ohne Grund
+                – so lässt sich nicht abschließen
+              </span>
+            )}
           </div>
 
           {/* Prüfhinweise: was beim Einlesen aufgefallen ist. */}
@@ -601,6 +745,18 @@ export default function InventurWidget({ widget, projectId }) {
                      onChange={e => setNurAbgelaufen(e.target.checked)} />
               nur mit abgelaufenen Chargen
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+              color: S.textDim, cursor: "pointer" }}>
+              <input type="checkbox" checked={nurAbweichung}
+                     onChange={e => setNurAbweichung(e.target.checked)} />
+              nur Abweichungen
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+              color: S.textDim, cursor: "pointer" }}>
+              <input type="checkbox" checked={nurUngezaehlt}
+                     onChange={e => setNurUngezaehlt(e.target.checked)} />
+              nur ungezählte
+            </label>
             <button style={btn} onClick={() => setStufenOffen(true)}
                     title={"Ab wann wie viel abgewertet wird: "
                       + stufen.map(s => `${s.label} ${Number(s.prozent)} %`).join(" · ")}>
@@ -631,10 +787,10 @@ export default function InventurWidget({ widget, projectId }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ backgroundColor: S.bgMain }}>
-                  {["", "Artikel", "Bestand", "EK", "Wert", "MHD", "Rest",
+                  {["", "Artikel", "Soll", "Ist", "Diff.", "EK", "Wert", "MHD", "Rest",
                     "Abgang 12M", "Reichw.", "Bewertung", "Abwertung", "neuer Wert", ""]
                     .map((h, i) => (
-                    <th key={i} style={{ padding: "7px 9px", textAlign: i >= 2 && i <= 8 ? "right" : "left",
+                    <th key={i} style={{ padding: "7px 9px", textAlign: i >= 2 && i <= 10 ? "right" : "left",
                       color: S.textDim, fontWeight: 500, fontSize: 10,
                       textTransform: "uppercase", letterSpacing: .3,
                       borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap" }}>{h}</th>
@@ -670,7 +826,38 @@ export default function InventurWidget({ widget, projectId }) {
                           <div style={{ color: S.textBright }}>{p.artikel || "—"}</div>
                           <div style={{ fontSize: 10, color: S.textDim }}>{p.art_nr}</div>
                         </td>
-                        <td style={{ padding: "5px 9px", textAlign: "right" }}>{zahl(p.bestand)}</td>
+                        <td style={{ padding: "5px 9px", textAlign: "right", color: S.textDim }}
+                            title={aktiv.zaehltag
+                              ? `Buchmenge am Zähltag ${datum(aktiv.zaehltag)} (zum Stichtag: ${zahl(p.bestand_soll, 3)})`
+                              : "Buchmenge zum Stichtag"}>
+                          {zahl(p.soll_zaehltag ?? p.bestand_soll, 3)}
+                        </td>
+                        <td style={{ padding: "5px 9px", textAlign: "right" }}>
+                          {offen && p.zaehlung_ebene !== "charge" ? (
+                            <input style={{ ...inp, width: 70, padding: "3px 5px", fontSize: 11,
+                                      textAlign: "right",
+                                      borderColor: p.zaehlung_ebene ? S.accent : S.border }}
+                                   value={zaehlEntwurf[p.id] ?? (p.ist_gezaehlt === null
+                                     || p.ist_gezaehlt === undefined ? "" : zahl(p.ist_gezaehlt, 3))}
+                                   placeholder="–"
+                                   title="Gezählte Menge. Leer = nicht gezählt, dann gilt Soll."
+                                   onChange={ev => setZaehlEntwurf(d => ({ ...d, [p.id]: ev.target.value }))}
+                                   onBlur={() => zaehlungUebernehmen(p, p.id, wert => ({ ist: wert }))}
+                                   onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
+                          ) : (
+                            <span style={{ color: p.zaehlung_ebene ? S.textBright : S.textDim }}
+                                  title={p.zaehlung_ebene === "charge"
+                                    ? "Summe der je Charge gezählten Mengen (ungezählte Chargen mit Soll)" : ""}>
+                              {p.zaehlung_ebene ? zahl(p.ist_gezaehlt, 3) : "–"}
+                              {p.zaehlung_ebene === "charge" && (
+                                <span style={{ fontSize: 9, color: S.textDim }}> je Ch.</span>
+                              )}
+                            </span>
+                          )}
+                        </td>
+                        <td style={{ padding: "5px 9px", textAlign: "right", whiteSpace: "nowrap" }}>
+                          {diffZelle(p)}
+                        </td>
                         <td style={{ padding: "5px 9px", textAlign: "right" }}>{eur(p.ek)}</td>
                         <td style={{ padding: "5px 9px", textAlign: "right",
                           color: S.textBright }}>{eur(p.wert)}</td>
@@ -742,7 +929,7 @@ export default function InventurWidget({ widget, projectId }) {
                       </tr>
                       {detail[p.id] && (
                         <tr style={{ backgroundColor: S.bgMain }}>
-                          <td colSpan={13} style={{ padding: "8px 34px" }}>
+                          <td colSpan={15} style={{ padding: "8px 34px" }}>
                             {p.grund && (
                               <div style={{ fontSize: 11, color: S.textDim, marginBottom: 6 }}>
                                 Begründung: {p.grund}
@@ -766,10 +953,10 @@ export default function InventurWidget({ widget, projectId }) {
                             <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
                               <thead>
                                 <tr style={{ color: S.textDim }}>
-                                  {["Charge", "MHD", "Rest", "Menge", "EK", "Wert",
+                                  {["Charge", "MHD", "Rest", "Soll", "Ist", "EK", "Wert",
                                     "Vorschlag", ""].map((h, i) => (
                                     <th key={i} style={{ padding: "3px 12px 3px 0",
-                                      textAlign: i <= 1 ? "left" : i >= 6 ? "left" : "right",
+                                      textAlign: i <= 1 ? "left" : i >= 7 ? "left" : "right",
                                       fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
                                   ))}
                                 </tr>
@@ -785,7 +972,35 @@ export default function InventurWidget({ widget, projectId }) {
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {rest === null ? "–" : `${zahl(rest)} T`}
                                     </td>
-                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{zahl(c.menge)}</td>
+                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right", color: S.textDim }}>
+                                      {zahl(c.soll_zaehltag ?? c.menge_soll ?? c.menge, 3)}
+                                      {c.nach_stichtag && (
+                                        <span title="Nach dem Stichtag eingelagert – wird mitgezählt, gehört aber nicht zum Stichtagsbestand."
+                                              style={{ fontSize: 9, marginLeft: 4 }}>neu</span>
+                                      )}
+                                    </td>
+                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right", whiteSpace: "nowrap" }}
+                                        title={p.zaehlung_ebene === "artikel"
+                                          ? "Die Position ist je Artikel gezählt – erst das Ist oben leeren, um je Charge zu zählen." : ""}>
+                                      {offen && p.zaehlung_ebene !== "artikel" ? (
+                                        <input style={{ ...inp, width: 64, padding: "2px 5px", fontSize: 11,
+                                                  textAlign: "right",
+                                                  borderColor: c.ist != null ? S.accent : S.border }}
+                                               value={zaehlEntwurf[`${p.id}:${i}`]
+                                                 ?? (c.ist == null ? "" : zahl(c.ist, 3))}
+                                               placeholder="–"
+                                               onChange={ev => setZaehlEntwurf(d => ({ ...d, [`${p.id}:${i}`]: ev.target.value }))}
+                                               onBlur={() => zaehlungUebernehmen(p, `${p.id}:${i}`,
+                                                 wert => ({ charge_index: i, charge_ist: wert }))}
+                                               onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
+                                      ) : (c.ist != null ? zahl(c.ist, 3) : "–")}
+                                      {c.differenz != null && Math.abs(c.differenz) > 0.0005 && (
+                                        <span style={{ marginLeft: 4, fontSize: 10,
+                                          color: c.differenz < 0 ? "#e07070" : "#6ec28e" }}>
+                                          {c.differenz > 0 ? "+" : ""}{zahl(c.differenz, 3)}
+                                        </span>
+                                      )}
+                                    </td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{eur(c.ek)}</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {/* exakt summiert aus der Abfrage – Menge × EK
@@ -815,7 +1030,7 @@ export default function InventurWidget({ widget, projectId }) {
                                     <td />
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {zahl(p.menge_ohne_partie)}</td>
-                                    <td colSpan={4} />
+                                    <td colSpan={5} />
                                   </tr>
                                 )}
                               </tbody>
@@ -827,7 +1042,7 @@ export default function InventurWidget({ widget, projectId }) {
                   );
                 })}
                 {gefiltert.length === 0 && (
-                  <tr><td colSpan={13} style={{ padding: 16, textAlign: "center",
+                  <tr><td colSpan={15} style={{ padding: 16, textAlign: "center",
                     color: S.textDim, fontSize: 12 }}>
                     {positionen.length === 0
                       ? "Noch keine Positionen – „Bestände neu einlesen“ füllt die Liste."

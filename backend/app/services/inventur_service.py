@@ -45,6 +45,22 @@ SPALTEN = {
 }
 
 
+# Gründe für eine Mengenabweichung. Feste Auswahl statt nur Freitext: sonst lässt
+# sich später nicht auswerten, wie viel Bruch, Schwund oder Fehlbuchung war.
+DIFFERENZ_GRUENDE = {
+    "bruch": "Bruch / Verderb",
+    "schwund": "Schwund / Diebstahl",
+    "fehlbuchung": "Fehlbuchung",
+    "we_ungebucht": "Wareneingang nicht gebucht",
+    "wa_ungebucht": "Warenausgang nicht gebucht",
+    "fund": "Fund / Umlagerung",
+    "sonstiges": "Sonstiges",          # braucht eine Notiz
+}
+
+# Unterhalb davon gilt eine Mengendifferenz als keine (Rundung aus der Abfrage).
+MENGE_EPS = 0.0005
+
+
 def _jetzt():
     return datetime.now(timezone.utc)
 
@@ -108,7 +124,7 @@ def _resolve_mapping(db, project_id, name: str):
 ZEILEN_MAX = 20000
 
 
-def bestandsliste_laden(db, lauf: InventurLauf) -> list:
+def bestandsliste_laden(db, lauf: InventurLauf, datum: Optional[date] = None) -> list:
     """Führt das Bestands-Mapping in der WaWi des Laufs aus.
 
     SQL bleibt SQL: Wie ein Stichtagsbestand ermittelt wird, steht in einem
@@ -129,7 +145,9 @@ def bestandsliste_laden(db, lauf: InventurLauf) -> list:
     # Mandanten. Ein fehlender Listen-Parameter bricht den Lauf ab, ein falscher
     # Mandant wäre schlimmer – dann stünden fremde Bestände in der Inventur.
     ctx.run_params, _ = mandant_service.lauf_vorbereiten(
-        {"stichtag": lauf.stichtag}, lauf.project_id, db,
+        # `datum` weicht nur für den Zähltag ab: dieselbe verprobte Rückrechnung,
+        # nur auf einen anderen Tag.
+        {"stichtag": datum or lauf.stichtag}, lauf.project_id, db,
         mandant_id=lauf.connection_id)
     mandant_service.verbindung_ersetzen(ctx, lauf.connection_id, db, m.project_id)
     if not ctx.targets:
@@ -197,11 +215,26 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
                  .filter(InventurPosition.lauf_id == lauf.id,
                          InventurPosition.bewertung_art.isnot(None)).count())
 
+    # Zählungen dagegen bleiben: sie kosten Stunden im Lager und hängen nicht an
+    # der Bewertung. Wieder zugeordnet über Artikel und Charge.
+    alte_zaehlungen = {}
+    for p in (db.query(InventurPosition)
+              .filter(InventurPosition.lauf_id == lauf.id,
+                      InventurPosition.zaehlung_ebene.isnot(None)).all()):
+        alte_zaehlungen[p.k_artikel] = {
+            "ebene": p.zaehlung_ebene, "ist": p.ist_gezaehlt,
+            "grund": p.differenz_grund, "notiz": p.differenz_notiz,
+            "am": p.gezaehlt_am, "von": p.gezaehlt_von,
+            "chargen": {_charge_schluessel(c): c.get("ist") for c in (p.chargen or [])
+                        if c.get("ist") is not None},
+        }
+
     db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).delete()
 
     ohne_ek = 0
     menge_ohne_partie_gesamt = 0.0
     angelegt = 0
+    neue = []
 
     for row in zeilen or []:
         k_artikel = _ganzzahl(_hole(row, "k_artikel"))
@@ -248,6 +281,7 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
             chargen=chargen if isinstance(chargen, list) else [],
         )
         db.add(pos)
+        neue.append(pos)
         angelegt += 1
 
     hinweise = []
@@ -272,8 +306,31 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
         })
 
     lauf.hinweise = hinweise
+
+    # Mit Zähltag: Soll am Zähltag neu holen, bevor die alten Zählungen zurückkommen.
+    db.flush()
+    if lauf.zaehltag:
+        _zaehltag_soll_eintragen(neue, bestandsliste_laden(db, lauf, datum=lauf.zaehltag),
+                                 lauf, benutzer)
+    uebernommen = 0
+    for pos in neue:
+        z = alte_zaehlungen.get(pos.k_artikel)
+        if not z:
+            continue
+        _soll_sichern(pos)
+        if z["ebene"] == "charge":
+            pos.chargen = [{**c, "ist": z["chargen"].get(_charge_schluessel(c), c.get("ist"))}
+                           for c in (pos.chargen or [])]
+        else:
+            pos.ist_gezaehlt = z["ist"]
+        pos.differenz_grund, pos.differenz_notiz = z["grund"], z["notiz"]
+        pos.gezaehlt_am, pos.gezaehlt_von = z["am"], z["von"]
+        _zaehlung_anwenden(pos, lauf.stichtag)
+        uebernommen += 1
+
     _protokoll(lauf, "eingelesen", benutzer, positionen=angelegt,
-               bewertungen_verworfen=verworfen or None)
+               bewertungen_verworfen=verworfen or None,
+               zaehlungen_uebernommen=uebernommen or None)
     lauf.updated_at = _jetzt()
     db.commit()
     summen_neu_rechnen(db, lauf)
@@ -380,14 +437,22 @@ def _vorschlag_fuer(pos: InventurPosition, stufen: List[dict],
     betrag = 0.0
     teile = {}   # label → Menge
 
+    # Bei einer Zählung je ARTIKEL weiß niemand, welche Charge fehlt – die Partien
+    # werden deshalb anteilig zur gezählten Menge gerechnet. Je Charge gezählt
+    # tragen die Partien ihre gezählte Menge schon selbst.
+    faktor = 1.0
+    if pos.zaehlung_ebene == "artikel" and (pos.bestand_soll or 0.0) > MENGE_EPS:
+        faktor = (pos.bestand or 0.0) / pos.bestand_soll
+
     for c in (pos.chargen or []):
         mhd = _datum(c.get("mhd"))
         if mhd is None:
             continue
-        menge = _zahl(c.get("menge"))
+        roh_menge = _zahl(c.get("menge"))
         # `wert` kommt exakt summiert aus der Abfrage; menge × ek wäre um die
         # Rundung des angezeigten EK daneben.
-        wert = _zahl(c.get("wert")) or menge * _zahl(c.get("ek"))
+        wert = (_zahl(c.get("wert")) or roh_menge * _zahl(c.get("ek"))) * faktor
+        menge = roh_menge * faktor
         if wert <= 0:
             continue
         resttage = (mhd - stichtag).days
@@ -566,6 +631,277 @@ def vorschlaege_bestaetigen(db, lauf: InventurLauf, benutzer: str = None) -> dic
     return {"bestaetigt": len(rows)}
 
 
+# ─── Zählung (Soll/Ist) ───────────────────────────────────────────────────────
+
+def _charge_schluessel(c: dict) -> tuple:
+    """Charge + MHD + gerundeter EK – derselbe Schlüssel, nach dem die Abfrage die
+    Partien bündelt. Damit finden sich Chargen aus zwei Läufen (Stichtag/Zähltag)
+    oder vor und nach einem neuen Einlesen wieder."""
+    return ((c.get("charge") or "").strip(), str(c.get("mhd") or "")[:10],
+            round(_zahl(c.get("ek")), 4))
+
+
+def _soll_sichern(pos: InventurPosition) -> None:
+    """Hält die Buchmenge fest, bevor eine Zählung die gültigen Felder ändert.
+    Einmalig: was schon gesichert ist, bleibt – sonst würde eine Zählung zum
+    neuen Soll."""
+    if pos.bestand_soll is None:
+        pos.bestand_soll = pos.bestand or 0.0
+        pos.wert_soll = pos.wert or 0.0
+        pos.menge_abgelaufen_soll = pos.menge_abgelaufen or 0.0
+        pos.wert_abgelaufen_soll = pos.wert_abgelaufen or 0.0
+    chargen = []
+    for c in (pos.chargen or []):
+        c = dict(c)
+        if "menge_soll" not in c:
+            c["menge_soll"] = _zahl(c.get("menge"))
+            c["wert_soll"] = (_zahl(c.get("wert")) if c.get("wert") is not None
+                              else c["menge_soll"] * _zahl(c.get("ek")))
+        chargen.append(c)
+    pos.chargen = chargen
+
+
+def _zaehlung_anwenden(pos: InventurPosition, stichtag: date) -> None:
+    """Leitet aus Buchmenge und Zählung die gültigen Mengen und Werte ab (committet nicht).
+
+    Differenz wird am ZÄHLTAG gemessen (gezählt − Soll am Zähltag) – dort steht der
+    Zähler. Die gültige Menge zum Stichtag ist Soll zum Stichtag + Differenz: die
+    Buchungen zwischen beiden Tagen heben sich damit heraus. Nie unter null.
+    """
+    _soll_sichern(pos)
+    soll = pos.bestand_soll or 0.0
+    wert_soll = pos.wert_soll or 0.0
+    chargen = [dict(c) for c in (pos.chargen or [])]
+    soll_zt = soll if pos.soll_zaehltag is None else pos.soll_zaehltag
+
+    if any(c.get("ist") is not None for c in chargen):
+        pos.zaehlung_ebene = "charge"
+        summe = 0.0
+        for c in chargen:
+            m_soll = _zahl(c.get("menge_soll"))
+            c_soll_zt = m_soll if c.get("soll_zaehltag") is None else _zahl(c.get("soll_zaehltag"))
+            if c.get("ist") is None:
+                c["menge"], c["wert"] = m_soll, c.get("wert_soll")
+                c.pop("differenz", None)
+                continue
+            d = _zahl(c["ist"]) - c_soll_zt
+            c["differenz"] = round(d, 3)
+            summe += d
+            m = max(0.0, m_soll + d)
+            c["menge"] = round(m, 3)
+            c["wert"] = round(m * _zahl(c.get("ek")), 2)
+        rest_wert = wert_soll - sum(_zahl(c.get("wert_soll")) for c in chargen)
+        pos.bestand = round(sum(_zahl(c["menge"]) for c in chargen)
+                            + (pos.menge_ohne_partie or 0.0), 3)
+        pos.wert = round(sum(_zahl(c["wert"]) for c in chargen) + rest_wert, 2)
+        alt = [c for c in chargen if _datum(c.get("mhd")) and _datum(c.get("mhd")) < stichtag]
+        pos.menge_abgelaufen = round(sum(_zahl(c["menge"]) for c in alt), 3)
+        pos.wert_abgelaufen = round(sum(_zahl(c["wert"]) for c in alt), 2)
+        pos.differenz = round(summe, 3)
+        pos.ist_gezaehlt = round(soll_zt + summe, 3)
+    elif pos.ist_gezaehlt is not None:
+        pos.zaehlung_ebene = "artikel"
+        d = pos.ist_gezaehlt - soll_zt
+        m = max(0.0, soll + d)
+        anteil = (m / soll) if soll > MENGE_EPS else None
+        pos.differenz = round(d, 3)
+        pos.bestand = round(m, 3)
+        pos.wert = (round(wert_soll * anteil, 2) if anteil is not None
+                    else round(m * (pos.ek or 0.0), 2))
+        # Welche Charge fehlt, weiß man bei einer Artikelzählung nicht: die
+        # abgelaufene Menge geht anteilig mit.
+        pos.menge_abgelaufen = round((pos.menge_abgelaufen_soll or 0.0) * (anteil or 0.0), 3)
+        pos.wert_abgelaufen = round((pos.wert_abgelaufen_soll or 0.0) * (anteil or 0.0), 2)
+        for c in chargen:
+            c["menge"], c["wert"] = c.get("menge_soll"), c.get("wert_soll")
+            c.pop("differenz", None)
+    else:
+        pos.zaehlung_ebene = None
+        pos.differenz = None
+        pos.bestand, pos.wert = soll, wert_soll
+        pos.menge_abgelaufen = pos.menge_abgelaufen_soll or 0.0
+        pos.wert_abgelaufen = pos.wert_abgelaufen_soll or 0.0
+        for c in chargen:
+            c["menge"], c["wert"] = c.get("menge_soll"), c.get("wert_soll")
+            c.pop("differenz", None)
+
+    # Frühestes MHD der Ware, die (noch) da ist – eine auf 0 gezählte abgelaufene
+    # Charge soll die Position nicht weiter rot färben.
+    mhds = [_datum(c.get("mhd")) for c in chargen
+            if _datum(c.get("mhd")) and _zahl(c.get("menge")) > MENGE_EPS]
+    if mhds:
+        pos.mhd_frueh = min(mhds)
+        pos.resttage = (pos.mhd_frueh - stichtag).days
+    pos.chargen = chargen
+
+
+def _bewertung_nachziehen(pos: InventurPosition, lauf: InventurLauf, benutzer: str = None) -> None:
+    """Nach geänderter Menge die Bewertung mitziehen (committet nicht).
+
+    Handbewertung: dieselbe Eingabe (z.B. 50 %) auf die neue Menge. Staffel-
+    Bewertung: neu vorschlagen; ein geänderter Betrag wird wieder zum Vorschlag."""
+    if not pos.bewertung_art:
+        return
+    if pos.vorschlag or pos.bewertung_quelle == "staffel":
+        betrag, grund = _vorschlag_fuer(pos, stufen_des_laufs(lauf), lauf.stichtag)
+        if betrag <= 0:
+            for feld in ("bewertung_art", "bewertung_wert", "wert_neu", "grund",
+                         "bewertet_am", "bewertet_von", "bewertung_quelle"):
+                setattr(pos, feld, None)
+            pos.abwertung_betrag = 0.0
+            pos.vorschlag = False
+            return
+        betrag = round(betrag, 2)
+        if betrag != round(pos.abwertung_betrag or 0.0, 2) or grund != pos.grund:
+            pos.bewertung_art, pos.bewertung_wert, pos.grund = "betrag", betrag, grund
+            pos.vorschlag, pos.bewertung_quelle = True, "staffel"
+            pos.bewertet_am, pos.bewertet_von = _jetzt(), benutzer
+    betrag, neu = _abwertung_rechnen(pos, pos.bewertung_art, pos.bewertung_wert or 0.0)
+    pos.abwertung_betrag, pos.wert_neu = betrag, neu
+
+
+def zaehlung_setzen(db, lauf: InventurLauf, pos: InventurPosition,
+                    felder: dict, benutzer: str = None) -> InventurPosition:
+    """Speichert eine Zählung. `felder` enthält nur, was geändert werden soll:
+    `ist` (Artikel, None = zurücksetzen), `charge_index` + `charge_ist`,
+    `grund`, `notiz`."""
+    if lauf.status == "abgeschlossen":
+        raise ValueError("Die Inventur ist abgeschlossen.")
+    _soll_sichern(pos)
+    mengen_geaendert = False
+
+    if "charge_index" in felder:
+        i = felder["charge_index"]
+        chargen = [dict(c) for c in (pos.chargen or [])]
+        if i is None or not 0 <= int(i) < len(chargen):
+            raise ValueError("Charge nicht gefunden.")
+        wert = felder.get("charge_ist")
+        if wert is not None and wert < 0:
+            raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
+        chargen[int(i)]["ist"] = None if wert is None else round(float(wert), 3)
+        pos.chargen = chargen
+        pos.ist_gezaehlt = None          # die Artikelmenge ergibt sich jetzt aus den Chargen
+        mengen_geaendert = True
+
+    if "ist" in felder:
+        wert = felder["ist"]
+        if wert is not None and wert < 0:
+            raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
+        if any(c.get("ist") is not None for c in (pos.chargen or [])):
+            if wert is not None:
+                raise ValueError("Diese Position ist je Charge gezählt – die Menge ergibt "
+                                 "sich aus den Chargen.")
+            pos.chargen = [{**c, "ist": None} for c in pos.chargen]
+        pos.ist_gezaehlt = None if wert is None else round(float(wert), 3)
+        mengen_geaendert = True
+
+    if "grund" in felder:
+        g = felder["grund"] or None
+        if g and g not in DIFFERENZ_GRUENDE:
+            raise ValueError("Unbekannter Grund.")
+        pos.differenz_grund = g
+    if "notiz" in felder:
+        pos.differenz_notiz = (felder["notiz"] or "").strip() or None
+
+    _zaehlung_anwenden(pos, lauf.stichtag)
+    if pos.zaehlung_ebene is None:
+        pos.differenz_grund = pos.differenz_notiz = None
+        pos.gezaehlt_am = pos.gezaehlt_von = None
+    else:
+        if abs(pos.differenz or 0.0) <= MENGE_EPS:
+            # Keine Abweichung, kein Grund – ein alter Grund wäre irreführend.
+            pos.differenz_grund = pos.differenz_notiz = None
+        if mengen_geaendert:
+            pos.gezaehlt_am, pos.gezaehlt_von = _jetzt(), benutzer
+    _bewertung_nachziehen(pos, lauf, benutzer)
+    db.commit()
+    summen_neu_rechnen(db, lauf)
+    return pos
+
+
+def _zaehltag_soll_eintragen(positionen: List[InventurPosition], zeilen: List[dict],
+                             lauf: InventurLauf, benutzer: str = None) -> None:
+    """Trägt die Buchmengen am Zähltag an Positionen und Chargen ein (committet nicht).
+
+    Chargen, die erst nach dem Stichtag eingelagert wurden, stehen am Zähltag im
+    Regal – sie kommen mit Soll zum Stichtag 0 dazu, damit man sie mitzählen kann."""
+    je_artikel, je_charge = {}, {}
+    for row in zeilen or []:
+        k = _ganzzahl(_hole(row, "k_artikel"))
+        if k is None:
+            continue
+        je_artikel[k] = _zahl(_hole(row, "bestand"))
+        ch = _hole(row, "chargen")
+        if isinstance(ch, str):
+            import json
+            try:
+                ch = json.loads(ch)
+            except ValueError:
+                ch = []
+        je_charge[k] = {_charge_schluessel(c): c for c in (ch if isinstance(ch, list) else [])}
+
+    for pos in positionen:
+        _soll_sichern(pos)
+        chargen = [dict(c) for c in (pos.chargen or [])]
+        if not zeilen:
+            pos.soll_zaehltag = None
+            chargen = [c for c in chargen if not c.get("nach_stichtag")]
+            for c in chargen:
+                c.pop("soll_zaehltag", None)
+        else:
+            pos.soll_zaehltag = round(je_artikel.get(pos.k_artikel, 0.0), 3)
+            zt = je_charge.get(pos.k_artikel, {})
+            bekannt = set()
+            for c in chargen:
+                key = _charge_schluessel(c)
+                bekannt.add(key)
+                c["soll_zaehltag"] = round(_zahl(zt[key].get("menge")), 3) if key in zt else 0.0
+            for key, c2 in zt.items():
+                if key not in bekannt and _zahl(c2.get("menge")) > MENGE_EPS:
+                    chargen.append({
+                        "charge": c2.get("charge"), "mhd": c2.get("mhd"),
+                        "ek": _zahl(c2.get("ek")), "einlagerungen": c2.get("einlagerungen"),
+                        "menge": 0.0, "wert": 0.0, "menge_soll": 0.0, "wert_soll": 0.0,
+                        "soll_zaehltag": round(_zahl(c2.get("menge")), 3),
+                        "nach_stichtag": True,
+                    })
+        pos.chargen = chargen
+        _zaehlung_anwenden(pos, lauf.stichtag)
+        _bewertung_nachziehen(pos, lauf, benutzer)
+
+
+def zaehltag_setzen(db, lauf: InventurLauf, zaehltag: Optional[date],
+                    benutzer: str = None) -> dict:
+    """Setzt den Zähltag und holt die Buchmengen dieses Tages (oder entfernt ihn)."""
+    if lauf.status == "abgeschlossen":
+        raise ValueError("Die Inventur ist abgeschlossen.")
+    if zaehltag and zaehltag > date.today():
+        raise ValueError("Der Zähltag kann nicht in der Zukunft liegen.")
+    if zaehltag == lauf.stichtag:
+        zaehltag = None
+    zeilen = bestandsliste_laden(db, lauf, datum=zaehltag) if zaehltag else []
+    positionen = db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).all()
+    _zaehltag_soll_eintragen(positionen, zeilen, lauf, benutzer)
+    lauf.zaehltag = zaehltag
+    _protokoll(lauf, "zaehltag", benutzer,
+               zaehltag=zaehltag.isoformat() if zaehltag else None)
+    db.commit()
+    summen_neu_rechnen(db, lauf)
+    return {"positionen": len(positionen)}
+
+
+def _abweichungen_ohne_grund(db, lauf: InventurLauf) -> int:
+    from sqlalchemy import func as sqlfunc, or_, and_
+    return (db.query(InventurPosition)
+            .filter(InventurPosition.lauf_id == lauf.id,
+                    InventurPosition.zaehlung_ebene.isnot(None),
+                    sqlfunc.abs(InventurPosition.differenz) > MENGE_EPS,
+                    or_(InventurPosition.differenz_grund.is_(None),
+                        and_(InventurPosition.differenz_grund == "sonstiges",
+                             InventurPosition.differenz_notiz.is_(None))))
+            .count())
+
+
 # ─── Summen und Abschluss ─────────────────────────────────────────────────────
 
 def summen_neu_rechnen(db, lauf: InventurLauf) -> InventurLauf:
@@ -582,6 +918,15 @@ def summen_neu_rechnen(db, lauf: InventurLauf) -> InventurLauf:
     lauf.abwertung_summe = round(float(q[2] or 0.0), 2)
     lauf.wert_nach_abwertung = round(lauf.bestand_wert - lauf.abwertung_summe, 2)
     lauf.bewertete_positionen = int(q[3] or 0)
+    z = db.query(
+        sqlfunc.count(InventurPosition.zaehlung_ebene),
+        sqlfunc.coalesce(sqlfunc.sum(InventurPosition.wert
+                                     - sqlfunc.coalesce(InventurPosition.wert_soll,
+                                                        InventurPosition.wert)), 0.0),
+    ).filter(InventurPosition.lauf_id == lauf.id).one()
+    lauf.gezaehlte_positionen = int(z[0] or 0)
+    lauf.differenz_wert = round(float(z[1] or 0.0), 2)
+    lauf.abweichungen_ohne_grund = _abweichungen_ohne_grund(db, lauf)
     lauf.updated_at = _jetzt()
     db.commit()
     db.refresh(lauf)
@@ -593,6 +938,11 @@ def abschliessen(db, lauf: InventurLauf, benutzer: str = None) -> InventurLauf:
     wer abschließt, steht für die Zahlen ein."""
     if lauf.status == "abgeschlossen":
         return lauf
+    ohne_grund = _abweichungen_ohne_grund(db, lauf)
+    if ohne_grund:
+        raise ValueError(f"{ohne_grund} Mengenabweichung{'en haben' if ohne_grund != 1 else ' hat'} "
+                         "noch keinen Grund (bei „Sonstiges“ eine Notiz). Ohne Grund lässt "
+                         "sich die Inventur nicht abschließen.")
     res = vorschlaege_bestaetigen(db, lauf, benutzer)
     summen_neu_rechnen(db, lauf)
     lauf.status = "abgeschlossen"
@@ -601,7 +951,9 @@ def abschliessen(db, lauf: InventurLauf, benutzer: str = None) -> InventurLauf:
     _protokoll(lauf, "abgeschlossen", benutzer,
                vorschlaege_bestaetigt=res.get("bestaetigt") or None,
                abwertung=lauf.abwertung_summe,
-               wert_nach_abwertung=lauf.wert_nach_abwertung)
+               wert_nach_abwertung=lauf.wert_nach_abwertung,
+               gezaehlt=lauf.gezaehlte_positionen or None,
+               differenz_wert=lauf.differenz_wert if lauf.gezaehlte_positionen else None)
     db.commit()
     db.refresh(lauf)
     return lauf
@@ -649,9 +1001,15 @@ EXPORT_SPALTEN = [
     ("artikelname", "Artikel"),
     ("warengruppe", "Warengruppe"),
     ("hersteller", "Hersteller"),
-    ("bestand", "Bestand"),
+    ("bestand_soll", "Menge Soll"),
+    ("bestand", "Menge Ist"),
+    ("differenz_stichtag", "Differenz"),
+    ("gezaehlt", "gezählt"),
     ("ek", "EK netto"),
     ("wert", "Wert zum EK"),
+    ("differenz_wert", "Differenzwert"),
+    ("differenz_grund", "Differenzgrund"),
+    ("differenz_notiz", "Notiz Differenz"),
     ("mhd_frueh", "MHD"),
     ("resttage", "Resttage"),
     ("menge_abgelaufen", "Menge abgelaufen"),
@@ -670,6 +1028,7 @@ _EURO = '#,##0.00 "€"'
 EXPORT_FORMATE = {
     "EK netto": '#,##0.00## "€"',
     "Wert zum EK": _EURO,
+    "Differenzwert": _EURO,
     "MHD": "DD.MM.YYYY",
     "Resttage": "#,##0",
     "Reichweite Tage": "#,##0",
@@ -677,7 +1036,7 @@ EXPORT_FORMATE = {
     "Abwertung": _EURO,
     "Wert nach Abwertung": _EURO,
 }
-EXPORT_SUMMEN = ["Wert zum EK", "Abwertung", "Wert nach Abwertung"]
+EXPORT_SUMMEN = ["Wert zum EK", "Differenzwert", "Abwertung", "Wert nach Abwertung"]
 
 
 def export_zeilen(db, lauf: InventurLauf, datum_als_text: bool = True) -> List[dict]:
@@ -698,6 +1057,21 @@ def export_zeilen(db, lauf: InventurLauf, datum_als_text: bool = True) -> List[d
                 v = v.strftime("%d.%m.%Y")
             if feld == "bewertung_art" and v:
                 v = ART_LABEL.get(v, v)
+            # Zählung: Soll/Differenz immer zum STICHTAG – das ist die Liste des
+            # Steuerberaters. Ungezählt gilt die Buchmenge (Differenz leer).
+            gezaehlt = p.zaehlung_ebene is not None
+            if feld == "bestand_soll" and v is None:
+                v = p.bestand
+            if feld == "differenz_stichtag":
+                v = (round((p.bestand or 0.0) - (p.bestand_soll if p.bestand_soll is not None
+                                                 else (p.bestand or 0.0)), 3) if gezaehlt else None)
+            if feld == "differenz_wert":
+                v = (round((p.wert or 0.0) - (p.wert_soll if p.wert_soll is not None
+                                              else (p.wert or 0.0)), 2) if gezaehlt else None)
+            if feld == "gezaehlt":
+                v = ("je Charge" if p.zaehlung_ebene == "charge" else "ja") if gezaehlt else "nein"
+            if feld == "differenz_grund" and v:
+                v = DIFFERENZ_GRUENDE.get(v, v)
             # Unbewertete Positionen behalten ihren vollen Wert – sonst summiert
             # der Steuerberater eine Spalte mit Löchern.
             if feld == "wert_neu" and v is None:

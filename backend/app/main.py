@@ -135,6 +135,23 @@ async def lifespan(app: FastAPI):
             # Inventur: Abwertungsstaffel je Lauf (gehört zum Beleg)
             "ALTER TABLE inventur_laeufe ADD COLUMN abwertung_stufen JSON",
             "ALTER TABLE inventur_laeufe ADD COLUMN protokoll JSON",
+            # Inventur: Soll/Ist-Zählung mit Zähltag und Differenzgrund
+            "ALTER TABLE inventur_laeufe ADD COLUMN zaehltag DATE",
+            "ALTER TABLE inventur_laeufe ADD COLUMN gezaehlte_positionen INTEGER DEFAULT 0",
+            "ALTER TABLE inventur_laeufe ADD COLUMN differenz_wert FLOAT DEFAULT 0",
+            "ALTER TABLE inventur_laeufe ADD COLUMN abweichungen_ohne_grund INTEGER DEFAULT 0",
+            "ALTER TABLE inventur_positionen ADD COLUMN bestand_soll FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN wert_soll FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN menge_abgelaufen_soll FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN wert_abgelaufen_soll FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN soll_zaehltag FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN ist_gezaehlt FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN zaehlung_ebene VARCHAR",
+            "ALTER TABLE inventur_positionen ADD COLUMN differenz FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN differenz_grund VARCHAR",
+            "ALTER TABLE inventur_positionen ADD COLUMN differenz_notiz TEXT",
+            "ALTER TABLE inventur_positionen ADD COLUMN gezaehlt_am DATETIME",
+            "ALTER TABLE inventur_positionen ADD COLUMN gezaehlt_von VARCHAR",
             # Inventur: Herkunft je Bewertung (staffel|hand). Altbestand einmalig
             # nachtragen – nur wo noch NULL, also idempotent. Staffel erkennt man am
             # Grundtext „… (100 %)" (Escape '!', sonst wäre das % ein Platzhalter).

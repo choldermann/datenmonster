@@ -68,6 +68,10 @@ def _out_lauf(l: InventurLauf) -> dict:
         "abwertung_stufen": inventur_service.stufen_des_laufs(l),
         "stufen_eigene": bool(l.abwertung_stufen),
         "protokoll": l.protokoll or [],
+        "zaehltag": l.zaehltag.isoformat() if l.zaehltag else None,
+        "gezaehlte_positionen": l.gezaehlte_positionen or 0,
+        "differenz_wert": l.differenz_wert or 0.0,
+        "abweichungen_ohne_grund": l.abweichungen_ohne_grund or 0,
         "erstellt_von": l.erstellt_von,
         "created_at": l.created_at.isoformat() if l.created_at else None,
         "abgeschlossen_am": l.abgeschlossen_am.isoformat() if l.abgeschlossen_am else None,
@@ -104,6 +108,19 @@ def _out_pos(p: InventurPosition) -> dict:
         "grund": p.grund,
         "vorschlag": bool(p.vorschlag),
         "bewertung_quelle": p.bewertung_quelle,   # staffel | hand | None
+        # Zählung: bestand/wert oben sind die GÜLTIGEN Werte (Ist, wo gezählt).
+        "bestand_soll": p.bestand_soll if p.bestand_soll is not None else p.bestand,
+        "wert_soll": p.wert_soll if p.wert_soll is not None else p.wert,
+        "soll_zaehltag": p.soll_zaehltag,
+        "ist_gezaehlt": p.ist_gezaehlt,
+        "zaehlung_ebene": p.zaehlung_ebene,
+        "differenz": p.differenz,
+        "differenz_wert": (round((p.wert or 0.0) - p.wert_soll, 2)
+                           if p.zaehlung_ebene and p.wert_soll is not None else None),
+        "differenz_grund": p.differenz_grund,
+        "differenz_notiz": p.differenz_notiz,
+        "gezaehlt_am": p.gezaehlt_am.isoformat() if p.gezaehlt_am else None,
+        "gezaehlt_von": p.gezaehlt_von,
         "bewertet_am": p.bewertet_am.isoformat() if p.bewertet_am else None,
         "bewertet_von": p.bewertet_von,
     }
@@ -213,7 +230,10 @@ def abschliessen(lauf_id: int,
                  user: User = Depends(get_current_user)):
     lauf = _lauf(db, lauf_id)
     _darf_aendern(lauf.project_id, user, db)
-    lauf = inventur_service.abschliessen(db, lauf, benutzer=getattr(user, "username", None))
+    try:
+        lauf = inventur_service.abschliessen(db, lauf, benutzer=getattr(user, "username", None))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
     return _out_lauf(lauf)
 
 
@@ -296,6 +316,68 @@ def del_bewertung(pos_id: int,
     inventur_service.bewertung_loeschen(db, pos)
     lauf = inventur_service.summen_neu_rechnen(db, lauf)
     return {"position": _out_pos(pos), "lauf": _out_lauf(lauf)}
+
+
+# ─── Zählung (Soll/Ist) ───────────────────────────────────────────────────────
+
+class ZaehlungIn(BaseModel):
+    # Nur mitgeschickte Felder werden geändert: `ist: null` setzt die Zählung zurück,
+    # ein fehlendes `ist` lässt sie stehen (z.B. wenn nur der Grund kommt).
+    ist: Optional[float] = None
+    charge_index: Optional[int] = None
+    charge_ist: Optional[float] = None
+    grund: Optional[str] = None
+    notiz: Optional[str] = None
+
+
+@router.put("/positionen/{pos_id}/zaehlung")
+def zaehlung(pos_id: int, data: ZaehlungIn,
+             db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    pos = db.query(InventurPosition).filter(InventurPosition.id == pos_id).first()
+    if not pos:
+        raise HTTPException(404, "Position nicht gefunden")
+    lauf = _lauf(db, pos.lauf_id)
+    _darf_aendern(lauf.project_id, user, db)
+    gesetzt = (data.model_fields_set if hasattr(data, "model_fields_set")
+               else data.__fields_set__)
+    felder = {k: getattr(data, k) for k in gesetzt}
+    if "charge_index" in felder:
+        felder.setdefault("charge_ist", None)
+    try:
+        inventur_service.zaehlung_setzen(db, lauf, pos, felder,
+                                         benutzer=getattr(user, "username", None))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.refresh(pos)
+    db.refresh(lauf)
+    return {"position": _out_pos(pos), "lauf": _out_lauf(lauf)}
+
+
+class ZaehltagIn(BaseModel):
+    zaehltag: Optional[date] = None
+
+
+@router.put("/laeufe/{lauf_id}/zaehltag")
+def zaehltag(lauf_id: int, data: ZaehltagIn,
+             db: Session = Depends(get_db),
+             user: User = Depends(get_current_user)):
+    """Zähltag setzen (leer = am Stichtag). Holt die Buchmengen dieses Tages aus
+    der Wawi, damit Ist gegen das richtige Soll steht."""
+    lauf = _lauf(db, lauf_id)
+    _darf_aendern(lauf.project_id, user, db)
+    try:
+        res = inventur_service.zaehltag_setzen(db, lauf, data.zaehltag,
+                                               benutzer=getattr(user, "username", None))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.refresh(lauf)
+    return {**res, "lauf": _out_lauf(lauf)}
+
+
+@router.get("/differenzgruende")
+def differenzgruende():
+    return [{"id": k, "label": v} for k, v in inventur_service.DIFFERENZ_GRUENDE.items()]
 
 
 class VorschlagIn(BaseModel):
@@ -462,6 +544,10 @@ def export_xlsx(lauf_id: int,
         ("Wert zum EK", round(lauf.bestand_wert or 0, 2)),
         ("Abwertung", round(lauf.abwertung_summe or 0, 2)),
         ("Wert nach Abwertung", round(lauf.wert_nach_abwertung or 0, 2)),
+        ("Zähltag", _text_datum(lauf.zaehltag) if lauf.zaehltag else "am Stichtag"),
+        ("Gezählt", f"{lauf.gezaehlte_positionen or 0} von {len(zeilen)} Positionen "
+                    "(ungezählte mit der Buchmenge)"),
+        ("Inventurdifferenz", round(lauf.differenz_wert or 0, 2)),
         ("Abwertungsstaffel", " · ".join(
             f"{s.get('label')}: {float(s.get('prozent') or 0):g} %"
             for s in inventur_service.stufen_des_laufs(lauf))),
@@ -472,7 +558,8 @@ def export_xlsx(lauf_id: int,
     # Der Verlauf gehört zum Beleg: wer wann eingelesen, abgeschlossen und wieder
     # geöffnet hat.
     aktionen = {"angelegt": "angelegt", "eingelesen": "Bestände eingelesen",
-                "abgeschlossen": "abgeschlossen", "wieder_geoeffnet": "wieder geöffnet"}
+                "abgeschlossen": "abgeschlossen", "wieder_geoeffnet": "wieder geöffnet",
+                "zaehltag": "Zähltag gesetzt"}
     for i, e in enumerate(lauf.protokoll or []):
         teile = []
         if e.get("positionen") is not None:

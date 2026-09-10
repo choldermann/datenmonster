@@ -79,6 +79,14 @@ class InventurLauf(Base):
     # verschwände ein früherer Abschluss beim erneuten Abschließen spurlos.
     protokoll = Column(JSON, nullable=True)
 
+    # Zähltag: an welchem Tag physisch gezählt wurde. Leer = am Stichtag. Liegt er
+    # daneben, wird die gezählte Menge über die Buchungen dazwischen auf den
+    # Stichtag zurückgerechnet (vor-/nachverlegte Stichtagsinventur, § 241 HGB).
+    zaehltag = Column(Date, nullable=True)
+    gezaehlte_positionen    = Column(Integer, default=0)
+    differenz_wert          = Column(Float, default=0.0)   # Wert Ist minus Wert Soll
+    abweichungen_ohne_grund = Column(Integer, default=0)
+
     erstellt_von     = Column(String, nullable=True)
     created_at       = Column(DateTime, default=_jetzt)
     updated_at       = Column(DateTime, default=_jetzt, onupdate=_jetzt)
@@ -124,6 +132,24 @@ class InventurPosition(Base):
     # Menge, die sich keiner Eingangspartie zuordnen ließ (Altbestand aus der
     # Zeit vor der Buchungshistorie). Wird bewertet, aber ohne MHD.
     menge_ohne_partie = Column(Float, default=0.0)
+
+    # ── Zählung ─────────────────────────────────────────────────────────────
+    # `bestand`, `wert`, `menge_abgelaufen`, `wert_abgelaufen` und die Chargen tragen
+    # die GÜLTIGE Menge (Ist zum Stichtag, wo gezählt). Die Buchmenge laut Wawi steht
+    # in den *_soll-Feldern – so rechnen Abwertung, Staffel, Summen und Export ohne
+    # Sonderweg mit der gezählten Menge. *_soll NULL = nie gezählt, dann gilt Soll.
+    bestand_soll          = Column(Float, nullable=True)
+    wert_soll             = Column(Float, nullable=True)
+    menge_abgelaufen_soll = Column(Float, nullable=True)
+    wert_abgelaufen_soll  = Column(Float, nullable=True)
+    soll_zaehltag   = Column(Float, nullable=True)    # Buchmenge am Zähltag
+    ist_gezaehlt    = Column(Float, nullable=True)    # gezählt am Zähltag; NULL = nicht gezählt
+    zaehlung_ebene  = Column(String, nullable=True)   # artikel | charge | NULL
+    differenz       = Column(Float, nullable=True)    # Ist − Soll am Zähltag (Stück)
+    differenz_grund = Column(String, nullable=True)
+    differenz_notiz = Column(Text, nullable=True)
+    gezaehlt_am     = Column(DateTime, nullable=True)
+    gezaehlt_von    = Column(String, nullable=True)
 
     # ── Bewertung durch den Anwender ────────────────────────────────────────
     # art: prozent | stueckwert | betrag – der Anwender denkt je nach Ware

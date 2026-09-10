@@ -103,6 +103,37 @@ abgewertet wird. Standard ist MHD überschritten 100 %, unter 3 Monaten 50 %,
   Mit PPS geprüft: Standard 63.842 €, „ab 30 Tagen drüber 100 %, bis dahin 50 %,
   unter 3 Monaten 20 %" 47.719 €.
 
+### Zählung (Soll/Ist)
+Die Liste zeigt je Position **Soll** (Buchmenge), **Ist** (editierbar) und die
+**Differenz**. Die gezählte Menge ist die gültige: Wert zum EK, Abwertung, Staffel
+und Export rechnen mit ihr. Ungezählte Positionen gelten mit der Buchmenge und
+stehen im Export als „gezählt: nein".
+* **Gezählt wird je Artikel oder je Charge.** Je Charge ist die Artikelmenge die
+  Summe (ungezählte Chargen mit Soll), das Artikelfeld ist dann gesperrt – und
+  umgekehrt. Bei einer Artikelzählung weiß niemand, welche Charge fehlt: abgelaufene
+  Menge und Staffel-Vorschlag gehen deshalb **anteilig** mit.
+* **Zähltag.** Wird nicht am Stichtag gezählt, holt „Zähltag übernehmen" die
+  Buchmengen dieses Tages über dieselbe Bestandsabfrage (keine zweite SQL). Soll zeigt
+  dann den Zähltag. Differenz = gezählt − Soll am Zähltag; gültige Menge zum Stichtag
+  = Soll zum Stichtag + Differenz, nie unter 0. Die Buchungen dazwischen heben sich
+  so heraus (vor-/nachverlegte Stichtagsinventur, § 241 Abs. 3 HGB). Chargen, die
+  erst nach dem Stichtag eingelagert wurden, erscheinen mit der Marke „neu".
+  PPS 31.08. → 09.09.: 188 Positionen mit Bewegung, 18 mit neuen Chargen.
+* **Grund bei Abweichung ist Pflicht**: Auswahl (Bruch/Verderb, Schwund/Diebstahl,
+  Fehlbuchung, Wareneingang/-ausgang nicht gebucht, Fund/Umlagerung, Sonstiges) plus
+  Notiz; bei „Sonstiges" ist die Notiz Pflicht. Ohne Grund lehnt der Server den
+  Abschluss ab, die Liste zeigt die Zahl offener Gründe.
+* Eine vorhandene **Bewertung wird nach jeder Zählung nachgerechnet**: Staffel – ein
+  geänderter Betrag wird wieder Vorschlag; Hand – dieselbe Eingabe auf die neue Menge.
+* **„Bestände neu einlesen" behält Zählungen**, Gründe und Notizen (zugeordnet über
+  Artikel und Charge + MHD + EK). Bewertungen gehen wie bisher verloren.
+* **Export**: Menge Soll, Menge Ist, Differenz, gezählt, Differenzwert, Differenzgrund,
+  Notiz – Soll und Differenz jeweils zum Stichtag. Info-Blatt: Zähltag, Anzahl
+  gezählt, Inventurdifferenz.
+* Technisch tragen `bestand`, `wert`, `menge_abgelaufen` und die Chargen die
+  gültigen Werte; die Buchmenge steht in den `*_soll`-Feldern (einmalig gesichert).
+  Nach JTL wird nichts zurückgebucht.
+
 ### Abschluss und Absicherung
 „Inventur abschließen" bestätigt offene Vorschläge (mit dem Namen des
 Abschließenden), rechnet die Summen und sperrt die Inventur: keine Bewertung, keine
