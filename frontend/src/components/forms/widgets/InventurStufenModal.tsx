@@ -181,7 +181,7 @@ export default function InventurStufenModal({ stufen, standard, gesperrt, vorsch
                 <th style={th}>Abwertung</th>
                 <th style={th}>Bereich</th>
                 <th style={{ ...th, textAlign: "right" }}>Partien</th>
-                <th style={{ ...th, textAlign: "right" }}>Wert</th>
+                <th style={{ ...th, textAlign: "right" }}>Wert zum EK</th>
                 <th style={{ ...th, textAlign: "right" }}>Abwertung</th>
                 <th style={th} />
               </tr>

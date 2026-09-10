@@ -898,8 +898,10 @@ export default function InventurWidget({ widget, projectId }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead>
                 <tr style={{ backgroundColor: S.bgMain }}>
-                  {["", "Artikel", "Soll", "Ist", "Diff.", "EK", "Wert", "MHD", "Rest",
-                    "Abgang 12M", "Reichw.", "Bewertung", "Abwertung", "neuer Wert", ""]
+                  {/* Alle Werte sind EK-Werte – ohne den Zusatz liest man „Wert“
+                      schnell als Verkaufswert und hält die Abwertung für VK-bezogen. */}
+                  {["", "Artikel", "Soll", "Ist", "Diff.", "EK", "Wert zum EK", "MHD", "Rest",
+                    "Abgang 12M", "Reichw.", "Bewertung", "Abwertung vom EK", "Wert nach Abw.", ""]
                     .map((h, i) => (
                     <th key={i} style={{ padding: "7px 9px", textAlign: i >= 2 && i <= 10 ? "right" : "left",
                       color: S.textDim, fontWeight: 500, fontSize: 10,
@@ -1074,7 +1076,7 @@ export default function InventurWidget({ widget, projectId }) {
                             <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
                               <thead>
                                 <tr style={{ color: S.textDim }}>
-                                  {["Charge", "MHD", "Rest", "Soll", "Ist", "EK", "Wert",
+                                  {["Charge", "MHD", "Rest", "Soll", "Ist", "EK", "Wert zum EK",
                                     "Vorschlag", ""].map((h, i) => (
                                     <th key={i} style={{ padding: "3px 12px 3px 0",
                                       textAlign: i <= 1 ? "left" : i >= 7 ? "left" : "right",
