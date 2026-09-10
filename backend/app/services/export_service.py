@@ -551,7 +551,12 @@ def export_xlsx_tabelle(kopf: List[str], zeilen: List[dict],
                         summen: Optional[List[str]] = None,
                         blatt: str = "Export",
                         info: Optional[List[tuple]] = None,
-                        feste_spalten: int = 0) -> bytes:
+                        feste_spalten: int = 0,
+                        versteckt: Optional[List[str]] = None,
+                        eingabe: Optional[List[str]] = None,
+                        auswahl: Optional[Dict[str, List[str]]] = None,
+                        breiten: Optional[Dict[str, int]] = None,
+                        druck: Optional[dict] = None) -> bytes:
     """Tabelle als Excel-Datei, mit der man sofort arbeiten kann: Kopfzeile fixiert,
     Autofilter über alle Spalten (sortieren/filtern), Zahlen und Datumswerte als echte
     Werte mit Format statt als Text.
@@ -591,6 +596,49 @@ def export_xlsx_tabelle(kopf: List[str], zeilen: List[dict],
         laenge = max([len(name)] + [len(str(z.get(name) if z.get(name) is not None else ""))
                                     for z in zeilen[:1000]])
         ws.column_dimensions[get_column_letter(i)].width = min(max(laenge + 2, 9), 60)
+
+    # Listen zum Ausfüllen (z.B. Zählliste): versteckte Schlüssel, hervorgehobene
+    # Eingabespalten, Auswahllisten, Druck auf A4.
+    from openpyxl.styles import Border, Side
+    from openpyxl.worksheet.datavalidation import DataValidation
+    for name, breite in (breiten or {}).items():
+        if name in kopf:
+            ws.column_dimensions[get_column_letter(kopf.index(name) + 1)].width = breite
+    for name in (versteckt or []):
+        if name in kopf:
+            ws.column_dimensions[get_column_letter(kopf.index(name) + 1)].hidden = True
+    if eingabe and letzte > 1:
+        feld = PatternFill("solid", fgColor="FFF7D6")
+        linie = Side(style="thin", color="999999")
+        for name in eingabe:
+            if name in kopf:
+                i = kopf.index(name) + 1
+                for (zelle,) in ws.iter_rows(min_row=2, max_row=letzte, min_col=i, max_col=i):
+                    zelle.fill = feld
+                    zelle.border = Border(top=linie, bottom=linie, left=linie, right=linie)
+    for name, werte in (auswahl or {}).items():
+        if name in kopf and letzte > 1:
+            b = get_column_letter(kopf.index(name) + 1)
+            # Ohne Fehlermeldung: die Liste hilft beim Ausfüllen, freier Text bleibt
+            # möglich und wird beim Zurückspielen geprüft.
+            dv = DataValidation(type="list", formula1='"' + ",".join(werte) + '"',
+                                allow_blank=True, showErrorMessage=False)
+            ws.add_data_validation(dv)
+            dv.add(f"{b}2:{b}{letzte}")
+    if druck:
+        ws.page_setup.orientation = "landscape" if druck.get("quer", True) else "portrait"
+        ws.page_setup.paperSize = ws.PAPERSIZE_A4
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.print_title_rows = "1:1"
+        ws.print_options.gridLines = True
+        ws.page_margins.left = ws.page_margins.right = 0.4
+        if druck.get("titel"):
+            ws.oddHeader.center.text = druck["titel"]
+        if druck.get("fusszeile"):
+            ws.oddFooter.left.text = druck["fusszeile"]
+        ws.oddFooter.right.text = "Seite &P von &N"
 
     ws.freeze_panes = ws.cell(row=2, column=feste_spalten + 1)
     ws.auto_filter.ref = f"A1:{get_column_letter(len(kopf))}{letzte}"

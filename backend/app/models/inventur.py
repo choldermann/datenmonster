@@ -150,6 +150,10 @@ class InventurPosition(Base):
     differenz_notiz = Column(Text, nullable=True)
     gezaehlt_am     = Column(DateTime, nullable=True)
     gezaehlt_von    = Column(String, nullable=True)
+    # Altbestand ohne Chargenzuordnung: bei Chargenartikeln eine eigene Zählzeile.
+    menge_ohne_partie_soll = Column(Float, nullable=True)
+    ist_ohne_partie        = Column(Float, nullable=True)   # gezählt am Zähltag
+    rest_soll_zaehltag     = Column(Float, nullable=True)   # Menge ohne Charge am Zähltag
 
     # ── Bewertung durch den Anwender ────────────────────────────────────────
     # art: prozent | stueckwert | betrag – der Anwender denkt je nach Ware

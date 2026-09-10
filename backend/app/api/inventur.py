@@ -5,7 +5,7 @@ oder ein veröffentlichtes Formular des Projekts sehen darf; Ändern braucht
 Editor-Rechte (oder einen Portal-Nutzer mit Zugang zum Formular). Eine
 abgeschlossene Inventur ist der Beleg und wird vom Service selbst geschützt.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
@@ -121,6 +121,10 @@ def _out_pos(p: InventurPosition) -> dict:
         "differenz_notiz": p.differenz_notiz,
         "gezaehlt_am": p.gezaehlt_am.isoformat() if p.gezaehlt_am else None,
         "gezaehlt_von": p.gezaehlt_von,
+        "menge_ohne_partie_soll": (p.menge_ohne_partie_soll if p.menge_ohne_partie_soll is not None
+                                   else p.menge_ohne_partie),
+        "ist_ohne_partie": p.ist_ohne_partie,
+        "rest_soll_zaehltag": p.rest_soll_zaehltag,
         "bewertet_am": p.bewertet_am.isoformat() if p.bewertet_am else None,
         "bewertet_von": p.bewertet_von,
     }
@@ -320,12 +324,78 @@ def del_bewertung(pos_id: int,
 
 # ─── Zählung (Soll/Ist) ───────────────────────────────────────────────────────
 
+ZAEHLLISTE_MAX_BYTES = 10 * 1024 * 1024
+
+
+@router.get("/laeufe/{lauf_id}/zaehlliste.xlsx")
+def zaehlliste(lauf_id: int, mit_soll: bool = False,
+               db: Session = Depends(get_db),
+               user: User = Depends(get_current_user)):
+    """Zählliste zum Ausdrucken und Zurückspielen: je Charge eine Zeile, druckfertig
+    A4 quer. `mit_soll=false` (Vorgabe) = Blindzählung."""
+    from app.services.export_service import export_xlsx_tabelle
+    lauf = _lauf(db, lauf_id)
+    _darf_lesen(lauf.project_id, user, db)
+    zeilen = inventur_service.zaehlliste_zeilen(db, lauf, mit_soll)
+    kopf = (["Schlüssel", "Warengruppe", "Artikelnummer", "Artikel", "Charge", "MHD"]
+            + (["Soll"] if mit_soll else []) + ["Ist", "Grund", "Notiz"])
+    tag = lauf.zaehltag or lauf.stichtag
+    info = [
+        ("Inventur", lauf.name or ""),
+        ("Stichtag", lauf.stichtag.strftime("%d.%m.%Y")),
+        ("Zähltag", tag.strftime("%d.%m.%Y")),
+        ("Zeilen", len(zeilen)),
+        ("Sollmenge", "angezeigt" if mit_soll else "nicht angezeigt (Blindzählung)"),
+        ("So wird gezählt", "Ist = gezählte Menge am Zähltag. Nicht Gezähltes leer lassen."),
+        ("", "Grund nur bei einer Abweichung eintragen, bei „Sonstiges“ bitte eine Notiz."),
+        ("", "Danach über „Zählliste zurückspielen“ hochladen. Die versteckte Spalte "
+             "„Schlüssel“ nicht verändern."),
+    ]
+    inhalt = export_xlsx_tabelle(
+        kopf, zeilen,
+        formate={"MHD": "DD.MM.YYYY"},
+        blatt=inventur_service.ZAEHLLISTE_BLATT, info=info, feste_spalten=4,
+        versteckt=["Schlüssel"], eingabe=["Ist", "Grund", "Notiz"],
+        auswahl={"Grund": list(inventur_service.DIFFERENZ_GRUENDE.values())},
+        breiten={"Artikel": 40, "Charge": 20, "Ist": 12, "Grund": 24, "Notiz": 30},
+        druck={"titel": f"Zählliste – {lauf.name} – Zähltag {tag.strftime('%d.%m.%Y')}",
+               "fusszeile": "Gezählt von: ________________   Datum: __________   "
+                            "Unterschrift: ________________"},
+    )
+    return StreamingResponse(
+        io.BytesIO(inhalt),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="Zaehlliste_{tag.isoformat()}.xlsx"'},
+    )
+
+
+@router.post("/laeufe/{lauf_id}/zaehlliste")
+async def zaehlliste_zurueckspielen(lauf_id: int, datei: UploadFile = File(...),
+                                    db: Session = Depends(get_db),
+                                    user: User = Depends(get_current_user)):
+    """Ausgefüllte Zählliste hochladen. Leere Ist-Zellen ändern nichts."""
+    lauf = _lauf(db, lauf_id)
+    _darf_aendern(lauf.project_id, user, db)
+    inhalt = await datei.read(ZAEHLLISTE_MAX_BYTES + 1)
+    if len(inhalt) > ZAEHLLISTE_MAX_BYTES:
+        raise HTTPException(413, "Die Datei ist zu groß (höchstens 10 MB).")
+    try:
+        res = inventur_service.zaehlliste_importieren(
+            db, lauf, inhalt, benutzer=getattr(user, "username", None),
+            dateiname=datei.filename)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.refresh(lauf)
+    return {**res, "lauf": _out_lauf(lauf)}
+
+
 class ZaehlungIn(BaseModel):
     # Nur mitgeschickte Felder werden geändert: `ist: null` setzt die Zählung zurück,
     # ein fehlendes `ist` lässt sie stehen (z.B. wenn nur der Grund kommt).
     ist: Optional[float] = None
     charge_index: Optional[int] = None
     charge_ist: Optional[float] = None
+    ohne_partie_ist: Optional[float] = None
     grund: Optional[str] = None
     notiz: Optional[str] = None
 
@@ -559,7 +629,7 @@ def export_xlsx(lauf_id: int,
     # geöffnet hat.
     aktionen = {"angelegt": "angelegt", "eingelesen": "Bestände eingelesen",
                 "abgeschlossen": "abgeschlossen", "wieder_geoeffnet": "wieder geöffnet",
-                "zaehltag": "Zähltag gesetzt"}
+                "zaehltag": "Zähltag gesetzt", "zaehlliste": "Zählliste zurückgespielt"}
     for i, e in enumerate(lauf.protokoll or []):
         teile = []
         if e.get("positionen") is not None:

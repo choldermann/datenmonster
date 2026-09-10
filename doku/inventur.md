@@ -108,10 +108,12 @@ Die Liste zeigt je Position **Soll** (Buchmenge), **Ist** (editierbar) und die
 **Differenz**. Die gezählte Menge ist die gültige: Wert zum EK, Abwertung, Staffel
 und Export rechnen mit ihr. Ungezählte Positionen gelten mit der Buchmenge und
 stehen im Export als „gezählt: nein".
-* **Gezählt wird je Artikel oder je Charge.** Je Charge ist die Artikelmenge die
-  Summe (ungezählte Chargen mit Soll), das Artikelfeld ist dann gesperrt – und
-  umgekehrt. Bei einer Artikelzählung weiß niemand, welche Charge fehlt: abgelaufene
-  Menge und Staffel-Vorschlag gehen deshalb **anteilig** mit.
+* **Wo Chargen existieren, wird je Charge gezählt** (Vorgabe des Anwenders, 10.09.):
+  das Artikel-Ist nimmt der Server dort nicht an, die Liste zeigt „je Charge ▸". Die
+  Artikelmenge ist die Summe; ungezählte Chargen gelten mit Soll. **Altbestand ohne
+  Charge** hat eine eigene Zählzeile (Soll am Zähltag aus „Menge ohne Charge" der
+  Abfrage). Artikel ohne Chargen werden direkt gezählt. Ältere Artikelzählungen an
+  Chargenartikeln rechnet der Code weiter anteilig (abgelaufene Menge, Staffel).
 * **Zähltag.** Wird nicht am Stichtag gezählt, holt „Zähltag übernehmen" die
   Buchmengen dieses Tages über dieselbe Bestandsabfrage (keine zweite SQL). Soll zeigt
   dann den Zähltag. Differenz = gezählt − Soll am Zähltag; gültige Menge zum Stichtag
@@ -130,6 +132,20 @@ stehen im Export als „gezählt: nein".
 * **Export**: Menge Soll, Menge Ist, Differenz, gezählt, Differenzwert, Differenzgrund,
   Notiz – Soll und Differenz jeweils zum Stichtag. Info-Blatt: Zähltag, Anzahl
   gezählt, Inventurdifferenz.
+* **Zählliste** („Zählliste" → Herunterladen): Excel, eine Zeile je Charge, je
+  Altbestand ohne Charge und je Artikel ohne Chargen; sortiert nach Warengruppe,
+  Artikel, MHD. Druckfertig (A4 quer, Kopfzeile auf jeder Seite, Seitenzahlen,
+  Unterschriftsfeld), Ist/Grund/Notiz hervorgehoben, Grund als Auswahlliste. Die
+  Sollmenge steht nur drauf, wenn beim Export angehakt (sonst Blindzählung). Am
+  Zähltag schon verbrauchte Chargen fehlen. Die erste Spalte „Schlüssel" ist
+  versteckt: Artikel + Charge + MHD + EK, deshalb passt die Liste auch nach neuem
+  Einlesen.
+* **Zurückspielen** („Zählliste zurückspielen"): leere Ist-Zellen ändern nichts (Teillisten
+  mehrerer Teams gehen), Zahlen auch mit Komma, Grund über den Text der Auswahl,
+  mehrere Notizen eines Artikels werden verbunden. Alles in einem Durchgang; der
+  Bericht nennt übernommene Mengen, nicht zugeordnete Zeilen und Fehler (z.B. „drei",
+  unbekannter Grund, Artikel-Ist an einem Chargenartikel). Steht im Verlauf.
+  Geprüft (PPS-Kopie): 959 Chargen- + 16 Artikelzeilen, zweimal hochladen ändert nichts.
 * Technisch tragen `bestand`, `wert`, `menge_abgelaufen` und die Chargen die
   gültigen Werte; die Buchmenge steht in den `*_soll`-Feldern (einmalig gesichert).
   Nach JTL wird nichts zurückgebucht.

@@ -152,6 +152,9 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE inventur_positionen ADD COLUMN differenz_notiz TEXT",
             "ALTER TABLE inventur_positionen ADD COLUMN gezaehlt_am DATETIME",
             "ALTER TABLE inventur_positionen ADD COLUMN gezaehlt_von VARCHAR",
+            "ALTER TABLE inventur_positionen ADD COLUMN menge_ohne_partie_soll FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN ist_ohne_partie FLOAT",
+            "ALTER TABLE inventur_positionen ADD COLUMN rest_soll_zaehltag FLOAT",
             # Inventur: Herkunft je Bewertung (staffel|hand). Altbestand einmalig
             # nachtragen – nur wo noch NULL, also idempotent. Staffel erkennt man am
             # Grundtext „… (100 %)" (Escape '!', sonst wäre das % ein Platzhalter).

@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, Fragment } from "react";
+import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import { ClipboardList, Plus, RefreshCw, Download, Lock, Unlock, Trash2,
          AlertCircle, Loader2, ChevronDown, ChevronRight, Wand2, Check,
-         Search, X, SlidersHorizontal } from "lucide-react";
+         Search, X, SlidersHorizontal, Upload } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 import InventurStufenModal from "./InventurStufenModal";
@@ -115,6 +115,9 @@ export default function InventurWidget({ widget, projectId }) {
   const [zaehltagEntwurf, setZaehltagEntwurf] = useState(null);
   const [nurAbweichung, setNurAbweichung] = useState(false);
   const [nurUngezaehlt, setNurUngezaehlt] = useState(false);
+  const [zaehllisteOffen, setZaehllisteOffen] = useState(false);
+  const [mitSoll, setMitSoll] = useState(false);     // aus = Blindzählung
+  const dateiRef = useRef(null);
 
   // Die Staffel DIESER Inventur (sie gehört zum Beleg), sonst die Standardstaffel.
   // Aufsteigend sortiert wie im Backend – die engste Stufe gewinnt.
@@ -328,6 +331,59 @@ export default function InventurWidget({ widget, projectId }) {
       setFehler(fehlerText(e));
     } finally {
       setArbeitet(null);
+    }
+  };
+
+  // Zählliste: Excel zum Ausdrucken, dieselbe Datei geht ausgefüllt zurück.
+  const zaehllisteLaden = async () => {
+    try {
+      const res = await api.get(`/api/inventur/laeufe/${aktiv.id}/zaehlliste.xlsx?mit_soll=${mitSoll}`,
+                                { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Zaehlliste_${aktiv.zaehltag || aktiv.stichtag}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setZaehllisteOffen(false);
+    } catch (e) { setFehler(fehlerText(e)); }
+  };
+
+  const zaehllisteHochladen = async (datei) => {
+    if (!datei) return;
+    setArbeitet("zaehlliste");
+    try {
+      const fd = new FormData();
+      fd.append("datei", datei);
+      const { data } = await api.post(`/api/inventur/laeufe/${aktiv.id}/zaehlliste`, fd,
+                                      { timeout: 0 });
+      setAktiv(data.lauf);
+      await positionenLaden(aktiv.id);
+      setFrage({
+        titel: "Zählliste übernommen",
+        label: "Schließen",
+        punkte: [
+          `${zahl(data.werte)} Mengen für ${zahl(data.positionen)} Positionen übernommen `
+            + `(${zahl(data.zeilen)} Zeilen in der Datei).`,
+          data.leer ? `${zahl(data.leer)} Zeilen ohne Ist-Menge – dort bleibt alles, wie es war.` : null,
+          data.nicht_zugeordnet_anzahl
+            ? `Nicht zugeordnet (${zahl(data.nicht_zugeordnet_anzahl)}): ${data.nicht_zugeordnet.join(", ")}`
+              + (data.nicht_zugeordnet_anzahl > data.nicht_zugeordnet.length ? " …" : "")
+            : null,
+          data.fehler_anzahl
+            ? `Nicht übernommen (${zahl(data.fehler_anzahl)}): ${data.fehler.join(" · ")}`
+              + (data.fehler_anzahl > data.fehler.length ? " …" : "")
+            : null,
+          data.lauf.abweichungen_ohne_grund
+            ? `${zahl(data.lauf.abweichungen_ohne_grund)} Abweichungen haben noch keinen Grund.`
+            : null,
+        ],
+      });
+    } catch (e) {
+      setFehler(fehlerText(e));
+    } finally {
+      setArbeitet(null);
+      if (dateiRef.current) dateiRef.current.value = "";
     }
   };
 
@@ -578,6 +634,20 @@ export default function InventurWidget({ widget, projectId }) {
             <button style={btn} onClick={() => exportieren("csv")}>
               <Download size={13} /> CSV
             </button>
+            <button style={btn} onClick={() => setZaehllisteOffen(o => !o)}
+                    title="Excel-Liste zum Ausdrucken und Zurückspielen">
+              <ClipboardList size={13} /> Zählliste
+            </button>
+            {offen && (
+              <button style={btn} onClick={() => dateiRef.current?.click()}
+                      disabled={arbeitet !== null} title="Ausgefüllte Zählliste hochladen">
+                {arbeitet === "zaehlliste"
+                  ? <Loader2 size={13} className="spin" /> : <Upload size={13} />}
+                Zählliste zurückspielen
+              </button>
+            )}
+            <input ref={dateiRef} type="file" accept=".xlsx" style={{ display: "none" }}
+                   onChange={e => zaehllisteHochladen(e.target.files?.[0])} />
           </>
         )}
         {aktiv && offen && positionen.length > 0 && (
@@ -602,6 +672,25 @@ export default function InventurWidget({ widget, projectId }) {
           </button>
         )}
       </div>
+
+      {zaehllisteOffen && aktiv && (
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+          marginBottom: 14, padding: 12, borderRadius: 6, backgroundColor: S.bgMain,
+          border: `1px solid ${S.border}`, fontSize: 12, color: S.textMain }}>
+          <span style={{ flex: 1, minWidth: 260, lineHeight: 1.5 }}>
+            Eine Zeile je Charge (Altbestand ohne Charge extra), druckfertig auf A4 quer.
+            Ausgefüllt über „Zählliste zurückspielen“ hochladen – leere Ist-Zellen ändern nichts.
+          </span>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+                 title="Aus = Blindzählung: die Zähler sehen nicht, wie viel da sein müsste.">
+            <input type="checkbox" checked={mitSoll} onChange={e => setMitSoll(e.target.checked)} />
+            Sollmenge anzeigen
+          </label>
+          <button style={{ ...btn, borderColor: S.accent, color: S.accent }} onClick={zaehllisteLaden}>
+            <Download size={13} /> Herunterladen
+          </button>
+        </div>
+      )}
 
       {neuOffen && (
         <div style={{ display: "flex", alignItems: "flex-end", gap: 10, marginBottom: 14,
@@ -833,7 +922,7 @@ export default function InventurWidget({ widget, projectId }) {
                           {zahl(p.soll_zaehltag ?? p.bestand_soll, 3)}
                         </td>
                         <td style={{ padding: "5px 9px", textAlign: "right" }}>
-                          {offen && p.zaehlung_ebene !== "charge" ? (
+                          {offen && !(p.chargen || []).length ? (
                             <input style={{ ...inp, width: 70, padding: "3px 5px", fontSize: 11,
                                       textAlign: "right",
                                       borderColor: p.zaehlung_ebene ? S.accent : S.border }}
@@ -844,6 +933,15 @@ export default function InventurWidget({ widget, projectId }) {
                                    onChange={ev => setZaehlEntwurf(d => ({ ...d, [p.id]: ev.target.value }))}
                                    onBlur={() => zaehlungUebernehmen(p, p.id, wert => ({ ist: wert }))}
                                    onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
+                          ) : offen && !p.zaehlung_ebene ? (
+                            // Artikel mit Chargen werden je Charge gezählt – der Link
+                            // klappt die Chargenliste auf.
+                            <span style={{ fontSize: 10.5, color: S.accent, cursor: "pointer",
+                                           whiteSpace: "nowrap" }}
+                                  title="Artikel mit Chargen werden je Charge gezählt"
+                                  onClick={() => setDetail(d => ({ ...d, [p.id]: true }))}>
+                              je Charge ▸
+                            </span>
                           ) : (
                             <span style={{ color: p.zaehlung_ebene ? S.textBright : S.textDim }}
                                   title={p.zaehlung_ebene === "charge"
@@ -1023,14 +1121,32 @@ export default function InventurWidget({ widget, projectId }) {
                                   </tr>
                                   );
                                 })}
-                                {p.menge_ohne_partie > 0 && (
+                                {((p.menge_ohne_partie_soll || 0) > 0 || (p.rest_soll_zaehltag || 0) > 0
+                                  || p.ist_ohne_partie != null) && (
                                   <tr style={{ color: S.textDim }}>
-                                    <td style={{ padding: "3px 12px 3px 0" }}>ohne Chargenzuordnung</td>
+                                    <td style={{ padding: "3px 12px 3px 0" }}
+                                        title="Altbestand aus der Zeit vor der Buchungshistorie – eigene Zählzeile">
+                                      ohne Chargenzuordnung</td>
                                     <td>–</td>
                                     <td />
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
-                                      {zahl(p.menge_ohne_partie)}</td>
-                                    <td colSpan={5} />
+                                      {zahl(aktiv.zaehltag && p.rest_soll_zaehltag != null
+                                        ? p.rest_soll_zaehltag : p.menge_ohne_partie_soll, 3)}</td>
+                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
+                                      {offen && p.zaehlung_ebene !== "artikel" ? (
+                                        <input style={{ ...inp, width: 64, padding: "2px 5px", fontSize: 11,
+                                                  textAlign: "right",
+                                                  borderColor: p.ist_ohne_partie != null ? S.accent : S.border }}
+                                               value={zaehlEntwurf[`${p.id}:r`]
+                                                 ?? (p.ist_ohne_partie == null ? "" : zahl(p.ist_ohne_partie, 3))}
+                                               placeholder="–"
+                                               onChange={ev => setZaehlEntwurf(d => ({ ...d, [`${p.id}:r`]: ev.target.value }))}
+                                               onBlur={() => zaehlungUebernehmen(p, `${p.id}:r`,
+                                                 wert => ({ ohne_partie_ist: wert }))}
+                                               onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
+                                      ) : (p.ist_ohne_partie != null ? zahl(p.ist_ohne_partie, 3) : "–")}
+                                    </td>
+                                    <td colSpan={4} />
                                   </tr>
                                 )}
                               </tbody>

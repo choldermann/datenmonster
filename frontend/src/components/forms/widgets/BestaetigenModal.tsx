@@ -71,11 +71,14 @@ export default function BestaetigenModal({ titel, punkte = [], label = "OK", gef
 
         <div style={{ padding: "12px 18px", borderTop: `1px solid ${S.border}`,
           display: "flex", justifyContent: "flex-end", gap: 10 }}>
-          <button style={btn} onClick={onClose} disabled={busy} autoFocus={gefahr}>
-            Abbrechen
-          </button>
+          {/* Ohne onBestaetigen ist es eine reine Mitteilung: nur „Schließen". */}
+          {onBestaetigen && (
+            <button style={btn} onClick={onClose} disabled={busy} autoFocus={gefahr}>
+              Abbrechen
+            </button>
+          )}
           <button style={{ ...btn, borderColor: farbe, color: farbe }}
-                  onClick={los} disabled={busy} autoFocus={!gefahr}>
+                  onClick={onBestaetigen ? los : onClose} disabled={busy} autoFocus={!gefahr}>
             {busy && <Loader2 size={13} className="spin" />} {label}
           </button>
         </div>

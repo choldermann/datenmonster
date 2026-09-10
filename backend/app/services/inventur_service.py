@@ -222,7 +222,7 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
               .filter(InventurPosition.lauf_id == lauf.id,
                       InventurPosition.zaehlung_ebene.isnot(None)).all()):
         alte_zaehlungen[p.k_artikel] = {
-            "ebene": p.zaehlung_ebene, "ist": p.ist_gezaehlt,
+            "ebene": p.zaehlung_ebene, "ist": p.ist_gezaehlt, "ohne_partie": p.ist_ohne_partie,
             "grund": p.differenz_grund, "notiz": p.differenz_notiz,
             "am": p.gezaehlt_am, "von": p.gezaehlt_von,
             "chargen": {_charge_schluessel(c): c.get("ist") for c in (p.chargen or [])
@@ -321,6 +321,7 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
         if z["ebene"] == "charge":
             pos.chargen = [{**c, "ist": z["chargen"].get(_charge_schluessel(c), c.get("ist"))}
                            for c in (pos.chargen or [])]
+            pos.ist_ohne_partie = z["ohne_partie"]
         else:
             pos.ist_gezaehlt = z["ist"]
         pos.differenz_grund, pos.differenz_notiz = z["grund"], z["notiz"]
@@ -650,6 +651,8 @@ def _soll_sichern(pos: InventurPosition) -> None:
         pos.wert_soll = pos.wert or 0.0
         pos.menge_abgelaufen_soll = pos.menge_abgelaufen or 0.0
         pos.wert_abgelaufen_soll = pos.wert_abgelaufen or 0.0
+    if pos.menge_ohne_partie_soll is None:
+        pos.menge_ohne_partie_soll = pos.menge_ohne_partie or 0.0
     chargen = []
     for c in (pos.chargen or []):
         c = dict(c)
@@ -674,7 +677,7 @@ def _zaehlung_anwenden(pos: InventurPosition, stichtag: date) -> None:
     chargen = [dict(c) for c in (pos.chargen or [])]
     soll_zt = soll if pos.soll_zaehltag is None else pos.soll_zaehltag
 
-    if any(c.get("ist") is not None for c in chargen):
+    if any(c.get("ist") is not None for c in chargen) or pos.ist_ohne_partie is not None:
         pos.zaehlung_ebene = "charge"
         summe = 0.0
         for c in chargen:
@@ -690,9 +693,19 @@ def _zaehlung_anwenden(pos: InventurPosition, stichtag: date) -> None:
             m = max(0.0, m_soll + d)
             c["menge"] = round(m, 3)
             c["wert"] = round(m * _zahl(c.get("ek")), 2)
-        rest_wert = wert_soll - sum(_zahl(c.get("wert_soll")) for c in chargen)
-        pos.bestand = round(sum(_zahl(c["menge"]) for c in chargen)
-                            + (pos.menge_ohne_partie or 0.0), 3)
+        # Altbestand ohne Charge: eigene Zählzeile, sonst gilt seine Buchmenge.
+        rest_wert_soll = wert_soll - sum(_zahl(c.get("wert_soll")) for c in chargen)
+        rest_soll = pos.menge_ohne_partie_soll or 0.0
+        rest_menge, rest_wert = rest_soll, rest_wert_soll
+        if pos.ist_ohne_partie is not None:
+            rest_soll_zt = rest_soll if pos.rest_soll_zaehltag is None else pos.rest_soll_zaehltag
+            d = pos.ist_ohne_partie - rest_soll_zt
+            summe += d
+            rest_menge = max(0.0, rest_soll + d)
+            rest_wert = (rest_wert_soll * rest_menge / rest_soll if rest_soll > MENGE_EPS
+                         else rest_menge * (pos.ek or 0.0))
+        pos.menge_ohne_partie = round(rest_menge, 3)
+        pos.bestand = round(sum(_zahl(c["menge"]) for c in chargen) + rest_menge, 3)
         pos.wert = round(sum(_zahl(c["wert"]) for c in chargen) + rest_wert, 2)
         alt = [c for c in chargen if _datum(c.get("mhd")) and _datum(c.get("mhd")) < stichtag]
         pos.menge_abgelaufen = round(sum(_zahl(c["menge"]) for c in alt), 3)
@@ -715,6 +728,7 @@ def _zaehlung_anwenden(pos: InventurPosition, stichtag: date) -> None:
         for c in chargen:
             c["menge"], c["wert"] = c.get("menge_soll"), c.get("wert_soll")
             c.pop("differenz", None)
+        pos.menge_ohne_partie = pos.menge_ohne_partie_soll or 0.0
     else:
         pos.zaehlung_ebene = None
         pos.differenz = None
@@ -724,6 +738,7 @@ def _zaehlung_anwenden(pos: InventurPosition, stichtag: date) -> None:
         for c in chargen:
             c["menge"], c["wert"] = c.get("menge_soll"), c.get("wert_soll")
             c.pop("differenz", None)
+        pos.menge_ohne_partie = pos.menge_ohne_partie_soll or 0.0
 
     # Frühestes MHD der Ware, die (noch) da ist – eine auf 0 gezählte abgelaufene
     # Charge soll die Position nicht weiter rot färben.
@@ -762,9 +777,20 @@ def _bewertung_nachziehen(pos: InventurPosition, lauf: InventurLauf, benutzer: s
 
 def zaehlung_setzen(db, lauf: InventurLauf, pos: InventurPosition,
                     felder: dict, benutzer: str = None) -> InventurPosition:
-    """Speichert eine Zählung. `felder` enthält nur, was geändert werden soll:
-    `ist` (Artikel, None = zurücksetzen), `charge_index` + `charge_ist`,
-    `grund`, `notiz`."""
+    """Speichert eine Zählung aus der Oberfläche (eine Position, sofort gespeichert)."""
+    _zaehlung_felder(lauf, pos, felder, benutzer)
+    db.commit()
+    summen_neu_rechnen(db, lauf)
+    return pos
+
+
+def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
+                     benutzer: str = None) -> None:
+    """Wendet eine Zählung an, ohne zu speichern – der Import schreibt viele auf einmal.
+
+    `felder` enthält nur, was sich ändert: `ist` (Artikel ohne Chargen, None =
+    zurücksetzen), `charge_index` + `charge_ist` oder `chargen_ist` {index: menge},
+    `ohne_partie_ist` (Altbestand ohne Charge), `grund`, `notiz`."""
     if lauf.status == "abgeschlossen":
         raise ValueError("Die Inventur ist abgeschlossen.")
     _soll_sichern(pos)
@@ -783,15 +809,39 @@ def zaehlung_setzen(db, lauf: InventurLauf, pos: InventurPosition,
         pos.ist_gezaehlt = None          # die Artikelmenge ergibt sich jetzt aus den Chargen
         mengen_geaendert = True
 
+    if "chargen_ist" in felder:
+        chargen = [dict(c) for c in (pos.chargen or [])]
+        for i, wert in (felder["chargen_ist"] or {}).items():
+            i = int(i)
+            if not 0 <= i < len(chargen):
+                raise ValueError("Charge nicht gefunden.")
+            if wert is not None and wert < 0:
+                raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
+            chargen[i]["ist"] = None if wert is None else round(float(wert), 3)
+        pos.chargen = chargen
+        pos.ist_gezaehlt = None
+        mengen_geaendert = True
+
+    if "ohne_partie_ist" in felder:
+        wert = felder["ohne_partie_ist"]
+        if wert is not None and wert < 0:
+            raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
+        pos.ist_ohne_partie = None if wert is None else round(float(wert), 3)
+        pos.ist_gezaehlt = None
+        mengen_geaendert = True
+
     if "ist" in felder:
         wert = felder["ist"]
         if wert is not None and wert < 0:
             raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
-        if any(c.get("ist") is not None for c in (pos.chargen or [])):
+        if pos.chargen:
+            # Wo Chargen existieren, wird je Charge gezählt – nur so bleibt
+            # nachvollziehbar, welche Partie fehlt. Zurücksetzen geht trotzdem.
             if wert is not None:
-                raise ValueError("Diese Position ist je Charge gezählt – die Menge ergibt "
-                                 "sich aus den Chargen.")
+                raise ValueError("Dieser Artikel hat Chargen und wird je Charge gezählt – "
+                                 "bitte die Mengen an den Chargen eintragen.")
             pos.chargen = [{**c, "ist": None} for c in pos.chargen]
+            pos.ist_ohne_partie = None
         pos.ist_gezaehlt = None if wert is None else round(float(wert), 3)
         mengen_geaendert = True
 
@@ -814,9 +864,6 @@ def zaehlung_setzen(db, lauf: InventurLauf, pos: InventurPosition,
         if mengen_geaendert:
             pos.gezaehlt_am, pos.gezaehlt_von = _jetzt(), benutzer
     _bewertung_nachziehen(pos, lauf, benutzer)
-    db.commit()
-    summen_neu_rechnen(db, lauf)
-    return pos
 
 
 def _zaehltag_soll_eintragen(positionen: List[InventurPosition], zeilen: List[dict],
@@ -825,12 +872,13 @@ def _zaehltag_soll_eintragen(positionen: List[InventurPosition], zeilen: List[di
 
     Chargen, die erst nach dem Stichtag eingelagert wurden, stehen am Zähltag im
     Regal – sie kommen mit Soll zum Stichtag 0 dazu, damit man sie mitzählen kann."""
-    je_artikel, je_charge = {}, {}
+    je_artikel, je_charge, je_rest = {}, {}, {}
     for row in zeilen or []:
         k = _ganzzahl(_hole(row, "k_artikel"))
         if k is None:
             continue
         je_artikel[k] = _zahl(_hole(row, "bestand"))
+        je_rest[k] = _zahl(_hole(row, "menge_ohne_partie"))
         ch = _hole(row, "chargen")
         if isinstance(ch, str):
             import json
@@ -845,11 +893,13 @@ def _zaehltag_soll_eintragen(positionen: List[InventurPosition], zeilen: List[di
         chargen = [dict(c) for c in (pos.chargen or [])]
         if not zeilen:
             pos.soll_zaehltag = None
+            pos.rest_soll_zaehltag = None
             chargen = [c for c in chargen if not c.get("nach_stichtag")]
             for c in chargen:
                 c.pop("soll_zaehltag", None)
         else:
             pos.soll_zaehltag = round(je_artikel.get(pos.k_artikel, 0.0), 3)
+            pos.rest_soll_zaehltag = round(je_rest.get(pos.k_artikel, 0.0), 3)
             zt = je_charge.get(pos.k_artikel, {})
             bekannt = set()
             for c in chargen:
@@ -888,6 +938,194 @@ def zaehltag_setzen(db, lauf: InventurLauf, zaehltag: Optional[date],
     db.commit()
     summen_neu_rechnen(db, lauf)
     return {"positionen": len(positionen)}
+
+
+# ─── Zählliste: ausdrucken und zurückspielen ──────────────────────────────────
+
+ZAEHLLISTE_BLATT = "Zählliste"
+
+
+def _schluessel_text(art: str, pos: InventurPosition, c: dict = None) -> str:
+    """Stabiler Zeilenschlüssel der Zählliste. Artikel + Charge + MHD + EK statt
+    Datenbank-ID: so passt eine Liste auch nach „Bestände neu einlesen" noch."""
+    if art == "C":
+        charge, mhd, ek = _charge_schluessel(c)
+        return f"C|{pos.k_artikel}|{charge}|{mhd}|{ek:.4f}"
+    return f"{art}|{pos.k_artikel}"
+
+
+def zaehlliste_zeilen(db, lauf: InventurLauf, mit_soll: bool = False) -> List[dict]:
+    """Zeilen der Zählliste: je Charge, je Altbestand ohne Charge, je Artikel ohne
+    Chargen. Sortiert nach Warengruppe und Artikel, Chargen nach MHD – was im Regal
+    zusammen liegt, steht auch auf der Liste zusammen. Soll ist die Buchmenge am
+    Zähltag (sonst zum Stichtag), nur wenn gewünscht (sonst Blindzählung)."""
+    mit_zaehltag = lauf.zaehltag is not None
+    positionen = db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).all()
+    positionen.sort(key=lambda p: ((p.warengruppe or "").lower(),
+                                   (p.artikelname or "").lower(), p.c_artnr or ""))
+    zeilen = []
+    for p in positionen:
+        basis = {"Warengruppe": p.warengruppe, "Artikelnummer": p.c_artnr,
+                 "Artikel": p.artikelname}
+        if p.chargen:
+            for c in sorted(p.chargen, key=lambda c: (_datum(c.get("mhd")) or date.max,
+                                                      c.get("charge") or "")):
+                soll = c.get("menge_soll", c.get("menge"))
+                if mit_zaehltag and c.get("soll_zaehltag") is not None:
+                    soll = c.get("soll_zaehltag")
+                # Am Zähltag schon verbraucht: nichts zu zählen.
+                if _zahl(soll) <= MENGE_EPS and c.get("ist") is None:
+                    continue
+                z = {**basis, "Schlüssel": _schluessel_text("C", p, c),
+                     "Charge": (c.get("charge") or "(ohne Nr.)") + ("  [neu]" if c.get("nach_stichtag") else ""),
+                     "MHD": _datum(c.get("mhd"))}
+                if mit_soll:
+                    z["Soll"] = round(_zahl(soll), 3)
+                zeilen.append(z)
+            rest = (p.menge_ohne_partie_soll if p.menge_ohne_partie_soll is not None
+                    else p.menge_ohne_partie)
+            if mit_zaehltag and p.rest_soll_zaehltag is not None:
+                rest = p.rest_soll_zaehltag
+            if _zahl(rest) > MENGE_EPS or p.ist_ohne_partie is not None:
+                z = {**basis, "Schlüssel": _schluessel_text("R", p),
+                     "Charge": "ohne Charge (Altbestand)", "MHD": None}
+                if mit_soll:
+                    z["Soll"] = round(_zahl(rest), 3)
+                zeilen.append(z)
+        else:
+            soll = p.bestand_soll if p.bestand_soll is not None else p.bestand
+            if mit_zaehltag and p.soll_zaehltag is not None:
+                soll = p.soll_zaehltag
+            z = {**basis, "Schlüssel": _schluessel_text("A", p), "Charge": "",
+                 "MHD": p.mhd_frueh}
+            if mit_soll:
+                z["Soll"] = round(_zahl(soll), 3)
+            zeilen.append(z)
+    return zeilen
+
+
+def _import_zahl(v) -> Optional[float]:
+    """Menge aus einer Excel-Zelle: Zahl, oder Text mit deutschem Komma („3,5")."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace(" ", "")
+    if "," in s:
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def zaehlliste_importieren(db, lauf: InventurLauf, inhalt: bytes, benutzer: str = None,
+                           dateiname: str = None) -> dict:
+    """Spielt eine ausgefüllte Zählliste zurück.
+
+    Leere Ist-Zellen ändern nichts – so können mehrere Teams Teillisten
+    zurückspielen. Grund und Notiz gehören zur Position; mehrere Notizen eines
+    Artikels werden aneinandergehängt. Alles in einem Durchgang, eine Summenrechnung."""
+    if lauf.status == "abgeschlossen":
+        raise ValueError("Die Inventur ist abgeschlossen.")
+    import io
+    from openpyxl import load_workbook
+    try:
+        wb = load_workbook(io.BytesIO(inhalt), data_only=True, read_only=True)
+    except Exception:
+        raise ValueError("Die Datei ist keine lesbare Excel-Datei (.xlsx).")
+    ws = wb[ZAEHLLISTE_BLATT] if ZAEHLLISTE_BLATT in wb.sheetnames else wb.worksheets[0]
+    reihen = ws.iter_rows(values_only=True)
+    kopf = [str(k or "").strip() for k in (next(reihen, None) or [])]
+
+    def spalte(name):
+        return kopf.index(name) if name in kopf else None
+    i_key, i_ist, i_grund, i_notiz = spalte("Schlüssel"), spalte("Ist"), spalte("Grund"), spalte("Notiz")
+    if i_key is None or i_ist is None:
+        raise ValueError("Das ist keine Zählliste – die Spalten „Schlüssel“ und „Ist“ fehlen.")
+
+    def zelle(row, i):
+        return row[i] if i is not None and i < len(row) else None
+
+    gruende = {v.lower(): k for k, v in DIFFERENZ_GRUENDE.items()}
+    gruende.update({k: k for k in DIFFERENZ_GRUENDE})
+    positionen = {p.k_artikel: p for p in
+                  db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).all()}
+    je_pos, fehler, fremd = {}, [], []
+    zeilen = leer = werte = 0
+
+    for nr, row in enumerate(reihen, start=2):
+        schluessel = str(zelle(row, i_key) or "").strip()
+        if not schluessel:
+            continue
+        zeilen += 1
+        ist_roh = zelle(row, i_ist)
+        if ist_roh is None or str(ist_roh).strip() == "":
+            leer += 1
+            continue
+        ist = _import_zahl(ist_roh)
+        if ist is None or ist < 0:
+            fehler.append(f"Zeile {nr}: „{ist_roh}“ ist keine gültige Menge")
+            continue
+        try:
+            art, rest = schluessel.split("|", 1)
+            if art == "C":
+                k_txt, rest = rest.split("|", 1)
+                charge, mhd, ek = rest.rsplit("|", 2)
+            else:
+                k_txt = rest
+            pos = positionen.get(int(k_txt))
+        except (ValueError, TypeError):
+            fremd.append(f"Zeile {nr}")
+            continue
+        if pos is None:
+            fremd.append(f"Zeile {nr}")
+            continue
+        felder = je_pos.setdefault(pos.k_artikel, {})
+        if art == "A":
+            felder["ist"] = ist
+        elif art == "R":
+            felder["ohne_partie_ist"] = ist
+        elif art == "C":
+            ziel = (charge, mhd, round(_zahl(ek), 4))
+            idx = next((i for i, c in enumerate(pos.chargen or [])
+                        if _charge_schluessel(c) == ziel), None)
+            if idx is None:
+                fremd.append(f"Zeile {nr} ({pos.c_artnr}, Charge {charge})")
+                continue
+            felder.setdefault("chargen_ist", {})[idx] = ist
+        else:
+            fremd.append(f"Zeile {nr}")
+            continue
+        werte += 1
+
+        g = zelle(row, i_grund)
+        if g is not None and str(g).strip():
+            gid = gruende.get(str(g).strip().lower())
+            if gid:
+                felder["grund"] = gid
+            else:
+                fehler.append(f"Zeile {nr}: Grund „{g}“ unbekannt")
+        n = zelle(row, i_notiz)
+        if n is not None and str(n).strip():
+            felder["notiz"] = "; ".join(x for x in (felder.get("notiz"), str(n).strip()) if x)
+
+    uebernommen = 0
+    for k, felder in je_pos.items():
+        pos = positionen[k]
+        try:
+            _zaehlung_felder(lauf, pos, felder, benutzer)
+            uebernommen += 1
+        except ValueError as e:
+            fehler.append(f"{pos.c_artnr or k}: {e}")
+
+    _protokoll(lauf, "zaehlliste", benutzer, datei=dateiname, werte=werte,
+               positionen=uebernommen, fehler=len(fehler) or None)
+    db.commit()
+    summen_neu_rechnen(db, lauf)
+    return {"zeilen": zeilen, "leer": leer, "werte": werte, "positionen": uebernommen,
+            "nicht_zugeordnet": fremd[:10], "nicht_zugeordnet_anzahl": len(fremd),
+            "fehler": fehler[:10], "fehler_anzahl": len(fehler)}
 
 
 def _abweichungen_ohne_grund(db, lauf: InventurLauf) -> int:
