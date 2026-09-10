@@ -5,6 +5,7 @@ import { ClipboardList, Plus, RefreshCw, Download, Lock, Unlock, Trash2,
 import api, { fehlerText } from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
 import InventurStufenModal from "./InventurStufenModal";
+import BestaetigenModal from "./BestaetigenModal";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -108,6 +109,7 @@ export default function InventurWidget({ widget, projectId }) {
   const [entwurf, setEntwurf] = useState({});      // pos.id → {art, wert, grund}
   const [standardStufen, setStandardStufen] = useState([]);
   const [stufenOffen, setStufenOffen] = useState(false);
+  const [frage, setFrage] = useState(null);         // offene Rückfrage (BestaetigenModal)
 
   // Die Staffel DIESER Inventur (sie gehört zum Beleg), sonst die Standardstaffel.
   // Aufsteigend sortiert wie im Backend – die engste Stufe gewinnt.
@@ -318,6 +320,72 @@ export default function InventurWidget({ widget, projectId }) {
     } catch (e) { setFehler(fehlerText(e)); }
   };
 
+  // Rückfragen vor Schritten, die sich nicht zurücknehmen lassen. Sie nennen die
+  // Folgen in Zahlen – ein bloßes „Wirklich?" klickt jeder weg.
+  const bewertete = positionen.filter(p => p.bewertung_art).length;
+  const offeneVorschlaege = positionen.filter(p => p.vorschlag).length;
+  const kopfzeile = () => `${aktiv.name} · Stichtag ${datum(aktiv.stichtag)}`;
+
+  const abschliessenFragen = () => setFrage({
+    titel: "Inventur abschließen",
+    label: "Abschließen",
+    aktion: abschliessen,
+    punkte: [
+      kopfzeile(),
+      `Wert zum EK ${eur(aktiv.bestand_wert)} · Abwertung ${eur(aktiv.abwertung_summe)} · `
+        + `Wert nach Abwertung ${eur(aktiv.wert_nach_abwertung)}`,
+      offeneVorschlaege > 0
+        ? `${zahl(offeneVorschlaege)} offene Vorschläge gelten damit als bestätigt – mit deinem Namen.`
+        : "Es gibt keine offenen Vorschläge.",
+      "Danach sind Bewertungen, Staffel und neues Einlesen gesperrt, Löschen ebenfalls. "
+        + "Ansehen und Export bleiben möglich.",
+    ],
+  });
+
+  const befuellenFragen = () => {
+    // Ohne Bewertungen geht nichts verloren – dann keine Rückfrage.
+    if (!bewertete) return befuellen(aktiv.id);
+    setFrage({
+      titel: "Bestände neu einlesen",
+      label: "Neu einlesen",
+      gefahr: true,
+      aktion: () => befuellen(aktiv.id),
+      punkte: [
+        `Liest die Bestände zum Stichtag ${datum(aktiv.stichtag)} neu aus der Wawi.`,
+        `${zahl(bewertete)} Bewertungen mit zusammen ${eur(aktiv.abwertung_summe)} Abwertung `
+          + "gehen dabei verloren.",
+        "Die Staffel bleibt: „Abwertung vorschlagen“ stellt Staffel-Bewertungen danach wieder "
+          + "her, von Hand eingetragene nicht.",
+      ],
+    });
+  };
+
+  const loeschenFragen = () => setFrage({
+    titel: "Inventur löschen",
+    label: "Endgültig löschen",
+    gefahr: true,
+    aktion: () => loeschen(aktiv),
+    punkte: [
+      kopfzeile(),
+      `${zahl(positionen.length)} Positionen und ${zahl(bewertete)} Bewertungen werden gelöscht.`,
+      "Das lässt sich nicht rückgängig machen.",
+    ],
+  });
+
+  const oeffnenFragen = () => setFrage({
+    titel: "Inventur wieder öffnen",
+    label: "Wieder öffnen",
+    gefahr: true,
+    aktion: oeffnen,
+    punkte: [
+      `Abgeschlossen am ${datum(aktiv.abgeschlossen_am)}`
+        + (aktiv.abgeschlossen_von ? ` von ${aktiv.abgeschlossen_von}` : "") + ".",
+      "Danach sind Bewertungen wieder änderbar. Das Öffnen steht im Verlauf der Inventur "
+        + "und im Excel-Info-Blatt.",
+      "Nur für den Irrtumsfall – eine abgegebene Inventur sollte abgeschlossen bleiben.",
+    ],
+  });
+
   // Der Export läuft über einen Blob, weil die API mit Anmeldung geschützt ist –
   // ein einfacher Link würde ohne Kopfzeile gehen und 401 liefern.
   const exportieren = async (format) => {
@@ -385,7 +453,7 @@ export default function InventurWidget({ widget, projectId }) {
         </button>
 
         {aktiv && offen && (
-          <button style={btn} onClick={() => befuellen(aktiv.id)}
+          <button style={btn} onClick={befuellenFragen}
                   disabled={arbeitet === "befuellen"}
                   title="Liest die Bestände zum Stichtag neu ein. Bereits erfasste Bewertungen gehen dabei verloren.">
             {arbeitet === "befuellen"
@@ -406,19 +474,22 @@ export default function InventurWidget({ widget, projectId }) {
         )}
         {aktiv && offen && positionen.length > 0 && (
           <button style={{ ...btn, borderColor: S.accent, color: S.accent }}
-                  onClick={abschliessen} disabled={arbeitet === "abschliessen"}>
+                  onClick={abschliessenFragen} disabled={arbeitet === "abschliessen"}>
             <Lock size={13} /> Inventur abschließen
           </button>
         )}
         {aktiv && !offen && (
-          <button style={btn} onClick={oeffnen}
+          <button style={btn} onClick={oeffnenFragen}
                   title="Nur für den Irrtumsfall – der Abschluss bleibt vermerkt.">
             <Unlock size={13} /> Wieder öffnen
           </button>
         )}
         {aktiv && (
-          <button style={{ ...btn, marginLeft: "auto", color: "#e07070" }}
-                  onClick={() => loeschen(aktiv)}>
+          <button style={{ ...btn, marginLeft: "auto", color: "#e07070",
+                    opacity: offen ? 1 : 0.45, cursor: offen ? "pointer" : "not-allowed" }}
+                  onClick={offen ? loeschenFragen : undefined} disabled={!offen}
+                  title={offen ? "Inventur mit allen Positionen löschen"
+                               : "Eine abgeschlossene Inventur ist ein Beleg und kann nicht gelöscht werden."}>
             <Trash2 size={13} /> Löschen
           </button>
         )}
@@ -482,6 +553,19 @@ export default function InventurWidget({ widget, projectId }) {
                 {aktiv.abgeschlossen_von ? ` von ${aktiv.abgeschlossen_von}` : ""}
               </div>
             )}
+            {/* War schon einmal abgeschlossen: das soll man der offenen Inventur ansehen. */}
+            {offen && (() => {
+              const w = [...(aktiv.protokoll || [])].reverse()
+                .find(e => e.aktion === "wieder_geoeffnet");
+              return w ? (
+                <div style={{ marginLeft: "auto", display: "flex", alignItems: "center",
+                  gap: 6, fontSize: 11, color: "#e0b070" }}
+                  title="Die Inventur war schon abgeschlossen und wurde wieder geöffnet – das steht im Verlauf und im Excel-Info-Blatt.">
+                  <Unlock size={12} /> wieder geöffnet am {datum(w.am)}
+                  {w.von ? ` von ${w.von}` : ""}
+                </div>
+              ) : null;
+            })()}
           </div>
 
           {/* Prüfhinweise: was beim Einlesen aufgefallen ist. */}
@@ -754,6 +838,12 @@ export default function InventurWidget({ widget, projectId }) {
             </table>
           </div>
         </>
+      )}
+
+      {frage && (
+        <BestaetigenModal titel={frage.titel} punkte={frage.punkte} label={frage.label}
+                          gefahr={frage.gefahr} onBestaetigen={frage.aktion}
+                          onClose={() => setFrage(null)} />
       )}
 
       {stufenOffen && aktiv && (

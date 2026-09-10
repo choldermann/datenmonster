@@ -67,6 +67,7 @@ def _out_lauf(l: InventurLauf) -> dict:
         # Die Staffel, nach der diese Inventur vorschlägt – gehört zum Beleg.
         "abwertung_stufen": inventur_service.stufen_des_laufs(l),
         "stufen_eigene": bool(l.abwertung_stufen),
+        "protokoll": l.protokoll or [],
         "erstellt_von": l.erstellt_von,
         "created_at": l.created_at.isoformat() if l.created_at else None,
         "abgeschlossen_am": l.abgeschlossen_am.isoformat() if l.abgeschlossen_am else None,
@@ -195,6 +196,11 @@ def delete_lauf(lauf_id: int,
                 user: User = Depends(get_current_user)):
     lauf = _lauf(db, lauf_id)
     _darf_aendern(lauf.project_id, user, db)
+    # Eine abgeschlossene Inventur ist ein Beleg. Löschen geht nur über den
+    # bewussten Umweg „wieder öffnen" – und der steht im Verlauf.
+    if lauf.status == "abgeschlossen":
+        raise HTTPException(400, "Eine abgeschlossene Inventur kann nicht gelöscht werden. "
+                                 "Falls sie wirklich weg soll: erst wieder öffnen.")
     db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).delete()
     db.delete(lauf)
     db.commit()
@@ -218,7 +224,8 @@ def oeffnen(lauf_id: int,
     lauf = _lauf(db, lauf_id)
     # Einen Beleg wieder aufzumachen ist keine Portal-Handlung.
     require_editor(lauf.project_id, user, db)
-    return _out_lauf(inventur_service.wieder_oeffnen(db, lauf))
+    return _out_lauf(inventur_service.wieder_oeffnen(
+        db, lauf, benutzer=getattr(user, "username", None)))
 
 
 # ─── Positionen ───────────────────────────────────────────────────────────────
@@ -425,9 +432,24 @@ def export_xlsx(lauf_id: int,
     zeilen = inventur_service.export_zeilen(db, lauf, datum_als_text=False)
     spalten = [label for _, label in inventur_service.EXPORT_SPALTEN]
 
+    from zoneinfo import ZoneInfo
+    from datetime import timezone
+    try:
+        ort = ZoneInfo("Europe/Berlin")
+    except Exception:
+        ort = timezone.utc   # ohne Zeitzonendaten lieber UTC als eine falsche Uhrzeit
+
     def _text_datum(d, mit_zeit=False):
         if not d:
             return ""
+        if isinstance(d, str):
+            try:
+                d = datetime.fromisoformat(d)
+            except ValueError:
+                return d
+        if mit_zeit and isinstance(d, datetime):
+            # Gespeichert wird in UTC; SQLite gibt es ohne Zeitzone zurück.
+            d = (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).astimezone(ort)
         return d.strftime("%d.%m.%Y %H:%M" if mit_zeit else "%d.%m.%Y")
 
     # Als Text: openpyxl lehnt Zeitstempel mit Zeitzone ab, und im Info-Blatt
@@ -447,6 +469,28 @@ def export_xlsx(lauf_id: int,
         ("Abgeschlossen von", lauf.abgeschlossen_von or ""),
         ("Exportiert am", datetime.now().strftime("%d.%m.%Y %H:%M")),
     ]
+    # Der Verlauf gehört zum Beleg: wer wann eingelesen, abgeschlossen und wieder
+    # geöffnet hat.
+    aktionen = {"angelegt": "angelegt", "eingelesen": "Bestände eingelesen",
+                "abgeschlossen": "abgeschlossen", "wieder_geoeffnet": "wieder geöffnet"}
+    for i, e in enumerate(lauf.protokoll or []):
+        teile = []
+        if e.get("positionen") is not None:
+            teile.append(f"{e['positionen']} Positionen")
+        if e.get("bewertungen_verworfen"):
+            teile.append(f"{e['bewertungen_verworfen']} Bewertungen verworfen")
+        if e.get("vorschlaege_bestaetigt"):
+            teile.append(f"{e['vorschlaege_bestaetigt']} Vorschläge bestätigt")
+        if e.get("abwertung") is not None:
+            teile.append("Abwertung " + f"{float(e['abwertung']):,.2f} €"
+                         .replace(",", "X").replace(".", ",").replace("X", "."))
+        text = f"{_text_datum(e.get('am'), mit_zeit=True)} {aktionen.get(e.get('aktion'), e.get('aktion'))}"
+        if e.get("von"):
+            text += f" von {e['von']}"
+        if teile:
+            text += " (" + ", ".join(teile) + ")"
+        info.append(("Verlauf" if i == 0 else "", text))
+
     inhalt = export_xlsx_tabelle(
         spalten, zeilen,
         formate=inventur_service.EXPORT_FORMATE,

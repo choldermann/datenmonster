@@ -173,6 +173,7 @@ def anlegen(db, project_id: Optional[int], connection_id: int, name: str,
         erstellt_von=benutzer,
         abwertung_stufen=vorige_stufen,
     )
+    _protokoll(lauf, "angelegt", benutzer, stichtag=stichtag.isoformat())
     db.add(lauf)
     db.commit()
     db.refresh(lauf)
@@ -189,6 +190,12 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
     """
     if lauf.status == "abgeschlossen":
         raise ValueError("Die Inventur ist abgeschlossen und kann nicht neu befüllt werden.")
+
+    # Was dabei verloren geht, gehört in den Verlauf – wer später fragt, warum eine
+    # Abwertung fehlt, soll es dort lesen können.
+    verworfen = (db.query(InventurPosition)
+                 .filter(InventurPosition.lauf_id == lauf.id,
+                         InventurPosition.bewertung_art.isnot(None)).count())
 
     db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).delete()
 
@@ -265,6 +272,8 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
         })
 
     lauf.hinweise = hinweise
+    _protokoll(lauf, "eingelesen", benutzer, positionen=angelegt,
+               bewertungen_verworfen=verworfen or None)
     lauf.updated_at = _jetzt()
     db.commit()
     summen_neu_rechnen(db, lauf)
@@ -584,19 +593,39 @@ def abschliessen(db, lauf: InventurLauf, benutzer: str = None) -> InventurLauf:
     wer abschließt, steht für die Zahlen ein."""
     if lauf.status == "abgeschlossen":
         return lauf
-    vorschlaege_bestaetigen(db, lauf, benutzer)
+    res = vorschlaege_bestaetigen(db, lauf, benutzer)
     summen_neu_rechnen(db, lauf)
     lauf.status = "abgeschlossen"
     lauf.abgeschlossen_am = _jetzt()
     lauf.abgeschlossen_von = benutzer
+    _protokoll(lauf, "abgeschlossen", benutzer,
+               vorschlaege_bestaetigt=res.get("bestaetigt") or None,
+               abwertung=lauf.abwertung_summe,
+               wert_nach_abwertung=lauf.wert_nach_abwertung)
     db.commit()
     db.refresh(lauf)
     return lauf
 
 
-def wieder_oeffnen(db, lauf: InventurLauf) -> InventurLauf:
+def _protokoll(lauf: InventurLauf, aktion: str, benutzer: str = None, **daten) -> None:
+    """Hängt einen Eintrag an den Verlauf der Inventur (committet nicht selbst).
+
+    Neue Liste statt append: eine JSON-Spalte bemerkt Änderungen an der
+    vorhandenen Liste nicht und würde den Eintrag still verwerfen."""
+    eintrag = {"aktion": aktion, "am": _jetzt().isoformat(timespec="seconds"), "von": benutzer}
+    eintrag.update({k: v for k, v in daten.items() if v is not None})
+    lauf.protokoll = list(lauf.protokoll or []) + [eintrag]
+
+
+def wieder_oeffnen(db, lauf: InventurLauf, benutzer: str = None) -> InventurLauf:
     """Nur für den Irrtumsfall. Der Abschluss bleibt in `abgeschlossen_am`
-    stehen, damit sichtbar bleibt, dass der Beleg einmal fertig war."""
+    stehen, damit sichtbar bleibt, dass der Beleg einmal fertig war – und das
+    Öffnen selbst steht im Verlauf."""
+    if lauf.status != "abgeschlossen":
+        return lauf
+    _protokoll(lauf, "wieder_geoeffnet", benutzer,
+               abschluss_vom=lauf.abgeschlossen_am.isoformat(timespec="seconds")
+               if lauf.abgeschlossen_am else None)
     lauf.status = "offen"
     lauf.updated_at = _jetzt()
     db.commit()

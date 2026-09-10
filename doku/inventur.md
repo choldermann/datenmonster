@@ -103,6 +103,22 @@ abgewertet wird. Standard ist MHD überschritten 100 %, unter 3 Monaten 50 %,
   Mit PPS geprüft: Standard 63.842 €, „ab 30 Tagen drüber 100 %, bis dahin 50 %,
   unter 3 Monaten 20 %" 47.719 €.
 
+### Abschluss und Absicherung
+„Inventur abschließen" bestätigt offene Vorschläge (mit dem Namen des
+Abschließenden), rechnet die Summen und sperrt die Inventur: keine Bewertung, keine
+Staffel, kein neues Einlesen, **kein Löschen** – auch der Server lehnt das ab.
+Ansehen und Export bleiben. In die Wawi wird dabei nichts geschrieben.
+* **Rückfragen mit Zahlen** vor Abschließen (Summen, offene Vorschläge), Bestände
+  neu einlesen (nur wenn Bewertungen verloren gingen), Löschen und Wieder öffnen
+  (`BestaetigenModal.tsx`, bei gefährlichen Schritten liegt der Fokus auf „Abbrechen").
+* **Verlauf** (`inventur_laeufe.protokoll`): angelegt, eingelesen (mit verworfenen
+  Bewertungen), abgeschlossen (mit Summen), wieder geöffnet. Gespeichert in UTC, im
+  Excel-Info-Blatt in deutscher Zeit. `abgeschlossen_am/_von` nennen nur den letzten
+  Abschluss, der Verlauf behält alle.
+* Wieder öffnen darf, wer Bearbeiten-Rechte hat (kein Portal-Nutzer); die offene
+  Inventur zeigt dann „wieder geöffnet am …". Löschen geht nur bei offenen
+  Inventuren – eine gelöschte nimmt ihren Verlauf mit.
+
 ### Ausgabe
 Unbewertete Positionen stehen in beiden Formaten mit ihrem vollen Wert in der
 Spalte „Wert nach Abwertung", damit die Summe stimmt.

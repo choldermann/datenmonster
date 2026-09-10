@@ -74,6 +74,11 @@ class InventurLauf(Base):
     # wenn sie später geändert wird. Leer = STANDARD_STUFEN.
     abwertung_stufen = Column(JSON, nullable=True)
 
+    # Verlauf: angelegt, eingelesen, abgeschlossen, wieder geöffnet – mit Zeit und
+    # Person. `abgeschlossen_am/_von` nennen nur den LETZTEN Abschluss; ohne Verlauf
+    # verschwände ein früherer Abschluss beim erneuten Abschließen spurlos.
+    protokoll = Column(JSON, nullable=True)
+
     erstellt_von     = Column(String, nullable=True)
     created_at       = Column(DateTime, default=_jetzt)
     updated_at       = Column(DateTime, default=_jetzt, onupdate=_jetzt)

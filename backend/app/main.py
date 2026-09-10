@@ -134,6 +134,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE adhoc_queries ADD COLUMN verlauf_mapping_id INTEGER",
             # Inventur: Abwertungsstaffel je Lauf (gehört zum Beleg)
             "ALTER TABLE inventur_laeufe ADD COLUMN abwertung_stufen JSON",
+            "ALTER TABLE inventur_laeufe ADD COLUMN protokoll JSON",
             # Inventur: Herkunft je Bewertung (staffel|hand). Altbestand einmalig
             # nachtragen – nur wo noch NULL, also idempotent. Staffel erkennt man am
             # Grundtext „… (100 %)" (Escape '!', sonst wäre das % ein Platzhalter).
