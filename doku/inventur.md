@@ -223,10 +223,11 @@ Die Frage lautete: „Welche Mengen der einzelnen Größen von VAR80215 sind an
 verbundene Unternehmen ging.
 
 ### Bedienung
-Artikelnummer oder Name eingeben, Zeitraum wählen, „Abflüsse auswerten".
+Zeitraum wählen, optional Artikelnummer oder Name eingeben, „Abflüsse auswerten".
+Das Artikelfeld ist ein **Filter**: leer zeigt alle Artikel, nach Menge sortiert.
 Eine **Vater-Artikelnummer findet alle Größen darunter** (`VAR80215` → 80216
-bis 80219), eine einzelne Nummer nur diese. Ohne Eingabe bleibt die Auswertung
-leer – eine Abgangsliste über das ganze Sortiment beantwortet keine Frage.
+bis 80219), eine einzelne Nummer nur diese. Bis 10.09.2026 blieb der Reiter ohne
+Eingabe leer – das sah aus wie „keine Abgänge" und wurde deshalb geändert.
 
 ### Drei Fallen, die die Auswertung abfängt
 1. **Korrekturbuchungen sind kein Abverkauf.** Bei einer der Größen des

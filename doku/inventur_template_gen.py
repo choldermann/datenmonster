@@ -100,8 +100,10 @@ NEUE_FELDER = [
     {"id": "f_artikel_suche", "name": "artikel_suche", "type": "text",
      "label": "Artikel (Nummer oder Name)", "row": 1, "colSpan": 5,
      "required": False, "action_ids": AB_ACTIONS,
-     "config": {"placeholder": "z. B. VAR80215 oder 80218",
-                "auto_run": False,
+     # Textfelder lesen den Platzhalter auf oberster Ebene; config.placeholder
+     # gilt nur für DB-Dropdowns und blieb hier wirkungslos.
+     "placeholder": "leer = alle Artikel · z. B. VAR80215 oder 80218",
+     "config": {"auto_run": False,
                 "visible_tabs": ["tab_abfluesse"]}},
     {"id": "f_ohne_verbundene", "name": "ohne_verbundene", "type": "dropdown",
      "label": "Verbundene Unternehmen", "row": 1, "colSpan": 4,
@@ -251,14 +253,17 @@ def main():
     s["result_tabs"].sort(key=lambda t: REIHENFOLGE.index(t["id"])
                           if t["id"] in REIHENFOLGE else 99)
 
-    d["version"] = "1.6"
-    hinweise = d.get("hinweise") or []
+    d["version"] = "1.7"
+    # Überholte Hinweise früherer Läufe entfernen, sonst stünden alt und neu nebeneinander.
+    veraltet = {"Der Reiter „Abflüsse je Artikel“ braucht eine Artikelnummer als "
+                "Eingabe. Eine Vater-Artikelnummer (VAR…) findet alle Größen darunter."}
+    hinweise = [h for h in (d.get("hinweise") or []) if h not in veraltet]
     for h in ("Der Reiter „Inventur“ friert Bestände zum Stichtag ein, bewertet sie "
               "und gibt eine dokumentierte Liste für den Steuerberater aus. Der "
               "Bestandswert wird NICHT in die WaWi zurückgeschrieben – JTL kennt "
               "keinen Abwertungswert.",
-              "Der Reiter „Abflüsse je Artikel“ braucht eine Artikelnummer als "
-              "Eingabe. Eine Vater-Artikelnummer (VAR…) findet alle Größen darunter."):
+              "Im Reiter „Abflüsse je Artikel“ filtert das Artikelfeld: leer zeigt "
+              "alle Artikel nach Menge, eine Vater-Artikelnummer (VAR…) alle Größen darunter."):
         if h not in hinweise:
             hinweise.append(h)
     d["hinweise"] = hinweise

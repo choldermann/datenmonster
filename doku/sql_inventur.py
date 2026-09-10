@@ -210,17 +210,18 @@ ORDER BY k.klasse"""
 # ── Abflüsse: gemeinsamer Kopf ───────────────────────────────────────────────
 #
 # Der Artikelfilter greift auch über den Vaterartikel: „VAR80215" findet alle
-# Größen darunter, „80218" nur die eine. Ohne Eingabe bleibt die Auswertung
-# leer statt das ganze Sortiment zu ziehen – eine Abgangsliste über 3.000
-# Artikel beantwortet keine Frage und dauert.
+# Größen darunter, „80218" nur die eine. Ohne Eingabe gilt kein Filter – dann
+# kommt das ganze Sortiment, nach Menge sortiert. Früher blieb der Reiter leer,
+# und ein leeres Feld sah aus wie „keine Abgänge" (PPS, 10.09.). Über alle
+# Artikel eines Jahres läuft das bei PPS in rund einer Sekunde.
 ABFLUSS_KOPF = """WITH treffer AS (
     SELECT a.kArtikel
     FROM dbo.tArtikel a
     LEFT JOIN dbo.tArtikel va ON va.kArtikel = a.kVaterArtikel
     LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1
     WHERE a.nIstVater = 0
-      AND LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) <> ''
-      AND (a.cArtNr LIKE :artikel_suche + '%'
+      AND (LTRIM(RTRIM(ISNULL(:artikel_suche, ''))) = ''
+           OR a.cArtNr LIKE :artikel_suche + '%'
            OR va.cArtNr LIKE :artikel_suche + '%'
            OR ab.cName LIKE '%' + :artikel_suche + '%')
 ),
