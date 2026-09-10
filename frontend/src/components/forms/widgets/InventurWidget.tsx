@@ -29,8 +29,15 @@ const zahl = (n, k = 0) => new Intl.NumberFormat("de-DE", {
 const datum = (iso) => iso ? new Date(iso).toLocaleDateString("de-DE") : "–";
 const heuteISO = () => new Date().toISOString().slice(0, 10);
 
+/**
+ * Ein Prozentsatz braucht einen Bezug. „% auf abgelaufene Chargen" trifft nur
+ * die Partien, deren MHD am Stichtag vorbei war – bei Artikel 80123 sind das
+ * 31.936 € von 45.630 €, der Rest liegt in drei bis 2028 haltbaren Chargen.
+ * Deshalb ist diese Art vorbelegt, wo es abgelaufene Ware gibt.
+ */
 const BEWERTUNGSARTEN = [
-  { id: "prozent",    label: "% Abschlag", einheit: "%" },
+  { id: "prozent_abgelaufen", label: "% auf abgelaufene", einheit: "%" },
+  { id: "prozent",    label: "% auf Position", einheit: "%" },
   { id: "stueckwert", label: "neuer Stückwert", einheit: "€/Stk" },
   { id: "betrag",     label: "Abwertungsbetrag", einheit: "€" },
 ];
@@ -41,6 +48,32 @@ function restFarbe(tage) {
   if (tage < 0) return "#e07070";
   if (tage < 90) return "#e0b070";
   return S.textMain;
+}
+
+/** MHD einer Charge: das Mapping liefert TT.MM.JJJJ, der Lauf JJJJ-MM-TT. */
+function alsDatum(v) {
+  if (!v) return null;
+  const s = String(v).slice(0, 10);
+  const de = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  const d = de ? new Date(`${de[3]}-${de[2]}-${de[1]}`) : new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+/** Resttage einer Charge bis zum Stichtag der Inventur. */
+function resttage(mhd, stichtag) {
+  const a = alsDatum(mhd), b = alsDatum(stichtag);
+  if (!a || !b) return null;
+  return Math.round((a.getTime() - b.getTime()) / 86400000);
+}
+
+/**
+ * Welche Abwertungsstufe eine Charge trifft – dieselbe Regel wie im Backend
+ * (_vorschlag_fuer): aufsteigend sortiert, die engste Stufe gewinnt. Die Liste
+ * zeigt damit an der Partie, was der Vorschlag mit ihr macht.
+ */
+function stufeFuer(tage, stufen) {
+  if (tage === null || !stufen?.length) return null;
+  return stufen.find(st => tage <= Number(st.bis_tage ?? 0)) || null;
 }
 
 /**
@@ -69,8 +102,10 @@ export default function InventurWidget({ widget, projectId }) {
   const [neuName, setNeuName] = useState("");
   const [suche, setSuche] = useState("");
   const [nurBewertet, setNurBewertet] = useState(false);
+  const [nurAbgelaufen, setNurAbgelaufen] = useState(false);
   const [detail, setDetail] = useState({});        // pos.id → Chargen aufgeklappt
   const [entwurf, setEntwurf] = useState({});      // pos.id → {art, wert, grund}
+  const [stufen, setStufen] = useState([]);        // Abwertungsstufen des Vorschlags
 
   const q = projectId ? `?project_id=${projectId}` : "";
 
@@ -102,6 +137,15 @@ export default function InventurWidget({ widget, projectId }) {
   }, []);
 
   useEffect(() => { laeufeLaden(); }, [laeufeLaden]);
+
+  // Die Stufen des Abwertungsvorschlags, um sie an der einzelnen Charge
+  // anzuzeigen. Aufsteigend sortiert wie im Backend – die engste gewinnt.
+  useEffect(() => {
+    api.get("/api/inventur/stufen")
+      .then(({ data }) => setStufen([...(data || [])]
+        .sort((a, b) => Number(a.bis_tage ?? 0) - Number(b.bis_tage ?? 0))))
+      .catch(() => setStufen([]));   // ohne Stufen fehlt nur die Spalte
+  }, []);
 
   // Beim Mandantenwechsel neu laden: die Inventur des einen Betriebs hat in der
   // Maske des anderen nichts zu suchen.
@@ -247,6 +291,10 @@ export default function InventurWidget({ widget, projectId }) {
   const offen = aktiv && aktiv.status !== "abgeschlossen";
   const gefiltert = positionen.filter(p => {
     if (nurBewertet && !p.bewertung_art) return false;
+    // Die Frage des Kunden lautet „was ist abgelaufen?" – nicht „was hat ein
+    // MHD?". Deshalb hängt der Filter an der abgelaufenen MENGE, nicht daran,
+    // ob die Position überhaupt ein MHD trägt.
+    if (nurAbgelaufen && !(p.menge_abgelaufen > 0)) return false;
     if (!suche.trim()) return true;
     const s = suche.trim().toLowerCase();
     return (p.art_nr || "").toLowerCase().includes(s)
@@ -411,6 +459,13 @@ export default function InventurWidget({ widget, projectId }) {
                      onChange={e => setNurBewertet(e.target.checked)} />
               nur bewertete
             </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+              color: S.textDim, cursor: "pointer" }}
+              title="Zeigt nur Positionen, bei denen am Stichtag mindestens eine Charge über dem MHD war.">
+              <input type="checkbox" checked={nurAbgelaufen}
+                     onChange={e => setNurAbgelaufen(e.target.checked)} />
+              nur mit abgelaufenen Chargen
+            </label>
             {offen && (
               <button style={btn} onClick={vorschlagen} disabled={arbeitet !== null}
                       title="Wertet abgelaufene und bald ablaufende Chargen nach Stufen ab – jede Zeile bleibt änderbar.">
@@ -449,7 +504,16 @@ export default function InventurWidget({ widget, projectId }) {
               <tbody>
                 {gefiltert.map(p => {
                   const e = entwurf[p.id] || {};
-                  const art = e.art || p.bewertung_art || "prozent";
+                  const hatAbgelaufen = (p.wert_abgelaufen || 0) > 0;
+                  // Wo abgelaufene Ware liegt, ist der Bezug auf sie die
+                  // richtige Vorauswahl – sonst schreibt ein „100 %" die noch
+                  // haltbaren Chargen mit ab. Ohne abgelaufene Ware wäre die
+                  // Art sinnlos (Bezugswert 0) und steht deshalb nicht zur Wahl.
+                  const arten = hatAbgelaufen
+                    ? BEWERTUNGSARTEN
+                    : BEWERTUNGSARTEN.filter(a => a.id !== "prozent_abgelaufen");
+                  const art = e.art || p.bewertung_art
+                    || (hatAbgelaufen ? "prozent_abgelaufen" : "prozent");
                   const einheit = BEWERTUNGSARTEN.find(a => a.id === art)?.einheit || "";
                   return (
                     <Fragment key={p.id}>
@@ -488,7 +552,7 @@ export default function InventurWidget({ widget, projectId }) {
                                       onChange={ev => setEntwurf(d => ({ ...d,
                                         [p.id]: { ...e, art: ev.target.value,
                                                   wert: e.wert ?? p.bewertung_wert ?? "" } }))}>
-                                {BEWERTUNGSARTEN.map(a =>
+                                {arten.map(a =>
                                   <option key={a.id} value={a.id}>{a.label}</option>)}
                               </select>
                               <input style={{ ...inp, width: 62, padding: "3px 5px", fontSize: 11,
@@ -503,9 +567,11 @@ export default function InventurWidget({ widget, projectId }) {
                                      onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
                             </span>
                           ) : (
-                            <span style={{ color: S.textDim, fontSize: 11 }}>
+                            <span style={{ color: S.textDim, fontSize: 11 }}
+                                  title={BEWERTUNGSARTEN.find(a => a.id === p.bewertung_art)?.label || ""}>
                               {p.bewertung_art
                                 ? `${zahl(p.bewertung_wert, 2)} ${BEWERTUNGSARTEN.find(a => a.id === p.bewertung_art)?.einheit || ""}`
+                                  + (p.bewertung_art === "prozent_abgelaufen" ? " auf abgel." : "")
                                 : "–"}
                             </span>
                           )}
@@ -536,27 +602,54 @@ export default function InventurWidget({ widget, projectId }) {
                                 Begründung: {p.grund}
                               </div>
                             )}
+                            {/* Woran die Abwertung hängt, muss an der Partie
+                                stehen – sonst rät man, worauf sich ein Prozent
+                                bezieht. */}
+                            {(p.wert_abgelaufen || 0) > 0 && (
+                              <div style={{ fontSize: 11, marginBottom: 6, color: S.textMain }}>
+                                davon abgelaufen: <b style={{ color: "#e07070" }}>
+                                  {zahl(p.menge_abgelaufen)} Stück · {eur(p.wert_abgelaufen)}
+                                </b>
+                                <span style={{ color: S.textDim }}>
+                                  {"  ·  noch haltbar: "}
+                                  {zahl((p.bestand || 0) - (p.menge_abgelaufen || 0))} Stück ·{" "}
+                                  {eur((p.wert || 0) - (p.wert_abgelaufen || 0))}
+                                </span>
+                              </div>
+                            )}
                             <table style={{ borderCollapse: "collapse", fontSize: 11 }}>
                               <thead>
                                 <tr style={{ color: S.textDim }}>
-                                  {["Charge", "MHD", "Menge", "EK", "Wert", "Einlagerungen"].map(h => (
-                                    <th key={h} style={{ padding: "3px 12px 3px 0",
-                                      textAlign: h === "Charge" || h === "MHD" ? "left" : "right",
-                                      fontWeight: 500 }}>{h}</th>
+                                  {["Charge", "MHD", "Rest", "Menge", "EK", "Wert",
+                                    "Vorschlag", ""].map((h, i) => (
+                                    <th key={i} style={{ padding: "3px 12px 3px 0",
+                                      textAlign: i <= 1 ? "left" : i >= 6 ? "left" : "right",
+                                      fontWeight: 500, whiteSpace: "nowrap" }}>{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
-                                {(p.chargen || []).map((c, i) => (
-                                  <tr key={i}>
+                                {(p.chargen || []).map((c, i) => {
+                                  const rest = resttage(c.mhd, aktiv.stichtag);
+                                  const st = stufeFuer(rest, stufen);
+                                  return (
+                                  <tr key={i} style={{ color: restFarbe(rest) }}>
                                     <td style={{ padding: "3px 12px 3px 0" }}>{c.charge || "–"}</td>
                                     <td style={{ padding: "3px 12px 3px 0" }}>{c.mhd || "–"}</td>
+                                    <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
+                                      {rest === null ? "–" : `${zahl(rest)} T`}
+                                    </td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{zahl(c.menge)}</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>{eur(c.ek)}</td>
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {/* exakt summiert aus der Abfrage – Menge × EK
                                           wäre um die Rundung des EK daneben */}
                                       {eur(c.wert ?? (c.menge || 0) * (c.ek || 0))}
+                                    </td>
+                                    {/* Was „Abwertung vorschlagen" mit genau dieser
+                                        Partie macht. Leer heißt: bleibt unangetastet. */}
+                                    <td style={{ padding: "3px 12px 3px 0", whiteSpace: "nowrap" }}>
+                                      {st ? `${st.label} · ${Number(st.prozent)} %` : ""}
                                     </td>
                                     {/* JTL legt je Wareneingang einen Satz an, auch bei
                                         gleicher Charge. Die Zeile ist zusammengefasst –
@@ -567,14 +660,16 @@ export default function InventurWidget({ widget, projectId }) {
                                         ? `${zahl(c.einlagerungen)} Einlagerungen` : ""}
                                     </td>
                                   </tr>
-                                ))}
+                                  );
+                                })}
                                 {p.menge_ohne_partie > 0 && (
                                   <tr style={{ color: S.textDim }}>
                                     <td style={{ padding: "3px 12px 3px 0" }}>ohne Chargenzuordnung</td>
                                     <td>–</td>
+                                    <td />
                                     <td style={{ padding: "3px 12px 3px 0", textAlign: "right" }}>
                                       {zahl(p.menge_ohne_partie)}</td>
-                                    <td colSpan={3} />
+                                    <td colSpan={4} />
                                   </tr>
                                 )}
                               </tbody>

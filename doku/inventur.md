@@ -44,9 +44,18 @@ Altbestand ohne Partie und wird als Prüfhinweis ausgewiesen.
   Stammdaten-EK. Der angezeigte EK ist der daraus gewichtete Durchschnitt.
 
 ### Abwertung
-Der Anwender bewertet je Position auf drei Arten: **% Abschlag**, **neuer
-Stückwert** oder **Abwertungsbetrag**. Der Betrag ist auf den Bestandswert
-gedeckelt – eine Position kann auf null fallen, aber nicht ins Negative.
+Der Anwender bewertet je Position auf vier Arten: **% auf abgelaufene Chargen**,
+**% auf Position**, **neuer Stückwert** oder **Abwertungsbetrag**. Der Betrag
+ist auf den Bestandswert gedeckelt – eine Position kann auf null fallen, aber
+nicht ins Negative.
+
+> **Ein Prozentsatz braucht einen Bezug.** „% auf abgelaufene Chargen" rechnet
+> nur auf den Wert der Partien, deren MHD am Stichtag vorbei war
+> (`wert_abgelaufen`), „% auf Position" auf den ganzen Bestandswert. Wo es
+> abgelaufene Ware gibt, ist der Bezug auf sie vorbelegt und die Begründung
+> nennt ihn ausdrücklich („50 % auf 7.056 Stück abgelaufene Ware
+> (31.936,11 €)"). Ohne abgelaufene Ware steht die Art nicht zur Wahl – ihr
+> Bezugswert wäre 0.
 
 „Abwertung vorschlagen" staffelt nach Restlaufzeit (Standard: abgelaufen 100 %,
 unter 3 Monate 50 %, 3–6 Monate 25 %).
@@ -56,6 +65,12 @@ unter 3 Monate 50 %, 3–6 Monate 25 %).
 > (PPS, Artikel 80123): Bestandswert 45.630 €, davon abgelaufen 31.936 €. Eine
 > Regel „MHD überschritten → 100 % des Positionswerts" hätte 13.694 € zu viel
 > abgewertet. Die Begründung nennt deshalb die betroffenen Mengen je Stufe.
+
+Damit man den Bezug nicht raten muss, zeigt die aufgeklappte Chargenliste je
+Partie die **Restlaufzeit zum Stichtag** (abgelaufen rot, unter 3 Monate gelb)
+und die **Stufe, die der Vorschlag auf sie anwenden würde**; darüber steht die
+Aufteilung „davon abgelaufen / noch haltbar". Das Häkchen **„nur mit
+abgelaufenen Chargen"** blendet die übrigen Positionen aus.
 
 Vorschläge sind als solche markiert und überschreiben keine Handbewertung. Der
 Abschluss bestätigt offene Vorschläge – wer abschließt, steht für die Zahlen ein.

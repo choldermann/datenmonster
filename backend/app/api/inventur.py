@@ -241,7 +241,11 @@ def list_positionen(lauf_id: int,
 
 
 class BewertungIn(BaseModel):
-    art: str                       # prozent | stueckwert | betrag
+    # prozent            – Prozentsatz auf den ganzen Positionswert
+    # prozent_abgelaufen – Prozentsatz nur auf den Wert der abgelaufenen Partien
+    # stueckwert         – neuer Wert je Stück
+    # betrag             – fester Abwertungsbetrag
+    art: str
     wert: float
     grund: Optional[str] = None
 

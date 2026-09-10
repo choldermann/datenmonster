@@ -265,6 +265,14 @@ def _abwertung_rechnen(pos: InventurPosition, art: str, wert: float) -> tuple:
     """Rechnet aus der Eingabe des Anwenders (Prozent, neuer Stückwert oder
     Betrag) den Abwertungsbetrag und den neuen Positionswert.
 
+    Ein Prozentsatz braucht einen BEZUG. „prozent" wirkt auf die ganze Position,
+    „prozent_abgelaufen" nur auf den Wert der Partien, deren MHD am Stichtag
+    vorbei war. Der Unterschied ist keine Kleinigkeit: Artikel 80123 bei PPS hat
+    45.630 € Bestand, davon 31.936 € abgelaufen – die restlichen 13.694 € liegen
+    in drei Chargen, die noch bis 2028 haltbar sind. „100 % Abschlag" auf die
+    ganze Position hätte die mit abgeschrieben. Dieselbe Regel führt schon der
+    Vorschlag (_vorschlag_fuer), nur staffelt der zusätzlich nach Restlaufzeit.
+
     Gedeckelt auf den Bestandswert: eine Abwertung kann eine Position auf null
     bringen, aber nicht ins Negative – ein negativer Lagerwert wäre keine
     Bewertung mehr, sondern ein Tippfehler mit Folgen für die Bilanz.
@@ -272,6 +280,8 @@ def _abwertung_rechnen(pos: InventurPosition, art: str, wert: float) -> tuple:
     basis = pos.wert or 0.0
     if art == "prozent":
         betrag = basis * (wert / 100.0)
+    elif art == "prozent_abgelaufen":
+        betrag = (pos.wert_abgelaufen or 0.0) * (wert / 100.0)
     elif art == "stueckwert":
         betrag = basis - (pos.bestand or 0.0) * wert
     elif art == "betrag":
@@ -287,6 +297,12 @@ def bewerten(db, pos: InventurPosition, art: str, wert: float,
              grund: str = None, benutzer: str = None,
              vorschlag: bool = False) -> InventurPosition:
     betrag, neu = _abwertung_rechnen(pos, art, _zahl(wert))
+    if not grund and art == "prozent_abgelaufen":
+        # Der Bezug muss im Beleg stehen. Ohne ihn steht im Export des
+        # Steuerberaters „50 %" neben einer Abwertung, die nur ein Drittel der
+        # Position trifft – das sieht nach einem Rechenfehler aus.
+        grund = (f"{_zahl(wert):g} % auf {_menge(pos.menge_abgelaufen)} Stück "
+                 f"abgelaufene Ware ({_euro(pos.wert_abgelaufen)})")
     pos.bewertung_art = art
     pos.bewertung_wert = _zahl(wert)
     pos.abwertung_betrag = betrag
@@ -310,6 +326,11 @@ def bewertung_loeschen(db, pos: InventurPosition) -> InventurPosition:
     pos.bewertet_von = None
     db.commit()
     return pos
+
+
+def _euro(v) -> str:
+    """Betrag in deutscher Schreibweise – landet in Begründungen und im Export."""
+    return f"{_zahl(v):,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 def _menge(v) -> str:
@@ -468,6 +489,15 @@ def wieder_oeffnen(db, lauf: InventurLauf) -> InventurLauf:
 
 # ─── Ausgabe für den Steuerberater ────────────────────────────────────────────
 
+# Für den Steuerberater lesbar statt der internen Kennung – „prozent_abgelaufen"
+# sagt ihm nichts, „% auf abgelaufene Chargen" schon.
+ART_LABEL = {
+    "prozent": "% auf Position",
+    "prozent_abgelaufen": "% auf abgelaufene Chargen",
+    "stueckwert": "neuer Stückwert",
+    "betrag": "Abwertungsbetrag",
+}
+
 EXPORT_SPALTEN = [
     ("c_artnr", "Artikelnummer"),
     ("artikelname", "Artikel"),
@@ -502,6 +532,8 @@ def export_zeilen(db, lauf: InventurLauf) -> List[dict]:
             v = getattr(p, feld, None)
             if isinstance(v, date):
                 v = v.strftime("%d.%m.%Y")
+            if feld == "bewertung_art" and v:
+                v = ART_LABEL.get(v, v)
             # Unbewertete Positionen behalten ihren vollen Wert – sonst summiert
             # der Steuerberater eine Spalte mit Löchern.
             if feld == "wert_neu" and v is None:
