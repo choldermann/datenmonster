@@ -125,6 +125,8 @@ def _out_pos(p: InventurPosition) -> dict:
                                    else p.menge_ohne_partie),
         "ist_ohne_partie": p.ist_ohne_partie,
         "rest_soll_zaehltag": p.rest_soll_zaehltag,
+        "ist_quelle": p.ist_quelle,
+        "ist_ohne_partie_quelle": p.ist_ohne_partie_quelle,
         "bewertet_am": p.bewertet_am.isoformat() if p.bewertet_am else None,
         "bewertet_von": p.bewertet_von,
     }
@@ -328,45 +330,91 @@ ZAEHLLISTE_MAX_BYTES = 10 * 1024 * 1024
 
 
 @router.get("/laeufe/{lauf_id}/zaehlliste.xlsx")
-def zaehlliste(lauf_id: int, mit_soll: bool = False,
+def zaehlliste(lauf_id: int, mit_soll: bool = False, aufteilen: str = "",
+               nach: str = "warengruppe",
                db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     """Zählliste zum Ausdrucken und Zurückspielen: je Charge eine Zeile, druckfertig
-    A4 quer. `mit_soll=false` (Vorgabe) = Blindzählung."""
-    from app.services.export_service import export_xlsx_tabelle
+    A4 quer. `mit_soll=false` (Vorgabe) = Blindzählung.
+
+    `aufteilen`: leer = eine Liste · `blatt` = ein Blatt je Gruppe in einer Datei ·
+    `dateien` = eine Datei je Gruppe als ZIP. `nach`: warengruppe | hersteller.
+    Zurückgespielt wird jede Datei und jedes Blatt einzeln oder zusammen."""
+    import re
+    import zipfile
+    from app.services.export_service import export_xlsx_tabelle, export_xlsx_mappe
+    if aufteilen not in ("", "blatt", "dateien") or nach not in ("warengruppe", "hersteller"):
+        raise HTTPException(400, "Unbekannte Aufteilung.")
     lauf = _lauf(db, lauf_id)
     _darf_lesen(lauf.project_id, user, db)
     zeilen = inventur_service.zaehlliste_zeilen(db, lauf, mit_soll)
-    kopf = (["Schlüssel", "Warengruppe", "Artikelnummer", "Artikel", "Charge", "MHD"]
+    gruppenspalte = "Hersteller" if (aufteilen and nach == "hersteller") else "Warengruppe"
+    kopf = (["Schlüssel", gruppenspalte, "Artikelnummer", "Artikel", "Charge", "MHD"]
             + (["Soll"] if mit_soll else []) + ["Ist", "Grund", "Notiz"])
     tag = lauf.zaehltag or lauf.stichtag
-    info = [
-        ("Inventur", lauf.name or ""),
-        ("Stichtag", lauf.stichtag.strftime("%d.%m.%Y")),
-        ("Zähltag", tag.strftime("%d.%m.%Y")),
-        ("Zeilen", len(zeilen)),
-        ("Sollmenge", "angezeigt" if mit_soll else "nicht angezeigt (Blindzählung)"),
-        ("So wird gezählt", "Ist = gezählte Menge am Zähltag. Nicht Gezähltes leer lassen."),
-        ("", "Grund nur bei einer Abweichung eintragen, bei „Sonstiges“ bitte eine Notiz."),
-        ("", "Danach über „Zählliste zurückspielen“ hochladen. Die versteckte Spalte "
-             "„Schlüssel“ nicht verändern."),
-    ]
-    inhalt = export_xlsx_tabelle(
-        kopf, zeilen,
-        formate={"MHD": "DD.MM.YYYY"},
-        blatt=inventur_service.ZAEHLLISTE_BLATT, info=info, feste_spalten=4,
-        versteckt=["Schlüssel"], eingabe=["Ist", "Grund", "Notiz"],
-        auswahl={"Grund": list(inventur_service.DIFFERENZ_GRUENDE.values())},
-        breiten={"Artikel": 40, "Charge": 20, "Ist": 12, "Grund": 24, "Notiz": 30},
-        druck={"titel": f"Zählliste – {lauf.name} – Zähltag {tag.strftime('%d.%m.%Y')}",
-               "fusszeile": "Gezählt von: ________________   Datum: __________   "
-                            "Unterschrift: ________________"},
-    )
-    return StreamingResponse(
-        io.BytesIO(inhalt),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="Zaehlliste_{tag.isoformat()}.xlsx"'},
-    )
+    tag_text = tag.strftime("%d.%m.%Y")
+
+    def info_fuer(gruppe=None, anzahl=0):
+        return [
+            ("Inventur", lauf.name or ""),
+            ("Stichtag", lauf.stichtag.strftime("%d.%m.%Y")),
+            ("Zähltag", tag_text),
+            *([(gruppenspalte, gruppe)] if gruppe else []),
+            ("Zeilen", anzahl),
+            ("Sollmenge", "angezeigt" if mit_soll else "nicht angezeigt (Blindzählung)"),
+            ("So wird gezählt", "Ist = gezählte Menge am Zähltag. Nicht Gezähltes leer lassen."),
+            ("", "Grund nur bei einer Abweichung eintragen, bei „Sonstiges“ bitte eine Notiz."),
+            ("", "Danach über „Zählliste zurückspielen“ hochladen – jede Teilliste einzeln "
+                 "oder alles in einer Datei. Die versteckte Spalte „Schlüssel“ nicht verändern."),
+        ]
+
+    def optionen(gruppe=None):
+        titel = f"Zählliste – {lauf.name} – Zähltag {tag_text}" + (f" – {gruppe}" if gruppe else "")
+        return dict(
+            formate={"MHD": "DD.MM.YYYY"}, feste_spalten=4,
+            versteckt=["Schlüssel"], eingabe=["Ist", "Grund", "Notiz"],
+            auswahl={"Grund": list(inventur_service.DIFFERENZ_GRUENDE.values())},
+            breiten={"Artikel": 40, "Charge": 20, "Ist": 12, "Grund": 24, "Notiz": 30},
+            druck={"titel": titel,
+                   "fusszeile": "Gezählt von: ________________   Datum: __________   "
+                                "Unterschrift: ________________"},
+        )
+
+    xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    if not aufteilen:
+        inhalt = export_xlsx_tabelle(kopf, zeilen, blatt=inventur_service.ZAEHLLISTE_BLATT,
+                                     info=info_fuer(anzahl=len(zeilen)), **optionen())
+        return StreamingResponse(io.BytesIO(inhalt), media_type=xlsx, headers={
+            "Content-Disposition": f'attachment; filename="Zaehlliste_{tag.isoformat()}.xlsx"'})
+
+    ohne = f"ohne {gruppenspalte}"
+    gruppen = {}
+    for z in zeilen:
+        gruppen.setdefault((z.get(gruppenspalte) or "").strip() or ohne, []).append(z)
+    # Alphabetisch, „ohne …" ans Ende
+    namen = sorted(gruppen, key=lambda g: (g == ohne, g.lower()))
+
+    if aufteilen == "blatt":
+        inhalt = export_xlsx_mappe(
+            [{"blatt": g, "kopf": kopf, "zeilen": gruppen[g], **optionen(g)} for g in namen],
+            info=info_fuer(anzahl=len(zeilen)) + [("Blätter", " · ".join(namen))])
+        return StreamingResponse(io.BytesIO(inhalt), media_type=xlsx, headers={
+            "Content-Disposition": f'attachment; filename="Zaehlliste_{tag.isoformat()}_je_{nach}.xlsx"'})
+
+    puffer = io.BytesIO()
+    vergeben = set()
+    with zipfile.ZipFile(puffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for g in namen:
+            teil = re.sub(r"[^\w\-]+", "_", g).strip("_")[:40] or "Gruppe"
+            name, n = teil, 2
+            while name.lower() in vergeben:
+                name, n = f"{teil}_{n}", n + 1
+            vergeben.add(name.lower())
+            zf.writestr(f"Zaehlliste_{tag.isoformat()}_{name}.xlsx", export_xlsx_tabelle(
+                kopf, gruppen[g], blatt=inventur_service.ZAEHLLISTE_BLATT,
+                info=info_fuer(g, len(gruppen[g])), **optionen(g)))
+    return StreamingResponse(io.BytesIO(puffer.getvalue()), media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="Zaehllisten_{tag.isoformat()}_je_{nach}.zip"'})
 
 
 @router.post("/laeufe/{lauf_id}/zaehlliste")

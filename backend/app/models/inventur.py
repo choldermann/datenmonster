@@ -154,6 +154,11 @@ class InventurPosition(Base):
     menge_ohne_partie_soll = Column(Float, nullable=True)
     ist_ohne_partie        = Column(Float, nullable=True)   # gezählt am Zähltag
     rest_soll_zaehltag     = Column(Float, nullable=True)   # Menge ohne Charge am Zähltag
+    # Woher eine Zählung kam (Dateiname der Zählliste oder „Eingabe <Benutzer>").
+    # Bei Chargen steht sie im Chargeneintrag (`ist_quelle`). Nötig, um beim
+    # Zurückspielen verteilter Listen Überschreibungen mit ihrer Herkunft zu melden.
+    ist_quelle             = Column(String, nullable=True)
+    ist_ohne_partie_quelle = Column(String, nullable=True)
 
     # ── Bewertung durch den Anwender ────────────────────────────────────────
     # art: prozent | stueckwert | betrag – der Anwender denkt je nach Ware

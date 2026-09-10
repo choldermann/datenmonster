@@ -140,12 +140,25 @@ stehen im Export als „gezählt: nein".
   Zähltag schon verbrauchte Chargen fehlen. Die erste Spalte „Schlüssel" ist
   versteckt: Artikel + Charge + MHD + EK, deshalb passt die Liste auch nach neuem
   Einlesen.
-* **Zurückspielen** („Zählliste zurückspielen"): leere Ist-Zellen ändern nichts (Teillisten
-  mehrerer Teams gehen), Zahlen auch mit Komma, Grund über den Text der Auswahl,
-  mehrere Notizen eines Artikels werden verbunden. Alles in einem Durchgang; der
-  Bericht nennt übernommene Mengen, nicht zugeordnete Zeilen und Fehler (z.B. „drei",
-  unbekannter Grund, Artikel-Ist an einem Chargenartikel). Steht im Verlauf.
-  Geprüft (PPS-Kopie): 959 Chargen- + 16 Artikelzeilen, zweimal hochladen ändert nichts.
+* **Aufteilen für mehrere Lageristen** (Auswahl beim Herunterladen): ein Blatt je
+  Warengruppe oder Hersteller in einer Datei, oder eine Datei je Gruppe als ZIP
+  (PPS: 13 Warengruppen-Blätter, 36 Hersteller-Dateien). Selbst schneiden geht auch –
+  dann aber die Datei kopieren und Zeilen löschen: wer nur sichtbare Zellen in eine
+  neue Datei kopiert, verliert die versteckte Spalte „Schlüssel".
+* **Zurückspielen** („Zählliste zurückspielen"): jede Teilliste einzeln, in beliebiger
+  Reihenfolge. Gelesen wird **jedes Blatt** mit „Schlüssel" und „Ist" (Info wird
+  übersprungen). Leere Ist-Zellen ändern nichts, Zahlen auch mit Komma, Grund über den
+  Text der Auswahl. Alles in einem Durchgang; der Bericht nennt übernommene Mengen,
+  nicht zugeordnete Zeilen, Fehler („drei", unbekannter Grund, Artikel-Ist an einem
+  Chargenartikel) und **Überschreibungen**:
+  - eine schon erfasste, andere Zählung mit ihrer Quelle („1.005 → 1.003 (vorher aus
+    Liste_LageristA.xlsx)" oder „vorher aus Eingabe admin") – verglichen mit dem
+    Endwert der Datei;
+  - eine Zeile, die in der Datei doppelt mit verschiedenen Mengen steht (mit Blatt/Zeile);
+  - ein anderer Grund für denselben Artikel.
+  Jede Zählung merkt sich ihre **Quelle** (Dateiname oder „Eingabe <Benutzer>"), auch über
+  neues Einlesen hinweg. **Notizen werden angehängt** – „Karton offen [Liste_A.xlsx];
+  nachgezählt [Liste_B.xlsx]" –, dieselbe Datei nochmal verdoppelt sie nicht.
 * Technisch tragen `bestand`, `wert`, `menge_abgelaufen` und die Chargen die
   gültigen Werte; die Buchmenge steht in den `*_soll`-Feldern (einmalig gesichert).
   Nach JTL wird nichts zurückgebucht.

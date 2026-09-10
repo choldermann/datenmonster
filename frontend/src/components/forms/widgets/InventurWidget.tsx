@@ -117,6 +117,7 @@ export default function InventurWidget({ widget, projectId }) {
   const [nurUngezaehlt, setNurUngezaehlt] = useState(false);
   const [zaehllisteOffen, setZaehllisteOffen] = useState(false);
   const [mitSoll, setMitSoll] = useState(false);     // aus = Blindzählung
+  const [aufteilung, setAufteilung] = useState("");  // "" | "blatt:warengruppe" | "dateien:hersteller" …
   const dateiRef = useRef(null);
 
   // Die Staffel DIESER Inventur (sie gehört zum Beleg), sonst die Standardstaffel.
@@ -337,12 +338,15 @@ export default function InventurWidget({ widget, projectId }) {
   // Zählliste: Excel zum Ausdrucken, dieselbe Datei geht ausgefüllt zurück.
   const zaehllisteLaden = async () => {
     try {
-      const res = await api.get(`/api/inventur/laeufe/${aktiv.id}/zaehlliste.xlsx?mit_soll=${mitSoll}`,
-                                { responseType: "blob" });
+      const [modus, nach] = aufteilung ? aufteilung.split(":") : ["", "warengruppe"];
+      const res = await api.get(`/api/inventur/laeufe/${aktiv.id}/zaehlliste.xlsx`
+        + `?mit_soll=${mitSoll}&aufteilen=${modus}&nach=${nach}`, { responseType: "blob" });
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Zaehlliste_${aktiv.zaehltag || aktiv.stichtag}.xlsx`;
+      const tag = aktiv.zaehltag || aktiv.stichtag;
+      a.download = modus === "dateien" ? `Zaehllisten_${tag}_je_${nach}.zip`
+        : modus === "blatt" ? `Zaehlliste_${tag}_je_${nach}.xlsx` : `Zaehlliste_${tag}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
       setZaehllisteOffen(false);
@@ -365,6 +369,12 @@ export default function InventurWidget({ widget, projectId }) {
         punkte: [
           `${zahl(data.werte)} Mengen für ${zahl(data.positionen)} Positionen übernommen `
             + `(${zahl(data.zeilen)} Zeilen in der Datei).`,
+          (data.blaetter || []).length > 1
+            ? `Gelesen: ${data.blaetter.length} Blätter (${data.blaetter.join(", ")}).` : null,
+          data.ueberschrieben_anzahl
+            ? `Überschrieben (${zahl(data.ueberschrieben_anzahl)}): ${data.ueberschrieben.join(" · ")}`
+              + (data.ueberschrieben_anzahl > data.ueberschrieben.length ? " …" : "")
+            : null,
           data.leer ? `${zahl(data.leer)} Zeilen ohne Ist-Menge – dort bleibt alles, wie es war.` : null,
           data.nicht_zugeordnet_anzahl
             ? `Nicht zugeordnet (${zahl(data.nicht_zugeordnet_anzahl)}): ${data.nicht_zugeordnet.join(", ")}`
@@ -686,6 +696,18 @@ export default function InventurWidget({ widget, projectId }) {
             <input type="checkbox" checked={mitSoll} onChange={e => setMitSoll(e.target.checked)} />
             Sollmenge anzeigen
           </label>
+          <label style={{ display: "flex", alignItems: "center", gap: 6 }}
+                 title="Für mehrere Lageristen: jede Teilliste lässt sich einzeln zurückspielen.">
+            Aufteilen
+            <select style={{ ...inp, padding: "3px 6px" }} value={aufteilung}
+                    onChange={e => setAufteilung(e.target.value)}>
+              <option value="">nicht aufteilen</option>
+              <option value="blatt:warengruppe">ein Blatt je Warengruppe</option>
+              <option value="blatt:hersteller">ein Blatt je Hersteller</option>
+              <option value="dateien:warengruppe">eine Datei je Warengruppe (ZIP)</option>
+              <option value="dateien:hersteller">eine Datei je Hersteller (ZIP)</option>
+            </select>
+          </label>
           <button style={{ ...btn, borderColor: S.accent, color: S.accent }} onClick={zaehllisteLaden}>
             <Download size={13} /> Herunterladen
           </button>
@@ -929,7 +951,8 @@ export default function InventurWidget({ widget, projectId }) {
                                    value={zaehlEntwurf[p.id] ?? (p.ist_gezaehlt === null
                                      || p.ist_gezaehlt === undefined ? "" : zahl(p.ist_gezaehlt, 3))}
                                    placeholder="–"
-                                   title="Gezählte Menge. Leer = nicht gezählt, dann gilt Soll."
+                                   title={"Gezählte Menge. Leer = nicht gezählt, dann gilt Soll."
+                                     + (p.ist_quelle ? ` Quelle: ${p.ist_quelle}` : "")}
                                    onChange={ev => setZaehlEntwurf(d => ({ ...d, [p.id]: ev.target.value }))}
                                    onBlur={() => zaehlungUebernehmen(p, p.id, wert => ({ ist: wert }))}
                                    onKeyDown={ev => { if (ev.key === "Enter") ev.currentTarget.blur(); }} />
@@ -1087,6 +1110,7 @@ export default function InventurWidget({ widget, projectId }) {
                                                value={zaehlEntwurf[`${p.id}:${i}`]
                                                  ?? (c.ist == null ? "" : zahl(c.ist, 3))}
                                                placeholder="–"
+                                               title={c.ist_quelle ? `Quelle: ${c.ist_quelle}` : undefined}
                                                onChange={ev => setZaehlEntwurf(d => ({ ...d, [`${p.id}:${i}`]: ev.target.value }))}
                                                onBlur={() => zaehlungUebernehmen(p, `${p.id}:${i}`,
                                                  wert => ({ charge_index: i, charge_ist: wert }))}

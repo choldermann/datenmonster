@@ -223,10 +223,11 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
                       InventurPosition.zaehlung_ebene.isnot(None)).all()):
         alte_zaehlungen[p.k_artikel] = {
             "ebene": p.zaehlung_ebene, "ist": p.ist_gezaehlt, "ohne_partie": p.ist_ohne_partie,
+            "ist_quelle": p.ist_quelle, "rest_quelle": p.ist_ohne_partie_quelle,
             "grund": p.differenz_grund, "notiz": p.differenz_notiz,
             "am": p.gezaehlt_am, "von": p.gezaehlt_von,
-            "chargen": {_charge_schluessel(c): c.get("ist") for c in (p.chargen or [])
-                        if c.get("ist") is not None},
+            "chargen": {_charge_schluessel(c): (c.get("ist"), c.get("ist_quelle"))
+                        for c in (p.chargen or []) if c.get("ist") is not None},
         }
 
     db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).delete()
@@ -319,11 +320,14 @@ def befuellen(db, lauf: InventurLauf, zeilen: List[dict], benutzer: str = None) 
             continue
         _soll_sichern(pos)
         if z["ebene"] == "charge":
-            pos.chargen = [{**c, "ist": z["chargen"].get(_charge_schluessel(c), c.get("ist"))}
-                           for c in (pos.chargen or [])]
-            pos.ist_ohne_partie = z["ohne_partie"]
+            chargen = []
+            for c in (pos.chargen or []):
+                alt = z["chargen"].get(_charge_schluessel(c))
+                chargen.append({**c, "ist": alt[0], "ist_quelle": alt[1]} if alt else c)
+            pos.chargen = chargen
+            pos.ist_ohne_partie, pos.ist_ohne_partie_quelle = z["ohne_partie"], z["rest_quelle"]
         else:
-            pos.ist_gezaehlt = z["ist"]
+            pos.ist_gezaehlt, pos.ist_quelle = z["ist"], z["ist_quelle"]
         pos.differenz_grund, pos.differenz_notiz = z["grund"], z["notiz"]
         pos.gezaehlt_am, pos.gezaehlt_von = z["am"], z["von"]
         _zaehlung_anwenden(pos, lauf.stichtag)
@@ -784,8 +788,16 @@ def zaehlung_setzen(db, lauf: InventurLauf, pos: InventurPosition,
     return pos
 
 
+def _charge_ist_setzen(c: dict, wert, quelle: str) -> None:
+    c["ist"] = None if wert is None else round(float(wert), 3)
+    if wert is None:
+        c.pop("ist_quelle", None)
+    else:
+        c["ist_quelle"] = quelle
+
+
 def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
-                     benutzer: str = None) -> None:
+                     benutzer: str = None, quelle: str = None) -> None:
     """Wendet eine Zählung an, ohne zu speichern – der Import schreibt viele auf einmal.
 
     `felder` enthält nur, was sich ändert: `ist` (Artikel ohne Chargen, None =
@@ -793,6 +805,7 @@ def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
     `ohne_partie_ist` (Altbestand ohne Charge), `grund`, `notiz`."""
     if lauf.status == "abgeschlossen":
         raise ValueError("Die Inventur ist abgeschlossen.")
+    quelle = quelle or (f"Eingabe {benutzer}" if benutzer else "Eingabe")
     _soll_sichern(pos)
     mengen_geaendert = False
 
@@ -804,7 +817,7 @@ def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
         wert = felder.get("charge_ist")
         if wert is not None and wert < 0:
             raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
-        chargen[int(i)]["ist"] = None if wert is None else round(float(wert), 3)
+        _charge_ist_setzen(chargen[int(i)], wert, quelle)
         pos.chargen = chargen
         pos.ist_gezaehlt = None          # die Artikelmenge ergibt sich jetzt aus den Chargen
         mengen_geaendert = True
@@ -817,7 +830,7 @@ def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
                 raise ValueError("Charge nicht gefunden.")
             if wert is not None and wert < 0:
                 raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
-            chargen[i]["ist"] = None if wert is None else round(float(wert), 3)
+            _charge_ist_setzen(chargen[i], wert, quelle)
         pos.chargen = chargen
         pos.ist_gezaehlt = None
         mengen_geaendert = True
@@ -827,6 +840,7 @@ def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
         if wert is not None and wert < 0:
             raise ValueError("Eine gezählte Menge kann nicht negativ sein.")
         pos.ist_ohne_partie = None if wert is None else round(float(wert), 3)
+        pos.ist_ohne_partie_quelle = None if wert is None else quelle
         pos.ist_gezaehlt = None
         mengen_geaendert = True
 
@@ -840,9 +854,13 @@ def _zaehlung_felder(lauf: InventurLauf, pos: InventurPosition, felder: dict,
             if wert is not None:
                 raise ValueError("Dieser Artikel hat Chargen und wird je Charge gezählt – "
                                  "bitte die Mengen an den Chargen eintragen.")
-            pos.chargen = [{**c, "ist": None} for c in pos.chargen]
-            pos.ist_ohne_partie = None
+            chargen = [dict(c) for c in pos.chargen]
+            for c in chargen:
+                _charge_ist_setzen(c, None, quelle)
+            pos.chargen = chargen
+            pos.ist_ohne_partie = pos.ist_ohne_partie_quelle = None
         pos.ist_gezaehlt = None if wert is None else round(float(wert), 3)
+        pos.ist_quelle = None if wert is None else quelle
         mengen_geaendert = True
 
     if "grund" in felder:
@@ -965,8 +983,8 @@ def zaehlliste_zeilen(db, lauf: InventurLauf, mit_soll: bool = False) -> List[di
                                    (p.artikelname or "").lower(), p.c_artnr or ""))
     zeilen = []
     for p in positionen:
-        basis = {"Warengruppe": p.warengruppe, "Artikelnummer": p.c_artnr,
-                 "Artikel": p.artikelname}
+        basis = {"Warengruppe": p.warengruppe, "Hersteller": p.hersteller,
+                 "Artikelnummer": p.c_artnr, "Artikel": p.artikelname}
         if p.chargen:
             for c in sorted(p.chargen, key=lambda c: (_datum(c.get("mhd")) or date.max,
                                                       c.get("charge") or "")):
@@ -1021,11 +1039,16 @@ def _import_zahl(v) -> Optional[float]:
 
 def zaehlliste_importieren(db, lauf: InventurLauf, inhalt: bytes, benutzer: str = None,
                            dateiname: str = None) -> dict:
-    """Spielt eine ausgefüllte Zählliste zurück.
+    """Spielt eine ausgefüllte Zählliste zurück – auch Teillisten mehrerer Lageristen.
 
-    Leere Ist-Zellen ändern nichts – so können mehrere Teams Teillisten
-    zurückspielen. Grund und Notiz gehören zur Position; mehrere Notizen eines
-    Artikels werden aneinandergehängt. Alles in einem Durchgang, eine Summenrechnung."""
+    * Gelesen wird JEDES Blatt mit den Spalten „Schlüssel“ und „Ist“ – ein Blatt je
+      Lagerist oder Warengruppe in einer Datei geht also genauso wie Einzeldateien.
+    * Leere Ist-Zellen ändern nichts.
+    * Überschreibt ein Wert eine schon erfasste, andere Zählung, steht das im Bericht
+      mit der Quelle des alten Werts; ebenso eine Zeile, die in der Datei doppelt mit
+      verschiedenen Mengen steht. Gleiche Werte bleiben stumm (zweimal hochladen).
+    * Notizen werden mit Dateiname angehängt statt eine vorhandene zu ersetzen.
+    Alles in einem Durchgang, eine Summenrechnung."""
     if lauf.status == "abgeschlossen":
         raise ValueError("Die Inventur ist abgeschlossen.")
     import io
@@ -1034,96 +1057,150 @@ def zaehlliste_importieren(db, lauf: InventurLauf, inhalt: bytes, benutzer: str 
         wb = load_workbook(io.BytesIO(inhalt), data_only=True, read_only=True)
     except Exception:
         raise ValueError("Die Datei ist keine lesbare Excel-Datei (.xlsx).")
-    ws = wb[ZAEHLLISTE_BLATT] if ZAEHLLISTE_BLATT in wb.sheetnames else wb.worksheets[0]
-    reihen = ws.iter_rows(values_only=True)
-    kopf = [str(k or "").strip() for k in (next(reihen, None) or [])]
 
-    def spalte(name):
-        return kopf.index(name) if name in kopf else None
-    i_key, i_ist, i_grund, i_notiz = spalte("Schlüssel"), spalte("Ist"), spalte("Grund"), spalte("Notiz")
-    if i_key is None or i_ist is None:
-        raise ValueError("Das ist keine Zählliste – die Spalten „Schlüssel“ und „Ist“ fehlen.")
-
-    def zelle(row, i):
-        return row[i] if i is not None and i < len(row) else None
-
+    quelle = dateiname or "Zählliste"
     gruende = {v.lower(): k for k, v in DIFFERENZ_GRUENDE.items()}
     gruende.update({k: k for k in DIFFERENZ_GRUENDE})
     positionen = {p.k_artikel: p for p in
                   db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id).all()}
-    je_pos, fehler, fremd = {}, [], []
+    je_pos, notizen, fehler, fremd, ueberschrieben = {}, {}, [], [], []
+    gesehen = {}              # Schlüssel → (Ort, Menge) in dieser Datei, zuletzt gelesen
+    gespeichert = {}          # Schlüssel → (Bezeichnung, gespeicherte Menge, Quelle) vor dem Import
+    blaetter = []
     zeilen = leer = werte = 0
+    mehrblatt = sum(1 for w in wb.worksheets if w.title != "Info") > 1
 
-    for nr, row in enumerate(reihen, start=2):
-        schluessel = str(zelle(row, i_key) or "").strip()
-        if not schluessel:
+    def zelle(row, i):
+        return row[i] if i is not None and i < len(row) else None
+
+    for ws in wb.worksheets:
+        reihen = ws.iter_rows(values_only=True)
+        kopf = [str(k or "").strip() for k in (next(reihen, None) or [])]
+        if "Schlüssel" not in kopf or "Ist" not in kopf:
             continue
-        zeilen += 1
-        ist_roh = zelle(row, i_ist)
-        if ist_roh is None or str(ist_roh).strip() == "":
-            leer += 1
-            continue
-        ist = _import_zahl(ist_roh)
-        if ist is None or ist < 0:
-            fehler.append(f"Zeile {nr}: „{ist_roh}“ ist keine gültige Menge")
-            continue
-        try:
-            art, rest = schluessel.split("|", 1)
-            if art == "C":
-                k_txt, rest = rest.split("|", 1)
-                charge, mhd, ek = rest.rsplit("|", 2)
-            else:
-                k_txt = rest
-            pos = positionen.get(int(k_txt))
-        except (ValueError, TypeError):
-            fremd.append(f"Zeile {nr}")
-            continue
-        if pos is None:
-            fremd.append(f"Zeile {nr}")
-            continue
-        felder = je_pos.setdefault(pos.k_artikel, {})
-        if art == "A":
-            felder["ist"] = ist
-        elif art == "R":
-            felder["ohne_partie_ist"] = ist
-        elif art == "C":
-            ziel = (charge, mhd, round(_zahl(ek), 4))
-            idx = next((i for i, c in enumerate(pos.chargen or [])
-                        if _charge_schluessel(c) == ziel), None)
-            if idx is None:
-                fremd.append(f"Zeile {nr} ({pos.c_artnr}, Charge {charge})")
+        blaetter.append(ws.title)
+        i_key, i_ist = kopf.index("Schlüssel"), kopf.index("Ist")
+        i_grund = kopf.index("Grund") if "Grund" in kopf else None
+        i_notiz = kopf.index("Notiz") if "Notiz" in kopf else None
+
+        for nr, row in enumerate(reihen, start=2):
+            schluessel = str(zelle(row, i_key) or "").strip()
+            if not schluessel:
                 continue
-            felder.setdefault("chargen_ist", {})[idx] = ist
-        else:
-            fremd.append(f"Zeile {nr}")
-            continue
-        werte += 1
+            ort = f"„{ws.title}“ Zeile {nr}" if mehrblatt else f"Zeile {nr}"
+            zeilen += 1
+            ist_roh = zelle(row, i_ist)
+            if ist_roh is None or str(ist_roh).strip() == "":
+                leer += 1
+                continue
+            ist = _import_zahl(ist_roh)
+            if ist is None or ist < 0:
+                fehler.append(f"{ort}: „{ist_roh}“ ist keine gültige Menge")
+                continue
+            try:
+                art, rest = schluessel.split("|", 1)
+                if art == "C":
+                    k_txt, rest = rest.split("|", 1)
+                    charge, mhd, ek = rest.rsplit("|", 2)
+                else:
+                    k_txt = rest
+                pos = positionen.get(int(k_txt))
+            except (ValueError, TypeError):
+                fremd.append(ort)
+                continue
+            if pos is None:
+                fremd.append(ort)
+                continue
 
-        g = zelle(row, i_grund)
-        if g is not None and str(g).strip():
-            gid = gruende.get(str(g).strip().lower())
-            if gid:
-                felder["grund"] = gid
+            felder = je_pos.setdefault(pos.k_artikel, {})
+            if art == "A":
+                bez, alt, alt_quelle = pos.c_artnr, pos.ist_gezaehlt, pos.ist_quelle
+                felder["ist"] = ist
+            elif art == "R":
+                bez, alt, alt_quelle = (f"{pos.c_artnr} ohne Charge", pos.ist_ohne_partie,
+                                        pos.ist_ohne_partie_quelle)
+                felder["ohne_partie_ist"] = ist
+            elif art == "C":
+                ziel = (charge, mhd, round(_zahl(ek), 4))
+                idx = next((i for i, c in enumerate(pos.chargen or [])
+                            if _charge_schluessel(c) == ziel), None)
+                if idx is None:
+                    fremd.append(f"{ort} ({pos.c_artnr}, Charge {charge})")
+                    continue
+                bez = f"{pos.c_artnr} Charge {charge}"
+                alt, alt_quelle = pos.chargen[idx].get("ist"), pos.chargen[idx].get("ist_quelle")
+                felder.setdefault("chargen_ist", {})[idx] = ist
             else:
-                fehler.append(f"Zeile {nr}: Grund „{g}“ unbekannt")
-        n = zelle(row, i_notiz)
-        if n is not None and str(n).strip():
-            felder["notiz"] = "; ".join(x for x in (felder.get("notiz"), str(n).strip()) if x)
+                fremd.append(ort)
+                continue
+            werte += 1
+
+            # Dieselbe Zeile zweimal in der Datei, mit verschiedenen Mengen
+            if schluessel in gesehen and abs(gesehen[schluessel][1] - ist) > MENGE_EPS:
+                ueberschrieben.append(f"{bez}: {_menge(gesehen[schluessel][1])} ({gesehen[schluessel][0]}) "
+                                      f"→ {_menge(ist)} ({ort}) – doppelt in der Datei")
+            gesehen[schluessel] = (ort, ist)
+            # Gegen den gespeicherten Wert wird erst NACH allen Blättern verglichen – mit
+            # dem Endwert der Datei. Sonst meldet eine frühere Doppelzeile eine
+            # Überschreibung, die am Ende gar nicht stattfindet.
+            gespeichert.setdefault(schluessel, (bez, alt, alt_quelle))
+
+            g = zelle(row, i_grund)
+            if g is not None and str(g).strip():
+                gid = gruende.get(str(g).strip().lower())
+                if not gid:
+                    fehler.append(f"{ort}: Grund „{g}“ unbekannt")
+                else:
+                    vorher = felder.get("grund") or pos.differenz_grund
+                    if vorher and vorher != gid:
+                        ueberschrieben.append(f"{pos.c_artnr}: Grund „{DIFFERENZ_GRUENDE.get(vorher, vorher)}“ "
+                                              f"→ „{DIFFERENZ_GRUENDE[gid]}“ ({ort})")
+                    felder["grund"] = gid
+            n = zelle(row, i_notiz)
+            if n is not None and str(n).strip():
+                notizen.setdefault(pos.k_artikel, []).append(str(n).strip())
+
+    if not blaetter:
+        raise ValueError("Das ist keine Zählliste – kein Blatt hat die Spalten „Schlüssel“ und „Ist“.")
+
+    # Schon erfasste, andere Zählung (frühere Liste oder Eingabe) – gegen den Endwert.
+    vorher_anders = []
+    for schluessel, (bez, alt, alt_quelle) in gespeichert.items():
+        neu = gesehen[schluessel][1]
+        if alt is not None and abs(alt - neu) > MENGE_EPS:
+            vorher_anders.append(f"{bez}: {_menge(alt)} → {_menge(neu)} "
+                                 f"(vorher aus {alt_quelle or 'unbekannter Quelle'})")
+    ueberschrieben = vorher_anders + ueberschrieben
+
+    # Notizen anhängen, mit Datei – eine zweite Liste ersetzt die erste nicht. Was
+    # schon wörtlich drinsteht (dieselbe Datei nochmal), kommt nicht doppelt.
+    for k, texte in notizen.items():
+        vorhanden = positionen[k].differenz_notiz or ""
+        neu = []
+        for t in texte:
+            eintrag = f"{t} [{quelle}]"
+            if eintrag not in vorhanden and eintrag not in neu:
+                neu.append(eintrag)
+        if neu:
+            je_pos.setdefault(k, {})["notiz"] = "; ".join(x for x in [vorhanden] + neu if x)
 
     uebernommen = 0
     for k, felder in je_pos.items():
         pos = positionen[k]
         try:
-            _zaehlung_felder(lauf, pos, felder, benutzer)
+            _zaehlung_felder(lauf, pos, felder, benutzer, quelle=quelle)
             uebernommen += 1
         except ValueError as e:
             fehler.append(f"{pos.c_artnr or k}: {e}")
 
     _protokoll(lauf, "zaehlliste", benutzer, datei=dateiname, werte=werte,
-               positionen=uebernommen, fehler=len(fehler) or None)
+               positionen=uebernommen, blaetter=len(blaetter) if len(blaetter) > 1 else None,
+               ueberschrieben=len(ueberschrieben) or None, fehler=len(fehler) or None)
     db.commit()
     summen_neu_rechnen(db, lauf)
     return {"zeilen": zeilen, "leer": leer, "werte": werte, "positionen": uebernommen,
+            "blaetter": blaetter,
+            "ueberschrieben": ueberschrieben[:15], "ueberschrieben_anzahl": len(ueberschrieben),
             "nicht_zugeordnet": fremd[:10], "nicht_zugeordnet_anzahl": len(fremd),
             "fehler": fehler[:10], "fehler_anzahl": len(fehler)}
 

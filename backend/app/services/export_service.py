@@ -569,13 +569,60 @@ def export_xlsx_tabelle(kopf: List[str], zeilen: List[dict],
     `feste_spalten`: so viele Spalten links bleiben beim waagerechten Scrollen stehen.
     """
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-    from openpyxl.utils import get_column_letter
-
-    formate = formate or {}
     wb = Workbook()
     ws = wb.active
-    ws.title = blatt[:31]
+    ws.title = _blattname(blatt, set())
+    _xlsx_blatt(ws, kopf, zeilen, formate=formate, summen=summen,
+                feste_spalten=feste_spalten, versteckt=versteckt, eingabe=eingabe,
+                auswahl=auswahl, breiten=breiten, druck=druck)
+    _xlsx_info(wb, info)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def export_xlsx_mappe(blaetter: List[dict], info: Optional[List[tuple]] = None) -> bytes:
+    """Mehrere Tabellen als Blätter einer Datei (z.B. Zählliste je Warengruppe).
+
+    Jeder Eintrag: {"blatt", "kopf", "zeilen"} plus dieselben Optionen wie
+    export_xlsx_tabelle (formate, summen, feste_spalten, versteckt, eingabe,
+    auswahl, breiten, druck)."""
+    from openpyxl import Workbook
+    wb = Workbook()
+    wb.remove(wb.active)
+    vergeben = set()
+    for b in blaetter:
+        optionen = {k: v for k, v in b.items() if k not in ("blatt", "kopf", "zeilen")}
+        ws = wb.create_sheet(_blattname(b.get("blatt") or "Blatt", vergeben))
+        _xlsx_blatt(ws, b["kopf"], b["zeilen"], **optionen)
+    if not blaetter:
+        wb.create_sheet("Leer")
+    _xlsx_info(wb, info)
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _blattname(name, vergeben: set) -> str:
+    """Excel erlaubt je Blattname 31 Zeichen, keines von []:*?/\\ und jeden Namen
+    nur einmal (ohne Groß-/Kleinschreibung)."""
+    sauber = re.sub(r"[\[\]:*?/\\]", "-", str(name or "Blatt")).strip()[:31] or "Blatt"
+    kandidat, n = sauber, 2
+    while kandidat.lower() in vergeben:
+        zusatz = f" ({n})"
+        kandidat = sauber[:31 - len(zusatz)] + zusatz
+        n += 1
+    vergeben.add(kandidat.lower())
+    return kandidat
+
+
+def _xlsx_blatt(ws, kopf, zeilen, formate=None, summen=None, feste_spalten=0,
+                versteckt=None, eingabe=None, auswahl=None, breiten=None,
+                druck=None) -> None:
+    """Schreibt eine Tabelle mit allen Optionen von export_xlsx_tabelle in ein Blatt."""
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    formate = formate or {}
 
     ws.append(kopf)
     for zelle in ws[1]:
@@ -656,18 +703,20 @@ def export_xlsx_tabelle(kopf: List[str], zeilen: List[dict],
             if formate.get(name):
                 zelle.number_format = formate[name]
 
-    if info:
-        wi = wb.create_sheet("Info")
-        for beschriftung, wert in info:
-            wi.append([beschriftung, wert])
-        for (zelle,) in wi.iter_rows(min_col=1, max_col=1):
-            zelle.font = Font(bold=True)
-        wi.column_dimensions["A"].width = 26
-        wi.column_dimensions["B"].width = 40
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    return buf.getvalue()
+
+def _xlsx_info(wb, info) -> None:
+    """Blatt „Info" mit (Beschriftung, Wert)-Paaren."""
+    if not info:
+        return
+    from openpyxl.styles import Font
+    wi = wb.create_sheet("Info")
+    for beschriftung, wert in info:
+        wi.append([beschriftung, wert])
+    for (zelle,) in wi.iter_rows(min_col=1, max_col=1):
+        zelle.font = Font(bold=True)
+    wi.column_dimensions["A"].width = 26
+    wi.column_dimensions["B"].width = 40
 
 
 # ─── JSON ─────────────────────────────────────────────────────────────────────
