@@ -326,6 +326,97 @@ function buildAssessment(results) {
         + (chk.kunden_dubletten ? `, ${deNum(chk.kunden_dubletten)} mögliche Dubletten` : "") });
   }
 
+  // ── Preis- & Marge-Cockpit ─────────────────────────────────────────────────
+  // Schwellen identisch zu _assessment_rows in cockpit_report.py – laufen beide
+  // auseinander, widerspricht die Bewertung im PDF der im Cockpit.
+  const pr = one("act_pr_kpi");
+  if (pr) {
+    const umsatz = num(pr.Umsatz) || 0;
+    const marge = num(pr.Marge), margeVJ = num(pr.MargeVJ);
+    const punkte = (marge != null && margeVJ != null) ? marge - margeVJ : null;
+    // Auf Firmenebene ist ein Margenpunkt viel Geld – anders als beim einzelnen
+    // Artikel, wo erst marge_verfall_punkte (Vorgabe 5) anschlägt. Ein Zehntel
+    // Punkt Rauschen soll aber nicht rot werden.
+    const MARGE_TOLERANZ_PUNKTE = 1;
+    out.push({ bereich: "Rohertragsmarge", good: (punkte == null || punkte >= -MARGE_TOLERANZ_PUNKTE),
+      kommentar: `${deNum(pr.Marge)} % (VJ ${deNum(pr.MargeVJ)} %`
+        + (punkte != null ? `, ${punkte >= 0 ? "+" : "−"}${deNum(Math.abs(punkte))} Punkte` : "")
+        + `), Rohertrag ${deNum(pr.Rohertrag, true)} aus ${deNum(pr.Umsatz, true)} Umsatz` });
+
+    const unter = num(pr.UmsatzUnterMinMarge) || 0;
+    const anteil = umsatz ? (100 * unter) / umsatz : null;
+    const UNTER_MIN_OK = 10;
+    out.push({ bereich: "Mindestmarge", good: (anteil == null || anteil < UNTER_MIN_OK),
+      kommentar: `${deNum(unter, true)} Umsatz unter der Mindestmarge (${deNum(anteil)} % des Umsatzes), `
+        + `${deNum(pr.ArtikelUnterMinMarge)} Artikel betroffen` });
+
+    // Ehrlichkeitszeile wie "Versandkosten" im GF-Cockpit: Positionen ohne
+    // Einkaufspreis zählen als 100 % Marge und schönen das Ergebnis, verschenkte
+    // Ware drückt es. Beides gehört offen ausgewiesen.
+    const ohneEkUmsatz = num(pr.UmsatzOhneEK) || 0;
+    const ekAnteil = umsatz ? (100 * ohneEkUmsatz) / umsatz : null;
+    const OHNE_EK_OK = 2;
+    out.push({ bereich: "Datenlage EK & Gratisware", good: (ekAnteil == null || ekAnteil < OHNE_EK_OK),
+      kommentar: `${deNum(pr.PosOhneEK)} Positionen ohne Einkaufspreis `
+        + `(${deNum(ohneEkUmsatz, true)}, ${deNum(ekAnteil)} % des Umsatzes) zählen als 100 % Marge`
+        + (num(pr.PosGratis) ? `; ${deNum(pr.PosGratis)} Gratispositionen mit ${deNum(pr.EinsatzGratis, true)} Einsatz` : "") });
+  }
+
+  const prVerfall = rowsOf("act_pr_verfall");
+  const prUnterEk = rowsOf("act_pr_unter_ek");
+  if (prVerfall.length || prUnterEk.length) {
+    const entgangen = prVerfall.reduce((a, r) => a + (num(r.RohertragEntgangen) || 0), 0);
+    const verlust = prUnterEk.reduce((a, r) => a + (num(r.Verlust) || 0), 0);
+    const basis = pr ? (num(pr.Umsatz) || 0) : 0;
+    const quote = basis ? (100 * (entgangen + verlust)) / basis : null;
+    const VERLUST_OK = 1;
+    out.push({ bereich: "Margenverfall", good: (quote == null || quote < VERLUST_OK),
+      kommentar: `${prVerfall.length} Artikel mit sinkender Marge (${deNum(entgangen, true)} entgangener Rohertrag)`
+        + (prUnterEk.length ? `, ${prUnterEk.length} unter Einkaufspreis verkauft (${deNum(verlust, true)} Verlust)` : "") });
+  }
+
+  const kalk = one("act_pr_kalk_kpi");
+  if (kalk) {
+    const preise = num(kalk.Preise) || 0;
+    const unterMin = num(kalk.UnterMindestmarge) || 0;
+    const unterEkp = num(kalk.UnterEinkaufspreis) || 0;
+    const qMin = preise ? (100 * unterMin) / preise : null;
+    const qEk = preise ? (100 * unterEkp) / preise : null;
+    // Ein Listenpreis unter dem Einkaufspreis ist ein Fehler, keine Ermessensfrage –
+    // deshalb eine viel engere Schwelle als bei der Mindestmarge. Ganz auf null
+    // gehen wäre bei sechsstelligen Preislisten aber nur Rauschen.
+    const KALK_MIN_OK = 10, KALK_UNTER_EK_OK = 0.5;
+    const good = (qMin == null || qMin < KALK_MIN_OK) && (qEk == null || qEk < KALK_UNTER_EK_OK);
+    out.push({ bereich: "Kalkulation", good,
+      kommentar: `${deNum(unterMin)} von ${deNum(preise)} Preisen unter der Mindestmarge `
+        + `(${deNum(qMin)} %), ${deNum(unterEkp)} unter dem Einkaufspreis`
+        + (num(kalk.PreisNull) ? `, ${deNum(kalk.PreisNull)} Artikel ohne gepflegten Preis` : "")
+        + (num(kalk.OhneEK) ? `, ${deNum(kalk.OhneEK)} ohne Einkaufspreis` : "") });
+  }
+
+  const prEk = rowsOf("act_pr_ek");
+  if (prEk.length) {
+    // Gestiegener EK ist normal; kritisch wird es, wo der Verkaufspreis nicht
+    // nachgezogen wurde und die Marge jetzt im Minus steht.
+    const negativ = prEk.filter(r => (num(r.MargeNeu) || 0) < 0);
+    out.push({ bereich: "Einkaufspreise", good: negativ.length === 0,
+      kommentar: `${prEk.length} Artikel mit gestiegenem Einkaufspreis`
+        + (negativ.length
+            ? `, davon ${negativ.length} inzwischen über dem Verkaufspreis – Preise nachziehen`
+            : ", Verkaufspreise decken sie noch") });
+  }
+
+  const prKunden = rowsOf("act_pr_kunde");
+  if (prKunden.length) {
+    const rab = one("act_pr_rabatt_kpi");
+    const minus = prKunden.filter(r => (num(r.Rohertrag) || 0) < 0);
+    const rabatt = rab ? `, Rabattquote ${deNum(rab.Rabattquote)} % (${deNum(rab.Rabattbetrag, true)})` : "";
+    out.push({ bereich: "Kunden & Rabatte", good: minus.length === 0,
+      kommentar: `${prKunden.length} Kunden ausgewertet`
+        + (minus.length ? `, ${minus.length} davon mit negativem Rohertrag` : ", keiner mit negativem Rohertrag")
+        + rabatt });
+  }
+
   const rt = one("act_retouren_kpi");
   if (rt) {
     const q = num(rt.Quote), qvj = num(rt.QuoteVJ);

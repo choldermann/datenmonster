@@ -38,6 +38,7 @@ GESCHUETZTE_VORLAGEN = {
     "jtl_eingangsrechnung",
     "jtl_monitor",
     "jtl_wissen_paket",
+    "jtl_preis_cockpit",
 }
 
 SIGNATUR_SCHLUESSEL = "signatur"

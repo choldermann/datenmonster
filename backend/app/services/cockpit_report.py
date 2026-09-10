@@ -794,6 +794,9 @@ _ASSESSMENT_ACTION_IDS = {
     "act_vs_kpi", "act_vs_dauer_kpi", "act_vs_tracking_kpi",
     # Stammdaten-Health-Check
     "act_hc_kpi", "act_hc_summary", "act_hc_luecken",
+    # Preis- & Marge-Cockpit
+    "act_pr_kpi", "act_pr_kalk_kpi", "act_pr_rabatt_kpi", "act_pr_verfall",
+    "act_pr_unter_ek", "act_pr_ek", "act_pr_kunde",
     # Unternehmensmonitor
     "act_monitor_kpi", "act_monitor_alerts",
 }
@@ -1079,6 +1082,97 @@ def _assessment_rows(results: dict) -> list:
                     f"({_pctval(mail_quote)})"
                     + (f", {_fmt(chk.get('kunden_dubletten'), 0)} mögliche Dubletten"
                        if chk.get("kunden_dubletten") else "")))
+
+    # ── Preis- & Marge-Cockpit ─────────────────────────────────────────────────
+    # Die Schwellwerte (marge_min_prozent u.a.) stecken schon in den Abfragen; hier
+    # wird nur bewertet, wie viel Umsatz bzw. wie viele Preise darunter liegen.
+    pr = one("act_pr_kpi")
+    if pr:
+        umsatz = _asnum(pr.get("Umsatz")) or 0
+        marge, marge_vj = _asnum(pr.get("Marge")), _asnum(pr.get("MargeVJ"))
+        punkte = (marge - marge_vj) if (marge is not None and marge_vj is not None) else None
+        # Auf Firmenebene ist ein Margenpunkt viel Geld – anders als beim einzelnen
+        # Artikel, wo erst `marge_verfall_punkte` (Vorgabe 5) anschlägt. Ein Zehntel
+        # Punkt Rauschen soll aber nicht rot werden.
+        MARGE_TOLERANZ_PUNKTE = 1.0
+        out.append(("Rohertragsmarge", punkte is None or punkte >= -MARGE_TOLERANZ_PUNKTE,
+                    f"{_pctval(pr.get('Marge'))} (VJ {_pctval(pr.get('MargeVJ'))}"
+                    + (f", {'+' if punkte >= 0 else '−'}{_fmt(abs(punkte), 2)} Punkte" if punkte is not None else "")
+                    + f"), Rohertrag {_eur(pr.get('Rohertrag'))} aus {_eur(pr.get('Umsatz'))} Umsatz"))
+
+        unter = _asnum(pr.get("UmsatzUnterMinMarge")) or 0
+        anteil = (100.0 * unter / umsatz) if umsatz else None
+        UNTER_MIN_OK = 10.0
+        out.append(("Mindestmarge", anteil is None or anteil < UNTER_MIN_OK,
+                    f"{_eur(unter)} Umsatz unter der Mindestmarge ({_pctval(anteil)} des Umsatzes), "
+                    f"{_fmt(pr.get('ArtikelUnterMinMarge'), 0)} Artikel betroffen"))
+
+        # Ehrlichkeitszeile, dieselbe Bauform wie "Versandkosten" im GF-Cockpit:
+        # Positionen ohne Einkaufspreis zählen als 100 % Marge und schönen das
+        # Ergebnis, verschenkte Ware drückt es. Beides gehört offen ausgewiesen,
+        # sonst rechnet man mit einer Marge, die es nicht gibt.
+        ohne_ek_umsatz = _asnum(pr.get("UmsatzOhneEK")) or 0
+        ek_anteil = (100.0 * ohne_ek_umsatz / umsatz) if umsatz else None
+        OHNE_EK_OK = 2.0
+        out.append(("Datenlage EK & Gratisware", ek_anteil is None or ek_anteil < OHNE_EK_OK,
+                    f"{_fmt(pr.get('PosOhneEK'), 0)} Positionen ohne Einkaufspreis "
+                    f"({_eur(ohne_ek_umsatz)}, {_pctval(ek_anteil)} des Umsatzes) zählen als 100 % Marge"
+                    + (f"; {_fmt(pr.get('PosGratis'), 0)} Gratispositionen mit {_eur(pr.get('EinsatzGratis'))} Einsatz"
+                       if (_asnum(pr.get('PosGratis')) or 0) else "")))
+
+    verfall = rows_of("act_pr_verfall")
+    unter_ek = rows_of("act_pr_unter_ek")
+    if verfall or unter_ek:
+        entgangen = sum((_asnum(r.get("RohertragEntgangen")) or 0) for r in verfall)
+        verlust = sum((_asnum(r.get("Verlust")) or 0) for r in unter_ek)
+        basis = (_asnum(pr.get("Umsatz")) or 0) if pr else 0
+        quote = (100.0 * (entgangen + verlust) / basis) if basis else None
+        VERLUST_OK = 1.0
+        out.append(("Margenverfall", quote is None or quote < VERLUST_OK,
+                    f"{len(verfall)} Artikel mit sinkender Marge ({_eur(entgangen)} entgangener Rohertrag)"
+                    + (f", {len(unter_ek)} unter Einkaufspreis verkauft ({_eur(verlust)} Verlust)"
+                       if unter_ek else "")))
+
+    kalk = one("act_pr_kalk_kpi")
+    if kalk:
+        preise = _asnum(kalk.get("Preise")) or 0
+        unter_min = _asnum(kalk.get("UnterMindestmarge")) or 0
+        unter_ekp = _asnum(kalk.get("UnterEinkaufspreis")) or 0
+        q_min = (100.0 * unter_min / preise) if preise else None
+        q_ek = (100.0 * unter_ekp / preise) if preise else None
+        # Ein Listenpreis unter dem Einkaufspreis ist ein Fehler, keine Ermessensfrage –
+        # deshalb eine viel engere Schwelle als bei der Mindestmarge. Ganz auf null
+        # gehen wäre bei sechsstelligen Preislisten aber nur Rauschen.
+        KALK_MIN_OK, KALK_UNTER_EK_OK = 10.0, 0.5
+        good = (q_min is None or q_min < KALK_MIN_OK) and (q_ek is None or q_ek < KALK_UNTER_EK_OK)
+        out.append(("Kalkulation", good,
+                    f"{_fmt(unter_min, 0)} von {_fmt(preise, 0)} Preisen unter der Mindestmarge "
+                    f"({_pctval(q_min)}), {_fmt(unter_ekp, 0)} unter dem Einkaufspreis"
+                    + (f", {_fmt(kalk.get('PreisNull'), 0)} Artikel ohne gepflegten Preis"
+                       if (_asnum(kalk.get('PreisNull')) or 0) else "")
+                    + (f", {_fmt(kalk.get('OhneEK'), 0)} ohne Einkaufspreis"
+                       if (_asnum(kalk.get('OhneEK')) or 0) else "")))
+
+    ek = rows_of("act_pr_ek")
+    if ek:
+        # Gestiegener EK ist normal; kritisch wird es, wo der Verkaufspreis nicht
+        # nachgezogen wurde und die Marge jetzt im Minus steht.
+        negativ = [r for r in ek if (_asnum(r.get("MargeNeu")) or 0) < 0]
+        out.append(("Einkaufspreise", not negativ,
+                    f"{len(ek)} Artikel mit gestiegenem Einkaufspreis"
+                    + (f", davon {len(negativ)} inzwischen über dem Verkaufspreis "
+                       "– Preise nachziehen" if negativ else ", Verkaufspreise decken sie noch")))
+
+    kunden = rows_of("act_pr_kunde")
+    if kunden:
+        rab = one("act_pr_rabatt_kpi")
+        minus = [r for r in kunden if (_asnum(r.get("Rohertrag")) or 0) < 0]
+        rabatt = (f", Rabattquote {_pctval(rab.get('Rabattquote'))} "
+                  f"({_eur(rab.get('Rabattbetrag'))})") if rab else ""
+        out.append(("Kunden & Rabatte", not minus,
+                    f"{len(kunden)} Kunden ausgewertet"
+                    + (f", {len(minus)} davon mit negativem Rohertrag" if minus
+                       else ", keiner mit negativem Rohertrag") + rabatt))
 
     rt = one("act_retouren_kpi")
     if rt:
