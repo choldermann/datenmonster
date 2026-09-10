@@ -69,6 +69,11 @@ class InventurLauf(Base):
     # wertlos – deshalb reisen sie als Prüfhinweise mit.
     hinweise      = Column(JSON, default=list)
 
+    # Ab wann wie viel abgewertet wird. Gehört zum Beleg: eine abgeschlossene
+    # Inventur muss zeigen, nach welcher Staffel damals vorgeschlagen wurde, auch
+    # wenn sie später geändert wird. Leer = STANDARD_STUFEN.
+    abwertung_stufen = Column(JSON, nullable=True)
+
     erstellt_von     = Column(String, nullable=True)
     created_at       = Column(DateTime, default=_jetzt)
     updated_at       = Column(DateTime, default=_jetzt, onupdate=_jetzt)

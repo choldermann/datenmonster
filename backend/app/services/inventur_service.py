@@ -151,6 +151,17 @@ def bestandsliste_laden(db, lauf: InventurLauf) -> list:
 def anlegen(db, project_id: Optional[int], connection_id: int, name: str,
             stichtag: date, notiz: str = None, quelle_mapping: str = None,
             benutzer: str = None) -> InventurLauf:
+    # Die Staffel der letzten Inventur desselben Mandanten übernehmen: wer einmal
+    # „ab 60 Tagen drüber 100 %“ festgelegt hat, will das nicht jedes Jahr neu
+    # eintragen. Kopiert, nicht verknüpft – die alte Inventur bleibt ihr Beleg.
+    vorige_stufen = None
+    for frueher in (db.query(InventurLauf)
+                    .filter(InventurLauf.connection_id == connection_id)
+                    .order_by(InventurLauf.stichtag.desc(), InventurLauf.id.desc())
+                    .limit(20).all()):
+        if frueher.abwertung_stufen:
+            vorige_stufen = [dict(s) for s in frueher.abwertung_stufen]
+            break
     lauf = InventurLauf(
         project_id=project_id,
         connection_id=connection_id,
@@ -160,6 +171,7 @@ def anlegen(db, project_id: Optional[int], connection_id: int, name: str,
         quelle_mapping=quelle_mapping or STANDARD_MAPPING,
         status="offen",
         erstellt_von=benutzer,
+        abwertung_stufen=vorige_stufen,
     )
     db.add(lauf)
     db.commit()
@@ -393,6 +405,89 @@ def _vorschlag_fuer(pos: InventurPosition, stufen: List[dict],
     return betrag, grund
 
 
+def _dauer(t: int) -> str:
+    if t >= 30 and t % 30 == 0:
+        m = t // 30
+        return f"{m} {'Monat' if m == 1 else 'Monate'}"
+    return f"{t} {'Tag' if t == 1 else 'Tage'}"
+
+
+def _stufen_label(bis: int, vorher: Optional[int]) -> str:
+    """Beschriftung einer Stufe aus ihren Resttagen und denen der Stufe davor.
+
+    Dieselbe Regel wie `stufenLabel` in InventurStufenModal.tsx. Sie steht im
+    Grundtext jeder vorgeschlagenen Bewertung und damit in der Liste für den
+    Steuerberater – deshalb aus den Zahlen erzeugt statt frei eintippbar.
+    Die Standardstaffel ergibt damit genau ihre bisherigen Texte.
+    """
+    if bis < 0:
+        if vorher is None:
+            return f"MHD mindestens {-bis} Tage überschritten"
+        return f"MHD {-bis} bis {-vorher - 1} Tage überschritten"
+    if bis == 0:
+        if vorher is None:
+            return "MHD überschritten"
+        return f"MHD bis {-vorher - 1} Tage überschritten"
+    if vorher is None:
+        return f"Restlaufzeit bis {_dauer(bis)} (auch überschritten)"
+    if vorher < 0:
+        return f"Restlaufzeit bis {_dauer(bis)}"
+    if vorher == 0:
+        return f"unter {_dauer(bis)} Restlaufzeit"
+    if vorher >= 30 and vorher % 30 == 0 and bis % 30 == 0:
+        return f"{vorher // 30} bis {bis // 30} Monate Restlaufzeit"
+    return f"{_dauer(vorher)} bis {_dauer(bis)} Restlaufzeit"
+
+
+def stufen_pruefen(stufen) -> List[dict]:
+    """Prüft und vereinheitlicht eine Staffel: ganze Resttage, 0–100 %, keine
+    doppelten Resttage, aufsteigend sortiert, Beschriftung aus den Zahlen."""
+    if not isinstance(stufen, list) or not stufen:
+        raise ValueError("Die Staffel braucht mindestens eine Stufe.")
+    if len(stufen) > 12:
+        raise ValueError("Höchstens 12 Stufen.")
+    sauber = []
+    for s in stufen:
+        try:
+            bis_roh = float(s.get("bis_tage"))
+            prozent = float(s.get("prozent"))
+        except (TypeError, ValueError, AttributeError):
+            raise ValueError("Jede Stufe braucht Resttage und einen Prozentsatz.")
+        if bis_roh != int(bis_roh):
+            raise ValueError("Resttage bitte als ganze Zahl.")
+        bis = int(bis_roh)
+        if not -3650 <= bis <= 3650:
+            raise ValueError("Resttage müssen zwischen -3650 und 3650 liegen.")
+        if not 0 <= prozent <= 100:
+            raise ValueError("Der Prozentsatz muss zwischen 0 und 100 liegen.")
+        sauber.append({"bis_tage": bis, "prozent": round(prozent, 2)})
+    sauber.sort(key=lambda s: s["bis_tage"])
+    tage = [s["bis_tage"] for s in sauber]
+    if len(set(tage)) != len(tage):
+        raise ValueError("Zwei Stufen haben dieselben Resttage.")
+    vorher = None
+    for s in sauber:
+        s["label"] = _stufen_label(s["bis_tage"], vorher)
+        vorher = s["bis_tage"]
+    return sauber
+
+
+def stufen_des_laufs(lauf: InventurLauf) -> List[dict]:
+    """Die Staffel, nach der diese Inventur vorschlägt – eigene oder Standard."""
+    return sorted(lauf.abwertung_stufen or STANDARD_STUFEN,
+                  key=lambda s: _zahl(s.get("bis_tage"), 0))
+
+
+def stufen_setzen(db, lauf: InventurLauf, stufen) -> InventurLauf:
+    if lauf.status == "abgeschlossen":
+        raise ValueError("Die Inventur ist abgeschlossen – ihre Staffel gehört zum Beleg.")
+    lauf.abwertung_stufen = stufen_pruefen(stufen)
+    lauf.updated_at = _jetzt()
+    db.commit()
+    db.refresh(lauf)
+    return lauf
+
+
 def vorschlag_anwenden(db, lauf: InventurLauf, stufen: List[dict] = None,
                        nur_unbewertete: bool = True, benutzer: str = None) -> dict:
     """Setzt Abwertungsvorschläge nach Restlaufzeit bis zum MHD.
@@ -405,24 +500,30 @@ def vorschlag_anwenden(db, lauf: InventurLauf, stufen: List[dict] = None,
     if lauf.status == "abgeschlossen":
         raise ValueError("Die Inventur ist abgeschlossen.")
 
-    stufen = stufen or STANDARD_STUFEN
+    stufen = stufen or stufen_des_laufs(lauf)
     # Aufsteigend: die engste Stufe (kleinste bis_tage) gewinnt.
     stufen = sorted(stufen, key=lambda s: _zahl(s.get("bis_tage"), 0))
 
     q = db.query(InventurPosition).filter(InventurPosition.lauf_id == lauf.id)
-    gesetzt = 0
+    gesetzt = entfernt = 0
     for pos in q.all():
         if nur_unbewertete and pos.bewertung_art and not pos.vorschlag:
             continue
         betrag, grund = _vorschlag_fuer(pos, stufen, lauf.stichtag)
         if betrag <= 0:
+            # Ein Vorschlag, den die jetzige Staffel nicht mehr trägt, muss weg –
+            # sonst bliebe nach einer geänderten Staffel die Abwertung der alten
+            # stehen und die Summe stimmte mit keiner der beiden überein.
+            if pos.vorschlag and pos.bewertung_art:
+                bewertung_loeschen(db, pos)
+                entfernt += 1
             continue
         bewerten(db, pos, "betrag", round(betrag, 2), grund=grund,
                  benutzer=benutzer, vorschlag=True)
         gesetzt += 1
 
     summen_neu_rechnen(db, lauf)
-    return {"vorschlaege": gesetzt}
+    return {"vorschlaege": gesetzt, "entfernt": entfernt}
 
 
 def vorschlaege_bestaetigen(db, lauf: InventurLauf, benutzer: str = None) -> dict:

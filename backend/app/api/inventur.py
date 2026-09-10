@@ -64,6 +64,9 @@ def _out_lauf(l: InventurLauf) -> dict:
         "wert_nach_abwertung": l.wert_nach_abwertung,
         "bewertete_positionen": l.bewertete_positionen,
         "hinweise": l.hinweise or [],
+        # Die Staffel, nach der diese Inventur vorschlägt – gehört zum Beleg.
+        "abwertung_stufen": inventur_service.stufen_des_laufs(l),
+        "stufen_eigene": bool(l.abwertung_stufen),
         "erstellt_von": l.erstellt_von,
         "created_at": l.created_at.isoformat() if l.created_at else None,
         "abgeschlossen_am": l.abgeschlossen_am.isoformat() if l.abgeschlossen_am else None,
@@ -329,6 +332,32 @@ def stufen():
     return STANDARD_STUFEN
 
 
+class StufenIn(BaseModel):
+    stufen: List[dict]
+    neu_vorschlagen: bool = False
+
+
+@router.put("/laeufe/{lauf_id}/stufen")
+def stufen_setzen(lauf_id: int, data: StufenIn,
+                  db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Legt fest, ab welcher Restlaufzeit wie viel abgewertet wird – für DIESE
+    Inventur. Auf Wunsch werden die Vorschläge gleich neu gerechnet;
+    Handbewertungen bleiben dabei unberührt."""
+    lauf = _lauf(db, lauf_id)
+    _darf_aendern(lauf.project_id, user, db)
+    res = {}
+    try:
+        lauf = inventur_service.stufen_setzen(db, lauf, data.stufen)
+        if data.neu_vorschlagen:
+            res = inventur_service.vorschlag_anwenden(
+                db, lauf, None, True, benutzer=getattr(user, "username", None))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    db.refresh(lauf)
+    return {**res, "lauf": _out_lauf(lauf)}
+
+
 # ─── Export für den Steuerberater ─────────────────────────────────────────────
 
 @router.get("/laeufe/{lauf_id}/export.csv")
@@ -410,6 +439,9 @@ def export_xlsx(lauf_id: int,
         ("Wert zum EK", round(lauf.bestand_wert or 0, 2)),
         ("Abwertung", round(lauf.abwertung_summe or 0, 2)),
         ("Wert nach Abwertung", round(lauf.wert_nach_abwertung or 0, 2)),
+        ("Abwertungsstaffel", " · ".join(
+            f"{s.get('label')}: {float(s.get('prozent') or 0):g} %"
+            for s in inventur_service.stufen_des_laufs(lauf))),
         ("Abgeschlossen am", _text_datum(lauf.abgeschlossen_am, mit_zeit=True)),
         ("Abgeschlossen von", lauf.abgeschlossen_von or ""),
         ("Exportiert am", datetime.now().strftime("%d.%m.%Y %H:%M")),

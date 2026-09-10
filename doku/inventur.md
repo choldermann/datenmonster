@@ -75,6 +75,26 @@ abgelaufenen Chargen"** blendet die übrigen Positionen aus.
 Vorschläge sind als solche markiert und überschreiben keine Handbewertung. Der
 Abschluss bestätigt offene Vorschläge – wer abschließt, steht für die Zahlen ein.
 
+### Abwertungsstaffel
+Der Knopf **„Staffel"** öffnet ein Modal: ab welcher Restlaufzeit wie viel
+abgewertet wird. Standard ist MHD überschritten 100 %, unter 3 Monaten 50 %,
+3 bis 6 Monate 25 %.
+* **Resttage** = MHD minus Stichtag, je Charge. Eine Charge fällt in die erste
+  Stufe, deren Resttage sie nicht übersteigt. 0 heißt „am Stichtag erreicht oder
+  überschritten", negative Werte „so viele Tage drüber" – damit lässt sich z.B.
+  „ab 30 Tagen drüber 100 %, darunter 50 %" abbilden.
+* Die **Beschriftung** entsteht aus den Zahlen (`_stufen_label`, gleiche Regel im
+  Modal) und steht im Grundtext jeder vorgeschlagenen Bewertung.
+* Das Modal zeigt **vor dem Speichern**, wie viele Partien jede Stufe trifft und
+  wie viel Euro sie abwertet.
+* Die Staffel gehört **zur Inventur** (`inventur_laeufe.abwertung_stufen`), bei
+  einer abgeschlossenen ist sie nur lesbar und steht im Excel-Info-Blatt. Eine
+  neue Inventur übernimmt die Staffel der letzten desselben Mandanten.
+* **„Vorschläge danach neu berechnen"** (startet aus) setzt die Vorschläge nach der
+  neuen Staffel und entfernt die, die sie nicht mehr trägt. Handbewertungen bleiben.
+  Mit PPS geprüft: Standard 63.842 €, „ab 30 Tagen drüber 100 %, bis dahin 50 %,
+  unter 3 Monaten 20 %" 47.719 €.
+
 ### Ausgabe
 Unbewertete Positionen stehen in beiden Formaten mit ihrem vollen Wert in der
 Spalte „Wert nach Abwertung", damit die Summe stimmt.

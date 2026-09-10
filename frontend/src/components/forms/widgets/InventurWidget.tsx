@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback, Fragment } from "react";
 import { ClipboardList, Plus, RefreshCw, Download, Lock, Unlock, Trash2,
          AlertCircle, Loader2, ChevronDown, ChevronRight, Wand2, Check,
-         Search, X } from "lucide-react";
+         Search, X, SlidersHorizontal } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { onMandantChange } from "../../../services/mandant";
+import InventurStufenModal from "./InventurStufenModal";
 
 const S = {
   bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)", bgMain: "var(--bg-main)",
@@ -105,7 +106,13 @@ export default function InventurWidget({ widget, projectId }) {
   const [nurAbgelaufen, setNurAbgelaufen] = useState(false);
   const [detail, setDetail] = useState({});        // pos.id → Chargen aufgeklappt
   const [entwurf, setEntwurf] = useState({});      // pos.id → {art, wert, grund}
-  const [stufen, setStufen] = useState([]);        // Abwertungsstufen des Vorschlags
+  const [standardStufen, setStandardStufen] = useState([]);
+  const [stufenOffen, setStufenOffen] = useState(false);
+
+  // Die Staffel DIESER Inventur (sie gehört zum Beleg), sonst die Standardstaffel.
+  // Aufsteigend sortiert wie im Backend – die engste Stufe gewinnt.
+  const stufen = [...(aktiv?.abwertung_stufen || standardStufen)]
+    .sort((a, b) => Number(a.bis_tage ?? 0) - Number(b.bis_tage ?? 0));
 
   const q = projectId ? `?project_id=${projectId}` : "";
 
@@ -138,13 +145,12 @@ export default function InventurWidget({ widget, projectId }) {
 
   useEffect(() => { laeufeLaden(); }, [laeufeLaden]);
 
-  // Die Stufen des Abwertungsvorschlags, um sie an der einzelnen Charge
-  // anzuzeigen. Aufsteigend sortiert wie im Backend – die engste gewinnt.
+  // Die Standardstaffel: Rückfall für Inventuren ohne eigene und Vorlage für den
+  // Knopf „Standard" im Staffel-Modal.
   useEffect(() => {
     api.get("/api/inventur/stufen")
-      .then(({ data }) => setStufen([...(data || [])]
-        .sort((a, b) => Number(a.bis_tage ?? 0) - Number(b.bis_tage ?? 0))))
-      .catch(() => setStufen([]));   // ohne Stufen fehlt nur die Spalte
+      .then(({ data }) => setStandardStufen(data || []))
+      .catch(() => setStandardStufen([]));   // ohne Stufen fehlt nur die Spalte
   }, []);
 
   // Beim Mandantenwechsel neu laden: die Inventur des einen Betriebs hat in der
@@ -200,6 +206,43 @@ export default function InventurWidget({ widget, projectId }) {
     } finally {
       setArbeitet(null);
     }
+  };
+
+  // Speichert die Staffel dieser Inventur. Fehler gehen an das Modal zurück –
+  // dort sieht man sie, statt hinter dem Overlay.
+  const stufenSpeichern = async (neu, neuVorschlagen) => {
+    const { data } = await api.put(`/api/inventur/laeufe/${aktiv.id}/stufen`,
+                                   { stufen: neu, neu_vorschlagen: neuVorschlagen });
+    setAktiv(data.lauf);
+    setStufenOffen(false);
+    if (neuVorschlagen) await positionenLaden(aktiv.id);
+  };
+
+  // Was eine Staffel mit dieser Inventur machen würde – dieselbe Rechnung wie
+  // _vorschlag_fuer im Backend: je Charge, Handbewertungen bleiben unberührt.
+  // Ergebnis in der Reihenfolge der übergebenen Stufen.
+  const stufenVorschau = (entwurfStufen) => {
+    const reihe = entwurfStufen.map((_, i) => i)
+      .sort((a, b) => entwurfStufen[a].bis_tage - entwurfStufen[b].bis_tage);
+    const je = entwurfStufen.map(() => ({ chargen: 0, wert: 0, abwertung: 0 }));
+    for (const p of positionen) {
+      if (p.bewertung_art && !p.vorschlag) continue;
+      const mitMhd = (p.chargen || []).filter(c => alsDatum(c.mhd));
+      const teile = mitMhd.length
+        ? mitMhd.map(c => ({ rest: resttage(c.mhd, aktiv.stichtag),
+                             wert: c.wert ?? (c.menge || 0) * (c.ek || 0) }))
+        : (p.resttage !== null && p.resttage !== undefined
+            ? [{ rest: p.resttage, wert: p.wert || 0 }] : []);
+      for (const t of teile) {
+        if (t.rest === null || !(t.wert > 0)) continue;
+        const i = reihe.find(k => t.rest <= entwurfStufen[k].bis_tage);
+        if (i === undefined) continue;
+        je[i].chargen += 1;
+        je[i].wert += t.wert;
+        je[i].abwertung += t.wert * entwurfStufen[i].prozent / 100;
+      }
+    }
+    return je;
   };
 
   const bestaetigen = async () => {
@@ -472,6 +515,11 @@ export default function InventurWidget({ widget, projectId }) {
                      onChange={e => setNurAbgelaufen(e.target.checked)} />
               nur mit abgelaufenen Chargen
             </label>
+            <button style={btn} onClick={() => setStufenOffen(true)}
+                    title={"Ab wann wie viel abgewertet wird: "
+                      + stufen.map(s => `${s.label} ${Number(s.prozent)} %`).join(" · ")}>
+              <SlidersHorizontal size={13} /> Staffel
+            </button>
             {offen && (
               <button style={btn} onClick={vorschlagen} disabled={arbeitet !== null}
                       title="Wertet abgelaufene und bald ablaufende Chargen nach Stufen ab – jede Zeile bleibt änderbar.">
@@ -698,6 +746,17 @@ export default function InventurWidget({ widget, projectId }) {
             </table>
           </div>
         </>
+      )}
+
+      {stufenOffen && aktiv && (
+        <InventurStufenModal
+          stufen={stufen}
+          standard={standardStufen}
+          gesperrt={!offen}
+          vorschau={stufenVorschau}
+          onClose={() => setStufenOffen(false)}
+          onSave={stufenSpeichern}
+        />
       )}
     </div>
   );
