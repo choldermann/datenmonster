@@ -275,14 +275,14 @@ export default function InventurWidget({ widget, projectId }) {
 
   // Der Export läuft über einen Blob, weil die API mit Anmeldung geschützt ist –
   // ein einfacher Link würde ohne Kopfzeile gehen und 401 liefern.
-  const exportieren = async () => {
+  const exportieren = async (format) => {
     try {
-      const res = await api.get(`/api/inventur/laeufe/${aktiv.id}/export.csv`,
+      const res = await api.get(`/api/inventur/laeufe/${aktiv.id}/export.${format}`,
                                 { responseType: "blob" });
       const url = URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Inventur_${aktiv.stichtag}.csv`;
+      a.download = `Inventur_${aktiv.stichtag}.${format}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) { setFehler(fehlerText(e)); }
@@ -349,9 +349,15 @@ export default function InventurWidget({ widget, projectId }) {
           </button>
         )}
         {aktiv && (
-          <button style={btn} onClick={exportieren}>
-            <Download size={13} /> Liste als CSV
-          </button>
+          <>
+            <button style={btn} onClick={() => exportieren("xlsx")}
+                    title="Kopfzeile fixiert, sortier- und filterbar, Summen der sichtbaren Zeilen">
+              <Download size={13} /> Liste als Excel
+            </button>
+            <button style={btn} onClick={() => exportieren("csv")}>
+              <Download size={13} /> CSV
+            </button>
+          </>
         )}
         {aktiv && offen && positionen.length > 0 && (
           <button style={{ ...btn, borderColor: S.accent, color: S.accent }}

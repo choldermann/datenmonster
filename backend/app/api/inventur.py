@@ -10,7 +10,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from pydantic import BaseModel
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 import csv
 import io
 
@@ -343,22 +344,85 @@ def export_csv(lauf_id: int,
     # Semikolon und BOM: Die Datei geht an einen Steuerberater und wird dort in
     # Excel geöffnet – ohne BOM zerlegt Excel die Umlaute.
     puffer.write("﻿")
+    # JEDES Feld in Anführungszeichen: Hat das Tabellenprogramm beim Import auch
+    # das Komma als Trenner eingestellt (LibreOffice merkt sich das), zerfielen
+    # sonst alle Zeilen mit Komma im Artikelnamen – bei PPS 410 von 688.
     schreiber = csv.DictWriter(puffer, fieldnames=spalten, delimiter=";",
-                               extrasaction="ignore")
+                               extrasaction="ignore", quoting=csv.QUOTE_ALL)
     schreiber.writeheader()
     for z in zeilen:
-        schreiber.writerow({k: ("" if v is None else v) for k, v in z.items()})
+        schreiber.writerow({k: _csv_wert(v) for k, v in z.items()})
     # Summenzeile: der Empfänger soll nicht selbst addieren müssen.
     schreiber.writerow({
         spalten[0]: "SUMME",
-        "Wert zum EK": round(lauf.bestand_wert or 0, 2),
-        "Abwertung": round(lauf.abwertung_summe or 0, 2),
-        "Wert nach Abwertung": round(lauf.wert_nach_abwertung or 0, 2),
+        "Wert zum EK": _csv_wert(round(lauf.bestand_wert or 0, 2)),
+        "Abwertung": _csv_wert(round(lauf.abwertung_summe or 0, 2)),
+        "Wert nach Abwertung": _csv_wert(round(lauf.wert_nach_abwertung or 0, 2)),
     })
 
     dateiname = f"Inventur_{(lauf.stichtag or date.today()).strftime('%Y-%m-%d')}.csv"
     return StreamingResponse(
         io.BytesIO(puffer.getvalue().encode("utf-8")),
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{dateiname}"'},
+    )
+
+
+def _csv_wert(v):
+    """Zahlen mit Dezimalkomma: ein deutsches Excel/LibreOffice liest „3.281" als
+    3281 – der EK stünde tausendfach zu hoch in der Liste."""
+    if v is None:
+        return ""
+    if isinstance(v, bool):
+        return "ja" if v else "nein"
+    if isinstance(v, (int, float, Decimal)):
+        s = str(v)
+        if "e" in s.lower():
+            s = f"{v:.10f}".rstrip("0").rstrip(".")
+        return s.replace(".", ",")
+    return v
+
+
+@router.get("/laeufe/{lauf_id}/export.xlsx")
+def export_xlsx(lauf_id: int,
+                db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    """Dieselbe Liste als Excel: Kopfzeile und Artikelspalten fixiert, Autofilter,
+    echte Zahlen und Datumswerte, Summen der sichtbaren Zeilen, Info-Blatt."""
+    from app.services.export_service import export_xlsx_tabelle
+    lauf = _lauf(db, lauf_id)
+    _darf_lesen(lauf.project_id, user, db)
+    zeilen = inventur_service.export_zeilen(db, lauf, datum_als_text=False)
+    spalten = [label for _, label in inventur_service.EXPORT_SPALTEN]
+
+    def _text_datum(d, mit_zeit=False):
+        if not d:
+            return ""
+        return d.strftime("%d.%m.%Y %H:%M" if mit_zeit else "%d.%m.%Y")
+
+    # Als Text: openpyxl lehnt Zeitstempel mit Zeitzone ab, und im Info-Blatt
+    # wird nicht gerechnet.
+    info = [
+        ("Inventur", lauf.name or ""),
+        ("Stichtag", _text_datum(lauf.stichtag)),
+        ("Status", lauf.status or ""),
+        ("Positionen", len(zeilen)),
+        ("Wert zum EK", round(lauf.bestand_wert or 0, 2)),
+        ("Abwertung", round(lauf.abwertung_summe or 0, 2)),
+        ("Wert nach Abwertung", round(lauf.wert_nach_abwertung or 0, 2)),
+        ("Abgeschlossen am", _text_datum(lauf.abgeschlossen_am, mit_zeit=True)),
+        ("Abgeschlossen von", lauf.abgeschlossen_von or ""),
+        ("Exportiert am", datetime.now().strftime("%d.%m.%Y %H:%M")),
+    ]
+    inhalt = export_xlsx_tabelle(
+        spalten, zeilen,
+        formate=inventur_service.EXPORT_FORMATE,
+        summen=inventur_service.EXPORT_SUMMEN,
+        blatt="Inventur", info=info, feste_spalten=2,
+    )
+    dateiname = f"Inventur_{(lauf.stichtag or date.today()).strftime('%Y-%m-%d')}.xlsx"
+    return StreamingResponse(
+        io.BytesIO(inhalt),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f'attachment; filename="{dateiname}"'},
     )

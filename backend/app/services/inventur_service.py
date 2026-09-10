@@ -518,10 +518,28 @@ EXPORT_SPALTEN = [
     ("grund", "Grund"),
 ]
 
+# Excel-Formate je Spalte. Mengen bleiben „Standard": ein Format wie '#,##0' würde
+# eine Bruchmenge (Meter, Liter) in der Anzeige stumm runden.
+_EURO = '#,##0.00 "€"'
+EXPORT_FORMATE = {
+    "EK netto": '#,##0.00## "€"',
+    "Wert zum EK": _EURO,
+    "MHD": "DD.MM.YYYY",
+    "Resttage": "#,##0",
+    "Reichweite Tage": "#,##0",
+    "Bewertungswert": "#,##0.00##",
+    "Abwertung": _EURO,
+    "Wert nach Abwertung": _EURO,
+}
+EXPORT_SUMMEN = ["Wert zum EK", "Abwertung", "Wert nach Abwertung"]
 
-def export_zeilen(db, lauf: InventurLauf) -> List[dict]:
+
+def export_zeilen(db, lauf: InventurLauf, datum_als_text: bool = True) -> List[dict]:
     """Flache Zeilen für CSV/XLSX – bewusst ohne Chargen-Detail, das würde die
-    Liste für den Steuerberater vervielfachen. Die Partien stehen im Drilldown."""
+    Liste für den Steuerberater vervielfachen. Die Partien stehen im Drilldown.
+
+    `datum_als_text=False` lässt Datumswerte als Datum stehen – für Excel, damit
+    die MHD-Spalte richtig sortiert und nach Zeitraum filterbar ist."""
     rows = (db.query(InventurPosition)
             .filter(InventurPosition.lauf_id == lauf.id)
             .order_by(InventurPosition.wert.desc()).all())
@@ -530,7 +548,7 @@ def export_zeilen(db, lauf: InventurLauf) -> List[dict]:
         zeile = {}
         for feld, label in EXPORT_SPALTEN:
             v = getattr(p, feld, None)
-            if isinstance(v, date):
+            if isinstance(v, date) and datum_als_text:
                 v = v.strftime("%d.%m.%Y")
             if feld == "bewertung_art" and v:
                 v = ART_LABEL.get(v, v)

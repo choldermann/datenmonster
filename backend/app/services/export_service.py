@@ -546,6 +546,82 @@ def export_xlsx(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
+def export_xlsx_tabelle(kopf: List[str], zeilen: List[dict],
+                        formate: Optional[Dict[str, str]] = None,
+                        summen: Optional[List[str]] = None,
+                        blatt: str = "Export",
+                        info: Optional[List[tuple]] = None,
+                        feste_spalten: int = 0) -> bytes:
+    """Tabelle als Excel-Datei, mit der man sofort arbeiten kann: Kopfzeile fixiert,
+    Autofilter über alle Spalten (sortieren/filtern), Zahlen und Datumswerte als echte
+    Werte mit Format statt als Text.
+
+    `formate`:  Spaltenname → Excel-Zahlenformat (z.B. '#,##0.00 "€"', 'DD.MM.YYYY').
+    `summen`:   Spalten mit Summenzeile unter der Tabelle. Sie steht bewusst AUSSERHALB
+                des Filterbereichs und rechnet mit TEILERGEBNIS(109): Sortieren lässt
+                sie stehen, und beim Filtern summiert sie nur die sichtbaren Zeilen.
+    `info`:     (Beschriftung, Wert)-Paare für ein zweites Blatt „Info".
+    `feste_spalten`: so viele Spalten links bleiben beim waagerechten Scrollen stehen.
+    """
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+
+    formate = formate or {}
+    wb = Workbook()
+    ws = wb.active
+    ws.title = blatt[:31]
+
+    ws.append(kopf)
+    for zelle in ws[1]:
+        zelle.font = Font(bold=True)
+        zelle.fill = PatternFill("solid", fgColor="DDDDDD")
+        zelle.alignment = Alignment(vertical="center")
+    for z in zeilen:
+        ws.append([z.get(name) for name in kopf])
+    letzte = ws.max_row
+
+    for i, name in enumerate(kopf, start=1):
+        fmt = formate.get(name)
+        if fmt and letzte > 1:
+            for (zelle,) in ws.iter_rows(min_row=2, max_row=letzte, min_col=i, max_col=i):
+                zelle.number_format = fmt
+        # Breite nach dem längsten Inhalt, aber gedeckelt – ein langer Artikelname
+        # soll nicht die halbe Tabelle aus dem Bild schieben.
+        laenge = max([len(name)] + [len(str(z.get(name) if z.get(name) is not None else ""))
+                                    for z in zeilen[:1000]])
+        ws.column_dimensions[get_column_letter(i)].width = min(max(laenge + 2, 9), 60)
+
+    ws.freeze_panes = ws.cell(row=2, column=feste_spalten + 1)
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(kopf))}{letzte}"
+
+    if summen and letzte > 1:
+        zeile = letzte + 2
+        ws.cell(row=zeile, column=1, value="Summe (sichtbare Zeilen)").font = Font(bold=True)
+        for name in summen:
+            if name not in kopf:
+                continue
+            i = kopf.index(name) + 1
+            b = get_column_letter(i)
+            zelle = ws.cell(row=zeile, column=i, value=f"=SUBTOTAL(109,{b}2:{b}{letzte})")
+            zelle.font = Font(bold=True)
+            if formate.get(name):
+                zelle.number_format = formate[name]
+
+    if info:
+        wi = wb.create_sheet("Info")
+        for beschriftung, wert in info:
+            wi.append([beschriftung, wert])
+        for (zelle,) in wi.iter_rows(min_col=1, max_col=1):
+            zelle.font = Font(bold=True)
+        wi.column_dimensions["A"].width = 26
+        wi.column_dimensions["B"].width = 40
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 # ─── JSON ─────────────────────────────────────────────────────────────────────
 
 def export_json(df: pd.DataFrame, orient: str = "records", indent: int = 2) -> bytes:

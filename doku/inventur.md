@@ -76,10 +76,28 @@ Vorschläge sind als solche markiert und überschreiben keine Handbewertung. Der
 Abschluss bestätigt offene Vorschläge – wer abschließt, steht für die Zahlen ein.
 
 ### Ausgabe
-„Liste als CSV" liefert eine Datei für den Steuerberater: Semikolon, BOM (sonst
-zerlegt Excel die Umlaute), Summenzeile am Ende. Unbewertete Positionen stehen
-mit ihrem vollen Wert in der Spalte „Wert nach Abwertung", damit die Summe
-stimmt.
+Unbewertete Positionen stehen in beiden Formaten mit ihrem vollen Wert in der
+Spalte „Wert nach Abwertung", damit die Summe stimmt.
+
+**„Liste als Excel"** ist der Weg für den Steuerberater:
+* Kopfzeile und die Spalten Artikelnummer/Artikel sind fixiert, über allen
+  Spalten liegt ein Autofilter (sortieren und filtern).
+* Zahlen und das MHD sind echte Werte mit Format, keine Texte – die MHD-Spalte
+  sortiert also nach Datum, nicht nach Tag.
+* Unter der Tabelle steht eine Summenzeile mit `TEILERGEBNIS`: Sortieren lässt sie
+  stehen, beim Filtern summiert sie nur die sichtbaren Zeilen. Die Formel hat keinen
+  vorberechneten Wert; LibreOffice rechnet sie beim Öffnen aus (am 10.09. geprüft),
+  in Excel selbst noch nicht getestet.
+* Ein Blatt „Info" nennt Inventur, Stichtag, Status, Summen und wer wann
+  abgeschlossen hat.
+
+**„CSV"** bleibt für Weiterverarbeitung: Semikolon, BOM (sonst zerlegt Excel die
+Umlaute), Summenzeile am Ende. Zwei Fallen, die am 10.09. bei PPS auftraten:
+* **Jedes Feld steht in Anführungszeichen.** LibreOffice merkt sich die Trenner des
+  letzten Imports; war dort auch das Komma angehakt, zerfielen alle Zeilen mit
+  Komma im Artikelnamen (410 von 688).
+* **Zahlen mit Dezimalkomma.** Ein deutsches Tabellenprogramm liest „3.281" als
+  3281 – der EK stand vorher tausendfach zu hoch da.
 
 ### Bewusst nicht enthalten: Rückschreiben nach JTL
 JTL kennt **keinen Abwertungswert** – der Lagerwert ist dort immer Menge × EK.
