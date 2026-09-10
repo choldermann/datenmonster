@@ -68,8 +68,19 @@ class EmailTableRequest(BaseModel):
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def form_out(f: Form) -> dict:
+def form_out(f: Form, db: Optional[Session] = None) -> dict:
+    """Formular fuer die UI. Mit `db` kommt der Sperrhinweis einer Vorlage mit, deren
+    Berechtigung ausgelaufen ist — die Karte im Katalog zeigt das dann sofort, ohne
+    dass jemand erst auf „Ausfuehren" klicken muss."""
+    gesperrt = None
+    if db is not None:
+        try:
+            from app.core import vorlagen_gate
+            gesperrt = vorlagen_gate.sperre_fuer_objekt(db, "forms", f.id)
+        except Exception:
+            gesperrt = None
     return {
+        "gesperrt":      gesperrt,
         "id":            f.id,
         "name":          f.name,
         "project_id":    f.project_id,
@@ -128,7 +139,7 @@ def list_forms(project_id: Optional[int] = None, db: Session = Depends(get_db),
     q = db.query(Form)
     if project_id is not None:
         q = q.filter(Form.project_id == project_id)
-    return [form_out(f) for f in q.order_by(Form.updated_at.desc()).all()]
+    return [form_out(f, db) for f in q.order_by(Form.updated_at.desc()).all()]
 
 
 @router.post("/")
@@ -202,6 +213,10 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     if not (can_read_project(m.project_id, user, db)
             or _portal_darf_mapping(m, user, db)):
         raise HTTPException(403, "Kein Zugriff auf dieses Mapping")
+    # Der Drilldown haengt am Mapping, nicht am Formular — sonst waere der Klick in
+    # die Tabelle die offene Hintertuer einer gesperrten Vorlage.
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_objekt(db, "mappings", m.id)
 
     ctx = MappingContext.from_orm(m)
     from app.services import mandant_service
@@ -320,7 +335,7 @@ def get_form(form_id: int, db: Session = Depends(get_db),
     f = db.query(Form).filter(Form.id == form_id).first()
     if not f:
         raise HTTPException(404, "Formular nicht gefunden")
-    return form_out(f)
+    return form_out(f, db)
 
 
 @router.put("/{form_id}")
@@ -396,6 +411,8 @@ async def form_report(form_id: int, data: FormRunRequest,
     f = db.query(Form).filter(Form.id == form_id).first()
     if not f:
         raise HTTPException(404, "Formular nicht gefunden")
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_formular(db, f)
     try:
         pdf = await generate_report(f, data.params or {}, db,
                                     precomputed_summary=data.ai_summary,
@@ -551,6 +568,11 @@ def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
 
 def _execute_form(f: Form, data: FormRunRequest, db: Session,
                   user_id: Optional[int] = None, user=None) -> dict:
+    # Der eine Trichter fuer Editor UND Portal: eine Vorlage ohne laufende Berechtigung
+    # (Testphase vorbei, Abo beendet) laeuft hier nicht mehr durch.
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_formular(db, f)
+
     schema = f.schema or {}
     run_params = data.params or {}
     _validate_required(schema, run_params)

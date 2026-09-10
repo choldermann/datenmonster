@@ -57,15 +57,58 @@ def inhalt_hash(data: dict) -> str:
     return hashlib.sha256(_kanonisch(ohne)).hexdigest()
 
 
-def signatur_payload(template_id: str, lizenz: str, hash_hex: str, erstellt_am: str) -> dict:
-    """Das, was tatsächlich signiert wird. Reihenfolge egal — kanonisch serialisiert."""
-    return {
+def signatur_payload(template_id: str, lizenz: str, hash_hex: str, erstellt_am: str,
+                     gueltig_bis: Optional[str] = None) -> dict:
+    """Das, was tatsächlich signiert wird. Reihenfolge egal — kanonisch serialisiert.
+
+    `gueltig_bis` steht nur in befristeten Lieferungen (Testphase). Fehlt es, bleibt der
+    Payload byte-genau der alte — sonst würden alle bisher ausgestellten Signaturen
+    ungültig. Weil das Datum mitsigniert ist, lässt es sich nicht herausschneiden: wer
+    es entfernt, macht die Signatur ungültig.
+    """
+    payload = {
         "version": SIGNATUR_VERSION,
         "template_id": template_id,
         "lizenz": lizenz,
         "inhalt_hash": hash_hex,
         "erstellt_am": erstellt_am,
     }
+    if gueltig_bis:
+        payload["gueltig_bis"] = gueltig_bis
+    return payload
+
+
+def signiertes_ablaufdatum(data: dict) -> Optional[str]:
+    """Das im Signaturblock stehende Ablaufdatum (ISO) — ohne Prüfung.
+
+    Nur zusammen mit `pruefe` aussagekräftig: erst die Signaturprüfung belegt, dass
+    das Datum echt ist. Für Anzeigen ("Testphase bis …") genügt es so.
+    """
+    block = data.get(SIGNATUR_SCHLUESSEL)
+    if isinstance(block, dict):
+        wert = block.get("gueltig_bis")
+        if isinstance(wert, str) and wert:
+            return wert
+    return None
+
+
+def _ist_abgelaufen(iso: Optional[str]) -> bool:
+    if not iso:
+        return False
+    from datetime import datetime, timedelta, timezone
+    try:
+        stichtag = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except Exception:
+        return False
+    if stichtag.tzinfo is not None:
+        # erst nach UTC umrechnen, dann die Zone abstreifen — sonst verschiebt ein
+        # "+02:00" das Ende um zwei Stunden
+        stichtag = stichtag.astimezone(timezone.utc).replace(tzinfo=None)
+    if len(iso.strip()) == 10:
+        # Reines Datum ("--gueltig-bis 2026-09-23"): gemeint ist der ganze Tag,
+        # nicht dessen erste Sekunde.
+        stichtag += timedelta(days=1)
+    return stichtag < datetime.utcnow()
 
 
 def braucht_signatur(template_id: str) -> bool:
@@ -119,7 +162,7 @@ def pruefe(data: dict, lizenzschluessel: str,
         return False, "Die Vorlage wurde nach dem Signieren verändert."
 
     payload = signatur_payload(tid, block.get("lizenz", ""), block.get("inhalt_hash", ""),
-                               block.get("erstellt_am", ""))
+                               block.get("erstellt_am", ""), block.get("gueltig_bis"))
     try:
         pub = Ed25519PublicKey.from_public_bytes(
             base64.b64decode(pubkey_b64 or HERAUSGEBER_PUBKEY))
@@ -128,5 +171,11 @@ def pruefe(data: dict, lizenzschluessel: str,
         return False, "Die Signatur der Vorlage ist ungültig."
     except Exception as e:
         return False, f"Signatur nicht prüfbar: {e}"
+
+    # Erst jetzt ist das Ablaufdatum belegt: es steckt im signierten Payload.
+    if _ist_abgelaufen(block.get("gueltig_bis")):
+        return False, ("Die Testphase für diese Vorlage ist am "
+                       f"{(block.get('gueltig_bis') or '')[:10]} abgelaufen. "
+                       "Nach dem Kauf steht sie im Vorlagen-Store wieder bereit.")
 
     return True, ""

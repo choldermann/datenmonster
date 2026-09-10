@@ -59,6 +59,13 @@ def _run_job(scheduled_job_id: int, mapping_id: int, triggered_by: str = "schedu
         if not mapping:
             raise ValueError(f"Mapping {mapping_id} nicht gefunden")
 
+        # Nachtlauf einer Vorlage ohne laufende Berechtigung: nicht ausfuehren. Sonst
+        # laeuft die abgelaufene Testphase im Hintergrund munter weiter und stellt
+        # sogar noch Berichte zu.
+        from app.core import vorlagen_gate
+        if not vorlagen_gate.darf_laufen(db, "mappings", mapping_id):
+            raise ValueError("Vorlage ohne laufende Lizenz — Lauf uebersprungen")
+
         user_id      = job.created_by if job and hasattr(job, "created_by") and job.created_by else 1
         project_id   = mapping.project_id
         mapping_name = mapping.name
@@ -837,6 +844,10 @@ def _run_report(schedule_id: int, triggered_by: str = "scheduler"):
         form = db.query(Form).filter(Form.id == plan.form_id).first()
         if not form:
             raise ValueError(f"Report-Formular {plan.form_id} existiert nicht mehr")
+
+        from app.core import vorlagen_gate
+        if not vorlagen_gate.darf_laufen(db, "forms", form.id):
+            raise ValueError("Vorlage ohne laufende Lizenz — Report nicht zugestellt")
 
         # Die Vorgaben der Filterfelder zuerst: der Browser füllt sie beim Öffnen,
         # ein Zeitplan tut das nicht – ein fehlender Filter macht die Abfrage nicht

@@ -8,6 +8,7 @@ import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
+import VorlageGesperrt from "../components/VorlageGesperrt";
 import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
@@ -279,6 +280,27 @@ export default function PortalRunner() {
     <div style={{ height: "100vh", display: "flex", alignItems: "center",
       justifyContent: "center", backgroundColor: S.bgMain, color: S.textDim, fontSize: 14 }}>
       Lädt…
+    </div>
+  );
+
+  // Vorlage ohne laufende Berechtigung: der Portal-Benutzer sieht den Grund statt einer
+  // Fehlermeldung. Kaufen kann er nicht selbst — das erledigt der Administrator —,
+  // deshalb hier ohne den Knopf "Erneut pruefen".
+  if (form?.gesperrt) return (
+    <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
+      <header style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px",
+          display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => navigate("/portal")}
+            style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
+              border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
+            <ArrowLeft size={14} /> Übersicht
+          </button>
+          <span style={{ color: S.border }}>|</span>
+          <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>{form?.name || slug}</span>
+        </div>
+      </header>
+      <VorlageGesperrt sperre={form.gesperrt} darfPruefen={false} />
     </div>
   );
 

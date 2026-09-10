@@ -1137,6 +1137,9 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     t.installations = (t.installations or []) + [inst_record]
     flag_modified(t, "installations")
     db.commit()
+    # Die Zuordnung Objekt → Vorlage hat sich geaendert: das Laufzeit-Tor muss sie neu lesen.
+    from app.core.vorlagen_gate import cache_leeren
+    cache_leeren()
 
     code_knoten = code_knoten_zaehlen(content)
     try:
@@ -1266,6 +1269,39 @@ def _store_catalog(db: Session) -> dict:
         "message": data.get("message"),
         "shop_url": LICENSE_SERVER,
     }
+
+
+@router.get("/berechtigung")
+def vorlagen_berechtigung_status(db: Session = Depends(get_db),
+                                 user: User = Depends(get_current_user)):
+    """Läuft die Berechtigung der installierten Vorlagen noch?
+
+    Zeigt je Vorlage: frei oder gesperrt, warum, und was zu kaufen wäre. Grundlage für
+    den Hinweis im Lizenz-Bereich und für die Marke an einer gesperrten Auswertung.
+    """
+    from app.core import vorlagen_gate
+    from app.services import vorlagen_berechtigung as vb
+    from app.api.license import LICENSE_SERVER
+    zustaende = vorlagen_gate.zustand(db)
+    alter = vb.alter_stunden(db)
+    return {
+        "vorlagen":      sorted(zustaende.values(), key=lambda z: (z["status"] != "gesperrt",
+                                                                   (z.get("name") or "").lower())),
+        "alter_stunden": round(alter, 1) if alter is not None else None,
+        "gesperrt":      sum(1 for z in zustaende.values() if z["status"] == "gesperrt"),
+        "shop_url":      LICENSE_SERVER,
+    }
+
+
+@router.post("/berechtigung/pruefen")
+def vorlagen_berechtigung_pruefen(db: Session = Depends(get_db),
+                                  user: User = Depends(get_current_user)):
+    """Berechtigung sofort neu beim Lizenzserver erfragen (nach einem Kauf)."""
+    _nur_admin(user)
+    from app.core import vorlagen_gate
+    vorlagen_gate.cache_leeren()
+    vorlagen_gate.zustand(db, frisch=True)
+    return vorlagen_berechtigung_status(db, user)
 
 
 @router.get("/store")
@@ -1646,6 +1682,8 @@ def delete_template(template_id: str, db: Session = Depends(get_db), user: User 
 
     db.delete(t)
     db.commit()
+    from app.core.vorlagen_gate import cache_leeren
+    cache_leeren()
     # tracked=False ⇒ Template wurde vor Einführung des Install-Trackings installiert;
     # die erzeugten Objekte bleiben bestehen und müssen ggf. manuell gelöscht werden.
     return {'ok': True, 'deleted': deleted, 'tracked': bool(installs)}

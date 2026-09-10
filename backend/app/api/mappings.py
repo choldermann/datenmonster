@@ -420,6 +420,10 @@ def delete_mapping(mapping_id: int, db: Session = Depends(get_db),
 def preview_mapping(data: PreviewRequest, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     from app.services.mapping_service import MappingContext, run_mapping_object
+    from app.core import vorlagen_gate
+    # Auch die Vorschau liefert Daten — sonst waere sie der bequemste Weg an einer
+    # gesperrten Vorlage vorbei.
+    vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
     try:
         ctx = _build_context_from_request(data, db)
         # Wenn targets übergeben wurden, nutze diese direkt
@@ -632,6 +636,8 @@ def get_sql_schema(
 def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db),
                               user: User = Depends(get_current_user)):
     from app.services.mapping_service import MappingContext, run_mapping_object
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
     ctx = _build_context_from_request(data, db)
 
@@ -752,6 +758,8 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     """Führt ein Target aus und speichert das Ergebnis unter Exporte."""
     from app.services.mapping_service import execute_mapping, _apply_target_types
     import pandas as pd
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
     ctx = _build_context_from_request(data, db)
     if not ctx.targets:

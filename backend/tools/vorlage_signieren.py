@@ -48,6 +48,9 @@ def main():
     ap.add_argument("--lizenz", required=True, help="Lizenzschlüssel der Zielinstallation")
     ap.add_argument("--ausgabe", help="Zieldatei (Vorgabe: <datei>-signiert.json)")
     ap.add_argument("--schluessel", help="Pfad zum privaten Schlüssel")
+    ap.add_argument("--gueltig-bis", dest="gueltig_bis",
+                    help="Befristete Lieferung (Testphase), ISO-Datum z.B. 2026-09-23. "
+                         "Datenmonster sperrt die Vorlage danach von selbst.")
     args = ap.parse_args()
 
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -62,7 +65,8 @@ def main():
 
     data.pop(SIGNATUR_SCHLUESSEL, None)      # eine alte Signatur nie mitsignieren
     erstellt = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    payload = signatur_payload(tid, args.lizenz, inhalt_hash(data), erstellt)
+    payload = signatur_payload(tid, args.lizenz, inhalt_hash(data), erstellt,
+                               args.gueltig_bis)
 
     sk = Ed25519PrivateKey.from_private_bytes(privaten_schluessel_lesen(args.schluessel))
     sig = base64.b64encode(sk.sign(_kanonisch(payload))).decode()
@@ -70,7 +74,8 @@ def main():
     data[SIGNATUR_SCHLUESSEL] = {**payload, "sig": sig}
     ziel = pathlib.Path(args.ausgabe or (args.datei.rsplit(".json", 1)[0] + "-signiert.json"))
     ziel.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Signiert für Lizenz {args.lizenz}\n  → {ziel}")
+    befristet = f", befristet bis {args.gueltig_bis}" if args.gueltig_bis else ""
+    print(f"Signiert für Lizenz {args.lizenz}{befristet}\n  → {ziel}")
 
 
 if __name__ == "__main__":

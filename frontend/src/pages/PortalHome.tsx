@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { GesperrtMarke } from "../components/VorlageGesperrt";
 import { useNavigate } from "react-router-dom";
 import { Play, LogOut, LayoutGrid } from "lucide-react";
 import api from "../api/client";
@@ -100,8 +101,10 @@ export default function PortalHome() {
                     e.currentTarget.style.boxShadow = "none";
                   }}>
                   <div style={{ fontSize: 28, marginBottom: 10 }}>{formIcon(f.icon)}</div>
-                  <h3 style={{ fontSize: 14, fontWeight: 700, color: S.textBright, margin: "0 0 6px" }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 700, color: S.textBright, margin: "0 0 6px",
+                    display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     {f.name}
+                    {f.gesperrt && <GesperrtMarke sperre={f.gesperrt} />}
                   </h3>
                   {f.description && (
                     <p style={{ fontSize: 11, color: S.textDim, margin: "0 0 14px", lineHeight: 1.5 }}>

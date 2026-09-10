@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { GesperrtMarke } from "../../VorlageGesperrt";
 import { useLizenz } from "../../../contexts/LizenzContext";
 import { useNavigate } from "react-router-dom";
 import { Plus, Pencil, Trash2, Play, FileText, Globe, ExternalLink, LayoutGrid, CalendarClock, Filter } from "lucide-react";
@@ -154,6 +155,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                         {f.portal_config?.icon && <span style={{ marginRight: 4 }}>{f.portal_config.icon}</span>}
                         {f.name}
                       </p>
+                      {f.gesperrt && <GesperrtMarke sperre={f.gesperrt} />}
                       {f.published && (
                         <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 8,
                           backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",

@@ -10,6 +10,7 @@ import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../c
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
+import VorlageGesperrt from "../components/VorlageGesperrt";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -226,6 +227,26 @@ export default function FormRunner() {
     <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
       backgroundColor: S.bgMain, color: S.textDim, fontSize: 12 }}>
       Lädt…
+    </div>
+  );
+
+  // Vorlage ohne laufende Berechtigung: statt der Auswertung der Kauf-Hinweis. Die
+  // Auswertung waere ohnehin gesperrt (das Backend laesst den Lauf nicht durch) —
+  // hier steht, warum, und wie es weitergeht.
+  if (form?.gesperrt) return (
+    <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
+        borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
+        <button onClick={() => navigate("/dashboard")}
+          style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
+            color: S.textDim, cursor: "pointer", fontSize: 12 }}>
+          <ArrowLeft size={14} /> Dashboard
+        </button>
+        <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
+        <span style={{ fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
+      </div>
+      <VorlageGesperrt sperre={form.gesperrt}
+        onErneutGeprueft={() => api.get(`/api/forms/${id}`).then(({ data }) => setForm(data))} />
     </div>
   );
 

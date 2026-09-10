@@ -23,11 +23,19 @@ router = APIRouter(prefix="/api/portal", tags=["portal"])
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-def _portal_form_out(f: Form) -> dict:
+def _portal_form_out(f: Form, db: Optional[Session] = None) -> dict:
     """Gibt nur die für den Portal-Benutzer relevanten Felder zurück."""
     pc = f.portal_config or {}
     schema = f.schema or {}
+    gesperrt = None
+    if db is not None:
+        try:
+            from app.core import vorlagen_gate
+            gesperrt = vorlagen_gate.sperre_fuer_objekt(db, "forms", f.id)
+        except Exception:
+            gesperrt = None
     return {
+        "gesperrt":         gesperrt,
         "id":               f.id,
         "name":             f.name,
         "slug":             f.slug,
@@ -103,7 +111,7 @@ def list_portal_forms(db: Session = Depends(get_db),
     for f in forms:
         try:
             _check_portal_access(f, user)
-            accessible.append(_portal_form_out(f))
+            accessible.append(_portal_form_out(f, db))
         except HTTPException:
             pass
     return accessible
@@ -117,7 +125,7 @@ def get_portal_form(slug: str, db: Session = Depends(get_db),
     if not f:
         raise HTTPException(404, "Formular nicht gefunden")
     _check_portal_access(f, user)
-    return _portal_form_out(f)
+    return _portal_form_out(f, db)
 
 
 @router.post("/forms/{slug}/run")
@@ -171,6 +179,9 @@ async def portal_form_report(slug: str, data: FormRunRequest,
     pc = f.portal_config or {}
     if not pc.get("allow_download", False):
         raise HTTPException(403, "Für dieses Formular ist kein Download freigegeben")
+
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_formular(db, f)
 
     try:
         pdf = await generate_report(f, data.params or {}, db,

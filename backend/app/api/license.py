@@ -386,6 +386,8 @@ def _speichere_lizenz(db: Session, key: str, email: str, result: dict) -> None:
     # Sonst gilt die alte Rechte-Auskunft noch bis zu 30 Sekunden weiter
     from app.core.lizenz_gate import cache_leeren
     cache_leeren()
+    from app.core.vorlagen_gate import cache_leeren as vorlagen_cache_leeren
+    vorlagen_cache_leeren()
 
 @router.post("/free-request")
 def free_request(req: FreeRequestBody, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
@@ -498,6 +500,8 @@ def deactivate(db: Session = Depends(get_db), _: User = Depends(get_current_user
     db.commit()
     from app.core.lizenz_gate import cache_leeren
     cache_leeren()
+    from app.core.vorlagen_gate import cache_leeren as vorlagen_cache_leeren
+    vorlagen_cache_leeren()
     return {"ok": True}
 
 # ─── Offline-Key-Generator (Entwicklung / Demo) ───────────────────────────────

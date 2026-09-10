@@ -204,6 +204,8 @@ def delete_pipeline(pipeline_id: int, db: Session = Depends(get_db),
 def run_pipeline(pipeline_id: int, db: Session = Depends(get_db),
                  user: User = Depends(get_current_user)):
     p = _pipeline_aenderbar(pipeline_id, db, user)
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_objekt(db, "pipelines", pipeline_id)
     from app.services.pipeline_service import run_pipeline as _run
     try:
         result = _run(p, db)
@@ -234,6 +236,8 @@ def debug_run_pipeline(pipeline_id: int, dry_run: bool = True,
     NICHT last_run_status (kein echter Lauf).
     """
     p = _pipeline_aenderbar(pipeline_id, db, user)
+    from app.core import vorlagen_gate
+    vorlagen_gate.pruefe_objekt(db, "pipelines", pipeline_id)
     from app.services.pipeline_service import run_pipeline as _run
     try:
         return _run(p, db, debug=True, dry_run=dry_run)

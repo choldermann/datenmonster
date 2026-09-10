@@ -103,6 +103,12 @@ def _run_mapping(mapping_id: int, run_params: dict, preview_rows: int = 500,
         m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
         if not m:
             return {"rows": [], "columns": [], "error": f"Mapping {mapping_id} nicht gefunden"}
+        # Warnungen sind der stillste Weg an einer gesperrten Vorlage vorbei: sie laufen
+        # nachts und verschicken das Ergebnis per Mail.
+        from app.core import vorlagen_gate
+        if not vorlagen_gate.darf_laufen(db, "mappings", mapping_id):
+            return {"rows": [], "columns": [],
+                    "error": "Vorlage ohne laufende Lizenz"}
         ctx = MappingContext.from_orm(m)
         ctx.run_params = dict(run_params)
         from app.services import mandant_service
