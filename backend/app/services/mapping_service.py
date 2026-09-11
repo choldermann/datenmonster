@@ -1904,8 +1904,14 @@ def execute_mapping(
             output_rows.append(flat)
         total = len(output_rows)
 
-    # Transform-Node mit Connections: schneller Pfad ohne iterrows
-    if has_transform_sql and connections and result_df is not None and not result_df.empty:
+    # Transform-Node mit Connections: schneller Pfad ohne iterrows.
+    # Er kennt nur die reine Feldzuordnung und kehrt sofort zurück. Knoten, die je
+    # Zeile rechnen oder erst auf der fertigen Ausgabe laufen, würden hier still
+    # übersprungen – mit ihnen nimmt das Mapping den normalen Zeilen-Pfad.
+    _zeilen_knoten = any((constant_nodes, param_nodes, transform_nodes, calc_nodes,
+                          expr_nodes, quality_nodes, python_nodes, ai_nodes))
+    if (has_transform_sql and connections and result_df is not None
+            and not result_df.empty and not _zeilen_knoten):
         import pandas as _pd_fast
         # Nur die gemappten Felder aus result_df selektieren
         mapped_fields = {c.get("source_field"): c.get("target_field") for c in connections if c.get("source_field") and c.get("target_field")}
