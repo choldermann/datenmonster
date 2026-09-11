@@ -208,6 +208,13 @@ def run_mapping_object(
 
     errors = result.get("errors") or []
 
+    # Rohergebnis vor der Typumwandlung aufheben: das Ziel, dessen Felder dieser
+    # Lauf schon benutzt hat, braucht keinen zweiten. Ein zweiter Lauf fragt
+    # REST- und KI-Knoten erneut ab – doppelte Aufrufe, doppeltes Kontingent.
+    _erster_lauf = {"rows": list(result.get("rows") or []),
+                    "columns": list(result.get("columns") or []),
+                    "errors": list(errors)}
+
     if result.get("rows") and result.get("columns"):
         import pandas as _pd
         df_out = _pd.DataFrame(result["rows"], columns=result["columns"])
@@ -278,7 +285,14 @@ def run_mapping_object(
             continue
 
         try:
-            t_result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
+            if (t_fields is preview_connections and preview_rows >= 999999
+                    and (target.get("target_options") or {}) == (_preview_target_opts or {})):
+                # Gleiche Felder, gleiche Optionen, keine Zeilengrenze: der Lauf
+                # oben hat genau dieses Ergebnis schon geliefert.
+                t_result = {"rows": _erster_lauf["rows"], "columns": _erster_lauf["columns"],
+                            "errors": list(_erster_lauf["errors"])}
+            else:
+                t_result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
             t_errors = t_result.get("errors") or []
 
             if t_errors and not t_result.get("rows"):
