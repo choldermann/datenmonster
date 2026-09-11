@@ -992,10 +992,11 @@ def knoten_config(rn: dict) -> dict:
             auth_config = {"username": alt.get("username", ""),
                            "password": alt.get("password", "")}
         elif auth_type == "apikey":
-            # Der alte Knoten kannte nur den Header-Weg.
+            # Die Oberfläche bietet Kopfzeile oder Abfrageparameter an; hier stand
+            # lange fest "header", die Wahl ging also still verloren.
             auth_config = {"key": alt.get("key_name") or "X-Api-Key",
                            "value": alt.get("key_value", ""),
-                           "location": "header"}
+                           "location": alt.get("location") or "header"}
 
     return {
         "url":          rn.get("url", ""),

@@ -196,6 +196,29 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
           </div>
         )}
 
+        {/* Drosselung – nur einzeln; gebündelt ist es ohnehin ein Aufruf */}
+        {(node.mode || "single") === "single" && (
+          <div>
+            <p style={{ fontSize: 9, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>
+              Drosselung
+            </p>
+            <div style={{ display: "flex", gap: 4 }}>
+              <input style={iS} type="number" min={0} max={60000} step={100}
+                value={node.pause_ms ?? ""} placeholder="Pause in ms"
+                title="Wartezeit zwischen zwei Aufrufen"
+                onChange={(e) => set("pause_ms", e.target.value === "" ? null : Number(e.target.value))} />
+              <input style={iS} type="number" min={1} max={1000}
+                value={node.max_calls ?? ""} placeholder="Höchstens … Aufrufe"
+                title="Obergrenze je Lauf (höchstens 1000)"
+                onChange={(e) => set("max_calls", e.target.value === "" ? null : Number(e.target.value))} />
+            </div>
+            <p style={{ fontSize: 9, color: S.textDim, marginTop: 3, lineHeight: 1.4 }}>
+              Für APIs mit Ratenlimit, z.B. DHL: 5000 ms. Die Pause gilt auch in der Vorschau –
+              dort wenige Aufrufe erlauben. Zeilen über der Grenze bleiben ohne Antwort.
+            </p>
+          </div>
+        )}
+
         {/* Anfrage-Rumpf – nur bei Verfahren, die einen mitschicken */}
         {["POST", "PUT", "PATCH", "DELETE"].includes(node.method || "GET") && (
           <div>

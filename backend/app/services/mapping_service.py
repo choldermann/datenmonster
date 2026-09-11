@@ -1445,16 +1445,43 @@ def execute_mapping(
             })
             _dbg_err_idx = len(errors)
 
+    # ─── REST- und Lookup-Knoten: reichern die Quellzeilen an ──────────────────
+    #
+    # Beide liefen bis 2026-09 auf `output_rows` – die ist an dieser Stelle aber
+    # immer leer, sie entsteht erst weiter unten aus `result_df`. Die Knoten
+    # wurden deshalb nie ausgeführt, ohne Fehler und ohne Hinweis. Jetzt arbeiten
+    # sie auf den Zeilen von `result_df` und schreiben ihre Felder als Spalten
+    # zurück; die Verbindungen zu den Zielfeldern finden sie dann wie jede andere
+    # Quellspalte.
+    _zeilen = None
+    if (rest_nodes or lookup_nodes) and result_df is not None and not result_df.empty:
+        _zeilen = result_df.to_dict("records")
+
+    def _feldwert(row, feld):
+        """Wert eines Eingabefelds – auch wenn nur eine Seite den Dataset-Präfix trägt."""
+        if feld in row:
+            return row[feld]
+        for k, v in row.items():
+            if isinstance(k, str) and k.endswith("." + feld):
+                return v
+        kurz = feld.rsplit(".", 1)[-1]
+        return row.get(kurz)
+
     # ─── REST API Nodes: pro Zeile bzw. gebündelt ein API-Aufruf ───────────────
     #
     # Der Aufruf läuft über rest_service.execute_request – denselben Weg, den auch
     # REST-Quellen, Pipeline und API-Studio nehmen. Damit bekommt der Knoten
     # Anfragerumpf, alle Anmeldeverfahren, Wiederholung bei Drosselung und vor
     # allem die SSRF-Prüfung, die seiner früheren eigenen Umsetzung fehlte.
-    if rest_nodes and output_rows:
+    #
+    # Abgefragt werden nur die Zeilen, die dieser Lauf auch ausgibt – eine
+    # Vorschau über 50 Zeilen soll keine 5.000 Aufrufe auslösen.
+    _rest_zeilen = _zeilen[:row_cap or preview_rows] if _zeilen else []
+    if rest_nodes and _rest_zeilen:
         from app.services.rest_service import (
-            execute_request, knoten_config, werte_einsetzen, _NODE_MAX_AUFRUFE,
+            execute_request, knoten_config, werte_einsetzen, _als_text, _NODE_MAX_AUFRUFE,
         )
+        _rest_t0 = time.time()
         from app.services.db_logger import (
             log_rest_aufruf, log_rest_zusammenfassung, REST_LOG_MAX_FEHLER,
         )
@@ -1553,8 +1580,8 @@ def execute_mapping(
                 join_key = rn.get("join_key") or leitfeld
 
                 werte, gesehen = [], set()
-                for row in output_rows:
-                    v = str(row.get(leitfeld, "")).strip() if leitfeld else ""
+                for row in _rest_zeilen:
+                    v = _als_text(_feldwert(row, leitfeld)).strip() if leitfeld else ""
                     if v and v not in gesehen:
                         gesehen.add(v)
                         werte.append(v)
@@ -1606,8 +1633,8 @@ def execute_mapping(
                             if schluessel:
                                 index[schluessel] = eintrag
 
-                for row in output_rows:
-                    treffer = index.get(str(row.get(leitfeld, "")).strip())
+                for row in _rest_zeilen:
+                    treffer = index.get(_als_text(_feldwert(row, leitfeld)).strip())
                     if not mappings:
                         if isinstance(treffer, dict):
                             for k, v in treffer.items():
@@ -1639,31 +1666,48 @@ def execute_mapping(
             fehler_gesehen = []
             _t0 = time.time()
 
-            for row in output_rows:
-                werte = {f: row.get(f) for f in felder}
+            # Drosselung: APIs mit Ratenlimit (DHL: ein Aufruf alle 5 s) brauchen
+            # eine Pause, und ein Lauf soll ein Tageskontingent nicht auf einmal
+            # verbrauchen. Eine selbst gesetzte Grenze ist Absicht, kein Fehler.
+            try:
+                pause = min(max(float(rn.get("pause_ms") or 0), 0.0), 60000.0) / 1000
+            except (TypeError, ValueError):
+                pause = 0.0
+            try:
+                grenze = min(max(int(rn.get("max_calls") or 0), 0), _NODE_MAX_AUFRUFE) or _NODE_MAX_AUFRUFE
+            except (TypeError, ValueError):
+                grenze = _NODE_MAX_AUFRUFE
+            eigene_grenze = grenze < _NODE_MAX_AUFRUFE
+            ausgelassen = 0
+
+            for row in _rest_zeilen:
+                werte = {f: _feldwert(row, f) for f in felder}
                 if felder:
-                    werte.setdefault("value", row.get(felder[0]))
+                    werte.setdefault("value", werte[felder[0]])
 
                 # Ohne Eingabewert gibt es nichts nachzuschlagen – schreibende
-                # Aufrufe brauchen dagegen keinen Schlüssel.
+                # Aufrufe brauchen dagegen keinen Schlüssel. Leer ist auch NaN,
+                # sonst würde für jede leere Zelle "nan" abgefragt.
                 if felder and not schreibend and not any(
-                        str(v).strip() for v in werte.values() if v is not None):
+                        _als_text(v).strip() for v in werte.values()):
                     for m in mappings:
                         if m.get("output_field"):
                             row[m["output_field"]] = None
                     continue
 
-                schluessel = tuple(str(werte.get(f, "")) for f in felder)
+                schluessel = tuple(_als_text(werte.get(f)) for f in felder)
                 if not schreibend and schluessel in zwischenspeicher:
                     _antwort_auswerten(rn, zwischenspeicher[schluessel], mappings, row)
                     continue
 
-                if aufrufe >= _NODE_MAX_AUFRUFE:
-                    errors.append(
-                        f"REST-Knoten: Obergrenze von {_NODE_MAX_AUFRUFE} Aufrufen erreicht – "
-                        "die restlichen Zeilen wurden nicht abgefragt.")
-                    break
+                # An der Grenze weiterlaufen statt abbrechen: Zeilen, deren Wert
+                # schon abgefragt ist, bekommen ihre Antwort trotzdem.
+                if aufrufe >= grenze:
+                    ausgelassen += 1
+                    continue
 
+                if pause and aufrufe:
+                    time.sleep(pause)
                 try:
                     # Auch das Einsetzen kann scheitern – etwa wenn {{json:…}} auf
                     # etwas zeigt, das kein gültiges JSON ist. Das darf die Zeile
@@ -1683,6 +1727,11 @@ def execute_mapping(
                     if len(fehler_gesehen) < 5:
                         fehler_gesehen.append(grund[:150])
 
+            if ausgelassen and not eigene_grenze:
+                errors.append(
+                    f"REST-Knoten: Obergrenze von {_NODE_MAX_AUFRUFE} Aufrufen erreicht – "
+                    f"{ausgelassen} Zeilen wurden nicht abgefragt.")
+
             # Fehler gehören ins Protokoll des Laufs, nicht nur in eine Zelle –
             # im Einzelmodus fehlte diese Rückmeldung bisher ganz.
             if fehler_gesehen:
@@ -1697,12 +1746,29 @@ def execute_mapping(
                         knoten=rn.get("id"), aufrufe=aufrufe, fehler=fehler_anzahl,
                         dauer_ms=int((time.time() - _t0) * 1000),
                         zusatz={"modus": "single", "methode": grund_cfg["method"],
-                                "aus_zwischenspeicher": len(output_rows) - aufrufe})
+                                "aus_zwischenspeicher": len(_rest_zeilen) - aufrufe - ausgelassen,
+                                "ausgelassen": ausgelassen})
                 except Exception:
                     pass
 
+        if _debug_trace is not None:
+            _prev_r = _debug_trace[-1]["rows_out"] if _debug_trace else 0
+            _debug_trace.append({
+                "id": "rest",
+                "label": f"REST API ({len(rest_nodes)} Node{'s' if len(rest_nodes) > 1 else ''})",
+                "type": "rest",
+                "rows_in": _prev_r,
+                "rows_out": len(_zeilen),
+                "errors": len(errors) - _dbg_err_idx,
+                "duration_ms": int((time.time() - _rest_t0) * 1000),
+                "sample": _rows_to_json(_rest_zeilen[:5]),
+                "icon": "globe",
+                "meta": {"abgefragt": len(_rest_zeilen)},
+            })
+            _dbg_err_idx = len(errors)
+
     # ─── Lookup Nodes: Werte aus anderem Dataset nachschlagen ─────────────────────
-    if lookup_nodes and output_rows:
+    if lookup_nodes and _zeilen:
         for ln in lookup_nodes:
             input_field = ln.get("input_field", "")
             lookup_ds_id = ln.get("lookup_dataset_id")
@@ -1733,8 +1799,9 @@ def execute_mapping(
                     lookup_index[key] = row
 
             skip_rows = []
-            for i, row in enumerate(output_rows):
-                input_val = str(row.get(input_field, "")) if row.get(input_field) is not None else ""
+            for i, row in enumerate(_zeilen):
+                _wert = _feldwert(row, input_field)
+                input_val = "" if _wert is None or (isinstance(_wert, float) and _wert != _wert) else str(_wert)
                 lookup_row = lookup_index.get(input_val)
 
                 if lookup_row is None:
@@ -1756,7 +1823,13 @@ def execute_mapping(
 
             # Zeilen überspringen wenn on_missing = skip
             if skip_rows:
-                output_rows = [r for i, r in enumerate(output_rows) if i not in skip_rows]
+                _weg = set(skip_rows)
+                _zeilen = [r for i, r in enumerate(_zeilen) if i not in _weg]
+
+    # Angereicherte Zeilen zurück in result_df – ab hier sind die neuen Felder
+    # Quellspalten wie alle anderen.
+    if _zeilen is not None:
+        result_df = pd.DataFrame(_zeilen) if _zeilen else result_df.iloc[0:0]
 
 
 
