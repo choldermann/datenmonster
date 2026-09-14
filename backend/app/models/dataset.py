@@ -79,6 +79,11 @@ class DbConnection(Base):
     mandant_label      = Column(String, nullable=True)   # Anzeigename, sonst name
     is_mandant_default = Column(Boolean, default=False)  # Erstauswahl + Ziel der Altdaten
     mandant_sort       = Column(Integer, default=100)
+    # Wird eine Verbindung, die selbst kein Mandant ist, beim Mandantenwechsel
+    # mit umgeschaltet? Ja für die WaWi, gegen die Cockpits installiert wurden.
+    # Nein für Hilfsdatenbanken auf demselben Server (z. B. DXBackup), die es in
+    # keinem anderen Mandanten gibt.
+    folgt_mandant      = Column(Boolean, default=True)
     schema_cache    = Column(Text, nullable=True)
     schema_cached_at = Column(DateTime(timezone=True), nullable=True)
     created_at      = Column(DateTime(timezone=True), server_default=func.now())

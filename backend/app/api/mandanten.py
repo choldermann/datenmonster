@@ -71,6 +71,7 @@ def _verwaltung_out(c: DbConnection) -> dict:
         "mandant_label": getattr(c, "mandant_label", None) or "",
         "ist_standard": bool(getattr(c, "is_mandant_default", False)),
         "sort": getattr(c, "mandant_sort", 100) or 100,
+        "folgt_mandant": getattr(c, "folgt_mandant", True) is not False,
     }
 
 
@@ -91,6 +92,7 @@ class MandantIn(BaseModel):
     mandant_label: Optional[str] = None
     ist_standard: bool = False
     sort: Optional[int] = None
+    folgt_mandant: Optional[bool] = None   # None = unverändert lassen
 
 
 @router.put("/verwaltung")
@@ -112,6 +114,8 @@ def verwaltung_setzen(body: MandantIn, db: Session = Depends(get_db),
     c.mandant_label = (body.mandant_label or "").strip() or None
     if body.sort is not None:
         c.mandant_sort = body.sort
+    if body.folgt_mandant is not None:
+        c.folgt_mandant = body.folgt_mandant
 
     uebernommen = {"kosten": 0, "zeitplan": 0}
     if body.is_mandant and body.ist_standard:

@@ -247,12 +247,17 @@ def austauschbare_ids(project_id: Optional[int], db) -> set:
     Das sind alle Mandanten des Projekts plus die übrigen Verbindungen desselben
     Projekts – letztere, weil die Cockpits vor der Umstellung auf eine ganz normale
     Projektverbindung zeigten, die niemand als Mandant markiert haben muss.
+
+    Ausgenommen sind Verbindungen ohne Mandanten-Kennzeichen, bei denen
+    `folgt_mandant` abgeschaltet ist: eine Hilfsdatenbank wie DXBackup gibt es im
+    Mandanten nicht, umgebogen liefe die Abfrage in „Ungültiger Objektname“.
     """
     from app.models.dataset import DbConnection
     if db is None or project_id is None:
         return set()
     return {c.id for c in db.query(DbConnection)
-            .filter(DbConnection.project_id == project_id).all()}
+            .filter(DbConnection.project_id == project_id).all()
+            if c.is_mandant or c.folgt_mandant is not False}
 
 
 def verbindung_ersetzen(ctx, connection_id: Optional[int], db,

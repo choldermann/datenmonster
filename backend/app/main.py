@@ -112,6 +112,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE db_connections ADD COLUMN mandant_label TEXT",
             "ALTER TABLE db_connections ADD COLUMN is_mandant_default BOOLEAN DEFAULT 0",
             "ALTER TABLE db_connections ADD COLUMN mandant_sort INTEGER DEFAULT 100",
+            # Standard 1: bestehende Verbindungen schalten weiter um wie bisher
+            "ALTER TABLE db_connections ADD COLUMN folgt_mandant BOOLEAN DEFAULT 1",
             "ALTER TABLE business_config ADD COLUMN mandant_id INTEGER",
             "ALTER TABLE alert_runs ADD COLUMN mandant_id INTEGER",
             "ALTER TABLE alert_schedules ADD COLUMN mandant_id INTEGER",

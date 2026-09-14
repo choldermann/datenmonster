@@ -1141,6 +1141,7 @@ function MandantenSettings() {
         is_mandant: patch.is_mandant ?? c.is_mandant,
         mandant_label: patch.mandant_label ?? c.mandant_label,
         ist_standard: patch.ist_standard ?? c.ist_standard,
+        folgt_mandant: patch.folgt_mandant ?? c.folgt_mandant,
       });
       const ue = data.uebernommen || {};
       if (ue.kosten || ue.zeitplan) {
@@ -1210,6 +1211,15 @@ function MandantenSettings() {
                     Standard
                   </label>
                 </div>
+              )}
+              {!c.is_mandant && (
+                <label title="Abschalten für Hilfsdatenbanken, die es nur auf einem Server gibt (z. B. DXBackup). Sonst liefe die Abfrage nach dem Mandantenwechsel gegen die falsche Datenbank."
+                  style={{ display: "flex", alignItems: "center", gap: 5, paddingLeft: 22,
+                    fontSize: 10.5, color: S.textDim, cursor: "pointer" }}>
+                  <input type="checkbox" checked={c.folgt_mandant} disabled={busy === c.connection_id}
+                    onChange={e => speichern(c, { folgt_mandant: e.target.checked })} />
+                  Folgt dem Mandanten – Abfragen auf diese Verbindung schalten beim Mandantenwechsel mit um
+                </label>
               )}
             </div>
           ))}
