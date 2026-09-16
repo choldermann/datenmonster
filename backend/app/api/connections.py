@@ -30,23 +30,10 @@ def _nur_admin(user: User) -> None:
 
 
 def _verbundene_ids(project_id: int, db: Session) -> set:
-    """Alle Verbindungen, die diesem Projekt zur Verfügung stehen.
-
-    Gibt es für das Projekt Zuordnungen, entscheiden AUSSCHLIESSLICH diese. Die
-    alte Zugehörigkeit (db_connections.project_id) zählt nur, solange das Projekt
-    noch gar keine Zuordnung hat – als Netz für Installationen, bei denen die
-    einmalige Übernahme nicht gelaufen ist.
-
-    Vorher wurden beide Mengen immer vereinigt. Dadurch liess sich die im Projekt
-    angelegte Verbindung im Zuordnen-Dialog zwar abwählen, sie kam über das
-    Eigentum aber sofort zurück – das Häkchen war wirkungslos.
-    """
-    ids = {r.connection_id for r in db.query(ProjektVerbindung)
-           .filter(ProjektVerbindung.project_id == project_id).all()}
-    if ids:
-        return ids
-    return {c.id for c in db.query(DbConnection)
-            .filter(DbConnection.project_id == project_id).all()}
+    """Siehe db_service.verbundene_ids - die Regel steht dort, damit sie nicht
+    an zwei Stellen auseinanderlaufen kann."""
+    from app.services.db_service import verbundene_ids
+    return verbundene_ids(project_id, db)
 
 
 class ConnectionCreate(BaseModel):

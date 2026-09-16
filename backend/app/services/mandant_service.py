@@ -47,16 +47,10 @@ def mandanten(project_id: Optional[int], db) -> List[dict]:
     if project_id is not None:
         # Über die Zuordnung, nicht über das Eigentum: eine Verbindung kann in
         # mehreren Projekten dienen, ohne dort noch einmal zu existieren.
-        # Dieselbe Regel wie in connections._verbundene_ids: liegen Zuordnungen
-        # vor, zaehlen nur sie. Sonst waere eine abgewaehlte Verbindung hier
-        # weiterhin als Mandant waehlbar – abgewaehlt im einen Bild, verfuegbar
-        # im anderen.
-        from app.models.dataset import ProjektVerbindung
-        ids = {r.connection_id for r in db.query(ProjektVerbindung)
-               .filter(ProjektVerbindung.project_id == project_id).all()}
-        if not ids:
-            ids = {c.id for c in db.query(DbConnection)
-                   .filter(DbConnection.project_id == project_id).all()}
+        # Sonst waere eine abgewaehlte Verbindung hier weiterhin als Mandant
+        # waehlbar – abgewaehlt im einen Bild, verfuegbar im anderen.
+        from app.services.db_service import verbundene_ids
+        ids = verbundene_ids(project_id, db)
         if not ids:
             return []
         q = q.filter(DbConnection.id.in_(ids))
@@ -244,19 +238,32 @@ def _umschreiben(nodes: Optional[List[Dict]], ziel_id: int,
 def austauschbare_ids(project_id: Optional[int], db) -> set:
     """Verbindungen, deren Rolle ein Mandant übernehmen darf.
 
-    Das sind alle Mandanten des Projekts plus die übrigen Verbindungen desselben
-    Projekts – letztere, weil die Cockpits vor der Umstellung auf eine ganz normale
-    Projektverbindung zeigten, die niemand als Mandant markiert haben muss.
+    Das sind alle Mandanten des Projekts plus die übrigen dem Projekt zur Verfügung
+    stehenden Verbindungen – letztere, weil die Cockpits vor der Umstellung auf eine
+    ganz normale Projektverbindung zeigten, die niemand als Mandant markiert haben muss.
+
+    „Zum Projekt gehörend" heißt dabei dasselbe wie überall sonst: die Zuordnungen
+    in `projekt_verbindungen` entscheiden, die alte `db_connections.project_id` ist
+    nur noch Netz für Projekte ganz ohne Zuordnung (db_service.verbundene_ids).
 
     Ausgenommen sind Verbindungen ohne Mandanten-Kennzeichen, bei denen
     `folgt_mandant` abgeschaltet ist: eine Hilfsdatenbank wie DXBackup gibt es im
     Mandanten nicht, umgebogen liefe die Abfrage in „Ungültiger Objektname“.
     """
     from app.models.dataset import DbConnection
+    from app.services.db_service import verbundene_ids
     if db is None or project_id is None:
         return set()
+    # Welche Verbindungen zum Projekt gehoeren, beantwortet verbundene_ids:
+    # zentral verwaltete Verbindungen haengen ueber `projekt_verbindungen` am
+    # Projekt, nicht mehr ueber `db_connections.project_id`. Frueher stand hier
+    # nur die alte Zugehoerigkeit - beim Kunden war die Menge dadurch leer, der
+    # Tausch ein No-Op und jeder Mandant zeigte dieselben Zahlen, ohne Fehler.
+    ids = verbundene_ids(project_id, db)
+    if not ids:
+        return set()
     return {c.id for c in db.query(DbConnection)
-            .filter(DbConnection.project_id == project_id).all()
+            .filter(DbConnection.id.in_(ids)).all()
             if c.is_mandant or c.folgt_mandant is not False}
 
 

@@ -4,6 +4,31 @@ from app.models.dataset import DbConnection
 from app.core.security import decrypt_credential
 
 
+def verbundene_ids(project_id, db) -> set:
+    """Alle Verbindungen, die diesem Projekt zur Verfuegung stehen.
+
+    Gibt es fuer das Projekt Zuordnungen (`projekt_verbindungen`), entscheiden
+    AUSSCHLIESSLICH diese. Die alte Zugehoerigkeit (`db_connections.project_id`)
+    zaehlt nur, solange das Projekt noch gar keine Zuordnung hat - als Netz fuer
+    Installationen, bei denen die einmalige Uebernahme nicht gelaufen ist.
+
+    Diese Regel stand frueher zweimal im Code: einmal hier (als `_verbundene_ids`
+    in api/connections.py) und einmal, unvollstaendig, im Mandantentausch, der nur
+    `db_connections.project_id` kannte. Genau daran ist der Tausch bei zentral
+    verwalteten Verbindungen still gescheitert. Deshalb gibt es sie jetzt nur noch
+    an dieser einen Stelle.
+    """
+    from app.models.dataset import ProjektVerbindung
+    if project_id is None or db is None:
+        return set()
+    ids = {r.connection_id for r in db.query(ProjektVerbindung)
+           .filter(ProjektVerbindung.project_id == project_id).all()}
+    if ids:
+        return ids
+    return {c.id for c in db.query(DbConnection)
+            .filter(DbConnection.project_id == project_id).all()}
+
+
 # Reihenfolge: erstmal latin-1 (decodes alles ohne Fehler),
 # dann als String weiterverarbeiten
 MSSQL_DECODE_ORDER = ["utf-8", "cp1252", "latin-1"]

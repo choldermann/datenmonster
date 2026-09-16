@@ -7,6 +7,12 @@ und scheiterte mit „Ungültiger Objektname dbo.infox“. Neu: `folgt_mandant` 
 Verbindung. Die alte WaWi-Verbindung der Cockpits muss weiter umschalten, sonst
 zeigte das Cockpit still die Zahlen des falschen Betriebs.
 
+Seit 2026-09-16 zusaetzlich der Fall, der beim Kunden auftrat: zentral verwaltete
+Verbindungen haengen ueber `projekt_verbindungen` am Projekt und haben ein anderes
+(oder gar kein) `db_connections.project_id`. `austauschbare_ids` kannte nur das
+Eigentum, die Menge war leer, der Tausch ein No-Op - beide Mandanten zeigten
+dieselben Zahlen, ohne dass irgendetwas knallte.
+
 Lauf:  docker compose exec -T backend python tests/test_mandant_tausch.py
 """
 import sys
@@ -70,6 +76,32 @@ print("Lauf")
 pruefe("Cockpit auf alter WaWi schaltet weiter um", lauf(1, 1, 7) == (7, 7), lauf(1, 1, 7))
 pruefe("DXBackup bleibt DXBackup", lauf(8, 9, 5) == (9, 9), lauf(8, 9, 5))
 pruefe("normale Projektverbindung schaltet um", lauf(8, 10, 5) == (5, 5), lauf(8, 10, 5))
+
+# ── Zentral verwaltete Verbindungen (Zuordnung statt Eigentum) ───────────────
+# Projekt 20 besitzt KEINE Verbindung; zwei fremde WaWis sind ihm nur zugeordnet.
+# Genau so sieht eine Kundeninstallation aus, in der Verbindungen zentral gepflegt
+# und den Projekten zugewiesen werden.
+verbindung(30, None, "eazybusiness", is_mandant=True)   # Mandant A, ohne Eigentuemer
+verbindung(31, 99,   "eazybusiness", is_mandant=True)   # Mandant B, fremdes Projekt
+db.add(ProjektVerbindung(project_id=20, connection_id=30))
+db.add(ProjektVerbindung(project_id=20, connection_id=31))
+db.commit()
+
+print("Zentral verwaltete Verbindungen")
+pruefe("Zuordnung zaehlt, nicht das Eigentum",
+       mandant_service.austauschbare_ids(20, db) == {30, 31},
+       mandant_service.austauschbare_ids(20, db))
+pruefe("Umschalten auf den zweiten Mandanten wirkt wirklich",
+       lauf(20, 30, 31) == (31, 31), lauf(20, 30, 31))
+pruefe("und wieder zurueck", lauf(20, 31, 30) == (30, 30), lauf(20, 31, 30))
+pruefe("beide stehen im Umschalter",
+       {m["connection_id"] for m in mandant_service.mandanten(20, db)} == {30, 31},
+       mandant_service.mandanten(20, db))
+# Die Zuordnung darf nicht zu weit greifen: Projekt 99 besitzt 31, hat aber keine
+# Zuordnungen - dort gilt weiterhin das Eigentum.
+pruefe("Projekt ohne Zuordnung faellt auf das Eigentum zurueck",
+       mandant_service.austauschbare_ids(99, db) == {31},
+       mandant_service.austauschbare_ids(99, db))
 
 print("Schreibziel")
 pruefe("DXBackup bleibt Schreibziel", mandant_service.schreibziel(9, 8, None, db) == 9)
