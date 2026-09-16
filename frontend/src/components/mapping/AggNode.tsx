@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect} from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { GripVertical, Layers, X, Plus, Minimize2 } from "lucide-react";
 import { S, AGG_COLOR, AGG_FUNCTIONS } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, nodeRef, onMiniPortsReady, debugHighlight, debugStats, isActive, onActivate }) {
   const internalRef = useRef(null);
@@ -60,6 +61,11 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "2px 4px", outline: "none", flex: 1, minWidth: 0 };
   const DOT = 10;
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 340, defaultHeight: 0, minWidth: 260, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   if (node.minimized) {
     return (
       <div style={{ position: "absolute", left: node.x, top: node.y, zIndex: 10, overflow: "visible", width: 46, height: 46 }}
@@ -78,7 +84,7 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
   return (
     <div ref={ref} draggable={false}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "aggregation", fields: (node.fields || []).map(f => ({ func: f.func, input: f.input_field, output: f.output_field })) }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 340, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px ${AGG_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid ${AGG_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${AGG_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px ${AGG_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid ${AGG_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${AGG_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}
@@ -169,6 +175,8 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
         </div>
       )}
       </div>{/* /Body */}
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

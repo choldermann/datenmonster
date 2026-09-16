@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useRef, useCallback } from "react";
 import { ShieldCheck, GripVertical, Plus, X } from "lucide-react";
 import { S } from "./constants";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const DQ_NODE_COLOR = "#06b6d4";
 
@@ -62,13 +63,18 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
 
   const activeBorder = isActive && !debugHighlight;
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 340, defaultHeight: 0, minWidth: 260, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   return (
     <div
       draggable={false}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "data_quality", label: node.label, rules: (node.rules || []).map(r => ({ field: r.field, type: r.type })) }); }}
       style={{
         position: "absolute", left: node.x, top: node.y,
-        width: 340, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
+        width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
         boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
         borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${C}55`,
         backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
@@ -202,6 +208,8 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
           </div>
         )}
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

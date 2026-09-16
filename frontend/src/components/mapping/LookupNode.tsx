@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect} from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { GripVertical, Search, X, Plus, Minimize2 } from "lucide-react";
 import { S } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const LOOKUP_COLOR = "#34d399"; // emerald
 
@@ -63,6 +64,11 @@ function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, in
   const iS = { backgroundColor: S.bgEl, border: "1px solid " + S.border, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "3px 6px", outline: "none", flex: 1, minWidth: 0, maxWidth: "100%" };
   const DOT = 10;
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 300, defaultHeight: 0, minWidth: 240, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   if (node.minimized) {
     return (
       <div style={{ position: "absolute", left: node.x, top: node.y, zIndex: 10, overflow: "visible", width: 54, height: 54 }}
@@ -80,7 +86,7 @@ function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, in
 
   return (
     <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "lookup", inputField: node.input_field, lookupDatasetId: node.lookup_dataset_id, lookupKeyCol: node.lookup_key_col, outputMappings: (node.output_mappings || []).map(m => m.output_field) }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 300, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${LOOKUP_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${LOOKUP_ACTIVE_BORDER}` : "1px solid " + LOOKUP_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${LOOKUP_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${LOOKUP_ACTIVE_BORDER}` : "1px solid " + LOOKUP_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}
@@ -192,6 +198,8 @@ function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, in
           💡 Lookup-Dataset wird einmalig geladen und gecacht – kein Performance-Problem bei großen Quellen
         </div>
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

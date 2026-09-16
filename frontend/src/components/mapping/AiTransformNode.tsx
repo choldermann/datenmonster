@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useCallback } from "react";
 import { Sparkles, GripVertical, Plus, X, Play, Loader2, ChevronDown, ChevronUp, Database } from "lucide-react";
 import { S } from "./constants";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 import api, { fehlerText } from "../../api/client";
 
 export const AI_NODE_COLOR = "#a78bfa";
@@ -142,13 +143,18 @@ export default function AiTransformNode({
     byDataset[f.dataset].push(f);
   }
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 300, defaultHeight: 0, minWidth: 240, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   return (
     <div
       draggable={false}
       onMouseDown={handleMouseDown}
       style={{
         position: "absolute", left: node.x, top: node.y,
-        width: 300, userSelect: "none", cursor: "grab",
+        width: nodeWidth, userSelect: "none", cursor: "grab",
         backgroundColor: S.bgCard, border: `1.5px solid ${borderColor}`,
         borderRadius: 10, boxShadow, zIndex: isActive ? 10 : 1,
       }}
@@ -367,6 +373,8 @@ export default function AiTransformNode({
           )}
         </div>
       )}
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

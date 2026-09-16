@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect} from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { GripVertical, Plus, Type, X, Minimize2 } from "lucide-react";
 import { S, CONST_TYPES } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 const CONST_ACTIVE_BORDER = "#fce499";
 
@@ -29,6 +30,11 @@ function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, o
     window.addEventListener("mouseup", onUp);
   };
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 200, defaultHeight: 0, minWidth: 160, minHeight: 50,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   if (node.minimized) {
     return (
       <div style={{ position: "absolute", left: node.x, top: node.y, zIndex: 10, overflow: "visible", width: 44, height: 44 }}
@@ -45,7 +51,7 @@ function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, o
   }
 
   return (
-    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: 200, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${CONST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: isActive ? `1px solid ${CONST_ACTIVE_BORDER}` : `1px solid rgba(167,139,250,0.4)`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+    <div draggable={false} style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${CONST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden", border: isActive ? `1px solid ${CONST_ACTIVE_BORDER}` : `1px solid rgba(167,139,250,0.4)`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "constant", constType: node.const_type, outputField: node.output_field, value: node.const_value }); }}>
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: "rgba(167,139,250,0.08)", borderBottom: `1px solid rgba(167,139,250,0.2)` }}>
@@ -120,6 +126,8 @@ function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, o
             flexShrink: 0, marginLeft: 8, cursor: "grab",
           }} />
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

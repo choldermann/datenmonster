@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useRef, useCallback } from "react";
 import { GripVertical, Plus, Trash2, X, Minimize2 } from "lucide-react";
 import { S, PARAMS_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 const FIELD_TYPES = [
   { value: "text",   label: "Text" },
@@ -25,6 +26,11 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
   };
+
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 240, defaultHeight: 0, minWidth: 200, minHeight: 50,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
 
   if (node.minimized) {
     return (
@@ -59,7 +65,7 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
 
   return (
     <div draggable={false}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 240, zIndex: 10, userSelect: "none",
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none",
         boxShadow: isActive ? `0 0 0 2px ${PARAMS_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden",
         border: isActive ? `1px solid ${PARAMS_ACTIVE_BORDER}` : `1px solid ${PARAMS_NODE_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "params", params: (node.fields || []).map(f => ({ name: f.name, type: f.type, label: f.label })) }); }}>
@@ -181,6 +187,8 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
           </div>
         </div>
       )}
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

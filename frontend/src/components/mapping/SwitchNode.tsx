@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect} from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { GripVertical, GitBranch, X, Plus, Minimize2 } from "lucide-react";
 import { S } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const SWITCH_COLOR = "#e879f9";
 
@@ -55,6 +56,11 @@ function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, al
   const iS = { backgroundColor: S.bgEl, border: "1px solid " + S.border, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "2px 5px", outline: "none", width: "100%", minWidth: 0 };
   const DOT = 10;
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 270, defaultHeight: 0, minWidth: 220, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   if (node.minimized) {
     return (
       <div style={{ position: "absolute", left: node.x, top: node.y, zIndex: 10, overflow: "visible", width: 44, height: 44 }}
@@ -72,7 +78,7 @@ function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, al
 
   return (
     <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "switch", outputField: node.output_field, branches: (node.branches || []).map(b => ({ label: b.label, condition: b.condition })) }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 270, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${SWITCH_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${SWITCH_ACTIVE_BORDER}` : "1px solid " + SWITCH_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${SWITCH_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${SWITCH_ACTIVE_BORDER}` : "1px solid " + SWITCH_COLOR + "55", backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}
@@ -148,6 +154,8 @@ function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, al
           💡 Erste zutreffende Bedingung gewinnt. Ausgabe-Dataset wird als Quelle verwendet.
         </p>
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

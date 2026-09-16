@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useRef, useCallback } from "react";
 import { FunctionSquare, GripVertical, Plus, X } from "lucide-react";
 import { S } from "./constants";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const EXPR_NODE_COLOR = "#e879f9";
 
@@ -56,6 +57,11 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
     ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
     : "0 8px 32px rgba(0,0,0,0.5)";
 
+  const { width: nodeWidth, onResizeStart } = useNodeResize({
+    node, defaultWidth: 320, defaultHeight: 0, minWidth: 240, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   return (
     <div
       draggable={false}
@@ -69,7 +75,7 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
       }}
       style={{
         position: "absolute", left: node.x, top: node.y,
-        width: 320, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
+        width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
         boxShadow, borderRadius: 6,
         border: `${debugHighlight ? "1.5px" : "1px"} solid ${borderColor}`,
         backgroundColor: S.bgCard, overflow: "visible",
@@ -197,6 +203,8 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
           </div>
         )}
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }
