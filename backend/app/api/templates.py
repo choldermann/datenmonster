@@ -1011,12 +1011,24 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         # als Text; danach fasst der Textersatz sie nicht mehr an.
         schema = _resolve_conn_ids_install(schema, config)
         schema = _apply_config_deep(schema, config)
+        # Sofort veroeffentlichen, aber NUR fuer den Installierenden freigeben.
+        # Vorher stand hier published=False: das Formular war im Editor zwar sofort
+        # da, im Portal aber erst nach einem manuellen Schritt, den niemand erwartet.
+        #
+        # Die Freigabe muss dabei ausdruecklich gesetzt werden, denn ein leeres
+        # `allowed_users` heisst in _check_portal_access "alle angemeldeten
+        # Benutzer" — ein automatisch veroeffentlichtes GF-Cockpit haette sonst
+        # Betriebsergebnis und Fixkosten fuer jeden Portalbenutzer geoeffnet.
+        # Wer sonst mitlesen darf, entscheidet der Anwender danach bewusst.
+        # (Admins sehen ohnehin alles, die Einschraenkung trifft Portalbenutzer.)
+        portal_config = dict(f_def.get("portal_config", {}) or {})
+        portal_config["allowed_users"] = [user.username]
         fo = Form(
             name=_apply_config(f_def.get("name", "Formular"), config),
             project_id=body.project_id,
             schema=schema,
-            portal_config=f_def.get("portal_config", {}) or {},
-            published=False,
+            portal_config=portal_config,
+            published=True,
             slug=unique_slug(db, _apply_config(f_def.get("name", "Formular"), config)),
         )
         db.add(fo); db.commit(); db.refresh(fo)

@@ -156,13 +156,19 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                         {f.name}
                       </p>
                       {f.gesperrt && <GesperrtMarke sperre={f.gesperrt} />}
-                      {f.published && (
-                        <span style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 8,
-                          backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
-                          color: "#6ee7b7", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
-                          <Globe size={8} /> Live
-                        </span>
-                      )}
+                      {f.published && (() => {
+                        const nurFuer = (f.portal_config?.allowed_users || []).length;
+                        return (
+                          <span title={nurFuer
+                            ? `Im Portal, freigegeben für: ${(f.portal_config.allowed_users || []).join(", ")}`
+                            : "Im Portal für alle angemeldeten Benutzer sichtbar"}
+                            style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 8,
+                              backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
+                              color: "#6ee7b7", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                            <Globe size={8} /> {nurFuer ? `Live · nur ${nurFuer}` : "Live · alle"}
+                          </span>
+                        );
+                      })()}
                     </div>
                     <p style={{ fontSize: 10, color: S.textDim, margin: "3px 0 0" }}>
                       v{f.version} · {new Date(f.updated_at).toLocaleDateString("de-DE")}
