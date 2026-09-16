@@ -5,15 +5,13 @@ import api from "../../api/client";
 import { CONST_TYPES, FILTER_COLOR, JOIN_COLOR, S, SORT_COLOR, typeColor } from "./constants";
 import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./FilterSortEditor";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 const DATASET_ACTIVE_BORDER = "#fce499";
 
 function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx, debugStats, isActive, onActivate }) {
   const dragState = useRef(null);
-  const resizeState = useRef(null);
   const FIELD_H = 28;
-  const [nodeWidth, setNodeWidth] = useState(node.width || 230);
-  const [nodeHeight, setNodeHeight] = useState(node.height || 300);
   const filters = node.filters || {};
   const [showPreview, setShowPreview] = useState(false);
   const [previewData, setPreviewData] = useState(null);
@@ -74,29 +72,10 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
     window.addEventListener("mouseup", onUp);
   }, [node.x, node.y, node.dataset_id, onPositionChange]);
 
-  const handleResizeMouseDown = useCallback((e) => {
-    e.preventDefault(); e.stopPropagation();
-    resizeState.current = { startX: e.clientX, startY: e.clientY, startW: nodeWidth, startH: nodeHeight };
-    const onMove = (ev) => {
-      if (!resizeState.current) return;
-      const newW = Math.max(180, resizeState.current.startW + ev.clientX - resizeState.current.startX);
-      const newH = Math.max(100, resizeState.current.startH + ev.clientY - resizeState.current.startY);
-      setNodeWidth(newW);
-      setNodeHeight(newH);
-    };
-    const onUp = (ev) => {
-      if (resizeState.current) {
-        const newW = Math.max(180, resizeState.current.startW + ev.clientX - resizeState.current.startX);
-        const newH = Math.max(100, resizeState.current.startH + ev.clientY - resizeState.current.startY);
-        if (onResize) onResize(node.dataset_id, newW, newH);
-      }
-      resizeState.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [nodeWidth, nodeHeight, node.dataset_id, onResize]);
+  const { width: nodeWidth, height: nodeHeight, onResizeStart } = useNodeResize({
+    node, defaultWidth: 230, defaultHeight: 300, minWidth: 180, minHeight: 100,
+    onCommit: useCallback((w, h) => { if (onResize) onResize(node.dataset_id, w, h); }, [node.dataset_id, onResize]),
+  });
 
   const clickTimers = useRef({});
   const fieldListRef = useRef(null);
@@ -347,16 +326,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
             <span style={{ fontSize: 9, color: JOIN_COLOR, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>JOIN</span>
           )}
         </div>
-        {/* Resize handle */}
-        <div
-          onMouseDown={handleResizeMouseDown}
-          title="Größe ändern"
-          style={{ position: "absolute", right: 3, bottom: 3, width: 10, height: 10, cursor: "nwse-resize", opacity: 0.4,
-            backgroundImage: "linear-gradient(135deg, transparent 30%, #888 30%, #888 40%, transparent 40%, transparent 60%, #888 60%, #888 70%, transparent 70%)",
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
-          onMouseLeave={(e) => e.currentTarget.style.opacity = "0.4"}
-        />
+        <ResizeHandle onMouseDown={onResizeStart} />
       </div>
     </div>
 

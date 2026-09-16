@@ -1,6 +1,7 @@
-import { useRef } from "react";
+import { useCallback, useRef } from "react";
 import { Code, GripVertical, Plus, X } from "lucide-react";
 import { S } from "./constants";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const PYTHON_NODE_COLOR = "#22c55e";
 
@@ -55,13 +56,18 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
     ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
     : "0 8px 32px rgba(0,0,0,0.5)";
 
+  const { width: nodeWidth, height: nodeHeight, onResizeStart } = useNodeResize({
+    node, defaultWidth: 300, defaultHeight: 100, minWidth: 240, minHeight: 80,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
+
   return (
     <div
       draggable={false}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "python", script: (node.script || "").slice(0, 400), outputFields: node.output_fields || [] }); }}
       style={{
         position: "absolute", left: node.x, top: node.y,
-        width: 300, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
+        width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
         boxShadow, borderRadius: 6,
         border: `${debugHighlight ? "1.5px" : "1px"} solid ${borderColor}`,
         backgroundColor: S.bgCard, overflow: "visible",
@@ -117,7 +123,7 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
             placeholder={"# row enthält alle Eingabefelder als dict\n# Beispiel:\nrow['netto'] = float(row.get('brutto', 0)) / 1.19\nreturn row"}
             style={{
               width: "100%", boxSizing: "border-box",
-              minHeight: 100, resize: "vertical",
+              height: nodeHeight, resize: "vertical",
               fontFamily: "monospace", fontSize: 11, lineHeight: 1.5,
               color: "#e2e8f0", backgroundColor: "rgba(0,0,0,0.4)",
               border: "1px solid " + C + "33", borderRadius: 4,
@@ -197,6 +203,8 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
           💡 Felder aus <code style={{ color: C, background: "none" }}>row</code> lesen &amp; schreiben, dann <code style={{ color: C, background: "none" }}>return row</code> — Fehler stoppen nur diese Zeile.
         </div>
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }

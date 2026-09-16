@@ -4,6 +4,7 @@ import api from "../../api/client";
 import SqlEditorModal from "./SqlEditorModal";
 import AiStreamModal from "./AiStreamModal";
 import { explainSql } from "../../services/aiService";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
@@ -17,12 +18,9 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
   const [sqlModalValue, setSqlModalValue] = useState("");
   const [aiMode, setAiMode] = useState(null); // "explain" | "generate"
   const [pendingSchemaDetect, setPendingSchemaDetect] = useState(false);
-  const [nodeWidth, setNodeWidth] = useState(node.width || 260);
-  const [nodeHeight, setNodeHeight] = useState(node.height || 160);
   const textareaRef = useRef(null);
   const miniLeftRef = useRef(null);
   const miniRightRef = useRef(null);
-  const resizeState = useRef(null);
   const fieldListRef = useRef(null);
   useEffect(() => {
     if (node.minimized) {
@@ -36,29 +34,10 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
     if (onRegisterFieldListRef) onRegisterFieldListRef(`__sql__${node.id}`, fieldListRef);
   }, [node.id, onRegisterFieldListRef]);
 
-  const handleResizeMouseDown = useCallback((e) => {
-    e.preventDefault(); e.stopPropagation();
-    resizeState.current = { startX: e.clientX, startY: e.clientY, startW: nodeWidth, startH: nodeHeight };
-    const onMove = (ev) => {
-      if (!resizeState.current) return;
-      const newW = Math.max(200, resizeState.current.startW + ev.clientX - resizeState.current.startX);
-      const newH = Math.max(60, resizeState.current.startH + ev.clientY - resizeState.current.startY);
-      setNodeWidth(newW);
-      setNodeHeight(newH);
-    };
-    const onUp = (ev) => {
-      if (resizeState.current) {
-        const newW = Math.max(200, resizeState.current.startW + ev.clientX - resizeState.current.startX);
-        const newH = Math.max(60, resizeState.current.startH + ev.clientY - resizeState.current.startY);
-        if (onResize) onResize(node.id, newW, newH);
-      }
-      resizeState.current = null;
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  }, [nodeWidth, nodeHeight, node.id, onResize]);
+  const { width: nodeWidth, height: nodeHeight, onResizeStart } = useNodeResize({
+    node, defaultWidth: 260, defaultHeight: 160, minWidth: 200, minHeight: 60,
+    onCommit: useCallback((w, h) => { if (onResize) onResize(node.id, w, h); }, [node.id, onResize]),
+  });
 
   useEffect(() => {
     if (pendingSchemaDetect && node.sql?.trim()) {
@@ -404,16 +383,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
               title="Auf Zielfeld ziehen" />
           </div>
         )}
-        {/* Resize handle */}
-        <div
-          onMouseDown={handleResizeMouseDown}
-          title="Größe ändern"
-          style={{ position: "absolute", right: 3, bottom: 3, width: 10, height: 10, cursor: "nwse-resize", opacity: 0.4,
-            backgroundImage: "linear-gradient(135deg, transparent 30%, #888 30%, #888 40%, transparent 40%, transparent 60%, #888 60%, #888 70%, transparent 70%)",
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.opacity = "1"}
-          onMouseLeave={(e) => e.currentTarget.style.opacity = "0.4"}
-        />
+        <ResizeHandle onMouseDown={onResizeStart} />
       </div>
     </div>
 

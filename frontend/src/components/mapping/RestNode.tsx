@@ -1,7 +1,8 @@
-import { useState, useRef, useEffect} from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { GripVertical, Globe, X, Plus, Minimize2 } from "lucide-react";
 import { S } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
+import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const REST_NODE_COLOR = "#a78bfa"; // violet
 
@@ -18,6 +19,11 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
       if (onMiniPortsReady) onMiniPortsReady(node.id, miniLeftRef.current, miniRightRef.current);
     }
   }, [node.minimized, onMiniPortsReady]);
+
+  const { width: nodeWidth, height: nodeHeight, onResizeStart } = useNodeResize({
+    node, defaultWidth: 330, defaultHeight: 74, minWidth: 260, minHeight: 60,
+    onCommit: useCallback((w, h) => onUpdate({ ...node, width: w, height: h }), [node, onUpdate]),
+  });
   const offset = useRef({ x: 0, y: 0 });
 
   const handleMouseDown = (e) => {
@@ -98,7 +104,7 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
 
   return (
     <div draggable={false} onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "rest", url: node.url, method: node.method || "GET", mode: node.mode || "single", outputFields: (node.response_mappings || []).map(m => m.output_field) }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: 330, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${REST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${REST_ACTIVE_BORDER}` : "1px solid " + REST_NODE_COLOR + "55", backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none", boxShadow: isActive ? `0 0 0 2px ${REST_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: isActive ? `1px solid ${REST_ACTIVE_BORDER}` : "1px solid " + REST_NODE_COLOR + "55", backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}>
 
       <div onMouseDown={handleMouseDown}
         style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: REST_NODE_COLOR + "12", borderBottom: "1px solid " + REST_NODE_COLOR + "33", borderRadius: "6px 6px 0 0" }}>
@@ -235,7 +241,7 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
             {(node.body_type || "none") !== "none" && (
               <>
                 <textarea
-                  style={{ ...iS, marginTop: 4, minHeight: 74, fontFamily: "ui-monospace, monospace", resize: "vertical" }}
+                  style={{ ...iS, marginTop: 4, height: nodeHeight, fontFamily: "ui-monospace, monospace", resize: "vertical" }}
                   value={node.body_content || ""}
                   onChange={(e) => set("body_content", e.target.value)}
                   placeholder={(node.body_type === "json")
@@ -373,6 +379,8 @@ function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inpu
           💡 Gleiche Eingabewerte werden gecacht – jede Kombination nur 1× abgefragt
         </div>
       </div>
+
+      <ResizeHandle onMouseDown={onResizeStart} />
     </div>
   );
 }
