@@ -157,6 +157,18 @@ export default function FormRunner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form]);
 
+  // Passt das Cockpit zur JTL-Version des Mandanten? Geprüft wird serverseitig
+  // gegen die vorhandenen Objekte – nach einem JTL-Update fällt der Hinweis von
+  // selbst weg, hier ist nichts zu pflegen.
+  const ladeKompat = useCallback(() => {
+    if (!id) return;
+    api.get(`/api/forms/${id}/kompatibilitaet`)
+      .then(({ data }) => setKompat(data?.fehlend?.length ? data : null))
+      .catch(() => setKompat(null));   // nicht prüfbar: dann eben kein Hinweis
+  }, [id]);
+
+  useEffect(() => { ladeKompat(); }, [ladeKompat]);
+
   const [reporting, setReporting] = useState(false);
   const [reportModal, setReportModal] = useState(false); // Abschnittsauswahl vor dem PDF
   const downloadReport = async (sections) => {
@@ -271,18 +283,6 @@ export default function FormRunner() {
   const visibleFields = fieldsForTab(fields, currentTab);
   const hasButtonField = visibleFields.some(f => f.type === "button");
 
-  // Passt das Cockpit zur JTL-Version des Mandanten? Geprüft wird serverseitig
-  // gegen die vorhandenen Objekte – nach einem JTL-Update fällt der Hinweis von
-  // selbst weg, hier ist nichts zu pflegen.
-  const ladeKompat = useCallback(() => {
-    if (!id) return;
-    api.get(`/api/forms/${id}/kompatibilitaet`)
-      .then(({ data }) => setKompat(data?.fehlend?.length ? data : null))
-      .catch(() => setKompat(null));   // nicht prüfbar: dann eben kein Hinweis
-  }, [id]);
-
-  useEffect(() => { ladeKompat(); }, [ladeKompat]);
-
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
 
@@ -346,8 +346,9 @@ export default function FormRunner() {
                 {kompat.reiter?.length ? `, darunter die Reiter ${kompat.reiter.map(r => r.label).join(", ")}` : ""}.
               </div>
               <div style={{ marginTop: 4, color: S.textDim }}>
-                Nach einem Update der JTL-Wawi verschwindet dieser Hinweis von selbst –
-                geprüft wird bei jedem Aufruf, was die Datenbank tatsächlich hergibt.
+                Die betroffenen Kacheln sagen es noch einmal kurz. Nach einem Update der
+                JTL-Wawi verschwindet der Hinweis von selbst – geprüft wird bei jedem
+                Aufruf, was die Datenbank tatsächlich hergibt.
               </div>
             </div>
           </div>

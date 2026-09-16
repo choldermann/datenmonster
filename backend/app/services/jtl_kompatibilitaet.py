@@ -184,17 +184,15 @@ def erklaere_sql_fehler(fehlertext: str, version: Optional[str] = None) -> Optio
     """
     if not fehlertext:
         return None
-    v = f" (diese Datenbank: JTL {version})" if version else ""
+    # BEWUSST EINZEILIG. Diese Meldung erscheint in JEDER betroffenen Kachel - beim
+    # Lager-Cockpit 24 Mal. Ein erklaerender Absatz, zwei Dutzend Mal wiederholt,
+    # ist genauso unbrauchbar wie der ODBC-Rohtext davor, nur laenger. Das Warum und
+    # das "loest sich nach dem Update von selbst" stehen einmal oben im Banner.
+    v = f", JTL {version}" if version else ""
     m = _OBJEKT.search(fehlertext)
     if m:
-        name = m.group(1) or m.group(2)
-        return (f"Diese Auswertung braucht „{name}“ – in der JTL-Datenbank dieses Mandanten "
-                f"ist das nicht verfügbar{v}. Das deutet auf eine ältere JTL-Wawi-Version hin; "
-                f"nach einem Update steht die Auswertung ohne weiteres Zutun wieder zur Verfügung.")
+        return f"„{m.group(1) or m.group(2)}“ gibt es in der Datenbank dieses Mandanten nicht{v}."
     m = _SPALTE.search(fehlertext)
     if m:
-        name = m.group(1) or m.group(2)
-        return (f"Diese Auswertung braucht das Feld „{name}“ – in der JTL-Datenbank dieses "
-                f"Mandanten gibt es das nicht{v}. Das deutet auf eine ältere JTL-Wawi-Version hin; "
-                f"nach einem Update steht die Auswertung ohne weiteres Zutun wieder zur Verfügung.")
+        return f"Das Feld „{m.group(1) or m.group(2)}“ gibt es in der Datenbank dieses Mandanten nicht{v}."
     return None
