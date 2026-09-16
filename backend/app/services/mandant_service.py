@@ -242,24 +242,34 @@ def austauschbare_ids(project_id: Optional[int], db) -> set:
     stehenden Verbindungen – letztere, weil die Cockpits vor der Umstellung auf eine
     ganz normale Projektverbindung zeigten, die niemand als Mandant markiert haben muss.
 
-    „Zum Projekt gehörend" heißt dabei dasselbe wie überall sonst: die Zuordnungen
-    in `projekt_verbindungen` entscheiden, die alte `db_connections.project_id` ist
-    nur noch Netz für Projekte ganz ohne Zuordnung (db_service.verbundene_ids).
+    „Zum Projekt gehörend" ist hier bewusst WEIT gefasst: Zuordnung ODER Eigentum.
+    Anders als bei der Auswahl (db_service.verbundene_ids) darf keine der beiden
+    Mengen die andere verdrängen – sonst bleibt je nach Installation entweder die
+    zentral zugeordnete WaWi oder die alte Projektverbindung der Cockpits außen vor,
+    und der Wechsel tut still nichts.
 
     Ausgenommen sind Verbindungen ohne Mandanten-Kennzeichen, bei denen
     `folgt_mandant` abgeschaltet ist: eine Hilfsdatenbank wie DXBackup gibt es im
     Mandanten nicht, umgebogen liefe die Abfrage in „Ungültiger Objektname“.
     """
-    from app.models.dataset import DbConnection
-    from app.services.db_service import verbundene_ids
+    from app.models.dataset import DbConnection, ProjektVerbindung
     if db is None or project_id is None:
         return set()
-    # Welche Verbindungen zum Projekt gehoeren, beantwortet verbundene_ids:
-    # zentral verwaltete Verbindungen haengen ueber `projekt_verbindungen` am
-    # Projekt, nicht mehr ueber `db_connections.project_id`. Frueher stand hier
-    # nur die alte Zugehoerigkeit - beim Kunden war die Menge dadurch leer, der
-    # Tausch ein No-Op und jeder Mandant zeigte dieselben Zahlen, ohne Fehler.
-    ids = verbundene_ids(project_id, db)
+    # BEIDE Mengen, ausdruecklich als Vereinigung - hier gilt NICHT die Regel aus
+    # db_service.verbundene_ids ("Zuordnungen ersetzen das Eigentum"). Die passt
+    # zur Frage "was darf ich auswaehlen"; hier lautet die Frage "worauf koennen
+    # die Cockpit-Knoten zeigen", und das ist mehr:
+    #   * zugeordnet, nicht im Eigentum -> zentral verwaltete WaWis. Fehlten sie,
+    #     schaltete der Mandantenwechsel beim Kunden still gar nichts um.
+    #   * im Eigentum, nicht zugeordnet -> die alte Projektverbindung, auf die die
+    #     ueber 200 Cockpit-Knoten aus der Zeit vor der Mandantenfaehigkeit zeigen.
+    #     Fiele sie weg, zeigten alle Cockpits still die Zahlen des Standardbetriebs.
+    # Eine der beiden wegzulassen bricht jeweils den anderen Fall - und zwar
+    # lautlos, weil verbindung_ersetzen bei leerer Menge einfach aussteigt.
+    ids = {r.connection_id for r in db.query(ProjektVerbindung)
+           .filter(ProjektVerbindung.project_id == project_id).all()}
+    ids |= {c.id for c in db.query(DbConnection)
+            .filter(DbConnection.project_id == project_id).all()}
     if not ids:
         return set()
     return {c.id for c in db.query(DbConnection)

@@ -103,6 +103,20 @@ pruefe("Projekt ohne Zuordnung faellt auf das Eigentum zurueck",
        mandant_service.austauschbare_ids(99, db) == {31},
        mandant_service.austauschbare_ids(99, db))
 
+# Der Fall, der bei der Korrektur fast verlorengegangen waere: ein Projekt hat
+# Zuordnungen UND eine eigene Altverbindung, auf die die Cockpit-Knoten zeigen.
+# "Zuordnung ersetzt Eigentum" haette sie herausgeworfen - die Cockpits haetten
+# still die Zahlen des Standardbetriebs gezeigt. Beide Mengen muessen gelten.
+verbindung(40, 21, "eazybusiness")                      # alte Projektverbindung
+verbindung(41, None, "eazybusiness", is_mandant=True)   # zentral, nur zugeordnet
+db.add(ProjektVerbindung(project_id=21, connection_id=41))
+db.commit()
+
+print("Zuordnung UND Eigentum nebeneinander")
+pruefe("beide Mengen gelten", mandant_service.austauschbare_ids(21, db) == {40, 41},
+       mandant_service.austauschbare_ids(21, db))
+pruefe("Cockpit auf der Altverbindung schaltet um", lauf(21, 40, 41) == (41, 41), lauf(21, 40, 41))
+
 print("Schreibziel")
 pruefe("DXBackup bleibt Schreibziel", mandant_service.schreibziel(9, 8, None, db) == 9)
 
