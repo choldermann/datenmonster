@@ -213,14 +213,27 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px",
           borderTop: "1px solid var(--border)", fontSize: 11, color: "#e07070" }}>
           <AlertCircle size={12} />
-          {meta.errors.length} Regel(n) konnten nicht geprüft werden:{" "}
-          {meta.errors.slice(0, 2).map(e => e.name).join(", ")}
+          <span>
+            {meta.errors.length} Regel(n) konnten nicht geprüft werden:{" "}
+            {meta.errors.slice(0, 2).map(e => e.name).join(", ")}
+            {/* Der Grund kam schon immer mit, wurde aber nie angezeigt – „konnte
+                nicht geprüft werden" allein hilft niemandem weiter. */}
+            {meta.errors[0]?.error && (
+              <div style={{ marginTop: 3, color: "var(--text-dim)" }}>{meta.errors[0].error}</div>
+            )}
+          </span>
         </div>
       )}
       {(meta.unavailable || []).length > 0 && (
         <div style={{ padding: "8px 16px", borderTop: "1px solid var(--border)",
           fontSize: 11, color: "var(--text-dim)" }}>
-          {meta.unavailable.length} Regel(n) ohne installierte Auswertung übersprungen.
+          <div>{meta.unavailable.length} Regel(n) übersprungen.</div>
+          {meta.unavailable.slice(0, 3).map((u) => (
+            <div key={u.rule_key} style={{ marginTop: 3 }}>
+              <strong style={{ color: "var(--text-main)" }}>{u.name}</strong>
+              {u.hinweis ? ` – ${u.hinweis}` : ""}
+            </div>
+          ))}
         </div>
       )}
     </div>

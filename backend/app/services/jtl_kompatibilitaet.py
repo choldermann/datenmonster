@@ -175,6 +175,21 @@ _OBJEKT = re.compile(r'Ung.ltiger Objektname\s+["\']([^"\']+)["\']|Invalid objec
 _SPALTE = re.compile(r'Ung.ltiger Spaltenname\s+["\']([^"\']+)["\']|Invalid column name\s+["\']([^"\']+)["\']', re.I)
 
 
+# Stabiler Teilsatz der uebersetzten Meldung. Wird gebraucht, weil der Fehler die
+# Uebersetzung in mapping_service schon durchlaufen hat, wenn ihn spaetere Aufrufer
+# (Warnregeln) zu sehen bekommen - dort greift kein SQL-Server-Muster mehr.
+_UEBERSETZT = "gibt es in der Datenbank dieses Mandanten nicht"
+
+
+def ist_versionsproblem(fehlertext: str) -> bool:
+    """Liegt es an einem fehlenden Objekt/Feld - also an der JTL-Version?
+
+    Erkennt den SQL-Server-Rohtext UND die bereits uebersetzte Fassung.
+    """
+    t = fehlertext or ""
+    return bool(_OBJEKT.search(t) or _SPALTE.search(t) or _UEBERSETZT in t)
+
+
 def erklaere_sql_fehler(fehlertext: str, version: Optional[str] = None) -> Optional[str]:
     """Macht aus einem SQL-Server-Fehler eine Aussage, mit der ein Anwender etwas anfangen kann.
 
@@ -184,6 +199,8 @@ def erklaere_sql_fehler(fehlertext: str, version: Optional[str] = None) -> Optio
     """
     if not fehlertext:
         return None
+    if _UEBERSETZT in fehlertext:
+        return fehlertext          # schon uebersetzt (mapping_service) - so lassen
     # BEWUSST EINZEILIG. Diese Meldung erscheint in JEDER betroffenen Kachel - beim
     # Lager-Cockpit 24 Mal. Ein erklaerender Absatz, zwei Dutzend Mal wiederholt,
     # ist genauso unbrauchbar wie der ODBC-Rohtext davor, nur laenger. Das Warum und

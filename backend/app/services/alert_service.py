@@ -435,8 +435,29 @@ def evaluate(db, project_id: Optional[int], params: Optional[dict] = None,
     for rule, _data in vorbereitet:
         res = ergebnisse.get(rule.rule_key) or {"status": "error", "error": "kein Ergebnis"}
         if res["status"] == "error":
-            fehler.append({"rule_key": rule.rule_key, "name": rule.name,
-                           "error": res.get("error")})
+            roh = res.get("error")
+            # Fehlt ein Objekt oder eine Spalte, ist das kein Fehler der Regel, sondern
+            # eine aeltere JTL-Version beim Mandanten: die Ladenhueter-Regel braucht
+            # dbo.vArtikelHistorie, die es erst ab 1.9 gibt. Das gehoert zu den
+            # uebersprungenen Regeln (grau), nicht zu den roten Fehlern - sonst sieht
+            # ein Kunde auf 1.8 dauerhaft eine Stoerung, die keine ist.
+            klar = None
+            try:
+                from app.services.jtl_kompatibilitaet import (
+                    erklaere_sql_fehler, ist_versionsproblem)
+                if ist_versionsproblem(str(roh or "")):
+                    klar = erklaere_sql_fehler(str(roh or "")) or str(roh)
+            except Exception:
+                klar = None
+            if klar:
+                nicht_verfuegbar.append({
+                    "rule_key": rule.rule_key, "name": rule.name,
+                    "kategorie": rule.category, "cockpit": rule.cockpit,
+                    "status": "nicht_verfuegbar", "hinweis": klar,
+                })
+            else:
+                fehler.append({"rule_key": rule.rule_key, "name": rule.name,
+                               "error": roh})
             continue
 
         anzahl = res.get("anzahl") or 0
