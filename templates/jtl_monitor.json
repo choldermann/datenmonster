@@ -4,7 +4,7 @@
   "template_name": "Unternehmensmonitor (JTL)",
   "description": "Operative Startseite: Was ist heute wichtig, wo besteht Handlungsbedarf? Die Warnungen werden deterministisch aus den vorhandenen Cockpit-Auswertungen abgeleitet – Schwellwerte sind je Projekt einstellbar.",
   "category": "jtl-reporting",
-  "version": "1.4",
+  "version": "1.5",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung wählen – nur die eigene Kennzahlen-Auswertung des Monitors braucht sie.",
@@ -368,7 +368,13 @@
             ]
           }
         ],
-        "show_ai_assistant": true
+        "show_ai_assistant": true,
+        "doku": {
+          "intro": "Die operative Startseite: Was ist heute wichtig, wo besteht Handlungsbedarf? Die Warnungen werden aus den Auswertungen der übrigen Cockpits abgeleitet und sind deterministisch — gleiche Daten, gleiche Warnung, keine KI-Interpretation. Die Schwellwerte sind je Projekt einstellbar, damit die Ampel zum eigenen Betrieb passt.",
+          "hinweise": [
+            "Der Monitor rechnet nichts Eigenes, er bewertet die Ergebnisse der anderen Cockpits. Fehlt ein Cockpit, fehlt die zugehörige Warnung."
+          ]
+        }
       },
       "portal_config": {
         "description": "Was heute wichtig ist – Warnungen, Kennzahlen, Aufgaben.",

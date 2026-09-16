@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
-import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText, BookOpen } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
@@ -10,6 +10,7 @@ import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../c
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
+import CockpitDokuModal from "../components/forms/CockpitDokuModal";
 import VorlageGesperrt from "../components/VorlageGesperrt";
 
 const S = {
@@ -83,6 +84,7 @@ export default function FormRunner() {
   const [params, setParams] = useState({});
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
+  const [dokuOffen, setDokuOffen] = useState(false);
   const [aiSummaries, setAiSummaries] = useState({}); // {action_id: KI-Analysetext} für den PDF-Report
   const [aiLoading, setAiLoading] = useState({});     // {action_id: bool} – KI-Analyse streamt noch
   const [error, setError] = useState(null);
@@ -284,6 +286,16 @@ export default function FormRunner() {
         <MandantWaehler projectId={form?.project_id ?? null}
           onWechsel={() => { setResults({}); runForm(null); }} kompakt />
         {widgets.length > 0 && (
+          <button onClick={() => setDokuOffen(true)} title="Was zeigt dieses Cockpit? Datenquellen und Aufbau"
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
+              border: `1px solid ${S.border}`, backgroundColor: "transparent", color: S.textDim,
+              cursor: "pointer", fontSize: 12, fontWeight: 600 }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = S.textBright; e.currentTarget.style.borderColor = S.accent + "55"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; e.currentTarget.style.borderColor = S.border; }}>
+            <BookOpen size={12} /> Erklärung
+          </button>
+        )}
+        {widgets.length > 0 && (
           <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
             title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
@@ -464,6 +476,8 @@ export default function FormRunner() {
         })()}
         </>)}
       </div>
+
+      {dokuOffen && <CockpitDokuModal formId={id} onClose={() => setDokuOffen(false)} />}
 
       {/* Abschnittsauswahl für den PDF-Report */}
       {reportModal && (

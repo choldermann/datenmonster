@@ -338,6 +338,18 @@ def get_form(form_id: int, db: Session = Depends(get_db),
     return form_out(f, db)
 
 
+@router.get("/{form_id}/doku")
+def get_form_doku(form_id: int, db: Session = Depends(get_db),
+                  user: User = Depends(get_current_user)):
+    """Erklärseite: was zeigt dieses Cockpit, woher kommen die Daten."""
+    _check_editor(user)
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    from app.services.form_doku import build_doku
+    return build_doku(f, db)
+
+
 @router.put("/{form_id}")
 def update_form(form_id: int, data: FormUpdate, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):

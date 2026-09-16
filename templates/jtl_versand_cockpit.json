@@ -4,7 +4,7 @@
   "template_name": "JTL – Versand-Cockpit",
   "description": "Versandsicht auf die JTL-Wawi: Sendungsaufkommen je Versandart, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und der Rückstand nicht versendeter Lieferscheine.",
   "category": "jtl-reporting",
-  "version": "1.3",
+  "version": "1.4",
   "author": "Datenmonster",
   "hinweise": [
     "Der Versanddienstleister kommt aus dbo.tVersandArt.cName – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt und ist durchgängig leer.",
@@ -2463,7 +2463,13 @@
             ]
           }
         ],
-        "show_ai_assistant": true
+        "show_ai_assistant": true,
+        "doku": {
+          "intro": "Wie schnell und wie zuverlässig die Ware rausgeht: Sendungsaufkommen je Versandart, die Durchlaufzeit vom Auftrag bis zum Versand, die Qualität der Trackingnummern und der Rückstand an Lieferscheinen, die noch nicht versendet wurden. Der Rückstand ist die Zahl, die morgens zählt.",
+          "hinweise": [
+            "Die Durchlaufzeit misst Kalendertage, nicht Arbeitstage — Wochenenden sind enthalten."
+          ]
+        }
       },
       "portal_config": {}
     }

@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -6718,7 +6718,14 @@
               "act_lg_buchungsarten"
             ]
           }
-        ]
+        ],
+        "doku": {
+          "intro": "Der Lagerwert zum Stichtag und im Verlauf, bewertet zum damals gültigen Einkaufspreis, dazu Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite sowie die Ladenhüter mit dem darin gebundenen Kapital. Der Verlauf wird aus der Buchungshistorie rekonstruiert — das Cockpit kann also auch rückwirkend sagen, was im Lager lag, was JTL selbst nicht beantwortet.",
+          "hinweise": [
+            "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Auf dem Reiter Disposition wirkt der Zeitraumfilter deshalb nicht.",
+            "Vaterartikel von Variationen werden nicht doppelt gezählt."
+          ]
+        }
       }
     }
   ],

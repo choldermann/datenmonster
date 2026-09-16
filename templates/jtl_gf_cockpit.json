@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.15",
+  "version": "2.16",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12111,7 +12111,14 @@
             ]
           }
         ],
-        "show_ai_assistant": true
+        "show_ai_assistant": true,
+        "doku": {
+          "intro": "Die Gesamtsicht auf das Unternehmen in einem Bild: Umsatz und Rohertrag mit Vorjahresvergleich, das Betriebsergebnis nach Abzug der hinterlegten Fixkosten, wie sich der Kundenstamm entwickelt und wie viel Kapital im Lager gebunden ist. Gedacht für den wöchentlichen Blick der Geschäftsführung, nicht für die Tagesarbeit. Jede Kennzahl lässt sich anklicken und bis auf die einzelne Rechnung aufschlüsseln.",
+          "hinweise": [
+            "Umsatz zählt hier ausgestellte Rechnungen, nicht Auftragseingänge — für die Vertriebssicht ist das Vertriebs-Cockpit zuständig.",
+            "Stornorechnungen sind gegengerechnet. Das kann von der JTL-eigenen Statistik abweichen, die Stornos teilweise mitzählt."
+          ]
+        }
       },
       "portal_config": {}
     },
@@ -12133,7 +12140,11 @@
           }
         ],
         "result_tabs": [],
-        "show_ai_assistant": false
+        "show_ai_assistant": false,
+        "doku": {
+          "intro": "Hier werden die Fixkosten gepflegt, mit denen das Geschäftsführer-Cockpit das Betriebsergebnis und den Break-even rechnet. Personal, Miete, Fahrzeuge, Versicherungen und Sonstiges lassen sich je Monat erfassen. Ohne gepflegte Werte zeigt das Geschäftsführer-Cockpit den Rohertrag, aber kein Ergebnis.",
+          "hinweise": []
+        }
       },
       "portal_config": {}
     }

@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.9",
+  "version": "1.10",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -5400,7 +5400,14 @@
             ]
           }
         ],
-        "show_ai_assistant": true
+        "show_ai_assistant": true,
+        "doku": {
+          "intro": "Der Vertrieb wird am Auftragseingang gemessen, nicht an der Rechnung — deshalb steht hier der eingegangene Auftrag im Mittelpunkt, dazu der offene Auftragsbestand, die Angebote mit Nachfass-Liste sowie die Entwicklung nach Kunden, Artikeln und Mitarbeitern. Damit lässt sich beantworten, was im Zulauf ist, bevor es sich im Umsatz zeigt.",
+          "hinweise": [
+            "Aufträge mit dem Kennzeichen MUSTER bleiben außen vor.",
+            "Der Mitarbeiterbezug kommt aus dem Erfasser des Auftrags, nicht aus einer Provisionszuordnung."
+          ]
+        }
       },
       "portal_config": {}
     }
