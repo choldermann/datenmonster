@@ -8,6 +8,7 @@ import { S } from "../constants";
 import ReportBuilder from "../../forms/ReportBuilder";
 import ReportScheduleModal from "../../forms/ReportScheduleModal";
 import QueryBuilder from "../../query/QueryBuilder";
+import { formIcon } from "../../../utils/formIcon";
 
 export default function FormsPanel({ projectId, canEdit, onCountChange }) {
   const lizenz = useLizenz();
@@ -152,7 +153,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <p style={{ fontSize: 13, fontWeight: 600, color: S.textBright, margin: 0,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {f.portal_config?.icon && <span style={{ marginRight: 4 }}>{f.portal_config.icon}</span>}
+                        {f.portal_config?.icon && <span style={{ marginRight: 4 }}>{formIcon(f.portal_config.icon)}</span>}
                         {f.name}
                       </p>
                       {f.gesperrt && <GesperrtMarke sperre={f.gesperrt} />}
