@@ -804,7 +804,12 @@ _ASSESSMENT_ACTION_IDS = {
 
 def _assessment_rows(results: dict) -> list:
     """Deterministische Bewertung je Cockpit-Bereich – identisch zur Frontend-Logik
-    (buildAssessment in AiSummaryWidget.tsx). Gibt (Bereich, gut?, Kommentar)-Tupel."""
+    (buildAssessment in AiSummaryWidget.tsx). Gibt (Bereich, gut?, Kommentar)-Tupel.
+
+    Zeilen ohne eine einzige Zahl fallen am Ende raus: die Schwellen lauten durchweg
+    „(wert is None oder gut)“, fehlende Daten landeten damit als „gut“ im Report.
+    Unter einem Mandanten mit aelterer JTL-Version stand so „Kapital & Lager: gut“,
+    obwohl es schlicht keine Zahlen gab."""
     def rows_of(aid):
         return (results.get(aid) or {}).get("rows") or []
 
@@ -1185,7 +1190,7 @@ def _assessment_rows(results: dict) -> list:
         out.append(("Retouren", good,
                     f"Retourenquote {_pctval(rt.get('Quote'))} (VJ {_pctval(rt.get('QuoteVJ'))}"
                     + (f", {_spct(chg)}" if chg is not None else "") + f"), Wert {_eur(rt.get('Wert'))}"))
-    return out
+    return [z for z in out if any(c.isdigit() for c in str(z[2] if len(z) > 2 else ""))]
 
 
 def _assessment_html(rows: list) -> str:

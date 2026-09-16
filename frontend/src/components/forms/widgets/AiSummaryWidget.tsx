@@ -11,7 +11,9 @@ const S = {
 // de-DE Zahlformatierung (Tausenderpunkt, Komma). money → auf ganze Euro gerundet.
 function deNum(v, money = false) {
   const f = typeof v === "number" ? v : parseFloat(v);
-  if (!isFinite(f)) return null;
+  // Fehlender Wert wurde als JS-null zurueckgegeben und landete in Vorlagentexten
+  // woertlich als "null" ("null gebunden, davon null Ladenhueter").
+  if (!isFinite(f)) return "–";
   const s = new Intl.NumberFormat("de-DE", {
     maximumFractionDigits: money ? 0 : 1,
   }).format(f);
@@ -51,6 +53,15 @@ function signPct(p) { return p == null ? "–" : `${p >= 0 ? "+" : ""}${p.toFixe
 // Deterministische Bewertung "gut / verbesserungswürdig" je Cockpit-Bereich – direkt
 // aus den (strukturierten) KPI-Ergebnissen aller Reiter. Bewusst NICHT vom LLM: so ist
 // die Tabelle immer vorhanden, korrekt und stabil; das Modell schreibt nur die Prosa.
+// Eine Bewertungszeile ohne eine einzige Zahl sagt nichts aus - und weil die
+// Schwellen durchweg "(wert == null || gut)" lauten, faellt sie dabei auch noch
+// auf "gut". Unter einem Mandanten mit aelterer JTL-Version stand deshalb
+// "Kapital & Lager: gut - null gebunden, davon null Ladenhueter", obwohl schlicht
+// keine Daten da waren. Fehlende Daten als gutes Ergebnis auszuweisen ist die
+// irrefuehrendste Ausgabe, die diese Tabelle haben kann.
+// Gleiche Regel im PDF: cockpit_report._assessment_rows.
+const hatZahl = (text) => /\d/.test(String(text || ""));
+
 function buildAssessment(results) {
   const rowsOf = id => (results?.[id]?.rows) || [];
   const one = id => rowsOf(id)[0] || null;
@@ -430,7 +441,7 @@ function buildAssessment(results) {
       kommentar: `Retourenquote ${deNum(rt.Quote)} % (VJ ${deNum(rt.QuoteVJ)} %${chg != null ? `, ${signPct(chg)}` : ""}), `
         + `Wert ${deNum(rt.Wert, true)}` });
   }
-  return out;
+  return out.filter(z => hatZahl(z.kommentar));
 }
 
 // Generische KPI-Zeile (eine Ergebniszeile) vorformatieren: "Name: Wert (VJ …, ±%)".
