@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Database, Table, ChevronRight, ChevronDown, Search, X, Play, Check } from "lucide-react";
 import api from "../../api/client";
 import { S, SQL_NODE_COLOR } from "./constants";
@@ -143,7 +144,10 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
     width: "100%",
   };
 
-  return (
+  // In den body portalen: der Node-Container hat zIndex:10 und bildet damit einen
+  // eigenen Stacking-Context — ohne Portal bleibt das Modal trotz zIndex:200 hinter
+  // allen Nodes, die im DOM spaeter kommen.
+  return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.85)" }}
       onClick={(e) => e.stopPropagation()}>
       <div style={{ width: "min(1100px, 95vw)", height: "85vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid ${SQL_NODE_COLOR}44`, boxShadow: "0 32px 80px rgba(0,0,0,0.9)", overflow: "hidden" }}>
@@ -317,6 +321,7 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
