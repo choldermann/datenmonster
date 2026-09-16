@@ -85,6 +85,7 @@ export default function FormRunner() {
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState(null);
   const [dokuOffen, setDokuOffen] = useState(false);
+  const [kompat, setKompat] = useState(null);   // JTL-Version des Mandanten vs. Cockpit
   const [aiSummaries, setAiSummaries] = useState({}); // {action_id: KI-Analysetext} für den PDF-Report
   const [aiLoading, setAiLoading] = useState({});     // {action_id: bool} – KI-Analyse streamt noch
   const [error, setError] = useState(null);
@@ -270,6 +271,18 @@ export default function FormRunner() {
   const visibleFields = fieldsForTab(fields, currentTab);
   const hasButtonField = visibleFields.some(f => f.type === "button");
 
+  // Passt das Cockpit zur JTL-Version des Mandanten? Geprüft wird serverseitig
+  // gegen die vorhandenen Objekte – nach einem JTL-Update fällt der Hinweis von
+  // selbst weg, hier ist nichts zu pflegen.
+  const ladeKompat = useCallback(() => {
+    if (!id) return;
+    api.get(`/api/forms/${id}/kompatibilitaet`)
+      .then(({ data }) => setKompat(data?.fehlend?.length ? data : null))
+      .catch(() => setKompat(null));   // nicht prüfbar: dann eben kein Hinweis
+  }, [id]);
+
+  useEffect(() => { ladeKompat(); }, [ladeKompat]);
+
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
 
@@ -284,7 +297,7 @@ export default function FormRunner() {
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
         <MandantWaehler projectId={form?.project_id ?? null}
-          onWechsel={() => { setResults({}); runForm(null); }} kompakt />
+          onWechsel={() => { setResults({}); ladeKompat(); runForm(null); }} kompakt />
         {widgets.length > 0 && (
           <button onClick={() => setDokuOffen(true)} title="Was zeigt dieses Cockpit? Datenquellen und Aufbau"
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
@@ -315,6 +328,30 @@ export default function FormRunner() {
 
       {/* Dashboards (mit Widgets) breiter rendern als reine Eingabeformulare. */}
       <div style={{ maxWidth: widgets.length ? 1760 : 900, margin: "0 auto", padding: "32px 20px" }}>
+
+        {kompat && (
+          <div style={{ display: "flex", gap: 10, padding: "12px 14px", borderRadius: 6,
+            backgroundColor: "rgba(252,228,153,0.08)", border: "1px solid rgba(252,228,153,0.35)",
+            color: S.textMain, fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
+            <AlertCircle size={15} style={{ color: S.accent, flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <strong style={{ color: S.textBright }}>
+                Dieses Cockpit passt nicht zur JTL-Version dieses Mandanten
+                {kompat.version ? ` (JTL ${kompat.version})` : ""}.
+              </strong>
+              <div style={{ marginTop: 4 }}>
+                Nicht verfügbar: {kompat.fehlend.map((x) => <code key={x} style={{ fontFamily: "monospace" }}>{x}</code>)
+                  .reduce((a, b) => [a, ", ", b])}. Betroffen sind {kompat.aktionen_betroffen} von{" "}
+                {kompat.aktionen_gesamt} Auswertungen
+                {kompat.reiter?.length ? `, darunter die Reiter ${kompat.reiter.map(r => r.label).join(", ")}` : ""}.
+              </div>
+              <div style={{ marginTop: 4, color: S.textDim }}>
+                Nach einem Update der JTL-Wawi verschwindet dieser Hinweis von selbst –
+                geprüft wird bei jedem Aufruf, was die Datenbank tatsächlich hergibt.
+              </div>
+            </div>
+          </div>
+        )}
 
         {error && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 6,

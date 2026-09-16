@@ -1323,7 +1323,20 @@ def execute_mapping(
                 sql_output_fields = sn.get("output_fields") or list(result_df.columns)
 
             except Exception as e:
-                errors.append(f"SQL-Transform fehlgeschlagen: {str(e)[:300]}")
+                # Fehlt ein Objekt oder eine Spalte, liegt das fast immer an einer
+                # aelteren JTL-Version des Mandanten (siehe jtl_kompatibilitaet).
+                # Dann die Klartextaussage statt des ODBC-Rohtexts - sonst stehen
+                # beim Anwender zwei Dutzend unverstaendlicher Meldungen.
+                try:
+                    from app.services.jtl_kompatibilitaet import erklaere_sql_fehler, jtl_version
+                    from app.core.database import SessionLocal as _SL
+                    # Eigene kurze Sitzung: execute_mapping bekommt keine uebergeben.
+                    # Die Version ist zwischengespeichert, das kostet also praktisch nichts.
+                    with _SL() as _s:
+                        _klar = erklaere_sql_fehler(str(e), jtl_version(sn.get("connection_id"), _s))
+                except Exception:
+                    _klar = None
+                errors.append(_klar or f"SQL-Transform fehlgeschlagen: {str(e)[:300]}")
             if _debug_trace is not None:
                 _prev = _debug_trace[-1]["rows_out"] if _debug_trace else None
                 _rout = 0 if result_df is None else len(result_df)

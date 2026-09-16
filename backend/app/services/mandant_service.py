@@ -164,6 +164,14 @@ def waehlen(project_id: Optional[int], user, connection_id: int, db) -> int:
         db.add(MandantAuswahl(user_id=user.id, project_id=project_id,
                               connection_id=connection_id))
     db.commit()
+    # Beim Wechsel den Kompatibilitaetsbefund verwerfen: wurde die JTL-Wawi des
+    # Mandanten zwischenzeitlich aktualisiert, soll der Hinweis sofort weg sein
+    # und nicht erst, wenn die Haltbarkeit des Zwischenspeichers ablaeuft.
+    try:
+        from app.services.jtl_kompatibilitaet import cache_leeren
+        cache_leeren(connection_id)
+    except Exception:
+        pass
     return connection_id
 
 

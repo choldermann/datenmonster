@@ -350,6 +350,24 @@ def get_form_doku(form_id: int, db: Session = Depends(get_db),
     return build_doku(f, db)
 
 
+@router.get("/{form_id}/kompatibilitaet")
+def get_form_kompatibilitaet(form_id: int, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    """Passt dieses Cockpit zur JTL-Version des aktiven Mandanten?
+
+    Geprüft wird gegen die vorhandenen Objekte, nicht gegen eine Versionsnummer –
+    nach einem JTL-Update verschwindet der Hinweis dadurch von selbst.
+    """
+    _check_editor(user)
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    from app.services import mandant_service
+    from app.services.jtl_kompatibilitaet import pruefe_formular
+    mandant = mandant_service.aktiver(f.project_id, user, db)
+    return pruefe_formular(f, mandant, db)
+
+
 @router.put("/{form_id}")
 def update_form(form_id: int, data: FormUpdate, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):
