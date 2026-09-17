@@ -301,15 +301,36 @@ def email_table(body: EmailTableRequest, db: Session = Depends(get_db),
     def _h(v):
         s = "" if v is None else str(v)
         return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-    thead = "".join(f"<th style='text-align:left;padding:6px 10px;border-bottom:2px solid #ccc;'>{_h(c)}</th>" for c in cols)
-    tbody = "".join("<tr>" + "".join(f"<td style='padding:5px 10px;border-bottom:1px solid #eee;'>{_h(r.get(c))}</td>" for c in cols) + "</tr>" for r in rows)
+    # Layout bewusst eng gefuehrt. Ohne Breitenvorgabe bestimmt die laengste Zelle die
+    # Spaltenbreite: die Stoerungsliste (9 Spalten, aber ein Hinweistext mit knapp 170
+    # Zeichen) wurde in einem schmalen Lesebereich 2083 px hoch - 139 px je Zeile -,
+    # waehrend die breitere Ruecksendungsliste 1411 px blieb. Im Postfach sieht das aus
+    # wie eine leere Mail, durch die man erst scrollen muss.
+    #   * table-layout:fixed + width:100% -> die Spalten teilen sich die vorhandene
+    #     Breite, statt sie vom laengsten Text diktiert zu bekommen.
+    #   * word-break -> lange Texte brechen um, statt die Tabelle breitzuziehen.
+    #   * cellpadding/cellspacing/border als ATTRIBUTE, weil Outlook das zugehoerige
+    #     CSS in Tabellen teilweise ignoriert.
+    # KEINE feste Spaltenbreite und kein table-layout:fixed: das gaebe jeder Spalte
+    # gleich viel Platz, also dem Datum so viel wie dem 170-Zeichen-Hinweis - gemessen
+    # 2447 px Hoehe statt 1411. Die Breite begrenzt stattdessen der Container, den Rest
+    # verteilt der Client nach Inhalt; word-break verhindert das Ueberlaufen.
+    th_stil = ("text-align:left;padding:6px 10px;border-bottom:2px solid #ccc;"
+               "word-break:break-word;")
+    td_stil = ("padding:5px 10px;border-bottom:1px solid #eee;"
+               "vertical-align:top;word-break:break-word;")
+    thead = "".join(f"<th style='{th_stil}'>{_h(c)}</th>" for c in cols)
+    tbody = "".join("<tr>" + "".join(f"<td style='{td_stil}'>{_h(r.get(c))}</td>" for c in cols) + "</tr>" for r in rows)
     intro = _h(body.message).replace("\n", "<br>") if body.message else ""
     sender = getattr(user, "username", None) or getattr(user, "email", None) or "Cockpit"
     html = (
-        "<div style=\"font-family:Arial,sans-serif;font-size:13px;color:#222;\">"
+        "<div style=\"font-family:Arial,sans-serif;font-size:13px;color:#222;"
+        "max-width:900px;\">"
         + (f"<p>{intro}</p>" if intro else "")
         + f"<p><b>{_h(title)}</b> – {len(rows)} Zeilen (Tabelle auch als CSV im Anhang zum Bearbeiten)</p>"
-        + f"<table style=\"border-collapse:collapse;font-size:12px;\"><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
+        + "<table cellpadding=\"0\" cellspacing=\"0\" border=\"0\" width=\"100%\" "
+          "style=\"border-collapse:collapse;font-size:12px;width:100%;\">"
+        + f"<thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>"
         + f"<p style=\"color:#888;font-size:11px;margin-top:14px;\">Gesendet aus dem Datenmonster GF-Cockpit von {_h(sender)}.</p></div>"
     )
     plain = (f"{body.message}\n\n" if body.message else "") + f"{title} – {len(rows)} Zeilen. Details siehe CSV-Anhang."
