@@ -18,9 +18,12 @@ from sqlalchemy.orm import Session
 
 from app.models.mapping import Mapping
 
-# FROM/JOIN gefolgt von einem (ggf. schema-qualifizierten, ggf. eckig geklammerten) Namen.
+# FROM/JOIN gefolgt von einem Namen mit EIN bis DREI Teilen. Die dritte Stufe ist
+# wichtig: `eazybusiness.Verkauf.tAuftrag` ist ein Verweis in eine ANDERE Datenbank.
+# Mit nur zwei Teilen blieb davon "eazybusiness.Verkauf" uebrig - ein Name, den es
+# nirgends gibt, und die Kompatibilitaetspruefung meldete ihn als fehlend.
 _TABLE_RE = re.compile(
-    r"\b(?:FROM|JOIN)\s+(\[?[A-Za-z_][\w]*\]?(?:\s*\.\s*\[?[A-Za-z_][\w]*\]?)?)",
+    r"\b(?:FROM|JOIN)\s+(\[?[A-Za-z_][\w]*\]?(?:\s*\.\s*\[?[A-Za-z_][\w]*\]?){0,2})",
     re.IGNORECASE,
 )
 # CTE-Namen: "WITH x AS (" und ", y AS (" — die sind KEINE Quelltabellen.

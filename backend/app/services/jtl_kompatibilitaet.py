@@ -99,9 +99,18 @@ def fehlende_objekte(connection_id: Optional[int], benoetigt: set, db) -> set:
     if vorhanden is None:
         return set()
 
+    conn = _verbindung(connection_id, db)
+    eigene_db = (getattr(conn, "database", "") or "").strip().lower()
+
     fehlt = set()
     for name in benoetigt:
-        kurz = str(name).split(".")[-1].strip().lower()
+        teile = [t.strip().strip("[]") for t in str(name).split(".")]
+        # Dreiteilig = Verweis in eine ANDERE Datenbank (eazybusiness.Verkauf.tAuftrag,
+        # abgesetzt von einer Hilfs-DB aus). sys.objects kennt nur die eigene; ein
+        # "fehlt" waere hier schlicht falsch. Nur pruefen, wenn es die eigene ist.
+        if len(teile) == 3 and teile[0].lower() != eigene_db:
+            continue
+        kurz = teile[-1].lower()
         if kurz and kurz not in vorhanden:
             fehlt.add(name)
     return fehlt
@@ -122,7 +131,14 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
     if connection_id is None:
         return leer
 
-    # Tabellen je Action sammeln, damit wir hinterher sagen koennen, WAS ausfaellt.
+    # Welche Verbindungen tauscht der Mandantenwechsel ueberhaupt aus? Ein SQL-Knoten
+    # auf einer Hilfsdatenbank (DXBackup, folgt_mandant=false) laeuft weiterhin dort -
+    # seine Tabellen gegen die WaWi des Mandanten zu pruefen, meldet Unsinn: das
+    # DHL-Cockpit galt so als "passt nicht zur JTL-Version", obwohl es laeuft.
+    from app.services.mandant_service import austauschbare_ids
+    austauschbar = austauschbare_ids(getattr(form, "project_id", None), db)
+
+    # Tabellen je Action UND je tatsaechlich verwendeter Verbindung.
     je_action = {}
     for a in schema.get("actions") or []:
         mid = a.get("mapping_id")
@@ -131,19 +147,29 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
         m = db.query(Mapping).filter(Mapping.id == mid).first()
         if not m:
             continue
-        tabellen = set()
+        paare = set()
         for n in _nodes(m, "sql_nodes"):
-            if isinstance(n, dict):
-                tabellen |= _tables_from_sql(n.get("sql") or "")
-        if tabellen:
-            je_action[a.get("id")] = tabellen
+            if not isinstance(n, dict):
+                continue
+            quelle = n.get("connection_id")
+            ziel = connection_id if quelle in austauschbar else quelle
+            for t in _tables_from_sql(n.get("sql") or ""):
+                paare.add((ziel, t))
+        if paare:
+            je_action[a.get("id")] = paare
 
-    alle = set().union(*je_action.values()) if je_action else set()
-    fehlt = fehlende_objekte(connection_id, alle, db)
+    je_verbindung = {}
+    for paare in je_action.values():
+        for cid, t in paare:
+            je_verbindung.setdefault(cid, set()).add(t)
+
+    fehlt = set()
+    for cid, tabellen in je_verbindung.items():
+        fehlt |= {(cid, t) for t in fehlende_objekte(cid, tabellen, db)}
     if not fehlt:
         return {**leer, "aktionen_gesamt": len(je_action)}
 
-    betroffene_actions = {aid for aid, tab in je_action.items() if tab & fehlt}
+    betroffene_actions = {aid for aid, paare in je_action.items() if paare & fehlt}
 
     # Welche Reiter haengen daran? Das ist die Information, die der Anwender braucht.
     reiter = []
@@ -162,7 +188,7 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
 
     return {
         "version": jtl_version(connection_id, db),
-        "fehlend": sorted(fehlt),
+        "fehlend": sorted({t for _cid, t in fehlt}),
         "reiter": reiter,
         "aktionen_gesamt": len(je_action),
         "aktionen_betroffen": len(betroffene_actions),
