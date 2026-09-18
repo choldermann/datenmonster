@@ -77,7 +77,11 @@ def eigenbau_anzahl(db: Session, art: str) -> int:
     if art == "benutzer":
         # Portal-Zugaenge sind kostenlos und zaehlen nicht mit — sonst koennte ein
         # gekauftes Cockpit nicht an die Geschaeftsfuehrung weitergereicht werden.
-        return db.query(User).filter(User.is_portal_only == False).count()  # noqa: E712
+        # Deaktivierte zaehlen nicht: wer einen Benutzer abschaltet, gibt den Platz frei.
+        return (db.query(User)
+                .filter(User.is_portal_only == False)  # noqa: E712
+                .filter((User.is_active == True) | (User.is_active == None))  # noqa: E711,E712
+                .count())
     return 0
 
 

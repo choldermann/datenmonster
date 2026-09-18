@@ -1,3 +1,16 @@
+import logging
+import os
+
+# Ohne diese Zeilen zeigt Python nur WARNING und hoeher – die INFO-Meldungen der
+# Anwendung (logger "datenmonster", Scheduler, Dienste) gingen bisher verloren.
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)-7s %(name)s: %(message)s",
+)
+# Bibliotheken, die sonst jede Anfrage bzw. jeden Joblauf auf INFO melden
+for _laut in ("httpx", "httpcore", "apscheduler"):
+    logging.getLogger(_laut).setLevel(logging.WARNING)
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager

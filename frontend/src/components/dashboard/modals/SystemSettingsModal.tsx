@@ -1336,6 +1336,16 @@ function UserManagement() {
     } finally { setBusyId(null); }
   };
 
+  const handleActiveToggle = async (u) => {
+    setBusyId(u.id);
+    try {
+      await api.patch(`/api/auth/users/${u.id}`, { is_active: u.is_active === false });
+      await load();
+    } catch (e) {
+      alert(fehlerText(e, "Aktivieren/Deaktivieren fehlgeschlagen"));
+    } finally { setBusyId(null); }
+  };
+
   const handleDelete = async (id, name) => {
     if (!confirm(`Benutzer "${name}" wirklich löschen?`)) return;
     try {
@@ -1379,9 +1389,10 @@ function UserManagement() {
           {users.map(u => {
             const isSelf = me && u.username === me.username;
             const rm = ROLE_META[roleOf(u)];
+            const aktiv = u.is_active !== false;
             return (
-              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
-                <span style={{ fontSize: 12, color: S.textMain, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.username}</span>
+              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, opacity: aktiv ? 1 : 0.55 }}>
+                <span style={{ fontSize: 12, color: S.textMain, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: aktiv ? "none" : "line-through" }}>{u.username}</span>
                 <span title={rm.hint} style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: rm.color, backgroundColor: rm.bg, border: `1px solid ${rm.border}`, borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>{rm.label}</span>
                 {isSelf ? (
                   <span style={{ fontSize: 10, color: S.textDim, fontStyle: "italic", whiteSpace: "nowrap" }}>(du)</span>
@@ -1392,6 +1403,13 @@ function UserManagement() {
                     <option value="editor">Editor</option>
                     <option value="portal">Portal</option>
                   </select>
+                )}
+                {!isSelf && (
+                  <button onClick={() => handleActiveToggle(u)} disabled={busyId === u.id}
+                    title={aktiv ? "Deaktivieren: Anmeldung gesperrt, laufende Sitzungen enden sofort" : "Wieder aktivieren"}
+                    style={{ ...selS, color: aktiv ? S.textDim : S.textBright, whiteSpace: "nowrap" }}>
+                    {aktiv ? "aktiv" : "deaktiviert"}
+                  </button>
                 )}
                 <button onClick={() => handleDelete(u.id, u.username)} disabled={isSelf}
                   style={{ background: "none", border: "none", color: isSelf ? S.border : S.textDim, cursor: isSelf ? "not-allowed" : "pointer", padding: 2, display: "flex", alignItems: "center" }}

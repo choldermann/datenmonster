@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 import bcrypt
 from jose import JWTError, jwt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from app.core.config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
@@ -27,7 +27,13 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
+def ist_deaktiviert(user: User) -> bool:
+    """NULL zaehlt als aktiv (Altbestand vor der Spalte)."""
+    return getattr(user, "is_active", True) is False
+
+
+def get_current_user(request: Request, token: str = Depends(oauth2_scheme),
+                     db: Session = Depends(get_db)) -> User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Ungültiger Token",
@@ -42,8 +48,16 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
 
     user = db.query(User).filter(User.username == username).first()
-    if user is None:
+    if user is None or ist_deaktiviert(user):
+        # Ein deaktivierter Benutzer verliert auch ein noch gueltiges Token.
         raise credentials_exception
+
+    # Portal-Zugaenge erreichen nur die Endpunkte des Portals (siehe portal_zugriff).
+    if getattr(user, "is_portal_only", False) and not getattr(user, "is_admin", False):
+        from app.core.portal_zugriff import portal_darf
+        if not portal_darf(request.method, request.url.path):
+            raise HTTPException(status_code=403,
+                                detail="Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
     return user
 
 # ─── Credential-Verschlüsselung ───────────────────────────────────────────────

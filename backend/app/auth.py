@@ -3,7 +3,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.security import verify_password, hash_password, create_access_token, get_current_user
+from app.core.security import verify_password, hash_password, create_access_token, get_current_user, ist_deaktiviert
+from app.core import kontingent
 from app.models.user import User
 import time
 import threading
@@ -90,6 +91,13 @@ def login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Falscher Benutzername oder Passwort",
         )
+    if ist_deaktiviert(user):
+        # Erst nach der Passwortpruefung melden, sonst verraet die Antwort,
+        # welche Benutzernamen es gibt.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dieser Benutzer ist deaktiviert. Bitte an den Administrator wenden.",
+        )
     # Erfolgreicher Login: Versuche zurücksetzen
     _clear_attempts(f"ip:{client_ip}")
     _clear_attempts(f"user:{form.username}")
@@ -121,6 +129,9 @@ def register(data: UserCreate, db: Session = Depends(get_db), admin: User = Depe
         raise HTTPException(status_code=400, detail="Benutzername bereits vergeben")
     if len(data.password) < 6:
         raise HTTPException(status_code=400, detail="Passwort mindestens 6 Zeichen")
+    if not data.is_portal_only:
+        # Portal-Zugaenge sind in jeder Stufe frei, weitere Editor-Benutzer nicht.
+        kontingent.pruefe(db, "benutzer")
     user = User(
         username=data.username,
         hashed_password=hash_password(data.password),
@@ -142,7 +153,8 @@ def list_users(db: Session = Depends(get_db), user: User = Depends(get_current_u
     return [
         {"id": u.id, "username": u.username,
          "is_admin": bool(getattr(u, "is_admin", False)),
-         "is_portal_only": bool(getattr(u, "is_portal_only", False))}
+         "is_portal_only": bool(getattr(u, "is_portal_only", False)),
+         "is_active": not ist_deaktiviert(u)}
         for u in db.query(User).all()
     ]
 
@@ -155,14 +167,26 @@ def update_user(user_id: int, data: dict, db: Session = Depends(get_db),
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(404, "Benutzer nicht gefunden")
+    wird_editor = (
+        ("is_portal_only" in data and not data["is_portal_only"] and target.is_portal_only)
+        or ("is_active" in data and data["is_active"] and ist_deaktiviert(target)
+            and not target.is_portal_only)
+    )
+    if wird_editor:
+        kontingent.pruefe(db, "benutzer")
     if "is_portal_only" in data:
         target.is_portal_only = bool(data["is_portal_only"])
     if "is_admin" in data and admin.id != user_id:
         target.is_admin = bool(data["is_admin"])
+    if "is_active" in data:
+        if admin.id == user_id and not data["is_active"]:
+            raise HTTPException(400, "Den eigenen Account kann man nicht deaktivieren")
+        target.is_active = bool(data["is_active"])
     db.commit()
     return {"id": target.id, "username": target.username,
             "is_admin": bool(target.is_admin),
-            "is_portal_only": bool(getattr(target, "is_portal_only", False))}
+            "is_portal_only": bool(getattr(target, "is_portal_only", False)),
+            "is_active": not ist_deaktiviert(target)}
 
 
 @router.delete("/users/{user_id}")
