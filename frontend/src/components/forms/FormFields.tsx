@@ -136,11 +136,22 @@ export function fieldsForTab(fields, currentTab) {
   });
 }
 
+/** Bewusster Klick ohne Auswahl = ALLE Actions, auch schreibende (Export, Pipeline).
+ *  `null` heißt dagegen „automatischer Lauf“ (Öffnen, Filter, Mandantenwechsel) –
+ *  dafür führt das Backend nur lesende Actions aus. */
+export const ALLE_AKTIONEN = "__alle__";
+
+/** Übersetzt die Action-Auswahl in den Request-Body für /run. */
+export function aktionsAuswahl(actionIds) {
+  if (actionIds === ALLE_AKTIONEN) return { action_ids: null, alle_aktionen: true };
+  return { action_ids: (actionIds && actionIds.length) ? actionIds : null };
+}
+
 /** Button-Feld → Liste der auszulösenden Action-IDs (mehrere via action_ids, sonst einzelne). */
 export function buttonActionIds(f) {
   if (f.action_ids && f.action_ids.length) return f.action_ids;
   if (f.action_id) return [f.action_id];
-  return null;
+  return ALLE_AKTIONEN;
 }
 
 /** Prüft Pflichtfelder. Gibt die Namen der leer gebliebenen Pflichtfelder zurück. */

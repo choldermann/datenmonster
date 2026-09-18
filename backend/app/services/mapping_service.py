@@ -1149,14 +1149,9 @@ def execute_mapping(
             continue
         try:
             from sqlalchemy import text as sa_text
-            # Sicherstellen dass die Connection zum selben Projekt gehört
-            if db:
-                from app.models.dataset import DbConnection as _DBC
-                _conn_obj = db.query(_DBC).filter(_DBC.id == conn_id).first()
-                if not _conn_obj:
-                    errors.append(f"SQL-Node '{out_field}': Verbindung {conn_id} nicht gefunden")
-                    sql_column_data[out_field] = []
-                    continue
+            # Fehlt die Verbindung, meldet _get_sql_engine das selbst (ValueError).
+            # Hier stand eine Pruefung ueber `db`, das in execute_mapping nicht
+            # existiert – der NameError liess Spalten- und exec-Knoten IMMER scheitern.
             engine = _get_sql_engine(conn_id)
             def _read_col():
                 with engine.connect() as con:
@@ -1187,6 +1182,9 @@ def execute_mapping(
     # in einer committenden Transaktion (engine.begin()). Liefert das Statement einen
     # Wert zurück (z.B. spGetNextNummer), landet die erste Spalte als Konstante im
     # output_field – ansonsten bleibt es fire-and-forget.
+    # :name-Platzhalter werden wie im Transform-Modus aus run_params GEBUNDEN.
+    # In der Vorschau (Editor-Vorschau, Formular-Aktion run_mapping) läuft der Knoten
+    # NICHT – eine Vorschau darf nichts in die Datenbank schreiben.
     for sn in (sql_nodes or []):
         if sn.get("mode") != "exec":
             continue
@@ -1195,17 +1193,24 @@ def execute_mapping(
         sql_text = (sn.get("sql") or "").strip()
         if not conn_id or not sql_text:
             continue
+        if is_preview:
+            if _debug_trace is not None:
+                _debug_trace.append({
+                    "id": f"sql_exec_{sn.get('id','')}",
+                    "label": f"SQL ausführen: {out_field} (in der Vorschau übersprungen)",
+                    "type": "sql", "rows_in": None, "rows_out": None, "errors": 0,
+                    "duration_ms": 0, "sample": [], "icon": "sql",
+                    "meta": {"mode": "exec", "committed": False,
+                             "hinweis": "Läuft nur beim Ausführen/Exportieren, nicht in der Vorschau.",
+                             "sql": sql_text[:400]},
+                })
+            continue
         try:
             from sqlalchemy import text as sa_text
-            if db:
-                from app.models.dataset import DbConnection as _DBC
-                _conn_obj = db.query(_DBC).filter(_DBC.id == conn_id).first()
-                if not _conn_obj:
-                    errors.append(f"SQL-Node '{out_field}' (exec): Verbindung {conn_id} nicht gefunden")
-                    continue
-            engine = _get_sql_engine(conn_id)
+            engine = _get_sql_engine(conn_id)   # meldet eine fehlende Verbindung selbst
+            _exec_text, _exec_params = _resolve_sql_run_params(sql_text, run_params)
             with engine.begin() as con:   # begin() committet am Ende, connect() nicht
-                result = con.execute(sa_text(sql_text))
+                result = con.execute(sa_text(_exec_text), _exec_params)
                 if result.returns_rows:
                     rows_fetched = result.fetchall()
                     if sn.get("output_field"):

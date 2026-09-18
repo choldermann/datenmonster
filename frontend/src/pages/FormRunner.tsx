@@ -6,7 +6,7 @@ import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileTex
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
-import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
@@ -228,7 +228,7 @@ export default function FormRunner() {
     try {
       const { data } = await api.post(`/api/forms/${id}/run`, {
         params: effParams,
-        action_ids: (actionIds && actionIds.length) ? actionIds : null,
+        ...aktionsAuswahl(actionIds),
       });
       setResults(data.results || {});
     } catch (e) {
@@ -409,7 +409,7 @@ export default function FormRunner() {
             {/* Fallback-Button wenn kein Button-Feld im Schema */}
             {!hasButtonField && (
               <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={() => runForm(null)} disabled={running}
+                <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
                   style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
                     borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
                     border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
@@ -428,7 +428,7 @@ export default function FormRunner() {
             <p style={{ color: S.textDim, fontSize: 12, marginBottom: 16 }}>
               Dieses Formular hat noch keine Eingabefelder.
             </p>
-            <button onClick={() => runForm(null)} disabled={running}
+            <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 20px",
                 borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
                 border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",

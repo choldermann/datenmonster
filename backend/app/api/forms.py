@@ -35,6 +35,10 @@ class FormUpdate(BaseModel):
 class FormRunRequest(BaseModel):
     params: Optional[dict] = {}
     action_ids: Optional[List[str]] = None
+    # Ohne action_ids laufen nur LESENDE Actions (automatische Läufe: Öffnen, Filter,
+    # Mandantenwechsel). Schreibende (Export, Pipeline) nur bei ausdrücklicher Auswahl
+    # oder wenn der Anwender bewusst „alle“ auslöst (Ausführen-Knopf).
+    alle_aktionen: Optional[bool] = False
     preview_rows: Optional[int] = 500
     # Beim PDF-Report: bereits im Formular erzeugte KI-Analyse mitgeben, damit der
     # Report den (langsamen, timeout-gefährdeten) KI-Aufruf überspringen kann.
@@ -519,10 +523,23 @@ def list_submissions(form_id: int, limit: int = 100, db: Session = Depends(get_d
 @router.delete("/{form_id}/submissions")
 def clear_submissions(form_id: int, db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
-    _check_editor(user)
-    n = db.query(FormSubmission).filter(FormSubmission.form_id == form_id).delete()
+    # Das Protokoll ist zugleich der Nachweis, wer wann exportiert bzw. geschrieben
+    # hat. Aufräumen darf nur ein Admin, und Läufe mit schreibenden Actions bleiben.
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren dürfen das Protokoll aufräumen")
+    f = db.query(Form).filter(Form.id == form_id).first()
+    schreibend = {a.get("id") for a in (((f.schema if f else None) or {}).get("actions") or [])
+                  if a.get("type") not in LESENDE_AKTIONEN}
+    n = behalten = 0
+    for sub in db.query(FormSubmission).filter(FormSubmission.form_id == form_id).all():
+        gelaufen = set((sub.row_counts or {}).keys()) | set(sub.action_ids or [])
+        if gelaufen & schreibend:
+            behalten += 1
+            continue
+        db.delete(sub)
+        n += 1
     db.commit()
-    return {"deleted": n}
+    return {"deleted": n, "behalten": behalten}
 
 
 # ── Shared execution logic ────────────────────────────────────────────────────
@@ -617,6 +634,11 @@ def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
         db.close()
 
 
+# Actions ohne Seiteneffekt. Alles andere (export_mapping, run_pipeline, …) läuft nur,
+# wenn es ausdrücklich ausgewählt oder „alle“ bewusst ausgelöst wurde.
+LESENDE_AKTIONEN = {"run_mapping", "run_alerts"}
+
+
 def _execute_form(f: Form, data: FormRunRequest, db: Session,
                   user_id: Optional[int] = None, user=None) -> dict:
     # Der eine Trichter fuer Editor UND Portal: eine Vorlage ohne laufende Berechtigung
@@ -639,6 +661,8 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     actions = schema.get("actions") or []
     if data.action_ids:
         actions = [a for a in actions if a.get("id") in data.action_ids]
+    elif not data.alle_aktionen:
+        actions = [a for a in actions if a.get("type") in LESENDE_AKTIONEN]
 
     # Actions, die ohne einen bestimmten Laufzeit-Parameter gar nicht sinnvoll sind
     # (z.B. die Preishistorie ohne gewählten Artikel), werden übersprungen statt in

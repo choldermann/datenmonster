@@ -923,6 +923,13 @@ def export_to_db(
         except Exception as col_err:
             log.warning(f"export_to_db: Spalten-Abgleich fehlgeschlagen ({col_err}), verwende alle DataFrame-Spalten")
 
+        # Spaltennamen je Datenbank maskieren: [x] ist SQL-Server-Syntax und scheitert
+        # auf Postgres/MySQL. SQL Server bleibt bei den eckigen Klammern wie bisher.
+        if conn_obj.db_type == "mssql":
+            q = lambda c: f"[{c}]"
+        else:
+            q = engine.dialect.identifier_preparer.quote_identifier
+
         with engine.begin() as con:
             if write_mode == "truncate_insert":
                 con.execute(text(f"DELETE FROM {table}"))
@@ -931,7 +938,7 @@ def export_to_db(
                 if conn_obj.db_type == "mssql":
                     # Direktes INSERT via parameterisiertes SQL – kein to_sql
                     cols = list(df.columns)
-                    col_list = ", ".join(f"[{c}]" for c in cols)
+                    col_list = ", ".join(q(c) for c in cols)
                     param_list = ", ".join(f":{c}" for c in cols)
                     sql = text(f"INSERT INTO {table} ({col_list}) VALUES ({param_list})")
                     records = df.where(df.notna(), other=None).to_dict(orient="records")
@@ -953,10 +960,10 @@ def export_to_db(
 
                 for _, row in df.iterrows():
                     row_dict = {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
-                    where_clause = " AND ".join([f"[{k}] = :{k}" for k in key_columns])
+                    where_clause = " AND ".join([f"{q(k)} = :{k}" for k in key_columns])
 
                     if write_mode == "update":
-                        set_clause = ", ".join([f"[{c}] = :set_{c}" for c in non_key_cols])
+                        set_clause = ", ".join([f"{q(c)} = :set_{c}" for c in non_key_cols])
                         params = {f"set_{c}": row_dict.get(c) for c in non_key_cols}
                         params.update({k: row_dict.get(k) for k in key_columns})
                         result = con.execute(text(f"UPDATE {table} SET {set_clause} WHERE {where_clause}"), params)
@@ -966,12 +973,12 @@ def export_to_db(
                         exists = con.execute(text(f"SELECT 1 FROM {table} WHERE {where_clause}"), check_params).fetchone()
                         if exists:
                             if non_key_cols:
-                                set_clause = ", ".join([f"[{c}] = :set_{c}" for c in non_key_cols])
+                                set_clause = ", ".join([f"{q(c)} = :set_{c}" for c in non_key_cols])
                                 params = {f"set_{c}": row_dict.get(c) for c in non_key_cols}
                                 params.update(check_params)
                                 con.execute(text(f"UPDATE {table} SET {set_clause} WHERE {where_clause}"), params)
                         else:
-                            col_list = ", ".join(f"[{k}]" for k in row_dict)
+                            col_list = ", ".join(q(k) for k in row_dict)
                             val_list = ", ".join(f":{k}" for k in row_dict)
                             con.execute(text(f"INSERT INTO {table} ({col_list}) VALUES ({val_list})"), row_dict)
                         rows_affected += 1
@@ -981,7 +988,7 @@ def export_to_db(
                 # key_columns ist durch den Sicherheitsgurt oben garantiert.
                 for _, row in df.iterrows():
                     row_dict = {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
-                    where_clause = " AND ".join([f"[{k}] = :{k}" for k in key_columns])
+                    where_clause = " AND ".join([f"{q(k)} = :{k}" for k in key_columns])
                     params = {k: row_dict.get(k) for k in key_columns}
                     result = con.execute(text(f"DELETE FROM {table} WHERE {where_clause}"), params)
                     rows_affected += result.rowcount

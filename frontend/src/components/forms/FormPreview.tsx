@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { Play, Loader2, AlertCircle, X } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 import WidgetRenderer from "./WidgetRenderer";
-import FormFields, { validateRequired, PipelineResult } from "./FormFields";
+import FormFields, { validateRequired, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "./FormFields";
 
 const S = {
   bgMain: "var(--bg-main)", bgCard: "var(--bg-card)", bgEl: "var(--bg-elevated)",
@@ -39,8 +39,7 @@ export default function FormPreview({ schema, formId, onClose }) {
     setMissing([]);
     setRunning(true); setError(null);
     try {
-      const ids = (actionIds && actionIds.length) ? actionIds : null;
-      const { data } = await api.post(`/api/forms/${formId}/run`, { params, action_ids: ids });
+      const { data } = await api.post(`/api/forms/${formId}/run`, { params, ...aktionsAuswahl(actionIds) });
       setResults(data.results || {});
     } catch (e) {
       setError(fehlerText(e));
@@ -88,7 +87,7 @@ export default function FormPreview({ schema, formId, onClose }) {
 
           {/* Fallback run-button wenn kein Button-Feld vorhanden */}
           {!fields.some(f => f.type === "button") && actions.length > 0 && (
-            <button onClick={() => runAction(null)} disabled={running}
+            <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 8,
                 padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 600,
                 backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",

@@ -40,7 +40,11 @@ export default function FormSubmissions({ formId, onClose }) {
 
   const clearAll = async () => {
     if (!window.confirm("Alle protokollierten Einträge dieses Formulars löschen?")) return;
-    try { await api.delete(`/api/forms/${formId}/submissions`); load(); }
+    try {
+      const { data } = await api.delete(`/api/forms/${formId}/submissions`);
+      load();   // setzt die Meldung zurück – deshalb der Hinweis erst danach
+      if (data?.behalten) setError(`${data.behalten} Einträge mit Export/Schreibvorgang bleiben als Nachweis erhalten.`);
+    }
     catch (e) { setError(fehlerText(e)); }
   };
 

@@ -9,7 +9,7 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
-import FormFields, { validateRequired, fieldsForTab, PipelineResult } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
@@ -216,7 +216,7 @@ export default function PortalRunner() {
     setMissing([]);
     setRunning(true); setRunErr(null);
     try {
-      const body = { params: effParams, action_ids: (actionIds && actionIds.length) ? actionIds : null };
+      const body = { params: effParams, ...aktionsAuswahl(actionIds) };
       const { data } = await api.post(`/api/portal/forms/${slug}/run`, body);
       setResults(data.results || {});
     } catch (e) {
@@ -428,7 +428,7 @@ export default function PortalRunner() {
             beginnt automatisch (siehe unten), der Knopf bleibt zum Aktualisieren. */}
         {visibleFields.length === 0 && actions.length > 0 && (
           <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <button onClick={() => runAction(null)} disabled={running}
+            <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px",
                 borderRadius: 8, fontSize: 14, fontWeight: 600,
                 backgroundColor: "rgba(110,231,183,0.12)",
@@ -458,7 +458,7 @@ export default function PortalRunner() {
                 Actions wäre ein Button je Action eine Buttonwand statt eines Formulars. */}
             {!hasButtonField && actions.length > 0 && (
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                <button onClick={() => runAction(null)} disabled={running}
+                <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8,
                     padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
                     backgroundColor: "rgba(110,231,183,0.12)",
