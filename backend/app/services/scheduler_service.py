@@ -548,6 +548,13 @@ def _run_vorlagen_pruefung(triggered_by: str = "scheduler"):
             f"{len(e['referenzen'])} JTL-Staende, {len(e['befunde'])} Befunde, "
             f"{e['dauer_s']} s, Mail: {e['versand'].get('gesendet')} {e['versand'].get('grund', '')}"
         )
+        # Gleicher Zeitplan, zweite Frage: reicht das KI-Guthaben noch? Ein eigener
+        # Job dafuer waere ein zweiter Schalter, den jemand vergisst einzuschalten.
+        from app.services import ai_guthaben
+        g = ai_guthaben.pruefen_und_melden(db)
+        if g.get("zutreffend"):
+            logger.info(f"KI-Guthaben: {g.get('guthaben')} (Schwelle {g.get('schwelle')}), "
+                        f"knapp={g.get('knapp')}, Mail: {g.get('gesendet')} {g.get('grund', '')}")
     except Exception as ex:
         logger.error(f"Vorlagen-Pruefung fehlgeschlagen: {ex}")
     finally:

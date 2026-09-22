@@ -24,6 +24,12 @@ router = APIRouter(prefix="/api/ai", tags=["ai"])
 _ERLAUBTE_PROVIDER = {"ollama", "datenmonster"}
 
 
+def _require_admin(user: User) -> None:
+    """Zeitpläne und Empfänger gehören dem Betreiber, nicht jedem Benutzer."""
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+
+
 def _require_ai(db, provider: Optional[str] = None):
     """`provider` übersteuert die globale Einstellung für DIESEN Aufruf – für
     Oberflächen, die die Wahl selbst anbieten. Unbekannte Werte werden ignoriert,
@@ -261,6 +267,38 @@ def ai_usage(db: Session = Depends(get_db), user: User = Depends(get_current_use
     except Exception as e:
         from app.services.ai_gateway import describe_gateway_error
         return {"error": describe_gateway_error(e)}
+
+
+class GuthabenWarnung(BaseModel):
+    aktiv: bool = False
+    schwelle: int = 150
+    empfaenger: str = ""
+
+
+@router.get("/guthaben-warnung")
+def guthaben_warnung_lesen(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Einstellung + aktuelle Lage. Läuft im selben Nachtlauf wie die Vorlagen-Prüfung."""
+    _require_admin(user)
+    from app.api.settings import get_setting
+    from app.services import ai_guthaben as g
+    return {
+        "aktiv": (get_setting(db, g.SCHLUESSEL_AKTIV, "0") or "0") == "1",
+        "schwelle": int(get_setting(db, g.SCHLUESSEL_SCHWELLE, g.STANDARD_SCHWELLE) or g.STANDARD_SCHWELLE),
+        "empfaenger": get_setting(db, g.SCHLUESSEL_EMPFAENGER, "") or "",
+        "lage": g.stand(db),
+    }
+
+
+@router.put("/guthaben-warnung")
+def guthaben_warnung_schreiben(body: GuthabenWarnung, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_user)):
+    _require_admin(user)
+    from app.api.settings import set_setting
+    from app.services import ai_guthaben as g
+    set_setting(db, g.SCHLUESSEL_AKTIV, "1" if body.aktiv else "0")
+    set_setting(db, g.SCHLUESSEL_SCHWELLE, str(max(0, int(body.schwelle))))
+    set_setting(db, g.SCHLUESSEL_EMPFAENGER, (body.empfaenger or "").strip())
+    return guthaben_warnung_lesen(db, user)
 
 
 @router.get("/gateway-models")

@@ -527,15 +527,32 @@ def _cover_html(company: dict, schema: dict, params: dict, conn_id: Optional[int
     )
 
 
-async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] = None) -> str:
-    """Best-effort KI-Management-Summary aus dem Übersichts-KPI-Ergebnis."""
+# Warum die KI-Analyse fehlt - in Klartext, der in den Report darf. Bis 2026-09-23
+# verschwand jeder Grund stillschweigend: der Report kam ohne Summary, und niemand
+# erfuhr, ob das Modell langsam war, der Gateway nicht erreichbar oder schlicht das
+# Guthaben leer. Gerade das Guthaben merkt man sonst erst, wenn es lange weg ist.
+AI_GRUND_TEXT = {
+    "kein_guthaben":  "Die KI-Analyse fehlt: Das Guthaben für Datenmonster AI ist aufgebraucht.",
+    "nicht_erreichbar": "Die KI-Analyse fehlt: Der KI-Dienst war nicht erreichbar.",
+    "zeit_abgelaufen": "Die KI-Analyse fehlt: Der KI-Dienst hat nicht rechtzeitig geantwortet.",
+    "fehler":         "Die KI-Analyse fehlt: Der KI-Dienst hat sie nicht geliefert.",
+}
+
+
+async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] = None) -> tuple:
+    """KI-Management-Summary. Gibt (Text, Grund) zurück.
+
+    Grund ist leer, wenn alles gut ging ODER wenn es nichts zu analysieren gab -
+    ein Cockpit ohne ai_summary-Widget soll keine Entschuldigung in den Report
+    schreiben. Ein GESCHEITERTER Versuch nennt dagegen seinen Grund.
+    """
     try:
         ai_widget = next((w for w in schema.get("widgets", []) if w.get("type") == "ai_summary"), None)
         if not ai_widget:
-            return ""
+            return "", ""
         res = results.get(ai_widget.get("action_id"))
         if not res or not res.get("rows"):
-            return ""
+            return "", ""
         from app.api.ai import _require_ai
         # Anbieterwahl des Aufrufers durchreichen: über den Gateway ist die Analyse in
         # Sekunden fertig, das lokale Modell braucht auf CPU eine gute Minute.
@@ -610,9 +627,12 @@ async def _ai_summary(schema: dict, results: dict, db, provider: Optional[str] =
             "Analysiere diese bereits berechneten Kennzahlen:\n" + "\n".join(lines), system,
             params=AIParams(think=False, temperature=0.4, top_p=0.9, max_tokens=420, num_ctx=8192),
             model=chosen)
-        return (txt or "").strip()
-    except Exception:
-        return ""
+        return (txt or "").strip(), ""
+    except Exception as e:
+        from app.services.ai_gateway import GatewayError
+        if isinstance(e, GatewayError):
+            return "", ("kein_guthaben" if e.code == "insufficient_credits" else "nicht_erreichbar")
+        return "", "fehler"
 
 
 # ── Report-Layout: Summary-Prosa + deterministische Bewertungstabelle ───────────
@@ -1300,18 +1320,33 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
         out_results.update(results)
     # Wenn das Formular seine KI-Analyse schon erzeugt hat (Client), diese direkt
     # übernehmen – spart den langsamen, timeout-gefährdeten KI-Aufruf im Report.
+    summary_grund = ""
     if not want_summary:
         summary = ""
     elif precomputed_summary and precomputed_summary.strip():
         summary = precomputed_summary.strip()
     else:
         try:
-            summary = await asyncio.wait_for(_ai_summary(schema, results, db, provider),
-                                             timeout=_SUMMARY_TIMEOUT_S)
+            summary, summary_grund = await asyncio.wait_for(
+                _ai_summary(schema, results, db, provider), timeout=_SUMMARY_TIMEOUT_S)
+        except asyncio.TimeoutError:
+            summary, summary_grund = "", "zeit_abgelaufen"
         except Exception:
-            summary = ""  # KI zu langsam/nicht verfügbar → Report ohne Summary
+            summary, summary_grund = "", "fehler"
 
     body = [_cover_html(company, schema, params, conn_id, form.name or "Report")]
+    if summary_grund and not summary and want_summary:
+        # Steht VOR der Bewertungstabelle, nicht in einer Fußnote: wer den Report
+        # nachts automatisch bekommt, soll auf Seite 1 sehen, dass ein Teil fehlt -
+        # sonst hält er die dünnere Fassung fuer das normale Ergebnis.
+        body.append(
+            f'<div style="page-break-before:always"></div>'
+            f'<h2 style="color:{ACCENT};font-size:13pt;border-bottom:2px solid {ACCENT};padding-bottom:3px">'
+            f'Management-Summary</h2>'
+            f'<p style="font-size:10pt;line-height:1.5;color:#b45309;background:#fffbeb;'
+            f'border:1px solid #fcd34d;border-radius:4px;padding:8px 10px">'
+            f'{AI_GRUND_TEXT.get(summary_grund, AI_GRUND_TEXT["fehler"])} '
+            f'Die Zahlen und Auswertungen darunter sind davon nicht betroffen.</p>')
     if summary or want_assessment:
         body.append(
             f'<div style="page-break-before:always"></div>'

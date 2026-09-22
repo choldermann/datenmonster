@@ -18,6 +18,7 @@ const TABS = [
   { id: "mandanten", label: "Mandanten", icon: "🏢", nurAdmin: true },
   { id: "network", label: "Netzwerk", icon: "🛡️" },
   { id: "appearance", label: "Optik", icon: "🎨" },
+  { id: "nachtwache", label: "Nachtwache", icon: "🌙", nurAdmin: true },
   { id: "backup", label: "Sicherung", icon: "💾", nurAdmin: true },
   { id: "language", label: "Sprache", icon: "🌍", disabled: true },
 ];
@@ -919,6 +920,139 @@ const ROLE_META = {
 // ─── Datensicherung ───────────────────────────────────────────────────────────
 // Die Anwendungsdaten liegen im Docker-Volume, nicht im Projektordner. Ohne
 // Sicherung ist ein verlorenes Volume der Verlust der gesamten Einrichtung.
+/**
+ * Was nachts von selbst nachsieht. Beides lief bisher nur über die API - die
+ * Vorlagen-Prüfung musste ich von Hand in die Systemeinstellungen schreiben, und
+ * eine Funktion, die nur über die API konfigurierbar ist, gibt es für einen
+ * Anwender nicht.
+ */
+function NachtwacheSettings() {
+  const [vorlagen, setVorlagen] = useState(null);
+  const [guthaben, setGuthaben] = useState(null);
+  const [status, setStatus] = useState("");
+  const [laeuft, setLaeuft] = useState(false);
+
+  const laden = () => {
+    api.get("/api/vorlagen-pruefung/einstellungen").then(({ data }) => setVorlagen(data)).catch(() => {});
+    api.get("/api/ai/guthaben-warnung").then(({ data }) => setGuthaben(data)).catch(() => {});
+  };
+  useEffect(laden, []);
+
+  const speichern = async () => {
+    setStatus("");
+    try {
+      await api.put("/api/vorlagen-pruefung/einstellungen", {
+        aktiv: vorlagen.aktiv, cron: vorlagen.cron, empfaenger: vorlagen.empfaenger });
+      await api.put("/api/ai/guthaben-warnung", {
+        aktiv: guthaben.aktiv, schwelle: Number(guthaben.schwelle) || 0, empfaenger: guthaben.empfaenger });
+      setStatus("gespeichert");
+      laden();
+    } catch (e) { setStatus(fehlerText(e)); }
+  };
+
+  const jetztPruefen = async () => {
+    setLaeuft(true); setStatus("");
+    try {
+      const { data } = await api.post("/api/vorlagen-pruefung/jetzt");
+      const n = data?.befunde?.length || 0;
+      setStatus(n === 0
+        ? `${data.vorlagen} Vorlagen geprüft, keine Befunde (${data.dauer_s} s)`
+        : `${n} Befund${n === 1 ? "" : "e"} bei ${data.vorlagen} Vorlagen (${data.dauer_s} s)`);
+    } catch (e) { setStatus(fehlerText(e)); }
+    finally { setLaeuft(false); }
+  };
+
+  const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
+  const kasten = { padding: "12px 14px", borderRadius: 6, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, marginBottom: 12 };
+  if (!vorlagen || !guthaben) return <span style={{ fontSize: 11, color: S.textDim }}>Lade…</span>;
+
+  return (
+    <div>
+      {/* Vorlagen-Prüfung */}
+      <div style={kasten}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 6 }}>
+          <input type="checkbox" checked={!!vorlagen.aktiv}
+            onChange={e => setVorlagen(v => ({ ...v, aktiv: e.target.checked }))} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: S.textBright }}>Vorlagen gegen alle JTL-Stände prüfen</span>
+        </label>
+        <p style={{ fontSize: 10, color: S.textDim, margin: "0 0 10px" }}>
+          Übersetzt jede Abfrage jeder Vorlage gegen je eine Datenbank pro JTL-Version.
+          Mail nur, wenn sich etwas geändert hat.
+          {vorlagen.referenzen?.length > 0 && (
+            <> Geprüft wird gegen: {vorlagen.referenzen.map(r => `JTL ${r.version} (${r.name})`).join(", ")}.</>
+          )}
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ width: 130 }}>
+            <label style={lS}>Takt (Cron)</label>
+            <input style={iS} value={vorlagen.cron || ""}
+              onChange={e => setVorlagen(v => ({ ...v, cron: e.target.value }))} placeholder="40 3 * * *" />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lS}>Empfänger</label>
+            <input style={iS} value={vorlagen.empfaenger || ""}
+              onChange={e => setVorlagen(v => ({ ...v, empfaenger: e.target.value }))}
+              placeholder="mail@firma.de, zweite@firma.de" />
+          </div>
+        </div>
+        {vorlagen.stand?.zeit && (
+          <div style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>
+            Zuletzt gelaufen: {new Date(vorlagen.stand.zeit).toLocaleString("de-DE")}
+          </div>
+        )}
+        <button onClick={jetztPruefen} disabled={laeuft}
+          style={{ marginTop: 10, padding: "6px 12px", borderRadius: 5, border: `1px solid ${S.border}`,
+            backgroundColor: S.bgCard, color: S.textMain, cursor: laeuft ? "default" : "pointer", fontSize: 11 }}>
+          {laeuft ? "prüft…" : "Jetzt prüfen (ohne Mail)"}
+        </button>
+      </div>
+
+      {/* KI-Guthaben */}
+      <div style={kasten}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 6 }}>
+          <input type="checkbox" checked={!!guthaben.aktiv}
+            onChange={e => setGuthaben(g => ({ ...g, aktiv: e.target.checked }))} />
+          <span style={{ fontSize: 12, fontWeight: 700, color: S.textBright }}>Warnen, bevor das KI-Guthaben leer ist</span>
+        </label>
+        <p style={{ fontSize: 10, color: S.textDim, margin: "0 0 10px" }}>
+          Läuft es leer, fällt die KI still aus: Reports kommen ohne Management-Summary.
+          Gemeldet wird der Wechsel, nicht jede Nacht derselbe Stand.
+        </p>
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ width: 130 }}>
+            <label style={lS}>Schwelle (Credits)</label>
+            <input style={iS} type="number" value={guthaben.schwelle ?? 150}
+              onChange={e => setGuthaben(g => ({ ...g, schwelle: e.target.value }))} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lS}>Empfänger</label>
+            <input style={iS} value={guthaben.empfaenger || ""}
+              onChange={e => setGuthaben(g => ({ ...g, empfaenger: e.target.value }))}
+              placeholder="mail@firma.de" />
+          </div>
+        </div>
+        {guthaben.lage?.zutreffend === false ? (
+          <div style={{ fontSize: 10, color: S.textDim, marginTop: 6 }}>
+            Anbieter ist derzeit {guthaben.lage.provider === "ollama" ? "das lokale Modell" : guthaben.lage.provider} — dort entstehen keine Kosten.
+          </div>
+        ) : guthaben.lage?.guthaben != null && (
+          <div style={{ fontSize: 10, color: guthaben.lage.knapp ? "#e0a070" : S.textDim, marginTop: 6 }}>
+            Aktuell {guthaben.lage.guthaben} Credits{guthaben.lage.knapp ? " — unter der Schwelle" : ""}.
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button onClick={speichern}
+          style={{ padding: "7px 14px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+          Speichern
+        </button>
+        {status && <span style={{ fontSize: 11, color: status === "gespeichert" ? "#6ee7b7" : S.textDim }}>{status}</span>}
+      </div>
+    </div>
+  );
+}
+
 function BackupSettings() {
   const [liste, setListe] = useState([]);
   const [frei, setFrei] = useState(null);
@@ -2097,6 +2231,7 @@ export default function SystemSettingsModal({ onClose }) {
           {activeTab === "mandanten"  && angemeldet?.is_admin && <MandantenSettings />}
           {activeTab === "network"    && <NetworkSettings />}
           {activeTab === "appearance" && <AppearanceSettings />}
+          {activeTab === "nachtwache" && angemeldet?.is_admin && <NachtwacheSettings />}
           {activeTab === "backup"     && angemeldet?.is_admin && <BackupSettings />}
         </div>
       </div>
