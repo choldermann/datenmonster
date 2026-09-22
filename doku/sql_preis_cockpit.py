@@ -318,13 +318,13 @@ ORDER BY 100.0 * (v.ek_neu - v.ek_alt) / NULLIF(v.ek_alt, 0) DESC""",
     COUNT(*)                                                   AS Positionen,
     SUM(CASE WHEN P.fRabatt > 0 THEN 1 ELSE 0 END)             AS MitRabatt,
     CAST(SUM(P.fAnzahl * P.fVkNetto) AS DECIMAL(18,2))         AS Listenwert,
-    CAST(SUM(ISNULL(P.fWertNettoGesamtFixiert, P.fAnzahl * P.fVkNetto))
+    CAST(SUM(P.fAnzahl * P.fVkNetto * (1 - ISNULL(P.fRabatt, 0) / 100.0))
          AS DECIMAL(18,2))                                     AS Rechnungswert,
     CAST(SUM(P.fAnzahl * P.fVkNetto)
-         - SUM(ISNULL(P.fWertNettoGesamtFixiert, P.fAnzahl * P.fVkNetto))
+         - SUM(P.fAnzahl * P.fVkNetto * (1 - ISNULL(P.fRabatt, 0) / 100.0))
          AS DECIMAL(18,2))                                     AS Rabattbetrag,
     CAST(100.0 * (SUM(P.fAnzahl * P.fVkNetto)
-         - SUM(ISNULL(P.fWertNettoGesamtFixiert, P.fAnzahl * P.fVkNetto)))
+         - SUM(P.fAnzahl * P.fVkNetto * (1 - ISNULL(P.fRabatt, 0) / 100.0)))
          / NULLIF(SUM(P.fAnzahl * P.fVkNetto), 0) AS DECIMAL(18,2)) AS Rabattquote,
     CAST(MAX(P.fRabatt) AS DECIMAL(18,2))                      AS HoechsterRabatt
 FROM Rechnung.vRechnung R
@@ -342,7 +342,7 @@ WHERE ISNULL(R.nStorno, 0) = 0 AND P.nType = 1
     CAST(100.0 * SUM(P.fAnzahl * (P.fVkNetto - COALESCE(NULLIF(P.fEkNetto, 0), NULLIF(A.fEKNetto, 0), 0)))
          / NULLIF(SUM(P.fAnzahl * P.fVkNetto), 0) AS DECIMAL(18,2)) AS Marge,
     CAST(SUM(P.fAnzahl * P.fVkNetto)
-         - SUM(ISNULL(P.fWertNettoGesamtFixiert, P.fAnzahl * P.fVkNetto))
+         - SUM(P.fAnzahl * P.fVkNetto * (1 - ISNULL(P.fRabatt, 0) / 100.0))
          AS DECIMAL(18,2))                         AS Rabattbetrag,
     COUNT(DISTINCT R.kRechnung)                    AS Rechnungen
 FROM Rechnung.vRechnung R
