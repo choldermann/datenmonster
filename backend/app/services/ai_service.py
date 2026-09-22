@@ -293,7 +293,11 @@ class AIService:
         json_mode: bool = False,
         params: AIParams | None = None,
         model: str | None = None,
+        request_type: str = "OTHER",
     ) -> AsyncIterator[str]:
+        # request_type interessiert nur den Gateway (Abrechnung, Modellwahl).
+        # Hier steht er nur, damit beide Anbieter dieselbe Oberflaeche haben und
+        # die Endpunkte ihn bedingungslos mitgeben koennen.
         payload_messages = []
         if system:
             payload_messages.append({"role": "system", "content": system})

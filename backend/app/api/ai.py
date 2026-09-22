@@ -244,6 +244,25 @@ def ai_credits(db: Session = Depends(get_db), user: User = Depends(get_current_u
     return {**data, "provider": provider, "enabled": ist_gateway}
 
 
+@router.get("/usage")
+def ai_usage(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Wofür das Guthaben draufgeht: Verbrauch nach Modell und Aufgabe.
+
+    Das Guthaben allein beantwortet die Frage nicht, die man wirklich hat -
+    „wofür?". Der Gateway fuehrt beides ohnehin mit; hier wird es nur durchgereicht.
+    Prompts und Antworten sind NICHT dabei, der Gateway speichert sie nicht.
+    """
+    from app.api.license import license_auth_body, LICENSE_SERVER
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/ai/usage", json=license_auth_body(db))
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        from app.services.ai_gateway import describe_gateway_error
+        return {"error": describe_gateway_error(e)}
+
+
 @router.get("/credit-packages")
 def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kaufbare Credit-Pakete (S/M/L) vom Gateway."""
@@ -328,7 +347,8 @@ async def explain_sql(
     from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
     params = params_fuer_prompt(len(system) + len(context))
     svc.timeout = timeout_fuer_prompt(len(system) + len(context), svc.timeout)
-    return _sse_stream(svc.stream_with_context(context, system, params=params))
+    return _sse_stream(svc.stream_with_context(context, system, params=params,
+                                               request_type="SQL_EXPLAIN"))
 
 
 class GenerateSqlRequest(BaseModel):
@@ -351,7 +371,8 @@ async def generate_sql(
     from app.services.ai_service import params_fuer_prompt, timeout_fuer_prompt
     params = params_fuer_prompt(len(system) + len(full_msg))
     svc.timeout = timeout_fuer_prompt(len(system) + len(full_msg), svc.timeout)
-    return _sse_stream(svc.stream_with_context(full_msg, system, params=params))
+    return _sse_stream(svc.stream_with_context(full_msg, system, params=params,
+                                               request_type="SQL_GENERATION"))
 
 
 # ── Python ────────────────────────────────────────────────────────────────────
@@ -373,7 +394,8 @@ async def generate_python(
     system, context = ctx.python_generate_context(body.mapping_id, body.node_id, body.current_script,
                                                   description=body.description)
     user_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
-    return _sse_stream(svc.stream_with_context(user_msg, system))
+    return _sse_stream(svc.stream_with_context(user_msg, system,
+                                               request_type="TRANSFORMATION"))
 
 
 # ── Error explanation ─────────────────────────────────────────────────────────
@@ -394,7 +416,8 @@ async def explain_error(
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.error_explain_context(body.error, body.node_type, body.code, body.mapping_id)
-    return _sse_stream(svc.stream_with_context(context, system))
+    return _sse_stream(svc.stream_with_context(context, system,
+                                               request_type="ERROR_EXPLAIN"))
 
 
 # ── Kennzahlen-Zusammenfassung (Dashboard-Widget "ai_summary") ──────────────────
@@ -737,7 +760,7 @@ async def summarize_data(
             # Auto-Modellwahl im Gateway (_pick_model) vom Mini- auf das große Modell hoch.
             async for tok in svc.stream_with_context(
                 user_msg, system, params=params, model=chosen,
-                request_type="DATA_ANALYSIS" if is_deep else "OTHER",
+                request_type="DATA_ANALYSIS" if is_deep else "SUMMARY",
             ):
                 parts.append(tok)
                 yield f"data: {json.dumps({'token': tok})}\n\n"
@@ -1073,7 +1096,8 @@ async def recommend_action(
         # Berechnete Kennzahlen zuerst – die Oberfläche rendert sie als Chips.
         yield f"data: {json.dumps({'meta': facts})}\n\n"
         try:
-            async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen):
+            async for tok in svc.stream_with_context(user_msg, system, params=params, model=chosen,
+                                                         request_type="DATA_ANALYSIS"):
                 yield f"data: {json.dumps({'token': tok})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'error': f'Modell-Fehler: {e}'})}\n\n"
@@ -1101,7 +1125,8 @@ async def generate_expression(
     system, context = ctx.expression_generate_context(body.mapping_id, body.node_id, body.field_name,
                                                       description=body.description)
     user_msg = f"{context}\n\nAufgabe: {body.description}" if context else f"Aufgabe: {body.description}"
-    return _sse_stream(svc.stream_with_context(user_msg, system))
+    return _sse_stream(svc.stream_with_context(user_msg, system,
+                                               request_type="EXPRESSION"))
 
 
 # ── Dataset-Vorschlag ────────────────────────────────────────────────────────
@@ -1140,7 +1165,8 @@ async def suggest_datasets(
     async def generate():
         import re as _re
         tokens = []
-        async for token in svc.stream_with_context(context, system):
+        async for token in svc.stream_with_context(context, system,
+                                                       request_type="MAPPING_ASSISTANT"):
             tokens.append(token)
             yield f"data: {json.dumps({'token': token})}\n\n"
 
@@ -1725,7 +1751,8 @@ async def chat(
         yield f"data: {json.dumps({'meta': meta})}\n\n"
         _tokens: list[str] = []
         try:
-            async for token in svc._stream(messages, system, params=params, model=model_used):
+            async for token in svc._stream(messages, system, params=params, model=model_used,
+                                           request_type="CHAT"):
                 _tokens.append(token)
                 yield f"data: {json.dumps({'token': token})}\n\n"
             # Cache speichern wenn aktiviert
@@ -2110,7 +2137,8 @@ async def suggest_tables(
     raw_chunks = []
 
     async def generate():
-        async for token in svc._stream(messages, system, params=params, model=model_used):
+        async for token in svc._stream(messages, system, params=params, model=model_used,
+                                       request_type="MAPPING_ASSISTANT"):
             raw_chunks.append(token)
             yield f"data: {json.dumps({'token': token})}\n\n"
 
@@ -2225,7 +2253,8 @@ async def suggest_fields(
     async def generate():
         import re as _re
         tokens = []
-        async for token in svc.stream_with_context(user_msg, _SUGGEST_FIELDS_SYSTEM):
+        async for token in svc.stream_with_context(user_msg, _SUGGEST_FIELDS_SYSTEM,
+                                                       request_type="MAPPING_ASSISTANT"):
             tokens.append(token)
             yield f"data: {json.dumps({'token': token})}\n\n"
 
@@ -2672,7 +2701,8 @@ async def generate_nodes(
     async def generate():
         import re as _re
         tokens = []
-        async for token in svc.stream_with_context(user_msg, _GENERATE_NODES_SYSTEM):
+        async for token in svc.stream_with_context(user_msg, _GENERATE_NODES_SYSTEM,
+                                                       request_type="MAPPING_ASSISTANT"):
             tokens.append(token)
             yield f"data: {json.dumps({'token': token})}\n\n"
 
@@ -2763,7 +2793,8 @@ async def suggest_mapping(
         f"Quellfelder: {_json.dumps(source_fields)}\n"
         f"Zielfelder: {_json.dumps(target_fields)}"
     )
-    return _sse_stream(svc.stream_with_context(msg, system))
+    return _sse_stream(svc.stream_with_context(msg, system,
+                                               request_type="MAPPING_ASSISTANT"))
 
 
 # ── KI-Transform-Node Preview ─────────────────────────────────────────────────

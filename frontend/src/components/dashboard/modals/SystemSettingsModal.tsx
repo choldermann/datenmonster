@@ -257,6 +257,24 @@ function ProviderSelector({ value, onChange }) {
   );
 }
 
+// Wofür das Guthaben draufgeht. Die Rohwerte kommen vom Gateway (Vertrag §7);
+// „SQL_GENERATION" sagt einem Anwender nichts, „SQL schreiben" schon.
+const AUFGABEN_LABEL = {
+  CHAT: "Frag deine Daten",
+  SQL_GENERATION: "SQL schreiben",
+  SQL_ANALYSIS: "SQL prüfen",
+  SQL_EXPLAIN: "SQL erklären",
+  DATA_ANALYSIS: "Auswertung analysieren",
+  ARTICLE_DESCRIPTION: "Artikelbeschreibung",
+  CLASSIFICATION: "Einordnen",
+  MAPPING_ASSISTANT: "Mapping-Assistent",
+  TRANSFORMATION: "Transformation",
+  EXPRESSION: "Ausdruck erzeugen",
+  ERROR_EXPLAIN: "Fehler erklären",
+  SUMMARY: "Kurzanalyse",
+  OTHER: "Sonstiges",
+};
+
 const DM_MODELS = [
   { id: "auto",        label: "Automatisch", desc: "Datenmonster wählt je Aufgabe (günstig ↔ leistungsfähig)" },
   { id: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Günstig & schnell — Standard" },
@@ -331,6 +349,8 @@ function DatenmonsterAiPanel({ model, onModel }) {
   const [credits, setCredits] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showTopUp, setShowTopUp] = useState(false);
+  const [verbrauch, setVerbrauch] = useState(null);   // nach Modell und Aufgabe
+  const [zeigeVerbrauch, setZeigeVerbrauch] = useState(false);
   const loadCredits = () => {
     setLoading(true);
     api.get("/api/ai/credits")
@@ -338,6 +358,14 @@ function DatenmonsterAiPanel({ model, onModel }) {
       .catch(e => setCredits({ error: e.message }))
       .finally(() => setLoading(false));
   };
+  // Erst auf Klick holen: die Zahlen kommen vom Gateway, und niemand braucht sie,
+  // solange er nur das Guthaben sehen wollte.
+  useEffect(() => {
+    if (!zeigeVerbrauch || verbrauch) return;
+    api.get("/api/ai/usage")
+      .then(({ data }) => setVerbrauch(data))
+      .catch(e => setVerbrauch({ error: e.message }));
+  }, [zeigeVerbrauch, verbrauch]);
   useEffect(() => { loadCredits(); }, []);
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
   return (
@@ -361,10 +389,49 @@ function DatenmonsterAiPanel({ model, onModel }) {
             )}
           </>
         )}
-        <button onClick={() => setShowTopUp(v => !v)}
-          style={{ marginTop: 10, padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
-          {showTopUp ? "Schließen" : "Guthaben aufladen"}
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
+          <button onClick={() => setShowTopUp(v => !v)}
+            style={{ padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            {showTopUp ? "Schließen" : "Guthaben aufladen"}
+          </button>
+          {!credits?.error && (
+            <button onClick={() => setZeigeVerbrauch(v => !v)}
+              style={{ padding: "6px 12px", borderRadius: 5, border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textMain, cursor: "pointer", fontSize: 11 }}>
+              {zeigeVerbrauch ? "Verbrauch ausblenden" : "Wofür?"}
+            </button>
+          )}
+        </div>
+        {zeigeVerbrauch && (
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(252,228,153,0.2)" }}>
+            {!verbrauch ? (
+              <span style={{ fontSize: 11, color: S.textDim }}>Lade Verbrauch…</span>
+            ) : verbrauch.error ? (
+              <span style={{ fontSize: 11, color: "#e07070" }}>Verbrauch nicht abrufbar: {verbrauch.error}</span>
+            ) : (
+              <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+                {[["Nach Modell", verbrauch.by_model, (z) => z.model],
+                  ["Nach Aufgabe", verbrauch.by_request_type,
+                   (z) => AUFGABEN_LABEL[z.request_type] || z.request_type]].map(([titel, zeilen, name]) => (
+                  <div key={titel} style={{ minWidth: 190 }}>
+                    <div style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{titel}</div>
+                    {(zeilen || []).length === 0 && (
+                      <div style={{ fontSize: 11, color: S.textDim }}>noch nichts verbraucht</div>
+                    )}
+                    {(zeilen || []).map((z, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 11, color: S.textMain, padding: "2px 0" }}>
+                        <span>{name(z)}</span>
+                        <span style={{ color: S.textDim }}>{z.credits} Cr · {z.requests}×</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 10, color: S.textDim, marginTop: 8 }}>
+              Gezählt werden nur Menge und Art der Anfragen – keine Fragen, keine Antworten.
+            </div>
+          </div>
+        )}
         {showTopUp && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(252,228,153,0.2)" }}>
             <TopUpPanel onDone={loadCredits} />
