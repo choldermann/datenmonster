@@ -11,12 +11,18 @@ naechsten JTL-Release schon wieder falsch, und niemand merkt es. Existiert die
 Sicht dagegen nach einem Update, faellt die Meldung von selbst weg - ohne dass
 hier irgendetwas nachgezogen werden muss.
 
-Zwei Stufen, weil sie verschiedene Faelle erwischen:
+Drei Stufen, weil sie verschiedene Faelle erwischen:
   * `pruefe_formular()` - VORHER. Liest die Tabellen/Sichten aus den Mappings und
     fragt die Datenbank, welche davon fehlen. Faengt den Lager-Fall als Ganzes ab.
+  * `_trockenlauf()` - VORHER, eine Stufe genauer. Laesst die Datenbank die Abfrage
+    UEBERSETZEN, ohne sie auszufuehren (`SET NOEXEC ON`). Damit fallen auch fehlende
+    SPALTEN auf, und zwar ohne dass wir SQL selbst zerlegen muessten: Aliase,
+    Unterabfragen und CTEs loest der Server ohnehin besser auf als jede Regex.
+    Anlass war JTL-Wawi 2.0: `fWertNettoGesamtFixiert` ist dort weg, die Tabelle
+    gibt es aber weiter - die Objektpruefung sah alles gruen, der Reiter lief in
+    einen Fehler.
   * `erklaere_sql_fehler()` - NACHHER. Uebersetzt „Ungültiger Objektname/Spaltenname"
-    in Klartext. Noetig, weil fehlende SPALTEN (HyDa: `nLieferstatus` auf
-    `dbo.tAuftragEckdaten`) sich nicht zuverlaessig aus dem SQL ablesen lassen.
+    in Klartext, fuer alles, was die beiden Vorab-Stufen nicht sehen konnten.
 """
 import re
 import time
@@ -34,8 +40,10 @@ def cache_leeren(connection_id: Optional[int] = None) -> None:
     if connection_id is None:
         _CACHE.clear()
     else:
-        _CACHE.pop(("objekte", connection_id), None)
-        _CACHE.pop(("version", connection_id), None)
+        # Alles, was an dieser Verbindung haengt - auch die Trockenlauf-Befunde,
+        # deren Schluessel die Abfrage mitfuehrt.
+        for k in [k for k in _CACHE if isinstance(k, tuple) and len(k) > 1 and k[1] == connection_id]:
+            _CACHE.pop(k, None)
 
 
 def _cached(schluessel, erzeuge):
@@ -116,17 +124,81 @@ def fehlende_objekte(connection_id: Optional[int], benoetigt: set, db) -> set:
     return fehlt
 
 
+_PARAM = re.compile(r":([a-zA-Z_][a-zA-Z0-9_]*)")
+
+
+def _trockenlauf(connection_id: Optional[int], sql: str) -> Optional[tuple]:
+    """Laesst die Datenbank die Abfrage uebersetzen, ohne sie auszufuehren.
+
+    Rueckgabe: ("spalte"|"objekt", Name) beim ersten Schema-Fehler, sonst None.
+
+    Warum ueber die Datenbank und nicht ueber einen eigenen Parser: welche Spalte
+    zu welcher Tabelle gehoert, entscheidet der Alias - ueber Unterabfragen, CTEs
+    und JOINs hinweg. Eine Regex raet das bestenfalls; ein Fehlalarm ist hier aber
+    teurer als gar keine Pruefung (siehe DHL-Cockpit, ece84ad).
+
+    `SET NOEXEC ON` laesst den Server den Batch uebersetzen und dann verwerfen.
+    Scheitert die Uebersetzung, lief NICHTS davon - auch das SET nicht, die
+    Verbindung bleibt also unveraendert. Gelingt sie, schaltet das SET am Ende
+    wieder ab (SET-Anweisungen laufen auch unter NOEXEC).
+
+    Parameter werden durch NULL ersetzt statt typisiert deklariert: fuer die
+    Uebersetzung reicht das, und geratene Typen wuerden Fehler melden, die im
+    echten Lauf keine sind.
+    """
+    if connection_id is None or not (sql or "").strip():
+        return None
+
+    def pruefe():
+        from app.core.database import SessionLocal
+        from app.models.dataset import DbConnection
+        from app.services.sql_helpers import _get_sql_engine
+        from sqlalchemy import text
+
+        sitzung = SessionLocal()
+        try:
+            conn = sitzung.query(DbConnection).filter(DbConnection.id == connection_id).first()
+            if conn is None or conn.db_type != "mssql":
+                return None          # nur SQL Server kennt NOEXEC
+        finally:
+            sitzung.close()
+
+        rumpf = _PARAM.sub("NULL", sql).strip().rstrip(";")
+        batch = "SET NOEXEC ON;\n" + rumpf + "\n;SET NOEXEC OFF;"
+        try:
+            engine = _get_sql_engine(connection_id)
+            with engine.connect() as c:
+                c.exec_driver_sql("SET NOEXEC OFF")   # falls eine Verbindung aus dem Pool haengt
+                c.execute(text(batch))
+            return None
+        except Exception as ex:
+            fehler = str(ex)
+            m = _SPALTE.search(fehler)
+            if m:
+                return ("spalte", m.group(1) or m.group(2))
+            m = _OBJEKT.search(fehler)
+            if m:
+                return ("objekt", m.group(1) or m.group(2))
+            # Alles andere (Syntax, Rechte, Timeout) ist KEIN Versionsbefund.
+            # Lieber schweigen als etwas behaupten, was der echte Lauf widerlegt.
+            return None
+
+    return _cached(("sql", connection_id, hash(sql)), pruefe)
+
+
 def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
     """Prueft ein Formular gegen die Datenbank des aktiven Mandanten.
 
-    Gibt zurueck: {version, fehlend[], reiter[], aktionen_gesamt, aktionen_betroffen}.
-    `fehlend` leer heisst: alles da (oder nicht pruefbar) - dann nichts anzeigen.
+    Gibt zurueck: {version, fehlend[], felder[], reiter[], aktionen_gesamt,
+    aktionen_betroffen}. `fehlend` sind fehlende Tabellen/Sichten, `felder` fehlende
+    Spalten aus dem Trockenlauf. Beide leer heisst: alles da (oder nicht pruefbar)
+    - dann nichts anzeigen.
     """
     from app.services.form_doku import _tables_from_sql, _nodes
     from app.models.mapping import Mapping
 
     schema = form.schema or {}
-    leer = {"version": jtl_version(connection_id, db), "fehlend": [], "reiter": [],
+    leer = {"version": jtl_version(connection_id, db), "fehlend": [], "felder": [], "reiter": [],
             "aktionen_gesamt": 0, "aktionen_betroffen": 0}
     if connection_id is None:
         return leer
@@ -140,6 +212,7 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
 
     # Tabellen je Action UND je tatsaechlich verwendeter Verbindung.
     je_action = {}
+    sql_je_action = {}
     for a in schema.get("actions") or []:
         mid = a.get("mapping_id")
         if not mid:
@@ -148,15 +221,21 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
         if not m:
             continue
         paare = set()
+        abfragen = []
         for n in _nodes(m, "sql_nodes"):
             if not isinstance(n, dict):
                 continue
             quelle = n.get("connection_id")
             ziel = connection_id if quelle in austauschbar else quelle
-            for t in _tables_from_sql(n.get("sql") or ""):
+            sql = n.get("sql") or ""
+            for t in _tables_from_sql(sql):
                 paare.add((ziel, t))
+            if sql.strip():
+                abfragen.append((ziel, sql))
         if paare:
             je_action[a.get("id")] = paare
+        if abfragen:
+            sql_je_action[a.get("id")] = abfragen
 
     je_verbindung = {}
     for paare in je_action.values():
@@ -166,10 +245,29 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
     fehlt = set()
     for cid, tabellen in je_verbindung.items():
         fehlt |= {(cid, t) for t in fehlende_objekte(cid, tabellen, db)}
-    if not fehlt:
-        return {**leer, "aktionen_gesamt": len(je_action)}
 
     betroffene_actions = {aid for aid, paare in je_action.items() if paare & fehlt}
+
+    # Zweite Stufe: Abfragen uebersetzen lassen. Nur fuer Actions, die nicht schon
+    # an einem fehlenden Objekt haengen - dort waere der Befund nur eine Wiederholung.
+    fehlende_felder = set()
+    for aid, abfragen in sql_je_action.items():
+        if aid in betroffene_actions:
+            continue
+        for cid, sql in abfragen:
+            befund = _trockenlauf(cid, sql)
+            if not befund:
+                continue
+            art, name = befund
+            if art == "spalte":
+                fehlende_felder.add(name)
+            else:
+                fehlt.add((cid, name))
+            betroffene_actions.add(aid)
+            break            # ein Befund je Auswertung genuegt
+
+    if not fehlt and not fehlende_felder:
+        return {**leer, "aktionen_gesamt": len(je_action)}
 
     # Welche Reiter haengen daran? Das ist die Information, die der Anwender braucht.
     reiter = []
@@ -189,6 +287,7 @@ def pruefe_formular(form, connection_id: Optional[int], db) -> dict:
     return {
         "version": jtl_version(connection_id, db),
         "fehlend": sorted({t for _cid, t in fehlt}),
+        "felder": sorted(fehlende_felder),
         "reiter": reiter,
         "aktionen_gesamt": len(je_action),
         "aktionen_betroffen": len(betroffene_actions),

@@ -163,7 +163,7 @@ export default function FormRunner() {
   const ladeKompat = useCallback(() => {
     if (!id) return;
     api.get(`/api/forms/${id}/kompatibilitaet`)
-      .then(({ data }) => setKompat(data?.fehlend?.length ? data : null))
+      .then(({ data }) => setKompat(data?.fehlend?.length || data?.felder?.length ? data : null))
       .catch(() => setKompat(null));   // nicht prüfbar: dann eben kein Hinweis
   }, [id]);
 
@@ -340,8 +340,17 @@ export default function FormRunner() {
                 {kompat.version ? ` (JTL ${kompat.version})` : ""}.
               </strong>
               <div style={{ marginTop: 4 }}>
-                Nicht verfügbar: {kompat.fehlend.map((x) => <code key={x} style={{ fontFamily: "monospace" }}>{x}</code>)
-                  .reduce((a, b) => [a, ", ", b])}. Betroffen sind {kompat.aktionen_betroffen} von{" "}
+                {kompat.fehlend?.length > 0 && (<>
+                  Nicht verfügbar: {kompat.fehlend.map((x) => <code key={x} style={{ fontFamily: "monospace" }}>{x}</code>)
+                    .reduce((a, b) => [a, ", ", b])}.{" "}
+                </>)}
+                {/* Fehlende Felder kommen aus dem Trockenlauf: die Tabelle gibt es,
+                    die Spalte nicht (JTL 2.0 hat z. B. fWertNettoGesamtFixiert entfernt). */}
+                {kompat.felder?.length > 0 && (<>
+                  Fehlende Felder: {kompat.felder.map((x) => <code key={x} style={{ fontFamily: "monospace" }}>{x}</code>)
+                    .reduce((a, b) => [a, ", ", b])}.{" "}
+                </>)}
+                Betroffen sind {kompat.aktionen_betroffen} von{" "}
                 {kompat.aktionen_gesamt} Auswertungen
                 {kompat.reiter?.length ? `, darunter die Reiter ${kompat.reiter.map(r => r.label).join(", ")}` : ""}.
               </div>
