@@ -110,7 +110,12 @@ class AiConfig(BaseModel):
     ai_base_url: str  = "http://ollama:11434"
     ai_model:       str = "qwen2.5-coder:3b"  # Code-Modell (SQL/Python/Assistent)
     ai_prose_model: str = ""                   # Textmodell (Berichte/Erklärungen); leer → Auto
-    ai_dm_model: str  = "auto"     # Modell für »Datenmonster AI« (Gateway): auto|gpt-4o-mini|gpt-4o
+    # Modell für »Datenmonster AI« (Gateway): "auto" oder ein Modellname, den der
+    # Gateway führt. Bewusst keine Liste erlaubter Werte hier: welche Modelle es
+    # gibt, weiß der Gateway (POST /api/v1/ai/models) — eine zweite Liste in dieser
+    # Datei wäre beim nächsten Modellwechsel still falsch. Kennt der Gateway den
+    # Namen nicht, fällt er selbst auf seine Vorgabe zurück.
+    ai_dm_model: str  = "auto"
     ai_timeout:  int  = 120
 
 AI_KEYS = ["ai_enabled", "ai_provider", "ai_base_url", "ai_model", "ai_prose_model",

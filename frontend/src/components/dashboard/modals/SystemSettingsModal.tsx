@@ -275,10 +275,12 @@ const AUFGABEN_LABEL = {
   OTHER: "Sonstiges",
 };
 
-const DM_MODELS = [
+// Nur der Rückfall, wenn der Gateway nicht antwortet. Die echte Liste kommt von
+// dort (GET /api/ai/gateway-models) — eine gepflegte Liste hier stand schon
+// einmal zwei Modellgenerationen hinterher.
+const DM_MODELS_FALLBACK = [
   { id: "auto",        label: "Automatisch", desc: "Datenmonster wählt je Aufgabe (günstig ↔ leistungsfähig)" },
-  { id: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Günstig & schnell — Standard" },
-  { id: "gpt-4o",      label: "gpt-4o",      desc: "Leistungsfähig — komplexe SQL/Analyse" },
+  { id: "gpt-4o-mini", label: "gpt-4o-mini", desc: "Günstig & schnell" },
 ];
 
 function TopUpPanel({ onDone }) {
@@ -350,6 +352,8 @@ function DatenmonsterAiPanel({ model, onModel }) {
   const [loading, setLoading] = useState(true);
   const [showTopUp, setShowTopUp] = useState(false);
   const [verbrauch, setVerbrauch] = useState(null);   // nach Modell und Aufgabe
+  const [modelle, setModelle] = useState(DM_MODELS_FALLBACK);
+  const [schwereAufgaben, setSchwereAufgaben] = useState([]);
   const [zeigeVerbrauch, setZeigeVerbrauch] = useState(false);
   const loadCredits = () => {
     setLoading(true);
@@ -367,6 +371,18 @@ function DatenmonsterAiPanel({ model, onModel }) {
       .catch(e => setVerbrauch({ error: e.message }));
   }, [zeigeVerbrauch, verbrauch]);
   useEffect(() => { loadCredits(); }, []);
+  useEffect(() => {
+    api.get("/api/ai/gateway-models")
+      .then(({ data }) => {
+        if (!data?.models?.length) return;                 // Gateway stumm → Rückfall
+        setModelle([{ id: "auto", label: "Automatisch",
+                      desc: "Datenmonster wählt je Aufgabe (günstig ↔ leistungsfähig)" },
+                    ...data.models.filter(m => m.id !== "auto")
+                                  .map(m => ({ id: m.id, label: m.label || m.id, desc: "" }))]);
+        setSchwereAufgaben(data.heavy_request_types || []);
+      })
+      .catch(() => {});
+  }, []);
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -442,7 +458,7 @@ function DatenmonsterAiPanel({ model, onModel }) {
       <div>
         <label style={lS}>Modell</label>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {DM_MODELS.map(m => {
+          {modelle.map(m => {
             const sel = model === m.id;
             return (
               <div key={m.id} onClick={() => onModel(m.id)}
@@ -450,7 +466,12 @@ function DatenmonsterAiPanel({ model, onModel }) {
                   backgroundColor: sel ? "rgba(252,228,153,0.08)" : S.bgEl,
                   border: `1px solid ${sel ? "rgba(252,228,153,0.35)" : S.border}` }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: sel ? ACCENT : S.textMain }}>{m.label}</div>
-                <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{m.desc}</div>
+                {m.desc && <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{m.desc}</div>}
+                {m.id === "auto" && schwereAufgaben.length > 0 && (
+                  <div style={{ fontSize: 10, color: S.textDim, marginTop: 2 }}>
+                    Großes Modell bei: {schwereAufgaben.map(t => AUFGABEN_LABEL[t] || t).join(", ")}
+                  </div>
+                )}
               </div>
             );
           })}

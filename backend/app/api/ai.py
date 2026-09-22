@@ -263,6 +263,25 @@ def ai_usage(db: Session = Depends(get_db), user: User = Depends(get_current_use
         return {"error": describe_gateway_error(e)}
 
 
+@router.get("/gateway-models")
+def ai_gateway_models(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Welche Modelle führt der Gateway gerade — und wonach entscheidet „Automatisch"?
+
+    Kommt vom Gateway statt aus einer Liste hier: sonst bietet diese Oberfläche
+    irgendwann ein Modell an, das dort längst abgelöst ist (gpt-4o stand hier noch,
+    als es zwei Generationen zurücklag).
+    """
+    from app.api.license import license_auth_body, LICENSE_SERVER
+    try:
+        with httpx.Client(timeout=10) as c:
+            r = c.post(f"{LICENSE_SERVER}/api/v1/ai/models", json=license_auth_body(db))
+            r.raise_for_status()
+            return r.json()
+    except Exception as e:
+        from app.services.ai_gateway import describe_gateway_error
+        return {"models": [], "error": describe_gateway_error(e)}
+
+
 @router.get("/credit-packages")
 def ai_credit_packages(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kaufbare Credit-Pakete (S/M/L) vom Gateway."""
