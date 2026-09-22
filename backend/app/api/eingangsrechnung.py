@@ -57,6 +57,45 @@ def _check_connection_access(connection_id: int, user: User, db: Session,
     raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
 
 
+def verbindung_aufloesen(connection_id: int, user: User, db: Session,
+                         widget_types: tuple = ("eingangsrechnung",)) -> int:
+    """Darf der Benutzer hier arbeiten - und in WELCHE Wawi wird geschrieben?
+
+    Die Verbindung aus der Widget-Konfiguration ist nur die Vorgabe. Das Formular
+    selbst folgt dem Mandanten-Umschalter, die Zahlen davor stammen also aus der
+    Datenbank des AKTIVEN Mandanten. Bliebe das Schreiben bei der Vorgabe, stuende
+    oben „HaKo" und die Rechnung landete in der Testumgebung - lautlos, denn beides
+    sieht gleich aus. Bis 2026-09-22 war das genau so; DATEV und die Stammdaten
+    lenkten laengst um, dieser Pfad nicht.
+
+    Zwei Fragen, sauber getrennt: die Freigabe haengt an der Widget-Verbindung
+    (ueber die Formular-Veroeffentlichung), das Ziel am Umschalter - und gegen
+    dieses Ziel wird die Mandantenfreigabe noch einmal geprueft.
+    """
+    from app.models.dataset import DbConnection
+    from app.services import mandant_service
+
+    _check_connection_access(connection_id, user, db, widget_types=widget_types)
+    conn = db.query(DbConnection).filter(DbConnection.id == connection_id).first()
+    if not conn:
+        raise HTTPException(404, f"Verbindung {connection_id} gibt es nicht")
+    ziel = mandant_service.schreibziel(connection_id, conn.project_id, user, db)
+    if not mandant_service.darf_nutzen(ziel, user, db, conn.project_id):
+        raise HTTPException(403, "Für diesen Mandanten nicht freigegeben")
+    return ziel
+
+
+def _verbindungsinfo(vorgabe: int, ziel: int, db: Session) -> dict:
+    """Wohin wird wirklich geschrieben? Gehoert in die Antwort, nicht nur ins Log."""
+    from app.models.dataset import DbConnection
+    conn = db.query(DbConnection).filter(DbConnection.id == ziel).first()
+    return {
+        "id": ziel,
+        "name": getattr(conn, "mandant_label", None) or getattr(conn, "name", "") or "",
+        "umgelenkt": ziel != vorgabe,
+    }
+
+
 def _writer(connection_id: int) -> EingangsrechnungWriter:
     try:
         return EingangsrechnungWriter(connection_id)
@@ -91,8 +130,10 @@ def _beleg_aus_posteingang(beleg_id: int, connection_id: int, db: Session):
     if not beleg:
         raise HTTPException(404, "Beleg gibt es nicht")
     if beleg.mandant_id != connection_id:
-        # Sonst liesse sich ein Beleg des einen Betriebs in die Wawi des
-        # anderen buchen, nur weil jemand die Nummer kennt.
+        # Geprueft wird gegen die Wawi, in die wirklich geschrieben wird (siehe
+        # verbindung_aufloesen). Sonst liesse sich ein Beleg des einen Betriebs in
+        # die Wawi des anderen buchen - entweder weil jemand die Nummer kennt oder
+        # schlicht, weil der Umschalter woanders stand.
         raise HTTPException(403, "Der Beleg gehört zu einem anderen Mandanten")
     pfad = _Pfad(beleg.pfad)
     if not pfad.is_file():
@@ -115,9 +156,9 @@ async def plan(
     Posteingang (dort hat ihn eine Quelle abgelegt). Ab hier ist der Weg
     derselbe — der Import soll nicht wissen muessen, wie der Beleg ins Haus kam.
     """
-    _check_connection_access(connection_id, user, db)
+    ziel = verbindung_aufloesen(connection_id, user, db)
     if posteingang_id:
-        data, dateiname = _beleg_aus_posteingang(posteingang_id, connection_id, db)
+        data, dateiname = _beleg_aus_posteingang(posteingang_id, ziel, db)
         file = _Datei(dateiname)
     elif file is None:
         raise HTTPException(422, "Weder eine Datei noch ein Beleg aus dem Posteingang")
@@ -137,22 +178,23 @@ async def plan(
         from app.services.pdf_rechnung_leser import lese_pdf_rechnung
         try:
             kopf, befund = await lese_pdf_rechnung(
-                data, file.filename or "", connection_id, db)
+                data, file.filename or "", ziel, db)
         except ERechnungParseError as pdf_fehler:
             raise HTTPException(
                 422, f"Weder E-Rechnung noch lesbares PDF: {pdf_fehler}")
     ov = json.loads(overrides) if overrides else None
-    p = _writer(connection_id).build_plan(kopf, dry_run=True, overrides=ov)
-    return {"kopf": serialize_kopf(kopf), "plan": p.to_dict(), "befund": befund}
+    p = _writer(ziel).build_plan(kopf, dry_run=True, overrides=ov)
+    return {"kopf": serialize_kopf(kopf), "plan": p.to_dict(), "befund": befund,
+            "verbindung": _verbindungsinfo(connection_id, ziel, db)}
 
 
 @router.post("/replan")
 def replan(req: ReplanRequest, user: User = Depends(get_current_user),
            db: Session = Depends(get_db)):
     """Plan mit geänderten Overrides neu berechnen (Live-Vorschau, kein Write)."""
-    _check_connection_access(req.connection_id, user, db)
+    ziel = verbindung_aufloesen(req.connection_id, user, db)
     kopf = deserialize_kopf(req.kopf)
-    p = _writer(req.connection_id).build_plan(kopf, dry_run=True, overrides=req.overrides)
+    p = _writer(ziel).build_plan(kopf, dry_run=True, overrides=req.overrides)
     return p.to_dict()
 
 
@@ -160,9 +202,9 @@ def replan(req: ReplanRequest, user: User = Depends(get_current_user),
 def write(req: WriteRequest, user: User = Depends(get_current_user),
           db: Session = Depends(get_db)):
     """Freigabe: echten Write ausführen (nur wenn Plan fehlerfrei). Optional lernen."""
-    _check_connection_access(req.connection_id, user, db)
+    ziel = verbindung_aufloesen(req.connection_id, user, db)
     kopf = deserialize_kopf(req.kopf)
-    w = _writer(req.connection_id)
+    w = _writer(ziel)
     p = w.build_plan(kopf, dry_run=False, overrides=req.overrides)
     learned = []
     if p.ok and req.learn:
@@ -174,6 +216,7 @@ def write(req: WriteRequest, user: User = Depends(get_current_user),
                 learned.append({**l, "created": False, "reason": str(e)[:120]})
     out = p.to_dict()
     out["learned"] = learned
+    out["verbindung"] = _verbindungsinfo(req.connection_id, ziel, db)
     return out
 
 
@@ -181,10 +224,10 @@ def write(req: WriteRequest, user: User = Depends(get_current_user),
 def artikel_suche(connection_id: int, q: str, user: User = Depends(get_current_user),
                   db: Session = Depends(get_db)):
     """Artikelsuche fürs manuelle Zuordnen (eigene ArtNr / Lieferanten-ArtNr / Name)."""
-    _check_connection_access(connection_id, user, db)
+    ziel = verbindung_aufloesen(connection_id, user, db)
     if len(q.strip()) < 2:
         return {"results": []}
-    return {"results": _writer(connection_id).search_artikel(q.strip())}
+    return {"results": _writer(ziel).search_artikel(q.strip())}
 
 
 @router.get("/kostenarten")
@@ -196,5 +239,5 @@ def kostenarten(connection_id: int, user: User = Depends(get_current_user),
     „Frachtkosten", beim nächsten „Gefahrgutzuschlag". Deshalb bietet das Formular
     die Namen dieser Wawi an, statt eine ID zu raten.
     """
-    _check_connection_access(connection_id, user, db)
-    return {"results": _writer(connection_id).kostenarten()}
+    ziel = verbindung_aufloesen(connection_id, user, db)
+    return {"results": _writer(ziel).kostenarten()}

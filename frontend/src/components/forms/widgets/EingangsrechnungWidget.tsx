@@ -426,6 +426,10 @@ export default function EingangsrechnungWidget({ widget }) {
   const connId = widget?.config?.connection_id ? Number(widget.config.connection_id) : null;
   const [kopf, setKopf] = useState(null);
   const [plan, setPlan] = useState(null);
+  // In WELCHE Wawi geschrieben wird. Das Widget trägt eine Verbindung, der
+  // Mandanten-Umschalter kann sie umlenken – seit 2026-09 tut er das auch beim
+  // Import. Wer eine Rechnung freigibt, muss sehen, wo sie landet.
+  const [ziel, setZiel] = useState(null);
   const [overrides, setOverrides] = useState({});
   const [merken, setMerken] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -489,6 +493,7 @@ export default function EingangsrechnungWidget({ widget }) {
       fd.append("posteingang_id", String(beleg.id));
       const { data } = await api.post("/api/eingangsrechnung/plan", fd);
       setKopf(data.kopf); setPlan(data.plan); setBefund(data.befund || null);
+      setZiel(data.verbindung || null);
     } catch (e) {
       setError(fehlerText(e));
     } finally { setLoading(false); }
@@ -512,6 +517,7 @@ export default function EingangsrechnungWidget({ widget }) {
       fd.append("file", file);
       const { data } = await api.post("/api/eingangsrechnung/plan", fd);
       setKopf(data.kopf); setPlan(data.plan); setBefund(data.befund || null);
+      setZiel(data.verbindung || null);
     } catch (e) {
       setError(fehlerText(e));
     } finally { setLoading(false); }
@@ -645,6 +651,14 @@ export default function EingangsrechnungWidget({ widget }) {
             {kopf.ist_gutschrift ? "Gutschrift" : "Rechnung"} {kopf.cFremdbelegnummer} · {kopf.dBelegdatum?.slice(0, 10)}
             {plan.lieferant?._match ? ` · Lieferant via ${plan.lieferant._match}` : ""}
             {kopf.peppolId ? ` · Peppol ${kopf.peppolId}` : ""}</div>
+          {/* Wohin gebucht wird. Nur nennen, wenn der Umschalter die Verbindung des
+              Widgets umgelenkt hat – sonst ist es Rauschen an jeder Rechnung. */}
+          {ziel?.umgelenkt && (
+            <div style={{ fontSize: 11, color: S.accent, marginTop: 3 }}>
+              Gebucht wird in {ziel.name || `Verbindung ${ziel.id}`} – dem Mandanten,
+              der oben eingestellt ist.
+            </div>
+          )}
           {(datei || postId) && (
             <button onClick={() => setBelegAnsicht(true)}
               style={{ marginTop: 6, padding: "3px 9px", background: S.bgCard,

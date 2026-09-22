@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.auth import get_current_user
-from app.api.eingangsrechnung import _check_connection_access
+from app.api.eingangsrechnung import _check_connection_access, verbindung_aufloesen
 from app.core.database import get_db
 from app.core.security import encrypt_credential
 from app.models.er_posteingang import ErPosteingangBeleg, ErPosteingangQuelle
@@ -144,7 +144,10 @@ def alle_abholen(mandant_id: Optional[int] = None, user: User = Depends(get_curr
                  db: Session = Depends(get_db)):
     """Alle aktiven Quellen eines Mandanten abfragen (Knopf in der Oberfläche)."""
     if mandant_id:
-        _check_connection_access(mandant_id, user, db)
+        # Derselbe Umweg ueber den Umschalter wie beim Import: sonst holt der Knopf
+        # die Post des einen Betriebs, waehrend die Rechnungen in die Wawi des
+        # anderen laufen ([[verbindung_aufloesen]]).
+        mandant_id = verbindung_aufloesen(mandant_id, user, db)
     else:
         _nur_admin(user)
     return {"quellen": dienst.alle_abholen(db, mandant_id)}
@@ -155,7 +158,10 @@ def alle_abholen(mandant_id: Optional[int] = None, user: User = Depends(get_curr
 @router.get("/belege")
 def belege(mandant_id: int, status: str = "neu", limit: int = 100,
            user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    _check_connection_access(mandant_id, user, db)
+    # Die Liste zeigt, was sich in die Wawi buchen laesst, die der Umschalter
+    # gerade meint - nicht die des Widgets. Sonst stuenden Belege in der Liste,
+    # die der Import anschliessend mit "gehoert zu einem anderen Mandanten" abweist.
+    mandant_id = verbindung_aufloesen(mandant_id, user, db)
     q = db.query(ErPosteingangBeleg).filter(ErPosteingangBeleg.mandant_id == mandant_id)
     if status != "alle":
         q = q.filter(ErPosteingangBeleg.status == status)
