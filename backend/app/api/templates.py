@@ -492,6 +492,44 @@ def _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
     return p
 
 
+class PruefBody(BaseModel):
+    template_id: str
+    connection_id: int
+
+
+@router.post("/pruefe")
+def pruefe_vorlage(body: PruefBody, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    """Passt diese Vorlage zur JTL-Version dieser Verbindung?
+
+    Vor dem Installieren gefragt, nicht danach: wer auf JTL 1.8 das Lager-Cockpit
+    einspielt, sieht sonst erst hinterher zwei Dutzend rote Kacheln. Geprueft wird
+    wie im Formular - erst die Objekte, dann ein Trockenlauf je Abfrage
+    (`SET NOEXEC ON`), der auch fehlende Spalten findet.
+
+    Ein Befund ist KEIN Hindernis: dieselbe Vorlage kann fuer einen anderen
+    Mandanten gedacht sein. Die Antwort beschreibt nur, was dort fehlt.
+    """
+    from app.models.template import Template
+    from app.services.jtl_kompatibilitaet import jtl_version
+    from app.services.vorlagen_pruefung import _sql_knoten, pruefe_vorlage as _pruefe
+
+    t = db.query(Template).filter(Template.template_id == body.template_id).first()
+    if not t:
+        raise HTTPException(404, "Template nicht gefunden")
+    inhalt = t.content if isinstance(t.content, dict) else {}
+
+    befunde = _pruefe(inhalt, body.connection_id, db)
+    betroffene = {b["mapping"] for b in befunde}
+    return {
+        "version": jtl_version(body.connection_id, db),
+        "fehlend": sorted({b["name"] for b in befunde if b["art"] == "objekt"}),
+        "felder": sorted({b["name"] for b in befunde if b["art"] == "spalte"}),
+        "mappings_betroffen": len(betroffene),
+        "mappings_gesamt": len({name for name, _sql in _sql_knoten(inhalt)}),
+    }
+
+
 @router.post("/install")
 def install_template(body: InstallBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """

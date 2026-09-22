@@ -66,14 +66,23 @@ def jtl_version(connection_id: Optional[int], db) -> Optional[str]:
         return None
 
     def lies():
-        from app.services.db_service import query_preview
+        from sqlalchemy import create_engine, text
+        from app.services.db_service import get_engine_str
         conn = _verbindung(connection_id, db)
         if conn is None:
             return None
         try:
-            r = query_preview(conn, "SELECT TOP 1 cVersion FROM dbo.tVersion ORDER BY cVersion DESC", limit=1)
-            zeilen = r.get("rows") or []
-            return str(zeilen[0].get("cVersion")) if zeilen else None
+            # KURZER Anmeldezeitraum. Diese Abfrage laeuft ueber ALLE Verbindungen,
+            # wenn der Nachtlauf seine Referenzdatenbanken sucht - eine tote
+            # Verbindung kostete mit dem Standard-Zeitlimit 15 s, drei davon machen
+            # aus einer Pruefung eine Kaffeepause. Erreichbar oder nicht, in vier
+            # Sekunden steht es fest.
+            engine = create_engine(get_engine_str(conn),
+                                   connect_args={"timeout": 4, "login_timeout": 4})
+            with engine.connect() as c:
+                v = c.execute(text("SELECT TOP 1 cVersion FROM dbo.tVersion ORDER BY cVersion DESC")).scalar()
+            engine.dispose()
+            return str(v) if v else None
         except Exception:
             return None      # keine JTL-Datenbank oder nicht erreichbar - kein Grund zu scheitern
 

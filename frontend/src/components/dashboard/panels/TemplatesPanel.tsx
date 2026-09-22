@@ -35,6 +35,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
   const [error, setError] = useState("");
   const [config, setConfig] = useState({});
   const [dbConnections, setDbConnections] = useState([]);
+  const [kompat, setKompat] = useState(null);      // passt die Vorlage zur JTL-Version?
 
   const hasConfig = template.config_required?.length > 0;
   const needsConnection = template.config_required?.some(c => c.type === "connection");
@@ -51,6 +52,26 @@ function TemplateCard({ template, projectId, onInstalled }) {
         .catch(() => {});
     }
   }, [expanded, needsConnection]);
+
+  // Die gewählte Verbindung entscheidet, gegen welche JTL-Version geprüft wird.
+  const verbindungsSchluessel = template.config_required?.find(c => c.type === "connection")?.key;
+  const gewaehlteVerbindung = verbindungsSchluessel ? config[verbindungsSchluessel] : null;
+
+  // Vor dem Installieren fragen, nicht danach: wer auf JTL 1.8 das Lager-Cockpit
+  // einspielt, sieht sonst erst hinterher zwei Dutzend rote Kacheln. Ein Befund
+  // hindert niemanden am Installieren – die Vorlage kann für einen anderen
+  // Mandanten gedacht sein.
+  useEffect(() => {
+    if (!gewaehlteVerbindung) { setKompat(null); return; }
+    let abgebrochen = false;
+    api.post("/api/templates/pruefe", {
+      template_id: template.template_id,
+      connection_id: Number(gewaehlteVerbindung),
+    })
+      .then(({ data }) => { if (!abgebrochen) setKompat(data); })
+      .catch(() => { if (!abgebrochen) setKompat(null); });   // nicht prüfbar: dann eben kein Hinweis
+    return () => { abgebrochen = true; };
+  }, [gewaehlteVerbindung, template.template_id]);
 
   const handleInstall = async () => {
     setInstalling(true);
@@ -198,15 +219,36 @@ function TemplateCard({ template, projectId, onInstalled }) {
             </div>
           )}
 
-          {/* Was wird angelegt */}
-          <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5, backgroundColor: `${ACCENT_HEX}08`, border: `1px solid ${ACCENT_HEX}22` }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: ACCENT_HEX, marginBottom: 4 }}>Was wird installiert:</p>
-            <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
-              ✓ SQL-Datasets für Versendungen und Eingänge<br />
-              ✓ Zwei Mappings → INSTAT XML<br />
-              ✓ Pipeline mit monatlichem Trigger + E-Mail Benachrichtigung
-            </p>
-          </div>
+          {/* Was wird angelegt – aus der Vorlage gezählt. Hier stand bis 2026-09
+              bei JEDER Vorlage der Intrastat-Text ("Zwei Mappings → INSTAT XML"). */}
+          {template.contents && Object.keys(template.contents).length > 0 && (
+            <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5, backgroundColor: `${ACCENT_HEX}08`, border: `1px solid ${ACCENT_HEX}22` }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: ACCENT_HEX, marginBottom: 4 }}>Was wird installiert:</p>
+              <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
+                {Object.entries(template.contents).map(([typ, n]) => (
+                  <span key={typ}>✓ {n} {(INHALT_LABEL[typ] || [typ, typ])[n === 1 ? 0 : 1]}<br /></span>
+                ))}
+                Gleichnamige Objekte im Projekt werden wiederverwendet.
+              </p>
+            </div>
+          )}
+
+          {/* Passt die Vorlage zur JTL-Version der gewählten Verbindung? */}
+          {kompat && (kompat.fehlend?.length > 0 || kompat.felder?.length > 0) && (
+            <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5,
+              backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.3)" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "#e07070", marginBottom: 4 }}>
+                Passt nicht zu dieser Datenbank{kompat.version ? ` (JTL ${kompat.version})` : ""}
+              </p>
+              <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
+                {kompat.fehlend?.length > 0 && <>Nicht verfügbar: {kompat.fehlend.join(", ")}. </>}
+                {kompat.felder?.length > 0 && <>Fehlende Felder: {kompat.felder.join(", ")}. </>}
+                {kompat.mappings_betroffen} von {kompat.mappings_gesamt} Auswertungen
+                {" "}würden hier scheitern. Installieren lässt sich die Vorlage trotzdem –
+                {" "}für einen anderen Mandanten kann sie genau richtig sein.
+              </p>
+            </div>
+          )}
 
           {/* Error */}
           {error && (
