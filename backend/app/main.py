@@ -548,6 +548,8 @@ async def lifespan(app: FastAPI):
     reload_all_rest_jobs()
     from app.services.scheduler_service import reload_all_er_posteingang_jobs
     reload_all_er_posteingang_jobs()
+    from app.services.scheduler_service import reload_vorlagen_pruefung_job
+    reload_vorlagen_pruefung_job()
     # FTP-Jobs laden
     from app.api.ftp_sources import _sync_scheduler
     ftp_db = SessionLocal()
@@ -663,6 +665,8 @@ app.include_router(logs_api.router)
 app.include_router(pipelines_api.router)
 app.include_router(templates_api.router)
 app.include_router(settings_api.router)
+from app.api import vorlagen_pruefung as vorlagen_pruefung_api
+app.include_router(vorlagen_pruefung_api.router)
 app.include_router(datasets.router)
 app.include_router(connections.router)
 app.include_router(mappings.router)

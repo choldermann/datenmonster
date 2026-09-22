@@ -535,6 +535,64 @@ def unregister_er_posteingang_job(quelle_id: int):
         pass
 
 
+def _run_vorlagen_pruefung(triggered_by: str = "scheduler"):
+    """Naechtlicher Durchgang: laufen die Vorlagen noch auf allen JTL-Staenden?"""
+    from app.core.database import SessionLocal
+    from app.services import vorlagen_pruefung
+
+    db = SessionLocal()
+    try:
+        e = vorlagen_pruefung.lauf(db)
+        logger.info(
+            f"Vorlagen-Pruefung ({triggered_by}): {e['vorlagen']} Vorlagen, "
+            f"{len(e['referenzen'])} JTL-Staende, {len(e['befunde'])} Befunde, "
+            f"{e['dauer_s']} s, Mail: {e['versand'].get('gesendet')} {e['versand'].get('grund', '')}"
+        )
+    except Exception as ex:
+        logger.error(f"Vorlagen-Pruefung fehlgeschlagen: {ex}")
+    finally:
+        db.close()
+
+
+def register_vorlagen_pruefung_job(cron_expr: str):
+    """Registriert den naechtlichen Vorlagen-Lauf. Leerer Ausdruck = abgeschaltet."""
+    sched = get_scheduler()
+    if not sched:
+        return
+    job_id = "vorlagen_pruefung"
+    try:
+        sched.remove_job(job_id)
+    except Exception:
+        pass
+
+    parts = (cron_expr or "").strip().split()
+    if len(parts) != 5:
+        return
+    try:
+        trigger = CronTrigger(minute=parts[0], hour=parts[1], day=parts[2],
+                              month=parts[3], day_of_week=parts[4], timezone="Europe/Berlin")
+        sched.add_job(_run_vorlagen_pruefung, trigger=trigger, id=job_id, replace_existing=True)
+        logger.info(f"Vorlagen-Pruefung registriert: {cron_expr}")
+    except Exception as e:
+        logger.error(f"Fehler beim Registrieren der Vorlagen-Pruefung: {e}")
+
+
+def reload_vorlagen_pruefung_job():
+    """Beim Start: Takt aus den Systemeinstellungen. Ohne Empfaenger laeuft sie
+    trotzdem - der Befund steht dann im Log, und die Oberflaeche zeigt ihn."""
+    from app.core.database import SessionLocal
+    from app.api.settings import get_setting
+    from app.services.vorlagen_pruefung import (SCHLUESSEL_AKTIV, SCHLUESSEL_CRON,
+                                                STANDARD_CRON)
+    db = SessionLocal()
+    try:
+        if (get_setting(db, SCHLUESSEL_AKTIV, "0") or "0") != "1":
+            return
+        register_vorlagen_pruefung_job(get_setting(db, SCHLUESSEL_CRON, STANDARD_CRON))
+    finally:
+        db.close()
+
+
 def reload_all_er_posteingang_jobs():
     """Beim Start: alle aktiven Posteingangs-Quellen mit Takt laden."""
     from app.core.database import SessionLocal
