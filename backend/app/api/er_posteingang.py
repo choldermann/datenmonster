@@ -72,6 +72,10 @@ def quellen(mandant_id: Optional[int] = None, user: User = Depends(get_current_u
     _nur_admin(user)
     q = db.query(ErPosteingangQuelle)
     if mandant_id:
+        # Wie beim Import: der Umschalter entscheidet, um wessen Post es geht.
+        # Sonst pflegt jemand Quellen fuer die Testumgebung, waehrend oben der
+        # Produktivmandant steht - und wundert sich, dass nichts ankommt.
+        mandant_id = verbindung_aufloesen(mandant_id, user, db)
         q = q.filter(ErPosteingangQuelle.mandant_id == mandant_id)
     return [_raus(x) for x in q.order_by(ErPosteingangQuelle.id).all()]
 
@@ -82,6 +86,10 @@ def quelle_anlegen(body: QuelleBody, user: User = Depends(get_current_user),
     _nur_admin(user)
     daten = body.model_dump()
     passwort = daten.pop("password", None)
+    # Dieselbe Aufloesung wie beim Lesen: eine Quelle, die fuer den falschen
+    # Mandanten angelegt wird, liefert Belege, die der Import anschliessend
+    # abweist - und der Fehler faellt erst Wochen spaeter auf.
+    daten["mandant_id"] = verbindung_aufloesen(daten["mandant_id"], user, db)
     quelle = ErPosteingangQuelle(**daten)
     if passwort and passwort != GEHEIM:
         quelle.password = encrypt_credential(passwort)
@@ -102,6 +110,7 @@ def quelle_aendern(quelle_id: int, body: QuelleBody, user: User = Depends(get_cu
         raise HTTPException(404, "Quelle gibt es nicht")
     daten = body.model_dump()
     passwort = daten.pop("password", None)
+    daten["mandant_id"] = verbindung_aufloesen(daten["mandant_id"], user, db)
     for feld, wert in daten.items():
         setattr(quelle, feld, wert)
     # Das Kennwort kommt nur als Sternchen zurueck; wer es nicht aendert,
@@ -136,7 +145,8 @@ def quelle_abholen(quelle_id: int, user: User = Depends(get_current_user),
     quelle = db.query(ErPosteingangQuelle).filter(ErPosteingangQuelle.id == quelle_id).first()
     if not quelle:
         raise HTTPException(404, "Quelle gibt es nicht")
-    return dienst.abholen(db, quelle)
+    ergebnis = dienst.abholen(db, quelle)
+    return {**ergebnis, "quelle": _raus(quelle)}
 
 
 @router.post("/abholen")

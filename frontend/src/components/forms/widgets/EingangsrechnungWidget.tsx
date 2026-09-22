@@ -4,6 +4,7 @@ import {
   ChevronRight, ChevronDown, Eye, X,
 } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
+import { useAuth } from "../../../context/AuthContext";
 import { useDateiAblage } from "../../../hooks/useDateiAblage";
 
 const ENDUNGEN = [".pdf", ".xml"];
@@ -285,6 +286,250 @@ function BelegAusschnitt({ text, tabellenkopf, offen, onToggle, felder, abstand 
 }
 
 
+// ── Quellen des Posteingangs ─────────────────────────────────────────────────
+/** Woher Belege hereinkommen: ein Mail-Postfach oder ein Ordner.
+ *
+ *  Bis 2026-09-23 gab es das nur über die API — wer eine Quelle einrichten wollte,
+ *  brauchte einen curl-Aufruf. Bewusst hier im Widget und nicht in den
+ *  Systemeinstellungen: die Quellen gehören zu DIESEM Mandanten, und der steht
+ *  im Umschalter über dem Formular.
+ */
+const LEERE_QUELLE = {
+  name: "", art: "imap", aktiv: true, host: "", port: 993, username: "", password: "",
+  ssl: true, ordner: "INBOX", nach_abholung: "gelesen", ziel_ordner: "",
+  pfad: "", endungen: ".xml,.pdf", cron_expr: "",
+};
+
+function QuellenVerwaltung({ connId, offen, onToggle, onAbgeholt }) {
+  const [quellen, setQuellen] = useState([]);
+  const [formular, setFormular] = useState(null);      // null = keine Bearbeitung
+  const [fehler, setFehler] = useState("");
+  const [meldung, setMeldung] = useState("");
+  const [holt, setHolt] = useState(null);
+
+  const laden = useCallback(async () => {
+    if (!connId) return;
+    try {
+      const { data } = await api.get("/api/er-posteingang/quellen", { params: { mandant_id: connId } });
+      setQuellen(Array.isArray(data) ? data : []);
+    } catch (e) { setFehler(fehlerText(e)); }
+  }, [connId]);
+  useEffect(() => { if (offen) laden(); }, [offen, laden]);
+
+  const speichern = async () => {
+    setFehler(""); setMeldung("");
+    const koerper = { ...formular, mandant_id: connId, port: Number(formular.port) || null };
+    try {
+      if (formular.id) await api.put(`/api/er-posteingang/quellen/${formular.id}`, koerper);
+      else await api.post("/api/er-posteingang/quellen", koerper);
+      setFormular(null);
+      await laden();
+    } catch (e) { setFehler(fehlerText(e)); }
+  };
+
+  const loeschen = async (q) => {
+    if (!window.confirm(`Quelle „${q.name}" löschen? Bereits geholte Belege bleiben.`)) return;
+    try { await api.delete(`/api/er-posteingang/quellen/${q.id}`); await laden(); }
+    catch (e) { setFehler(fehlerText(e)); }
+  };
+
+  const abholen = async (q) => {
+    setHolt(q.id); setFehler(""); setMeldung("");
+    try {
+      const { data } = await api.post(`/api/er-posteingang/quellen/${q.id}/abholen`);
+      const n = data?.neu ?? data?.belege ?? 0;
+      setMeldung(`${q.name}: ${n} neue${n === 1 ? "r Beleg" : " Belege"}`);
+      await laden();
+      onAbgeholt && onAbgeholt();
+    } catch (e) { setFehler(fehlerText(e)); }
+    finally { setHolt(null); }
+  };
+
+  const fS = { width: "100%", padding: "5px 7px", background: S.bgCard, color: S.textMain,
+               border: `1px solid ${S.border}`, borderRadius: 4, fontSize: 11 };
+  const lS = { fontSize: 10, color: S.textDim, display: "block", marginBottom: 2 };
+  const ist_imap = formular?.art === "imap";
+
+  return (
+    <div style={{ marginTop: 10, borderTop: `1px solid ${S.border}`, paddingTop: 8 }}>
+      <button onClick={onToggle}
+        style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer",
+          fontSize: 11, padding: 0, display: "flex", alignItems: "center", gap: 5 }}>
+        {offen ? "▾" : "▸"} Quellen verwalten{quellen.length ? ` (${quellen.length})` : ""}
+      </button>
+
+      {offen && (
+        <div style={{ marginTop: 8 }}>
+          {quellen.length === 0 && !formular && (
+            <div style={{ fontSize: 11, color: S.textDim, marginBottom: 8 }}>
+              Noch keine Quelle. Ohne Quelle kommen Belege nur über die Ablagefläche herein.
+            </div>
+          )}
+
+          {quellen.map(q => (
+            <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0",
+              borderBottom: `1px solid ${S.border}` }}>
+              <span style={{ width: 7, height: 7, borderRadius: 7, flexShrink: 0,
+                background: q.aktiv ? "#34d399" : S.textDim }} title={q.aktiv ? "aktiv" : "aus"} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, color: S.textMain }}>{q.name}
+                  <span style={{ color: S.textDim, fontSize: 11 }}>
+                    {" · "}{q.art === "imap" ? `${q.host || "?"}/${q.ordner || "INBOX"}` : q.pfad}
+                    {q.cron_expr ? ` · ${q.cron_expr}` : " · nur von Hand"}
+                  </span>
+                </div>
+                {q.letzter_status && (
+                  <div style={{ fontSize: 10, color: q.letzter_fehler ? "#e07070" : S.textDim }}>
+                    {q.letzter_fehler || q.letzter_status}
+                    {q.letzter_lauf ? ` · ${new Date(q.letzter_lauf).toLocaleString("de-DE")}` : ""}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => abholen(q)} disabled={holt === q.id} title="Jetzt abholen"
+                style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, padding: 2 }}>
+                {holt === q.id ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+              </button>
+              <button onClick={() => setFormular({ ...LEERE_QUELLE, ...q })} title="Bearbeiten"
+                style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, fontSize: 11, padding: 2 }}>
+                ✎
+              </button>
+              <button onClick={() => loeschen(q)} title="Löschen"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#e07070", padding: 2 }}>
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+
+          {!formular && (
+            <button onClick={() => setFormular({ ...LEERE_QUELLE })}
+              style={{ marginTop: 8, padding: "4px 10px", background: S.bgEl, color: S.textMain,
+                border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 11, cursor: "pointer" }}>
+              + Quelle
+            </button>
+          )}
+
+          {formular && (
+            <div style={{ marginTop: 10, padding: 10, background: S.bgEl, borderRadius: 6,
+              border: `1px solid ${S.border}`, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={lS}>Name</label>
+                  <input style={fS} value={formular.name} placeholder="Rechnungen@firma.de"
+                    onChange={e => setFormular(f => ({ ...f, name: e.target.value }))} />
+                </div>
+                <div style={{ width: 110 }}>
+                  <label style={lS}>Art</label>
+                  <select style={fS} value={formular.art}
+                    onChange={e => setFormular(f => ({ ...f, art: e.target.value }))}>
+                    <option value="imap">Mail-Postfach</option>
+                    <option value="ordner">Ordner</option>
+                  </select>
+                </div>
+              </div>
+
+              {ist_imap ? (<>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 2 }}>
+                    <label style={lS}>Server</label>
+                    <input style={fS} value={formular.host || ""} placeholder="imap.firma.de"
+                      onChange={e => setFormular(f => ({ ...f, host: e.target.value }))} />
+                  </div>
+                  <div style={{ width: 70 }}>
+                    <label style={lS}>Port</label>
+                    <input style={fS} value={formular.port ?? ""} type="number"
+                      onChange={e => setFormular(f => ({ ...f, port: e.target.value }))} />
+                  </div>
+                  <label style={{ display: "flex", alignItems: "flex-end", gap: 4, fontSize: 11, color: S.textDim }}>
+                    <input type="checkbox" checked={!!formular.ssl}
+                      onChange={e => setFormular(f => ({ ...f, ssl: e.target.checked }))} /> SSL
+                  </label>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lS}>Benutzer</label>
+                    <input style={fS} value={formular.username || ""}
+                      onChange={e => setFormular(f => ({ ...f, username: e.target.value }))} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lS}>Kennwort</label>
+                    <input style={fS} type="password" value={formular.password || ""}
+                      placeholder={formular.id ? "unverändert" : ""}
+                      onChange={e => setFormular(f => ({ ...f, password: e.target.value }))} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={lS}>Ordner</label>
+                    <input style={fS} value={formular.ordner || ""}
+                      onChange={e => setFormular(f => ({ ...f, ordner: e.target.value }))} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lS}>Nach dem Abholen</label>
+                    <select style={fS} value={formular.nach_abholung}
+                      onChange={e => setFormular(f => ({ ...f, nach_abholung: e.target.value }))}>
+                      <option value="gelesen">als gelesen markieren</option>
+                      <option value="verschieben">verschieben nach…</option>
+                    </select>
+                  </div>
+                  {formular.nach_abholung === "verschieben" && (
+                    <div style={{ flex: 1 }}>
+                      <label style={lS}>Zielordner</label>
+                      <input style={fS} value={formular.ziel_ordner || ""}
+                        onChange={e => setFormular(f => ({ ...f, ziel_ordner: e.target.value }))} />
+                    </div>
+                  )}
+                </div>
+              </>) : (
+                <div style={{ display: "flex", gap: 8 }}>
+                  <div style={{ flex: 2 }}>
+                    <label style={lS}>Pfad (im Container)</label>
+                    <input style={fS} value={formular.pfad || ""} placeholder="/app/uploads/eingang"
+                      onChange={e => setFormular(f => ({ ...f, pfad: e.target.value }))} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={lS}>Endungen</label>
+                    <input style={fS} value={formular.endungen || ""}
+                      onChange={e => setFormular(f => ({ ...f, endungen: e.target.value }))} />
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div style={{ width: 130 }}>
+                  <label style={lS}>Takt (Cron)</label>
+                  <input style={fS} value={formular.cron_expr || ""} placeholder="*/30 * * * *"
+                    onChange={e => setFormular(f => ({ ...f, cron_expr: e.target.value }))} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: S.textDim }}>
+                  <input type="checkbox" checked={!!formular.aktiv}
+                    onChange={e => setFormular(f => ({ ...f, aktiv: e.target.checked }))} /> aktiv
+                </label>
+                <div style={{ flex: 1 }} />
+                <button onClick={() => { setFormular(null); setFehler(""); }}
+                  style={{ padding: "5px 10px", background: "none", color: S.textDim,
+                    border: `1px solid ${S.border}`, borderRadius: 5, fontSize: 11, cursor: "pointer" }}>
+                  Abbrechen</button>
+                <button onClick={speichern} disabled={!formular.name.trim()}
+                  style={{ padding: "5px 12px", background: S.accent, color: "#0b1120", border: "none",
+                    borderRadius: 5, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                  Speichern</button>
+              </div>
+              <div style={{ fontSize: 10, color: S.textDim }}>
+                Ohne Takt wird nur geholt, wenn jemand auf „Jetzt abholen" drückt.
+                Dubletten hält eine Prüfsumme über den Inhalt draußen, nicht der Dateiname.
+              </div>
+            </div>
+          )}
+
+          {meldung && <div style={{ fontSize: 11, color: "#34d399", marginTop: 8 }}>{meldung}</div>}
+          {fehler && <div style={{ fontSize: 11, color: "#e07070", marginTop: 8 }}>{fehler}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Posteingang ──────────────────────────────────────────────────────────────
 /** Was an Belegen wartet, ohne dass jemand eine Datei hereingezogen haette.
  *
@@ -430,6 +675,10 @@ export default function EingangsrechnungWidget({ widget }) {
   // Mandanten-Umschalter kann sie umlenken – seit 2026-09 tut er das auch beim
   // Import. Wer eine Rechnung freigibt, muss sehen, wo sie landet.
   const [ziel, setZiel] = useState(null);
+  const [quellenOffen, setQuellenOffen] = useState(false);
+  // Quellen darf nur der Betreiber pflegen (das Backend besteht darauf).
+  const { user: angemeldet } = useAuth();
+  const istAdmin = !!angemeldet?.is_admin;
   const [overrides, setOverrides] = useState({});
   const [merken, setMerken] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -632,6 +881,11 @@ export default function EingangsrechnungWidget({ widget }) {
 
       <Posteingang belege={posteingang} holt={holt} onAbholen={abholen}
         onOeffnen={ausPosteingang} onVerwerfen={(id) => belegStatus(id, "verworfen")} />
+      {/* Fuer alle anderen waere der Knopf nur eine Sackgasse. */}
+      {istAdmin && (
+        <QuellenVerwaltung connId={connId} offen={quellenOffen}
+          onToggle={() => setQuellenOffen(v => !v)} onAbgeholt={ladePosteingang} />
+      )}
     </div>
   );
 
