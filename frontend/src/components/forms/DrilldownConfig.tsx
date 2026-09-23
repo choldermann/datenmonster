@@ -71,6 +71,21 @@ export default function DrilldownConfig({ value, dimensionField, projectId, onCh
             das Mapping übergeben. Aktuelle Dashboard-Filter (z.&nbsp;B. <code>:von</code>/<code>:bis</code>) werden mitgeschickt.
           </p>
 
+          <label style={{ ...lbl, marginTop: 8 }}>Dokument-Spalte (optional)</label>
+          <input style={{ ...iS, marginBottom: 6 }} value={dd.dokument_spalte || ""}
+            onChange={e => setDd({ dokument_spalte: e.target.value })} placeholder="z.B. XML" />
+          {dd.dokument_spalte && (
+            <>
+              <label style={lbl}>Dateiname aus Spalte (zum Herunterladen)</label>
+              <input style={{ ...iS, marginBottom: 6 }} value={dd.datei_spalte || ""}
+                onChange={e => setDd({ datei_spalte: e.target.value })} placeholder="z.B. Datei" />
+            </>
+          )}
+          <p style={{ fontSize: 9, color: "var(--text-dim)", marginTop: 0, lineHeight: 1.4 }}>
+            Mit Dokument-Spalte zeigt das Fenster statt einer Tabelle den Inhalt dieser Spalte
+            (XML eingerückt) – mit Kopieren und Herunterladen.
+          </p>
+
           {/* Tiefere Ebenen: Klick auf eine Zeile im Detail-Modal öffnet die nächste Ebene */}
           <div style={{ marginTop: 10, borderTop: "1px solid var(--border)", paddingTop: 8 }}>
             <span style={{ fontSize: 9, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: "0.05em" }}>

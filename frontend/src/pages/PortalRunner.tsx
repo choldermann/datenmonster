@@ -9,7 +9,7 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
-import FormFields, { validateRequired, fieldsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
@@ -492,7 +492,7 @@ export default function PortalRunner() {
         )}
 
         {/* Ergebnis-Register (optional, aus schema.result_tabs) */}
-        {results && resultTabs.length > 0 && (
+        {(results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && resultTabs.length > 0 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 16,
             borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
             {resultTabs.map(tab => {
@@ -515,7 +515,7 @@ export default function PortalRunner() {
             reguläre Widgets erst nach dem Ausführen. Parität zum Editor-FormRunner. */}
         {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
-            widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
+            widgets={widgetsForTab(widgets, currentTab, tabActionIds)}
             results={results || {}}
             allowDownload={allowDownload}
             baseParams={params}

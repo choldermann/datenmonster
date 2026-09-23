@@ -1,4 +1,5 @@
-import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { useState } from "react";
+import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
 
 const S = {
@@ -18,6 +19,79 @@ const ACCENT = "#fce499";
 const DB_INFO = "Rohertrag Ware = Umsatz − Wareneinsatz (Einkaufspreis), nur Artikelpositionen. "
   + "Rohertrag gesamt = derselbe Rohertrag über alle Positionsarten, also zuzüglich "
   + "Versandergebnis und sonstiger Positionen wie Rabatten.";
+
+/** XML einrücken, damit es lesbar ist – SQL Server liefert xml-Spalten ohne
+ *  Zeilenumbrüche. Kein Parser: ein kaputtes Dokument soll trotzdem sichtbar sein. */
+export function xmlEinruecken(xml) {
+  const t = String(xml ?? "").trim();
+  if (!t.startsWith("<")) return t;
+  let tiefe = 0;
+  return t.replace(/>\s*</g, ">\n<").split("\n").map(zeile => {
+    let rein = 0;
+    if (/^<\/[^>]+>$/.test(zeile)) tiefe = Math.max(tiefe - 1, 0);
+    else if (/^<[\w:][^>]*[^/]>$/.test(zeile) || /^<[\w:]+>$/.test(zeile)) rein = 1;
+    const out = "  ".repeat(tiefe) + zeile;
+    tiefe += rein;
+    return out;
+  }).join("\n");
+}
+
+/** Inhalt einer Spalte als Dokument (eine Zeile): Kopfdaten, Kopieren, Herunterladen. */
+function DokumentAnsicht({ row, spalte, dateiSpalte, hidden }) {
+  const [kopiert, setKopiert] = useState(false);
+  const roh = row[spalte];
+  const istXml = typeof roh === "string" && roh.trim().startsWith("<");
+  const text = istXml ? xmlEinruecken(roh) : String(roh ?? "");
+  const kopf = Object.keys(row).filter(c => c !== spalte && !hidden.has(c)
+    && row[c] !== null && row[c] !== "");
+
+  const kopieren = async () => {
+    try { await navigator.clipboard.writeText(text); setKopiert(true); setTimeout(() => setKopiert(false), 1500); }
+    catch { /* Zwischenablage gesperrt (kein HTTPS) – Text bleibt markierbar */ }
+  };
+  const herunterladen = () => {
+    // Aus einer xml-Spalte kommt das Dokument ohne Kopfzeile zurück; für die Datei ergänzen.
+    const inhalt = istXml && !text.startsWith("<?xml")
+      ? '<?xml version="1.0" encoding="UTF-8"?>\n' + text : text;
+    const name = (dateiSpalte && row[dateiSpalte]) || `${spalte}.${istXml ? "xml" : "txt"}`;
+    const url = URL.createObjectURL(new Blob([inhalt], { type: istXml ? "application/xml" : "text/plain" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = String(name); a.click();
+    URL.revokeObjectURL(url);
+  };
+  const knopf = { display: "flex", alignItems: "center", gap: 5, padding: "4px 9px", borderRadius: 4,
+    fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${S.border}`,
+    backgroundColor: S.bgEl, color: S.textMain };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 16px",
+        borderBottom: `1px solid ${S.border}` }}>
+        <div style={{ flex: 1, display: "flex", flexWrap: "wrap", gap: "4px 16px", fontSize: 11 }}>
+          {kopf.map(c => (
+            <span key={c}><span style={{ color: S.textDim }}>{c}: </span>
+              <span style={{ color: S.textMain }}>{fmtCell(row[c])}</span></span>
+          ))}
+        </div>
+        <button onClick={kopieren} disabled={!text} style={knopf}>
+          {kopiert ? <Check size={12} /> : <Copy size={12} />} {kopiert ? "Kopiert" : "Kopieren"}
+        </button>
+        <button onClick={herunterladen} disabled={!text} style={knopf}>
+          <Download size={12} /> {istXml ? "XML" : "Datei"}
+        </button>
+      </div>
+      {text ? (
+        <pre style={{ margin: 0, padding: "12px 16px", flex: 1, overflow: "auto", fontSize: 11.5,
+          lineHeight: 1.5, color: S.textMain, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          whiteSpace: "pre", tabSize: 2 }}>{text}</pre>
+      ) : (
+        <div style={{ padding: 40, textAlign: "center", color: S.textDim, fontSize: 12 }}>
+          „{spalte}“ ist leer.
+        </div>
+      )}
+    </div>
+  );
+}
 
 // CSV aus Zeilen bauen (RFC-4180-konform: Felder mit " , \n werden gequotet)
 function toCsv(columns, rows) {
@@ -45,7 +119,7 @@ function isNumericCol(col, rows) {
 
 export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose,
   trail = [], canDrillDeeper = false, onRowClick = null, onBack = null, hiddenColumns = [],
-  emailEnabled = false }) {
+  emailEnabled = false, dokument = null }) {
   const hidden = new Set(hiddenColumns || []);
   const columns = (rows.length ? Object.keys(rows[0]) : []).filter(c => !hidden.has(c));
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
@@ -152,6 +226,9 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <div style={{ padding: 40, textAlign: "center", color: S.textDim, fontSize: 12 }}>
               Keine Detailzeilen für diese Auswahl.
             </div>
+          ) : dokument && dokument.spalte in rows[0] ? (
+            <DokumentAnsicht row={rows[0]} spalte={dokument.spalte}
+              dateiSpalte={dokument.datei_spalte} hidden={hidden} />
           ) : (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>

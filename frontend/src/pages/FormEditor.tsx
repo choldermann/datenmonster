@@ -469,6 +469,7 @@ export default function FormEditor() {
           <WidgetsEditor
             widgets={widgets}
             actions={actions}
+            resultTabs={resultTabs}
             onChange={setWidgets}
           />
         )}

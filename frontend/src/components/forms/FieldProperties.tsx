@@ -244,6 +244,7 @@ export default function FieldProperties({ field, onChange, actions, resultTabs }
                 <option value="warengruppe">Warengruppe</option>
                 <option value="kategorie">Kategorie</option>
                 <option value="plattform">Plattform</option>
+                <option value="papinet_partner">Papinet-Partner</option>
               </select>
             </div>
           </Row>

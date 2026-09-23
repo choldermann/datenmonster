@@ -85,6 +85,11 @@ LOOKUP_QUERIES = {
                    "              WHERE H.kArtikel = A.kArtikel AND H.cTyp = 'Eingang' "
                    "                AND ISNULL(H.fEKNetto, 0) > 0) "
                    "ORDER BY A.cArtNr",
+    # Papinet-Partner (PapinetV2, eigene EGP-Datenbank, nicht JTL). Gesperrte
+    # stehen mit drin – ihre alten Nachrichten sollen auffindbar bleiben.
+    "papinet_partner": "SELECT PartnerID AS value, PartnerName + ' (' + PartnerCode + ')' "
+                       "  + CASE WHEN IsActive = 0 THEN ' – gesperrt' ELSE '' END AS label "
+                       "FROM dbo.tPapinetPartner ORDER BY PartnerName",
 }
 
 

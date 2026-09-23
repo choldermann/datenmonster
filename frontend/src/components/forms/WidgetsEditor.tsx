@@ -118,7 +118,7 @@ function TagsInput({ label, value = [], onChange, placeholder }) {
   );
 }
 
-function WidgetConfig({ widget, actions, onUpdate }) {
+function WidgetConfig({ widget, actions, resultTabs = [], onUpdate }) {
   const cfg = widget.config || {};
   const set = (patch) => onUpdate({ ...widget, config: { ...cfg, ...patch } });
   const setTop = (patch) => onUpdate({ ...widget, ...patch });
@@ -185,6 +185,27 @@ function WidgetConfig({ widget, actions, onUpdate }) {
             <option value="">— Verbindung wählen —</option>
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
+        </LabelRow>
+      )}
+
+      {resultTabs.length > 0 && (
+        <LabelRow label="Nur in diesen Reitern">
+          {resultTabs.map(t => {
+            const sel = Array.isArray(cfg.visible_tabs) ? cfg.visible_tabs : [];
+            return (
+              <label key={t.id} style={{ display: "flex", alignItems: "center", gap: 7,
+                cursor: "pointer", fontSize: 11, color: S.textMain, marginBottom: 3 }}>
+                <input type="checkbox" checked={sel.includes(t.id)}
+                  onChange={e => set({ visible_tabs: e.target.checked
+                    ? [...sel, t.id] : sel.filter(x => x !== t.id) })}
+                  style={{ width: 12, height: 12 }} />
+                {t.label || t.id}
+              </label>
+            );
+          })}
+          <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0", lineHeight: 1.5 }}>
+            Ohne Auswahl folgt das Widget seiner Aktion; Widgets ohne Aktion stehen dann auf allen Reitern.
+          </p>
         </LabelRow>
       )}
 
@@ -391,7 +412,7 @@ function WidgetConfig({ widget, actions, onUpdate }) {
   );
 }
 
-export default function WidgetsEditor({ widgets = [], actions = [], onChange }) {
+export default function WidgetsEditor({ widgets = [], actions = [], resultTabs = [], onChange }) {
   const [expanded, setExpanded] = useState(null);
   const [showPalette, setShowPalette] = useState(false);
 
@@ -507,7 +528,7 @@ export default function WidgetsEditor({ widgets = [], actions = [], onChange }) 
                            : <ChevronRight size={12} style={{ color: S.textDim, flexShrink: 0 }} />}
                 </div>
                 {isOpen && (
-                  <WidgetConfig widget={widget} actions={actions} onUpdate={updateWidget} />
+                  <WidgetConfig widget={widget} actions={actions} resultTabs={resultTabs} onUpdate={updateWidget} />
                 )}
               </div>
             );

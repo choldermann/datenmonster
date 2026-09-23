@@ -100,6 +100,10 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   }
 }
 
+// Drilldown-Ebene mit Dokument-Spalte (z.B. XML einer Nachricht) → Dokument- statt Tabellenansicht.
+const dokumentAus = (dd) => dd?.dokument_spalte
+  ? { spalte: dd.dokument_spalte, datei_spalte: dd.datei_spalte || null } : null;
+
 export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null, formId = null }) {
   // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
@@ -131,10 +135,10 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   };
 
   // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
-  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter }) => {
+  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter, dokument = null }) => {
     const base = cfgRef.current.base || {};
     const id = ++seqRef.current;
-    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [] }]);
+    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [], dokument }]);
     try {
       // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
       const params = param ? { ...base, [param]: value } : { ...base };
@@ -176,7 +180,8 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     if (!dd?.mapping_id) return;
     cfgRef.current = { dd, base: baseParams || {} };
     openLevel({ mapping_id: dd.mapping_id, param: dd.param || field, value,
-      title: dd.title || widget.label || "Drilldown", field, depth: 0, hidden: dd.hidden_columns });
+      title: dd.title || widget.label || "Drilldown", field, depth: 0, hidden: dd.hidden_columns,
+      dokument: dokumentAus(dd) });
   };
 
   // Klick auf eine Zeile im Modal → nächste Ebene (levels[depth]).
@@ -188,7 +193,8 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     const val = row[next.key_column];
     if (val === null || val === undefined || val === "") return;
     openLevel({ mapping_id: next.mapping_id, param: next.param || next.key_column, value: val,
-      title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth, hidden: next.hidden_columns });
+      title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth, hidden: next.hidden_columns,
+      dokument: dokumentAus(next) });
   };
 
   // Ist die aktuell oberste Ebene weiter aufklappbar?
@@ -263,6 +269,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         error={topFrame.error}
         trail={stack.map(f => ({ title: f.title, value: f.value }))}
         hiddenColumns={topFrame.hidden || []}
+        dokument={topFrame.dokument}
         canDrillDeeper={canDrillDeeper}
         onRowClick={handleRowDrill}
         onBack={stack.length > 1 ? backDrill : null}

@@ -136,6 +136,18 @@ export function fieldsForTab(fields, currentTab) {
   });
 }
 
+/** Widgets eines Reiters: `config.visible_tabs` legt ein Widget fest auf Reiter
+ *  (nötig für eigenständige Widgets ohne Aktion, die sonst überall stehen);
+ *  ohne diese Angabe entscheidet wie bisher die Aktion des Widgets. */
+export function widgetsForTab(widgets, currentTab, tabActionIds) {
+  if (!tabActionIds) return widgets || [];
+  return (widgets || []).filter(w => {
+    const vt = w.config?.visible_tabs;
+    if (Array.isArray(vt) && vt.length) return currentTab ? vt.includes(currentTab) : false;
+    return !w.action_id || tabActionIds.has(w.action_id);
+  });
+}
+
 /** Bewusster Klick ohne Auswahl = ALLE Actions, auch schreibende (Export, Pipeline).
  *  `null` heißt dagegen „automatischer Lauf“ (Öffnen, Filter, Mandantenwechsel) –
  *  dafür führt das Backend nur lesende Actions aus. */

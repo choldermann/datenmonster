@@ -6,7 +6,7 @@ import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileTex
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
-import FormFields, { validateRequired, fieldsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
@@ -448,8 +448,10 @@ export default function FormRunner() {
           </div>
         )}
 
-        {/* Ergebnis-Tabs (optional, aus schema.result_tabs) */}
-        {results && resultTabs.length > 0 && (
+        {/* Ergebnis-Tabs (optional, aus schema.result_tabs) – bei eigenständigen Widgets
+            schon vor dem ersten Lauf, sonst käme man nie auf einen Reiter, dessen
+            Filter den ersten Lauf erst auslöst */}
+        {(results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && resultTabs.length > 0 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 16,
             borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
             {resultTabs.map(tab => {
@@ -470,7 +472,7 @@ export default function FormRunner() {
         {/* Widgets: eigenständige (z.B. Eingangsrechnung) sofort, ergebnis-basierte nach Lauf */}
         {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
           <WidgetRenderer
-            widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
+            widgets={widgetsForTab(widgets, currentTab, tabActionIds)}
             results={results || {}} allowDownload={true} baseParams={params}
             projectId={form.project_id} formId={form.id}
             onAiText={(aid, text, loading) => {
