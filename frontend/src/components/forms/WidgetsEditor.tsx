@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags, ClipboardList, Building2 } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags, ClipboardList, Building2, Database } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -44,7 +44,28 @@ const WIDGET_TYPES = [
     desc: "Bestände zum Stichtag einfrieren, abwerten und als Liste für den Steuerberater ausgeben" },
   { type: "kunden_ausschluss", label: "Verbundene Unternehmen", Icon: Building2, color: "#94a3b8",
     desc: "Kunden pflegen, die aus den Abfluss-Auswertungen herausfallen (eigene Firma, Schwestergesellschaften)" },
+  { type: "datenpflege", label: "Datenpflege", Icon: Database, color: "#34d399",
+    desc: "Eine Tabelle einer Verbindung anzeigen: Zeilen anlegen, bearbeiten und sperren" },
 ];
+
+// „Spalte=Text"-Zeilen ⇄ Objekt (Beschriftungen, Auswahllisten)
+const zeilenZuMap = (t, liste = false) => Object.fromEntries(
+  (t || "").split("\n").map(z => z.split("=")).filter(([k, v]) => k?.trim() && v?.trim())
+    .map(([k, ...v]) => {
+      const w = v.join("=").trim();
+      return [k.trim(), liste ? w.split("|").map(x => x.trim()).filter(Boolean) : w];
+    }));
+const mapZuZeilen = (m, liste = false) => Object.entries(m || {})
+  .map(([k, v]) => `${k}=${liste ? (v || []).join("|") : v}`).join("\n");
+const kommaListe = (v) => v.split(",").map(s => s.trim()).filter(Boolean);
+
+/** Textfeld, das erst beim Verlassen übernimmt – sonst frisst das Parsen halbe Zeilen. */
+function MapTextarea({ value, liste, onChange, placeholder }) {
+  const [t, setT] = useState(() => mapZuZeilen(value, liste));
+  return <textarea value={t} onChange={e => setT(e.target.value)}
+    onBlur={() => onChange(zeilenZuMap(t, liste))} rows={3} placeholder={placeholder}
+    style={{ ...inp, resize: "vertical", fontFamily: "ui-monospace, monospace" }} />;
+}
 
 function LabelRow({ label, children }) {
   return (
@@ -104,9 +125,10 @@ function WidgetConfig({ widget, actions, onUpdate }) {
 
   const [connections, setConnections] = useState([]);
   useEffect(() => {
-    if (widget.type !== "eingangsrechnung" && widget.type !== "debitoren") return;
+    if (!["eingangsrechnung", "debitoren", "datenpflege"].includes(widget.type)) return;
     api.get("/api/connections/")
-      .then(r => setConnections((r.data || []).filter(c => c.db_type === "mssql")))
+      .then(r => setConnections((r.data || []).filter(c =>
+        widget.type === "datenpflege" || c.db_type === "mssql")))
       .catch(() => {});
   }, [widget.type]);
 
@@ -164,6 +186,76 @@ function WidgetConfig({ widget, actions, onUpdate }) {
             {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </LabelRow>
+      )}
+
+      {widget.type === "datenpflege" && (
+        <>
+          <LabelRow label="Verbindung">
+            <select value={cfg.connection_id || ""}
+              onChange={e => set({ connection_id: e.target.value ? Number(e.target.value) : null })}
+              style={{ ...inp, cursor: "pointer" }}>
+              <option value="">— Verbindung wählen —</option>
+              {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </LabelRow>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 2 }}>
+              <LabelRow label="Tabelle">
+                <Inp value={cfg.table} onChange={v => set({ table: v })} placeholder="z.B. dbo.tPartner" />
+              </LabelRow>
+            </div>
+            <div style={{ flex: 1 }}>
+              <LabelRow label="Schlüsselspalte">
+                <Inp value={cfg.key_column} onChange={v => set({ key_column: v })} placeholder="leer = Primärschlüssel" />
+              </LabelRow>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <LabelRow label="Aktiv-Spalte (zum Sperren)">
+                <Inp value={cfg.aktiv_spalte} onChange={v => set({ aktiv_spalte: v })} placeholder="z.B. IsActive" />
+              </LabelRow>
+            </div>
+            <div style={{ flex: 1 }}>
+              <LabelRow label="Sortieren nach">
+                <Inp value={cfg.sort_column} onChange={v => set({ sort_column: v })} placeholder="leer = Schlüssel" />
+              </LabelRow>
+            </div>
+          </div>
+          <LabelRow label="Eindeutige Spalten (Komma-getrennt)">
+            <Inp value={(cfg.unique_columns || []).join(", ")}
+              onChange={v => set({ unique_columns: kommaListe(v) })} placeholder="z.B. PartnerCode" />
+          </LabelRow>
+          <LabelRow label="Nicht bearbeitbar (Komma-getrennt)">
+            <Inp value={(cfg.readonly_columns || []).join(", ")}
+              onChange={v => set({ readonly_columns: kommaListe(v) })} placeholder="Spalten, die nur angezeigt werden" />
+          </LabelRow>
+          <LabelRow label="In der Liste ausblenden (Komma-getrennt)">
+            <Inp value={(cfg.hidden_columns || []).join(", ")}
+              onChange={v => set({ hidden_columns: kommaListe(v) })} placeholder="bleiben in der Bearbeiten-Maske" />
+          </LabelRow>
+          <LabelRow label="Beschriftungen (eine je Zeile: Spalte=Text)">
+            <MapTextarea value={cfg.labels} onChange={m => set({ labels: m })}
+              placeholder={"PartnerName=Name\nPartnerCode=Kürzel"} />
+          </LabelRow>
+          <LabelRow label="Auswahllisten (eine je Zeile: Spalte=A|B|C)">
+            <MapTextarea liste value={cfg.auswahl} onChange={m => set({ auswahl: m })}
+              placeholder="PartnerType=Customer|Supplier|Internal" />
+          </LabelRow>
+          <LabelRow label="Nur lesen">
+            <label style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer",
+              fontSize: 11, color: S.textMain }}>
+              <input type="checkbox" checked={!!cfg.nur_lesen}
+                onChange={e => set({ nur_lesen: e.target.checked })}
+                style={{ width: 12, height: 12 }} />
+              Nur anzeigen, keine Änderungen zulassen
+            </label>
+            <p style={{ fontSize: 10, color: S.textDim, margin: "6px 0 0", lineHeight: 1.5 }}>
+              Spalten, Pflichtfelder und Längen kommen aus der Datenbank. Löschen gibt es bewusst
+              nicht – gesperrt wird über die Aktiv-Spalte. Einstellungen wirken nach dem Speichern.
+            </p>
+          </LabelRow>
+        </>
       )}
 
       {widget.type === "kpi" && (

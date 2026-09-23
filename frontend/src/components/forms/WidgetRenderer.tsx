@@ -20,6 +20,7 @@ import TaskListWidget from "./widgets/TaskListWidget";
 import AlertsWidget from "./widgets/AlertsWidget";
 import InventurWidget from "./widgets/InventurWidget";
 import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
+import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -35,6 +36,7 @@ const WIDGET_LABELS = {
   datev_stammdaten: "DATEV-Stammdaten",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
   inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
+  datenpflege: "Datenpflege",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -42,9 +44,10 @@ const WIDGET_LABELS = {
 export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_research",
                                                 "kostenstruktur", "preisautomatik",
                                                 "debitoren", "datev_stammdaten",
-                                                "inventur", "kunden_ausschluss"]);
+                                                "inventur", "kunden_ausschluss",
+                                                "datenpflege"]);
 
-function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, baseParams }) {
+function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
   // Braucht Jahr/Monat aus dem Formular – deshalb baseParams.
@@ -63,6 +66,9 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     return <InventurWidget widget={widget} projectId={projectId} />;
   if (widget.type === "kunden_ausschluss")
     return <KundenAusschlussWidget widget={widget} projectId={projectId} />;
+  // Die Tabelle steht im gespeicherten Formular – der Server braucht nur Formular + Widget.
+  if (widget.type === "datenpflege")
+    return <DatenpflegeWidget widget={widget} formId={formId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
@@ -94,7 +100,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   }
 }
 
-export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null }) {
+export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null, formId = null }) {
   // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
   // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
@@ -240,7 +246,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} baseParams={baseParams} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
+                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} formId={formId} baseParams={baseParams} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
               </div>
             );
           })}

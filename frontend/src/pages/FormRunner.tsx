@@ -472,7 +472,7 @@ export default function FormRunner() {
           <WidgetRenderer
             widgets={tabActionIds ? widgets.filter(w => !w.action_id || tabActionIds.has(w.action_id)) : widgets}
             results={results || {}} allowDownload={true} baseParams={params}
-            projectId={form.project_id}
+            projectId={form.project_id} formId={form.id}
             onAiText={(aid, text, loading) => {
               setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
               setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });

@@ -31,7 +31,7 @@ _REGELN = [
     # Verbindungsauswahl im Intrastat-Ausschluss-Widget (nur die Liste)
     ({"GET"},            r"/api/connections"),
     # Fach-Widgets mit eigenen Portal-Pruefungen im jeweiligen Router
-    (ALLE, r"/api/(business-config|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
+    (ALLE, r"/api/(business-config|datenpflege|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
            r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten)(/.*)?"),
 ]
 _KOMPILIERT = [(m, re.compile(muster)) for m, muster in _REGELN]
