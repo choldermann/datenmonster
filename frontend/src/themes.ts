@@ -24,6 +24,14 @@ export const THEMES: ThemeDef[] = [
   { id: "gameboy",    label: "Game Boy",        desc: "Vier Grüntöne, 160 × 144 Gefühl",       scheme: "light", gruppe: "retro" },
   { id: "nextstep",   label: "NeXTSTEP",        desc: "Graue 3D-Kanten, Helvetica, 1989",      scheme: "light", gruppe: "retro" },
   { id: "atari",      label: "Atari ST",        desc: "GEM-Desktop: Grün, Weiß, Schwarz",      scheme: "light", gruppe: "retro" },
+  { id: "norton",     label: "Norton Commander", desc: "Blaue Panels, Doppellinien, F10 = Quit", scheme: "dark",  gruppe: "retro" },
+  { id: "turbopascal", label: "Turbo Pascal",   desc: "Gelb auf Blau, Turbo Vision 1992",      scheme: "dark",  gruppe: "retro" },
+  { id: "videotext",  label: "Videotext",       desc: "Tafel 100 – sieben Farben auf Schwarz", scheme: "dark",  gruppe: "retro" },
+  { id: "zx",         label: "ZX Spectrum",     desc: "Schwarz mit Regenbogenstreifen, 1982",  scheme: "dark",  gruppe: "retro" },
+  { id: "win95",      label: "Windows 95",      desc: "Petrol-Desktop, graue 3D-Knöpfe",       scheme: "light", gruppe: "retro" },
+  { id: "system7",    label: "Mac System 7",    desc: "Schwarz auf Weiß, grauer Schreibtisch", scheme: "light", gruppe: "retro" },
+  { id: "os2",        label: "OS/2 Warp",       desc: "Graue Fenster auf tiefem Blau",         scheme: "light", gruppe: "retro" },
+  { id: "beos",       label: "BeOS",            desc: "Hellgrau mit dem gelben Reiter",        scheme: "light", gruppe: "retro" },
 ];
 
 export const GRUPPEN: { id: ThemeGruppe; label: string }[] = [

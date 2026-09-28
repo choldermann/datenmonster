@@ -366,6 +366,260 @@
   --shadow-card: inset 1px 1px 0 #d8d8d8, inset -1px -1px 0 #555555;
 }
 
+[data-theme="norton"] {
+  /* Norton Commander: blaue Panels, cyan Schrift, gelbe Markierung */
+  --accent:      #ffff55;
+  --accent-dim:  rgba(255, 255, 85, 0.14);
+  --accent-line: rgba(255, 255, 85, 0.45);
+  --accent-fg:   #000000;
+
+  --bg-main:     #000080;
+  --bg-card:     #0000aa;
+  --bg-elevated: #00008c;
+  --border:      #55ffff;
+  --border-soft: #0000cc;
+
+  --text-main:   #55ffff;
+  --text-bright: #ffffff;
+  --text-dim:    #00c8c8;
+
+  --red: #ff5555; --green: #55ff55; --blue: #55ffff;
+  --ok: #55ff55; --err: #ff5555; --err-soft: #ff7777; --warn: #ffff55;
+  --muted: #55ffff; --muted-2: #00c8c8; --muted-3: #00aaaa;
+
+  --scroll-thumb: #00aaaa; --scroll-thumb-hover: #55ffff;
+  --ghost-hover-border: #ffff55;
+  --ghost-hover-bg: rgba(85, 255, 255, 0.1);
+  --tag-bg: rgba(0, 0, 0, 0.25);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "VT323", var(--font-mono);
+}
+
+[data-theme="turbopascal"] {
+  /* Turbo Pascal 7 / Turbo Vision: gelbe Schrift auf Blau, schwarze Fensterschatten */
+  --accent:      #55ff55;
+  --accent-dim:  rgba(85, 255, 85, 0.14);
+  --accent-line: rgba(85, 255, 85, 0.45);
+  --accent-fg:   #000000;
+
+  --bg-main:     #00007a;
+  --bg-card:     #0000aa;
+  --bg-elevated: #0000c4;
+  --border:      #ffffff;
+  --border-soft: #2a2acc;
+
+  --text-main:   #ffff55;
+  --text-bright: #ffffff;
+  --text-dim:    #c8c8a0;
+
+  --red: #ff5555; --green: #55ff55; --blue: #55ffff;
+  --ok: #55ff55; --err: #ff5555; --err-soft: #ff7777; --warn: #ffaa00;
+  --muted: #d0d0d0; --muted-2: #aaaaaa; --muted-3: #8888aa;
+
+  --scroll-thumb: #00aaaa; --scroll-thumb-hover: #55ffff;
+  --ghost-hover-border: #55ff55;
+  --ghost-hover-bg: rgba(255, 255, 85, 0.08);
+  --tag-bg: rgba(0, 0, 0, 0.25);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "VT323", var(--font-mono);
+  --shadow-card: 4px 4px 0 #000000;
+}
+
+[data-theme="videotext"] {
+  /* Videotext: Schwarz mit den sieben Grundfarben, blaue Kopfbalken */
+  --accent:      #ffff00;
+  --accent-dim:  rgba(255, 255, 0, 0.15);
+  --accent-line: rgba(255, 255, 0, 0.5);
+  --accent-fg:   #000000;
+
+  --bg-main:     #000000;
+  --bg-card:     #000000;
+  --bg-elevated: #0000ff;
+  --border:      #0000ff;
+  --border-soft: #00007f;
+
+  --text-main:   #ffffff;
+  --text-bright: #ffffff;
+  --text-dim:    #00ffff;
+
+  --red: #ff0000; --green: #00ff00; --blue: #0000ff;
+  --ok: #00ff00; --err: #ff0000; --err-soft: #ff00ff; --warn: #ffff00;
+  --muted: #00ffff; --muted-2: #00d0d0; --muted-3: #00a0a0;
+
+  --scroll-thumb: #0000ff; --scroll-thumb-hover: #ffff00;
+  --ghost-hover-border: #ffff00;
+  --ghost-hover-bg: rgba(0, 0, 255, 0.35);
+  --tag-bg: rgba(0, 0, 255, 0.4);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "VT323", var(--font-mono);
+}
+
+[data-theme="zx"] {
+  /* ZX Spectrum: Schwarz, die hellen Spectrum-Farben, Regenbogen in der Ecke */
+  --accent:      #ffff00;
+  --accent-dim:  rgba(255, 255, 0, 0.14);
+  --accent-line: rgba(255, 255, 0, 0.45);
+  --accent-fg:   #000000;
+
+  --bg-main:     #000000;
+  --bg-card:     #0a0a0a;
+  --bg-elevated: #161616;
+  --border:      #d7d7d7;
+  --border-soft: #2a2a2a;
+
+  --text-main:   #d7d7d7;
+  --text-bright: #ffffff;
+  --text-dim:    #00d7d7;
+
+  --red: #ff0000; --green: #00ff00; --blue: #0000ff;
+  --ok: #00ff00; --err: #ff3030; --err-soft: #ff00ff; --warn: #ffff00;
+  --muted: #d7d7d7; --muted-2: #00d7d7; --muted-3: #00a0a0;
+
+  --scroll-thumb: #d7d7d7; --scroll-thumb-hover: #ffff00;
+  --ghost-hover-border: #00ffff;
+  --ghost-hover-bg: rgba(255, 255, 255, 0.06);
+  --tag-bg: rgba(255, 255, 255, 0.06);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "Press Start 2P", var(--font-mono);
+}
+
+[data-theme="win95"] {
+  --accent:      #000080;
+  --accent-dim:  rgba(0, 0, 128, 0.12);
+  --accent-line: rgba(0, 0, 128, 0.4);
+  --accent-fg:   #ffffff;
+
+  --bg-main:     #008080;
+  --bg-card:     #c0c0c0;
+  --bg-elevated: #ffffff;
+  --border:      #808080;
+  --border-soft: #a0a0a0;
+
+  --text-main:   #000000;
+  --text-bright: #000000;
+  --text-dim:    #202020;   /* steht auch direkt auf dem Petrol-Desktop */
+
+  --red: #aa0000; --green: #006e00; --blue: #000080;
+  --ok: #006e00; --err: #aa0000; --err-soft: #8a1a1a; --warn: #6e5000;
+  --muted: #333333; --muted-2: #3a3a3a; --muted-3: #2a2a2a;
+
+  --scroll-thumb: #c0c0c0; --scroll-thumb-hover: #a0a0a0;
+  --ghost-hover-border: #000000;
+  --ghost-hover-bg: rgba(0, 0, 128, 0.08);
+  --tag-bg: rgba(255, 255, 255, 0.4);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    Tahoma, "MS Sans Serif", Verdana, Arial, sans-serif;
+  --font-display: var(--font-body);
+  --bevel:       inset 1px 1px 0 #ffffff, inset -1px -1px 0 #000000, inset -2px -2px 0 #808080;
+  --shadow-card: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #000000, inset -2px -2px 0 #808080;
+}
+
+[data-theme="system7"] {
+  /* Mac System 7: Schwarz auf Weiß, grauer Schreibtisch, harte Schatten */
+  --accent:      #000000;
+  --accent-dim:  rgba(0, 0, 0, 0.08);
+  --accent-line: rgba(0, 0, 0, 0.4);
+  --accent-fg:   #ffffff;
+
+  --bg-main:     #b4b4b4;
+  --bg-card:     #ffffff;
+  --bg-elevated: #ffffff;
+  --border:      #000000;
+  --border-soft: #bbbbbb;
+
+  --text-main:   #000000;
+  --text-bright: #000000;
+  --text-dim:    #333333;
+
+  --red: #bb0000; --green: #006600; --blue: #0000bb;
+  --ok: #006600; --err: #bb0000; --err-soft: #992222; --warn: #7a5600;
+  --muted: #444444; --muted-2: #444444; --muted-3: #333333;
+
+  --scroll-thumb: #000000; --scroll-thumb-hover: #444444;
+  --ghost-hover-border: #000000;
+  --ghost-hover-bg: rgba(0, 0, 0, 0.06);
+  --tag-bg: rgba(0, 0, 0, 0.05);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    Chicago, ChicagoFLF, Charcoal, Geneva, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: var(--font-body);
+  --shadow-card: 1px 1px 0 #000000;
+}
+
+[data-theme="os2"] {
+  /* OS/2 Warp 4: grauer Fensterrahmen, tiefblauer Schreibtisch, dunkelblaue Titel */
+  --accent:      #00407f;
+  --accent-dim:  rgba(0, 64, 127, 0.12);
+  --accent-line: rgba(0, 64, 127, 0.4);
+  --accent-fg:   #ffffff;
+
+  --bg-main:     #6a93b8;
+  --bg-card:     #cccccc;
+  --bg-elevated: #eeeeee;
+  --border:      #6a6a6a;
+  --border-soft: #aaaaaa;
+
+  --text-main:   #111111;
+  --text-bright: #000000;
+  --text-dim:    #262626;   /* steht auch direkt auf dem blauen Schreibtisch */
+
+  --red: #a00000; --green: #006a00; --blue: #00407f;
+  --ok: #006a00; --err: #a00000; --err-soft: #8a1a1a; --warn: #6e5000;
+  --muted: #333333; --muted-2: #3a3a3a; --muted-3: #2a2a2a;
+
+  --scroll-thumb: #999999; --scroll-thumb-hover: #6a6a6a;
+  --ghost-hover-border: #00407f;
+  --ghost-hover-bg: rgba(0, 64, 127, 0.08);
+  --tag-bg: rgba(255, 255, 255, 0.4);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: var(--font-body);
+  --bevel:       inset 1px 1px 0 #ffffff, inset -1px -1px 0 #6a6a6a;
+  --shadow-card: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #6a6a6a;
+}
+
+[data-theme="beos"] {
+  /* BeOS: hellgraue Fenster, blauer Schreibtisch, gelber Reiter */
+  --accent:      #8a6400;   /* dunkles Gold – das Reitergelb ist als Schrift unlesbar */
+  --accent-dim:  rgba(255, 203, 0, 0.25);
+  --accent-line: rgba(255, 203, 0, 0.7);
+  --accent-fg:   #000000;
+
+  --bg-main:     #6f9cc8;
+  --bg-card:     #dedede;
+  --bg-elevated: #ffffff;
+  --border:      #8c8c8c;
+  --border-soft: #bcbcbc;
+
+  --text-main:   #1a1a1a;
+  --text-bright: #000000;
+  --text-dim:    #262626;   /* steht auch direkt auf dem blauen Schreibtisch */
+
+  --red: #b00000; --green: #1a6e1a; --blue: #336698;
+  --ok: #1a6e1a; --err: #b00000; --err-soft: #992222; --warn: #7a5600;
+  --muted: #3a3a3a; --muted-2: #444444; --muted-3: #333333;
+
+  --scroll-thumb: #a8a8a8; --scroll-thumb-hover: #8c8c8c;
+  --ghost-hover-border: #8a6400;
+  --ghost-hover-bg: rgba(255, 203, 0, 0.18);
+  --tag-bg: rgba(255, 255, 255, 0.5);
+
+  --radius: 2px; --radius-sm: 0px;
+  --font-body:    "Swis721 BT", Verdana, "DejaVu Sans", Arial, sans-serif;
+  --font-display: var(--font-body);
+  --shadow-card: inset 1px 1px 0 #ffffff, inset -1px -1px 0 #8c8c8c;
+}
+
 /* ── Effekte, die nur fürs ganze Fenster Sinn ergeben ──────────────────── */
 
 /* Leuchtende Schrift auf Röhrenmonitoren */
@@ -401,11 +655,51 @@ html[data-theme="bernstein"] .recharts-wrapper,
 html[data-theme="phosphor"] .recharts-wrapper,
 html[data-theme="gameboy"] .recharts-wrapper { filter: var(--chart-filter); }
 
-/* Harte Schatten (Atari, Amiga, Game Boy) bzw. 3D-Kante (NeXTSTEP) an Karten */
+/* Harte Schatten (Atari, Amiga, Game Boy, Turbo Pascal, System 7) bzw.
+   3D-Kante (NeXTSTEP, Windows 95, OS/2, BeOS) an Karten */
 html[data-theme="atari"] .card,
 html[data-theme="amiga"] .card,
 html[data-theme="gameboy"] .card,
-html[data-theme="nextstep"] .card { box-shadow: var(--shadow-card); }
+html[data-theme="nextstep"] .card,
+html[data-theme="turbopascal"] .card,
+html[data-theme="system7"] .card,
+html[data-theme="win95"] .card,
+html[data-theme="os2"] .card,
+html[data-theme="beos"] .card { box-shadow: var(--shadow-card); }
+
+/* Norton Commander: Doppellinien um die Panels */
+html[data-theme="norton"] .card { border-style: double; border-width: 3px; }
+
+/* ZX Spectrum: die vier Regenbogenstreifen unten rechts */
+html[data-theme="zx"] body::after {
+  content: "";
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 96px;
+  height: 48px;
+  pointer-events: none;
+  z-index: 2147483647;
+  opacity: 0.85;
+  background: linear-gradient(135deg,
+    transparent 0 40%, #ff0000 40% 50%, #ffff00 50% 60%, #00ff00 60% 70%, #00ffff 70% 80%, transparent 80%);
+}
+
+/* Windows 95 / OS/2: erhabene Knöpfe, eingelassene Eingabefelder */
+html[data-theme="win95"] .btn-ghost,
+html[data-theme="os2"] .btn-ghost {
+  background: var(--bg-card); color: #000; border-color: #000; box-shadow: var(--bevel);
+}
+html[data-theme="win95"] .input,
+html[data-theme="os2"] .input {
+  background-color: #ffffff; box-shadow: inset 1px 1px 0 #808080, inset 2px 2px 0 #000000;
+}
+
+/* BeOS: der gelbe Reiter als Hauptknopf */
+html[data-theme="beos"] .btn-primary { background: #ffcb00; color: #000; border-color: #8a6400; }
+
+/* System 7: fette Überschriften wie in der Chicago-Menüleiste */
+html[data-theme="system7"] :is(.section-title, h1, h2, h3) { font-weight: 700; }
 
 /* NeXTSTEP: erhabene Knöpfe, eingelassene Eingabefelder */
 html[data-theme="nextstep"] .btn-ghost {
@@ -427,12 +721,16 @@ h1, h2, h3 {
 html[data-theme="bernstein"] :is(.section-title, .btn-primary, h1, h2, h3),
 html[data-theme="phosphor"]  :is(.section-title, .btn-primary, h1, h2, h3),
 html[data-theme="amiga"]     :is(.section-title, .btn-primary, h1, h2, h3),
-html[data-theme="atari"]     :is(.section-title, .btn-primary, h1, h2, h3) {
+html[data-theme="atari"]     :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="norton"]    :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="turbopascal"] :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="videotext"] :is(.section-title, .btn-primary, h1, h2, h3) {
   font-size-adjust: 0.62;
   letter-spacing: 0.04em;
 }
 html[data-theme="c64"]     :is(.section-title, .btn-primary, h1, h2, h3),
-html[data-theme="gameboy"] :is(.section-title, .btn-primary, h1, h2, h3) {
+html[data-theme="gameboy"] :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="zx"]      :is(.section-title, .btn-primary, h1, h2, h3) {
   font-size-adjust: 0.58;
   letter-spacing: 0.02em;
   line-height: 1.5;
