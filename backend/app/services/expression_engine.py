@@ -230,6 +230,49 @@ def _exec_python_script(script: str, row: dict, timeout_sec: int = 3) -> tuple:
     return _result["value"], _result["error"]
 
 
+# ── Prüfung vor eval ──────────────────────────────────────────────────────────
+#
+# Formel-Knoten und Fensterformel werden mit eval ausgewertet. Leere Builtins
+# allein schützen nicht: über Attribute (().__class__.__base__.__subclasses__())
+# kommt man an jede geladene Klasse und damit an os.system. Deshalb wird der
+# Ausdruck vorher als Baum geprüft: kein Attributzugriff, keine Namen mit
+# Unterstrich (außer dem Zeilen-Platzhalter), Aufrufe nur von freigegebenen
+# Funktionsnamen, keine Lambdas/Comprehensions.
+import ast as _ast
+
+_ERLAUBTE_KNOTEN = (
+    _ast.Expression, _ast.BoolOp, _ast.BinOp, _ast.UnaryOp, _ast.Compare, _ast.IfExp,
+    _ast.Call, _ast.keyword, _ast.Name, _ast.Load, _ast.Constant, _ast.Subscript,
+    _ast.Slice, _ast.Tuple, _ast.List, _ast.JoinedStr, _ast.FormattedValue,
+    _ast.operator, _ast.unaryop, _ast.boolop, _ast.cmpop,
+)
+_MAX_POTENZ = 1000  # 9**9**9 legt sonst den Server lahm
+
+
+def pruefe_ausdruck(expr: str, namen: set, platzhalter: tuple = ()) -> None:
+    """ValueError, wenn der Ausdruck mehr ist als eine Formel über `namen`."""
+    try:
+        baum = _ast.parse(expr, mode="eval")
+    except SyntaxError as e:
+        raise ValueError(f"Syntaxfehler in der Formel: {e.msg}")
+    for k in _ast.walk(baum):
+        if not isinstance(k, _ERLAUBTE_KNOTEN):
+            raise ValueError(f"In Formeln nicht erlaubt: {type(k).__name__}")
+        if isinstance(k, _ast.Name):
+            if k.id.startswith("_") and k.id not in platzhalter:
+                raise ValueError(f"Unerlaubter Name in Formel: {k.id!r}")
+            if k.id not in namen and k.id not in platzhalter:
+                raise ValueError(f"Unbekannter Name in Formel: {k.id!r}")
+        if isinstance(k, _ast.Call):
+            if not isinstance(k.func, _ast.Name) or (k.func.id not in namen
+                                                     and k.func.id not in platzhalter):
+                raise ValueError("Nur die angebotenen Funktionen dürfen aufgerufen werden")
+        if isinstance(k, _ast.BinOp) and isinstance(k.op, _ast.Pow):
+            if not (isinstance(k.right, _ast.Constant) and isinstance(k.right.value, (int, float))
+                    and abs(k.right.value) <= _MAX_POTENZ):
+                raise ValueError("Potenzen nur mit fester, kleiner Hochzahl")
+
+
 def _eval_expression(expr: str, row: dict):
     """Wertet einen Formelausdruck aus. {feldname} wird durch row["feldname"] ersetzt."""
     import re as _re, datetime as _dt, math as _math
@@ -272,7 +315,8 @@ def _eval_expression(expr: str, row: dict):
         "sqrt": _math.sqrt, "floor": _math.floor, "ceil": _math.ceil,
         "True": True, "False": False, "None": None,
     }
-    return eval(expr_py, ns)  # noqa: S307
+    pruefe_ausdruck(expr_py, {k for k in ns if not k.startswith("__")}, platzhalter=("__r__",))
+    return eval(expr_py, ns)  # noqa: S307 – vorher durch pruefe_ausdruck
 
 
 def _validate_date(v) -> bool:

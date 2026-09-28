@@ -181,8 +181,17 @@ def test_conn_form(data: ConnectionTest, db: Session = Depends(get_db), user: Us
     d = {k: v for k, v in data.model_dump().items() if k != "name"}
     # Maskiertes Passwort: echtes PW aus DB laden wenn id vorhanden
     if d.get("password") == "••••••••" and getattr(data, "id", None):
-        existing = db.query(DbConnection).filter(DbConnection.id == data.id).first()
-        if existing and existing.password:
+        # Das gespeicherte Passwort nur für eine Verbindung, die der Aufrufer lesen
+        # darf – und nur an denselben Server. Sonst reichte eine fremde id plus
+        # eigener Host, um sich das Wawi-Login zuschicken zu lassen.
+        existing = _require_read_conn(data.id, user, db)
+        gleich = (str(existing.db_type or "") == str(d.get("db_type") or "")
+                  and str(existing.host or "").strip().lower() == str(d.get("host") or "").strip().lower()
+                  and int(existing.port or 0) == int(d.get("port") or 0))
+        if not gleich:
+            raise HTTPException(400, "Server, Port oder Typ wurden geändert – bitte das "
+                                     "Passwort für den Test neu eingeben.")
+        if existing.password:
             d["password"] = decrypt_credential(existing.password)
     conn = DbConnection(**d, name=data.name or "test")
     return test_connection(conn)

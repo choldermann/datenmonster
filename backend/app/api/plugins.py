@@ -98,6 +98,12 @@ def get_target_schema(target_type_id: str, user: User = Depends(get_current_user
         raise HTTPException(502, f"Schema-Abruf fehlgeschlagen: {e}")
 
 
+def _nur_admin(user: User) -> None:
+    """Dienst-Plugins sind Docker-Container auf dem Server – das entscheidet ein Admin."""
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Dienst-Plugins verwalten nur Administratoren")
+
+
 @router.get("/manager/health")
 def plugin_manager_health(user: User = Depends(get_current_user)):
     """Plugin Manager Health-Check."""
@@ -131,6 +137,7 @@ class DienstPluginBody(BaseModel):
 @router.post("/dienst", status_code=201)
 def register_dienst_plugin(body: DienstPluginBody, user: User = Depends(get_current_user)):
     """eigener Dienst Plugin beim Plugin Manager registrieren."""
+    _nur_admin(user)  # Container auf dem Server
     result = _pm_post("/plugins", body.model_dump())
     from app.plugins.dienst_proxy import DienstPlugin
     plugin = DienstPlugin(body.model_dump(), PLUGIN_MANAGER_URL)
@@ -141,18 +148,21 @@ def register_dienst_plugin(body: DienstPluginBody, user: User = Depends(get_curr
 @router.delete("/dienst/{plugin_id}")
 def unregister_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
     """eigener Dienst Plugin entfernen (stoppt und löscht den Container)."""
+    _nur_admin(user)  # Container auf dem Server
     return _pm_delete(f"/plugins/{plugin_id}")
 
 
 @router.post("/dienst/{plugin_id}/start")
 def start_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
     """Container für ein eigener Dienst Plugin starten."""
+    _nur_admin(user)  # Container auf dem Server
     return _pm_post(f"/plugins/{plugin_id}/start")
 
 
 @router.post("/dienst/{plugin_id}/stop")
 def stop_dienst_plugin(plugin_id: str, user: User = Depends(get_current_user)):
     """Container für ein eigener Dienst Plugin stoppen."""
+    _nur_admin(user)  # Container auf dem Server
     return _pm_post(f"/plugins/{plugin_id}/stop")
 
 
@@ -348,6 +358,7 @@ def install_dienst_plugin(plugin_id: str, db: Session = Depends(get_db),
     Katalog/Manifest holen → Image-Tarball streamen → Plugin-Manager `docker load`
     → Plugin registrieren. Gated mit Feature `plugin_dienst`.
     """
+    _nur_admin(user)
     import os, tempfile
     import httpx
     from app.api.license import license_auth_body, get_license_credentials, LICENSE_SERVER

@@ -89,9 +89,9 @@ def decrypt_credential(ciphertext: str) -> str:
     if not ciphertext:
         return ciphertext
     try:
-        from cryptography.fernet import Fernet, InvalidToken
-        from app.core.config import get_fernet_key
-        f = Fernet(get_fernet_key())
+        from cryptography.fernet import Fernet, MultiFernet
+        from app.core.config import get_fernet_keys
+        f = MultiFernet([Fernet(k) for k in get_fernet_keys()])
         return f.decrypt(ciphertext.encode()).decode()
     except ImportError:
         return ciphertext  # Plaintext-Fallback

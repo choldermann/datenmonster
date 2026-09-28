@@ -126,6 +126,10 @@ class MappingContext:
 
 # ─── Zentrale Ausführungsfunktion ─────────────────────────────────────────────
 
+
+# Rechenzeichen, die die Fensterformel (Berechnungs-Knoten) kennt
+_FORMEL_OPS = {"+", "-", "*", "/", "(", ")", "%"}
+
 def _binaerspalten_als_hex(df):
     """bytes-Spalten (varbinary, timestamp/rowversion, image) in Hex-Strings
     wandeln — so wie SQL Server sie selbst anzeigt. Ohne das bricht jede
@@ -696,6 +700,10 @@ def _run_window_calc_nodes(
                     expr_parts = []
                     for part in formula_parts:
                         if "op" in part:
+                            # Nur die Rechenzeichen der Oberfläche – das Feld landet
+                            # sonst ungeprüft als Code im Ausdruck.
+                            if part["op"] not in _FORMEL_OPS:
+                                raise ValueError(f"Unerlaubtes Rechenzeichen: {str(part['op'])[:20]!r}")
                             expr_parts.append(part["op"])
                         elif part.get("type") == "number":
                             expr_parts.append(str(float(part.get("value") or 0)))
@@ -714,26 +722,10 @@ def _run_window_calc_nodes(
                                 expr_parts.append("0")
                     expr = " ".join(expr_parts)
                     try:
-                        _allowed_names = {"df_calc", "pd", "_num_series"}
-                        try:
-                            _tree = _ast.parse(expr, mode="eval")
-                        except SyntaxError as _se:
-                            raise ValueError(f"Syntaxfehler in Window-Formel: {_se}")
-                        for _node in _ast.walk(_tree):
-                            if isinstance(_node, _ast.Name) and _node.id not in _allowed_names:
-                                raise ValueError(f"Unerlaubter Name in Formel: {_node.id!r}")
-                            if isinstance(_node, _ast.Attribute):
-                                if isinstance(_node.value, _ast.Name) and _node.value.id not in _allowed_names:
-                                    raise ValueError(f"Unerlaubter Attributzugriff in Formel")
-                            if isinstance(_node, (_ast.Import, _ast.ImportFrom, _ast.Call)):
-                                if isinstance(_node, _ast.Call):
-                                    fn = _node.func
-                                    if isinstance(fn, _ast.Name) and fn.id not in _allowed_names:
-                                        raise ValueError(f"Unerlaubter Funktionsaufruf: {fn.id!r}")
-                        df_calc[output_field] = eval(
-                            expr,
-                            {"df_calc": df_calc, "pd": pd, "_num_series": _num_series,
-                             "__builtins__": {}, "__import__": None},
+                        from app.services.expression_engine import pruefe_ausdruck
+                        pruefe_ausdruck(expr, set(), platzhalter=("_num_series",))
+                        df_calc[output_field] = eval(  # noqa: S307 – vorher geprüft
+                            expr, {"_num_series": _num_series, "__builtins__": {}},
                         )
                     except Exception as fe:
                         errors.append(f"Formel-Fehler: {str(fe)[:100]}")

@@ -186,24 +186,99 @@ def _rest_nodes_maskieren(nodes: list) -> list:
     return heraus
 
 
-def _rest_nodes_entmasken(nodes: list, mapping_id, db) -> list:
+def _rest_ziel(url) -> str:
+    """Schema + Host[:Port] einer URL; leer, wenn nicht eindeutig bestimmbar."""
+    from urllib.parse import urlsplit
+    try:
+        p = urlsplit(str(url or "").strip())
+    except ValueError:
+        return ""
+    if not p.netloc or "{" in p.netloc:
+        return ""  # Platzhalter im Host: Ziel steht erst zur Laufzeit fest
+    return f"{p.scheme.lower()}://{p.netloc.lower()}"
+
+
+def _gleiches_rest_ziel(neu: dict, alt: dict) -> bool:
+    if not _rest_ziel(neu.get("url")) or _rest_ziel(neu.get("url")) != _rest_ziel(alt.get("url")):
+        return False
+    tok_neu = ((neu.get("auth_config") or {}).get("token_url") or "").strip()
+    tok_alt = ((alt.get("auth_config") or {}).get("token_url") or "").strip()
+    return tok_neu == tok_alt
+
+
+def _rest_nodes_entmasken(nodes: list, mapping_id, db, user) -> list:
     """Vor dem Ausführen: die Maske gegen den gespeicherten Wert tauschen.
 
     Der Editor schickt beim Ausprobieren zurück, was er bekommen hat – und das
     ist maskiert. Ohne diesen Schritt liefe jede Vorschau mit ``***`` als Token.
     Bei einem noch nicht gespeicherten Mapping gibt es nichts nachzuschlagen;
-    dann bleibt die Maske stehen und die Gegenstelle lehnt hörbar ab."""
+    dann bleibt die Maske stehen und die Gegenstelle lehnt hörbar ab.
+
+    ⭐ Nur für ein Mapping, das der Aufrufer lesen darf, und nur, wenn der Knoten
+    noch an dasselbe Ziel geht wie der gespeicherte. Sonst reichte eine fremde
+    mapping_id plus eigene URL, um sich den hinterlegten API-Schlüssel an den
+    eigenen Server schicken zu lassen."""
     if not nodes or not mapping_id:
         return nodes or []
+    from app.api.projects import can_read_project
     m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
-    if not m:
+    if not m or not can_read_project(m.project_id, user, db):
         return nodes
-    return _rest_nodes_schuetzen(nodes, getattr(m, "rest_nodes", None) or [])
+    alt_je_id = {n.get("id"): n for n in (getattr(m, "rest_nodes", None) or []) if isinstance(n, dict)}
+    passend = [alt_je_id[n.get("id")] for n in nodes
+               if isinstance(n, dict) and n.get("id") in alt_je_id
+               and _gleiches_rest_ziel(n, alt_je_id[n.get("id")])]
+    return _rest_nodes_schuetzen(nodes, passend)
 
 
-def _build_context_from_request(data, db: Session = None) -> "MappingContext":
+# ── Python-Knoten: nur Administratoren ────────────────────────────────────────
+#
+# Ein Python-Knoten führt beliebigen Code im Backend aus. Eine Sandbox im selben
+# Prozess gibt es in Python nicht, und das Backend steuert Docker – Code dort ist
+# Code auf dem Server. Deshalb schreiben und ändern nur Administratoren Skripte.
+# Editoren dürfen Mappings mit solchen Knoten weiter bearbeiten und ausführen,
+# solange die Skripte unverändert bleiben (Vergleich je Knoten-ID mit dem
+# gespeicherten Stand).
+PYTHON_NUR_ADMIN = ("Python-Knoten dürfen nur Administratoren anlegen oder ändern. "
+                    "Das Mapping enthält ein Skript, das so nicht gespeichert ist.")
+
+
+def _python_skripte(nodes) -> dict:
+    return {n.get("id"): (n.get("script") or "")
+            for n in (nodes or []) if isinstance(n, dict)}
+
+
+def python_nodes_pruefen(neu, gespeichert, user) -> None:
+    """403, wenn ein Nicht-Admin ein Skript mitbringt, das nicht gespeichert ist."""
+    if getattr(user, "is_admin", False):
+        return
+    alt = _python_skripte(gespeichert)
+    for knoten_id, skript in _python_skripte(neu).items():
+        if not skript.strip():
+            continue  # leerer Knoten führt nichts aus
+        if alt.get(knoten_id) != skript:
+            raise HTTPException(403, PYTHON_NUR_ADMIN)
+
+
+def _gespeicherte_python_nodes(mapping_id, user, db) -> list:
+    if not mapping_id:
+        return []
+    from app.api.projects import can_read_project
+    m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
+    if not m or not can_read_project(m.project_id, user, db):
+        return []
+    return getattr(m, "python_nodes", None) or []
+
+
+def _build_context_from_request(data, db: Session, user: User) -> "MappingContext":
     """Erstellt MappingContext aus einem API-Request-Objekt."""
     from app.services.mapping_service import MappingContext
+
+    # Knoten kommen hier aus der Anfrage, nicht aus der Datenbank: Code darf
+    # darüber nur laufen, wenn er so gespeichert ist (oder ein Admin fragt).
+    python_nodes_pruefen(getattr(data, "python_nodes", None) or [],
+                         _gespeicherte_python_nodes(getattr(data, "mapping_id", None), user, db),
+                         user)
 
     # Targets bevorzugen; Fallback: Legacy-Felder
     targets = getattr(data, "targets", None) or []
@@ -233,8 +308,7 @@ def _build_context_from_request(data, db: Session = None) -> "MappingContext":
         agg_nodes       = getattr(data, "agg_nodes",       None) or [],
         rest_nodes      = _rest_nodes_entmasken(
             getattr(data, "rest_nodes", None) or [],
-            getattr(data, "mapping_id", None), db) if db else (
-            getattr(data, "rest_nodes", None) or []),
+            getattr(data, "mapping_id", None), db, user),
         lookup_nodes    = getattr(data, "lookup_nodes",    None) or [],
         calc_nodes      = getattr(data, "calc_nodes",      None) or [],
         switch_nodes    = getattr(data, "switch_nodes",    None) or [],
@@ -342,6 +416,7 @@ def list_mappings(
 def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     require_editor(data.project_id, user, db)
+    python_nodes_pruefen(data.python_nodes, [], user)
     kontingent.pruefe(db, "mappings")
     kontingent.pruefe_db_ziel(db, None, data.targets, data.target_type)
     m = Mapping(
@@ -380,6 +455,9 @@ def update_mapping(mapping_id: int, data: MappingCreate, db: Session = Depends(g
     if not m:
         raise HTTPException(404, "Mapping nicht gefunden")
     require_editor(m.project_id, user, db)
+    if data.project_id != m.project_id:
+        require_editor(data.project_id, user, db)  # auch im Zielprojekt Editor sein
+    python_nodes_pruefen(data.python_nodes, m.python_nodes, user)
     kontingent.pruefe_db_ziel(db, mapping_id, data.targets, data.target_type)
     m.name            = data.name
     m.canvas_nodes    = data.canvas_nodes
@@ -425,7 +503,7 @@ def preview_mapping(data: PreviewRequest, db: Session = Depends(get_db),
     # gesperrten Vorlage vorbei.
     vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
     try:
-        ctx = _build_context_from_request(data, db)
+        ctx = _build_context_from_request(data, db, user)
         # Wenn targets übergeben wurden, nutze diese direkt
         if data.targets:
             ctx.targets = data.targets
@@ -459,7 +537,7 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
     """Führt das Mapping aus und gibt einen Debug-Trace zurück."""
     import time as _time
     try:
-        ctx = _build_context_from_request(data, db)
+        ctx = _build_context_from_request(data, db, user)
         if data.targets:
             ctx.targets = data.targets
         elif data.fields:
@@ -639,7 +717,7 @@ def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db)
     from app.core import vorlagen_gate
     vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
-    ctx = _build_context_from_request(data, db)
+    ctx = _build_context_from_request(data, db, user)
 
     # save_as_dataset Flag in Target eintragen falls gesetzt
     if data.save_as_dataset and ctx.targets:
@@ -761,7 +839,7 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     from app.core import vorlagen_gate
     vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
-    ctx = _build_context_from_request(data, db)
+    ctx = _build_context_from_request(data, db, user)
     if not ctx.targets:
         raise HTTPException(400, "Kein Ziel definiert")
 

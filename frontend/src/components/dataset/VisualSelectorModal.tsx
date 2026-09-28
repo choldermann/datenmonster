@@ -144,7 +144,6 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
   const [previewError, setPreviewError] = useState("");
 
   const iframeRef  = useRef(null);
-  const blobUrlRef = useRef(null);
 
   // ── Seite laden ─────────────────────────────────────────────────────────────
   const loadPage = useCallback(async () => {
@@ -155,11 +154,10 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
         params: { url: url.trim() },
         responseType: "text",
       });
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-      const blob = new Blob([data], { type: "text/html" });
-      const blobUrl = URL.createObjectURL(blob);
-      blobUrlRef.current = blobUrl;
-      setIframeSrc(blobUrl);
+      // Als srcDoc in einem Sandbox-iframe OHNE allow-same-origin: die fremde
+      // Seite bekommt eine eigene, leere Herkunft. Früher lief sie als Blob-URL
+      // unter der Herkunft der App und hätte den Login-Token lesen können.
+      setIframeSrc(data);
       setLoadedUrl(url.trim());
     } catch (e) {
       setPageError(fehlerText(e, "Seite konnte nicht geladen werden"));
@@ -168,15 +166,14 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
     }
   }, [url]);
 
-  // Cleanup Blob-URL
-  useEffect(() => () => { if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current); }, []);
-
   // Initiale URL sofort laden
   useEffect(() => { if (initialUrl) loadPage(); }, []); // eslint-disable-line
 
   // ── postMessage vom iframe empfangen ────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
+      // Nur Nachrichten aus unserem iframe – nicht aus anderen Fenstern/Tabs
+      if (!iframeRef.current || e.source !== iframeRef.current.contentWindow) return;
       const d = e.data;
       if (!d || typeof d !== "object") return;
 
@@ -355,11 +352,11 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
                 )}
                 <iframe
                   ref={iframeRef}
-                  src={iframeSrc}
+                  srcDoc={iframeSrc}
                   style={{ width: "100%", height: "100%", border: "none",
                     pointerEvents: mode ? "all" : "all",
                     cursor: mode ? "crosshair" : "default" }}
-                  sandbox="allow-scripts allow-same-origin allow-forms"
+                  sandbox="allow-scripts allow-forms"
                   title="Visual Selektor Vorschau"
                 />
               </>

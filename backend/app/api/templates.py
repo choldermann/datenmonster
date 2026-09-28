@@ -165,10 +165,10 @@ def code_knoten_zaehlen(content: dict) -> int:
     """Wie viele Python-Knoten ein Template mitbringt.
 
     Seit Templates auch Python-Knoten übertragen, kann eine heruntergeladene Datei
-    Code enthalten, der beim Lauf auf diesem Server ausgeführt wird. Die Ausführung
-    ist zwar abgeschottet (keine Einfuhr von Modulen, kein Dateisystem, kein Netz,
-    Zeitgrenze je Zeile), aber wer ein fremdes Template installiert, soll es wissen –
-    verschwiegene Codeausführung ist das, was man Anwendern nicht antun darf.
+    Code enthalten, der beim Lauf auf diesem Server ausgeführt wird – und zwar
+    NICHT abgeschottet: eine Sandbox im selben Prozess gibt es in Python nicht.
+    Deshalb installieren nur Administratoren Vorlagen mit Code, die nicht aus dem
+    Store kommen (install_template), und wer es tut, soll es wissen.
     """
     return sum(len(m.get("python_nodes") or [])
                for m in (content.get("mappings") or [])
@@ -546,6 +546,16 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         raise HTTPException(404, "Template nicht gefunden")
 
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
+
+    from app.api.projects import require_editor
+    require_editor(body.project_id, user, db)
+    # Python-Knoten sind Code, der später auf diesem Server läuft. Aus dem Store
+    # kommt er von uns; eine hochgeladene oder selbst gebaute Vorlage mit Code
+    # installiert nur ein Administrator (wie das Schreiben solcher Knoten).
+    if (code_knoten_zaehlen(content) and t.herkunft != "store"
+            and not getattr(user, "is_admin", False)):
+        raise HTTPException(403, "Diese Vorlage enthält Python-Knoten und kommt nicht aus "
+                                 "dem Store – installieren darf sie nur ein Administrator.")
     # config mit Defaults aus config_required auffüllen
     config = body.config or {}
     for req in content.get("config_required", []):

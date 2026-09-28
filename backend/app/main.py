@@ -469,7 +469,7 @@ async def lifespan(app: FastAPI):
     try:
         import os as _os, secrets as _secrets, hmac as _hmac, hashlib as _hashlib
         from app.api.settings import get_setting as _get_setting, set_setting as _set_setting
-        from app.core.config import SECRET_KEY as _SECRET_KEY
+        from app.core.config import SECRET_KEY as _SECRET_KEY, LEGACY_SECRET as _LEGACY
 
         _admin_pw_env = _os.environ.get("ADMIN_PASSWORD", "")
 
@@ -512,6 +512,11 @@ async def lifespan(app: FastAPI):
                     # genau der Fall auftreten, den dieser Umbau abstellt.
                     _set_setting(db, _FP_KEY, _fp_neu)
                     print("ADMIN_PASSWORD vorgemerkt – zum Zuruecksetzen einen NEUEN Wert eintragen")
+                elif _fp_alt == _hmac.new(_LEGACY.encode("utf-8"), _admin_pw_env.encode("utf-8"),
+                                          _hashlib.sha256).hexdigest():
+                    # Derselbe Wert, nur mit dem alten Standardschlüssel gemerkt (vor
+                    # dem eigenen SECRET_KEY) – umstempeln, NICHT zurücksetzen.
+                    _set_setting(db, _FP_KEY, _fp_neu)
                 elif _fp_alt != _fp_neu:
                     _admin.hashed_password = hash_password(_admin_pw_env)
                     _changed = True

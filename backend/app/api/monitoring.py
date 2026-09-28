@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from datetime import datetime, timezone, timedelta
@@ -220,9 +220,25 @@ def get_monitoring(db: Session = Depends(get_db), user: User = Depends(get_curre
         "system_logs": system_logs,
     }
 
+def _nur_admin(user: User) -> None:
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+
+
+def _eigener_container(client, container_id: str):
+    """Nur Container im Datenmonster-Netz – fremde Stacks auf demselben Server
+    gehen diese Oberfläche nichts an (und ihre Logs können Geheimnisse enthalten)."""
+    c = client.containers.get(container_id)
+    netze = (c.attrs.get("NetworkSettings") or {}).get("Networks") or {}
+    if "datenmonster" not in netze:
+        raise HTTPException(403, "Dieser Container gehört nicht zu Datenmonster")
+    return c
+
+
 @router.get("/docker")
 def get_docker_containers(user: User = Depends(get_current_user)):
     """Listet alle Docker-Container mit Status, Image und Ports."""
+    _nur_admin(user)
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
@@ -253,48 +269,60 @@ def get_docker_containers(user: User = Depends(get_current_user)):
 
 @router.post("/docker/{container_id}/start")
 def docker_start(container_id: str, user: User = Depends(get_current_user)):
+    _nur_admin(user)
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
-        c = client.containers.get(container_id)
+        c = _eigener_container(client, container_id)
         c.start()
         return {"ok": True, "status": client.containers.get(container_id).status}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @router.post("/docker/{container_id}/stop")
 def docker_stop(container_id: str, user: User = Depends(get_current_user)):
+    _nur_admin(user)
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
-        c = client.containers.get(container_id)
+        c = _eigener_container(client, container_id)
         c.stop(timeout=10)
         return {"ok": True, "status": client.containers.get(container_id).status}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @router.post("/docker/{container_id}/restart")
 def docker_restart(container_id: str, user: User = Depends(get_current_user)):
+    _nur_admin(user)
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
-        c = client.containers.get(container_id)
+        c = _eigener_container(client, container_id)
         c.restart(timeout=10)
         return {"ok": True, "status": client.containers.get(container_id).status}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
 
 @router.get("/docker/{container_id}/logs")
 def docker_logs(container_id: str, lines: int = 100, user: User = Depends(get_current_user)):
+    _nur_admin(user)
     try:
         import docker as docker_sdk
         client = docker_sdk.from_env()
-        c = client.containers.get(container_id)
-        log_bytes = c.logs(tail=lines, timestamps=True)
+        c = _eigener_container(client, container_id)
+        log_bytes = c.logs(tail=max(1, min(int(lines), 5000)), timestamps=True)
         return {"logs": log_bytes.decode("utf-8", errors="replace")}
+    except HTTPException:
+        raise
     except Exception as e:
         return {"logs": "", "error": str(e)}
 
@@ -302,6 +330,7 @@ def docker_logs(container_id: str, lines: int = 100, user: User = Depends(get_cu
 @router.delete("/logs/{log_id}")
 def delete_log(log_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Einzelnen Log-Eintrag löschen."""
+    _nur_admin(user)  # das Protokoll ist auch die Spur für Nachfragen
     db.execute(text("DELETE FROM system_logs WHERE id = :id"), {"id": log_id})
     db.commit()
     return {"ok": True}
@@ -310,6 +339,7 @@ def delete_log(log_id: int, db: Session = Depends(get_db), user: User = Depends(
 @router.delete("/logs")
 def delete_all_logs(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Alle Log-Einträge löschen."""
+    _nur_admin(user)  # das Protokoll ist auch die Spur für Nachfragen
     db.execute(text("DELETE FROM system_logs"))
     db.commit()
     return {"ok": True}
