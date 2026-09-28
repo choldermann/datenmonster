@@ -21,6 +21,8 @@ export const THEMES: ThemeDef[] = [
   { id: "phosphor",   label: "Grüner Phosphor", desc: "Der klassische grüne Bildschirm",       scheme: "dark",  gruppe: "retro" },
   { id: "amiga",      label: "Amiga Workbench", desc: "Blau, Weiß und Orange – Workbench 1.3", scheme: "dark",  gruppe: "retro" },
   { id: "c64",        label: "C64",             desc: "READY. – Hellblau auf Dunkelblau",      scheme: "dark",  gruppe: "retro" },
+  { id: "gameboy",    label: "Game Boy",        desc: "Vier Grüntöne, 160 × 144 Gefühl",       scheme: "light", gruppe: "retro" },
+  { id: "nextstep",   label: "NeXTSTEP",        desc: "Graue 3D-Kanten, Helvetica, 1989",      scheme: "light", gruppe: "retro" },
   { id: "atari",      label: "Atari ST",        desc: "GEM-Desktop: Grün, Weiß, Schwarz",      scheme: "light", gruppe: "retro" },
 ];
 

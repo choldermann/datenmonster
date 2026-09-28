@@ -300,6 +300,72 @@
   --shadow-card: 2px 2px 0 #000000;
 }
 
+[data-theme="gameboy"] {
+  /* Nur die vier Grüntöne des DMG-Displays: #0f380f #306230 #8bac0f #9bbc0f */
+  --accent:      #0f380f;
+  --accent-dim:  rgba(15, 56, 15, 0.12);
+  --accent-line: rgba(15, 56, 15, 0.35);
+  --accent-fg:   #9bbc0f;
+
+  --bg-main:     #8bac0f;
+  --bg-card:     #9bbc0f;
+  --bg-elevated: #a7c71e;
+  --border:      #306230;
+  --border-soft: #7f9e0f;
+
+  --text-main:   #0f380f;
+  --text-bright: #0f380f;
+  --text-dim:    #306230;
+
+  --red: #0f380f; --green: #306230; --blue: #306230;
+  --ok: #306230; --err: #0f380f; --err-soft: #1f4a1f; --warn: #3f6a18;
+  --muted: #306230; --muted-2: #306230; --muted-3: #0f380f;
+
+  --scroll-thumb: #306230; --scroll-thumb-hover: #0f380f;
+  --ghost-hover-border: #0f380f;
+  --ghost-hover-bg: rgba(15, 56, 15, 0.08);
+  --tag-bg: rgba(15, 56, 15, 0.08);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "Press Start 2P", var(--font-mono);
+  --shadow-card: 3px 3px 0 #306230;
+  --chart-filter: grayscale(1) sepia(1) saturate(2.5) hue-rotate(38deg) brightness(0.75) contrast(1.3);
+}
+
+[data-theme="nextstep"] {
+  --accent:      #1a1a1a;
+  --accent-dim:  rgba(0, 0, 0, 0.12);
+  --accent-line: rgba(0, 0, 0, 0.35);
+  --accent-fg:   #ffffff;
+
+  --bg-main:     #7f7f7f;
+  --bg-card:     #aaaaaa;
+  --bg-elevated: #c2c2c2;
+  --border:      #555555;
+  --border-soft: #999999;
+
+  --text-main:   #111111;
+  --text-bright: #000000;
+  --text-dim:    #2e2e2e;
+
+  --red: #a00000; --green: #0a6b0a; --blue: #1a3a8a;
+  --ok: #0a6b0a; --err: #a00000; --err-soft: #8a1a1a; --warn: #6e5000;
+  --muted: #333333; --muted-2: #3a3a3a; --muted-3: #2a2a2a;
+
+  --scroll-thumb: #555555; --scroll-thumb-hover: #333333;
+  --ghost-hover-border: #000000;
+  --ghost-hover-bg: rgba(255, 255, 255, 0.25);
+  --tag-bg: rgba(255, 255, 255, 0.35);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-display: var(--font-body);
+  /* 3D-Kante: Licht oben links, Schatten unten rechts */
+  --bevel:       inset 1px 1px 0 #ffffff, inset -1px -1px 0 #555555;
+  --shadow-card: inset 1px 1px 0 #d8d8d8, inset -1px -1px 0 #555555;
+}
+
 /* ── Effekte, die nur fürs ganze Fenster Sinn ergeben ──────────────────── */
 
 /* Leuchtende Schrift auf Röhrenmonitoren */
@@ -318,13 +384,38 @@ html[data-theme="phosphor"] body::after {
     to bottom, transparent 0, transparent 2px, var(--scanlines) 3px, transparent 4px);
 }
 
+/* Game Boy: Punktraster des LCD statt Röhrenzeilen */
+html[data-theme="gameboy"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483647;
+  background:
+    repeating-linear-gradient(to right,  transparent 0, transparent 2px, rgba(15, 56, 15, 0.07) 2px, rgba(15, 56, 15, 0.07) 3px),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 2px, rgba(15, 56, 15, 0.07) 2px, rgba(15, 56, 15, 0.07) 3px);
+}
+
 /* Diagramme bleiben sonst bunt – auf Monochrom-Monitoren gibt es nur eine Farbe */
 html[data-theme="bernstein"] .recharts-wrapper,
-html[data-theme="phosphor"] .recharts-wrapper { filter: var(--chart-filter); }
+html[data-theme="phosphor"] .recharts-wrapper,
+html[data-theme="gameboy"] .recharts-wrapper { filter: var(--chart-filter); }
 
-/* Atari ST: Schatten an Karten wie bei GEM-Dialogen */
+/* Harte Schatten (Atari, Amiga, Game Boy) bzw. 3D-Kante (NeXTSTEP) an Karten */
 html[data-theme="atari"] .card,
-html[data-theme="amiga"] .card { box-shadow: var(--shadow-card); }
+html[data-theme="amiga"] .card,
+html[data-theme="gameboy"] .card,
+html[data-theme="nextstep"] .card { box-shadow: var(--shadow-card); }
+
+/* NeXTSTEP: erhabene Knöpfe, eingelassene Eingabefelder */
+html[data-theme="nextstep"] .btn-ghost {
+  background: #bdbdbd; color: #000; border-color: #000; box-shadow: var(--bevel);
+}
+html[data-theme="nextstep"] .btn-primary { box-shadow: inset 1px 1px 0 #666, inset -1px -1px 0 #000; }
+html[data-theme="nextstep"] .input {
+  background-color: #ffffff; box-shadow: inset 1px 1px 0 #555555, inset -1px -1px 0 #ffffff;
+}
+html[data-theme="nextstep"] :is(.section-title, h1, h2, h3) { font-weight: 700; }
 
 /* Pixel-Schrift für Überschriften und Knöpfe. font-size-adjust gleicht die sehr
    unterschiedlichen Schriftgrößen (VT323 klein, Press Start 2P riesig) an. */
@@ -340,7 +431,8 @@ html[data-theme="atari"]     :is(.section-title, .btn-primary, h1, h2, h3) {
   font-size-adjust: 0.62;
   letter-spacing: 0.04em;
 }
-html[data-theme="c64"] :is(.section-title, .btn-primary, h1, h2, h3) {
+html[data-theme="c64"]     :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="gameboy"] :is(.section-title, .btn-primary, h1, h2, h3) {
   font-size-adjust: 0.58;
   letter-spacing: 0.02em;
   line-height: 1.5;
