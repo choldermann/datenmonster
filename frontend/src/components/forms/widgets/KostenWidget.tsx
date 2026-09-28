@@ -191,7 +191,7 @@ export default function KostenWidget({ widget, projectId, canEdit = true }) {
 
       {fehler && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
-          border: "1px solid rgba(224,112,112,0.4)", borderRadius: 6, color: "#e07070",
+          border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)", borderRadius: 6, color: "var(--err-soft)",
           fontSize: 12 }}>
           <AlertCircle size={13} /> {fehler}
         </div>

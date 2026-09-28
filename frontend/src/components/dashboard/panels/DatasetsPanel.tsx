@@ -188,7 +188,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <input type="checkbox" id="auto-refresh" checked={autoRefresh}
                   onChange={e => setAutoRefresh(e.target.checked)}
-                  style={{ accentColor: "#6ee7b7", cursor: "pointer", width: 16, height: 16 }} />
+                  style={{ accentColor: "var(--ok)", cursor: "pointer", width: 16, height: 16 }} />
                 <label htmlFor="auto-refresh" style={{ fontSize: 13, color: "var(--text-main)", cursor: "pointer" }}>
                   Automatisch aktualisieren
                 </label>
@@ -205,7 +205,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                         <button key={p.value} onClick={() => setCronExpr(p.value)} style={{
                           fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer",
                           border: `1px solid ${cronExpr === p.value ? "var(--accent)" : "var(--border)"}`,
-                          backgroundColor: cronExpr === p.value ? "rgba(252,228,153,0.1)" : "transparent",
+                          backgroundColor: cronExpr === p.value ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent",
                           color: cronExpr === p.value ? "var(--accent)" : "var(--text-dim)",
                         }}>{p.label}</button>
                       ))}
@@ -222,11 +222,11 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                   {dataset.last_refresh_at && (
                     <div style={{ padding: "8px 12px", borderRadius: 6,
                       backgroundColor: dataset.last_refresh_status === "error"
-                        ? "rgba(248,113,113,0.08)" : "rgba(110,231,183,0.06)",
+                        ? "color-mix(in srgb, var(--err) 8%, transparent)" : "color-mix(in srgb, var(--ok) 6%, transparent)",
                       border: `1px solid ${dataset.last_refresh_status === "error"
-                        ? "rgba(248,113,113,0.2)" : "rgba(110,231,183,0.2)"}` }}>
+                        ? "color-mix(in srgb, var(--err) 20%, transparent)" : "color-mix(in srgb, var(--ok) 20%, transparent)"}` }}>
                       <p style={{ fontSize: 11, margin: 0,
-                        color: dataset.last_refresh_status === "error" ? "#f87171" : "#6ee7b7" }}>
+                        color: dataset.last_refresh_status === "error" ? "var(--err)" : "var(--ok)" }}>
                         {dataset.last_refresh_status === "error" ? "✗" : "✓"}{" "}
                         Letzte Aktualisierung: {new Date(dataset.last_refresh_at).toLocaleString("de-DE")}
                         {dataset.last_refresh_msg && ` – ${dataset.last_refresh_msg}`}
@@ -250,7 +250,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                   </div>
                   {cols.map(col => {
                     const info = colTypes[col] || { type: "string" };
-                    const TC = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
+                    const TC = { integer:"#93c5fd", decimal:"var(--ok)", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
                     const TL = { integer:"INT", decimal:"DEC", date:"DAT", boolean:"BOL", string:"STR" };
                     const c = TC[info.type] || "#6a6a6a";
                     return (
@@ -289,8 +289,8 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                 return (
                   <div key={col} style={{ display: "flex", flexDirection: "column", gap: 4,
                       padding: "8px 10px", borderRadius: 8,
-                      background: info.is_primary ? "rgba(251,191,36,0.05)" : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${info.is_primary ? "rgba(251,191,36,0.2)" : "var(--border)"}` }}>
+                      background: info.is_primary ? "color-mix(in srgb, var(--warn) 5%, transparent)" : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${info.is_primary ? "color-mix(in srgb, var(--warn) 20%, transparent)" : "var(--border)"}` }}>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 34px", gap: 8, alignItems: "center" }}>
                       <span style={{ fontSize: 12, fontFamily: "monospace", color: "var(--text-bright)",
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4 }}>
@@ -312,8 +312,8 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                         onClick={() => togglePrimary(col)}
                         title={info.is_primary ? "Primärschlüssel entfernen" : "Als Primärschlüssel markieren"}
                         style={{
-                          background: info.is_primary ? "rgba(251,191,36,0.2)" : "none",
-                          border: `1px solid ${info.is_primary ? "rgba(251,191,36,0.5)" : "var(--border)"}`,
+                          background: info.is_primary ? "color-mix(in srgb, var(--warn) 20%, transparent)" : "none",
+                          border: `1px solid ${info.is_primary ? "color-mix(in srgb, var(--warn) 50%, transparent)" : "var(--border)"}`,
                           borderRadius: 6, cursor: "pointer", fontSize: 14,
                           display: "flex", alignItems: "center", justifyContent: "center",
                           height: 32, width: 34, flexShrink: 0,
@@ -324,7 +324,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                         <input type="checkbox" id={`ai-edit-${col}`}
                           checked={info.autoincrement}
                           onChange={() => toggleAutoincrement(col)}
-                          style={{ accentColor: "#6ee7b7", cursor: "pointer" }} />
+                          style={{ accentColor: "var(--ok)", cursor: "pointer" }} />
                         <label htmlFor={`ai-edit-${col}`}
                           style={{ fontSize: 11, color: "var(--text-dim)", cursor: "pointer" }}>
                           Autoincrement – ID wird automatisch vergeben
@@ -351,22 +351,22 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
             <button onClick={handleSaveName} disabled={saving || !name.trim()} style={{
               fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6,
               cursor: saving ? "wait" : "pointer",
-              background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-              color: "#6ee7b7", opacity: saving || !name.trim() ? 0.5 : 1,
+              background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+              color: "var(--ok)", opacity: saving || !name.trim() ? 0.5 : 1,
             }}>{saving ? "Speichert…" : "Speichern"}</button>
           ) : tab === "schedule" ? (
             <button onClick={handleSaveSchedule} disabled={savingSchedule} style={{
               fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6,
               cursor: savingSchedule ? "wait" : "pointer",
-              background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-              color: "#6ee7b7", opacity: savingSchedule ? 0.5 : 1,
+              background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+              color: "var(--ok)", opacity: savingSchedule ? 0.5 : 1,
             }}>{savingSchedule ? "Speichert…" : "Zeitplan speichern"}</button>
           ) : (
             <button onClick={handleSaveColumns} disabled={savingCols} style={{
               fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6,
               cursor: savingCols ? "wait" : "pointer",
-              background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-              color: "#6ee7b7", opacity: savingCols ? 0.5 : 1,
+              background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+              color: "var(--ok)", opacity: savingCols ? 0.5 : 1,
             }}>{savingCols ? "Speichert…" : "Spalten speichern"}</button>
           )}
         </div>
@@ -391,9 +391,9 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
             <p style={{ fontSize: 12, color: "var(--text-main)", margin: "0 0 12px", lineHeight: 1.6 }}>
               Du hast einen oder mehrere Datentypen geändert.
             </p>
-            <div style={{ fontSize: 12, color: "#f87171", marginBottom: 20, lineHeight: 1.6,
-              padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(248,113,113,0.08)",
-              border: "1px solid rgba(248,113,113,0.2)",
+            <div style={{ fontSize: 12, color: "var(--err)", marginBottom: 20, lineHeight: 1.6,
+              padding: "10px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--err) 20%, transparent)",
               wordBreak: "break-word", overflowWrap: "break-word" }}>
               <p style={{ margin: "0 0 4px", fontWeight: 600 }}>⚠ Achtung</p>
               <p style={{ margin: 0 }}>Wenn du die Daten konvertierst, werden Inhalte unwiederbringlich geändert. Nicht konvertierbare Werte werden auf leer gesetzt.</p>
@@ -410,7 +410,7 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
               }}>Nur Label ändern</button>
               <button onClick={() => doSaveColumns(true)} style={{
                 fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
-                background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
+                background: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
                 color: "var(--accent)",
               }}>Daten konvertieren</button>
             </div>
@@ -431,7 +431,7 @@ const WEEKDAYS = [
 
 
 function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRows, onRequery, canEdit = true }) {
-  const typeColor = { csv: "#6ee7b7", xlsx: "#93c5fd", xml: "#fcd34d", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
+  const typeColor = { csv: "var(--ok)", xlsx: "#93c5fd", xml: "#fcd34d", db_mssql: "#c4b5fd", db_mysql: "var(--ok)" };
   const typeLabel = { csv: "CSV", xlsx: "XLSX", xml: "XML", db_mssql: "SQL Server", db_mysql: "MySQL" };
   const isPending = dataset.xml_configured === 0;
   const isDb = dataset.file_type?.startsWith("db_") && dataset.source_sql;
@@ -475,7 +475,7 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
             {dataset.file_type === "static" && onEditRows && (
               <button onClick={(e) => { e.stopPropagation(); onEditRows(dataset); }}
                 className="p-1 rounded" title="Zeilen bearbeiten" style={{ color: S.textDim }}
-                onMouseEnter={(e) => e.currentTarget.style.color = "#6ee7b7"}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--ok)"}
                 onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                 <Table size={13} />
               </button>
@@ -488,7 +488,7 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
             </button>
             <button onClick={(e) => { e.stopPropagation(); onDelete(dataset.id); }}
               className="p-1 rounded" style={{ color: S.textDim }}
-              onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+              onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
               onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
               <Trash2 size={13} />
             </button>
@@ -497,7 +497,7 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
       </div>
       {isPending ? (
         <div className="mt-4">
-          <div className="flex items-center gap-2 text-xs mb-3" style={{ color: "#fbbf24" }}>
+          <div className="flex items-center gap-2 text-xs mb-3" style={{ color: "var(--warn)" }}>
             <span>⚠</span> XML-Konfiguration erforderlich
           </div>
           {canEdit && (
@@ -527,10 +527,10 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
                   display: "inline-flex", alignItems: "center", gap: 3,
                   fontSize: 9, fontWeight: 700, padding: "2px 6px", borderRadius: 3,
                   backgroundColor: dataset.last_refresh_status === "error"
-                    ? "rgba(248,113,113,0.15)" : "rgba(110,231,183,0.12)",
-                  color: dataset.last_refresh_status === "error" ? "#f87171" : "#6ee7b7",
+                    ? "color-mix(in srgb, var(--err) 15%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)",
+                  color: dataset.last_refresh_status === "error" ? "var(--err)" : "var(--ok)",
                   border: `1px solid ${dataset.last_refresh_status === "error"
-                    ? "rgba(248,113,113,0.3)" : "rgba(110,231,183,0.3)"}`,
+                    ? "color-mix(in srgb, var(--err) 30%, transparent)" : "color-mix(in srgb, var(--ok) 30%, transparent)"}`,
                 }}>
                 ⏰ AUTO
               </span>
@@ -578,7 +578,7 @@ const PAGE_SIZE = 100;
 // ─── Feldtyp-Hilfsfunktionen ─────────────────────────────────────────────────
 const TYPE_META = {
   integer: { label: "INT",  color: "#93c5fd" },
-  decimal: { label: "DEC",  color: "#6ee7b7" },
+  decimal: { label: "DEC",  color: "var(--ok)" },
   string:  { label: "STR",  color: "#8a8a8a" },
   date:    { label: "DATE", color: "#fcd34d" },
   bool:    { label: "BOOL", color: "#c4b5fd" },
@@ -657,7 +657,7 @@ function TypeBadgeEditor({ colName, columnTypes, datasetId, onTypeChange, style 
     }
   };
 
-  const badgeColor = error ? "#e07070" : saved ? "#6ee7b7" : meta.color;
+  const badgeColor = error ? "var(--err-soft)" : saved ? "var(--ok)" : meta.color;
   const badgeLabel = saving ? "…" : saved ? "✓" : error ? "✗" : meta.label;
 
   return (
@@ -734,9 +734,9 @@ function TypeBadgeEditor({ colName, columnTypes, datasetId, onTypeChange, style 
               Spalte <strong style={{ color: "var(--accent)" }}>{colName}</strong> von{" "}
               <strong>{info?.type}</strong> → <strong>{confirmConvert.newType}</strong>
             </p>
-            <div style={{ fontSize: 12, color: "#f87171", marginBottom: 20, lineHeight: 1.6,
-              padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(248,113,113,0.08)",
-              border: "1px solid rgba(248,113,113,0.2)",
+            <div style={{ fontSize: 12, color: "var(--err)", marginBottom: 20, lineHeight: 1.6,
+              padding: "10px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--err) 20%, transparent)",
               wordBreak: "break-word", overflowWrap: "break-word" }}>
               <p style={{ margin: "0 0 4px", fontWeight: 600 }}>⚠ Achtung</p>
               <p style={{ margin: 0 }}>Wenn du die Daten konvertierst, werden Inhalte unwiederbringlich geändert. Nicht konvertierbare Werte werden auf leer gesetzt.</p>
@@ -753,7 +753,7 @@ function TypeBadgeEditor({ colName, columnTypes, datasetId, onTypeChange, style 
               }}>Nur Label ändern</button>
               <button onClick={() => doConvert(confirmConvert.newType, true)} style={{
                 fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
-                background: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
+                background: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
                 color: "var(--accent)",
               }}>Daten konvertieren</button>
             </div>
@@ -992,8 +992,8 @@ function DataExplorer({ dataset, onClose, onColumnTypesChange }) {
                     navigator.clipboard.writeText(expandedCell.value)
                       .then(() => {
                         btn.textContent = "✓ Kopiert!";
-                        btn.style.color = "#6ee7b7";
-                        btn.style.borderColor = "#6ee7b7";
+                        btn.style.color = "var(--ok)";
+                        btn.style.borderColor = "var(--ok)";
                         setTimeout(() => {
                           btn.textContent = "Kopieren";
                           btn.style.color = S.textDim;
@@ -1136,8 +1136,8 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
               </label>
               <button onClick={addColumn} style={{
                 fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6,
-                cursor: "pointer", background: "rgba(110,231,183,0.1)",
-                border: "1px solid rgba(110,231,183,0.3)", color: "#6ee7b7",
+                cursor: "pointer", background: "color-mix(in srgb, var(--ok) 10%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", color: "var(--ok)",
               }}>+ Spalte hinzufügen</button>
             </div>
 
@@ -1159,8 +1159,8 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
                       onClick={() => updateColumn(i, "is_primary", !col.is_primary)}
                       title={col.is_primary ? "Primärschlüssel entfernen" : "Als Primärschlüssel markieren"}
                       style={{
-                        background: col.is_primary ? "rgba(251,191,36,0.15)" : "none",
-                        border: `1px solid ${col.is_primary ? "rgba(251,191,36,0.4)" : "var(--border)"}`,
+                        background: col.is_primary ? "color-mix(in srgb, var(--warn) 15%, transparent)" : "none",
+                        border: `1px solid ${col.is_primary ? "color-mix(in srgb, var(--warn) 40%, transparent)" : "var(--border)"}`,
                         borderRadius: 6, cursor: "pointer", fontSize: 14,
                         display: "flex", alignItems: "center", justifyContent: "center",
                         height: 32, width: 32, flexShrink: 0,
@@ -1179,7 +1179,7 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
                         id={`ai-${i}`}
                         checked={col.autoincrement}
                         onChange={e => updateColumn(i, "autoincrement", e.target.checked)}
-                        style={{ accentColor: "#6ee7b7", cursor: "pointer" }}
+                        style={{ accentColor: "var(--ok)", cursor: "pointer" }}
                       />
                       <label htmlFor={`ai-${i}`} style={{ fontSize: 11, color: "var(--text-dim)", cursor: "pointer" }}>
                         Autoincrement (ID automatisch vergeben)
@@ -1195,7 +1195,7 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
           </div>
 
           {error && (
-            <p style={{ fontSize: 12, color: "#e07070", margin: 0 }}>{error}</p>
+            <p style={{ fontSize: 12, color: "var(--err-soft)", margin: 0 }}>{error}</p>
           )}
         </div>
 
@@ -1209,8 +1209,8 @@ export function ManualDatasetModal({ projectId, onDone, onCancel }) {
           <button onClick={handleCreate} disabled={saving || !name.trim()} style={{
             fontSize: 13, fontWeight: 600, padding: "7px 16px", borderRadius: 6,
             cursor: saving ? "wait" : "pointer",
-            background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-            color: "#6ee7b7", opacity: saving || !name.trim() ? 0.5 : 1,
+            background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+            color: "var(--ok)", opacity: saving || !name.trim() ? 0.5 : 1,
           }}>
             {saving ? "Wird angelegt…" : "Dataset anlegen"}
           </button>

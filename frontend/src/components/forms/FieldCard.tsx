@@ -80,8 +80,8 @@ function FieldPreviewContent({ field }) {
     case "button":
       return (
         <button disabled
-          style={{ padding: "6px 16px", borderRadius: 5, backgroundColor: "rgba(110,231,183,0.12)",
-            border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
+          style={{ padding: "6px 16px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)",
             fontSize: 11, fontWeight: 600, cursor: "default" }}>
           {field.label || "Button"}
         </button>
@@ -113,7 +113,7 @@ export default function FieldCard({ field, selected, onClick, onDelete, dragHand
         maxWidth: `${(field.colSpan / 12) * 100}%`,
         boxSizing: "border-box", padding: "0 4px" }}>
       <div style={{
-        backgroundColor: selected ? `${def.color}0a` : S.bgEl,
+        backgroundColor: selected ? `color-mix(in srgb, ${def.color} 3.9%, transparent)` : S.bgEl,
         border: `1px solid ${selected ? def.color : S.border}`,
         borderRadius: 6, padding: "8px 10px", position: "relative",
         cursor: "pointer", transition: "border-color 0.12s, background-color 0.12s",
@@ -131,7 +131,7 @@ export default function FieldCard({ field, selected, onClick, onDelete, dragHand
           style={{ position: "absolute", top: 4, right: 4, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", padding: 2, lineHeight: 1, display: "flex",
             opacity: selected ? 1 : 0.4 }}
-          onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+          onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
           onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
           <Trash2 size={10} />
         </button>
@@ -148,7 +148,7 @@ export default function FieldCard({ field, selected, onClick, onDelete, dragHand
           <label style={{ display: "block", fontSize: 10, fontWeight: 600,
             color: S.textDim, marginBottom: 4 }}>
             {field.label || field.name}
-            {field.required && <span style={{ color: "#f87171", marginLeft: 2 }}>*</span>}
+            {field.required && <span style={{ color: "var(--err)", marginLeft: 2 }}>*</span>}
           </label>
         )}
 

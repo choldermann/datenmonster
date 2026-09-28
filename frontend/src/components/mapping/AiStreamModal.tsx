@@ -3,7 +3,7 @@ import { X, Loader2, Check, Sparkles, Copy } from "lucide-react";
 import { S } from "./constants";
 import { getStatus } from "../../services/aiService";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 function ThinkingDots() {
   const [dots, setDots] = useState(1);
@@ -96,11 +96,11 @@ export default function AiStreamModal({
       onClick={onClose}
     >
       <div
-        style={{ width: 520, maxHeight: "80vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 8, border: `1px solid rgba(252,228,153,0.25)`, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", overflow: "hidden" }}
+        style={{ width: 520, maxHeight: "80vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 8, border: `1px solid color-mix(in srgb, var(--accent) 25%, transparent)`, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", overflow: "hidden" }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: `1px solid ${S.border}`, backgroundColor: "rgba(252,228,153,0.04)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px", borderBottom: `1px solid ${S.border}`, backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)" }}>
           <Sparkles size={14} style={{ color: ACCENT }} />
           <span style={{ fontSize: 13, fontWeight: 700, color: ACCENT }}>{title}</span>
           {activeModel && (
@@ -118,7 +118,7 @@ export default function AiStreamModal({
 
         {/* Fortschrittsbalken */}
         {streaming && (
-          <div style={{ height: 2, backgroundColor: "rgba(252,228,153,0.12)", position: "relative", overflow: "hidden" }}>
+          <div style={{ height: 2, backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)", position: "relative", overflow: "hidden" }}>
             <div style={{
               position: "absolute", top: 0, left: 0, height: "100%",
               width: result ? "100%" : "60%",
@@ -139,8 +139,8 @@ export default function AiStreamModal({
           {warning && (
             <div style={{
               padding: "7px 10px", borderRadius: 4, fontSize: 11, lineHeight: 1.5,
-              backgroundColor: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.3)",
-              color: "#fbbf24", display: "flex", gap: 7, alignItems: "flex-start",
+              backgroundColor: "color-mix(in srgb, var(--warn) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 30%, transparent)",
+              color: "var(--warn)", display: "flex", gap: 7, alignItems: "flex-start",
             }}>
               <span style={{ marginTop: 1 }}>⚠</span>
               <span>{warning}</span>
@@ -173,14 +173,14 @@ export default function AiStreamModal({
                 </label>
                 {result && !streaming && (
                   <button onClick={handleCopy}
-                    style={{ background: "none", border: "none", color: copied ? "#6ee7b7" : S.textDim, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
+                    style={{ background: "none", border: "none", color: copied ? "var(--ok)" : S.textDim, cursor: "pointer", fontSize: 10, display: "flex", alignItems: "center", gap: 4 }}>
                     {copied ? <Check size={10} /> : <Copy size={10} />}
                     {copied ? "Kopiert" : "Kopieren"}
                   </button>
                 )}
               </div>
               {error ? (
-                <div style={{ padding: "8px 10px", borderRadius: 4, backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)", fontSize: 11, color: "#e07070" }}>
+                <div style={{ padding: "8px 10px", borderRadius: 4, backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)", fontSize: 11, color: "var(--err-soft)" }}>
                   ✗ {error}
                 </div>
               ) : streaming && !result ? (
@@ -219,14 +219,14 @@ export default function AiStreamModal({
           </button>
           {!readOnly && (
             <button onClick={handleGenerate} disabled={streaming || (!readOnly && !description.trim())}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, border: `1px solid rgba(252,228,153,0.3)`, backgroundColor: "rgba(252,228,153,0.08)", color: ACCENT, fontSize: 11, fontWeight: 600, cursor: streaming ? "not-allowed" : "pointer", opacity: streaming ? 0.6 : 1 }}>
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)`, backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", color: ACCENT, fontSize: 11, fontWeight: 600, cursor: streaming ? "not-allowed" : "pointer", opacity: streaming ? 0.6 : 1 }}>
               {streaming ? <Loader2 size={11} className="animate-spin" /> : <Sparkles size={11} />}
               {streaming ? "Generiere..." : "Generieren"}
             </button>
           )}
           {!noApply && onApply && done && result && (
             <button onClick={() => { onApply(result); onClose(); }}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, border: "none", backgroundColor: ACCENT, color: "#111", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, border: "none", backgroundColor: ACCENT, color: "var(--accent-fg)", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
               <Check size={11} /> {applyLabel}
             </button>
           )}

@@ -4,7 +4,7 @@ import {
 
 const S = { textDim: "var(--text-dim)" };
 
-const COLORS = ["#fce499", "#6ee7b7", "#a78bfa", "#f87171", "#60a5fa", "#fb923c",
+const COLORS = ["var(--accent)", "var(--ok)", "#a78bfa", "var(--err)", "#60a5fa", "#fb923c",
                 "#34d399", "#f472b6", "#38bdf8", "#facc15"];
 
 export default function PieWidget({ widget, result, onDrilldown }) {

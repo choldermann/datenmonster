@@ -10,7 +10,7 @@ const S = {
   textMain: "var(--text-main)", textBright: "var(--text-bright)", textDim: "var(--text-dim)",
   accent: "var(--accent)",
 };
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 function fmtNum(v, digits = 0) {
   const n = typeof v === "number" ? v : parseFloat(v);
@@ -253,7 +253,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
 
           {discount != null && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5,
-              color: S.textMain, backgroundColor: `${ACCENT}12`, border: `1px solid ${ACCENT}33`,
+              color: S.textMain, backgroundColor: `color-mix(in srgb, ${ACCENT} 7.1%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 20%, transparent)`,
               borderRadius: 8, padding: "9px 12px" }}>
               <TrendingDown size={15} style={{ color: ACCENT, flexShrink: 0 }} />
               Empfohlener Rabatt: <strong style={{ color: ACCENT }}>{discount} %</strong>
@@ -262,7 +262,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
 
           {kind === "region_potential" && meta?.potenzial != null && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5,
-              color: S.textMain, backgroundColor: `${ACCENT}12`, border: `1px solid ${ACCENT}33`,
+              color: S.textMain, backgroundColor: `color-mix(in srgb, ${ACCENT} 7.1%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 20%, transparent)`,
               borderRadius: 8, padding: "9px 12px" }}>
               <TrendingDown size={15} style={{ color: ACCENT, flexShrink: 0, transform: "rotate(180deg)" }} />
               Rechnerisches Zusatzpotenzial bei durchschnittlicher Erschließung:&nbsp;
@@ -304,7 +304,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                 {phase === "ai" && <Loader2 size={11} style={{ animation: "spin 1s linear infinite", color: S.textDim }} />}
               </div>
               {phase === "error" ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#e07070", fontSize: 12.5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--err-soft)", fontSize: 12.5 }}>
                   <AlertCircle size={14} /> {error}
                 </div>
               ) : phase === "ready" ? (
@@ -312,7 +312,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button onClick={() => runAi(null, false)}
                       style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
-                        borderRadius: 7, backgroundColor: ACCENT, border: "none", color: "#111",
+                        borderRadius: 7, backgroundColor: ACCENT, border: "none", color: "var(--accent-fg)",
                         cursor: "pointer", fontSize: 12.5, fontWeight: 700 }}>
                       <Sparkles size={14} /> {buttonLabel || "Beschreibung erzeugen"}
                     </button>
@@ -350,8 +350,8 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                     <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                       <button onClick={copy}
                         style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
-                          borderRadius: 6, backgroundColor: copied ? "rgba(110,231,183,0.15)" : ACCENT,
-                          border: "none", color: copied ? "#6ee7b7" : "#111", cursor: "pointer",
+                          borderRadius: 6, backgroundColor: copied ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT,
+                          border: "none", color: copied ? "var(--ok)" : "#111", cursor: "pointer",
                           fontSize: 12, fontWeight: 700 }}>
                         {copied ? <Check size={13} /> : <Copy size={13} />}
                         {copied ? "Kopiert" : "Kopieren"}
@@ -366,8 +366,8 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                       {kannUebernehmen && !uebernahme?.fertig && (
                         <button onClick={uebernahmeVorschau} disabled={uebernahmeLaeuft}
                           style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 13px",
-                            borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
-                            border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                            borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                            border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", color: "var(--ok)",
                             cursor: uebernahmeLaeuft ? "wait" : "pointer",
                             fontSize: 12, fontWeight: 700 }}>
                           {uebernahmeLaeuft ? <Loader2 size={12} className="animate-spin" />
@@ -379,7 +379,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                   )}
 
                   {uebernahmeFehler && (
-                    <p style={{ fontSize: 11.5, color: "#e07070", margin: "10px 0 0" }}>
+                    <p style={{ fontSize: 11.5, color: "var(--err-soft)", margin: "10px 0 0" }}>
                       {uebernahmeFehler}
                     </p>
                   )}
@@ -391,7 +391,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                       const ok = z.status === "geschrieben";
                       return (
                         <p style={{ fontSize: 12, margin: "10px 0 0", lineHeight: 1.6,
-                          color: ok ? "#6ee7b7" : "#e07070" }}>
+                          color: ok ? "var(--ok)" : "var(--err-soft)" }}>
                           {ok ? "✓ Beschreibung wurde in die Wawi geschrieben. "
                               + "Die Wawi-Oberfläche zeigt sie nach dem nächsten Öffnen des Artikels."
                             : `Nicht geschrieben: ${z.hinweis || uebernahme.plan.errors?.join(" · ")
@@ -410,7 +410,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                                 {alt ? <>Der bisherige Text ({alt.length} Zeichen) wird{" "}
                                   <strong style={{ color: S.textBright }}>ersetzt</strong>.</>
                                      : "Bisher ist dort nichts hinterlegt."}</>
-                            : <span style={{ color: "#e07070" }}>
+                            : <span style={{ color: "var(--err-soft)" }}>
                                 {z.hinweis || uebernahme.plan.errors?.join(" · ")
                                   || "Der Wert lässt sich nicht schreiben."}</span>}
                         </p>
@@ -418,7 +418,7 @@ export default function AiActionModal({ kind, label, title, factsMapping, keyPar
                           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                             <button onClick={uebernahmeSchreiben} disabled={uebernahmeLaeuft}
                               style={{ display: "flex", alignItems: "center", gap: 6,
-                                padding: "7px 13px", borderRadius: 6, backgroundColor: "#6ee7b7",
+                                padding: "7px 13px", borderRadius: 6, backgroundColor: "var(--ok)",
                                 border: "none", color: "#111",
                                 cursor: uebernahmeLaeuft ? "wait" : "pointer",
                                 fontSize: 12, fontWeight: 700 }}>

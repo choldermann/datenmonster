@@ -198,7 +198,7 @@ export default function FormEditor() {
           {TABS.map(t => (
             <button key={t.id} onClick={() => setActiveTab(t.id)}
               style={{ padding: "4px 10px", borderRadius: 5, border: "none",
-                backgroundColor: activeTab === t.id ? "rgba(252,228,153,0.12)" : "transparent",
+                backgroundColor: activeTab === t.id ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
                 color: activeTab === t.id ? S.accent : S.textDim,
                 fontSize: 11, fontWeight: activeTab === t.id ? 700 : 400, cursor: "pointer" }}>
               {t.label}
@@ -233,8 +233,8 @@ export default function FormEditor() {
           {id && id !== "new" && schema?.report_builder && (
             <button onClick={() => setShowBuilder(true)} title="Bausteine des Reports ändern"
               style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px",
-                borderRadius: 5, border: "1px solid rgba(252,228,153,0.35)",
-                backgroundColor: "rgba(252,228,153,0.08)", color: "var(--accent)",
+                borderRadius: 5, border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", color: "var(--accent)",
                 cursor: "pointer", fontSize: 11 }}>
               <LayoutGrid size={11} /> Bausteine
             </button>
@@ -255,9 +255,9 @@ export default function FormEditor() {
             <>
               <button onClick={togglePublish}
                 style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 9px",
-                  borderRadius: 5, border: `1px solid ${published ? "rgba(110,231,183,0.4)" : S.border}`,
-                  backgroundColor: published ? "rgba(110,231,183,0.08)" : "transparent",
-                  color: published ? "#6ee7b7" : S.textDim, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
+                  borderRadius: 5, border: `1px solid ${published ? "color-mix(in srgb, var(--ok) 40%, transparent)" : S.border}`,
+                  backgroundColor: published ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "transparent",
+                  color: published ? "var(--ok)" : S.textDim, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
                 {published ? <Globe size={11} /> : <GlobeLock size={11} />}
                 {published ? "Veröffentlicht" : "Entwurf"}
               </button>
@@ -274,8 +274,8 @@ export default function FormEditor() {
           {/* Save */}
           <button onClick={save} disabled={saving}
             style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 12px",
-              borderRadius: 5, backgroundColor: "rgba(252,228,153,0.1)",
-              border: "1px solid rgba(252,228,153,0.35)", color: S.accent,
+              borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)", color: S.accent,
               cursor: saving ? "wait" : "pointer", fontSize: 11, fontWeight: 700 }}>
             {saving ? <Loader2 size={11} /> : <Save size={11} />}
             {savedToast ? "✓ Gespeichert" : "Speichern"}
@@ -330,7 +330,7 @@ export default function FormEditor() {
                         <button key={em} type="button"
                           onClick={() => { setPortalConfig(p => ({ ...p, icon: em })); setShowIconPicker(false); }}
                           title={em}
-                          style={{ background: portalConfig.icon === em ? "rgba(252,228,153,0.15)" : "transparent",
+                          style={{ background: portalConfig.icon === em ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
                             border: "none", borderRadius: 4, cursor: "pointer", fontSize: 18, lineHeight: 1,
                             padding: "4px 0", aspectRatio: "1" }}>
                           {em}
@@ -424,7 +424,7 @@ export default function FormEditor() {
             </div>
             {appUrl && published && (
               <a href={appUrl} target="_blank" rel="noreferrer"
-                style={{ fontSize: 10, color: "#6ee7b7", textDecoration: "none",
+                style={{ fontSize: 10, color: "var(--ok)", textDecoration: "none",
                   display: "flex", alignItems: "center", gap: 4 }}>
                 <Globe size={10} /> {window.location.origin}{appUrl}
               </a>

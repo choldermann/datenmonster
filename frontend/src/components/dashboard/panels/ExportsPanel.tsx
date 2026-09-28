@@ -35,7 +35,7 @@ function ExportsPanel({ projectId }) {
     return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   };
 
-  const EXT_COLORS = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fce499", xml: "#fcd34d", db: "#f97316" };
+  const EXT_COLORS = { csv: "var(--ok)", xlsx: "#93c5fd", json: "var(--accent)", xml: "#fcd34d", db: "#f97316" };
 
   const toggleSelect = (id) => setSelected((prev) => {
     const next = new Set(prev);
@@ -128,7 +128,7 @@ function ExportsPanel({ projectId }) {
               <Download size={12} /> Herunterladen
             </button>
             <button onClick={deleteSelected} disabled={deleting}
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 4, border: `1px solid #ef444455`, backgroundColor: "#ef444418", color: "#f87171", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 4, border: `1px solid #ef444455`, backgroundColor: "#ef444418", color: "var(--err)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
               <Trash2 size={12} /> Löschen
             </button>
             <button onClick={clearSel} style={{ fontSize: 11, color: S.textDim, background: "none", border: "none", cursor: "pointer" }}>Abwählen</button>
@@ -145,7 +145,7 @@ function ExportsPanel({ projectId }) {
       </div>
 
       {/* Hint bar */}
-      <div style={{ padding: "6px 20px", borderBottom: `1px solid ${S.border}`, backgroundColor: "rgba(252,228,153,0.04)", flexShrink: 0 }}>
+      <div style={{ padding: "6px 20px", borderBottom: `1px solid ${S.border}`, backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)", flexShrink: 0 }}>
         <p style={{ fontSize: 10, color: S.textDim }}>
           Klicken zum Auswählen · Gedrückt halten &amp; ziehen für Mehrfachauswahl · Doppelklick zum Herunterladen
         </p>
@@ -183,13 +183,13 @@ function ExportsPanel({ projectId }) {
                     onMouseEnter={() => handleRowMouseEnter(f.id)}
                     onClick={() => toggleSelect(f.id)}
                     onDoubleClick={() => downloadFile(f)}
-                    style={{ borderBottom: `1px solid ${S.border}`, cursor: "pointer", backgroundColor: isSel ? "rgba(252,228,153,0.08)" : "transparent", transition: "background-color 0.05s" }}
+                    style={{ borderBottom: `1px solid ${S.border}`, cursor: "pointer", backgroundColor: isSel ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent", transition: "background-color 0.05s" }}
                     onMouseLeave={(e) => { if (!isSel) e.currentTarget.style.backgroundColor = "transparent"; }}
                     onMouseOver={(e) => { if (!isSel) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)"; }}>
                     {/* Checkbox */}
                     <td style={{ padding: "8px 10px 8px 16px", width: 28 }}>
                       <div style={{ width: 14, height: 14, borderRadius: 3, border: `2px solid ${isSel ? S.accent : S.border}`, backgroundColor: isSel ? S.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {isSel && <Check size={9} color="#111" strokeWidth={3} />}
+                        {isSel && <Check size={9} color="var(--accent-fg)" strokeWidth={3} />}
                       </div>
                     </td>
                     {/* Filename */}
@@ -207,7 +207,7 @@ function ExportsPanel({ projectId }) {
                     <td style={{ padding: "8px 12px", color: S.textDim, whiteSpace: "nowrap" }}>{fmtSize(f.file_size)}</td>
                     {/* Triggered by */}
                     <td style={{ padding: "8px 12px" }}>
-                      <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, textTransform: "uppercase", letterSpacing: "0.05em", backgroundColor: f.triggered_by === "scheduler" ? "rgba(167,139,250,0.15)" : "rgba(252,228,153,0.1)", color: f.triggered_by === "scheduler" ? "#a78bfa" : S.accent }}>
+                      <span style={{ fontSize: 9, fontWeight: 600, padding: "2px 6px", borderRadius: 3, textTransform: "uppercase", letterSpacing: "0.05em", backgroundColor: f.triggered_by === "scheduler" ? "rgba(167,139,250,0.15)" : "color-mix(in srgb, var(--accent) 10%, transparent)", color: f.triggered_by === "scheduler" ? "#a78bfa" : S.accent }}>
                         {f.triggered_by === "scheduler" ? "Scheduler" : "Manuell"}
                       </span>
                     </td>
@@ -226,7 +226,7 @@ function ExportsPanel({ projectId }) {
                         </button>
                         <button onClick={(e) => { e.stopPropagation(); deleteSingle(f); }} title="Löschen"
                           style={{ padding: "3px 6px", borderRadius: 4, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "#f87171"; e.currentTarget.style.borderColor = "#ef444455"; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--err)"; e.currentTarget.style.borderColor = "#ef444455"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; e.currentTarget.style.borderColor = S.border; }}>
                           <Trash2 size={11} />
                         </button>

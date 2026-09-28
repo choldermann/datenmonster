@@ -173,7 +173,7 @@ export default function FieldProperties({ field, onChange, actions, resultTabs }
               }} placeholder={`Option ${i + 1}`} style={{ ...inp, flex: 1 }} />
               <button onClick={() => set({ options: field.options.filter((_, j) => j !== i) })}
                 style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}
-                onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                 onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                 <X size={10} />
               </button>
@@ -349,7 +349,7 @@ export default function FieldProperties({ field, onChange, actions, resultTabs }
           {COL_SPANS.map(cs => (
             <button key={cs} onClick={() => set({ colSpan: cs })}
               style={{ padding: "3px 7px", borderRadius: 4, fontSize: 10, cursor: "pointer",
-                backgroundColor: field.colSpan === cs ? `${def.color}20` : "transparent",
+                backgroundColor: field.colSpan === cs ? `color-mix(in srgb, ${def.color} 12.5%, transparent)` : "transparent",
                 border: `1px solid ${field.colSpan === cs ? def.color : S.border}`,
                 color: field.colSpan === cs ? def.color : S.textDim, fontWeight: field.colSpan === cs ? 700 : 400 }}>
               {cs === 12 ? "12 (voll)" : cs === 6 ? "6 (½)" : cs === 4 ? "4 (⅓)" : cs === 3 ? "3 (¼)" : cs}

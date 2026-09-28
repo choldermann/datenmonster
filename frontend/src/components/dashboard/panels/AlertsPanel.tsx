@@ -231,7 +231,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
 
       {fehler && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
-          border: "1px solid rgba(224,112,112,0.4)", borderRadius: 6, color: "#e07070",
+          border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)", borderRadius: 6, color: "var(--err-soft)",
           fontSize: 12 }}>
           <AlertCircle size={13} /> {fehler}
         </div>
@@ -317,7 +317,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
 
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
               gap: 12, borderTop: `1px solid ${S.border}`, paddingTop: 10 }}>
-              <span style={{ fontSize: 11, color: plan.last_status === "error" ? "#e07070" : S.textDim }}>
+              <span style={{ fontSize: 11, color: plan.last_status === "error" ? "var(--err-soft)" : S.textDim }}>
                 {plan.last_run_at
                   ? <>Zuletzt {new Date(plan.last_run_at).toLocaleString("de-DE")}: {plan.last_message}</>
                   : "Noch nie gelaufen."}
@@ -327,7 +327,7 @@ export default function AlertsPanel({ projectId, canEdit }) {
                   <> · Nächster Lauf {new Date(plan.next_run).toLocaleString("de-DE")}</>
                 )}
                 {plan.active && !plan.next_run && (
-                  <b style={{ color: "#e07070" }}> · aktiv, aber kein Job registriert</b>
+                  <b style={{ color: "var(--err-soft)" }}> · aktiv, aber kein Job registriert</b>
                 )}
               </span>
               {canEdit && (

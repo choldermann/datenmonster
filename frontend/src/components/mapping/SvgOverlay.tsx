@@ -632,16 +632,16 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const x2 = tp.x, y2 = tp.y;
         const cx = Math.min(120, Math.abs(x2 - x1) * 0.5);
         const ti = TRANSFORMER_TYPES.find((t) => t.value === (conn.transformer?.type || "direct"));
-        const color = isAiNode ? AI_NODE_COLOR : isParams ? PARAMS_NODE_COLOR : isPython ? PYTHON_NODE_COLOR : isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "#6ee7b7");
+        const color = isAiNode ? AI_NODE_COLOR : isParams ? PARAMS_NODE_COLOR : isPython ? PYTHON_NODE_COLOR : isSwitch ? SWITCH_COLOR : isCalc ? CALC_COLOR : isLookup ? LOOKUP_COLOR : isRest ? REST_NODE_COLOR : isAgg ? AGG_COLOR : isSql ? SQL_NODE_COLOR : isConst ? "#a78bfa" : isTransform ? "#818cf8" : (ti?.color || "var(--ok)");
         const isClamped = sp.clamped || tp.clamped;
 
         // target_type Badge
         const ttype = conn.target_type;
-        const TYPE_COLORS = { integer:"#60a5fa", decimal:"#34d399", date:"#f59e0b", datetime:"#f59e0b", boolean:"#a78bfa", string:"#94a3b8" };
+        const TYPE_COLORS = { integer:"#60a5fa", decimal:"#34d399", date:"#f59e0b", datetime:"#f59e0b", boolean:"#a78bfa", string:"var(--muted)" };
         const TYPE_LABELS = { integer:"INT", decimal:"DEC", date:"DAT", datetime:"DT", boolean:"BOOL", string:"STR" };
         const midX = (x1 + x2) / 2;
         const midY = (y1 + y2) / 2;
-        const badgeColor = ttype ? (TYPE_COLORS[ttype] || "#94a3b8") : null;
+        const badgeColor = ttype ? (TYPE_COLORS[ttype] || "var(--muted)") : null;
         const badgeLabel = ttype ? (TYPE_LABELS[ttype] || ttype.toUpperCase().slice(0,3)) : null;
 
         // Typ-Kompatibilitätswarnung: nur für reguläre Dataset-Connections ohne expliziten Cast

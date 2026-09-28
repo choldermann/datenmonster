@@ -2,9 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import api from "../../../api/client";
 
 const C = {
-  success: { bg: "rgba(110,231,183,0.12)", border: "rgba(110,231,183,0.3)", text: "#6ee7b7", label: "Erfolgreich" },
-  error:   { bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.3)", text: "#e07070", label: "Fehler" },
-  warning: { bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)",  text: "#fbbf24", label: "Warnung" },
+  success: { bg: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "color-mix(in srgb, var(--ok) 30%, transparent)", text: "var(--ok)", label: "Erfolgreich" },
+  error:   { bg: "color-mix(in srgb, var(--err-soft) 12%, transparent)", border: "color-mix(in srgb, var(--err-soft) 30%, transparent)", text: "var(--err-soft)", label: "Fehler" },
+  warning: { bg: "color-mix(in srgb, var(--warn) 12%, transparent)",  border: "color-mix(in srgb, var(--warn) 30%, transparent)",  text: "var(--warn)", label: "Warnung" },
   active:  { bg: "rgba(56,189,248,0.12)",  border: "rgba(56,189,248,0.3)",  text: "#38bdf8", label: "Aktiv" },
   inactive:{ bg: "rgba(255,255,255,0.04)", border: "var(--border)",         text: "var(--text-dim)", label: "Inaktiv" },
 };
@@ -56,9 +56,9 @@ function ToggleButton({ pipeline, onToggle, toggling }) {
       style={{
         fontSize: 11, fontWeight: 600,
         padding: "4px 10px", borderRadius: 6, cursor: isToggling ? "wait" : "pointer",
-        background: isActive ? "rgba(224,112,112,0.1)" : "rgba(110,231,183,0.1)",
-        border: `1px solid ${isActive ? "rgba(224,112,112,0.3)" : "rgba(110,231,183,0.3)"}`,
-        color: isActive ? "#e07070" : "#6ee7b7",
+        background: isActive ? "color-mix(in srgb, var(--err-soft) 10%, transparent)" : "color-mix(in srgb, var(--ok) 10%, transparent)",
+        border: `1px solid ${isActive ? "color-mix(in srgb, var(--err-soft) 30%, transparent)" : "color-mix(in srgb, var(--ok) 30%, transparent)"}`,
+        color: isActive ? "var(--err-soft)" : "var(--ok)",
         opacity: isToggling ? 0.6 : 1,
         whiteSpace: "nowrap", transition: "opacity 0.15s",
       }}
@@ -105,9 +105,9 @@ function RefreshIcon() {
 }
 
 const DOCKER_STATUS_COLOR = {
-  running:    { text: "#6ee7b7", bg: "rgba(110,231,183,0.12)", border: "rgba(110,231,183,0.3)",  label: "running" },
-  exited:     { text: "#e07070", bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.3)",  label: "exited" },
-  paused:     { text: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)",   label: "paused" },
+  running:    { text: "var(--ok)", bg: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "color-mix(in srgb, var(--ok) 30%, transparent)",  label: "running" },
+  exited:     { text: "var(--err-soft)", bg: "color-mix(in srgb, var(--err-soft) 12%, transparent)", border: "color-mix(in srgb, var(--err-soft) 30%, transparent)",  label: "exited" },
+  paused:     { text: "var(--warn)", bg: "color-mix(in srgb, var(--warn) 12%, transparent)",  border: "color-mix(in srgb, var(--warn) 30%, transparent)",   label: "paused" },
   restarting: { text: "#38bdf8", bg: "rgba(56,189,248,0.12)",  border: "rgba(56,189,248,0.3)",   label: "restarting" },
   created:    { text: "#a78bfa", bg: "rgba(167,139,250,0.12)", border: "rgba(167,139,250,0.3)",  label: "created" },
 };
@@ -138,7 +138,7 @@ function DockerLogModal({ container, logs, onClose, onRefresh, loading }) {
             <button onClick={onRefresh} disabled={loading} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: loading ? "wait" : "pointer", background: "var(--bg-elevated)", border: "1px solid var(--border)", color: "var(--text-main)" }}>
               <RefreshIcon /> {loading ? "Lädt…" : "Aktualisieren"}
             </button>
-            <button onClick={handleCopy} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: "pointer", background: copied ? "rgba(110,231,183,0.15)" : "var(--bg-elevated)", border: `1px solid ${copied ? "rgba(110,231,183,0.4)" : "var(--border)"}`, color: copied ? "#6ee7b7" : "var(--text-main)", transition: "all 0.2s" }}>
+            <button onClick={handleCopy} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, padding: "5px 12px", borderRadius: 6, cursor: "pointer", background: copied ? "color-mix(in srgb, var(--ok) 15%, transparent)" : "var(--bg-elevated)", border: `1px solid ${copied ? "color-mix(in srgb, var(--ok) 40%, transparent)" : "var(--border)"}`, color: copied ? "var(--ok)" : "var(--text-main)", transition: "all 0.2s" }}>
               {copied ? <CheckIcon /> : <CopyIcon />} {copied ? "Kopiert!" : "Kopieren"}
             </button>
             <button onClick={onClose} style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 28, height: 28, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--border)", color: "var(--text-dim)" }}
@@ -248,9 +248,9 @@ function LogDetailModal({ log, onClose }) {
             <button onClick={handleCopy} style={{
               display: "flex", alignItems: "center", gap: 6,
               fontSize: 12, fontWeight: 500, padding: "5px 12px", borderRadius: 6, cursor: "pointer",
-              background: copied ? "rgba(110,231,183,0.15)" : "var(--bg-elevated)",
-              border: `1px solid ${copied ? "rgba(110,231,183,0.4)" : "var(--border)"}`,
-              color: copied ? "#6ee7b7" : "var(--text-main)",
+              background: copied ? "color-mix(in srgb, var(--ok) 15%, transparent)" : "var(--bg-elevated)",
+              border: `1px solid ${copied ? "color-mix(in srgb, var(--ok) 40%, transparent)" : "var(--border)"}`,
+              color: copied ? "var(--ok)" : "var(--text-main)",
               transition: "all 0.2s",
             }}>
               {copied ? <CheckIcon /> : <CopyIcon />}
@@ -308,10 +308,10 @@ function LogDetailModal({ log, onClose }) {
               {/* Traceback extra hervorheben */}
               {details.traceback && (
                 <div style={{ marginBottom: 10 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: "#e07070", margin: "0 0 4px" }}>Stacktrace</p>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--err-soft)", margin: "0 0 4px" }}>Stacktrace</p>
                   <pre style={{
-                    background: "rgba(224,112,112,0.06)", border: "1px solid rgba(224,112,112,0.2)",
-                    borderRadius: 6, padding: "10px 14px", fontSize: 11, color: "#e07070",
+                    background: "color-mix(in srgb, var(--err-soft) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 20%, transparent)",
+                    borderRadius: 6, padding: "10px 14px", fontSize: 11, color: "var(--err-soft)",
                     overflowX: "auto", margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
                     fontFamily: "var(--font-mono, monospace)", lineHeight: 1.5,
                   }}>{details.traceback}</pre>
@@ -349,9 +349,9 @@ const LOG_LEVELS = ["all", "info", "success", "warning", "error"];
 const PAGE_SIZE = 15;
 
 const lvlColor = (level) => {
-  if (level === "error")   return { text: "#e07070", bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.3)" };
-  if (level === "warning") return { text: "#fbbf24", bg: "rgba(251,191,36,0.12)",  border: "rgba(251,191,36,0.3)" };
-  if (level === "success") return { text: "#6ee7b7", bg: "rgba(110,231,183,0.12)", border: "rgba(110,231,183,0.3)" };
+  if (level === "error")   return { text: "var(--err-soft)", bg: "color-mix(in srgb, var(--err-soft) 12%, transparent)", border: "color-mix(in srgb, var(--err-soft) 30%, transparent)" };
+  if (level === "warning") return { text: "var(--warn)", bg: "color-mix(in srgb, var(--warn) 12%, transparent)",  border: "color-mix(in srgb, var(--warn) 30%, transparent)" };
+  if (level === "success") return { text: "var(--ok)", bg: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "color-mix(in srgb, var(--ok) 30%, transparent)" };
   return { text: "var(--text-dim)", bg: "rgba(255,255,255,0.05)", border: "rgba(255,255,255,0.1)" };
 };
 
@@ -429,18 +429,18 @@ function SystemLogTable({ logs, onDeleteOne, onDeleteAll, deleting }) {
               title="Alle Logs löschen"
               style={{
                 fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, cursor: logs.length === 0 ? "default" : "pointer",
-                background: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)",
-                color: "#e07070", display: "flex", alignItems: "center", gap: 5,
+                background: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)",
+                color: "var(--err-soft)", display: "flex", alignItems: "center", gap: 5,
                 opacity: logs.length === 0 ? 0.4 : 1,
               }}>
               <TrashIcon /> Log leeren
             </button>
           ) : (
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "#e07070" }}>Wirklich löschen?</span>
+              <span style={{ fontSize: 11, color: "var(--err-soft)" }}>Wirklich löschen?</span>
               <button onClick={() => { onDeleteAll(); setConfirmClear(false); }} style={{
                 fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20, cursor: "pointer",
-                background: "rgba(224,112,112,0.15)", border: "1px solid rgba(224,112,112,0.4)", color: "#e07070",
+                background: "color-mix(in srgb, var(--err-soft) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)", color: "var(--err-soft)",
               }}>Ja, löschen</button>
               <button onClick={() => setConfirmClear(false)} style={{
                 fontSize: 11, padding: "3px 10px", borderRadius: 20, cursor: "pointer",
@@ -505,7 +505,7 @@ function SystemLogTable({ logs, onDeleteOne, onDeleteAll, deleting }) {
                       opacity: deleting === log.id ? 0.4 : 0.5,
                       transition: "all 0.15s",
                     }}
-                    onMouseEnter={e => { if (log.id) { e.currentTarget.style.color = "#e07070"; e.currentTarget.style.opacity = "1"; e.currentTarget.style.background = "rgba(224,112,112,0.1)"; }}}
+                    onMouseEnter={e => { if (log.id) { e.currentTarget.style.color = "var(--err-soft)"; e.currentTarget.style.opacity = "1"; e.currentTarget.style.background = "color-mix(in srgb, var(--err-soft) 10%, transparent)"; }}}
                     onMouseLeave={e => { e.currentTarget.style.color = "var(--text-dim)"; e.currentTarget.style.opacity = "0.5"; e.currentTarget.style.background = "transparent"; }}
                   >
                     <TrashIcon />
@@ -540,9 +540,9 @@ function SystemLogTable({ logs, onDeleteOne, onDeleteAll, deleting }) {
               return (
                 <button key={p} onClick={() => setPage(p)}
                   style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, cursor: "pointer",
-                    background: p === page ? "rgba(110,231,183,0.15)" : "var(--bg-elevated)",
-                    border: `1px solid ${p === page ? "rgba(110,231,183,0.4)" : "var(--border)"}`,
-                    color: p === page ? "#6ee7b7" : "var(--text-main)", fontWeight: p === page ? 600 : 400 }}>
+                    background: p === page ? "color-mix(in srgb, var(--ok) 15%, transparent)" : "var(--bg-elevated)",
+                    border: `1px solid ${p === page ? "color-mix(in srgb, var(--ok) 40%, transparent)" : "var(--border)"}`,
+                    color: p === page ? "var(--ok)" : "var(--text-main)", fontWeight: p === page ? 600 : 400 }}>
                   {p + 1}
                 </button>
               );
@@ -683,7 +683,7 @@ export default function MonitoringPanel() {
   );
 
   if (!data) return (
-    <div style={{ padding: "3rem", textAlign: "center", color: "#e07070", fontSize: 13 }}>
+    <div style={{ padding: "3rem", textAlign: "center", color: "var(--err-soft)", fontSize: 13 }}>
       Monitoring-Daten konnten nicht geladen werden.
     </div>
   );
@@ -707,7 +707,7 @@ export default function MonitoringPanel() {
 
   const hasErrors = errors.some(e => e.level === "error");
   const hasWarnings = errors.some(e => e.level === "warning");
-  const alertColor = hasErrors ? "#e07070" : hasWarnings ? "#fbbf24" : "#6ee7b7";
+  const alertColor = hasErrors ? "var(--err-soft)" : hasWarnings ? "var(--warn)" : "var(--ok)";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: "4px 0" }}>
@@ -774,12 +774,12 @@ export default function MonitoringPanel() {
                 {/* CPU */}
                 <div style={s.kpi}>
                   <p style={s.kpiLabel}>CPU Auslastung</p>
-                  <p style={{ ...s.kpiValue, color: systemStats.cpu_percent > 80 ? "#e07070" : systemStats.cpu_percent > 50 ? "#fbbf24" : "#6ee7b7" }}>
+                  <p style={{ ...s.kpiValue, color: systemStats.cpu_percent > 80 ? "var(--err-soft)" : systemStats.cpu_percent > 50 ? "var(--warn)" : "var(--ok)" }}>
                     {systemStats.cpu_percent ?? "—"}%
                   </p>
                   <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
                     <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.cpu_percent ?? 0}%`,
-                      background: systemStats.cpu_percent > 80 ? "#e07070" : systemStats.cpu_percent > 50 ? "#fbbf24" : "#6ee7b7",
+                      background: systemStats.cpu_percent > 80 ? "var(--err-soft)" : systemStats.cpu_percent > 50 ? "var(--warn)" : "var(--ok)",
                       transition: "width 0.4s ease" }} />
                   </div>
                   <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>{systemStats.cpu_count} Kerne</p>
@@ -788,12 +788,12 @@ export default function MonitoringPanel() {
                 {/* RAM */}
                 <div style={s.kpi}>
                   <p style={s.kpiLabel}>RAM Auslastung</p>
-                  <p style={{ ...s.kpiValue, color: systemStats.ram_percent > 85 ? "#e07070" : systemStats.ram_percent > 65 ? "#fbbf24" : "#6ee7b7" }}>
+                  <p style={{ ...s.kpiValue, color: systemStats.ram_percent > 85 ? "var(--err-soft)" : systemStats.ram_percent > 65 ? "var(--warn)" : "var(--ok)" }}>
                     {systemStats.ram_percent ?? "—"}%
                   </p>
                   <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
                     <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.ram_percent ?? 0}%`,
-                      background: systemStats.ram_percent > 85 ? "#e07070" : systemStats.ram_percent > 65 ? "#fbbf24" : "#6ee7b7",
+                      background: systemStats.ram_percent > 85 ? "var(--err-soft)" : systemStats.ram_percent > 65 ? "var(--warn)" : "var(--ok)",
                       transition: "width 0.4s ease" }} />
                   </div>
                   <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
@@ -804,12 +804,12 @@ export default function MonitoringPanel() {
                 {/* Disk */}
                 <div style={s.kpi}>
                   <p style={s.kpiLabel}>Speicherplatz</p>
-                  <p style={{ ...s.kpiValue, color: systemStats.disk_percent > 90 ? "#e07070" : systemStats.disk_percent > 75 ? "#fbbf24" : "#6ee7b7" }}>
+                  <p style={{ ...s.kpiValue, color: systemStats.disk_percent > 90 ? "var(--err-soft)" : systemStats.disk_percent > 75 ? "var(--warn)" : "var(--ok)" }}>
                     {systemStats.disk_percent ?? "—"}%
                   </p>
                   <div style={{ marginTop: 10, height: 6, background: "var(--bg-elevated)", borderRadius: 3, overflow: "hidden" }}>
                     <div style={{ height: "100%", borderRadius: 3, width: `${systemStats.disk_percent ?? 0}%`,
-                      background: systemStats.disk_percent > 90 ? "#e07070" : systemStats.disk_percent > 75 ? "#fbbf24" : "#6ee7b7",
+                      background: systemStats.disk_percent > 90 ? "var(--err-soft)" : systemStats.disk_percent > 75 ? "var(--warn)" : "var(--ok)",
                       transition: "width 0.4s ease" }} />
                   </div>
                   <p style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 4 }}>
@@ -837,7 +837,7 @@ export default function MonitoringPanel() {
                 </div>
                 <div style={s.kpi}>
                   <p style={s.kpiLabel}>Scheduler-Jobs</p>
-                  <p style={{ ...s.kpiValue, fontSize: 20, color: systemStats.scheduler_jobs > 0 ? "#6ee7b7" : "var(--text-dim)" }}>
+                  <p style={{ ...s.kpiValue, fontSize: 20, color: systemStats.scheduler_jobs > 0 ? "var(--ok)" : "var(--text-dim)" }}>
                     {systemStats.scheduler_jobs}
                   </p>
                 </div>
@@ -856,8 +856,8 @@ export default function MonitoringPanel() {
               </div>
 
               {systemStats.psutil_unavailable && (
-                <div style={{ padding: "12px 16px", borderRadius: 8, background: "rgba(251,191,36,0.08)",
-                  border: "1px solid rgba(251,191,36,0.25)", fontSize: 12, color: "#fbbf24" }}>
+                <div style={{ padding: "12px 16px", borderRadius: 8, background: "color-mix(in srgb, var(--warn) 8%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--warn) 25%, transparent)", fontSize: 12, color: "var(--warn)" }}>
                   psutil nicht installiert – CPU/RAM/Disk nicht verfügbar.
                   Im Container: <code>pip install psutil --break-system-packages</code>
                 </div>
@@ -884,7 +884,7 @@ export default function MonitoringPanel() {
             </div>
 
             {dockerError && (
-              <div style={{ padding: "12px 16px", background: "rgba(224,112,112,0.08)", borderBottom: "1px solid var(--border)", fontSize: 12, color: "#e07070" }}>
+              <div style={{ padding: "12px 16px", background: "color-mix(in srgb, var(--err-soft) 8%, transparent)", borderBottom: "1px solid var(--border)", fontSize: 12, color: "var(--err-soft)" }}>
                 {dockerError}
               </div>
             )}
@@ -925,13 +925,13 @@ export default function MonitoringPanel() {
                             <div style={{ display: "flex", gap: 5 }}>
                               {!isRunning && (
                                 <button onClick={() => dockerAction(c.id, "start")} disabled={!!dockerActioning}
-                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)", color: "#6ee7b7", opacity: actionKey === "start" ? 0.6 : 1 }}>
+                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "color-mix(in srgb, var(--ok) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", color: "var(--ok)", opacity: actionKey === "start" ? 0.6 : 1 }}>
                                   {actionKey === "start" ? "…" : "Start"}
                                 </button>
                               )}
                               {isRunning && (
                                 <button onClick={() => dockerAction(c.id, "stop")} disabled={!!dockerActioning}
-                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", opacity: actionKey === "stop" ? 0.6 : 1 }}>
+                                  style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 6, cursor: dockerActioning ? "wait" : "pointer", background: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", opacity: actionKey === "stop" ? 0.6 : 1 }}>
                                   {actionKey === "stop" ? "…" : "Stopp"}
                                 </button>
                               )}
@@ -972,13 +972,13 @@ export default function MonitoringPanel() {
         </div>
         <div style={s.kpi}>
           <p style={s.kpiLabel}>Pipelines aktiv</p>
-          <p style={{ ...s.kpiValue, color: summary.pipelines_active > 0 ? "#6ee7b7" : "var(--text-dim)" }}>
+          <p style={{ ...s.kpiValue, color: summary.pipelines_active > 0 ? "var(--ok)" : "var(--text-dim)" }}>
             {summary.pipelines_active}
           </p>
         </div>
         <div style={s.kpi}>
           <p style={s.kpiLabel}>Fehler heute</p>
-          <p style={{ ...s.kpiValue, color: summary.errors_today > 0 ? "#e07070" : "#6ee7b7" }}>
+          <p style={{ ...s.kpiValue, color: summary.errors_today > 0 ? "var(--err-soft)" : "var(--ok)" }}>
             {summary.errors_today}
           </p>
         </div>
@@ -1059,7 +1059,7 @@ export default function MonitoringPanel() {
           {/* Fehler & Warnungen */}
           <div style={{
             ...s.card,
-            borderColor: hasErrors ? "rgba(224,112,112,0.4)" : hasWarnings ? "rgba(251,191,36,0.3)" : "var(--border)",
+            borderColor: hasErrors ? "color-mix(in srgb, var(--err-soft) 40%, transparent)" : hasWarnings ? "color-mix(in srgb, var(--warn) 30%, transparent)" : "var(--border)",
           }}>
             <div style={s.cardHeader}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1069,20 +1069,20 @@ export default function MonitoringPanel() {
               {errors.length > 0 && (
                 <span style={{
                   fontSize: 11, fontWeight: 600, padding: "2px 7px", borderRadius: 20,
-                  background: hasErrors ? "rgba(224,112,112,0.15)" : "rgba(251,191,36,0.15)",
-                  color: hasErrors ? "#e07070" : "#fbbf24",
+                  background: hasErrors ? "color-mix(in srgb, var(--err-soft) 15%, transparent)" : "color-mix(in srgb, var(--warn) 15%, transparent)",
+                  color: hasErrors ? "var(--err-soft)" : "var(--warn)",
                 }}>{errors.length}</span>
               )}
             </div>
             {errors.length === 0 ? (
               <div style={{ padding: "16px 14px", display: "flex", alignItems: "center", gap: 8 }}>
-                <Dot color="#6ee7b7" />
+                <Dot color="var(--ok)" />
                 <span style={{ fontSize: 12, color: "var(--text-dim)" }}>Alles läuft problemlos</span>
               </div>
             ) : errors.slice(0, 6).map((e, i) => (
               <div key={i} style={{ padding: "10px 14px", borderTop: "1px solid var(--border)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
-                  <Dot color={e.level === "error" ? "#e07070" : "#fbbf24"} />
+                  <Dot color={e.level === "error" ? "var(--err-soft)" : "var(--warn)"} />
                   <p style={{ fontSize: 12, fontWeight: 600, margin: 0, color: "var(--text-bright)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {e.pipeline}
                   </p>

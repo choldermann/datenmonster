@@ -32,7 +32,7 @@ function ChangePasswordModal({ onClose }) {
     <Modal title="Passwort ändern" onClose={onClose}>
       <div className="flex flex-col gap-4">
         {done ? (
-          <div className="flex items-center gap-2 text-sm" style={{ color: "#6ee7b7" }}>
+          <div className="flex items-center gap-2 text-sm" style={{ color: "var(--ok)" }}>
             <Check size={16} /> Passwort erfolgreich geändert
           </div>
         ) : (
@@ -53,7 +53,7 @@ function ChangePasswordModal({ onClose }) {
                 onChange={(e) => setConfirm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSave()} />
             </div>
-            {error && <p className="text-xs" style={{ color: "#e07070" }}>{error}</p>}
+            {error && <p className="text-xs" style={{ color: "var(--err-soft)" }}>{error}</p>}
             <div className="flex gap-3 justify-end">
               <button onClick={onClose} className="btn-ghost text-xs">Abbrechen</button>
               <button onClick={handleSave} disabled={saving || !current || !next || !confirm}

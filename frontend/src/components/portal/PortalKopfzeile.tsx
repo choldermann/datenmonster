@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Sun, Moon, Sparkles, Cpu } from "lucide-react";
 import api from "../../api/client";
-import { useTheme } from "../../hooks/useTheme";
+import { useTheme, istDunkel } from "../../hooks/useTheme";
 import { getAiProvider, setAiProvider, onAiProviderChange } from "../../services/aiProvider";
 
 const S = {
   border: "var(--border)", textDim: "var(--text-dim)", textBright: "var(--text-bright)",
   accent: "var(--accent)", bgEl: "var(--bg-elevated)",
 };
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 /** Hell/Dunkel umschalten. Nutzt denselben Speicher wie der Editor (dm_theme),
  *  d.h. die Wahl gilt geräteweit und bleibt nach dem Abmelden erhalten. */
@@ -16,8 +16,8 @@ export function ThemeUmschalter() {
   const { mode, setMode } = useTheme();
   // Aus dem Zustand ableiten, nicht aus dem DOM: das Attribut wird erst im Effekt
   // gesetzt, die Beschriftung hinkte sonst einen Klick hinterher.
-  const dunkel = mode === "dark"
-    || (mode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  // Bei einem Retro-/Ruhig-Theme zählt, ob es hell oder dunkel ist.
+  const dunkel = istDunkel(mode);
   return (
     <button
       onClick={() => setMode(dunkel ? "light" : "dark")}
@@ -58,7 +58,7 @@ export function KiCredits() {
 
   const guthaben = Number(daten.balance);
   const knapp = guthaben <= 0;
-  const farbe = knapp ? "#e07070" : ACCENT;
+  const farbe = knapp ? "var(--err-soft)" : ACCENT;
   // Was gilt gerade? Ohne eigene Wahl entscheidet die globale Einstellung (daten.enabled).
   const aktiv = provider || (daten.enabled ? "datenmonster" : "ollama");
   const verbrauch = daten.month
@@ -69,7 +69,7 @@ export function KiCredits() {
   const knopf = (wert, text, titel) => (
     <button key={wert} onClick={() => { setAiProvider(wert); setProvider(wert); }} title={titel}
       style={{ border: "none", padding: "4px 9px", fontSize: 11, cursor: "pointer",
-        backgroundColor: aktiv === wert ? `${ACCENT}22` : "transparent",
+        backgroundColor: aktiv === wert ? `color-mix(in srgb, ${ACCENT} 13.3%, transparent)` : "transparent",
         color: aktiv === wert ? S.textBright : S.textDim,
         fontWeight: aktiv === wert ? 600 : 400 }}>
       {text}
@@ -88,7 +88,7 @@ export function KiCredits() {
       )}
       <span title={verbrauch}
         style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px",
-          borderRadius: 20, backgroundColor: `${farbe}14`, border: `1px solid ${farbe}44`,
+          borderRadius: 20, backgroundColor: `color-mix(in srgb, ${farbe} 7.8%, transparent)`, border: `1px solid color-mix(in srgb, ${farbe} 26.7%, transparent)`,
           whiteSpace: "nowrap", opacity: aktiv === "datenmonster" ? 1 : 0.65 }}>
         <Sparkles size={12} style={{ color: farbe }} />
         <span style={{ fontSize: 12, fontWeight: 700, color: farbe }}>

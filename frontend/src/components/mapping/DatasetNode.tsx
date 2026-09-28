@@ -7,7 +7,7 @@ import { SortEditor, FilterEditor, TypeConvertEditor, CAST_COLOR } from "./Filte
 import { MinimizedNode } from "./MinimizedNode";
 import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
-const DATASET_ACTIVE_BORDER = "#fce499";
+const DATASET_ACTIVE_BORDER = "var(--accent)";
 
 function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick, onJoinDrop, onFieldDoubleClick, onFilterClick, onCastChange, onRegisterNodeRef, onFieldListScroll, pendingSource, pendingJoin, onRemove, onPositionChange, onResize, fieldRefs, onSortChange, onSchemaRefresh, debugHighlight, debugSampleRows, debugSelectedRowIdx, debugStats, isActive, onActivate }) {
   const dragState = useRef(null);
@@ -110,11 +110,11 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
               transform: "translateY(-50%)", width: 8, height: 8,
               borderRadius: "50%", backgroundColor: color,
               border: "2px solid #1e1e1e", zIndex: 20,
-              boxShadow: `0 0 4px ${color}88`, pointerEvents: "none" }} />
+              boxShadow: `0 0 4px color-mix(in srgb, ${color} 53.3%, transparent)`, pointerEvents: "none" }} />
 
           {/* Hintergrund-Box – nur für Drag, kein Click-Handler */}
           <div style={{ width: "100%", height: "100%", borderRadius: 6,
-            backgroundColor: color + "18", border: `2px solid ${color}55` }} />
+            backgroundColor: color + "18", border: `2px solid color-mix(in srgb, ${color} 33.3%, transparent)` }} />
 
           {/* Icon in der Mitte – NUR hier kann man aufklappen */}
           <div
@@ -145,7 +145,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                 transform: "translateY(-50%)", width: 8, height: 8,
                 borderRadius: "50%", backgroundColor: color,
                 border: "2px solid #1e1e1e", zIndex: 20,
-                boxShadow: `0 0 4px ${color}88`, pointerEvents: "none" }} />
+                boxShadow: `0 0 4px color-mix(in srgb, ${color} 53.3%, transparent)`, pointerEvents: "none" }} />
         </div>
 
         {/* Label */}
@@ -167,7 +167,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
         <FileText size={12} style={{ color: typeColor[node.dataset_file_type] || S.accent, flexShrink: 0 }} />
         <span style={{ fontSize: 12, fontWeight: 600, color: S.textBright, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{node.dataset_name}</span>
         {activeSortCount > 0 && (
-          <span style={{ fontSize: 9, color: SORT_COLOR, fontWeight: 700, backgroundColor: `${SORT_COLOR}18`, padding: "1px 5px", borderRadius: 3, flexShrink: 0 }}>
+          <span style={{ fontSize: 9, color: SORT_COLOR, fontWeight: 700, backgroundColor: `color-mix(in srgb, ${SORT_COLOR} 9.4%, transparent)`, padding: "1px 5px", borderRadius: 3, flexShrink: 0 }}>
             ↕ {activeSortCount}
           </span>
         )}
@@ -196,7 +196,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
           <Minimize2 size={11} />
         </button>
         <button onClick={(e) => { e.stopPropagation(); onRemove(node.dataset_id); }} style={{ color: S.textDim, flexShrink: 0, lineHeight: 1 }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#e07070")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--err-soft)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = S.textDim)}>
           <X size={12} />
         </button>
@@ -224,8 +224,8 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                 e.dataTransfer.setData("source_field", field);
                 e.dataTransfer.effectAllowed = "copy";
               }}
-              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.backgroundColor = `${JOIN_COLOR}22`; e.currentTarget.style.outline = `1px solid ${JOIN_COLOR}`; }}
-              onDragLeave={(e) => { e.currentTarget.style.backgroundColor = isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : conn ? "rgba(110,231,183,0.04)" : "transparent"; e.currentTarget.style.outline = "none"; }}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${JOIN_COLOR} 13.3%, transparent)`; e.currentTarget.style.outline = `1px solid ${JOIN_COLOR}`; }}
+              onDragLeave={(e) => { e.currentTarget.style.backgroundColor = isJoinPending ? `color-mix(in srgb, ${JOIN_COLOR} 13.3%, transparent)` : isPending ? "color-mix(in srgb, var(--accent) 12%, transparent)" : conn ? "color-mix(in srgb, var(--ok) 4%, transparent)" : "transparent"; e.currentTarget.style.outline = "none"; }}
               onDrop={(e) => {
                 e.preventDefault(); e.stopPropagation();
                 e.currentTarget.style.outline = "none"; e.currentTarget.style.backgroundColor = "transparent";
@@ -248,7 +248,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
               style={{
                 height: FIELD_H, display: "flex", alignItems: "center", justifyContent: "space-between",
                 padding: "0 10px", cursor: "grab", borderBottom: `1px solid ${S.border}`,
-                backgroundColor: isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent",
+                backgroundColor: isJoinPending ? `color-mix(in srgb, ${JOIN_COLOR} 13.3%, transparent)` : isPending ? "color-mix(in srgb, var(--accent) 12%, transparent)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "color-mix(in srgb, var(--ok) 4%, transparent)" : "transparent",
                 position: "relative",
               }}
               onMouseEnter={(e) => {
@@ -259,11 +259,11 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                 }
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.backgroundColor = isJoinPending ? `${JOIN_COLOR}22` : isPending ? "rgba(252,228,153,0.12)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "rgba(110,231,183,0.04)" : "transparent";
+                e.currentTarget.style.backgroundColor = isJoinPending ? `color-mix(in srgb, ${JOIN_COLOR} 13.3%, transparent)` : isPending ? "color-mix(in srgb, var(--accent) 12%, transparent)" : hasFilter ? "rgba(167,139,250,0.06)" : conn ? "color-mix(in srgb, var(--ok) 4%, transparent)" : "transparent";
                 setDebugTooltip(null);
               }}
             >
-              <span style={{ fontSize: 11, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isJoinPending ? JOIN_COLOR : isPending ? S.accent : hasFilter ? "#a78bfa" : conn ? "#6ee7b7" : S.textMain, display: "flex", alignItems: "center", gap: 0 }}>
+              <span style={{ fontSize: 11, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: isJoinPending ? JOIN_COLOR : isPending ? S.accent : hasFilter ? "#a78bfa" : conn ? "var(--ok)" : S.textMain, display: "flex", alignItems: "center", gap: 0 }}>
                 {(() => {
                   const ti = node.dataset_column_types?.[field];
                   if (ti?.is_primary) return (
@@ -296,15 +296,15 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                 {(() => {
                   const ti = node.dataset_column_types?.[field];
                   if (!ti) return null;
-                  const TMETA = { integer: { l: "INT", c: "#93c5fd" }, decimal: { l: "DEC", c: "#6ee7b7" }, string: { l: "STR", c: "#6a6a6a" }, date: { l: "DATE", c: "#fcd34d" }, bool: { l: "BOOL", c: "#c4b5fd" } };
+                  const TMETA = { integer: { l: "INT", c: "#93c5fd" }, decimal: { l: "DEC", c: "var(--ok)" }, string: { l: "STR", c: "#6a6a6a" }, date: { l: "DATE", c: "#fcd34d" }, bool: { l: "BOOL", c: "#c4b5fd" } };
                   const m = TMETA[ti.type] || { l: ti.type?.slice(0,3).toUpperCase(), c: "#6a6a6a" };
                   return <span title={ti.raw || ti.type} style={{ fontSize: 8, fontWeight: 700, color: m.c, backgroundColor: m.c + "18", borderRadius: 2, padding: "1px 3px", cursor: "help" }}>{m.l}</span>;
                 })()}
                 <div style={{
                   width: 8, height: 8, borderRadius: "50%",
-                  backgroundColor: isPending ? S.accent : conn ? "#fbbf24" : "transparent",
-                  border: `2px solid ${isPending ? S.accent : conn ? "#fbbf24" : S.textDim}`,
-                  boxShadow: isPending ? `0 0 6px ${S.accent}` : conn ? "0 0 5px #fbbf2466" : "none",
+                  backgroundColor: isPending ? S.accent : conn ? "var(--warn)" : "transparent",
+                  border: `2px solid ${isPending ? S.accent : conn ? "var(--warn)" : S.textDim}`,
+                  boxShadow: isPending ? `0 0 6px ${S.accent}` : conn ? "0 0 5px color-mix(in srgb, var(--warn) 40%, transparent)" : "none",
                 }} />
               </div>
             </div>
@@ -354,7 +354,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
                     style={{ fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 4, cursor: "pointer", border: "none", transition: "all 0.15s",
                       backgroundColor: previewMode === mode ? S.accent + "22" : "transparent",
                       color: previewMode === mode ? S.accent : S.textDim,
-                      outline: previewMode === mode ? `1px solid ${S.accent}55` : "none" }}>
+                      outline: previewMode === mode ? `1px solid color-mix(in srgb, ${S.accent} 33.3%, transparent)` : "none" }}>
                     {label}
                   </button>
                 ))}
@@ -456,7 +456,7 @@ function DatasetNode({ node, connections, joins, onFieldClick, onFieldRightClick
         }}>
           <p style={{ fontSize: 9, fontWeight: 700, color: "#38bdf8", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.07em" }}>{debugTooltip.field}</p>
           {values.map((v, i) => (
-            <p key={i} style={{ fontSize: 10, color: v === null ? "#475569" : "#e2e8f0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: v === null ? "italic" : "normal", lineHeight: 1.6 }}>
+            <p key={i} style={{ fontSize: 10, color: v === null ? "var(--muted-3)" : "#e2e8f0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontStyle: v === null ? "italic" : "normal", lineHeight: 1.6 }}>
               {v === null ? "null" : String(v)}
             </p>
           ))}

@@ -46,10 +46,10 @@ function ConfirmModal({ modal, onClose }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center",
         justifyContent: "center", backgroundColor: "rgba(0,0,0,0.75)" }} onClick={onClose}>
-      <div style={{ backgroundColor: "#1e1e1e", border: `1px solid ${dangerous ? "rgba(224,112,112,0.4)" : "#333"}`,
+      <div style={{ backgroundColor: "#1e1e1e", border: `1px solid ${dangerous ? "color-mix(in srgb, var(--err-soft) 40%, transparent)" : "#333"}`,
           borderRadius: 10, padding: 24, width: 420, boxShadow: "0 24px 60px rgba(0,0,0,0.7)" }}
           onClick={e => e.stopPropagation()}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: dangerous ? "#e07070" : "#f0f0f0",
+        <p style={{ fontSize: 14, fontWeight: 700, color: dangerous ? "var(--err-soft)" : "#f0f0f0",
             margin: "0 0 10px" }}>{title}</p>
         <p style={{ fontSize: 12, color: "#aaa", margin: "0 0 20px", whiteSpace: "pre-wrap",
             lineHeight: 1.6 }}>{message}</p>
@@ -62,7 +62,7 @@ function ConfirmModal({ modal, onClose }) {
           <button onClick={() => { onConfirm(); onClose(); }}
             style={{ padding: "7px 18px", borderRadius: 5, border: "none", fontSize: 12,
                 fontWeight: 700, cursor: "pointer",
-                backgroundColor: dangerous ? "#e07070" : "#fce499",
+                backgroundColor: dangerous ? "var(--err-soft)" : "var(--accent)",
                 color: dangerous ? "#fff" : "#111" }}>
             {dangerous ? "Löschen" : "Bestätigen"}
           </button>
@@ -274,7 +274,7 @@ export default function Dashboard() {
     { id: "license",     label: "Lizenz",           icon: KeyRound,    badge: 0 },
   ];
 
-  const tColor = { csv: "#6ee7b7", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "#6ee7b7" };
+  const tColor = { csv: "var(--ok)", xlsx: "#93c5fd", json: "#fcd34d", xml: "#f9a8d4", db_mssql: "#c4b5fd", db_mysql: "var(--ok)" };
   const tLabel = { csv: "CSV", xlsx: "Excel", json: "JSON", xml: "XML", db_mssql: "SQL Server", db_mysql: "MySQL" };
 
   return (
@@ -299,7 +299,7 @@ export default function Dashboard() {
                 <button onClick={() => setTab(id)} title={grund}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all w-full text-left"
                   style={active
-                    ? { backgroundColor: S.accent, color: "#111" }
+                    ? { backgroundColor: S.accent, color: "var(--accent-fg)" }
                     : { color: S.textDim, opacity: grund ? 0.45 : 1 }}
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
                   onMouseLeave={(e) => { if (!active) e.currentTarget.style.backgroundColor = "transparent"; }}>
@@ -330,8 +330,8 @@ export default function Dashboard() {
             </p>
             {updateInfo && (
               <button onClick={() => setShowUpdateModal(true)} title={`Update verfügbar: ${updateInfo.latest}`}
-                style={{ position: "relative", background: "none", border: "none", color: "#fbbf24", cursor: "pointer", padding: 4, borderRadius: 4, marginRight: 4 }}
-                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "rgba(251,191,36,0.1)"; }}
+                style={{ position: "relative", background: "none", border: "none", color: "var(--warn)", cursor: "pointer", padding: 4, borderRadius: 4, marginRight: 4 }}
+                onMouseEnter={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--warn) 10%, transparent)"; }}
                 onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}>
                 <Bell size={14} />
                 <span style={{ position: "absolute", top: 1, right: 1, width: 6, height: 6, borderRadius: "50%", backgroundColor: "#ef4444" }} />
@@ -340,13 +340,13 @@ export default function Dashboard() {
             <button onClick={() => setShowOnboarding(v => !v)} title="Erste Schritte"
               style={{ background: "none", border: "none", cursor: "pointer", padding: 4, borderRadius: 4,
                 color: showOnboarding ? S.accent : S.textDim }}
-              onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"; }}
+              onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)"; }}
               onMouseLeave={e => { e.currentTarget.style.color = showOnboarding ? S.accent : S.textDim; e.currentTarget.style.backgroundColor = "transparent"; }}>
               <Rocket size={14} />
             </button>
             <button onClick={() => setShowSettings(true)} title="Systemeinstellungen"
               style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4, borderRadius: 4 }}
-              onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"; }}
+              onMouseEnter={e => { e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)"; }}
               onMouseLeave={e => { e.currentTarget.style.color = S.textDim; e.currentTarget.style.backgroundColor = "transparent"; }}>
               <Settings size={14} />
             </button>
@@ -354,14 +354,14 @@ export default function Dashboard() {
           <button onClick={() => setShowChangePassword(true)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-all mb-1"
             style={{ color: S.textDim }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.06)"; e.currentTarget.style.color = S.textMain; }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 6%, transparent)"; e.currentTarget.style.color = S.textMain; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = S.textDim; }}>
             <KeyRound size={14} /> Passwort ändern
           </button>
           <button onClick={() => { logout(); navigate("/login"); }}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-all"
             style={{ color: S.textDim }}
-            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(224,112,112,0.08)"; e.currentTarget.style.color = "#e07070"; }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--err-soft) 8%, transparent)"; e.currentTarget.style.color = "var(--err-soft)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.color = S.textDim; }}>
             <LogOut size={14} /> Abmelden
           </button>
@@ -392,7 +392,7 @@ export default function Dashboard() {
           }}>
             {/* Header */}
             <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-              <Bell size={16} style={{ color: "#fbbf24" }} />
+              <Bell size={16} style={{ color: "var(--warn)" }} />
               <div style={{ flex: 1 }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: S.textBright, margin: 0 }}>
                   Update verfügbar
@@ -413,12 +413,12 @@ export default function Dashboard() {
               {updating ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <Loader2 size={16} className="animate-spin" style={{ color: "#6ee7b7", flexShrink: 0 }} />
+                    <Loader2 size={16} className="animate-spin" style={{ color: "var(--ok)", flexShrink: 0 }} />
                     <p style={{ fontSize: 13, color: S.textMain, margin: 0 }}>{updateLog || "Update läuft..."}</p>
                   </div>
                   {updateError && (
                     <div style={{ padding: "10px 14px", borderRadius: 8, background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
-                      <p style={{ fontSize: 12, color: "#f87171", margin: 0, whiteSpace: "pre-wrap" }}>{updateError}</p>
+                      <p style={{ fontSize: 12, color: "var(--err)", margin: 0, whiteSpace: "pre-wrap" }}>{updateError}</p>
                     </div>
                   )}
                   <p style={{ fontSize: 11, color: S.textDim, margin: 0 }}>Bitte nicht schließen. Der Browser lädt automatisch neu wenn das Update abgeschlossen ist.</p>
@@ -484,8 +484,8 @@ export default function Dashboard() {
                 }} disabled={updating} style={{
                   fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6,
                   cursor: updating ? "wait" : "pointer",
-                  background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)",
-                  color: "#6ee7b7", opacity: updating ? 0.7 : 1,
+                  background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+                  color: "var(--ok)", opacity: updating ? 0.7 : 1,
                   display: "flex", alignItems: "center", gap: 6
                 }}>
                   <Download size={13} />
@@ -495,7 +495,7 @@ export default function Dashboard() {
               {updateError && (
                 <button onClick={() => { setUpdating(false); setUpdateError(""); setUpdateLog(""); }} style={{
                   fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer",
-                  background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171"
+                  background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "var(--err)"
                 }}>Schließen</button>
               )}
             </div>
@@ -576,7 +576,7 @@ export default function Dashboard() {
                     <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
                       <button onClick={() => setShowWizard(true)}
                         style={{ padding: "8px 16px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                          backgroundColor: "rgba(252,228,153,0.15)", border: `1px solid rgba(252,228,153,0.4)`, color: S.accent }}>
+                          backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", border: `1px solid color-mix(in srgb, var(--accent) 40%, transparent)`, color: S.accent }}>
                         Datei importieren
                       </button>
                       <button onClick={() => setTab("connections")}
@@ -659,7 +659,7 @@ export default function Dashboard() {
                   <button
                     onClick={() => navigate(`/mappings/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)}
                     style={{ padding: "8px 18px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontWeight: 600,
-                      backgroundColor: "rgba(252,228,153,0.15)", border: `1px solid rgba(252,228,153,0.4)`,
+                      backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", border: `1px solid color-mix(in srgb, var(--accent) 40%, transparent)`,
                       color: S.accent }}>
                     Erstes Mapping erstellen
                   </button>
@@ -685,7 +685,7 @@ export default function Dashboard() {
                       <button onClick={(e) => { e.stopPropagation(); deleteMapping(m.id); }}
                         className="opacity-0 group-hover:opacity-100 transition-opacity ml-2"
                         style={{ color: S.textDim }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                        onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                         onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                         <Trash2 size={15} />
                       </button>

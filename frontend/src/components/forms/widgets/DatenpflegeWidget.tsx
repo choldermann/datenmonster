@@ -23,7 +23,7 @@ const btn = {
   color: S.textMain, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap",
 };
 
-const GRUEN = "#6ee7b7", ROT = "#e07070";
+const GRUEN = "var(--ok)", ROT = "var(--err-soft)";
 
 function anzeige(spalte, v) {
   if (v === null || v === undefined || v === "") return <span style={{ color: S.textDim }}>–</span>;
@@ -279,7 +279,7 @@ export default function DatenpflegeWidget({ widget, formId }) {
               .map(([k, l]) => (
                 <button key={k} onClick={() => setFilter(k)}
                   style={{ padding: "5px 10px", fontSize: 11, border: "none", cursor: "pointer",
-                    backgroundColor: filter === k ? "rgba(252,228,153,0.12)" : "transparent",
+                    backgroundColor: filter === k ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
                     color: filter === k ? S.accent : S.textDim }}>{l}</button>
               ))}
           </div>

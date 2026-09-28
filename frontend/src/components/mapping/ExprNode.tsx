@@ -6,7 +6,7 @@ import { useNodeResize, ResizeHandle } from "./useNodeResize";
 export const EXPR_NODE_COLOR = "#e879f9";
 
 const DOT = 10;
-const ACTIVE_BORDER = "#fce499";
+const ACTIVE_BORDER = "var(--accent)";
 const HINT = "Formel-Syntax: {feldname}, concat({a}, \" \", {b}), if_(Bedingung, dann, sonst), round({preis} * 1.19, 2)";
 
 export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, debugStats, aiEnabled, mappingId, isActive, onActivate }) {
@@ -50,9 +50,9 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
   });
 
   const activeBorder = isActive && !debugHighlight;
-  const borderColor = debugHighlight ? `${C}cc` : activeBorder ? ACTIVE_BORDER : `${C}55`;
+  const borderColor = debugHighlight ? `color-mix(in srgb, ${C} 80%, transparent)` : activeBorder ? ACTIVE_BORDER : `color-mix(in srgb, ${C} 33.3%, transparent)`;
   const boxShadow = debugHighlight
-    ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)`
+    ? `0 0 0 2px ${C}, 0 0 20px color-mix(in srgb, ${C} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)`
     : activeBorder
     ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
     : "0 8px 32px rgba(0,0,0,0.5)";
@@ -179,7 +179,7 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
         <button
           onClick={addField}
           style={{
-            background: "none", border: `1px dashed ${C}55`, borderRadius: 4,
+            background: "none", border: `1px dashed color-mix(in srgb, ${C} 33.3%, transparent)`, borderRadius: 4,
             color: C, cursor: "pointer", padding: "4px 8px", fontSize: 10,
             display: "flex", alignItems: "center", gap: 4, alignSelf: "flex-start",
           }}
@@ -197,9 +197,9 @@ export default function ExprNode({ node, onUpdate, onRemove, onPositionChange, o
         </div>
 
         {debugStats && (
-          <div style={{ fontSize: 9, color: S.textDim, display: "flex", gap: 8, paddingTop: 2, borderTop: `1px solid ${C}22` }}>
+          <div style={{ fontSize: 9, color: S.textDim, display: "flex", gap: 8, paddingTop: 2, borderTop: `1px solid color-mix(in srgb, ${C} 13.3%, transparent)` }}>
             <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
-            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+            {debugStats.errors > 0 && <span style={{ color: "var(--err)" }}>⚠ {debugStats.errors} Fehler</span>}
           </div>
         )}
       </div>

@@ -20,11 +20,11 @@ const NODE_BORDER  = "rgba(129,140,248,0.35)";
 
 export const TRANSFORM_TYPES = [
   { value: "number_format", label: "Zahlenformat",  icon: "123", color: "#34d399" },
-  { value: "number_calc",   label: "Zahlenrechnung", icon: "±",  color: "#6ee7b7" },
+  { value: "number_calc",   label: "Zahlenrechnung", icon: "±",  color: "var(--ok)" },
   { value: "date_format",   label: "Datumsformat",  icon: "📅",  color: "#f9a8d4" },
   { value: "date_calc",     label: "Datumsrechnung", icon: "🗓",  color: "#fb923c" },
   { value: "text",          label: "Text",           icon: "Aa",  color: "#93c5fd" },
-  { value: "concat",        label: "Verkettung",     icon: "⊕",   color: "#fbbf24" },
+  { value: "concat",        label: "Verkettung",     icon: "⊕",   color: "var(--warn)" },
 ];
 
 // Default config per type
@@ -346,7 +346,7 @@ const selS = { padding: "3px 4px", backgroundColor: "var(--bg-main)", border: "1
 
 // ─── TransformNode ────────────────────────────────────────────────────────────
 
-const TRANSFORM_ACTIVE_BORDER = "#fce499";
+const TRANSFORM_ACTIVE_BORDER = "var(--accent)";
 
 export default function TransformNode({ node, onPositionChange, onUpdate, onRemove, outputRef, inputRefs, onMiniPortsReady, debugHighlight, debugStats, isActive, onActivate }) {
   const dragState = useRef(null);
@@ -427,7 +427,7 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
         </button>
         <button onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
           style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", flexShrink: 0 }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--err)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = S.textDim)}>
           <X size={11} />
         </button>
@@ -453,7 +453,7 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
                 const portId = Math.random().toString(36).slice(2, 8);
                 onUpdate({ ...node, inputs: [...node.inputs, { port_id: portId, source_dataset_id: dsId, source_field: field }] });
               }}
-              style={{ padding: "6px 8px", borderRadius: 4, border: "1px dashed transparent", borderColor: `${NODE_COLOR}40`, textAlign: "center", fontSize: 9, color: S.textDim, cursor: "default" }}>
+              style={{ padding: "6px 8px", borderRadius: 4, border: "1px dashed transparent", borderColor: `color-mix(in srgb, ${NODE_COLOR} 25.1%, transparent)`, textAlign: "center", fontSize: 9, color: S.textDim, cursor: "default" }}>
               ← Feld hierher ziehen
             </div>
           )}
@@ -472,10 +472,10 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
           {node.type === "concat" && node.inputs.length > 0 && (
             <div
               onDragOver={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = NODE_COLOR; }}
-              onDragLeave={(e) => { e.currentTarget.style.borderColor = `${NODE_COLOR}40`; }}
+              onDragLeave={(e) => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${NODE_COLOR} 25.1%, transparent)`; }}
               onDrop={(e) => {
                 e.preventDefault(); e.stopPropagation();
-                e.currentTarget.style.borderColor = `${NODE_COLOR}40`;
+                e.currentTarget.style.borderColor = `color-mix(in srgb, ${NODE_COLOR} 25.1%, transparent)`;
                 const rawDsId = e.dataTransfer.getData("source_dataset_id");
                 const dsId = rawDsId.startsWith("__") ? rawDsId : parseInt(rawDsId);
                 const field = e.dataTransfer.getData("source_field");
@@ -483,7 +483,7 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
                 const portId = Math.random().toString(36).slice(2, 8);
                 onUpdate({ ...node, inputs: [...node.inputs, { port_id: portId, source_dataset_id: dsId, source_field: field }] });
               }}
-              style={{ padding: "3px 8px", borderRadius: 3, border: `1px dashed ${NODE_COLOR}40`, textAlign: "center", fontSize: 9, color: S.textDim, cursor: "default", marginTop: 2 }}>
+              style={{ padding: "3px 8px", borderRadius: 3, border: `1px dashed color-mix(in srgb, ${NODE_COLOR} 25.1%, transparent)`, textAlign: "center", fontSize: 9, color: S.textDim, cursor: "default", marginTop: 2 }}>
               + weiteres Feld
             </div>
           )}
@@ -522,9 +522,9 @@ export default function TransformNode({ node, onPositionChange, onUpdate, onRemo
           </div>
         </div>
         {debugStats && (
-          <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: "1px solid rgba(129,140,248,0.15)" }}>
+          <div style={{ fontSize: 9, color: "var(--muted)", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: "1px solid rgba(129,140,248,0.15)" }}>
             <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
-            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+            {debugStats.errors > 0 && <span style={{ color: "var(--err)" }}>⚠ {debugStats.errors} Fehler</span>}
           </div>
         )}
       </div>

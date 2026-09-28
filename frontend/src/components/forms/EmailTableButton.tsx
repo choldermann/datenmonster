@@ -91,7 +91,7 @@ export default function EmailTableButton({ columns = [], rows = [], title = "Tab
               </button>
               {msg && (
                 <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5,
-                  color: msg.ok ? "#5cb85c" : "#e07070" }}>
+                  color: msg.ok ? "#5cb85c" : "var(--err-soft)" }}>
                   {msg.ok ? <CheckCircle2 size={13} /> : <AlertCircle size={13} />} {msg.text}
                 </span>
               )}

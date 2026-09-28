@@ -48,8 +48,8 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
           </div>
           <button onClick={addAction}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
-              borderRadius: 6, backgroundColor: "rgba(252,228,153,0.1)",
-              border: "1px solid rgba(252,228,153,0.35)", color: S.accent,
+              borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)", color: S.accent,
               cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
             <Plus size={12} /> Aktion hinzufügen
           </button>
@@ -134,7 +134,7 @@ export default function ActionsEditor({ actions, onChange, projectId }) {
                   <button onClick={() => removeAction(idx)}
                     style={{ marginTop: 20, color: S.textDim, background: "none", border: "none",
                       cursor: "pointer", padding: 4, flexShrink: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                     onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                     <Trash2 size={13} />
                   </button>

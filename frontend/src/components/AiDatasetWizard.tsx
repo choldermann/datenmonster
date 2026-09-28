@@ -4,12 +4,12 @@ import api, { fehlerText } from "../api/client";
 import { getTableContext, suggestDatasets, getStatus } from "../services/aiService";
 import { S } from "./dashboard/constants";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 const MATCH_LABELS = {
-  keyword:   { label: "Keyword",  color: "rgba(252,228,153,0.7)" },
+  keyword:   { label: "Keyword",  color: "color-mix(in srgb, var(--accent) 70%, transparent)" },
   fk_parent: { label: "FK ↑",     color: "rgba(167,139,250,0.7)" },
-  fk_child:  { label: "FK ↓",     color: "rgba(110,231,183,0.7)" },
+  fk_child:  { label: "FK ↓",     color: "color-mix(in srgb, var(--ok) 70%, transparent)" },
   fallback:  { label: "Schema",   color: "rgba(148,163,184,0.5)" },
 };
 
@@ -38,7 +38,7 @@ function StepDescription({ description, setDescription, onAnalyze, loading }) {
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button onClick={onAnalyze} disabled={loading || !description.trim()}
           style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4,
-            border: `1px solid rgba(252,228,153,0.3)`, backgroundColor: "rgba(252,228,153,0.08)",
+            border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)`, backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)",
             color: ACCENT, fontSize: 11, fontWeight: 600,
             cursor: loading || !description.trim() ? "not-allowed" : "pointer",
             opacity: loading || !description.trim() ? 0.6 : 1 }}>
@@ -100,7 +100,7 @@ function TablePreviewModal({ table, onClose }) {
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {col.pk && (
                         <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8,
-                          color: ACCENT, border: `1px solid rgba(252,228,153,0.35)` }}>PK</span>
+                          color: ACCENT, border: `1px solid color-mix(in srgb, var(--accent) 35%, transparent)` }}>PK</span>
                       )}
                       {col.fk && (
                         <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: 8,
@@ -149,8 +149,8 @@ function StepTableSelect({ tables, allTables, selected, setSelected, keywords, o
         <div style={{ display: "flex", gap: 6 }}>
           {keywords.map(kw => (
             <span key={kw} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10,
-              backgroundColor: "rgba(252,228,153,0.1)", color: "rgba(252,228,153,0.6)",
-              border: "1px solid rgba(252,228,153,0.2)" }}>
+              backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)", color: "color-mix(in srgb, var(--accent) 60%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}>
               {kw}
             </span>
           ))}
@@ -166,13 +166,13 @@ function StepTableSelect({ tables, allTables, selected, setSelected, keywords, o
             <div key={t.full_name} onClick={() => toggleTable(t.full_name)}
               style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px",
                 borderRadius: 5, cursor: "pointer",
-                backgroundColor: isSelected ? "rgba(252,228,153,0.05)" : S.bgEl,
-                border: `1px solid ${isSelected ? "rgba(252,228,153,0.25)" : S.border}` }}>
+                backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 5%, transparent)" : S.bgEl,
+                border: `1px solid ${isSelected ? "color-mix(in srgb, var(--accent) 25%, transparent)" : S.border}` }}>
               <div style={{ width: 13, height: 13, borderRadius: 3, flexShrink: 0,
                 border: `2px solid ${isSelected ? ACCENT : S.border}`,
                 backgroundColor: isSelected ? ACCENT : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {isSelected && <Check size={8} color="#111" strokeWidth={3} />}
+                {isSelected && <Check size={8} color="var(--accent-fg)" strokeWidth={3} />}
               </div>
               <span style={{ fontSize: 11, color: isSelected ? S.textBright : S.textMain, flex: 1, fontFamily: "monospace" }}>
                 {t.full_name}
@@ -239,15 +239,15 @@ function StepSuggestions({ suggestions, selected, setSelected, names, setNames, 
         </div>
       </div>
       {suggestions.map((ds, i) => (
-        <div key={i} style={{ borderRadius: 6, border: `1px solid ${selected[i] ? "rgba(252,228,153,0.3)" : S.border}`,
-          backgroundColor: selected[i] ? "rgba(252,228,153,0.04)" : S.bgEl, overflow: "hidden" }}>
+        <div key={i} style={{ borderRadius: 6, border: `1px solid ${selected[i] ? "color-mix(in srgb, var(--accent) 30%, transparent)" : S.border}`,
+          backgroundColor: selected[i] ? "color-mix(in srgb, var(--accent) 4%, transparent)" : S.bgEl, overflow: "hidden" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px" }}>
             <div onClick={() => setSelected(s => ({ ...s, [i]: !s[i] }))}
               style={{ width: 13, height: 13, borderRadius: 3, flexShrink: 0, cursor: "pointer",
                 border: `2px solid ${selected[i] ? ACCENT : S.border}`,
                 backgroundColor: selected[i] ? ACCENT : "transparent",
                 display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {selected[i] && <Check size={8} color="#111" strokeWidth={3} />}
+              {selected[i] && <Check size={8} color="var(--accent-fg)" strokeWidth={3} />}
             </div>
             <input value={names[i] ?? ds.name} onChange={e => setNames(n => ({ ...n, [i]: e.target.value }))}
               style={{ ...iS, fontWeight: 700, fontSize: 12, flex: 1, padding: "3px 6px",
@@ -376,13 +376,13 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
       display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ width: 600, maxHeight: "88vh", display: "flex", flexDirection: "column",
         backgroundColor: S.bgCard, borderRadius: 8,
-        border: "1px solid rgba(252,228,153,0.25)",
+        border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)",
         boxShadow: "0 20px 60px rgba(0,0,0,0.6)", overflow: "hidden" }}
         onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px",
-          borderBottom: `1px solid ${S.border}`, backgroundColor: "rgba(252,228,153,0.04)" }}>
+          borderBottom: `1px solid ${S.border}`, backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)" }}>
           <Sparkles size={14} style={{ color: ACCENT }} />
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: 13, fontWeight: 700, color: ACCENT }}>KI-Dataset-Assistent</span>
@@ -401,12 +401,12 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 3 }}>
                 <div style={{ width: 18, height: 18, borderRadius: "50%", fontSize: 9, fontWeight: 700,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  backgroundColor: step === i ? ACCENT : step > i ? "rgba(252,228,153,0.2)" : S.bgEl,
-                  color: step === i ? "#111" : step > i ? ACCENT : S.textDim,
-                  border: `1px solid ${step >= i ? "rgba(252,228,153,0.4)" : S.border}` }}>
+                  backgroundColor: step === i ? ACCENT : step > i ? "color-mix(in srgb, var(--accent) 20%, transparent)" : S.bgEl,
+                  color: step === i ? "var(--accent-fg)" : step > i ? ACCENT : S.textDim,
+                  border: `1px solid ${step >= i ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}` }}>
                   {step > i ? "✓" : i + 1}
                 </div>
-                {i < 2 && <div style={{ width: 12, height: 1, backgroundColor: step > i ? "rgba(252,228,153,0.3)" : S.border }} />}
+                {i < 2 && <div style={{ width: 12, height: 1, backgroundColor: step > i ? "color-mix(in srgb, var(--accent) 30%, transparent)" : S.border }} />}
               </div>
             ))}
           </div>
@@ -419,8 +419,8 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
         <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
           {error && (
             <div style={{ padding: "8px 10px", borderRadius: 4, marginBottom: 12,
-              backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)",
-              fontSize: 11, color: "#e07070" }}>✗ {error}</div>
+              backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)",
+              fontSize: 11, color: "var(--err-soft)" }}>✗ {error}</div>
           )}
 
           {step === 0 && (
@@ -460,11 +460,11 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
               {results.map((r, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 10px",
                   borderRadius: 5,
-                  backgroundColor: r.ok ? "rgba(110,231,183,0.06)" : "rgba(224,112,112,0.06)",
-                  border: `1px solid ${r.ok ? "rgba(110,231,183,0.2)" : "rgba(224,112,112,0.2)"}` }}>
-                  <span style={{ color: r.ok ? "#6ee7b7" : "#e07070" }}>{r.ok ? "✓" : "✗"}</span>
+                  backgroundColor: r.ok ? "color-mix(in srgb, var(--ok) 6%, transparent)" : "color-mix(in srgb, var(--err-soft) 6%, transparent)",
+                  border: `1px solid ${r.ok ? "color-mix(in srgb, var(--ok) 20%, transparent)" : "color-mix(in srgb, var(--err-soft) 20%, transparent)"}` }}>
+                  <span style={{ color: r.ok ? "var(--ok)" : "var(--err-soft)" }}>{r.ok ? "✓" : "✗"}</span>
                   <span style={{ fontSize: 11, color: S.textBright, flex: 1, fontFamily: "monospace" }}>{r.name}</span>
-                  {!r.ok && <span style={{ fontSize: 10, color: "#e07070" }}>{r.error}</span>}
+                  {!r.ok && <span style={{ fontSize: 10, color: "var(--err-soft)" }}>{r.error}</span>}
                 </div>
               ))}
             </div>
@@ -496,7 +496,7 @@ export default function AiDatasetWizard({ connection, projectId, onDone, onClose
                 <button onClick={handleGenerate}
                   disabled={selectedTables.length === 0}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4,
-                    border: "1px solid rgba(252,228,153,0.3)", backgroundColor: "rgba(252,228,153,0.08)",
+                    border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)", backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)",
                     color: ACCENT, fontSize: 11, fontWeight: 600,
                     cursor: selectedTables.length === 0 ? "not-allowed" : "pointer",
                     opacity: selectedTables.length === 0 ? 0.6 : 1 }}>

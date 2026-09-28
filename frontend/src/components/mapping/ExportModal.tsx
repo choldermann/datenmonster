@@ -7,9 +7,9 @@ function TargetConfig({ targetType, targetConnectionId, targetTable, targetWrite
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textBright, borderRadius: "4px", padding: "6px 10px", width: "100%", outline: "none", fontSize: "12px" };
   const lS = { fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, display: "block", marginBottom: "4px" };
   const TARGET_TYPES = [
-    { value: "csv", label: "CSV", color: "#6ee7b7" }, { value: "xlsx", label: "Excel", color: "#93c5fd" },
+    { value: "csv", label: "CSV", color: "var(--ok)" }, { value: "xlsx", label: "Excel", color: "#93c5fd" },
     { value: "json", label: "JSON", color: "#fcd34d" }, { value: "xml", label: "XML", color: "#f9a8d4" },
-    { value: "db_mssql", label: "SQL Server", color: "#c4b5fd" }, { value: "db_mysql", label: "MySQL", color: "#6ee7b7" },
+    { value: "db_mssql", label: "SQL Server", color: "#c4b5fd" }, { value: "db_mysql", label: "MySQL", color: "var(--ok)" },
   ];
   return (
     <div className="flex flex-col gap-4">
@@ -46,7 +46,7 @@ function ContextMenu({ x, y, onJoin, onClose }) {
     <div style={{ position: "fixed", left: x, top: y, zIndex: 100, backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,0.5)", minWidth: 160, overflow: "hidden" }}
       onClick={(e) => e.stopPropagation()}>
       <button onClick={onJoin} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", fontSize: 12, color: JOIN_COLOR, backgroundColor: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
-        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${JOIN_COLOR}15`)}
+        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${JOIN_COLOR} 8.2%, transparent)`)}
         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}>
         <Link2 size={13} /> Join von hier ziehen
       </button>
@@ -153,7 +153,7 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
           <div style={{ display: "flex", gap: 6 }}>
             {TARGET_TYPES.map((t) => (
               <button key={t.value} onClick={() => setTargetType(t.value)}
-                style={{ flex: 1, padding: "10px 6px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "center", border: `1px solid ${targetType === t.value ? S.accent : S.border}`, backgroundColor: targetType === t.value ? "rgba(252,228,153,0.1)" : S.bgEl, color: targetType === t.value ? S.accent : S.textDim, transition: "all 0.1s" }}>
+                style={{ flex: 1, padding: "10px 6px", borderRadius: 6, cursor: "pointer", fontSize: 11, fontWeight: 600, textAlign: "center", border: `1px solid ${targetType === t.value ? S.accent : S.border}`, backgroundColor: targetType === t.value ? "color-mix(in srgb, var(--accent) 10%, transparent)" : S.bgEl, color: targetType === t.value ? S.accent : S.textDim, transition: "all 0.1s" }}>
                 <div style={{ fontSize: 16, marginBottom: 3 }}>{t.icon}</div>
                 {t.label}
               </button>
@@ -168,7 +168,7 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
             <div style={{ display: "flex", gap: 6 }}>
               {[";", ",", "\t", "|"].map((d) => (
                 <button key={d} onClick={() => setCsvDelimiter(d)}
-                  style={{ padding: "5px 12px", borderRadius: 4, cursor: "pointer", fontSize: 12, fontFamily: "monospace", border: `1px solid ${csvDelimiter === d ? S.accent : S.border}`, backgroundColor: csvDelimiter === d ? "rgba(252,228,153,0.1)" : S.bgEl, color: csvDelimiter === d ? S.accent : S.textDim }}>
+                  style={{ padding: "5px 12px", borderRadius: 4, cursor: "pointer", fontSize: 12, fontFamily: "monospace", border: `1px solid ${csvDelimiter === d ? S.accent : S.border}`, backgroundColor: csvDelimiter === d ? "color-mix(in srgb, var(--accent) 10%, transparent)" : S.bgEl, color: csvDelimiter === d ? S.accent : S.textDim }}>
                   {d === "\t" ? "TAB" : d}
                 </button>
               ))}
@@ -192,9 +192,9 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
                 {" · "}
                 <span style={{ color: S.textMain }}>{countNodes(xmlTemplate.tree)} Elemente</span>
                 {" · "}
-                <span style={{ color: "#fbbf24" }}>{countAttrs(xmlTemplate.tree)} Attribute</span>
+                <span style={{ color: "var(--warn)" }}>{countAttrs(xmlTemplate.tree)} Attribute</span>
                 {" · "}
-                <span style={{ color: "#6ee7b7" }}>{countBindings(xmlTemplate.tree)} Feldbindungen</span>
+                <span style={{ color: "var(--ok)" }}>{countBindings(xmlTemplate.tree)} Feldbindungen</span>
               </div>
             ) : (
               <div style={{ padding: "10px 12px", backgroundColor: S.bgMain, borderRadius: 4, border: `1px dashed ${S.border}`, fontSize: 11, color: S.textDim, textAlign: "center" }}>
@@ -241,13 +241,13 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
 
         {/* Result feedback */}
         {result && (
-          <div style={{ marginBottom: 16, padding: "10px 12px", borderRadius: 6, backgroundColor: result.type === "error" ? "rgba(224,112,112,0.1)" : "rgba(110,231,183,0.1)", border: `1px solid ${result.type === "error" ? "#e07070" : "#6ee7b7"}44` }}>
-            {result.type === "error" && <p style={{ fontSize: 12, color: "#e07070" }}>⚠ {result.message}</p>}
-            {result.type === "download" && <p style={{ fontSize: 12, color: "#6ee7b7" }}>✓ Download gestartet</p>}
+          <div style={{ marginBottom: 16, padding: "10px 12px", borderRadius: 6, backgroundColor: result.type === "error" ? "color-mix(in srgb, var(--err-soft) 10%, transparent)" : "color-mix(in srgb, var(--ok) 10%, transparent)", border: `1px solid color-mix(in srgb, ${result.type === "error" ? "var(--err-soft)" : "var(--ok)"} 26.7%, transparent)` }}>
+            {result.type === "error" && <p style={{ fontSize: 12, color: "var(--err-soft)" }}>⚠ {result.message}</p>}
+            {result.type === "download" && <p style={{ fontSize: 12, color: "var(--ok)" }}>✓ Download gestartet</p>}
             {result.type === "db" && (
               <>
-                <p style={{ fontSize: 12, color: "#6ee7b7" }}>✓ {result.rows_affected} Zeilen geschrieben → {result.table} ({result.mode})</p>
-                {result.errors?.map((e, i) => <p key={i} style={{ fontSize: 11, color: "#e07070", marginTop: 4 }}>⚠ {e}</p>)}
+                <p style={{ fontSize: 12, color: "var(--ok)" }}>✓ {result.rows_affected} Zeilen geschrieben → {result.table} ({result.mode})</p>
+                {result.errors?.map((e, i) => <p key={i} style={{ fontSize: 11, color: "var(--err-soft)", marginTop: 4 }}>⚠ {e}</p>)}
               </>
             )}
           </div>
@@ -255,7 +255,7 @@ function ExportModal({ canvasNodes, connections, joins, transformNodes, constant
 
         {/* Execute button */}
         <button onClick={execute} disabled={running || (targetType === "db" && (!targetConnectionId || !targetTable))}
-          style={{ width: "100%", padding: "11px", borderRadius: 6, cursor: running ? "wait" : "pointer", backgroundColor: S.accent, border: "none", color: "#111", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: running ? 0.7 : 1 }}>
+          style={{ width: "100%", padding: "11px", borderRadius: 6, cursor: running ? "wait" : "pointer", backgroundColor: S.accent, border: "none", color: "var(--accent-fg)", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: running ? 0.7 : 1 }}>
           {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
           {running ? "Wird ausgeführt…" : "Ausführen"}
         </button>
@@ -307,7 +307,7 @@ function TargetAddField({ onAdd }) {
           onKeyDown={(e) => { if (e.key === "Enter" && val.trim()) { onAdd(val.trim()); setVal(""); setShow(false); } if (e.key === "Escape") setShow(false); }}
           onClick={(e) => e.stopPropagation()} />
         <button onClick={() => { if (val.trim()) { onAdd(val.trim()); setVal(""); } setShow(false); }}
-          style={{ padding: "5px 10px", borderRadius: 4, backgroundColor: S.accent, color: "#111", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>+</button>
+          style={{ padding: "5px 10px", borderRadius: 4, backgroundColor: S.accent, color: "var(--accent-fg)", fontWeight: 700, fontSize: 13, border: "none", cursor: "pointer" }}>+</button>
       </div>
     </div>
   );

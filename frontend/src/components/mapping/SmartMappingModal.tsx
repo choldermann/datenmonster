@@ -83,7 +83,7 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
                   <button key={p.key} onClick={() => { setSelectedPreset(selectedPreset === p.key ? null : p.key); setQuery(""); }}
                     style={{ fontSize: 12, padding: "6px 14px", borderRadius: 20, cursor: "pointer",
                       border: `1px solid ${selectedPreset === p.key ? S.accent : S.border}`,
-                      backgroundColor: selectedPreset === p.key ? "rgba(252,228,153,0.12)" : "transparent",
+                      backgroundColor: selectedPreset === p.key ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
                       color: selectedPreset === p.key ? S.accent : S.textDim,
                     }}>
                     {p.label}
@@ -125,8 +125,8 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
               <button onClick={onClose} style={{ fontSize: 12, padding: "8px 16px", borderRadius: 6, cursor: "pointer", background: "transparent", border: `1px solid ${S.border}`, color: S.textDim }}>Abbrechen</button>
               <button onClick={handleSuggest} disabled={!canProceed || loading}
                 style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: canProceed ? "pointer" : "not-allowed",
-                  background: canProceed ? "rgba(252,228,153,0.15)" : "transparent",
-                  border: `1px solid ${canProceed ? "rgba(252,228,153,0.4)" : S.border}`,
+                  background: canProceed ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                  border: `1px solid ${canProceed ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                   color: canProceed ? S.accent : S.textDim,
                   display: "flex", alignItems: "center", gap: 6, opacity: loading ? 0.7 : 1 }}>
                 {loading ? <Loader2 size={13} className="animate-spin" /> : <ChevronRight size={13} />}
@@ -156,10 +156,10 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
               {suggestion.tables.map(t => (
                 <div key={t.key} onClick={() => toggleTable(t.key)}
                   style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 8, cursor: "pointer",
-                    border: `1px solid ${selectedTables.has(t.key) ? "rgba(110,231,183,0.3)" : S.border}`,
-                    backgroundColor: selectedTables.has(t.key) ? "rgba(110,231,183,0.05)" : "transparent",
+                    border: `1px solid ${selectedTables.has(t.key) ? "color-mix(in srgb, var(--ok) 30%, transparent)" : S.border}`,
+                    backgroundColor: selectedTables.has(t.key) ? "color-mix(in srgb, var(--ok) 5%, transparent)" : "transparent",
                   }}>
-                  <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${selectedTables.has(t.key) ? "#6ee7b7" : S.border}`, backgroundColor: selectedTables.has(t.key) ? "#6ee7b7" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${selectedTables.has(t.key) ? "var(--ok)" : S.border}`, backgroundColor: selectedTables.has(t.key) ? "var(--ok)" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {selectedTables.has(t.key) && <span style={{ color: "#111", fontSize: 10, fontWeight: 700 }}>✓</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -167,7 +167,7 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
                     <p style={{ fontSize: 10, color: S.textDim, margin: "2px 0 0" }}>{t.schema} · {t.columns.length} Spalten</p>
                   </div>
                   {t.already_exists ? (
-                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 3, backgroundColor: "rgba(110,231,183,0.1)", color: "#6ee7b7", border: "1px solid rgba(110,231,183,0.2)", whiteSpace: "nowrap" }}>✓ vorhanden</span>
+                    <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 3, backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)", color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)", whiteSpace: "nowrap" }}>✓ vorhanden</span>
                   ) : (
                     <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 3, backgroundColor: "rgba(147,197,253,0.1)", color: "#93c5fd", border: "1px solid rgba(147,197,253,0.2)", whiteSpace: "nowrap" }}>→ wird importiert</span>
                   )}
@@ -181,9 +181,9 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
                   </p>
                   {suggestion.joins.filter(j => selectedTables.has(j.from_table) && selectedTables.has(j.to_table)).map((j, i) => (
                     <div key={i} style={{ fontSize: 11, color: S.textMain, fontFamily: "monospace", padding: "6px 14px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.02)", border: `1px solid ${S.border}` }}>
-                      <span style={{ color: "#6ee7b7" }}>{j.from_table}</span>
+                      <span style={{ color: "var(--ok)" }}>{j.from_table}</span>
                       <span style={{ color: S.textDim }}>.{j.from_col} → </span>
-                      <span style={{ color: "#6ee7b7" }}>{j.to_table}</span>
+                      <span style={{ color: "var(--ok)" }}>{j.to_table}</span>
                       <span style={{ color: S.textDim }}>.{j.to_col}</span>
                     </div>
                   ))}
@@ -197,7 +197,7 @@ export default function SmartMappingModal({ projectId, connections, onClose, onA
               </button>
               <button onClick={handleApply} disabled={selectedTables.size === 0}
                 style={{ fontSize: 12, fontWeight: 600, padding: "8px 20px", borderRadius: 6, cursor: selectedTables.size > 0 ? "pointer" : "not-allowed",
-                  background: "rgba(110,231,183,0.15)", border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                  background: "color-mix(in srgb, var(--ok) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", color: "var(--ok)",
                   opacity: selectedTables.size === 0 ? 0.5 : 1 }}>
                 {selectedTables.size} Tabelle{selectedTables.size !== 1 ? "n" : ""} ins Mapping übernehmen
               </button>

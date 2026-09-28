@@ -163,7 +163,7 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
             onMouseLeave={canClick ? e => e.currentTarget.style.backgroundColor = "" : undefined}>
 
             <span style={{ width: 11, height: 11, borderRadius: "50%", backgroundColor: color,
-              flexShrink: 0, marginTop: 4, boxShadow: `0 0 8px ${color}66` }} />
+              flexShrink: 0, marginTop: 4, boxShadow: `0 0 8px color-mix(in srgb, ${color} 40%, transparent)` }} />
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13.5, color: "var(--text-main)", fontWeight: 600 }}>
@@ -211,7 +211,7 @@ export default function AlertsWidget({ widget, result, onTaskClick }) {
 
       {(meta.errors || []).length > 0 && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 16px",
-          borderTop: "1px solid var(--border)", fontSize: 11, color: "#e07070" }}>
+          borderTop: "1px solid var(--border)", fontSize: 11, color: "var(--err-soft)" }}>
           <AlertCircle size={12} />
           <span>
             {meta.errors.length} Regel(n) konnten nicht geprüft werden:{" "}

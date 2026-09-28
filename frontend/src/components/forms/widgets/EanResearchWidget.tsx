@@ -3,7 +3,7 @@ import { Barcode, Loader2, Download, ExternalLink, AlertCircle, Check } from "lu
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 /**
  * Eigenständiges Widget: schlägt für Artikel ohne EAN die offiziellen Nummern
@@ -60,12 +60,12 @@ export default function EanResearchWidget({ widget }) {
     borderBottom: `1px solid ${S.border}` };
 
   return (
-    <div style={{ borderRadius: 10, border: `1px solid ${ACCENT}55`,
-      backgroundColor: `${ACCENT}0a`, padding: 18, marginBottom: 4 }}>
+    <div style={{ borderRadius: 10, border: `1px solid color-mix(in srgb, ${ACCENT} 33.3%, transparent)`,
+      backgroundColor: `color-mix(in srgb, ${ACCENT} 3.9%, transparent)`, padding: 18, marginBottom: 4 }}>
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 12 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: `${ACCENT}1a`,
-          border: `1px solid ${ACCENT}44`, display: "flex", alignItems: "center",
+        <div style={{ width: 38, height: 38, borderRadius: 9, backgroundColor: `color-mix(in srgb, ${ACCENT} 10.2%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, display: "flex", alignItems: "center",
           justifyContent: "center", flexShrink: 0 }}>
           <Barcode size={19} style={{ color: ACCENT }} />
         </div>
@@ -121,18 +121,18 @@ export default function EanResearchWidget({ widget }) {
 
       {fehler && (
         <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6,
-          backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)",
+          backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)",
           display: "flex", gap: 8, alignItems: "center" }}>
-          <AlertCircle size={14} style={{ color: "#e07070" }} />
-          <span style={{ fontSize: 12, color: "#e07070" }}>{fehler}</span>
+          <AlertCircle size={14} style={{ color: "var(--err-soft)" }} />
+          <span style={{ fontSize: 12, color: "var(--err-soft)" }}>{fehler}</span>
         </div>
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button onClick={() => stapel(stand ? offset : 0)} disabled={laeuft || stand?.fertig}
           style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 16px",
-            borderRadius: 7, backgroundColor: stand?.fertig ? "rgba(110,231,183,0.15)" : ACCENT,
-            border: "none", color: stand?.fertig ? "#6ee7b7" : "#111",
+            borderRadius: 7, backgroundColor: stand?.fertig ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT,
+            border: "none", color: stand?.fertig ? "var(--ok)" : "#111",
             cursor: laeuft || stand?.fertig ? "default" : "pointer",
             fontSize: 12.5, fontWeight: 700 }}>
           {laeuft ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />

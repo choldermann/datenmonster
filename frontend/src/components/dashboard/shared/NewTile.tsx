@@ -32,7 +32,7 @@ const PAGE_SIZE = 100;
 // ─── Feldtyp-Hilfsfunktionen ─────────────────────────────────────────────────
 const TYPE_META = {
   integer: { label: "INT",  color: "#93c5fd" },
-  decimal: { label: "DEC",  color: "#6ee7b7" },
+  decimal: { label: "DEC",  color: "var(--ok)" },
   string:  { label: "STR",  color: "#8a8a8a" },
   date:    { label: "DATE", color: "#fcd34d" },
   bool:    { label: "BOOL", color: "#c4b5fd" },

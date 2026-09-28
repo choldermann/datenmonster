@@ -3,7 +3,7 @@ import { Plus, Pencil, Trash2, Play, Check, X, ChevronDown, GitBranch, Loader2 }
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
-const DISP_COLOR = "#fce499"; // Akzent-Gold wie im Rest des Dashboards
+const DISP_COLOR = "var(--accent)"; // Akzent-Gold wie im Rest des Dashboards
 
 const CONDITION_TYPES = [
   { v: "filename",        l: "Dateiname passt zu Muster" },
@@ -62,7 +62,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ width: 560, maxHeight: "90vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid ${DISP_COLOR}55`, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
+      <div style={{ width: 560, maxHeight: "90vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid color-mix(in srgb, ${DISP_COLOR} 33.3%, transparent)`, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 10 }}>
@@ -109,7 +109,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                 {["AND", "OR"].map(m => (
                   <button key={m} onClick={() => set("condition_mode", m)}
-                    style={{ padding: "2px 8px", borderRadius: 3, fontSize: 10, fontWeight: 700, cursor: "pointer", border: `1px solid ${form.condition_mode === m ? DISP_COLOR : S.border}`, backgroundColor: form.condition_mode === m ? `${DISP_COLOR}20` : "transparent", color: form.condition_mode === m ? DISP_COLOR : S.textDim }}>
+                    style={{ padding: "2px 8px", borderRadius: 3, fontSize: 10, fontWeight: 700, cursor: "pointer", border: `1px solid ${form.condition_mode === m ? DISP_COLOR : S.border}`, backgroundColor: form.condition_mode === m ? `color-mix(in srgb, ${DISP_COLOR} 12.5%, transparent)` : "transparent", color: form.condition_mode === m ? DISP_COLOR : S.textDim }}>
                     {m}
                   </button>
                 ))}
@@ -208,7 +208,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
           {/* Aktiv */}
           <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => set("active", !form.active)}>
             <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.active ? S.accent : S.textDim}`, backgroundColor: form.active ? S.accent : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              {form.active && <Check size={10} color="#111" strokeWidth={3} />}
+              {form.active && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
             </div>
             <span style={{ fontSize: 11, color: form.active ? S.textBright : S.textDim }}>Regel aktiv</span>
           </div>
@@ -284,7 +284,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
         </div>
         {canEdit && (
           <button onClick={() => setEditing({})}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: `${DISP_COLOR}20`, border: `1px solid ${DISP_COLOR}55`, color: DISP_COLOR, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: `color-mix(in srgb, ${DISP_COLOR} 12.5%, transparent)`, border: `1px solid color-mix(in srgb, ${DISP_COLOR} 33.3%, transparent)`, color: DISP_COLOR, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             <Plus size={13} /> Neue Regel
           </button>
         )}
@@ -306,7 +306,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
         const tr = testResult[rule.id];
         return (
           <div key={rule.id} style={{ marginBottom: 10, borderRadius: 8, border: `1px solid ${rule.active ? DISP_COLOR + "44" : S.border}`, backgroundColor: S.bgCard, overflow: "hidden" }}>
-            <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, backgroundColor: rule.active ? `${DISP_COLOR}08` : "transparent" }}>
+            <div style={{ padding: "10px 14px", display: "flex", alignItems: "center", gap: 10, backgroundColor: rule.active ? `color-mix(in srgb, ${DISP_COLOR} 3.1%, transparent)` : "transparent" }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: rule.active ? DISP_COLOR : S.textDim, flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>{rule.name}</p>
@@ -329,7 +329,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
                   </button>
                   <button onClick={() => deleteRule(rule.id)}
                     style={{ padding: "3px 8px", borderRadius: 4, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                     onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                     <Trash2 size={10} />
                   </button>
@@ -337,8 +337,8 @@ export default function DispatcherPanel({ projectId, canEdit }) {
               </div>
             </div>
             {tr && (
-              <div style={{ padding: "6px 14px", backgroundColor: tr.ok ? "rgba(110,231,183,0.06)" : "rgba(224,112,112,0.06)", borderTop: `1px solid ${S.border}` }}>
-                <p style={{ fontSize: 10, color: tr.ok ? "#6ee7b7" : "#e07070", margin: 0 }}>{tr.ok ? "✓" : "✗"} {tr.msg}</p>
+              <div style={{ padding: "6px 14px", backgroundColor: tr.ok ? "color-mix(in srgb, var(--ok) 6%, transparent)" : "color-mix(in srgb, var(--err-soft) 6%, transparent)", borderTop: `1px solid ${S.border}` }}>
+                <p style={{ fontSize: 10, color: tr.ok ? "var(--ok)" : "var(--err-soft)", margin: 0 }}>{tr.ok ? "✓" : "✗"} {tr.msg}</p>
               </div>
             )}
           </div>

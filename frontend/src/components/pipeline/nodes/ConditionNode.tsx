@@ -58,8 +58,8 @@ export default function ConditionNode({ node, onRemove, onPositionChange, onUpda
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 2 }}>
-          <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 700 }}>✓ JA →</span>
-          <span style={{ fontSize: 8, color: "#e07070", fontWeight: 700 }}>✗ NEIN →</span>
+          <span style={{ fontSize: 8, color: "var(--ok)", fontWeight: 700 }}>✓ JA →</span>
+          <span style={{ fontSize: 8, color: "var(--err-soft)", fontWeight: 700 }}>✗ NEIN →</span>
         </div>
       </div>
     </BaseNode>

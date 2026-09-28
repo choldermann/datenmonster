@@ -6,12 +6,12 @@ import api, { fehlerText } from "../../api/client";
 
 export const AI_NODE_COLOR = "#a78bfa";
 const DOT = 10;
-const ACTIVE_BORDER = "#fce499";
+const ACTIVE_BORDER = "var(--accent)";
 
 const FIELD_TYPES = ["string", "integer", "float", "boolean"];
 
 const TYPE_COLORS: Record<string, string> = {
-  string: "#94a3b8", integer: "#60a5fa", float: "#34d399",
+  string: "var(--muted)", integer: "#60a5fa", float: "#34d399",
   boolean: "#f472b6", date: "#f59e0b", datetime: "#f59e0b",
 };
 
@@ -119,9 +119,9 @@ export default function AiTransformNode({
   };
 
   const activeBorder = isActive && !debugHighlight;
-  const borderColor  = debugHighlight ? `${C}cc` : activeBorder ? ACTIVE_BORDER : `${C}55`;
+  const borderColor  = debugHighlight ? `color-mix(in srgb, ${C} 80%, transparent)` : activeBorder ? ACTIVE_BORDER : `color-mix(in srgb, ${C} 33.3%, transparent)`;
   const boxShadow    = debugHighlight
-    ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)`
+    ? `0 0 0 2px ${C}, 0 0 20px color-mix(in srgb, ${C} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)`
     : activeBorder
     ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
     : "0 8px 32px rgba(0,0,0,0.5)";
@@ -161,8 +161,8 @@ export default function AiTransformNode({
     >
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px",
-        borderBottom: `1px solid ${C}33`, borderRadius: "8px 8px 0 0",
-        background: `linear-gradient(135deg, ${C}22, ${C}11)` }}>
+        borderBottom: `1px solid color-mix(in srgb, ${C} 20%, transparent)`, borderRadius: "8px 8px 0 0",
+        background: `linear-gradient(135deg, color-mix(in srgb, ${C} 13.3%, transparent), color-mix(in srgb, ${C} 6.7%, transparent))` }}>
         <GripVertical size={12} color={C} style={{ flexShrink: 0 }} />
         <Sparkles size={13} color={C} style={{ flexShrink: 0 }} />
         <span style={{ fontSize: 11, fontWeight: 700, color: C, flex: 1 }}>KI-Transform</span>
@@ -180,11 +180,11 @@ export default function AiTransformNode({
         <div style={{ padding: "10px 10px 8px" }}>
 
           {/* ── Verfügbare Felder Panel ── */}
-          <div style={{ marginBottom: 10, border: `1px solid ${C}33`, borderRadius: 6, overflow: "hidden" }}>
+          <div style={{ marginBottom: 10, border: `1px solid color-mix(in srgb, ${C} 20%, transparent)`, borderRadius: 6, overflow: "hidden" }}>
               <button
                 onClick={() => setFieldsOpen(o => !o)}
                 style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", padding: "5px 8px",
-                  background: `${C}11`, border: "none", cursor: "pointer", color: S.textDim }}>
+                  background: `color-mix(in srgb, ${C} 6.7%, transparent)`, border: "none", cursor: "pointer", color: S.textDim }}>
                 <Database size={10} color={C} />
                 <span style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: C, flex: 1, textAlign: "left" }}>
                   Verfügbare Felder
@@ -220,12 +220,12 @@ export default function AiTransformNode({
                             style={{ display: "flex", alignItems: "center", gap: 6,
                               padding: "3px 8px", cursor: "pointer",
                               transition: "background 0.1s" }}
-                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = `${C}15`)}
+                            onMouseEnter={e => (e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${C} 8.2%, transparent)`)}
                             onMouseLeave={e => (e.currentTarget.style.backgroundColor = "transparent")}
                           >
                             <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 3,
-                              backgroundColor: `${TYPE_COLORS[f.type] || "#94a3b8"}22`,
-                              color: TYPE_COLORS[f.type] || "#94a3b8", fontWeight: 600,
+                              backgroundColor: `color-mix(in srgb, ${TYPE_COLORS[f.type] || "var(--muted)"} 13.3%, transparent)`,
+                              color: TYPE_COLORS[f.type] || "var(--muted)", fontWeight: 600,
                               minWidth: 28, textAlign: "center", textTransform: "uppercase" }}>
                               {f.type === "integer" ? "INT" : f.type === "boolean" ? "BOOL" : f.type === "datetime" ? "DT" : f.type.slice(0, 3).toUpperCase()}
                             </span>
@@ -297,7 +297,7 @@ export default function AiTransformNode({
                   style={{ width: DOT, height: DOT, borderRadius: "50%",
                     backgroundColor: f.name ? C : "#4b5563", flexShrink: 0,
                     border: "2px solid rgba(255,255,255,0.3)",
-                    boxShadow: f.name ? `0 0 6px ${C}88` : "none",
+                    boxShadow: f.name ? `0 0 6px color-mix(in srgb, ${C} 53.3%, transparent)` : "none",
                     cursor: f.name ? "grab" : "default" }}
                   title={f.name ? f.name + " auf Zielfeld ziehen" : "Feldname eingeben"} />
                 <input value={f.name} onChange={e => updateField(i, "name", e.target.value)}
@@ -307,7 +307,7 @@ export default function AiTransformNode({
                   {FIELD_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select>
                 <button onClick={() => removeField(i)}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#f87171", padding: 1 }}>
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "var(--err)", padding: 1 }}>
                   <X size={10} />
                 </button>
               </div>
@@ -338,15 +338,15 @@ export default function AiTransformNode({
           {/* Preview Button */}
           <button onClick={handlePreview} disabled={previewLoading || !node.prompt_template || outputFields.length === 0}
             style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", justifyContent: "center",
-              padding: "5px 0", borderRadius: 5, border: `1px solid ${C}55`,
-              backgroundColor: `${C}15`, color: C, fontSize: 11, cursor: "pointer",
+              padding: "5px 0", borderRadius: 5, border: `1px solid color-mix(in srgb, ${C} 33.3%, transparent)`,
+              backgroundColor: `color-mix(in srgb, ${C} 8.2%, transparent)`, color: C, fontSize: 11, cursor: "pointer",
               opacity: (!node.prompt_template || outputFields.length === 0) ? 0.4 : 1 }}>
             {previewLoading ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
             Vorschau (1 Beispiel-Row)
           </button>
 
           {previewError && (
-            <div style={{ marginTop: 6, fontSize: 10, color: "#f87171", backgroundColor: "rgba(248,113,113,0.1)",
+            <div style={{ marginTop: 6, fontSize: 10, color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 10%, transparent)",
               borderRadius: 4, padding: "4px 8px" }}>
               {previewError}
             </div>
@@ -363,11 +363,11 @@ export default function AiTransformNode({
           )}
 
           {maxInputRows && maxInputRows > 100 ? (
-            <div style={{ marginTop: 6, fontSize: 9, color: "#f87171", backgroundColor: "rgba(248,113,113,0.08)", borderRadius: 4, padding: "4px 6px", border: "1px solid rgba(248,113,113,0.2)" }}>
+            <div style={{ marginTop: 6, fontSize: 9, color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)", borderRadius: 4, padding: "4px 6px", border: "1px solid color-mix(in srgb, var(--err) 20%, transparent)" }}>
               ⚠ {maxInputRows} Eingabe-Zeilen — ca. {Math.ceil(maxInputRows / (node.batch_size || 10))} LLM-Aufrufe. Das kann mehrere Minuten dauern.
             </div>
           ) : (
-            <div style={{ marginTop: 6, fontSize: 9, color: "#fbbf24", opacity: 0.7 }}>
+            <div style={{ marginTop: 6, fontSize: 9, color: "var(--warn)", opacity: 0.7 }}>
               ⚠ KI-Transforms erhöhen die Ausführungszeit (1 LLM-Aufruf pro {node.batch_size || 10} Zeilen)
             </div>
           )}

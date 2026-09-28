@@ -12,7 +12,7 @@ function ActiveProjectBanner({ project, onSwitch }) {
   );
   return (
     <div className="flex items-center justify-center gap-3 py-2 px-6 mb-6 rounded-xl"
-      style={{ backgroundColor: "rgba(252,228,153,0.04)", border: `1px solid rgba(252,228,153,0.15)` }}>
+      style={{ backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)", border: `1px solid color-mix(in srgb, var(--accent) 15%, transparent)` }}>
       <FolderKanban size={14} style={{ color: S.accent }} />
       <span className="text-xs font-medium" style={{ color: S.accent }}>{project.name}</span>
       {project.description && (

@@ -2,62 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --accent:      #fce499;
-  --accent-dim:  rgba(252, 228, 153, 0.15);
-  --accent-line: rgba(252, 228, 153, 0.25);
-
-  --bg-main:     #111111;
-  --bg-card:     #181818;
-  --bg-elevated: #1f1f1f;
-
-  --border:      #272727;
-  --border-soft: #1e1e1e;
-
-  --text-main:   #8a8a8a;
-  --text-bright: #d8d8d8;
-  --text-dim:    #6a6a6a;
-
-  --red:   #c0392b;
-  --green: #5a9e6f;
-  --blue:  #4a7fa5;
-}
-
-/* ── Light Theme ───────────────────────────────────────── */
-[data-theme="light"] {
-  --accent:      #e6a800;
-  --accent-dim:  rgba(230, 168, 0, 0.12);
-  --accent-line: rgba(230, 168, 0, 0.25);
-
-  --bg-main:     #f0f0f0;
-  --bg-card:     #ffffff;
-  --bg-elevated: #f8f8f8;
-
-  --border:      #d8d8d8;
-  --border-soft: #e8e8e8;
-
-  --text-main:   #444444;
-  --text-bright: #111111;
-  --text-dim:    #888888;
-
-  --red:   #c0392b;
-  --green: #27ae60;
-  --blue:  #2980b9;
-}
-
-[data-theme="light"] ::-webkit-scrollbar-track       { background: var(--bg-main); }
-[data-theme="light"] ::-webkit-scrollbar-thumb        { background: #cccccc; }
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover  { background: #aaaaaa; }
-
-[data-theme="light"] .btn-ghost:hover { background: rgba(0,0,0,0.04); border-color: #bbb; }
-[data-theme="light"] .tag             { background: rgba(0,0,0,0.04); }
+/* Farben und Schriften der Themes: siehe themes.css */
 
 * { box-sizing: border-box; }
 
 body {
   background-color: var(--bg-main);
   color: var(--text-main);
-  font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body);
   font-size: 14px;
   line-height: 1.6;
   margin: 0;
@@ -67,14 +19,14 @@ body {
 /* ── Scrollbars ────────────────────────────────────────── */
 ::-webkit-scrollbar              { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track        { background: var(--bg-main); }
-::-webkit-scrollbar-thumb        { background: #2a2a2a; border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover  { background: #383838; }
+::-webkit-scrollbar-thumb        { background: var(--scroll-thumb); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover  { background: var(--scroll-thumb-hover); }
 
 /* ── Card ──────────────────────────────────────────────── */
 .card {
   background-color: var(--bg-card);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: var(--radius);
   padding: 1.1rem 1.2rem;
 }
 
@@ -84,12 +36,12 @@ body {
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.03em;
   background-color: var(--accent);
-  color: #111;
+  color: var(--accent-fg);
   border: none;
   cursor: pointer;
   transition: opacity 0.12s;
@@ -104,7 +56,7 @@ body {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
   font-weight: 500;
   background: transparent;
@@ -114,7 +66,7 @@ body {
   transition: all 0.12s;
   white-space: nowrap;
 }
-.btn-ghost:hover    { color: var(--text-main); border-color: #383838; background: rgba(255,255,255,0.03); }
+.btn-ghost:hover    { color: var(--text-main); border-color: var(--ghost-hover-border); background: var(--ghost-hover-bg); }
 .btn-ghost:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Inputs ────────────────────────────────────────────── */
@@ -122,7 +74,7 @@ body {
   background-color: var(--bg-elevated);
   border: 1px solid var(--border);
   color: var(--text-bright);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   padding: 7px 10px;
   outline: none;
   font-size: 13px;
@@ -164,10 +116,10 @@ textarea.input { resize: vertical; }
 .tag {
   display: inline-block;
   font-size: 10px;
-  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-family: var(--font-mono);
   padding: 2px 7px;
   border-radius: 3px;
-  background: rgba(255,255,255,0.04);
+  background: var(--tag-bg);
   border: 1px solid var(--border);
   color: var(--text-dim);
 }
@@ -175,5 +127,5 @@ textarea.input { resize: vertical; }
 /* ── Accent line (sidebar active) ──────────────────────── */
 .nav-active {
   background-color: var(--accent) !important;
-  color: #111 !important;
+  color: var(--accent-fg) !important;
 }

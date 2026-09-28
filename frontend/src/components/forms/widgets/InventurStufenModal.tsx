@@ -242,13 +242,13 @@ export default function InventurStufenModal({ stufen, standard, gesperrt, vorsch
             </div>
           )}
 
-          <div style={{ marginTop: 12, fontSize: 12, color: problem ? "#e07070" : S.textMain }}>
+          <div style={{ marginTop: 12, fontSize: 12, color: problem ? "var(--err-soft)" : S.textMain }}>
             {problem
               ? problem
               : <>Vorschau: <b>{eur(summe)}</b> Abwertung auf {zahl(partien)} Partien.</>}
           </div>
           {fehler && (
-            <div style={{ marginTop: 8, fontSize: 12, color: "#e07070" }}>{fehler}</div>
+            <div style={{ marginTop: 8, fontSize: 12, color: "var(--err-soft)" }}>{fehler}</div>
           )}
         </div>
 

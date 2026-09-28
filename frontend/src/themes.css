@@ -1,0 +1,347 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Farbschemata. Aktiv ist, was useTheme() als data-theme an <html> setzt.
+   Die Selektoren gelten für jedes Element, damit die Vorschau-Kacheln in den
+   Einstellungen einfach data-theme="…" tragen und sich selbst einfärben.
+
+   Neues Theme: Block unten ergänzen + Eintrag in themes.ts.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Grundwerte = Dunkel. Gilt für jedes [data-theme], damit eine Vorschau-Kachel
+   nichts vom gerade aktiven Theme erbt; die Blöcke darunter überschreiben. */
+:root,
+[data-theme] {
+  --accent:      #fce499;
+  --accent-dim:  rgba(252, 228, 153, 0.15);
+  --accent-line: rgba(252, 228, 153, 0.25);
+  --accent-fg:   #111111;              /* Schrift auf Akzentflächen */
+
+  --bg-main:     #111111;
+  --bg-card:     #181818;
+  --bg-elevated: #1f1f1f;
+
+  --border:      #272727;
+  --border-soft: #1e1e1e;
+
+  --text-main:   #8a8a8a;
+  --text-bright: #d8d8d8;
+  --text-dim:    #6a6a6a;
+
+  --red:   #c0392b;
+  --green: #5a9e6f;
+  --blue:  #4a7fa5;
+
+  /* Statusfarben (früher fest im Code) */
+  --ok:       #6ee7b7;
+  --err:      #f87171;
+  --err-soft: #e07070;
+  --warn:     #fbbf24;
+  --muted:    #94a3b8;
+  --muted-2:  #64748b;
+  --muted-3:  #475569;
+
+  --scroll-thumb:       #2a2a2a;
+  --scroll-thumb-hover: #383838;
+  --ghost-hover-border: #383838;
+  --ghost-hover-bg:     rgba(255, 255, 255, 0.03);
+  --tag-bg:             rgba(255, 255, 255, 0.04);
+
+  --radius:       6px;
+  --radius-sm:    4px;
+  --font-body:    "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono:    "JetBrains Mono", "Fira Code", monospace;
+  --shadow-card:  none;
+  --glow:         none;
+
+  /* Namen, die einzelne Stellen benutzen, die aber nie festgelegt waren */
+  --bg-input:  var(--bg-elevated);
+  --bg-el:     var(--bg-elevated);
+  --bg-hover:  var(--ghost-hover-bg);
+  --border-3:  var(--border);
+  --text-3:    var(--text-bright);
+  --accent-bd: var(--accent-line);
+}
+
+[data-theme="light"] {
+  --accent:      #e6a800;
+  --accent-dim:  rgba(230, 168, 0, 0.12);
+  --accent-line: rgba(230, 168, 0, 0.25);
+
+  --bg-main:     #f0f0f0;
+  --bg-card:     #ffffff;
+  --bg-elevated: #f8f8f8;
+
+  --border:      #d8d8d8;
+  --border-soft: #e8e8e8;
+
+  --text-main:   #444444;
+  --text-bright: #111111;
+  --text-dim:    #888888;
+
+  --red:   #c0392b;
+  --green: #27ae60;
+  --blue:  #2980b9;
+
+  --scroll-thumb:       #cccccc;
+  --scroll-thumb-hover: #aaaaaa;
+  --ghost-hover-border: #bbbbbb;
+  --ghost-hover-bg:     rgba(0, 0, 0, 0.04);
+  --tag-bg:             rgba(0, 0, 0, 0.04);
+}
+
+/* ── Ruhig ─────────────────────────────────────────────────────────────── */
+
+[data-theme="nord"] {
+  --accent:      #88c0d0;
+  --accent-dim:  rgba(136, 192, 208, 0.15);
+  --accent-line: rgba(136, 192, 208, 0.3);
+  --accent-fg:   #2e3440;
+
+  --bg-main:     #2e3440;
+  --bg-card:     #3b4252;
+  --bg-elevated: #434c5e;
+  --border:      #4c566a;
+  --border-soft: #3b4252;
+
+  --text-main:   #c2cad8;
+  --text-bright: #eceff4;
+  --text-dim:    #8b95a8;
+
+  --red: #bf616a; --green: #a3be8c; --blue: #81a1c1;
+  --ok: #a3be8c; --err: #d57780; --err-soft: #d08770; --warn: #ebcb8b;
+  --muted: #a3adbf; --muted-2: #8590a4; --muted-3: #6c7890;
+
+  --scroll-thumb: #4c566a; --scroll-thumb-hover: #5e6a80;
+  --ghost-hover-border: #5e6a80;
+  --radius: 8px;
+}
+
+[data-theme="solarized"] {
+  --accent:      #b58900;
+  --accent-dim:  rgba(181, 137, 0, 0.12);
+  --accent-line: rgba(181, 137, 0, 0.3);
+  --accent-fg:   #fdf6e3;
+
+  --bg-main:     #eee8d5;
+  --bg-card:     #fdf6e3;
+  --bg-elevated: #f6efdb;
+  --border:      #d9d0b4;
+  --border-soft: #e7e0c9;
+
+  --text-main:   #586e75;
+  --text-bright: #073642;
+  --text-dim:    #93a1a1;
+
+  --red: #dc322f; --green: #859900; --blue: #268bd2;
+  --ok: #859900; --err: #dc322f; --err-soft: #cb4b16; --warn: #b58900;
+  --muted: #839496; --muted-2: #657b83; --muted-3: #586e75;
+
+  --scroll-thumb: #d3cbb0; --scroll-thumb-hover: #b9b097;
+  --ghost-hover-border: #c5bc9f;
+  --ghost-hover-bg: rgba(7, 54, 66, 0.04);
+  --tag-bg: rgba(7, 54, 66, 0.05);
+}
+
+/* ── Retro ─────────────────────────────────────────────────────────────── */
+
+[data-theme="bernstein"] {
+  --accent:      #ffc23d;
+  --accent-dim:  rgba(255, 176, 0, 0.14);
+  --accent-line: rgba(255, 176, 0, 0.35);
+  --accent-fg:   #0b0700;
+
+  --bg-main:     #0b0700;
+  --bg-card:     #120c02;
+  --bg-elevated: #1a1103;
+  --border:      #3d2804;
+  --border-soft: #261902;
+
+  --text-main:   #d99100;
+  --text-bright: #ffb000;
+  --text-dim:    #9a6500;
+
+  --red: #ff7a2e; --green: #ffb000; --blue: #e0a000;
+  --ok: #ffd060; --err: #ff6a2a; --err-soft: #ff8a4a; --warn: #ffe08a;
+  --muted: #c48400; --muted-2: #a06c00; --muted-3: #7a5200;
+
+  --scroll-thumb: #3d2804; --scroll-thumb-hover: #6a4600;
+  --ghost-hover-border: #6a4600;
+  --ghost-hover-bg: rgba(255, 176, 0, 0.06);
+  --tag-bg: rgba(255, 176, 0, 0.06);
+
+  --radius: 2px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "VT323", var(--font-mono);
+  --glow: 0 0 4px rgba(255, 176, 0, 0.45);
+  --chart-filter: grayscale(1) sepia(1) saturate(7) hue-rotate(-22deg) brightness(1.0);
+  --scanlines: rgba(0, 0, 0, 0.22);
+}
+
+[data-theme="phosphor"] {
+  --accent:      #8dffac;
+  --accent-dim:  rgba(51, 255, 102, 0.12);
+  --accent-line: rgba(51, 255, 102, 0.32);
+  --accent-fg:   #020a03;
+
+  --bg-main:     #020a03;
+  --bg-card:     #051208;
+  --bg-elevated: #08190c;
+  --border:      #0f4a1e;
+  --border-soft: #0a2a12;
+
+  --text-main:   #2ec553;
+  --text-bright: #4dff7a;
+  --text-dim:    #1d8038;
+
+  --red: #d8ff5a; --green: #4dff7a; --blue: #33d6a0;
+  --ok: #8dffac; --err: #e4ff5a; --err-soft: #c8f060; --warn: #b8ff7a;
+  --muted: #2aa84a; --muted-2: #1f8a3c; --muted-3: #166a2d;
+
+  --scroll-thumb: #0f4a1e; --scroll-thumb-hover: #177a30;
+  --ghost-hover-border: #177a30;
+  --ghost-hover-bg: rgba(51, 255, 102, 0.05);
+  --tag-bg: rgba(51, 255, 102, 0.06);
+
+  --radius: 2px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "VT323", var(--font-mono);
+  --glow: 0 0 4px rgba(51, 255, 102, 0.45);
+  --chart-filter: grayscale(1) sepia(1) saturate(5) hue-rotate(70deg) brightness(1.1);
+  --scanlines: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme="amiga"] {
+  --accent:      #ff8800;
+  --accent-dim:  rgba(255, 136, 0, 0.22);
+  --accent-line: rgba(255, 136, 0, 0.5);
+  --accent-fg:   #000022;
+
+  --bg-main:     #0050a0;
+  --bg-card:     #0055aa;
+  --bg-elevated: #1466b8;
+  --border:      #d8e4f2;
+  --border-soft: #2d73bd;
+
+  --text-main:   #e6eef8;
+  --text-bright: #ffffff;
+  --text-dim:    #a9c6e8;
+
+  --red: #ff5544; --green: #88ff99; --blue: #ffffff;
+  --ok: #8dffa0; --err: #ff6a5a; --err-soft: #ff8a70; --warn: #ffd23f;
+  --muted: #c3d6ee; --muted-2: #a9c6e8; --muted-3: #8fb4e0;
+
+  --scroll-thumb: #d8e4f2; --scroll-thumb-hover: #ff8800;
+  --ghost-hover-border: #ff8800;
+  --ghost-hover-bg: rgba(255, 255, 255, 0.08);
+  --tag-bg: rgba(0, 0, 34, 0.25);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-display: "VT323", var(--font-mono);
+  --shadow-card: 3px 3px 0 #000022;
+}
+
+[data-theme="c64"] {
+  --accent:      #edf171;
+  --accent-dim:  rgba(237, 241, 113, 0.16);
+  --accent-line: rgba(237, 241, 113, 0.4);
+  --accent-fg:   #40318d;
+
+  --bg-main:     #40318d;
+  --bg-card:     #4839a0;
+  --bg-elevated: #5244b0;
+  --border:      #7869c4;
+  --border-soft: #5547b0;
+
+  --text-main:   #b3adff;
+  --text-bright: #e8e6ff;
+  --text-dim:    #8f84d8;
+
+  --red: #ff7777; --green: #a9ff9f; --blue: #7869c4;
+  --ok: #a9ff9f; --err: #ff8a80; --err-soft: #ffa090; --warn: #edf171;
+  --muted: #b3adff; --muted-2: #9f96e6; --muted-3: #8f84d8;
+
+  --scroll-thumb: #7869c4; --scroll-thumb-hover: #a59cf0;
+  --ghost-hover-border: #a59cf0;
+  --ghost-hover-bg: rgba(255, 255, 255, 0.06);
+  --tag-bg: rgba(0, 0, 0, 0.15);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-body:    var(--font-mono);
+  --font-display: "Press Start 2P", var(--font-mono);
+}
+
+[data-theme="atari"] {
+  --accent:      #000000;
+  --accent-dim:  rgba(0, 0, 0, 0.08);
+  --accent-line: rgba(0, 0, 0, 0.35);
+  --accent-fg:   #ffffff;
+
+  --bg-main:     #00a800;
+  --bg-card:     #ffffff;
+  --bg-elevated: #f2f2f2;
+  --border:      #000000;
+  --border-soft: #c8c8c8;
+
+  --text-main:   #1a1a1a;
+  --text-bright: #000000;
+  --text-dim:    #2e2e2e;   /* steht auch direkt auf dem grünen Desktop */
+
+  --red: #cc0000; --green: #008800; --blue: #0000aa;
+  --ok: #007a00; --err: #cc0000; --err-soft: #bb2222; --warn: #a06a00;
+  --muted: #555555; --muted-2: #444444; --muted-3: #333333;
+
+  --scroll-thumb: #000000; --scroll-thumb-hover: #333333;
+  --ghost-hover-border: #000000;
+  --ghost-hover-bg: rgba(0, 0, 0, 0.06);
+  --tag-bg: rgba(0, 0, 0, 0.04);
+
+  --radius: 0px; --radius-sm: 0px;
+  --font-display: "VT323", var(--font-mono);
+  --shadow-card: 2px 2px 0 #000000;
+}
+
+/* ── Effekte, die nur fürs ganze Fenster Sinn ergeben ──────────────────── */
+
+/* Leuchtende Schrift auf Röhrenmonitoren */
+html[data-theme="bernstein"] body,
+html[data-theme="phosphor"] body { text-shadow: var(--glow); }
+
+/* Zeilenraster der Röhre – rein optisch, klickt durch */
+html[data-theme="bernstein"] body::after,
+html[data-theme="phosphor"] body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2147483647;
+  background: repeating-linear-gradient(
+    to bottom, transparent 0, transparent 2px, var(--scanlines) 3px, transparent 4px);
+}
+
+/* Diagramme bleiben sonst bunt – auf Monochrom-Monitoren gibt es nur eine Farbe */
+html[data-theme="bernstein"] .recharts-wrapper,
+html[data-theme="phosphor"] .recharts-wrapper { filter: var(--chart-filter); }
+
+/* Atari ST: Schatten an Karten wie bei GEM-Dialogen */
+html[data-theme="atari"] .card,
+html[data-theme="amiga"] .card { box-shadow: var(--shadow-card); }
+
+/* Pixel-Schrift für Überschriften und Knöpfe. font-size-adjust gleicht die sehr
+   unterschiedlichen Schriftgrößen (VT323 klein, Press Start 2P riesig) an. */
+.section-title,
+.btn-primary,
+h1, h2, h3 {
+  font-family: var(--font-display);
+}
+html[data-theme="bernstein"] :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="phosphor"]  :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="amiga"]     :is(.section-title, .btn-primary, h1, h2, h3),
+html[data-theme="atari"]     :is(.section-title, .btn-primary, h1, h2, h3) {
+  font-size-adjust: 0.62;
+  letter-spacing: 0.04em;
+}
+html[data-theme="c64"] :is(.section-title, .btn-primary, h1, h2, h3) {
+  font-size-adjust: 0.58;
+  letter-spacing: 0.02em;
+  line-height: 1.5;
+}

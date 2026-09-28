@@ -6,7 +6,7 @@ import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const REST_NODE_COLOR = "#a78bfa"; // violet
 
-const REST_ACTIVE_BORDER = "#fce499";
+const REST_ACTIVE_BORDER = "var(--accent)";
 
 function RestNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRefs, allSourceFields, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);

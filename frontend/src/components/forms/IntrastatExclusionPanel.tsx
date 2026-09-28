@@ -166,8 +166,8 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
 
       {error && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderRadius: 6,
-          backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)",
-          color: "#e07070", fontSize: 12, marginBottom: 14 }}>
+          backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)",
+          color: "var(--err-soft)", fontSize: 12, marginBottom: 14 }}>
           <AlertCircle size={14} /> {error}
         </div>
       )}
@@ -282,9 +282,9 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
                 <button onClick={() => addExclusion(art)} disabled={already}
                   style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 5,
                     fontSize: 11, cursor: already ? "default" : "pointer",
-                    backgroundColor: already ? "transparent" : "rgba(110,231,183,0.12)",
-                    border: `1px solid ${already ? S.border : "rgba(110,231,183,0.35)"}`,
-                    color: already ? S.textDim : "#6ee7b7" }}>
+                    backgroundColor: already ? "transparent" : "color-mix(in srgb, var(--ok) 12%, transparent)",
+                    border: `1px solid ${already ? S.border : "color-mix(in srgb, var(--ok) 35%, transparent)"}`,
+                    color: already ? S.textDim : "var(--ok)" }}>
                   {already ? "ausgeschlossen" : <><Plus size={12} /> Ausschließen</>}
                 </button>
               </div>
@@ -312,7 +312,7 @@ export default function IntrastatExclusionPanel({ projectId, connectionId: fixed
               <button onClick={() => removeExclusion(e.id)} title="Entfernen"
                 style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 5,
                   fontSize: 11, cursor: "pointer", backgroundColor: "transparent",
-                  border: `1px solid ${S.border}`, color: "#e07070" }}>
+                  border: `1px solid ${S.border}`, color: "var(--err-soft)" }}>
                 <Trash2 size={12} /> Entfernen
               </button>
             </div>

@@ -93,13 +93,13 @@ function AiDownloadBanner() {
 
   if (!dl.pulling && !dl.done) return null;
 
-  const ACCENT = "#fce499";
-  const barColor = dl.done ? "#6ee7b7" : dl.error ? "#e07070" : ACCENT;
+  const ACCENT = "var(--accent)";
+  const barColor = dl.done ? "var(--ok)" : dl.error ? "var(--err-soft)" : ACCENT;
 
   return (
     <div style={{
       position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 9999,
-      backgroundColor: "#1a1a2e", borderTop: `1px solid ${barColor}30`,
+      backgroundColor: "#1a1a2e", borderTop: `1px solid color-mix(in srgb, ${barColor} 18.8%, transparent)`,
       padding: "6px 20px", display: "flex", alignItems: "center", gap: 12,
       boxShadow: "0 -4px 20px rgba(0,0,0,0.4)",
     }}>

@@ -6,8 +6,8 @@ import { S } from "./dashboard/constants";
 
 const CATEGORIES = ["Stammdaten", "Bewegungsdaten", "Konfiguration", "Lookup", "System", "Sonstige"];
 const CAT_COLOR: Record<string, string> = {
-  Stammdaten: "#60a5fa", Bewegungsdaten: "#34d399", Konfiguration: "#fbbf24",
-  Lookup: "#a78bfa", System: "#f87171", Sonstige: S.textDim,
+  Stammdaten: "#60a5fa", Bewegungsdaten: "#34d399", Konfiguration: "var(--warn)",
+  Lookup: "#a78bfa", System: "var(--err)", Sonstige: S.textDim,
 };
 
 const inp = (extra?: object) => ({
@@ -31,7 +31,7 @@ interface Kandidat {
 const QUELLE_LABEL: Record<string, { text: string; farbe: string; titel: string }> = {
   fk:         { text: "FK",        farbe: "#34d399", titel: "Echter Fremdschlüssel in der Datenbank" },
   schluessel: { text: "Schlüssel", farbe: "#60a5fa", titel: "Spalte heißt wie der Primärschlüssel der Zieltabelle" },
-  unsicher:   { text: "unsicher",  farbe: "#fbbf24", titel: "Mehrere Tabellen kommen als Ziel in Frage" },
+  unsicher:   { text: "unsicher",  farbe: "var(--warn)", titel: "Mehrere Tabellen kommen als Ziel in Frage" },
 };
 
 interface SchemaInfo { name: string; tabellen: number; views: number; empfohlen: boolean; }
@@ -48,8 +48,8 @@ interface Entwurf {
   ungedeckte_zahlen: string[]; titel_existiert: boolean; zu_lang: boolean;
 }
 const ART_FARBE: Record<string, string> = {
-  leer: "#f87171", ohne_treffer: "#f87171", beziehung: "#34d399",
-  statuswerte: "#60a5fa", zeitraum: "#fbbf24",
+  leer: "var(--err)", ohne_treffer: "var(--err)", beziehung: "#34d399",
+  statuswerte: "#60a5fa", zeitraum: "var(--warn)",
 };
 
 export default function SchemaCatalog({ connectionId }: { connectionId: number }) {
@@ -429,7 +429,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
               {([["ollama", "Ollama"], ["datenmonster", `Datenmonster AI · ${guthaben}`]] as const).map(([wert, text]) => (
                 <button key={wert} onClick={() => setProvider(wert as any)} disabled={suggesting}
                   style={{ border: "none", padding: "5px 9px", fontSize: 10, cursor: suggesting ? "not-allowed" : "pointer",
-                    backgroundColor: provider === wert ? "rgba(252,228,153,0.14)" : "transparent",
+                    backgroundColor: provider === wert ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
                     color: provider === wert ? S.textBright : S.textDim }}>
                   {text}
                 </button>
@@ -481,7 +481,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
           </span>
           <button onClick={cacheAufbauen} disabled={cacheBaut}
             style={{ marginLeft: "auto", whiteSpace: "nowrap", display: "flex", alignItems: "center",
-              gap: 6, backgroundColor: S.accent, color: "#111", border: "none", borderRadius: 6,
+              gap: 6, backgroundColor: S.accent, color: "var(--accent-fg)", border: "none", borderRadius: 6,
               padding: "6px 12px", fontWeight: 700, fontSize: 11,
               cursor: cacheBaut ? "not-allowed" : "pointer" }}>
             {cacheBaut ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
@@ -515,7 +515,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                     <button onClick={e => { e.stopPropagation(); updateDirty(current, { is_important: !current.is_important }); save({ ...current, is_important: !current.is_important }); }}
                       style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex" }}>
                       {current.is_important
-                        ? <Star size={11} fill="#fbbf24" color="#fbbf24" />
+                        ? <Star size={11} fill="var(--warn)" color="var(--warn)" />
                         : <StarOff size={11} color={S.textDim} />}
                     </button>
                     <span style={{ fontWeight: 600, color: S.textBright, fontFamily: "monospace" }}>{tbl.table_full_name}</span>
@@ -529,7 +529,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                       </span>
                     )}
                     {!current.description && (
-                      <span style={{ color: "#f87171", fontSize: 10, marginLeft: "auto" }}>keine Beschreibung</span>
+                      <span style={{ color: "var(--err)", fontSize: 10, marginLeft: "auto" }}>keine Beschreibung</span>
                     )}
                     {current.description && (
                       <span style={{ color: S.textDim, fontSize: 11, marginLeft: "auto", overflow: "hidden",
@@ -689,9 +689,9 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                         {QUELLE_LABEL[k.quelle].text}
                       </span>
                       <span style={{ fontFamily: "monospace", fontSize: 11, color: S.textBright }}>
-                        {k.from_table}.<span style={{ color: "#fbbf24" }}>{k.from_col}</span>
+                        {k.from_table}.<span style={{ color: "var(--warn)" }}>{k.from_col}</span>
                         {" → "}
-                        {k.to_table}.<span style={{ color: "#fbbf24" }}>{k.to_col}</span>
+                        {k.to_table}.<span style={{ color: "var(--warn)" }}>{k.to_col}</span>
                       </span>
                       {k.quelle === "unsicher" && k.alternativen.length > 0 && (
                         <span style={{ fontSize: 10, color: S.textDim }}>
@@ -748,14 +748,14 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                   backgroundColor: S.bgEl, borderRadius: 6, padding: "6px 10px",
                   border: `1px solid ${S.border}` }}>
                   <span style={{ fontFamily: "monospace", fontSize: 11, color: S.textBright }}>
-                    {r.from_table}.<span style={{ color: "#fbbf24" }}>{r.from_col}</span>
+                    {r.from_table}.<span style={{ color: "var(--warn)" }}>{r.from_col}</span>
                     {" → "}
-                    {r.to_table}.<span style={{ color: "#fbbf24" }}>{r.to_col}</span>
+                    {r.to_table}.<span style={{ color: "var(--warn)" }}>{r.to_col}</span>
                   </span>
                   {r.description && <span style={{ color: S.textDim, fontSize: 11 }}>({r.description})</span>}
                   <button onClick={() => deleteRelation(r.id)}
                     style={{ marginLeft: "auto", background: "none", border: "none",
-                      color: "#f87171", cursor: "pointer", padding: 2 }}>
+                      color: "var(--err)", cursor: "pointer", padding: 2 }}>
                     <Trash2 size={11} />
                   </button>
                 </div>
@@ -796,7 +796,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                       const n = new Set(m); n.has(sc.name) ? n.delete(sc.name) : n.add(sc.name); return n;
                     })} style={{
                       border: `1px solid ${an ? S.accent : S.border}`, borderRadius: 5,
-                      backgroundColor: an ? "rgba(252,228,153,0.14)" : S.bgEl,
+                      backgroundColor: an ? "color-mix(in srgb, var(--accent) 14%, transparent)" : S.bgEl,
                       color: an ? S.textBright : S.textDim, padding: "3px 8px",
                       fontSize: 11, cursor: "pointer",
                     }}>
@@ -885,8 +885,8 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
                         const n = new Set(m); n.has(i) ? n.delete(i) : n.add(i); return n;
                       })} />
                     <span style={{ fontFamily: "monospace", fontSize: 11 }}>
-                      {b.von}.<span style={{ color: "#fbbf24" }}>{b.von_spalte}</span>
-                      {" → "}{b.nach}.<span style={{ color: "#fbbf24" }}>{b.nach_spalte}</span>
+                      {b.von}.<span style={{ color: "var(--warn)" }}>{b.von_spalte}</span>
+                      {" → "}{b.nach}.<span style={{ color: "var(--warn)" }}>{b.nach_spalte}</span>
                     </span>
                     <span style={{ color: b.quote < 99 ? "#e0a070" : "#34d399",
                       fontSize: 10, marginLeft: "auto" }}>
@@ -968,7 +968,7 @@ export default function SchemaCatalog({ connectionId }: { connectionId: number }
           {(wahlWissen.size > 0 || wahlBez.size > 0) && (
             <button onClick={erkUebernehmen} disabled={uebernehmend}
               style={{ alignSelf: "flex-start", display: "flex", alignItems: "center", gap: 6,
-                backgroundColor: S.accent, color: "#111", border: "none", borderRadius: 6,
+                backgroundColor: S.accent, color: "var(--accent-fg)", border: "none", borderRadius: 6,
                 padding: "7px 14px", fontWeight: 700, fontSize: 11,
                 cursor: uebernehmend ? "not-allowed" : "pointer" }}>
               {uebernehmend ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}

@@ -41,10 +41,10 @@ const eur = (n) => n === null || n === undefined ? "–"
 // Zustände in der Reihenfolge des Ablaufs – so liest sich die Filterleiste wie
 // der Weg, den eine Preisänderung nimmt.
 const ZUSTAENDE = [
-  { key: "vorgeschlagen",   label: "Vorgeschlagen", farbe: "#fbbf24" },
+  { key: "vorgeschlagen",   label: "Vorgeschlagen", farbe: "var(--warn)" },
   { key: "freigegeben",     label: "Freigegeben",   farbe: "#38bdf8" },
   { key: "angewandt",       label: "Angewandt",     farbe: "#4ade80" },
-  { key: "verworfen",       label: "Verworfen",     farbe: "#94a3b8" },
+  { key: "verworfen",       label: "Verworfen",     farbe: "var(--muted)" },
   { key: "zurueckgenommen", label: "Zurückgenommen", farbe: "#a78bfa" },
 ];
 
@@ -280,7 +280,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
           <Plus size={12} /> Neues Regelwerk
         </button>
         {rw?.offen?.nicht_angekommen > 0 && (
-          <span style={{ fontSize: 12, color: "#e07070" }}>
+          <span style={{ fontSize: 12, color: "var(--err-soft)" }}>
             {rw.offen.nicht_angekommen} freigegebene Änderungen sind nicht in der Wawi
             angekommen
           </span>
@@ -297,7 +297,7 @@ export default function PreisautomatikWidget({ widget, projectId }) {
       {fehler && (
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "8px 11px",
           marginBottom: 10, borderRadius: 4, border: "1px solid #7f3b3b",
-          backgroundColor: "rgba(224,112,112,0.08)", color: "#e07070", fontSize: 12 }}>
+          backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
           <AlertCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} /> {fehler}
         </div>
       )}
@@ -515,7 +515,7 @@ function Einstellungen({ rw, speichern, stufeAnlegen, stufeAendern, stufeLoesche
             onBlur={() => speichern({ name: entwurf.name, email_to: entwurf.email_to })} />
         </Feld>
         {rw.last_run_at && (
-          <div style={{ fontSize: 11, color: rw.last_status === "error" ? "#e07070" : S.textDim,
+          <div style={{ fontSize: 11, color: rw.last_status === "error" ? "var(--err-soft)" : S.textDim,
             paddingBottom: 6, maxWidth: 460 }}>
             zuletzt {rw.last_run_at}: {rw.last_message}
           </div>
@@ -617,7 +617,7 @@ function Tabelle({ zeilen, auswahl, umschalten, alleUmschalten }) {
               <td style={{ ...td, whiteSpace: "nowrap" }}>{z.GueltigBis}</td>
               <td style={{ ...td, whiteSpace: "nowrap",
                 color: z.Abweichung === "ok" ? "#4ade80"
-                     : z.Abweichung === "abweichend" ? "#e07070" : S.textDim }}>
+                     : z.Abweichung === "abweichend" ? "var(--err-soft)" : S.textDim }}>
                 {z.Abweichung ? (z.IstPreis != null ? `${z.Abweichung} · ${eur(z.IstPreis)}`
                                                     : z.Abweichung) : "–"}
               </td>

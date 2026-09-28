@@ -96,7 +96,7 @@ export default function FormCanvas({ fields, selectedId, onSelect, onChange }) {
         onClick={() => onSelect(null)}>
         <div style={{ border: `2px dashed ${dragOverRow === "new" ? S.accent : S.border}`,
           borderRadius: 12, padding: "60px 40px", textAlign: "center",
-          backgroundColor: dragOverRow === "new" ? "rgba(252,228,153,0.04)" : "transparent",
+          backgroundColor: dragOverRow === "new" ? "color-mix(in srgb, var(--accent) 4%, transparent)" : "transparent",
           transition: "all 0.15s" }}>
           <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.2 }}>⊞</div>
           <p style={{ color: S.textDim, fontSize: 13, fontWeight: 600, marginBottom: 6 }}>

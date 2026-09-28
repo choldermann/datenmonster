@@ -26,7 +26,7 @@ export default function PipelineToolbar({ onAddNode }) {
           style={{
             display: "flex", alignItems: "center", gap: 8,
             padding: "8px 10px", borderRadius: 6, cursor: "grab",
-            border: `1px solid ${nt.color}33`,
+            border: `1px solid color-mix(in srgb, ${nt.color} 20%, transparent)`,
             backgroundColor: nt.color + "0c",
             color: S.textMain, fontSize: 11, fontWeight: 500,
             textAlign: "left", width: "100%",

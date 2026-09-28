@@ -42,9 +42,9 @@ export default function PipelinesPanel({ projectId, canEdit }) {
   };
 
   const statusIcon = (status) => {
-    if (status === "success") return <CheckCircle2 size={12} style={{ color: "#6ee7b7" }} />;
-    if (status === "error") return <XCircle size={12} style={{ color: "#e07070" }} />;
-    if (status === "warning") return <CheckCircle2 size={12} style={{ color: "#fce499" }} />;
+    if (status === "success") return <CheckCircle2 size={12} style={{ color: "var(--ok)" }} />;
+    if (status === "error") return <XCircle size={12} style={{ color: "var(--err-soft)" }} />;
+    if (status === "warning") return <CheckCircle2 size={12} style={{ color: "var(--accent)" }} />;
     return <Clock size={12} style={{ color: S.textDim }} />;
   };
 
@@ -57,7 +57,7 @@ export default function PipelinesPanel({ projectId, canEdit }) {
         </div>
         {canEdit && (
           <button onClick={() => navigate("/pipelines/new")} disabled={!!sperre} title={sperre}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: "var(--accent)", cursor: sperre ? "not-allowed" : "pointer", opacity: sperre ? 0.4 : 1, fontSize: 12, fontWeight: 600 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)", color: "var(--accent)", cursor: sperre ? "not-allowed" : "pointer", opacity: sperre ? 0.4 : 1, fontSize: 12, fontWeight: 600 }}>
             <Plus size={13} /> Neue Pipeline
           </button>
         )}
@@ -75,7 +75,7 @@ export default function PipelinesPanel({ projectId, canEdit }) {
 
       {pipelines.map(p => (
         <div key={p.id} style={{ marginBottom: 8, borderRadius: 8, border: `1px solid ${S.border}`, backgroundColor: S.bgCard, display: "flex", alignItems: "center", padding: "12px 16px", gap: 12 }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: p.active ? "#6ee7b7" : S.textDim, flexShrink: 0 }} />
+          <div style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: p.active ? "var(--ok)" : S.textDim, flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>{p.name}</p>
             <p style={{ fontSize: 10, color: S.textDim, margin: "3px 0 0" }}>
@@ -87,7 +87,7 @@ export default function PipelinesPanel({ projectId, canEdit }) {
             {p.last_run_status && statusIcon(p.last_run_status)}
             <button onClick={() => runPipeline(p.id)} disabled={running[p.id]} title="Ausführen"
               style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}
-              onMouseEnter={e => e.currentTarget.style.color = "#6ee7b7"}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--ok)"}
               onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
               {running[p.id] ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} />}
             </button>
@@ -100,7 +100,7 @@ export default function PipelinesPanel({ projectId, canEdit }) {
             {canEdit && (
               <button onClick={() => deletePipeline(p.id, p.name)} title="Löschen"
                 style={{ padding: "4px 8px", borderRadius: 4, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}
-                onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                 onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                 <Trash2 size={11} />
               </button>

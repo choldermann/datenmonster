@@ -3,9 +3,9 @@ import { RefreshCw, Trash2, ChevronDown, ChevronRight, X, Filter } from "lucide-
 import api from "../../../api/client";
 import { S } from "../constants";
 
-const LOG_COLOR = { info: "#6ee7b7", warning: "#fce499", error: "#e07070" };
-const LOG_BG = { info: "rgba(110,231,183,0.06)", warning: "rgba(252,228,153,0.06)", error: "rgba(224,112,112,0.06)" };
-const LOG_BORDER = { info: "rgba(110,231,183,0.2)", warning: "rgba(252,228,153,0.2)", error: "rgba(224,112,112,0.2)" };
+const LOG_COLOR = { info: "var(--ok)", warning: "var(--accent)", error: "var(--err-soft)" };
+const LOG_BG = { info: "color-mix(in srgb, var(--ok) 6%, transparent)", warning: "color-mix(in srgb, var(--accent) 6%, transparent)", error: "color-mix(in srgb, var(--err-soft) 6%, transparent)" };
+const LOG_BORDER = { info: "color-mix(in srgb, var(--ok) 20%, transparent)", warning: "color-mix(in srgb, var(--accent) 20%, transparent)", error: "color-mix(in srgb, var(--err-soft) 20%, transparent)" };
 
 const MODULES = ["mapping", "scheduler", "ftp", "dispatcher", "rest", "import"];
 
@@ -25,7 +25,7 @@ function DiffBadge({ before, after }) {
   if (before == null || after == null) return null;
   const diff = after - before;
   return (
-    <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, backgroundColor: diff > 0 ? "rgba(110,231,183,0.15)" : diff < 0 ? "rgba(224,112,112,0.15)" : "rgba(255,255,255,0.05)", color: diff > 0 ? "#6ee7b7" : diff < 0 ? "#e07070" : S.textDim }}>
+    <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 3, backgroundColor: diff > 0 ? "color-mix(in srgb, var(--ok) 15%, transparent)" : diff < 0 ? "color-mix(in srgb, var(--err-soft) 15%, transparent)" : "rgba(255,255,255,0.05)", color: diff > 0 ? "var(--ok)" : diff < 0 ? "var(--err-soft)" : S.textDim }}>
       {diff > 0 ? "+" : ""}{diff} Zeilen
     </span>
   );
@@ -155,7 +155,7 @@ export default function LogPanel({ projectId }) {
         <button onClick={() => load(true)} style={{ padding: "5px 10px", borderRadius: 4, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
           <RefreshCw size={11} /> Aktualisieren
         </button>
-        <button onClick={clearLogs} style={{ padding: "5px 10px", borderRadius: 4, border: `1px solid rgba(224,112,112,0.3)`, background: "none", color: "#e07070", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+        <button onClick={clearLogs} style={{ padding: "5px 10px", borderRadius: 4, border: `1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)`, background: "none", color: "var(--err-soft)", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
           <Trash2 size={11} /> Alte löschen
         </button>
       </div>
@@ -166,7 +166,7 @@ export default function LogPanel({ projectId }) {
         <div style={{ display: "flex", gap: 4 }}>
           {["", "info", "warning", "error"].map(lvl => (
             <button key={lvl} onClick={() => { setFilters(f => ({ ...f, level: lvl })); setOffset(0); }}
-              style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${filters.level === lvl ? (LOG_COLOR[lvl] || S.accent) : S.border}`, backgroundColor: filters.level === lvl ? (LOG_BG[lvl] || "rgba(252,228,153,0.1)") : "transparent", color: filters.level === lvl ? (LOG_COLOR[lvl] || S.accent) : S.textDim }}>
+              style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${filters.level === lvl ? (LOG_COLOR[lvl] || S.accent) : S.border}`, backgroundColor: filters.level === lvl ? (LOG_BG[lvl] || "color-mix(in srgb, var(--accent) 10%, transparent)") : "transparent", color: filters.level === lvl ? (LOG_COLOR[lvl] || S.accent) : S.textDim }}>
               {lvl || "Alle Level"}
             </button>
           ))}

@@ -21,8 +21,8 @@ const S = {
 };
 
 const ELEM_COLOR  = "#7dd3fc";  // light blue – XML elements
-const ATTR_COLOR  = "#fbbf24";  // amber – attributes
-const TEXT_COLOR  = "#6ee7b7";  // green – text content / mapped fields
+const ATTR_COLOR  = "var(--warn)";  // amber – attributes
+const TEXT_COLOR  = "var(--ok)";  // green – text content / mapped fields
 const OPT_COLOR   = "#c084fc";  // purple – optional marker
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -255,9 +255,9 @@ function AttrRow({ attr, fields, onChange, onDelete }) {
           style={{ width: 80, padding: "2px 6px", backgroundColor: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textMain, fontSize: 10, outline: "none" }}
           placeholder="Wert" />
       )}
-      {attr.required && <span style={{ fontSize: 9, color: "#f87171", flexShrink: 0 }}>*</span>}
+      {attr.required && <span style={{ fontSize: 9, color: "var(--err)", flexShrink: 0 }}>*</span>}
       <button onClick={onDelete} style={{ color: S.textDim, flexShrink: 0, fontSize: 11, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+        onMouseEnter={(e) => (e.currentTarget.style.color = "var(--err)")}
         onMouseLeave={(e) => (e.currentTarget.style.color = S.textDim)}>✕</button>
     </div>
   );
@@ -303,8 +303,8 @@ function TreeNodeRow({ node, fields, depth, onUpdate, onDelete, onAddChild, drag
           display: "flex", alignItems: "center", gap: 4,
           paddingLeft: indentPx + 6, paddingRight: 6, paddingTop: 3, paddingBottom: 3,
           cursor: "pointer", borderRadius: 3,
-          backgroundColor: isSelected ? "rgba(252,228,153,0.1)" : "transparent",
-          outline: isSelected ? `1px solid ${S.accent}44` : "none",
+          backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent",
+          outline: isSelected ? `1px solid color-mix(in srgb, ${S.accent} 26.7%, transparent)` : "none",
           userSelect: "none",
         }}
         onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
@@ -359,7 +359,7 @@ function TreeNodeRow({ node, fields, depth, onUpdate, onDelete, onAddChild, drag
             style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, cursor: "pointer", backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: ELEM_COLOR }}>+</button>
           <button title="Element löschen" onClick={() => onDelete(node.id)}
             style={{ fontSize: 9, padding: "1px 5px", borderRadius: 3, cursor: "pointer", backgroundColor: S.bgEl, border: `1px solid ${S.border}`, color: S.textDim }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#f87171")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--err)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = S.textDim)}>✕</button>
         </div>
       </div>
@@ -473,15 +473,15 @@ export default function XmlTemplateEditor({ fields, template, onChange, onClose 
     return xml
       .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
       // Restore for coloring
-      .replace(/&lt;\?([^?]*)\?&gt;/g, '<span style="color:#94a3b8">&lt;?$1?&gt;</span>')
-      .replace(/&lt;!--([^]*?)--&gt;/g, '<span style="color:#64748b">&lt;!--$1--&gt;</span>')
+      .replace(/&lt;\?([^?]*)\?&gt;/g, '<span style="color:var(--muted)">&lt;?$1?&gt;</span>')
+      .replace(/&lt;!--([^]*?)--&gt;/g, '<span style="color:var(--muted-2)">&lt;!--$1--&gt;</span>')
       .replace(/&lt;\/(\w[\w.-]*)&gt;/g, '<span style="color:#7dd3fc">&lt;/$1&gt;</span>')
       .replace(/&lt;(\w[\w.-]*)((?:[^&]|&amp;|&quot;)*?)\/&gt;/g,
-        '<span style="color:#7dd3fc">&lt;$1</span><span style="color:#fbbf24">$2</span><span style="color:#7dd3fc">/&gt;</span>')
+        '<span style="color:#7dd3fc">&lt;$1</span><span style="color:var(--warn)">$2</span><span style="color:#7dd3fc">/&gt;</span>')
       .replace(/&lt;(\w[\w.-]*)((?:[^&]|&amp;|&quot;)*?)&gt;/g,
-        '<span style="color:#7dd3fc">&lt;$1</span><span style="color:#fbbf24">$2</span><span style="color:#7dd3fc">&gt;</span>')
+        '<span style="color:#7dd3fc">&lt;$1</span><span style="color:var(--warn)">$2</span><span style="color:#7dd3fc">&gt;</span>')
       .replace(/(\w+)=&quot;([^&]*)&quot;/g,
-        '<span style="color:#fbbf24">$1</span>=<span style="color:#6ee7b7">&quot;$2&quot;</span>');
+        '<span style="color:var(--warn)">$1</span>=<span style="color:var(--ok)">&quot;$2&quot;</span>');
   };
 
   return (
@@ -505,7 +505,7 @@ export default function XmlTemplateEditor({ fields, template, onChange, onClose 
               Zurücksetzen
             </button>
             <button onClick={handleSave}
-              style={{ fontSize: 12, padding: "6px 18px", borderRadius: 4, cursor: "pointer", backgroundColor: S.accent, border: "none", color: "#111", fontWeight: 700 }}>
+              style={{ fontSize: 12, padding: "6px 18px", borderRadius: 4, cursor: "pointer", backgroundColor: S.accent, border: "none", color: "var(--accent-fg)", fontWeight: 700 }}>
               Übernehmen
             </button>
             <button onClick={onClose} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", fontSize: 16 }}>✕</button>
@@ -513,7 +513,7 @@ export default function XmlTemplateEditor({ fields, template, onChange, onClose 
         </div>
 
         {xsdError && (
-          <div style={{ padding: "6px 18px", backgroundColor: "rgba(248,113,113,0.1)", borderBottom: `1px solid rgba(248,113,113,0.3)`, fontSize: 11, color: "#f87171" }}>
+          <div style={{ padding: "6px 18px", backgroundColor: "color-mix(in srgb, var(--err) 10%, transparent)", borderBottom: `1px solid color-mix(in srgb, var(--err) 30%, transparent)`, fontSize: 11, color: "var(--err)" }}>
             ⚠ {xsdError}
           </div>
         )}
@@ -575,7 +575,7 @@ export default function XmlTemplateEditor({ fields, template, onChange, onClose 
           </span>
           <div style={{ marginLeft: "auto", display: "flex", gap: 8 }}>
             <button onClick={onClose} style={{ fontSize: 11, padding: "5px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: S.bgMain, border: `1px solid ${S.border}`, color: S.textDim }}>Abbrechen</button>
-            <button onClick={handleSave} style={{ fontSize: 12, padding: "6px 18px", borderRadius: 4, cursor: "pointer", backgroundColor: S.accent, border: "none", color: "#111", fontWeight: 700 }}>Übernehmen</button>
+            <button onClick={handleSave} style={{ fontSize: 12, padding: "6px 18px", borderRadius: 4, cursor: "pointer", backgroundColor: S.accent, border: "none", color: "var(--accent-fg)", fontWeight: 700 }}>Übernehmen</button>
           </div>
         </div>
       </div>

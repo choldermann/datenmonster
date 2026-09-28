@@ -12,7 +12,7 @@ const S = {
   textDim: "var(--text-dim)",
 };
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 // Erklärung wird automatisch eingeblendet, sobald die Detailtabelle eine
 // Ertrags-Spalte enthält (DB, Rohertrag Ware, Rohertrag gesamt …).
@@ -193,7 +193,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <EmailTableButton columns={columns} rows={rows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
           <button onClick={handleExport} disabled={!rows.length}
-            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid ${ACCENT}44`, backgroundColor: `${ACCENT}15`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, backgroundColor: `color-mix(in srgb, ${ACCENT} 8.2%, transparent)`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
             <Download size={12} /> CSV
           </button>
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4 }}>
@@ -218,7 +218,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
               Detaildaten werden geladen…
             </div>
           ) : error ? (
-            <div style={{ padding: 40, textAlign: "center", color: "#e07070", fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+            <div style={{ padding: 40, textAlign: "center", color: "var(--err-soft)", fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
               <AlertCircle size={20} />
               {error}
             </div>
@@ -246,7 +246,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
                     onClick={canDrillDeeper && onRowClick ? () => onRowClick(row) : undefined}
                     style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
                       cursor: canDrillDeeper && onRowClick ? "pointer" : "default" }}
-                    onMouseEnter={canDrillDeeper ? e => e.currentTarget.style.backgroundColor = `${ACCENT}18` : undefined}
+                    onMouseEnter={canDrillDeeper ? e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${ACCENT} 9.4%, transparent)` : undefined}
                     onMouseLeave={canDrillDeeper ? e => e.currentTarget.style.backgroundColor = i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)" : undefined}>
                     {columns.map(c => (
                       <td key={c} style={{ padding: "5px 12px", color: numericCols.has(c) ? S.textBright : S.textMain, textAlign: numericCols.has(c) ? "right" : "left",

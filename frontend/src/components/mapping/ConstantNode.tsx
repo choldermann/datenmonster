@@ -4,7 +4,7 @@ import { S, CONST_TYPES } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
-const CONST_ACTIVE_BORDER = "#fce499";
+const CONST_ACTIVE_BORDER = "var(--accent)";
 
 function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, onMiniPortsReady, isActive, onActivate }) {
   const miniLeftRef = useRef(null);
@@ -65,7 +65,7 @@ function ConstantNode({ node, onRemove, onPositionChange, onUpdate, outputRef, o
         </button>
         <button onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
           style={{ color: S.textDim, flexShrink: 0, lineHeight: 1 }}
-          onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+          onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
           onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
           <X size={12} />
         </button>

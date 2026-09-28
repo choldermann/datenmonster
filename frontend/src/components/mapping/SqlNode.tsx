@@ -8,7 +8,7 @@ import { useNodeResize, ResizeHandle } from "./useNodeResize";
 import { S, SQL_NODE_COLOR } from "./constants";
 import { MinimizedNode } from "./MinimizedNode";
 
-const ACTIVE_BORDER = "#fce499";
+const ACTIVE_BORDER = "var(--accent)";
 
 function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputRef, dbConnections, onMiniPortsReady, onRegisterFieldListRef, onFieldListScroll, canvasNodes, outputRefs, aiEnabled, mappingId, isActive, onActivate }) {
   const [expanded, setExpanded] = useState(true);
@@ -118,7 +118,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: `${SQL_NODE_COLOR}12`, borderBottom: `1px solid ${SQL_NODE_COLOR}33` }}>
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: `color-mix(in srgb, ${SQL_NODE_COLOR} 7.1%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 20%, transparent)` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
         <Database size={11} style={{ color: SQL_NODE_COLOR, flexShrink: 0 }} />
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: SQL_NODE_COLOR, flex: 1 }}>SQL Node</span>
@@ -129,7 +129,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
         <button onClick={() => onUpdate({ ...node, minimized: true })} title="Minimieren" style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0, display: "flex" }}><Minimize2 size={10} /></button>
         <button onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
           style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
-          onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+          onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
           onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
           <X size={12} />
         </button>
@@ -161,7 +161,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
               ].map((m) => (
                 <button key={m.v} onClick={() => set("mode", m.v)} title={m.hint}
                   style={{ flex: 1, padding: "4px 4px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer",
-                    backgroundColor: mode === m.v ? `${SQL_NODE_COLOR}22` : S.bgEl,
+                    backgroundColor: mode === m.v ? `color-mix(in srgb, ${SQL_NODE_COLOR} 13.3%, transparent)` : S.bgEl,
                     border: `1px solid ${mode === m.v ? SQL_NODE_COLOR : S.border}`,
                     color: mode === m.v ? SQL_NODE_COLOR : S.textDim }}>
                   {m.l}
@@ -199,7 +199,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                     style={{ flex: 1, backgroundColor: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 3, color: SQL_NODE_COLOR, fontSize: 10, fontFamily: "monospace", padding: "3px 6px", outline: "none" }} />
                   <button onClick={() => set("external_tables", (node.external_tables || []).filter((_, idx) => idx !== i))}
                     style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", padding: 2 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                     onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                     <Trash2 size={10} />
                   </button>
@@ -226,7 +226,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                   ].map(sm => (
                     <button key={sm.v} onClick={() => set("lookup_sub_mode", sm.v)} title={sm.hint}
                       style={{ flex: 1, padding: "4px 4px", borderRadius: 4, fontSize: 9, fontWeight: 600, cursor: "pointer",
-                        backgroundColor: (node.lookup_sub_mode || "row_by_row") === sm.v ? `${SQL_NODE_COLOR}22` : S.bgEl,
+                        backgroundColor: (node.lookup_sub_mode || "row_by_row") === sm.v ? `color-mix(in srgb, ${SQL_NODE_COLOR} 13.3%, transparent)` : S.bgEl,
                         border: `1px solid ${(node.lookup_sub_mode || "row_by_row") === sm.v ? SQL_NODE_COLOR : S.border}`,
                         color: (node.lookup_sub_mode || "row_by_row") === sm.v ? SQL_NODE_COLOR : S.textDim }}>
                       {sm.l}
@@ -238,7 +238,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
                   <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim }}>Parameter</label>
                   <button onClick={detectParams} title="Parameter aus SQL erkennen"
-                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
+                    style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 26.7%, transparent)`, background: `color-mix(in srgb, ${SQL_NODE_COLOR} 6.7%, transparent)`, color: SQL_NODE_COLOR }}>
                     ⟳ Erkennen
                   </button>
                 </div>
@@ -274,13 +274,13 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
               <label style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: S.textDim, flex: 1 }}>SQL</label>
               {aiEnabled && node.sql?.trim() && (
                 <button onClick={() => setAiMode("explain")} title="✨ SQL erklären"
-                  style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.07)", color: "#fce499", display: "flex", alignItems: "center", gap: 3 }}>
+                  style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)", background: "color-mix(in srgb, var(--accent) 7%, transparent)", color: "var(--accent)", display: "flex", alignItems: "center", gap: 3 }}>
                   <Sparkles size={9} /> Erklären
                 </button>
               )}
               <button onClick={(e) => { e.stopPropagation(); setSqlModalValue(node.sql || ""); setSqlModalOpen(true); }}
                 title="SQL-Editor öffnen"
-                style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
+                style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, cursor: "pointer", border: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 26.7%, transparent)`, background: `color-mix(in srgb, ${SQL_NODE_COLOR} 6.7%, transparent)`, color: SQL_NODE_COLOR }}>
                 ⛶ Vollbild
               </button>
             </div>
@@ -294,7 +294,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                 ? "SELECT name FROM kunden WHERE id = {Kunden.id}"
                 : "SELECT lookup_value FROM ref_table ORDER BY sort_nr"}
               rows={4}
-              style={{ width: "100%", backgroundColor: S.bgMain, border: `1px solid ${SQL_NODE_COLOR}44`, borderRadius: 4, color: S.textBright, fontSize: 11, fontFamily: "monospace", padding: "5px 7px", outline: "none", resize: "vertical", boxSizing: "border-box", lineHeight: 1.5 }}
+              style={{ width: "100%", backgroundColor: S.bgMain, border: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 26.7%, transparent)`, borderRadius: 4, color: S.textBright, fontSize: 11, fontFamily: "monospace", padding: "5px 7px", outline: "none", resize: "vertical", boxSizing: "border-box", lineHeight: 1.5 }}
             />
           </div>
 
@@ -328,11 +328,11 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
             <div>
               <button onClick={loadSchema} disabled={schemaLoading}
                 style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 4, fontSize: 10, padding: "5px 0", borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${SQL_NODE_COLOR}44`, background: `${SQL_NODE_COLOR}11`, color: SQL_NODE_COLOR }}>
+                  border: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 26.7%, transparent)`, background: `color-mix(in srgb, ${SQL_NODE_COLOR} 6.7%, transparent)`, color: SQL_NODE_COLOR }}>
                 <RefreshCw size={10} className={schemaLoading ? "animate-spin" : ""} />
                 {schemaLoading ? "Erkenne Spalten..." : "Spalten aus SELECT erkennen"}
               </button>
-              {schemaError && <p style={{ fontSize: 9, color: "#e07070", marginTop: 4 }}>⚠ {schemaError}</p>}
+              {schemaError && <p style={{ fontSize: 9, color: "var(--err-soft)", marginTop: 4 }}>⚠ {schemaError}</p>}
               {(node.output_fields || []).length > 0 && (
                 <button onClick={() => onUpdate({ ...node, output_fields: [] })}
                   style={{ marginTop: 3, width: "100%", fontSize: 9, padding: "3px 0", borderRadius: 4, cursor: "pointer",
@@ -346,11 +346,11 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
       )}
 
       {/* Output dots — output_fields (multi) hat immer Vorrang vor output_field (single) */}
-      <div style={{ borderTop: `1px solid ${SQL_NODE_COLOR}22`, backgroundColor: `${SQL_NODE_COLOR}06`, position: "relative" }}>
+      <div style={{ borderTop: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 13.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${SQL_NODE_COLOR} 2.4%, transparent)`, position: "relative" }}>
         {(node.output_fields || []).length > 0 ? (
           <div ref={fieldListRef} onScroll={onFieldListScroll} style={{ maxHeight: nodeHeight, overflowY: "auto", scrollbarWidth: "thin" }}>
             {(node.output_fields || []).map((field, i) => (
-              <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid ${SQL_NODE_COLOR}11` : "none" }}>
+              <div key={field} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 10px", borderTop: i > 0 ? `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 6.7%, transparent)` : "none" }}>
                 <span style={{ fontSize: 10, fontFamily: "monospace", color: SQL_NODE_COLOR, opacity: 0.9 }}>{field}</span>
                 <div
                   ref={(el) => { if (outputRefs) outputRefs.current[`${node.id}_${i}`] = { current: el }; if (i === 0 && outputRef) outputRef.current = el; }}
@@ -361,7 +361,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                     e.dataTransfer.setData("source_field", field);
                     e.stopPropagation();
                   }}
-                  style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: SQL_NODE_COLOR, cursor: "grab", flexShrink: 0, boxShadow: `0 0 5px ${SQL_NODE_COLOR}88` }}
+                  style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: SQL_NODE_COLOR, cursor: "grab", flexShrink: 0, boxShadow: `0 0 5px color-mix(in srgb, ${SQL_NODE_COLOR} 53.3%, transparent)` }}
                   title={`${field} auf Zielfeld ziehen`} />
               </div>
             ))}
@@ -379,7 +379,7 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
                 e.dataTransfer.setData("source_field", node.output_field || `sql_${node.id}`);
                 e.stopPropagation();
               }}
-              style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: SQL_NODE_COLOR, cursor: "grab", flexShrink: 0, boxShadow: `0 0 6px ${SQL_NODE_COLOR}88` }}
+              style={{ width: 10, height: 10, borderRadius: "50%", backgroundColor: SQL_NODE_COLOR, cursor: "grab", flexShrink: 0, boxShadow: `0 0 6px color-mix(in srgb, ${SQL_NODE_COLOR} 53.3%, transparent)` }}
               title="Auf Zielfeld ziehen" />
           </div>
         )}

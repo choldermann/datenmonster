@@ -461,7 +461,7 @@ export default function PipelineEditor() {
                 triggerLineDraw();
               }} style={{
                 fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
-                background: "rgba(224,112,112,0.15)", border: "1px solid rgba(224,112,112,0.4)", color: "#e07070",
+                background: "color-mix(in srgb, var(--err-soft) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)", color: "var(--err-soft)",
               }}>Verbindung löschen</button>
             </div>
           </div>
@@ -479,7 +479,7 @@ export default function PipelineEditor() {
             <p style={{ fontSize: 12, color: S.textDim, textAlign: "center", padding: "18px 0" }}>Noch keine Läufe protokolliert.</p>
           )}
           {history.map(run => {
-            const col = run.status === "success" ? "#6ee7b7" : run.status === "error" ? "#e07070" : "#fbbf24";
+            const col = run.status === "success" ? "var(--ok)" : run.status === "error" ? "var(--err-soft)" : "var(--warn)";
             return (
               <div key={run.id} onClick={() => openHistoryRun(run)}
                 style={{ padding: "9px 14px", borderBottom: `1px solid ${S.border}`, cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}

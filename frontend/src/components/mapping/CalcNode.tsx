@@ -56,7 +56,7 @@ function InputDot({ part, index, inputPortRefs, nodeId, onDrop, onUpdate, onMini
           backgroundColor: part.value ? CALC_COLOR : "transparent",
           border: `2px solid ${CALC_COLOR}`,
           flexShrink: 0, cursor: "crosshair",
-          boxShadow: part.value ? `0 0 4px ${CALC_COLOR}66` : "none",
+          boxShadow: part.value ? `0 0 4px color-mix(in srgb, ${CALC_COLOR} 40%, transparent)` : "none",
         }}
         title="Feld hierher ziehen"
       />
@@ -144,7 +144,7 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
   // Vorschau
   const formulaPreview = formulaParts.map(p => p.op ? ` ${p.op} ` : (p.value || "?")).join("");
 
-  const ACTIVE_BORDER = "#fce499";
+  const ACTIVE_BORDER = "var(--accent)";
   const activeBorder = isActive && !debugHighlight;
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "3px 6px", outline: "none", flex: 1, minWidth: 0 };
@@ -172,11 +172,11 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
 
   return (
     <div draggable={false} onClick={e => { e.stopPropagation(); onActivate?.({ type: "calc", calcType: node.calc_type || "formula", outputField: node.output_field, inputField: node.input_field }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${CALC_COLOR}, 0 0 20px ${CALC_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: debugHighlight ? `1.5px solid ${CALC_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${CALC_COLOR}55`, backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${CALC_COLOR}, 0 0 20px color-mix(in srgb, ${CALC_COLOR} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, border: debugHighlight ? `1.5px solid color-mix(in srgb, ${CALC_COLOR} 80%, transparent)` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid color-mix(in srgb, ${CALC_COLOR} 33.3%, transparent)`, backgroundColor: S.bgCard, overflow: "hidden", transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: CALC_COLOR + "12", borderBottom: `1px solid ${CALC_COLOR}33` }}>
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: CALC_COLOR + "12", borderBottom: `1px solid color-mix(in srgb, ${CALC_COLOR} 20%, transparent)` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
         <Calculator size={11} style={{ color: CALC_COLOR, flexShrink: 0 }} />
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: CALC_COLOR, flex: 1 }}>Berechnung</span>
@@ -224,11 +224,11 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
             </div>
 
             <button onClick={addPart}
-              style={{ width: "100%", padding: "3px", borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: "pointer", backgroundColor: CALC_COLOR + "10", border: `1px dashed ${CALC_COLOR}44`, color: CALC_COLOR, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, marginTop: 6 }}>
+              style={{ width: "100%", padding: "3px", borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: "pointer", backgroundColor: CALC_COLOR + "10", border: `1px dashed color-mix(in srgb, ${CALC_COLOR} 26.7%, transparent)`, color: CALC_COLOR, display: "flex", alignItems: "center", justifyContent: "center", gap: 3, marginTop: 6 }}>
               <Plus size={9} /> Feld hinzufügen
             </button>
 
-            <div style={{ marginTop: 6, padding: "4px 8px", borderRadius: 3, backgroundColor: CALC_COLOR + "08", border: `1px solid ${CALC_COLOR}22`, fontFamily: "monospace", fontSize: 10, color: CALC_COLOR }}>
+            <div style={{ marginTop: 6, padding: "4px 8px", borderRadius: 3, backgroundColor: CALC_COLOR + "08", border: `1px solid color-mix(in srgb, ${CALC_COLOR} 13.3%, transparent)`, fontFamily: "monospace", fontSize: 10, color: CALC_COLOR }}>
               = {formulaPreview}
             </div>
           </div>
@@ -299,9 +299,9 @@ function CalcNode({ node, onRemove, onPositionChange, onUpdate, outputRef, input
           </div>
         </div>
         {debugStats && (
-          <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid ${CALC_COLOR}22` }}>
+          <div style={{ fontSize: 9, color: "var(--muted)", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid color-mix(in srgb, ${CALC_COLOR} 13.3%, transparent)` }}>
             <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
-            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+            {debugStats.errors > 0 && <span style={{ color: "var(--err)" }}>⚠ {debugStats.errors} Fehler</span>}
           </div>
         )}
       </div>

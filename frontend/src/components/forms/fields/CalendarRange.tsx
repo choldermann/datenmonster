@@ -72,7 +72,7 @@ export default function CalendarRange({ from, to, onChange }) {
   const cellBtn = (edge, ranged) => ({
     width: 30, height: 28, border: "none", borderRadius: ranged && !edge ? 0 : 6,
     fontSize: 12, cursor: "pointer",
-    background: edge ? S.accent : ranged ? "rgba(110,231,183,0.14)" : "transparent",
+    background: edge ? S.accent : ranged ? "color-mix(in srgb, var(--ok) 14%, transparent)" : "transparent",
     color: edge ? "#0c1a12" : S.textMain,
     fontWeight: edge ? 700 : 400,
   });

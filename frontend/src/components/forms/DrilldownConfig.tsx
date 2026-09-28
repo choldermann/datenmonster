@@ -95,7 +95,7 @@ export default function DrilldownConfig({ value, dimensionField, projectId, onCh
               <div key={i} style={{ marginTop: 8, padding: 8, border: "1px solid var(--border)", borderRadius: 4 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                   <span style={{ fontSize: 9, color: accent, fontWeight: 700 }}>Ebene {i + 2}</span>
-                  <button onClick={() => removeLevel(i)} style={{ background: "none", border: "none", color: "#e07070", cursor: "pointer", fontSize: 10 }}>entfernen</button>
+                  <button onClick={() => removeLevel(i)} style={{ background: "none", border: "none", color: "var(--err-soft)", cursor: "pointer", fontSize: 10 }}>entfernen</button>
                 </div>
                 <label style={lbl}>Detail-Mapping</label>
                 <MappingSelect val={l.mapping_id} onPick={v => setLevel(i, { mapping_id: v })} />
@@ -111,7 +111,7 @@ export default function DrilldownConfig({ value, dimensionField, projectId, onCh
               </div>
             ))}
             <button onClick={addLevel} style={{ marginTop: 8, fontSize: 10, color: accent, background: "none",
-              border: `1px dashed ${accent}66`, borderRadius: 4, padding: "4px 8px", cursor: "pointer", width: "100%" }}>
+              border: `1px dashed color-mix(in srgb, ${accent} 40%, transparent)`, borderRadius: 4, padding: "4px 8px", cursor: "pointer", width: "100%" }}>
               + Ebene hinzufügen
             </button>
           </div>

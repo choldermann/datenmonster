@@ -72,7 +72,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
-      color: "#e07070", fontSize: 12 }}>
+      color: "var(--err-soft)", fontSize: 12 }}>
       <AlertCircle size={12} /> {result.error}
     </div>
   );

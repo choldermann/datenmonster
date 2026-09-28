@@ -118,7 +118,7 @@ function KnowledgeForm({ item, onSave, onCancel }: {
           Abbrechen
         </button>
         <button onClick={handleSave} disabled={!title.trim() || !content.trim()}
-          style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: S.accent, color: "#111", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+          style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: S.accent, color: "var(--accent-fg)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
           Speichern
         </button>
       </div>
@@ -161,10 +161,10 @@ function SuggestionsBanner({ onDismiss }: { onDismiss: () => void }) {
     <div style={{ marginBottom: 20 }}>
       {pending.map(s => (
         <div key={s.solution_id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 14px",
-          background: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.25)", borderRadius: 8, marginBottom: 8 }}>
-          <Sparkles size={16} style={{ color: "#fce499", flexShrink: 0, marginTop: 1 }} />
+          background: "color-mix(in srgb, var(--accent) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 25%, transparent)", borderRadius: 8, marginBottom: 8 }}>
+          <Sparkles size={16} style={{ color: "var(--accent)", flexShrink: 0, marginTop: 1 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 600, color: "#fce499" }}>Lern-Vorschlag</p>
+            <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>Lern-Vorschlag</p>
             <p style={{ margin: 0, fontSize: 12, color: S.textDim }}>{s.message}</p>
             <p style={{ margin: "4px 0 0", fontSize: 11, color: S.textDim, fontFamily: "monospace",
               background: "rgba(0,0,0,0.2)", padding: "4px 8px", borderRadius: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -173,7 +173,7 @@ function SuggestionsBanner({ onDismiss }: { onDismiss: () => void }) {
           </div>
           <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
             <button onClick={() => handlePromote(s)} disabled={promoting === s.solution_id}
-              style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "#fce499", color: "#111",
+              style={{ padding: "5px 12px", borderRadius: 6, border: "none", background: "var(--accent)", color: "var(--accent-fg)",
                 cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
               {promoting === s.solution_id ? "..." : "Ja, speichern"}
             </button>
@@ -259,7 +259,7 @@ function SchemaImportSection({ onImported }: { onImported: () => void }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8, alignItems: "center" }}>
             {result && <span style={{ fontSize: 12, color: result.startsWith("Fehler") ? "#ef4444" : "#22c55e" }}>{result}</span>}
             <button onClick={handleImport} disabled={importing || !text.trim()}
-              style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: S.accent, color: "#111",
+              style={{ padding: "6px 14px", borderRadius: 6, border: "none", background: S.accent, color: "var(--accent-fg)",
                 cursor: "pointer", fontSize: 13, fontWeight: 600, opacity: !text.trim() ? 0.5 : 1 }}>
               {importing ? "Importiere..." : "Importieren"}
             </button>
@@ -324,14 +324,14 @@ function KnowledgeTab() {
           {["all", "global", "datasource", "project"].map(s => (
             <button key={s} onClick={() => setFilterScope(s)}
               style={{ padding: "4px 12px", borderRadius: 20, border: `1px solid ${S.border}`, fontSize: 12,
-                background: filterScope === s ? S.accent : "none", color: filterScope === s ? "#111" : S.textDim, cursor: "pointer" }}>
+                background: filterScope === s ? S.accent : "none", color: filterScope === s ? "var(--accent-fg)" : S.textDim, cursor: "pointer" }}>
               {s === "all" ? "Alle" : SCOPE_LABELS[s as keyof typeof SCOPE_LABELS]}
             </button>
           ))}
         </div>
         <button onClick={() => setAdding(true)}
           style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 6, border: "none",
-            background: S.accent, color: "#111", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            background: S.accent, color: "var(--accent-fg)", cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
           <Plus size={14} /> Neu
         </button>
       </div>
@@ -435,7 +435,7 @@ function SolutionsTab() {
         {cats.map(c => (
           <button key={c} onClick={() => setFilterCat(c)}
             style={{ padding: "4px 12px", borderRadius: 20, border: `1px solid ${S.border}`, fontSize: 12,
-              background: filterCat === c ? S.accent : "none", color: filterCat === c ? "#111" : S.textDim, cursor: "pointer" }}>
+              background: filterCat === c ? S.accent : "none", color: filterCat === c ? "var(--accent-fg)" : S.textDim, cursor: "pointer" }}>
             {c === "all" ? "Alle" : CAT_LABELS[c] || c}
           </button>
         ))}

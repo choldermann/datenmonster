@@ -35,7 +35,7 @@ export default function FtpNode({ node, onRemove, onPositionChange, onUpdate, in
         </div>
 
         {selectedSource && (
-          <div style={{ fontSize: 9, color: S.textDim, padding: "4px 6px", borderRadius: 3, backgroundColor: `${NODE_COLORS.ftp}10`, border: `1px solid ${NODE_COLORS.ftp}22` }}>
+          <div style={{ fontSize: 9, color: S.textDim, padding: "4px 6px", borderRadius: 3, backgroundColor: `color-mix(in srgb, ${NODE_COLORS.ftp} 6.3%, transparent)`, border: `1px solid color-mix(in srgb, ${NODE_COLORS.ftp} 13.3%, transparent)` }}>
             {selectedSource.host} · {selectedSource.remote_dir || "/"} · {selectedSource.filename_filter || "*"}
           </div>
         )}

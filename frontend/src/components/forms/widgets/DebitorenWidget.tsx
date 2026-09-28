@@ -100,8 +100,8 @@ export default function DebitorenWidget({ widget, baseParams }) {
 
       {fehler && (
         <div style={{ display: "flex", gap: 8, marginTop: 10, padding: "9px 12px",
-          borderRadius: 7, background: "rgba(248,113,113,.1)",
-          border: "1px solid rgba(248,113,113,.4)", color: "#f87171", fontSize: 11 }}>
+          borderRadius: 7, background: "color-mix(in srgb, var(--err) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)", color: "var(--err)", fontSize: 11 }}>
           <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{fehler}
         </div>
       )}
@@ -109,9 +109,9 @@ export default function DebitorenWidget({ widget, baseParams }) {
       {ergebnis && (
         <div style={{ display: "flex", gap: 8, marginTop: 10, padding: "9px 12px",
           borderRadius: 7,
-          background: ergebnis.errors?.length ? "rgba(248,113,113,.1)" : "rgba(52,211,153,.1)",
-          border: `1px solid ${ergebnis.errors?.length ? "rgba(248,113,113,.4)" : "rgba(52,211,153,.4)"}`,
-          color: ergebnis.errors?.length ? "#f87171" : "#34d399", fontSize: 11 }}>
+          background: ergebnis.errors?.length ? "color-mix(in srgb, var(--err) 10%, transparent)" : "rgba(52,211,153,.1)",
+          border: `1px solid ${ergebnis.errors?.length ? "color-mix(in srgb, var(--err) 40%, transparent)" : "rgba(52,211,153,.4)"}`,
+          color: ergebnis.errors?.length ? "var(--err)" : "#34d399", fontSize: 11 }}>
           {ergebnis.errors?.length
             ? <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
             : <CheckCircle2 size={13} style={{ flexShrink: 0, marginTop: 1 }} />}
@@ -191,7 +191,7 @@ export default function DebitorenWidget({ widget, baseParams }) {
             flexWrap: "wrap" }}>
             <button onClick={uebernehmen} disabled={!gewaehlt.length || schreiben}
               style={{ display: "flex", alignItems: "center", gap: 6,
-                background: gewaehlt.length ? "#6ee7b7" : S.bgEl,
+                background: gewaehlt.length ? "var(--ok)" : S.bgEl,
                 border: `1px solid ${S.border}`,
                 color: gewaehlt.length ? "#0b0b0c" : S.textDim, borderRadius: 7,
                 padding: "8px 16px", fontSize: 12, fontWeight: 600,

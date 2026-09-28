@@ -115,7 +115,7 @@ export default function OnboardingWidget({ open, onClose, autoClose = false }: P
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "10px 14px", borderBottom: "1px solid var(--border)",
-        background: "linear-gradient(135deg, rgba(252,228,153,0.08) 0%, transparent 100%)",
+        background: "linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent) 0%, transparent 100%)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
           <Rocket size={14} style={{ color: ACCENT }} />
@@ -134,7 +134,7 @@ export default function OnboardingWidget({ open, onClose, autoClose = false }: P
           <button onClick={onClose} title="Schließen"
             style={{ background: "none", border: "none", cursor: "pointer", padding: 3,
               color: "var(--text-dim)", display: "flex", alignItems: "center" }}
-            onMouseEnter={e => (e.currentTarget.style.color = "#e07070")}
+            onMouseEnter={e => (e.currentTarget.style.color = "var(--err-soft)")}
             onMouseLeave={e => (e.currentTarget.style.color = "var(--text-dim)")}>
             <X size={13} />
           </button>
@@ -171,13 +171,13 @@ export default function OnboardingWidget({ open, onClose, autoClose = false }: P
               {isLoading
                 ? <Loader2 size={16} style={{ color: "var(--text-dim)", flexShrink: 0, marginTop: 1, animation: "spin 1s linear infinite" }} />
                 : isDone
-                ? <CheckCircle2 size={16} style={{ color: "#6ee7b7", flexShrink: 0, marginTop: 1 }} />
+                ? <CheckCircle2 size={16} style={{ color: "var(--ok)", flexShrink: 0, marginTop: 1 }} />
                 : <Circle size={16} style={{ color: isNext ? ACCENT : "var(--text-dim)", flexShrink: 0, marginTop: 1 }} />
               }
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{
                   fontSize: 11, fontWeight: 600, margin: 0,
-                  color: isDone ? "#6ee7b7" : isNext ? "var(--text-bright)" : "var(--text-main)",
+                  color: isDone ? "var(--ok)" : isNext ? "var(--text-bright)" : "var(--text-main)",
                 }}>
                   {step.label}
                 </p>
@@ -198,8 +198,8 @@ export default function OnboardingWidget({ open, onClose, autoClose = false }: P
         })}
         {allDone && (
           <div style={{ margin: "4px 14px 4px", padding: "6px 10px", borderRadius: 6,
-            backgroundColor: "rgba(110,231,183,0.08)", border: "1px solid rgba(110,231,183,0.2)",
-            fontSize: 11, color: "#6ee7b7", textAlign: "center" }}>
+            backgroundColor: "color-mix(in srgb, var(--ok) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)",
+            fontSize: 11, color: "var(--ok)", textAlign: "center" }}>
             🎉 Alles eingerichtet — Datenmonster ist bereit!
           </div>
         )}

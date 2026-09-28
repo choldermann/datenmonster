@@ -152,7 +152,7 @@ export default function ReportOptionsModal({ formId, schema, busy, onClose, onCo
           <button onClick={confirm} disabled={busy || nothingPicked}
             title={nothingPicked ? "Mindestens einen Abschnitt auswählen" : ""}
             style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 6,
-              border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
+              border: `1px solid color-mix(in srgb, ${S.accent} 33.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${S.accent} 8.2%, transparent)`, color: S.accent,
               opacity: (busy || nothingPicked) ? 0.5 : 1, fontSize: 12, fontWeight: 600,
               cursor: busy ? "wait" : nothingPicked ? "not-allowed" : "pointer" }}>
             {busy ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={12} />}

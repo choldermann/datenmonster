@@ -66,7 +66,7 @@ export default function KpiWidget({ widget, result }) {
     const good = invert_delta ? !up : up;
     delta = {
       up,
-      color: good ? "#6ee7b7" : "#e07070",
+      color: good ? "var(--ok)" : "var(--err-soft)",
       pct: Math.abs(pct).toLocaleString("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
       cmpText: formatValue(cmp, Number(decimals) || 0, prefix, suffix),
     };

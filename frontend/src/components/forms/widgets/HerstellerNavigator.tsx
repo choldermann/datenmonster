@@ -7,9 +7,9 @@ import { alsText } from "../../../utils/html";
 import AiActionModal from "../AiActionModal";
 import StammdatenPruefung from "./StammdatenPruefung";
 
-const ACCENT = "#fce499";
-const GRUEN = "#6ee7b7";
-const ROT = "#e07070";
+const ACCENT = "var(--accent)";
+const GRUEN = "var(--ok)";
+const ROT = "var(--err-soft)";
 
 const fehltChip = () => (
   <span style={{ display: "inline-flex", alignItems: "center", gap: 4, color: ROT,
@@ -257,8 +257,8 @@ export default function HerstellerNavigator({ widget, result }) {
 
       {/* Intrastat: gesetzliche Pflicht, deshalb vor allen anderen Lücken erklärt. */}
       {auslandsartikel > 0 && (
-        <div style={{ borderRadius: 9, border: `1px solid ${ROT}55`,
-          backgroundColor: "rgba(224,112,112,0.07)", padding: "13px 15px", marginBottom: 14 }}>
+        <div style={{ borderRadius: 9, border: `1px solid color-mix(in srgb, ${ROT} 33.3%, transparent)`,
+          backgroundColor: "color-mix(in srgb, var(--err-soft) 7%, transparent)", padding: "13px 15px", marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
             <AlertTriangle size={15} style={{ color: ROT }} />
             <p style={{ fontSize: 13.5, fontWeight: 800, color: S.textBright, margin: 0 }}>

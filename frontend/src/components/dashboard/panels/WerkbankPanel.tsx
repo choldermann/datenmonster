@@ -28,7 +28,7 @@ const inp = {
 const knopf = (aktiv = true) => ({
   fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 5,
   border: "none", cursor: aktiv ? "pointer" : "not-allowed",
-  backgroundColor: S.accent, color: "#111", opacity: aktiv ? 1 : 0.5,
+  backgroundColor: S.accent, color: "var(--accent-fg)", opacity: aktiv ? 1 : 0.5,
   display: "inline-flex", alignItems: "center", gap: 6,
 });
 
@@ -340,9 +340,9 @@ export default function WerkbankPanel({ projectId, canEdit }) {
 
       {betrieb?.hinweis && betrieb.quelle !== "einzige_verbindung" && (
         <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 6,
-            background: betrieb.connection_id ? "rgba(252,228,153,0.07)"
+            background: betrieb.connection_id ? "color-mix(in srgb, var(--accent) 7%, transparent)"
                                               : "rgba(232,145,58,0.1)",
-            border: `1px solid ${betrieb.connection_id ? "rgba(252,228,153,0.25)"
+            border: `1px solid ${betrieb.connection_id ? "color-mix(in srgb, var(--accent) 25%, transparent)"
                                                        : "rgba(232,145,58,0.35)"}` }}>
           <p style={{ margin: 0, fontSize: 12, color: S.textMain, lineHeight: 1.55 }}>
             {betrieb.hinweis}
@@ -367,7 +367,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
           <button onClick={() => setAdoptionOffen(true)}
             style={{ ...knopfLeer, width: "100%", justifyContent: "center",
                      fontSize: 11.5, color: S.accent,
-                     borderColor: "rgba(252,228,153,0.35)" }}>
+                     borderColor: "color-mix(in srgb, var(--accent) 35%, transparent)" }}>
             <Inbox size={13} /> {adoption.anzahl} aus dem Bestand übernehmen
           </button>
         )}
@@ -387,7 +387,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
               <button key={v.id} onClick={() => oeffnen(v.id)}
                 style={{ textAlign: "left", padding: "9px 10px", borderRadius: 6,
                   border: `1px solid ${gewaehlt ? S.accent : S.border}`,
-                  backgroundColor: gewaehlt ? "rgba(252,228,153,0.07)" : S.bgCard,
+                  backgroundColor: gewaehlt ? "color-mix(in srgb, var(--accent) 7%, transparent)" : S.bgCard,
                   cursor: "pointer", display: "flex", flexDirection: "column", gap: 4 }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: S.textBright,
                                lineHeight: 1.3 }}>{v.name}</span>
@@ -426,7 +426,7 @@ export default function WerkbankPanel({ projectId, canEdit }) {
 
             {rueckfragen.length > 0 && (
               <div style={{ margin: "0 0 14px", padding: "12px 14px", borderRadius: 6,
-                  background: "rgba(252,228,153,0.07)",
+                  background: "color-mix(in srgb, var(--accent) 7%, transparent)",
                   borderLeft: `3px solid ${S.accent}` }}>
                 <p style={{ margin: "0 0 6px", fontSize: 12, fontWeight: 700,
                             color: S.textBright }}>Bevor gebaut wird</p>
@@ -520,8 +520,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
 
             {templateErg && (
               <div style={{ marginTop: 14, padding: "11px 14px", borderRadius: 6,
-                  background: "rgba(110,231,183,0.09)",
-                  border: "1px solid rgba(110,231,183,0.3)" }}>
+                  background: "color-mix(in srgb, var(--ok) 9%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)" }}>
                 <p style={{ margin: 0, fontSize: 12, color: S.textMain, lineHeight: 1.55 }}>
                   Template angelegt: <b>{templateErg.template_id}</b> —{" "}
                   {templateErg.mappings} Mapping(s), {templateErg.forms} Formular(e),
@@ -650,7 +650,7 @@ function Kopf({ v, mandanten, gebaut, onUmbenennen, onMandant }) {
           style={{ ...inp, fontSize: 15, fontWeight: 700, color: S.textBright,
                    background: "transparent", border: "1px solid transparent",
                    padding: "4px 6px", flex: 1 }} />
-        <span style={{ fontSize: 11, color: st.farbe, border: `1px solid ${st.farbe}40`,
+        <span style={{ fontSize: 11, color: st.farbe, border: `1px solid color-mix(in srgb, ${st.farbe} 25.1%, transparent)`,
             borderRadius: 4, padding: "3px 8px", whiteSpace: "nowrap" }}>{st.label}</span>
       </div>
       <p style={{ margin: "4px 0 0 6px", fontSize: 12, color: S.textDim, lineHeight: 1.5 }}>

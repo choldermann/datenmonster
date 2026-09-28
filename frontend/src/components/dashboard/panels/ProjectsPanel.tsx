@@ -36,15 +36,15 @@ function NewProjectTile({ onClick }) {
 // ─── Project Card ─────────────────────────────────────────────────────────────
 function ProjectCard({ project, isActive, onSelect, onDelete, onShare, onEdit }) {
   const [hovered, setHovered] = useState(false);
-  const roleColor = { owner: "#fce499", editor: "#93c5fd", viewer: "#6ee7b7" };
+  const roleColor = { owner: "var(--accent)", editor: "#93c5fd", viewer: "var(--ok)" };
   const roleLabel = { owner: "Eigentümer", editor: "Bearbeiter", viewer: "Betrachter" };
   return (
     <div onClick={() => onSelect(project)}
       onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
       className="card group cursor-pointer transition-all duration-150"
       style={{
-        borderColor: isActive ? S.accent : hovered ? "rgba(252,228,153,0.3)" : S.border,
-        backgroundColor: isActive ? "rgba(252,228,153,0.04)" : "transparent",
+        borderColor: isActive ? S.accent : hovered ? "color-mix(in srgb, var(--accent) 30%, transparent)" : S.border,
+        backgroundColor: isActive ? "color-mix(in srgb, var(--accent) 4%, transparent)" : "transparent",
       }}>
       <div className="flex items-start justify-between min-w-0">
         <div className="flex items-center gap-3 min-w-0">
@@ -76,7 +76,7 @@ function ProjectCard({ project, isActive, onSelect, onDelete, onShare, onEdit })
               <button onClick={(e) => { e.stopPropagation(); onDelete(project.id); }}
                 className="p-1 rounded"
                 style={{ color: S.textDim }}
-                onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                 onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                 <Trash2 size={13} />
               </button>
@@ -91,7 +91,7 @@ function ProjectCard({ project, isActive, onSelect, onDelete, onShare, onEdit })
         </span>
         {isActive && (
           <span className="text-xs px-2 py-0.5 rounded font-mono flex items-center gap-1"
-            style={{ backgroundColor: "rgba(252,228,153,0.08)", color: S.accent, border: `1px solid rgba(252,228,153,0.2)` }}>
+            style={{ backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", color: S.accent, border: `1px solid color-mix(in srgb, var(--accent) 20%, transparent)` }}>
             <Check size={10} /> Aktiv
           </span>
         )}
@@ -132,7 +132,7 @@ function ProjectModal({ project, onDone, onCancel }) {
           <input className="input" value={description} onChange={(e) => setDescription(e.target.value)}
             placeholder="Kurze Beschreibung..." />
         </div>
-        {error && <p className="text-xs" style={{ color: "#e07070" }}>{error}</p>}
+        {error && <p className="text-xs" style={{ color: "var(--err-soft)" }}>{error}</p>}
         <div className="flex gap-3 pt-1">
           <button onClick={onCancel} className="btn-ghost text-xs">Abbrechen</button>
           <button onClick={handleSave} disabled={saving || !name.trim()} className="btn-primary text-xs ml-auto">
@@ -189,7 +189,7 @@ function ShareProjectModal({ project, onClose }) {
   // als Mitglied eingetragen taucht sein Projekt zweimal in der Liste auf.
   const availableUsers = users.filter(
     (u) => u.id !== project.owner_id && !members.find((m) => m.user_id === u.id));
-  const roleColor = { owner: S.accent, editor: "#93c5fd", viewer: "#6ee7b7" };
+  const roleColor = { owner: S.accent, editor: "#93c5fd", viewer: "var(--ok)" };
   const roleLabel = { owner: "Eigentümer", editor: "Bearbeiter", viewer: "Betrachter" };
 
   return (
@@ -246,7 +246,7 @@ function ShareProjectModal({ project, onClose }) {
           {availableUsers.length === 0 && (
             <p className="text-xs mt-2" style={{ color: S.textDim }}>Keine weiteren Benutzer verfügbar.</p>
           )}
-          {error && <p className="text-xs mt-2" style={{ color: "#e07070" }}>{error}</p>}
+          {error && <p className="text-xs mt-2" style={{ color: "var(--err-soft)" }}>{error}</p>}
         </div>
 
         {/* Mitgliederliste */}
@@ -270,7 +270,7 @@ function ShareProjectModal({ project, onClose }) {
                       </span>
                     </div>
                     <button onClick={() => removeMember(m.user_id)} style={{ color: S.textDim }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                       onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                       <X size={13} />
                     </button>

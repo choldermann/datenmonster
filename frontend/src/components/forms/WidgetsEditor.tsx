@@ -18,13 +18,13 @@ const inp = {
 const WIDGET_TYPES = [
   { type: "table", label: "Tabelle",        Icon: Table2,    color: "#60a5fa",
     desc: "Rohdaten als Tabelle mit optionalem CSV-Download" },
-  { type: "kpi",   label: "KPI-Kachel",     Icon: Hash,      color: "#fce499",
+  { type: "kpi",   label: "KPI-Kachel",     Icon: Hash,      color: "var(--accent)",
     desc: "Einzelner Kennwert groß anzeigen (Summe, Durchschnitt, …)" },
-  { type: "bar",   label: "Balkendiagramm", Icon: BarChart2, color: "#6ee7b7",
+  { type: "bar",   label: "Balkendiagramm", Icon: BarChart2, color: "var(--ok)",
     desc: "Kategorien als Balken vergleichen" },
   { type: "line",  label: "Liniendiagramm", Icon: TrendingUp, color: "#a78bfa",
     desc: "Zeitreihen und Trends als Linie" },
-  { type: "pie",   label: "Kreisdiagramm",  Icon: PieChart,  color: "#f87171",
+  { type: "pie",   label: "Kreisdiagramm",  Icon: PieChart,  color: "var(--err)",
     desc: "Anteile als Kuchen- oder Donut-Diagramm" },
   { type: "eingangsrechnung", label: "Eingangsrechnungs-Freigabe", Icon: Receipt, color: "#f0abfc",
     desc: "E-Rechnung (ZUGFeRD/XRechnung) hochladen, prüfen und nach JTL verbuchen" },
@@ -34,7 +34,7 @@ const WIDGET_TYPES = [
     desc: "KI formuliert aus dem Ergebnis der Action eine kurze Management-Zusammenfassung" },
   { type: "alerts", label: "Unternehmenswarnungen", Icon: ShieldAlert, color: "#fb923c",
     desc: "Ergebnis einer Warnungs-Action (run_alerts): Ampel, Fakten und Drilldown je Regel" },
-  { type: "kostenstruktur", label: "Kostenstruktur", Icon: Wallet, color: "#fbbf24",
+  { type: "kostenstruktur", label: "Kostenstruktur", Icon: Wallet, color: "var(--warn)",
     desc: "Monatliche Fixkosten je Kostenart pflegen – Grundlage für den Ergebnis-Reiter" },
   { type: "datev_stammdaten", label: "DATEV-Stammdaten", Icon: Wallet, color: "#60a5fa",
     desc: "Berater-/Mandantennummer, USt-IdNr. und Sachkonten je Mandant pflegen" },
@@ -42,7 +42,7 @@ const WIDGET_TYPES = [
     desc: "Ladenhüter automatisch rabattieren: Regeln, Vorschläge, Ameise-Datei und Kontrolle" },
   { type: "inventur", label: "Inventur zum Stichtag", Icon: ClipboardList, color: "#c4b5fd",
     desc: "Bestände zum Stichtag einfrieren, abwerten und als Liste für den Steuerberater ausgeben" },
-  { type: "kunden_ausschluss", label: "Verbundene Unternehmen", Icon: Building2, color: "#94a3b8",
+  { type: "kunden_ausschluss", label: "Verbundene Unternehmen", Icon: Building2, color: "var(--muted)",
     desc: "Kunden pflegen, die aus den Abfluss-Auswertungen herausfallen (eigene Firma, Schwestergesellschaften)" },
   { type: "datenpflege", label: "Datenpflege", Icon: Database, color: "#34d399",
     desc: "Eine Tabelle einer Verbindung anzeigen: Zeilen anlegen, bearbeiten und sperren" },
@@ -450,8 +450,8 @@ export default function WidgetsEditor({ widgets = [], actions = [], resultTabs =
           <div style={{ position: "relative" }}>
             <button onClick={() => setShowPalette(p => !p)}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px",
-                borderRadius: 6, backgroundColor: "rgba(252,228,153,0.1)",
-                border: "1px solid rgba(252,228,153,0.35)", color: S.accent,
+                borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)", color: S.accent,
                 cursor: "pointer", fontSize: 11, fontWeight: 600 }}>
               <Plus size={12} /> Widget hinzufügen
             </button>
@@ -520,7 +520,7 @@ export default function WidgetsEditor({ widgets = [], actions = [], resultTabs =
                   <button onClick={e => { e.stopPropagation(); removeWidget(widget.id); }}
                     style={{ color: S.textDim, background: "none", border: "none",
                       cursor: "pointer", padding: 3, flexShrink: 0 }}
-                    onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                    onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                     onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                     <Trash2 size={12} />
                   </button>

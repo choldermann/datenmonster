@@ -118,8 +118,8 @@ export default function KundenAusschlussWidget({ widget, projectId }) {
 
       {fehler && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10,
-          padding: "7px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,.1)",
-          border: "1px solid rgba(224,112,112,.3)", color: "#e07070", fontSize: 12 }}>
+          padding: "7px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
           <AlertCircle size={13} /> {fehler}
         </div>
       )}

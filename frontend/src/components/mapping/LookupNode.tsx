@@ -6,7 +6,7 @@ import { useNodeResize, ResizeHandle } from "./useNodeResize";
 
 export const LOOKUP_COLOR = "#34d399"; // emerald
 
-const LOOKUP_ACTIVE_BORDER = "#fce499";
+const LOOKUP_ACTIVE_BORDER = "var(--accent)";
 
 function LookupNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, inputRef, allDatasets, allSourceFields, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);

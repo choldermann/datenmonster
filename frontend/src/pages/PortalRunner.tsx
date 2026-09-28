@@ -42,7 +42,7 @@ function ResultTable({ result, formName, actionLabel, allowDownload }) {
 
   if (error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
-      color: "#e07070", fontSize: 13 }}>
+      color: "var(--err-soft)", fontSize: 13 }}>
       <AlertCircle size={14} /> {error}
     </div>
   );
@@ -102,13 +102,13 @@ function ExportResult({ result, onDownload, allowDownload }) {
   const files = result.files || [];
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
-      color: "#e07070", fontSize: 13 }}>
+      color: "var(--err-soft)", fontSize: 13 }}>
       <AlertCircle size={14} /> {result.error}
     </div>
   );
   return (
     <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6ee7b7",
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
         fontSize: 13, fontWeight: 600 }}>
         <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
       </div>
@@ -350,7 +350,7 @@ export default function PortalRunner() {
               <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
                 title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
                 style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
-                  border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
+                  border: `1px solid color-mix(in srgb, ${S.accent} 33.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${S.accent} 8.2%, transparent)`, color: S.accent,
                   opacity: (reporting || aiBusy) ? 0.5 : 1,
                   cursor: reporting ? "wait" : aiBusy ? "not-allowed" : "pointer",
                   fontSize: 12, fontWeight: 600 }}>
@@ -381,8 +381,8 @@ export default function PortalRunner() {
         {/* Load error */}
         {loadErr && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
-            borderRadius: 8, backgroundColor: "rgba(224,112,112,0.1)",
-            border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 13 }}>
+            borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 13 }}>
             <AlertCircle size={14} /> {loadErr}
           </div>
         )}
@@ -431,9 +431,9 @@ export default function PortalRunner() {
             <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px",
                 borderRadius: 8, fontSize: 14, fontWeight: 600,
-                backgroundColor: "rgba(110,231,183,0.12)",
-                border: "1px solid rgba(110,231,183,0.4)",
-                color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+                backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+                color: "var(--ok)", cursor: running ? "wait" : "pointer" }}>
               {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
               {running ? "Wird ausgeführt …" : results ? "Aktualisieren" : "Ausführen"}
             </button>
@@ -461,9 +461,9 @@ export default function PortalRunner() {
                 <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
                   style={{ display: "inline-flex", alignItems: "center", gap: 8,
                     padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-                    backgroundColor: "rgba(110,231,183,0.12)",
-                    border: "1px solid rgba(110,231,183,0.4)",
-                    color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+                    backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+                    color: "var(--ok)", cursor: running ? "wait" : "pointer" }}>
                   {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
                   {actions.length === 1 ? (actions[0].label || "Ausführen") : "Ausführen"}
                 </button>
@@ -484,8 +484,8 @@ export default function PortalRunner() {
         {/* Run error */}
         {runErr && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px",
-            borderRadius: 8, backgroundColor: "rgba(224,112,112,0.1)",
-            border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 13,
+            borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 13,
             marginBottom: 20 }}>
             <AlertCircle size={14} /> {runErr}
           </div>
@@ -500,7 +500,7 @@ export default function PortalRunner() {
               return (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                   style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? "#6ee7b7" : "transparent"}`,
+                    borderBottom: `2px solid ${active ? "var(--ok)" : "transparent"}`,
                     color: active ? S.textBright : S.textDim, cursor: "pointer",
                     fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
                   {tab.label}

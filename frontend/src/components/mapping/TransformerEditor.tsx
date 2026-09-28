@@ -152,7 +152,7 @@ function TransformerEditor({ connection, allSourceFields, onClose, onChange }) {
 function JoinEditor({ join, onClose, onChange, onDelete }) {
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${JOIN_COLOR}55`, borderRadius: 8, padding: 20, width: 320, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ backgroundColor: S.bgCard, border: `1px solid color-mix(in srgb, ${JOIN_COLOR} 33.3%, transparent)`, borderRadius: 8, padding: 20, width: 320, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
           <div>
             <p style={{ fontSize: 11, color: JOIN_COLOR, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>Join</p>
@@ -166,7 +166,7 @@ function JoinEditor({ join, onClose, onChange, onDelete }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 16 }}>
           {JOIN_TYPES.map((jt) => {
             const isAnti = jt.value.includes("ANTI");
-            const activeColor = isAnti ? "#e07070" : JOIN_COLOR;
+            const activeColor = isAnti ? "var(--err-soft)" : JOIN_COLOR;
             return (
             <button key={jt.value} onClick={() => onChange({ ...join, join_type: jt.value })}
               style={{
@@ -183,7 +183,7 @@ function JoinEditor({ join, onClose, onChange, onDelete }) {
           })}
         </div>
         <button onClick={onDelete}
-          style={{ width: "100%", padding: "7px", borderRadius: 4, fontSize: 11, cursor: "pointer", backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070" }}>
+          style={{ width: "100%", padding: "7px", borderRadius: 4, fontSize: 11, cursor: "pointer", backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)" }}>
           Join löschen
         </button>
       </div>

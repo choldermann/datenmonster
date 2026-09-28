@@ -80,7 +80,7 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
         {result && !loading && (
           <span style={{ fontSize: 10, color: S.textDim }}>
             {result.total} Zeilen · {result.columns.length} Spalten
-            {result.errors?.length > 0 && <span style={{ color: "#e07070", marginLeft: 8 }}>⚠ {result.errors.length} Fehler</span>}
+            {result.errors?.length > 0 && <span style={{ color: "var(--err-soft)", marginLeft: 8 }}>⚠ {result.errors.length} Fehler</span>}
           </span>
         )}
         {open && (
@@ -107,7 +107,7 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
           {!loading && result?.errors?.length > 0 && result.rows.length === 0 && (
             <div style={{ padding: 16 }}>
               {result.errors.map((e, i) => (
-                <p key={i} style={{ fontSize: 11, color: "#e07070", marginBottom: 4 }}>⚠ {e}</p>
+                <p key={i} style={{ fontSize: 11, color: "var(--err-soft)", marginBottom: 4 }}>⚠ {e}</p>
               ))}
             </div>
           )}
@@ -115,8 +115,8 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
           {!loading && result && result.rows.length > 0 && (
             <div style={{ flex: 1, overflow: "auto", scrollbarWidth: "thin" }}>
               {result.errors?.length > 0 && (
-                <div style={{ padding: "6px 12px", backgroundColor: "rgba(224,112,112,0.06)", borderBottom: `1px solid ${S.border}` }}>
-                  {result.errors.map((e, i) => <span key={i} style={{ fontSize: 10, color: "#e07070", marginRight: 12 }}>⚠ {e}</span>)}
+                <div style={{ padding: "6px 12px", backgroundColor: "color-mix(in srgb, var(--err-soft) 6%, transparent)", borderBottom: `1px solid ${S.border}` }}>
+                  {result.errors.map((e, i) => <span key={i} style={{ fontSize: 10, color: "var(--err-soft)", marginRight: 12 }}>⚠ {e}</span>)}
                 </div>
               )}
               <table style={{ fontSize: 11, borderCollapse: "collapse", minWidth: "max-content", width: "100%" }}>
@@ -124,7 +124,7 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
                   <tr style={{ backgroundColor: S.bgEl }}>
                     {result.columns.map((col) => {
                       const ti = result.column_types?.[col];
-                      const TMETA = { integer: { l: "INT", c: "#93c5fd" }, decimal: { l: "DEC", c: "#6ee7b7" }, string: { l: "STR", c: "#6a6a6a" }, date: { l: "DATE", c: "#fcd34d" }, datetime: { l: "DT", c: "#fbbf24" }, bool: { l: "BOOL", c: "#c4b5fd" } };
+                      const TMETA = { integer: { l: "INT", c: "#93c5fd" }, decimal: { l: "DEC", c: "var(--ok)" }, string: { l: "STR", c: "#6a6a6a" }, date: { l: "DATE", c: "#fcd34d" }, datetime: { l: "DT", c: "var(--warn)" }, bool: { l: "BOOL", c: "#c4b5fd" } };
                       const m = ti ? (TMETA[ti.type] || { l: ti.type?.slice(0,3).toUpperCase(), c: "#6a6a6a" }) : null;
                       return (
                         <th key={col} style={{ textAlign: "left", padding: "5px 12px", fontFamily: "monospace", whiteSpace: "nowrap", borderRight: `1px solid ${S.border}`, borderBottom: `1px solid ${S.border}`, fontWeight: 600 }}>
@@ -146,9 +146,9 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
                             const val = row[col];
                             const ctype = result.column_types?.[col]?.type;
                             if (val === null || val === undefined) return <span style={{ color: S.textDim, fontStyle: "italic" }}>null</span>;
-                            if (ctype === "boolean") return <span style={{ color: val ? "#6ee7b7" : "#e07070" }}>{val ? "✓ true" : "✗ false"}</span>;
+                            if (ctype === "boolean") return <span style={{ color: val ? "var(--ok)" : "var(--err-soft)" }}>{val ? "✓ true" : "✗ false"}</span>;
                             if (ctype === "integer") return <span style={{ color: "#93c5fd" }}>{val}</span>;
-                            if (ctype === "decimal") return <span style={{ color: "#6ee7b7" }}>{val}</span>;
+                            if (ctype === "decimal") return <span style={{ color: "var(--ok)" }}>{val}</span>;
                             if (ctype === "date" || ctype === "datetime") return <span style={{ color: "#fcd34d" }}>{String(val)}</span>;
                             return <span style={{ color: S.textMain }}>{String(val)}</span>;
                           })()}

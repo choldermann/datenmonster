@@ -130,7 +130,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
     } catch { /* der nächste Versuch kommt gleich */ }
   };
 
-  const farbe = { ok: "#4ade80", warn: "var(--accent)", fehler: "#f87171" };
+  const farbe = { ok: "#4ade80", warn: "var(--accent)", fehler: "var(--err)" };
   const Icon = meldung?.art === "ok" ? CheckCircle2 : AlertTriangle;
 
   return (
@@ -239,7 +239,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
                   Letzter Lauf · {String(plan.last_run_at).slice(0, 19).replace("T", " ")}
                 </div>
                 <div style={{ fontSize: 11.5,
-                  color: plan.last_status === "error" ? "#f87171" : S.textMain }}>
+                  color: plan.last_status === "error" ? "var(--err)" : S.textMain }}>
                   {plan.last_message || plan.last_status}
                 </div>
               </div>
@@ -274,7 +274,7 @@ export default function ReportScheduleModal({ formId, formName, projectId, onClo
           </button>
           <button onClick={speichern} disabled={busy}
             style={{ marginLeft: "auto", padding: "8px 16px", borderRadius: 6,
-              backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)",
+              backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)",
               color: "var(--accent)", fontSize: 12, fontWeight: 600,
               cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.5 : 1 }}>
             {busy ? "…" : "Speichern"}

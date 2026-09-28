@@ -120,7 +120,7 @@ export default function DatasetRowEditor({ dataset, onClose, onSaved }) {
     padding: 0,
     borderBottom: `1px solid ${S.border}`,
     borderRight: `1px solid ${S.border}`,
-    backgroundColor: isEditing ? `${ACCENT}10` : "transparent",
+    backgroundColor: isEditing ? `color-mix(in srgb, ${ACCENT} 6.3%, transparent)` : "transparent",
     minWidth: 120,
   });
 
@@ -171,7 +171,7 @@ export default function DatasetRowEditor({ dataset, onClose, onSaved }) {
           <button onClick={addRow}
             style={{ display: "flex", alignItems: "center", gap: 5,
               padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600,
-              border: `1px solid ${ACCENT}55`, backgroundColor: `${ACCENT}15`,
+              border: `1px solid color-mix(in srgb, ${ACCENT} 33.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${ACCENT} 8.2%, transparent)`,
               color: ACCENT, cursor: "pointer" }}>
             <Plus size={11} /> Zeile
           </button>
@@ -226,7 +226,7 @@ export default function DatasetRowEditor({ dataset, onClose, onSaved }) {
                   </tr>
                 ) : rows.map((row, ri) => (
                   <tr key={row.__key || ri}
-                    style={{ backgroundColor: ri % 2 === 0 ? "transparent" : `${S.bgEl}50` }}>
+                    style={{ backgroundColor: ri % 2 === 0 ? "transparent" : `color-mix(in srgb, ${S.bgEl} 31.4%, transparent)` }}>
                     <td style={{ ...tdS(false), textAlign: "center",
                       color: S.textDim, fontSize: 10, width: 36 }}>
                       {ri + 1}
@@ -287,7 +287,7 @@ export default function DatasetRowEditor({ dataset, onClose, onSaved }) {
                         style={{ background: "none", border: "none",
                           color: S.textDim, cursor: "pointer", padding: 4,
                           display: "flex", alignItems: "center" }}
-                        onMouseEnter={e => e.currentTarget.style.color = "#f87171"}
+                        onMouseEnter={e => e.currentTarget.style.color = "var(--err)"}
                         onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
                         <Trash2 size={11} />
                       </button>

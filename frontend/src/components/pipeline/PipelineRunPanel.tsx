@@ -3,10 +3,10 @@ import { X, ChevronDown, ChevronRight, Check, AlertTriangle, XCircle, MinusCircl
 import { S } from "./constants";
 
 const STATUS = {
-  ok:      { color: "#6ee7b7", Icon: Check },
-  warning: { color: "#fbbf24", Icon: AlertTriangle },
-  error:   { color: "#e07070", Icon: XCircle },
-  skipped: { color: "#94a3b8", Icon: MinusCircle },
+  ok:      { color: "var(--ok)", Icon: Check },
+  warning: { color: "var(--warn)", Icon: AlertTriangle },
+  error:   { color: "var(--err-soft)", Icon: XCircle },
+  skipped: { color: "var(--muted)", Icon: MinusCircle },
 };
 
 function MiniSample({ sample, color }) {
@@ -17,7 +17,7 @@ function MiniSample({ sample, color }) {
       <table style={{ borderCollapse: "collapse", fontSize: 10, fontFamily: "monospace" }}>
         <thead>
           <tr>{cols.map(c => (
-            <th key={c} style={{ textAlign: "left", padding: "2px 8px", color, borderBottom: `1px solid ${color}33`, whiteSpace: "nowrap" }}>{c}</th>
+            <th key={c} style={{ textAlign: "left", padding: "2px 8px", color, borderBottom: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, whiteSpace: "nowrap" }}>{c}</th>
           ))}</tr>
         </thead>
         <tbody>
@@ -46,7 +46,7 @@ function SubTrace({ trace }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {s.type === "sql" && <Terminal size={11} color="#a78bfa" />}
             <span style={{ color: S.textMain, flex: 1 }}>{s.label}</span>
-            {s.errors > 0 && <span style={{ fontSize: 9, color: "#f87171" }}>⚠ {s.errors}</span>}
+            {s.errors > 0 && <span style={{ fontSize: 9, color: "var(--err)" }}>⚠ {s.errors}</span>}
             <span style={{ fontSize: 10, color: S.textDim }}>{s.rows_out ?? "–"} Z.</span>
           </div>
           {s.meta?.sql && (
@@ -69,7 +69,7 @@ function NodeStep({ step, isLast }) {
       <div
         onClick={() => canExpand && setOpen(o => !o)}
         style={{
-          backgroundColor: S.bgCard, border: `1.5px solid ${st.color}44`, borderRadius: 8,
+          backgroundColor: S.bgCard, border: `1.5px solid color-mix(in srgb, ${st.color} 26.7%, transparent)`, borderRadius: 8,
           padding: "10px 14px", cursor: canExpand ? "pointer" : "default", position: "relative",
         }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -94,9 +94,9 @@ function NodeStep({ step, isLast }) {
 
       {open && (
         <div style={{ padding: "6px 14px 2px" }}>
-          {step.message && <p style={{ fontSize: 11, color: step.status === "error" ? "#e07070" : S.textDim, margin: "2px 0" }}>{step.message}</p>}
+          {step.message && <p style={{ fontSize: 11, color: step.status === "error" ? "var(--err-soft)" : S.textDim, margin: "2px 0" }}>{step.message}</p>}
           {step.errors?.length > 0 && step.errors.map((e, i) => (
-            <p key={i} style={{ fontSize: 11, color: "#e07070", margin: "2px 0" }}>✗ {e}</p>
+            <p key={i} style={{ fontSize: 11, color: "var(--err-soft)", margin: "2px 0" }}>✗ {e}</p>
           ))}
           {step.sample?.length > 0 && <MiniSample sample={step.sample} color={st.color} />}
           {step.sub_trace?.length > 0 && <SubTrace trace={step.sub_trace} />}
@@ -133,7 +133,7 @@ export default function PipelineRunPanel({ data, nodes = [], onClose }) {
         )}
         <span style={{ fontSize: 10, color: S.textDim }}>{steps.length} Nodes · {totalMs}ms</span>
         {errors.length > 0 && (
-          <span style={{ fontSize: 10, color: "#f87171", backgroundColor: "rgba(248,113,113,0.12)", padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(248,113,113,0.25)" }}>⚠ {errors.length} Fehler</span>
+          <span style={{ fontSize: 10, color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 12%, transparent)", padding: "2px 8px", borderRadius: 10, border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)" }}>⚠ {errors.length} Fehler</span>
         )}
         <div style={{ flex: 1 }} />
         <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: S.textDim, padding: 4 }}>

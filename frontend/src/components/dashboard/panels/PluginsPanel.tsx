@@ -5,9 +5,9 @@ import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
 const CAP_COLOR = {
-  source: { bg: "rgba(110,231,183,0.12)", text: "#6ee7b7", label: "Quelle" },
+  source: { bg: "color-mix(in srgb, var(--ok) 12%, transparent)", text: "var(--ok)", label: "Quelle" },
   target: { bg: "rgba(147,197,253,0.12)", text: "#93c5fd", label: "Ziel" },
-  transformer: { bg: "rgba(251,191,36,0.12)", text: "#fbbf24", label: "Transform" },
+  transformer: { bg: "color-mix(in srgb, var(--warn) 12%, transparent)", text: "var(--warn)", label: "Transform" },
   compliance: { bg: "rgba(249,168,212,0.12)", text: "#f9a8d4", label: "Compliance" },
   trigger: { bg: "rgba(196,181,253,0.12)", text: "#c4b5fd", label: "Trigger" },
 };
@@ -24,8 +24,8 @@ function CapBadge({ cap }) {
 }
 
 function StatusDot({ status }) {
-  const color = status === "active" || status === "running" ? "#6ee7b7"
-    : status === "error" ? "#e07070" : "#6b7280";
+  const color = status === "active" || status === "running" ? "var(--ok)"
+    : status === "error" ? "var(--err-soft)" : "#6b7280";
   const label = status === "active" ? "Aktiv"
     : status === "running" ? "Läuft"
     : status === "error" ? "Fehler"
@@ -80,7 +80,7 @@ function TestModal({ plugin, onClose }) {
           <div key={field.key} style={{ marginBottom: 10 }}>
             <label style={{ fontSize: 10, fontWeight: 600, color: S.textDim,
               textTransform: "uppercase", letterSpacing: "0.05em", display: "block", marginBottom: 4 }}>
-              {field.label}{field.required && <span style={{ color: "#e07070" }}> *</span>}
+              {field.label}{field.required && <span style={{ color: "var(--err-soft)" }}> *</span>}
             </label>
             {field.type === "select" ? (
               <select value={config[field.key] ?? field.default ?? ""} style={iS}
@@ -99,9 +99,9 @@ function TestModal({ plugin, onClose }) {
 
         {result && (
           <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 6,
-            backgroundColor: result.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)",
-            border: `1px solid ${result.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
-            <p style={{ fontSize: 12, color: result.ok ? "#6ee7b7" : "#e07070", margin: 0 }}>
+            backgroundColor: result.ok ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err-soft) 8%, transparent)",
+            border: `1px solid ${result.ok ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--err-soft) 30%, transparent)"}` }}>
+            <p style={{ fontSize: 12, color: result.ok ? "var(--ok)" : "var(--err-soft)", margin: 0 }}>
               {result.ok ? "✓ " : "✗ "}{result.message}
             </p>
           </div>
@@ -114,7 +114,7 @@ function TestModal({ plugin, onClose }) {
           </button>
           <button onClick={run} disabled={testing} style={{ padding: "7px 18px", borderRadius: 5,
             border: "none", fontSize: 12, fontWeight: 700, cursor: testing ? "wait" : "pointer",
-            backgroundColor: "var(--accent)", color: "#111", display: "flex", alignItems: "center", gap: 6,
+            backgroundColor: "var(--accent)", color: "var(--accent-fg)", display: "flex", alignItems: "center", gap: 6,
             opacity: testing ? 0.7 : 1 }}>
             {testing ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
             {testing ? "Teste..." : "Testen"}
@@ -268,9 +268,9 @@ function RegisterPluginModal({ onClose, onSaved }) {
             {["source", "target", "transformer", "trigger"].map(cap => (
               <button key={cap} onClick={() => toggleCap(cap)}
                 style={{ fontSize: 11, padding: "4px 12px", borderRadius: 4, cursor: "pointer",
-                  border: `1px solid ${form.capabilities.includes(cap) ? "#6ee7b7" : S.border}`,
-                  backgroundColor: form.capabilities.includes(cap) ? "rgba(110,231,183,0.12)" : "transparent",
-                  color: form.capabilities.includes(cap) ? "#6ee7b7" : S.textDim }}>
+                  border: `1px solid ${form.capabilities.includes(cap) ? "var(--ok)" : S.border}`,
+                  backgroundColor: form.capabilities.includes(cap) ? "color-mix(in srgb, var(--ok) 12%, transparent)" : "transparent",
+                  color: form.capabilities.includes(cap) ? "var(--ok)" : S.textDim }}>
                 {cap}
               </button>
             ))}
@@ -309,8 +309,8 @@ function RegisterPluginModal({ onClose, onSaved }) {
 
         {error && (
           <div style={{ marginTop: 14, padding: "8px 12px", borderRadius: 6,
-            backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.3)" }}>
-            <p style={{ fontSize: 11, color: "#e07070", margin: 0 }}>{error}</p>
+            backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)" }}>
+            <p style={{ fontSize: 11, color: "var(--err-soft)", margin: 0 }}>{error}</p>
           </div>
         )}
 
@@ -322,7 +322,7 @@ function RegisterPluginModal({ onClose, onSaved }) {
           <button onClick={save} disabled={saving}
             style={{ padding: "7px 18px", borderRadius: 5, border: "none", fontSize: 12,
               fontWeight: 700, cursor: saving ? "wait" : "pointer",
-              backgroundColor: "var(--accent)", color: "#111",
+              backgroundColor: "var(--accent)", color: "var(--accent-fg)",
               display: "flex", alignItems: "center", gap: 6, opacity: saving ? 0.7 : 1 }}>
             {saving ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
             {saving ? "Registriere..." : "Registrieren"}
@@ -349,7 +349,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
       backgroundColor: S.bgCard, overflow: "hidden", marginBottom: 10 }}>
       <div style={{ padding: "14px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ width: 38, height: 38, borderRadius: 8, flexShrink: 0,
-          backgroundColor: "rgba(252,228,153,0.08)", border: "1px solid rgba(252,228,153,0.2)",
+          backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)",
           display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Puzzle size={16} style={{ color: "var(--accent)" }} />
         </div>
@@ -366,7 +366,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
             {(entry.capabilities || []).map(c => <CapBadge key={c} cap={c} />)}
             {STATE_TO_DOT[entry.state] && <StatusDot status={STATE_TO_DOT[entry.state]} />}
             {entry.needs_license && (
-              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#fbbf24" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--warn)" }}>
                 <Lock size={11} /> Lizenz erforderlich
               </span>
             )}
@@ -380,7 +380,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
             </p>
           )}
           {entry.needs_license && ((entry.included_plans || []).length > 0 || entry.required_feature_name) && (
-            <p style={{ fontSize: 10, color: "#fbbf24", margin: "4px 0 0", opacity: 0.9 }}>
+            <p style={{ fontSize: 10, color: "var(--warn)", margin: "4px 0 0", opacity: 0.9 }}>
               {(entry.included_plans || []).length > 0
                 ? <>Enthalten in {(entry.included_plans || []).join(", ")}</>
                 : <>Erfordert {entry.required_feature_name}</>}
@@ -392,8 +392,8 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
           {canTest && (
             <button onClick={() => setTesting(true)}
               style={{ fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: "pointer",
-                backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
-                color: "#6ee7b7", display: "flex", alignItems: "center", gap: 5 }}>
+                backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+                color: "var(--ok)", display: "flex", alignItems: "center", gap: 5 }}>
               <Zap size={11} /> Test
             </button>
           )}
@@ -405,7 +405,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
                 title="Diese Erweiterung erfordert eine passende Lizenz"
                 style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 5,
                   textDecoration: "none", backgroundColor: "transparent",
-                  border: `1px solid ${S.border}`, color: "#fbbf24",
+                  border: `1px solid ${S.border}`, color: "var(--warn)",
                   display: "flex", alignItems: "center", gap: 5 }}>
                 <Lock size={11} /> Lizenz ansehen
               </a>
@@ -413,8 +413,8 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
               <button onClick={() => onActivate(entry)} disabled={busy}
                 style={{ fontSize: 11, fontWeight: 600, padding: "5px 14px", borderRadius: 5,
                   cursor: busy ? "not-allowed" : "pointer",
-                  backgroundColor: "rgba(110,231,183,0.12)",
-                  border: "1px solid rgba(110,231,183,0.4)", color: "#6ee7b7",
+                  backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                  border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", color: "var(--ok)",
                   display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.6 : 1 }}>
                 {busy ? <Loader2 size={11} className="animate-spin" />
                   : entry.action === "install" ? <Download size={11} /> : <Play size={11} />}
@@ -427,8 +427,8 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
           {entry.state === "running" && (
             <button onClick={() => onStop(entry)} disabled={busy}
               style={{ fontSize: 11, padding: "5px 12px", borderRadius: 5, cursor: busy ? "wait" : "pointer",
-                backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)",
-                color: "#e07070", display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.6 : 1 }}>
+                backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)",
+                color: "var(--err-soft)", display: "flex", alignItems: "center", gap: 5, opacity: busy ? 0.6 : 1 }}>
               {busy ? <Loader2 size={11} className="animate-spin" /> : <Square size={11} />} Stoppen
             </button>
           )}
@@ -447,8 +447,8 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: hasConfig ? 10 : 0 }}>
             <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 700,
               textTransform: "uppercase", letterSpacing: "0.04em",
-              backgroundColor: entry.kind === "container" ? "rgba(196,181,253,0.12)" : "rgba(110,231,183,0.1)",
-              color: entry.kind === "container" ? "#c4b5fd" : "#6ee7b7",
+              backgroundColor: entry.kind === "container" ? "rgba(196,181,253,0.12)" : "color-mix(in srgb, var(--ok) 10%, transparent)",
+              color: entry.kind === "container" ? "#c4b5fd" : "var(--ok)",
               display: "flex", alignItems: "center", gap: 4 }}>
               <Container size={10} /> {entry.kind === "container" ? "Container" : "Integriert"}
             </span>
@@ -469,7 +469,7 @@ function CatalogCard({ entry, busy, onActivate, onStop, onDelete }) {
                 {entry.config_schema.map(f => (
                   <div key={f.key} style={{ fontSize: 11, color: S.textMain }}>
                     <span style={{ color: S.textDim }}>{f.key}</span>
-                    {f.required && <span style={{ color: "#e07070", marginLeft: 2 }}>*</span>}
+                    {f.required && <span style={{ color: "var(--err-soft)", marginLeft: 2 }}>*</span>}
                     <span style={{ color: S.textDim, opacity: 0.5 }}> · {f.type}</span>
                   </div>
                 ))}

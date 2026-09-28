@@ -47,7 +47,7 @@ const BEWERTUNGSARTEN = [
 /** Färbt die Restlaufzeit: abgelaufen rot, knapp gelb, sonst neutral. */
 function restFarbe(tage) {
   if (tage === null || tage === undefined) return S.textDim;
-  if (tage < 0) return "#e07070";
+  if (tage < 0) return "var(--err-soft)";
   if (tage < 90) return "#e0b070";
   return S.textMain;
 }
@@ -551,14 +551,14 @@ export default function InventurWidget({ widget, projectId }) {
     const notizKey = `n${p.id}`;
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-        <span style={{ color: d < 0 ? "#e07070" : "#6ec28e" }}
+        <span style={{ color: d < 0 ? "var(--err-soft)" : "#6ec28e" }}
               title={p.differenz_wert != null ? `Differenzwert zum Stichtag ${eur(p.differenz_wert)}` : ""}>
           {d > 0 ? "+" : ""}{zahl(d, 3)}
         </span>
         {offen ? (
           <>
             <select style={{ ...inp, padding: "2px 4px", fontSize: 10.5, maxWidth: 140,
-                      borderColor: fehlt ? "#e07070" : S.border }}
+                      borderColor: fehlt ? "var(--err-soft)" : S.border }}
                     value={p.differenz_grund || ""}
                     onChange={ev => zaehlungSpeichern(p, { grund: ev.target.value || null })}>
               <option value="">Grund …</option>
@@ -566,7 +566,7 @@ export default function InventurWidget({ widget, projectId }) {
             </select>
             {p.differenz_grund && (
               <input style={{ ...inp, padding: "2px 4px", fontSize: 10.5, width: 110,
-                        borderColor: fehlt ? "#e07070" : S.border }}
+                        borderColor: fehlt ? "var(--err-soft)" : S.border }}
                      placeholder={p.differenz_grund === "sonstiges" ? "Notiz (Pflicht)" : "Notiz"}
                      value={zaehlEntwurf[notizKey] ?? (p.differenz_notiz || "")}
                      onChange={ev => setZaehlEntwurf(x => ({ ...x, [notizKey]: ev.target.value }))}
@@ -593,8 +593,8 @@ export default function InventurWidget({ widget, projectId }) {
     <div style={{ padding: 14 }}>
       {fehler && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12,
-          padding: "8px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,.1)",
-          border: "1px solid rgba(224,112,112,.3)", color: "#e07070", fontSize: 12 }}>
+          padding: "8px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
           <AlertCircle size={13} /> {fehler}
           <X size={13} style={{ marginLeft: "auto", cursor: "pointer" }}
              onClick={() => setFehler(null)} />
@@ -673,7 +673,7 @@ export default function InventurWidget({ widget, projectId }) {
           </button>
         )}
         {aktiv && (
-          <button style={{ ...btn, marginLeft: "auto", color: "#e07070",
+          <button style={{ ...btn, marginLeft: "auto", color: "var(--err-soft)",
                     opacity: offen ? 1 : 0.45, cursor: offen ? "pointer" : "not-allowed" }}
                   onClick={offen ? loeschenFragen : undefined} disabled={!offen}
                   title={offen ? "Inventur mit allen Positionen löschen"
@@ -815,7 +815,7 @@ export default function InventurWidget({ widget, projectId }) {
                   : "Gezählt wird am Stichtag. Leeres Ist = nicht gezählt, dann gilt Soll."}
             </span>
             {aktiv.abweichungen_ohne_grund > 0 && (
-              <span style={{ marginLeft: "auto", color: "#e07070", display: "inline-flex",
+              <span style={{ marginLeft: "auto", color: "var(--err-soft)", display: "inline-flex",
                 alignItems: "center", gap: 4 }}>
                 <AlertCircle size={12} /> {zahl(aktiv.abweichungen_ohne_grund)} Abweichungen ohne Grund
                 – so lässt sich nicht abschließen
@@ -1027,7 +1027,7 @@ export default function InventurWidget({ widget, projectId }) {
                           )}
                         </td>
                         <td style={{ padding: "5px 9px", textAlign: "right",
-                          color: p.abwertung_betrag > 0 ? "#e07070" : S.textDim }}>
+                          color: p.abwertung_betrag > 0 ? "var(--err-soft)" : S.textDim }}>
                           {p.abwertung_betrag > 0 ? `− ${eur(p.abwertung_betrag)}` : "–"}
                           {p.vorschlag && (
                             <span style={{ marginLeft: 5, fontSize: 9, color: "#e0b070",
@@ -1063,7 +1063,7 @@ export default function InventurWidget({ widget, projectId }) {
                                 bezieht. */}
                             {(p.wert_abgelaufen || 0) > 0 && (
                               <div style={{ fontSize: 11, marginBottom: 6, color: S.textMain }}>
-                                davon abgelaufen: <b style={{ color: "#e07070" }}>
+                                davon abgelaufen: <b style={{ color: "var(--err-soft)" }}>
                                   {zahl(p.menge_abgelaufen)} Stück · {eur(p.wert_abgelaufen)}
                                 </b>
                                 <span style={{ color: S.textDim }}>
@@ -1120,7 +1120,7 @@ export default function InventurWidget({ widget, projectId }) {
                                       ) : (c.ist != null ? zahl(c.ist, 3) : "–")}
                                       {c.differenz != null && Math.abs(c.differenz) > 0.0005 && (
                                         <span style={{ marginLeft: 4, fontSize: 10,
-                                          color: c.differenz < 0 ? "#e07070" : "#6ec28e" }}>
+                                          color: c.differenz < 0 ? "var(--err-soft)" : "#6ec28e" }}>
                                           {c.differenz > 0 ? "+" : ""}{zahl(c.differenz, 3)}
                                         </span>
                                       )}

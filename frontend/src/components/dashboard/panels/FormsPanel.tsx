@@ -86,8 +86,8 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
             </button>
             <button onClick={createForm} disabled={!!sperreFormular} title={sperreFormular}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6,
-                backgroundColor: sperreFormular ? "transparent" : "rgba(252,228,153,0.15)",
-                border: `1px solid ${sperreFormular ? S.border : "rgba(252,228,153,0.4)"}`,
+                backgroundColor: sperreFormular ? "transparent" : "color-mix(in srgb, var(--accent) 15%, transparent)",
+                border: `1px solid ${sperreFormular ? S.border : "color-mix(in srgb, var(--accent) 40%, transparent)"}`,
                 color: sperreFormular ? S.textDim : "var(--accent)",
                 cursor: sperreFormular ? "not-allowed" : "pointer",
                 opacity: sperreFormular ? 0.45 : 1, fontSize: 12, fontWeight: 600 }}>
@@ -123,8 +123,8 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
           <p style={{ color: S.textDim, fontSize: 12, marginBottom: 16 }}>Noch keine Formulare erstellt.</p>
           {canEdit && (
             <button onClick={createForm}
-              style={{ padding: "8px 18px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)",
-                border: "1px solid rgba(252,228,153,0.4)", color: "var(--accent)",
+              style={{ padding: "8px 18px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)", color: "var(--accent)",
                 cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
               Erstes Formular erstellen
             </button>
@@ -145,7 +145,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                 style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 8,
                   padding: "14px 16px", display: "flex", flexDirection: "column", gap: 8,
                   transition: "border-color 0.15s" }}
-                onMouseEnter={e => e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"}
+                onMouseEnter={e => e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 30%, transparent)"}
                 onMouseLeave={e => e.currentTarget.style.borderColor = S.border}>
 
                 <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
@@ -164,8 +164,8 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                             ? `Im Portal, freigegeben für: ${(f.portal_config.allowed_users || []).join(", ")}`
                             : "Im Portal für alle angemeldeten Benutzer sichtbar"}
                             style={{ flexShrink: 0, fontSize: 9, padding: "1px 6px", borderRadius: 8,
-                              backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)",
-                              color: "#6ee7b7", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
+                              backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+                              color: "var(--ok)", fontWeight: 600, display: "flex", alignItems: "center", gap: 3 }}>
                             <Globe size={8} /> {nurFuer ? `Live · nur ${nurFuer}` : "Live · alle"}
                           </span>
                         );
@@ -179,17 +179,17 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                   <div style={{ display: "flex", gap: 4, flexShrink: 0, marginLeft: 8 }}>
                     <button onClick={() => navigate(`/forms/${f.id}/run`)} title="Formular ausführen"
                       style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                        borderRadius: 5, border: "1px solid rgba(110,231,183,0.3)",
-                        backgroundColor: "rgba(110,231,183,0.08)", color: "#6ee7b7", cursor: "pointer" }}
-                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.18)"}
-                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.08)"}>
+                        borderRadius: 5, border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+                        backgroundColor: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", cursor: "pointer" }}
+                      onMouseEnter={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--ok) 18%, transparent)"}
+                      onMouseLeave={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--ok) 8%, transparent)"}>
                       <Play size={11} />
                     </button>
                     {f.published && f.slug && (
                       <button onClick={() => navigate(`/app/${f.slug}`)} title="Im Portal öffnen"
                         style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                          borderRadius: 5, border: "1px solid rgba(110,231,183,0.2)",
-                          backgroundColor: "transparent", color: "#6ee7b7", cursor: "pointer", opacity: 0.7 }}
+                          borderRadius: 5, border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)",
+                          backgroundColor: "transparent", color: "var(--ok)", cursor: "pointer", opacity: 0.7 }}
                         onMouseEnter={e => e.currentTarget.style.opacity = "1"}
                         onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}>
                         <ExternalLink size={11} />
@@ -199,10 +199,10 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                       <>
                         <button onClick={() => setBausteineVon(f)} title="Bausteine ändern"
                           style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center",
-                            borderRadius: 5, border: "1px solid rgba(252,228,153,0.3)",
-                            backgroundColor: "rgba(252,228,153,0.08)", color: "var(--accent)", cursor: "pointer" }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.18)"}
-                          onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.08)"}>
+                            borderRadius: 5, border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
+                            backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", color: "var(--accent)", cursor: "pointer" }}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 18%, transparent)"}
+                          onMouseLeave={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)"}>
                           <LayoutGrid size={11} />
                         </button>
                         <button onClick={() => setZustellplanVon(f)} title="Regelmäßig zustellen"
@@ -235,7 +235,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                             backgroundColor: "transparent", color: S.textDim,
                             cursor: sperreFormular ? "not-allowed" : "pointer",
                             opacity: sperreFormular ? 0.35 : 1 }}
-                          onMouseEnter={e => { if (sperreFormular) return; e.currentTarget.style.color = "#e07070"; e.currentTarget.style.borderColor = "rgba(224,112,112,0.3)"; }}
+                          onMouseEnter={e => { if (sperreFormular) return; e.currentTarget.style.color = "var(--err-soft)"; e.currentTarget.style.borderColor = "color-mix(in srgb, var(--err-soft) 30%, transparent)"; }}
                           onMouseLeave={e => { e.currentTarget.style.color = S.textDim; e.currentTarget.style.borderColor = "transparent"; }}>
                           <Trash2 size={11} />
                         </button>
@@ -251,7 +251,7 @@ export default function FormsPanel({ projectId, canEdit, onCountChange }) {
                     { label: `${widgetCount} Widgets`, color: "#a78bfa" },
                   ].map(({ label, color }) => (
                     <span key={label} style={{ fontSize: 9, padding: "2px 7px", borderRadius: 10,
-                      backgroundColor: `${color}18`, border: `1px solid ${color}33`, color }}>
+                      backgroundColor: `color-mix(in srgb, ${color} 9.4%, transparent)`, border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, color }}>
                       {label}
                     </span>
                   ))}

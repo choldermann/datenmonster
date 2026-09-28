@@ -93,7 +93,7 @@ export default function PortalHome() {
                     borderRadius: 12, padding: "20px 22px", cursor: "pointer",
                     transition: "border-color 0.15s, box-shadow 0.15s" }}
                   onMouseEnter={e => {
-                    e.currentTarget.style.borderColor = "rgba(252,228,153,0.4)";
+                    e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 40%, transparent)";
                     e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.3)";
                   }}
                   onMouseLeave={e => {
@@ -112,8 +112,8 @@ export default function PortalHome() {
                     </p>
                   )}
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
-                    <Play size={11} style={{ color: "#6ee7b7" }} />
-                    <span style={{ fontSize: 10, color: "#6ee7b7", fontWeight: 600 }}>Öffnen</span>
+                    <Play size={11} style={{ color: "var(--ok)" }} />
+                    <span style={{ fontSize: 10, color: "var(--ok)", fontWeight: 600 }}>Öffnen</span>
                   </div>
                 </div>
               ))}

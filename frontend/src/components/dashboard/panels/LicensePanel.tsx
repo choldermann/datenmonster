@@ -310,7 +310,7 @@ export default function LicensePanel() {
             <div style={{
               fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
               background: mb.color + "22", color: mb.color,
-              border: `1px solid ${mb.color}44`,
+              border: `1px solid color-mix(in srgb, ${mb.color} 26.7%, transparent)`,
               textTransform: "uppercase", letterSpacing: "0.5px",
             }}>
               {mb.label}

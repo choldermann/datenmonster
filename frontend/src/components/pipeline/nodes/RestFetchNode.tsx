@@ -56,8 +56,8 @@ export default function RestFetchNode({
         {selectedSrc && (
           <div style={{
             fontSize: 9, color: S.textDim, padding: "4px 6px",
-            borderRadius: 3, backgroundColor: `${color}10`,
-            border: `1px solid ${color}22`,
+            borderRadius: 3, backgroundColor: `color-mix(in srgb, ${color} 6.3%, transparent)`,
+            border: `1px solid color-mix(in srgb, ${color} 13.3%, transparent)`,
           }}>
             {selectedSrc.method || "GET"} · {selectedSrc.url?.slice(0, 40)}{selectedSrc.url?.length > 40 ? "…" : ""}
             {selectedSrc.data_path ? ` · Pfad: ${selectedSrc.data_path}` : ""}

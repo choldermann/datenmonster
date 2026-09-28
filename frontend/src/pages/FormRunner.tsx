@@ -52,7 +52,7 @@ function ExportResult({ result, onDownload }) {
   const files = result.files || [];
   return (
     <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#6ee7b7",
+      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
         fontSize: 12, fontWeight: 600 }}>
         <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
       </div>
@@ -312,7 +312,7 @@ export default function FormRunner() {
           <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
             title={aiBusy ? "KI-Analyse wird noch erstellt – bitte kurz warten" : "PDF-Report erzeugen"}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 6,
-              border: `1px solid ${S.accent}55`, backgroundColor: `${S.accent}15`, color: S.accent,
+              border: `1px solid color-mix(in srgb, ${S.accent} 33.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${S.accent} 8.2%, transparent)`, color: S.accent,
               opacity: (reporting || aiBusy) ? 0.5 : 1,
               cursor: reporting ? "wait" : aiBusy ? "not-allowed" : "pointer", fontSize: 12, fontWeight: 600 }}>
             {(reporting || aiBusy) ? <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} /> : <FileText size={12} />}
@@ -331,7 +331,7 @@ export default function FormRunner() {
 
         {kompat && (
           <div style={{ display: "flex", gap: 10, padding: "12px 14px", borderRadius: 6,
-            backgroundColor: "rgba(252,228,153,0.08)", border: "1px solid rgba(252,228,153,0.35)",
+            backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)",
             color: S.textMain, fontSize: 12, marginBottom: 20, lineHeight: 1.6 }}>
             <AlertCircle size={15} style={{ color: S.accent, flexShrink: 0, marginTop: 1 }} />
             <div>
@@ -365,8 +365,8 @@ export default function FormRunner() {
 
         {error && (
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 6,
-            backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)",
-            color: "#e07070", fontSize: 12, marginBottom: 20 }}>
+            backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)",
+            color: "var(--err-soft)", fontSize: 12, marginBottom: 20 }}>
             <AlertCircle size={14} /> {error}
           </div>
         )}
@@ -420,8 +420,8 @@ export default function FormRunner() {
               <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
                 <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
                   style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
-                    borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
-                    border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
+                    borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)",
                     cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
                   {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
                   Ausführen
@@ -439,8 +439,8 @@ export default function FormRunner() {
             </p>
             <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 20px",
-                borderRadius: 6, backgroundColor: "rgba(110,231,183,0.12)",
-                border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7",
+                borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)",
                 cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
               {running ? <Loader2 size={13} /> : <Play size={13} />}
               Mappings ausführen
@@ -459,7 +459,7 @@ export default function FormRunner() {
               return (
                 <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                   style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? "#6ee7b7" : "transparent"}`,
+                    borderBottom: `2px solid ${active ? "var(--ok)" : "transparent"}`,
                     color: active ? S.textBright : S.textDim, cursor: "pointer",
                     fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
                   {tab.label}
@@ -509,7 +509,7 @@ export default function FormRunner() {
                       <PipelineResult result={result} />
                     ) : result.error ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14,
-                        color: "#e07070", fontSize: 11 }}>
+                        color: "var(--err-soft)", fontSize: 11 }}>
                         <AlertCircle size={13} /> {result.error}
                       </div>
                     ) : result.kind === "export" ? (

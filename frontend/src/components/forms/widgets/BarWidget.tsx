@@ -6,7 +6,7 @@ import {
 const S = { textDim: "var(--text-dim)", border: "var(--border)" };
 
 // Kräftige, gut unterscheidbare Farben je Serie/Plattform.
-const COLORS = ["#fce499", "#6ee7b7", "#a78bfa", "#f87171", "#60a5fa", "#fb923c",
+const COLORS = ["var(--accent)", "var(--ok)", "#a78bfa", "var(--err)", "#60a5fa", "#fb923c",
   "#34d399", "#f472b6", "#facc15", "#22d3ee", "#c084fc", "#4ade80"];
 
 // Deutsche Tausenderpunkte für Achse & Tooltip (z.B. 6000000 → 6.000.000).

@@ -69,8 +69,8 @@ export default function FormPreview({ schema, formId, onClose }) {
         <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", scrollbarWidth: "thin" }}>
           {error && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px",
-              borderRadius: 6, backgroundColor: "rgba(224,112,112,0.1)",
-              border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 11, marginBottom: 16 }}>
+              borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 11, marginBottom: 16 }}>
               <AlertCircle size={12} /> {error}
             </div>
           )}
@@ -90,8 +90,8 @@ export default function FormPreview({ schema, formId, onClose }) {
             <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
               style={{ display: "inline-flex", alignItems: "center", gap: 7, marginTop: 8,
                 padding: "8px 20px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",
-                color: "#6ee7b7", cursor: running ? "wait" : "pointer" }}>
+                backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+                color: "var(--ok)", cursor: running ? "wait" : "pointer" }}>
               {running ? <Loader2 size={12} /> : <Play size={12} />}
               Ausführen
             </button>
@@ -125,7 +125,7 @@ export default function FormPreview({ schema, formId, onClose }) {
                 {result.kind === "pipeline" ? (
                   <PipelineResult result={result} />
                 ) : result.error ? (
-                  <div style={{ padding: 12, color: "#e07070", fontSize: 11 }}>{result.error}</div>
+                  <div style={{ padding: 12, color: "var(--err-soft)", fontSize: 11 }}>{result.error}</div>
                 ) : (
                   <div style={{ overflowX: "auto", maxHeight: 300 }}>
                     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>

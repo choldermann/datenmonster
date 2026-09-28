@@ -55,7 +55,7 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
     if (srcField) updateField(i, "input_field", srcField);
   };
 
-  const ACTIVE_BORDER = "#fce499";
+  const ACTIVE_BORDER = "var(--accent)";
   const activeBorder = isActive && !debugHighlight;
 
   const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 3, color: S.textBright, fontSize: 10, padding: "2px 4px", outline: "none", flex: 1, minWidth: 0 };
@@ -84,11 +84,11 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
   return (
     <div ref={ref} draggable={false}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "aggregation", fields: (node.fields || []).map(f => ({ func: f.func, input: f.input_field, output: f.output_field })) }); }}
-      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px ${AGG_COLOR}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid ${AGG_COLOR}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${AGG_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
+      style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none", boxShadow: debugHighlight ? `0 0 0 2px ${AGG_COLOR}, 0 0 20px color-mix(in srgb, ${AGG_COLOR} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "visible", border: debugHighlight ? `1.5px solid color-mix(in srgb, ${AGG_COLOR} 80%, transparent)` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid color-mix(in srgb, ${AGG_COLOR} 33.3%, transparent)`, backgroundColor: S.bgCard, transition: "box-shadow 0.2s, border-color 0.2s" }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: `${AGG_COLOR}12`, borderBottom: `1px solid ${AGG_COLOR}33`, borderRadius: "6px 6px 0 0" }}>
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab", backgroundColor: `color-mix(in srgb, ${AGG_COLOR} 7.1%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${AGG_COLOR} 20%, transparent)`, borderRadius: "6px 6px 0 0" }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
         <Layers size={11} style={{ color: AGG_COLOR, flexShrink: 0 }} />
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: AGG_COLOR, flex: 1 }}>Aggregation</span>
@@ -97,7 +97,7 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
       </div>
 
       {/* Body – overflow hidden für sauberes Aussehen, Dots ragen per margin heraus */}
-      <div style={{ backgroundColor: S.bgCard, borderRadius: "0 0 6px 6px", border: `1px solid ${AGG_COLOR}33`, borderTop: "none" }}>
+      <div style={{ backgroundColor: S.bgCard, borderRadius: "0 0 6px 6px", border: `1px solid color-mix(in srgb, ${AGG_COLOR} 20%, transparent)`, borderTop: "none" }}>
 
       {/* Column headers */}
       {fields.length > 0 && (
@@ -123,7 +123,7 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
               ref={el => { if (inputRefs?.current) inputRefs.current[`${node.id}_${i}`] = { current: el }; }}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => handleInputDrop(i, e)}
-              style={{ width: DOT, height: DOT, borderRadius: "50%", backgroundColor: f.input_field ? AGG_COLOR : S.border, cursor: "crosshair", flexShrink: 0, boxShadow: f.input_field ? `0 0 5px ${AGG_COLOR}88` : "none", border: `1px solid ${AGG_COLOR}`, transition: "background 0.15s" }}
+              style={{ width: DOT, height: DOT, borderRadius: "50%", backgroundColor: f.input_field ? AGG_COLOR : S.border, cursor: "crosshair", flexShrink: 0, boxShadow: f.input_field ? `0 0 5px color-mix(in srgb, ${AGG_COLOR} 53.3%, transparent)` : "none", border: `1px solid ${AGG_COLOR}`, transition: "background 0.15s" }}
               title="Quellfeld hierher ziehen"
             />
 
@@ -154,7 +154,7 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
                 e.dataTransfer.setData("source_dataset_id", `__agg__${node.id}`);
                 e.dataTransfer.setData("source_field", f.output_field);
               }}
-              style={{ width: DOT, height: DOT, borderRadius: "50%", backgroundColor: f.output_field ? AGG_COLOR : S.border, cursor: f.output_field ? "grab" : "default", flexShrink: 0, boxShadow: f.output_field ? `0 0 5px ${AGG_COLOR}88` : "none", border: `1px solid ${AGG_COLOR}`, transition: "background 0.15s" }}
+              style={{ width: DOT, height: DOT, borderRadius: "50%", backgroundColor: f.output_field ? AGG_COLOR : S.border, cursor: f.output_field ? "grab" : "default", flexShrink: 0, boxShadow: f.output_field ? `0 0 5px color-mix(in srgb, ${AGG_COLOR} 53.3%, transparent)` : "none", border: `1px solid ${AGG_COLOR}`, transition: "background 0.15s" }}
               title={f.output_field ? `${f.output_field} auf Zielfeld ziehen` : "Ausgabefeld eingeben"}
             />
           </div>
@@ -164,14 +164,14 @@ function AggNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, input
       {/* Add button */}
       <div style={{ padding: "0 6px 8px" }}>
         <button onClick={addField}
-          style={{ width: "100%", padding: "4px", borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: "pointer", backgroundColor: `${AGG_COLOR}12`, border: `1px dashed ${AGG_COLOR}55`, color: AGG_COLOR, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          style={{ width: "100%", padding: "4px", borderRadius: 3, fontSize: 10, fontWeight: 600, cursor: "pointer", backgroundColor: `color-mix(in srgb, ${AGG_COLOR} 7.1%, transparent)`, border: `1px dashed color-mix(in srgb, ${AGG_COLOR} 33.3%, transparent)`, color: AGG_COLOR, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
           <Plus size={10} /> Feld hinzufügen
         </button>
       </div>
       {debugStats && (
-        <div style={{ fontSize: 9, color: "#94a3b8", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid ${AGG_COLOR}22` }}>
+        <div style={{ fontSize: 9, color: "var(--muted)", display: "flex", gap: 8, padding: "3px 8px 5px", borderTop: `1px solid color-mix(in srgb, ${AGG_COLOR} 13.3%, transparent)` }}>
           <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
-          {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} Fehler</span>}
+          {debugStats.errors > 0 && <span style={{ color: "var(--err)" }}>⚠ {debugStats.errors} Fehler</span>}
         </div>
       )}
       </div>{/* /Body */}

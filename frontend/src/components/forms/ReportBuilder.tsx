@@ -39,8 +39,8 @@ const VIELE = 15;
 const btn = (primary) => ({
   padding: "8px 16px", borderRadius: 6, fontSize: 12, fontWeight: 600,
   cursor: "pointer",
-  backgroundColor: primary ? "rgba(252,228,153,0.15)" : "transparent",
-  border: `1px solid ${primary ? "rgba(252,228,153,0.4)" : S.border}`,
+  backgroundColor: primary ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+  border: `1px solid ${primary ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
   color: primary ? "var(--accent)" : S.textMain,
 });
 
@@ -170,8 +170,8 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
             {FILTER.map((f) => (
               <button key={f.id} onClick={() => setFilter(f.id)}
                 style={{ padding: "6px 11px", borderRadius: 5, fontSize: 11, cursor: "pointer",
-                  backgroundColor: filter === f.id ? "rgba(252,228,153,0.15)" : "transparent",
-                  border: `1px solid ${filter === f.id ? "rgba(252,228,153,0.4)" : S.border}`,
+                  backgroundColor: filter === f.id ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                  border: `1px solid ${filter === f.id ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                   color: filter === f.id ? "var(--accent)" : S.textDim }}>
                 {f.label}
               </button>
@@ -207,7 +207,7 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
                   </span>
                   {gewaehltHier > 0 && (
                     <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--accent)",
-                      backgroundColor: "rgba(252,228,153,0.15)", padding: "1px 7px", borderRadius: 10 }}>
+                      backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", padding: "1px 7px", borderRadius: 10 }}>
                       {gewaehltHier} gewählt
                     </span>
                   )}
@@ -227,7 +227,7 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
                             padding: "6px 8px", borderRadius: 5, marginBottom: 2,
                             cursor: e.uebernehmbar ? "pointer" : "not-allowed",
                             opacity: e.uebernehmbar ? 1 : 0.45,
-                            backgroundColor: an ? "rgba(252,228,153,0.08)" : "transparent" }}>
+                            backgroundColor: an ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent" }}>
                           <input type="checkbox" checked={an} disabled={!e.uebernehmbar}
                             onChange={() => toggle(e)} style={{ accentColor: "var(--accent)" }} />
                           <Icon size={13} color={an ? "var(--accent)" : S.textDim} />
@@ -289,7 +289,7 @@ export default function ReportBuilder({ projectId, onClose, onCreated, formId = 
             </div>
           )}
           {fehler && (
-            <div style={{ flexBasis: "100%", fontSize: 11.5, color: "#f87171" }}>{fehler}</div>
+            <div style={{ flexBasis: "100%", fontSize: 11.5, color: "var(--err)" }}>{fehler}</div>
           )}
         </div>
       </div>

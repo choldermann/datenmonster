@@ -21,7 +21,7 @@ function TreeNode({ node, path, selectedNode, onSelect, depth = 0 }) {
         className="flex items-center gap-1.5 py-1.5 px-2 rounded cursor-pointer transition-all"
         style={{
           marginLeft: `${indent}px`,
-          backgroundColor: isSelected ? "rgba(252,228,153,0.1)" : "transparent",
+          backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent",
           border: `1px solid ${isSelected ? S.accent : "transparent"}`,
         }}
         onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
@@ -204,7 +204,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
                   <Loader2 size={18} className="animate-spin mr-2" /> Analysiere XML...
                 </div>
               ) : error && !structure ? (
-                <p className="text-xs py-4 text-center" style={{ color: "#e07070" }}>{error}</p>
+                <p className="text-xs py-4 text-center" style={{ color: "var(--err-soft)" }}>{error}</p>
               ) : rootNode ? (
                 <div className="rounded" style={{ border: `1px solid ${S.border}` }}>
                   <div className="p-3">
@@ -224,7 +224,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
 
               {selectedNode && (
                 <div className="mt-4 px-3 py-2.5 rounded flex items-center gap-2"
-                  style={{ backgroundColor: "rgba(252,228,153,0.08)", border: `1px solid ${S.accent}` }}>
+                  style={{ backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", border: `1px solid ${S.accent}` }}>
                   <FileText size={13} style={{ color: S.accent }} />
                   <span className="text-xs font-mono" style={{ color: S.accent }}>{selectedNode}</span>
                 </div>
@@ -259,7 +259,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
                       <label key={field}
                         className="flex items-center gap-3 px-3 py-2 rounded cursor-pointer transition-all"
                         style={{
-                          backgroundColor: checked ? "rgba(252,228,153,0.06)" : S.bgEl,
+                          backgroundColor: checked ? "color-mix(in srgb, var(--accent) 6%, transparent)" : S.bgEl,
                           border: `1px solid ${checked ? S.accent : S.border}`,
                         }}
                         onMouseEnter={(e) => { if (!checked) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
@@ -290,7 +290,7 @@ export default function XmlConfigurator({ dataset, onDone, onCancel }) {
           )}
 
           {error && step === "refs" && (
-            <p className="text-xs mt-3" style={{ color: "#e07070" }}>{error}</p>
+            <p className="text-xs mt-3" style={{ color: "var(--err-soft)" }}>{error}</p>
           )}
         </div>
 

@@ -19,7 +19,7 @@ const RULE_TYPES = [
   { value: "regex",     label: "Regex" },
 ];
 
-const ACTIVE_BORDER = "#fce499";
+const ACTIVE_BORDER = "var(--accent)";
 
 export default function DataQualityNode({ node, onUpdate, onRemove, onPositionChange, debugHighlight, debugStats, isActive, onActivate }) {
   const dragging = useRef(false);
@@ -75,8 +75,8 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
       style={{
         position: "absolute", left: node.x, top: node.y,
         width: nodeWidth, zIndex: debugHighlight ? 20 : 10, userSelect: "none",
-        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
-        borderRadius: 6, border: debugHighlight ? `1.5px solid ${C}cc` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid ${C}55`,
+        boxShadow: debugHighlight ? `0 0 0 2px ${C}, 0 0 20px color-mix(in srgb, ${C} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)` : activeBorder ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)",
+        borderRadius: 6, border: debugHighlight ? `1.5px solid color-mix(in srgb, ${C} 80%, transparent)` : activeBorder ? `1px solid ${ACTIVE_BORDER}` : `1px solid color-mix(in srgb, ${C} 33.3%, transparent)`,
         backgroundColor: S.bgCard, overflow: "visible", transition: "box-shadow 0.2s, border-color 0.2s",
       }}
     >
@@ -167,7 +167,7 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
                 style={{
                   width: "100%", boxSizing: "border-box", padding: "3px 6px", fontSize: 10,
                   backgroundColor: S.bgEl, border: "1px solid " + S.border,
-                  borderRadius: 3, color: "#fbbf24", outline: "none", fontFamily: "monospace",
+                  borderRadius: 3, color: "var(--warn)", outline: "none", fontFamily: "monospace",
                 }}
               />
             )}
@@ -188,7 +188,7 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
         <button
           onClick={addRule}
           style={{
-            background: "none", border: `1px dashed ${C}55`, borderRadius: 4,
+            background: "none", border: `1px dashed color-mix(in srgb, ${C} 33.3%, transparent)`, borderRadius: 4,
             color: C, cursor: "pointer", padding: "4px 8px", fontSize: 10,
             display: "flex", alignItems: "center", gap: 4, alignSelf: "flex-start",
           }}
@@ -202,9 +202,9 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
         </div>
 
         {debugStats && (
-          <div style={{ fontSize: 9, color: S.textDim, display: "flex", gap: 8, paddingTop: 2, borderTop: `1px solid ${C}22` }}>
+          <div style={{ fontSize: 9, color: S.textDim, display: "flex", gap: 8, paddingTop: 2, borderTop: `1px solid color-mix(in srgb, ${C} 13.3%, transparent)` }}>
             <span>↓ {(debugStats.rows_out ?? "–").toLocaleString()} Zeilen</span>
-            {debugStats.errors > 0 && <span style={{ color: "#f87171" }}>⚠ {debugStats.errors} ungültig</span>}
+            {debugStats.errors > 0 && <span style={{ color: "var(--err)" }}>⚠ {debugStats.errors} ungültig</span>}
           </div>
         )}
       </div>

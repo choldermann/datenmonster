@@ -10,7 +10,7 @@ const FIELD_TYPES = [
   { value: "date",   label: "Datum" },
 ];
 
-const PARAMS_ACTIVE_BORDER = "#fce499";
+const PARAMS_ACTIVE_BORDER = "var(--accent)";
 
 function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, onMiniPortsReady, isActive, onActivate }) {
   const miniLeftRef = useRef(null);
@@ -67,13 +67,13 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
     <div draggable={false}
       style={{ position: "absolute", left: node.x, top: node.y, width: nodeWidth, zIndex: 10, userSelect: "none",
         boxShadow: isActive ? `0 0 0 2px ${PARAMS_ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)` : "0 8px 32px rgba(0,0,0,0.5)", borderRadius: 6, overflow: "hidden",
-        border: isActive ? `1px solid ${PARAMS_ACTIVE_BORDER}` : `1px solid ${PARAMS_NODE_COLOR}55`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
+        border: isActive ? `1px solid ${PARAMS_ACTIVE_BORDER}` : `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 33.3%, transparent)`, backgroundColor: S.bgCard, transition: "box-shadow 0.15s, border-color 0.15s" }}
       onClick={(e) => { e.stopPropagation(); onActivate?.({ type: "params", params: (node.fields || []).map(f => ({ name: f.name, type: f.type, label: f.label })) }); }}>
 
       {/* Header */}
       <div onMouseDown={handleMouseDown} draggable={false}
         style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", cursor: "grab",
-          backgroundColor: `${PARAMS_NODE_COLOR}12`, borderBottom: `1px solid ${PARAMS_NODE_COLOR}33` }}>
+          backgroundColor: `color-mix(in srgb, ${PARAMS_NODE_COLOR} 7.1%, transparent)`, borderBottom: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 20%, transparent)` }}>
         <GripVertical size={12} style={{ color: S.textDim, flexShrink: 0 }} />
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: PARAMS_NODE_COLOR, flex: 1 }}>
           Params Node
@@ -84,14 +84,14 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
         </button>
         <button onClick={(e) => { e.stopPropagation(); onRemove(node.id); }}
           style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
-          onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+          onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
           onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
           <X size={12} />
         </button>
       </div>
 
       {/* Hint */}
-      <div style={{ padding: "5px 10px", borderBottom: `1px solid ${PARAMS_NODE_COLOR}22` }}>
+      <div style={{ padding: "5px 10px", borderBottom: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 13.3%, transparent)` }}>
         <p style={{ fontSize: 9, color: S.textDim, margin: 0, lineHeight: 1.4 }}>
           Laufzeit-Parameter aus Formular · Werte kommen per <code style={{ color: PARAMS_NODE_COLOR }}>run_params</code>
         </p>
@@ -105,14 +105,14 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
           </p>
         )}
         {fields.map((f, i) => (
-          <div key={i} style={{ borderBottom: `1px solid ${PARAMS_NODE_COLOR}11`, padding: "6px 10px" }}>
+          <div key={i} style={{ borderBottom: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 6.7%, transparent)`, padding: "6px 10px" }}>
             {/* Name + Type */}
             <div style={{ display: "flex", gap: 4, marginBottom: 3 }}>
               <input value={f.name || ""}
                 onChange={(e) => updateField(i, { name: e.target.value })}
                 onClick={(e) => e.stopPropagation()}
                 placeholder="feldname"
-                style={{ flex: 2, backgroundColor: S.bgMain, border: `1px solid ${PARAMS_NODE_COLOR}44`, borderRadius: 3,
+                style={{ flex: 2, backgroundColor: S.bgMain, border: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 26.7%, transparent)`, borderRadius: 3,
                   color: PARAMS_NODE_COLOR, fontSize: 10, fontFamily: "monospace", padding: "3px 6px", outline: "none" }} />
               <select value={f.type || "text"}
                 onChange={(e) => updateField(i, { type: e.target.value })}
@@ -122,7 +122,7 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
               </select>
               <button onClick={() => removeField(i)}
                 style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}
-                onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                 onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                 <Trash2 size={9} />
               </button>
@@ -147,25 +147,25 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
       </div>
 
       {/* Add field */}
-      <div style={{ padding: "5px 10px", borderTop: `1px solid ${PARAMS_NODE_COLOR}22` }}>
+      <div style={{ padding: "5px 10px", borderTop: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 13.3%, transparent)` }}>
         <button onClick={addField}
-          style={{ width: "100%", padding: "3px 0", borderRadius: 3, border: `1px dashed ${PARAMS_NODE_COLOR}44`,
+          style={{ width: "100%", padding: "3px 0", borderRadius: 3, border: `1px dashed color-mix(in srgb, ${PARAMS_NODE_COLOR} 26.7%, transparent)`,
             background: "none", color: S.textDim, cursor: "pointer", fontSize: 10,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}
           onMouseEnter={(e) => { e.currentTarget.style.borderColor = PARAMS_NODE_COLOR; e.currentTarget.style.color = PARAMS_NODE_COLOR; }}
-          onMouseLeave={(e) => { e.currentTarget.style.borderColor = `${PARAMS_NODE_COLOR}44`; e.currentTarget.style.color = S.textDim; }}>
+          onMouseLeave={(e) => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${PARAMS_NODE_COLOR} 26.7%, transparent)`; e.currentTarget.style.color = S.textDim; }}>
           <Plus size={10} /> Parameter hinzufügen
         </button>
       </div>
 
       {/* Output dots */}
       {fields.length > 0 && (
-        <div style={{ borderTop: `1px solid ${PARAMS_NODE_COLOR}22`, backgroundColor: `${PARAMS_NODE_COLOR}06` }}>
+        <div style={{ borderTop: `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 13.3%, transparent)`, backgroundColor: `color-mix(in srgb, ${PARAMS_NODE_COLOR} 2.4%, transparent)` }}>
           <div style={{ maxHeight: 160, overflowY: "auto", scrollbarWidth: "thin" }}>
             {fields.map((f, i) => (
               <div key={f.name || i}
                 style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "5px 10px", borderTop: i > 0 ? `1px solid ${PARAMS_NODE_COLOR}11` : "none" }}>
+                  padding: "5px 10px", borderTop: i > 0 ? `1px solid color-mix(in srgb, ${PARAMS_NODE_COLOR} 6.7%, transparent)` : "none" }}>
                 <span style={{ fontSize: 10, fontFamily: "monospace", color: PARAMS_NODE_COLOR, opacity: 0.9, flex: 1,
                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {f.name || `param_${i + 1}`}
@@ -180,7 +180,7 @@ function ParamsNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, on
                     e.stopPropagation();
                   }}
                   style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: PARAMS_NODE_COLOR,
-                    cursor: "grab", flexShrink: 0, boxShadow: `0 0 5px ${PARAMS_NODE_COLOR}88` }}
+                    cursor: "grab", flexShrink: 0, boxShadow: `0 0 5px color-mix(in srgb, ${PARAMS_NODE_COLOR} 53.3%, transparent)` }}
                   title={`${f.name} auf Zielfeld ziehen`} />
               </div>
             ))}

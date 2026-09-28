@@ -138,8 +138,8 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
 
       {fehler && (
         <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 12,
-          color: "#f87171", backgroundColor: "rgba(248,113,113,.08)",
-          border: "1px solid rgba(248,113,113,.25)", borderRadius: 6, padding: "8px 11px" }}>
+          color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)", borderRadius: 6, padding: "8px 11px" }}>
           <AlertCircle size={14} /> {fehler}
         </div>
       )}
@@ -148,8 +148,8 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
           Steuerberater den Stapel zurueckweist. */}
       {fehlend.length > 0 && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 7, fontSize: 12,
-          color: "#fbbf24", backgroundColor: "rgba(251,191,36,.08)",
-          border: "1px solid rgba(251,191,36,.25)", borderRadius: 6, padding: "9px 11px" }}>
+          color: "var(--warn)", backgroundColor: "color-mix(in srgb, var(--warn) 8%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--warn) 25%, transparent)", borderRadius: 6, padding: "9px 11px" }}>
           <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>Noch nicht hinterlegt: <b>{fehlend.join(", ")}</b>
             {mandant ? <> für <b>{mandant}</b></> : null}. Ohne diese Angaben weist
@@ -173,7 +173,7 @@ export default function DatevStammdatenWidget({ widget, projectId, canEdit = tru
                   fontSize: 11, color: S.textBright, marginBottom: 4 }}>
                   {f.label}
                   {f.identitaet && !String(entwurf[f.key] ?? "").trim() && (
-                    <span style={{ color: "#fbbf24", fontSize: 13, lineHeight: 1 }}>•</span>
+                    <span style={{ color: "var(--warn)", fontSize: 13, lineHeight: 1 }}>•</span>
                   )}
                   {speichert === f.key && <Loader2 size={11} className="animate-spin" />}
                   {gespeichert === f.key && <Check size={12} style={{ color: "#4ade80" }} />}

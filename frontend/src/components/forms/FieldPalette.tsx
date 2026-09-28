@@ -51,7 +51,7 @@ export default function FieldPalette({ existingFields = [], onAddFields, maxRow 
                 e.currentTarget.style.borderLeftColor = "transparent";
               }}>
               <div style={{ width: 22, height: 22, borderRadius: 4, flexShrink: 0,
-                backgroundColor: `${ft.color}18`, border: `1px solid ${ft.color}33`,
+                backgroundColor: `color-mix(in srgb, ${ft.color} 9.4%, transparent)`, border: `1px solid color-mix(in srgb, ${ft.color} 20%, transparent)`,
                 display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <ft.Icon size={11} style={{ color: ft.color }} />
               </div>

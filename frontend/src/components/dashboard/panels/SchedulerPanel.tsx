@@ -156,7 +156,7 @@ function JobFormModal({ mappings, projectId, onClose, onSaved, existing }) {
               <button key={m} onClick={() => setMode(m)} style={{
                 flex: 1, padding: "6px 0", borderRadius: 8, fontSize: 12, fontWeight: 500, cursor: "pointer",
                 border: `1px solid ${mode === m ? "var(--accent)" : "var(--border)"}`,
-                backgroundColor: mode === m ? "rgba(252,228,153,0.12)" : "transparent",
+                backgroundColor: mode === m ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
                 color: mode === m ? "var(--accent)" : S.textDim,
                 transition: "all 0.12s",
               }}>
@@ -215,7 +215,7 @@ function JobFormModal({ mappings, projectId, onClose, onSaved, existing }) {
           )}
         </div>
 
-        {error && <p className="text-xs" style={{ color: "#e07070" }}>{error}</p>}
+        {error && <p className="text-xs" style={{ color: "var(--err-soft)" }}>{error}</p>}
 
         <div className="flex gap-3 justify-end">
           <button onClick={onClose} className="btn-ghost text-xs">Abbrechen</button>
@@ -235,8 +235,8 @@ function RunHistoryModal({ job, onClose }) {
     api.get(`/api/scheduler/jobs/${job.id}/runs`).then(({ data }) => setRuns(data)).finally(() => setLoading(false));
   }, [job.id]);
 
-  const statusIcon = (s) => s === "success" ? <CheckCircle2 size={13} style={{ color: "#6ee7b7" }} />
-    : s === "error" ? <XCircle size={13} style={{ color: "#e07070" }} />
+  const statusIcon = (s) => s === "success" ? <CheckCircle2 size={13} style={{ color: "var(--ok)" }} />
+    : s === "error" ? <XCircle size={13} style={{ color: "var(--err-soft)" }} />
     : <Loader2 size={13} className="animate-spin" style={{ color: S.accent }} />;
 
   return (
@@ -267,7 +267,7 @@ function RunHistoryModal({ job, onClose }) {
             </table>
           )}
         {runs.find((r) => r.error_msg) && (
-          <div className="mt-3 p-2 rounded text-xs font-mono" style={{ backgroundColor: "rgba(224,112,112,0.08)", color: "#e07070" }}>
+          <div className="mt-3 p-2 rounded text-xs font-mono" style={{ backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", color: "var(--err-soft)" }}>
             {runs.find((r) => r.error_msg)?.error_msg}
           </div>
         )}
@@ -313,7 +313,7 @@ function SchedulerPanel({ mappings, projectId, canEdit }) {
     } finally { setTimeout(() => setTriggering(null), 1500); }
   };
 
-  const statusColor = (s) => s === "success" ? "#6ee7b7" : s === "error" ? "#e07070" : S.accent;
+  const statusColor = (s) => s === "success" ? "var(--ok)" : s === "error" ? "var(--err-soft)" : S.accent;
   const statusLabel = (s) => s === "success" ? "Erfolgreich" : s === "error" ? "Fehler" : s === "running" ? "Läuft..." : "–";
 
   return (
@@ -388,12 +388,12 @@ function SchedulerPanel({ mappings, projectId, canEdit }) {
                           <Pencil size={12} />
                         </button>
                         <button onClick={() => toggleActive(job)} title={job.active ? "Deaktivieren" : "Aktivieren"}
-                          className="btn-ghost text-xs" style={{ padding: "4px 8px", color: job.active ? "#6ee7b7" : S.textDim }}>
+                          className="btn-ghost text-xs" style={{ padding: "4px 8px", color: job.active ? "var(--ok)" : S.textDim }}>
                           {job.active ? <CheckCircle2 size={12} /> : <Square size={12} />}
                         </button>
                         <button onClick={() => deleteJob(job.id)} className="btn-ghost text-xs"
                           style={{ padding: "4px 8px" }}
-                          onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                          onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                           onMouseLeave={(e) => e.currentTarget.style.color = ""}>
                           <Trash2 size={12} />
                         </button>
@@ -417,12 +417,12 @@ function SchedulerPanel({ mappings, projectId, canEdit }) {
                       Nächster Lauf: {new Date(job.next_run).toLocaleString("de-DE")}
                     </span>
                   )}
-                  {!job.active && <span style={{ color: "#e07070" }}>Inaktiv</span>}
+                  {!job.active && <span style={{ color: "var(--err-soft)" }}>Inaktiv</span>}
                 </div>
 
                 {job.last_run?.error_msg && (
                   <div className="mt-2 px-2 py-1 rounded text-xs font-mono truncate"
-                    style={{ backgroundColor: "rgba(224,112,112,0.08)", color: "#e07070" }}>
+                    style={{ backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", color: "var(--err-soft)" }}>
                     {job.last_run.error_msg}
                   </div>
                 )}

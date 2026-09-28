@@ -186,7 +186,7 @@ export function PipelineResult({ result }) {
   const err = result?.error;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 16px",
-      fontSize: 13, color: err ? "#e07070" : "#6ee7b7" }}>
+      fontSize: 13, color: err ? "var(--err-soft)" : "var(--ok)" }}>
       {err ? <AlertTriangle size={15} /> : <CheckCircle2 size={15} />}
       {err
         ? <span>Pipeline fehlgeschlagen: {err}</span>
@@ -208,7 +208,7 @@ function groupByRow(fields) {
 }
 
 function FieldInput({ field, value, onChange, onRunAction, running, inp, hasError, compact, params, setParam }) {
-  const errStyle = hasError ? { border: "1px solid #f87171" } : {};
+  const errStyle = hasError ? { border: "1px solid var(--err)" } : {};
   const s = { ...inp, ...errStyle };
   switch (field.type) {
     case "daterange":
@@ -304,8 +304,8 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
           style={{ display: "inline-flex", alignItems: "center", gap: 7,
             padding: compact ? "8px 20px" : "10px 24px", borderRadius: 7,
             fontSize: compact ? 12 : 14, fontWeight: 600,
-            backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.4)",
-            color: "#6ee7b7", cursor: running ? "wait" : "pointer",
+            backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
+            color: "var(--ok)", cursor: running ? "wait" : "pointer",
             ...(field.fullWidth ? { width: "100%", justifyContent: "center" } : {}) }}>
           {running ? <Loader2 size={13} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={13} />}
           {field.label || "Ausführen"}
@@ -358,7 +358,7 @@ export default function FormFields({ fields, params, setParam, onRunAction, runn
                     color: S.textDim, marginBottom: compact ? 4 : 6, textTransform: "uppercase",
                     letterSpacing: "0.05em" }}>
                     {f.label || f.name}
-                    {f.required && <span style={{ color: "#f87171", marginLeft: 3 }}>*</span>}
+                    {f.required && <span style={{ color: "var(--err)", marginLeft: 3 }}>*</span>}
                   </label>
                 )}
                 <FieldInput

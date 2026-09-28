@@ -87,7 +87,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
             <label style={lS}>Protokoll</label>
             <div style={{ display: "flex", gap: 8 }}>
               {["ftp", "sftp"].map((p) => (
-                <button key={p} onClick={() => set("protocol", p)} style={{ padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.protocol === p ? S.accent : S.border}`, backgroundColor: form.protocol === p ? "rgba(252,228,153,0.1)" : "#1a1a1a", color: form.protocol === p ? S.accent : S.textDim }}>
+                <button key={p} onClick={() => set("protocol", p)} style={{ padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.protocol === p ? S.accent : S.border}`, backgroundColor: form.protocol === p ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "#1a1a1a", color: form.protocol === p ? S.accent : S.textDim }}>
                   {p.toUpperCase()}
                 </button>
               ))}
@@ -156,7 +156,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
             <label style={lS}>Nach dem Import</label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {[{ v: "nothing", l: "Nichts tun" }, { v: "move", l: "Verschieben" }, { v: "delete", l: "Löschen" }].map((o) => (
-                <button key={o.v} onClick={() => set("after_import", o.v)} style={{ padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.after_import === o.v ? S.accent : S.border}`, backgroundColor: form.after_import === o.v ? "rgba(252,228,153,0.1)" : "#1a1a1a", color: form.after_import === o.v ? S.accent : S.textDim }}>
+                <button key={o.v} onClick={() => set("after_import", o.v)} style={{ padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.after_import === o.v ? S.accent : S.border}`, backgroundColor: form.after_import === o.v ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "#1a1a1a", color: form.after_import === o.v ? S.accent : S.textDim }}>
                   {o.l}
                 </button>
               ))}
@@ -198,7 +198,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
             <p style={{ fontSize: 11, fontWeight: 700, color: S.textBright, marginBottom: 10 }}>Zeitplan (optional)</p>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
               {CRON_PRESETS.map((p) => (
-                <button key={p.value} onClick={() => set("cron_expr", p.value)} style={{ padding: "4px 10px", borderRadius: 3, fontSize: 10, cursor: "pointer", border: `1px solid ${form.cron_expr === p.value ? S.accent : S.border}`, backgroundColor: form.cron_expr === p.value ? "rgba(252,228,153,0.1)" : "#1a1a1a", color: form.cron_expr === p.value ? S.accent : S.textDim }}>
+                <button key={p.value} onClick={() => set("cron_expr", p.value)} style={{ padding: "4px 10px", borderRadius: 3, fontSize: 10, cursor: "pointer", border: `1px solid ${form.cron_expr === p.value ? S.accent : S.border}`, backgroundColor: form.cron_expr === p.value ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "#1a1a1a", color: form.cron_expr === p.value ? S.accent : S.textDim }}>
                   {p.label}
                 </button>
               ))}
@@ -221,7 +221,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
                 {testing ? <Loader2 size={12} className="animate-spin" /> : <Wifi size={12} />} Verbindung testen
               </button>
               {testResult && (
-                <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 4, fontSize: 11, backgroundColor: testResult.ok ? "rgba(110,231,183,0.08)" : "rgba(248,113,113,0.08)", border: `1px solid ${testResult.ok ? "#6ee7b7" : "#f87171"}`, color: testResult.ok ? "#6ee7b7" : "#f87171" }}>
+                <div style={{ marginTop: 8, padding: "8px 12px", borderRadius: 4, fontSize: 11, backgroundColor: testResult.ok ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err) 8%, transparent)", border: `1px solid ${testResult.ok ? "var(--ok)" : "var(--err)"}`, color: testResult.ok ? "var(--ok)" : "var(--err)" }}>
                   {testResult.ok ? (
                     <div>
                       <p style={{ fontWeight: 600, marginBottom: 4 }}>✓ Verbunden · {testResult.count} Datei(en) gefunden</p>
@@ -318,7 +318,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
     }
   };
 
-  const statusColor = { success: "#6ee7b7", error: "#f87171" };
+  const statusColor = { success: "var(--ok)", error: "var(--err)" };
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: 900 }}>
@@ -350,7 +350,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
             <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, backgroundColor: s.protocol === "sftp" ? "rgba(147,197,253,0.15)" : "rgba(110,231,183,0.12)", color: s.protocol === "sftp" ? "#93c5fd" : "#6ee7b7", textTransform: "uppercase" }}>{s.protocol}</span>
+                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 3, backgroundColor: s.protocol === "sftp" ? "rgba(147,197,253,0.15)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: s.protocol === "sftp" ? "#93c5fd" : "var(--ok)", textTransform: "uppercase" }}>{s.protocol}</span>
                   <span style={{ fontSize: 13, fontWeight: 600, color: S.textBright }}>{s.name}</span>
                   {!s.active && <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, backgroundColor: "rgba(255,255,255,0.05)", color: S.textDim }}>Inaktiv</span>}
                 </div>
@@ -364,7 +364,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
                     {s.dataset_mode === "append" ? "↓ Anhängen" : "↺ Ersetzen"}
                   </span>
                   {s.after_import !== "nothing" && (
-                    <span style={{ color: s.after_import === "delete" ? "#f87171" : "#c4b5fd" }}>
+                    <span style={{ color: s.after_import === "delete" ? "var(--err)" : "#c4b5fd" }}>
                       {s.after_import === "delete" ? "🗑 Löschen" : `📦 → ${s.move_dir || "?"}`}
                     </span>
                   )}
@@ -383,7 +383,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
                 {canEdit && (
                   <>
                     <button onClick={() => handleTrigger(s.id)} disabled={!!triggering[s.id]} title="Jetzt synchronisieren"
-                      style={{ padding: "5px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "#1a1a1a", color: triggering[s.id] ? S.textDim : "#6ee7b7", display: "flex", alignItems: "center", gap: 4 }}>
+                      style={{ padding: "5px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "#1a1a1a", color: triggering[s.id] ? S.textDim : "var(--ok)", display: "flex", alignItems: "center", gap: 4 }}>
                       {triggering[s.id] ? <Loader2 size={11} className="animate-spin" /> : <FolderSync size={11} />} Sync
                     </button>
                     <button onClick={() => setEditing(s)} title="Bearbeiten"
@@ -391,7 +391,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
                       <Pencil size={11} />
                     </button>
                     <button onClick={() => handleDelete(s.id)} title="Löschen"
-                      style={{ padding: "5px 8px", borderRadius: 4, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "#1a1a1a", color: "#f87171" }}>
+                      style={{ padding: "5px 8px", borderRadius: 4, cursor: "pointer", border: `1px solid ${S.border}`, backgroundColor: "#1a1a1a", color: "var(--err)" }}>
                       <Trash2 size={11} />
                     </button>
                   </>

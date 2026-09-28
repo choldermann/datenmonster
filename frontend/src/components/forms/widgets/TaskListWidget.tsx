@@ -53,7 +53,7 @@ export default function TaskListWidget({ widget, result, onTaskClick }) {
             onMouseEnter={canClick ? e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)" : undefined}
             onMouseLeave={canClick ? e => e.currentTarget.style.backgroundColor = "" : undefined}>
             <span style={{ width: 11, height: 11, borderRadius: "50%", backgroundColor: color,
-              flexShrink: 0, boxShadow: `0 0 8px ${color}66` }} />
+              flexShrink: 0, boxShadow: `0 0 8px color-mix(in srgb, ${color} 40%, transparent)` }} />
             {hasCount && (
               <span style={{ fontSize: 16, fontWeight: 800, color: "var(--text-bright)",
                 minWidth: 32, textAlign: "right" }}>

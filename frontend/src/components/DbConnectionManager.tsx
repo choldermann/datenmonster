@@ -9,7 +9,7 @@ import AiDatasetWizard from "./AiDatasetWizard";
 import SchemaCatalog from "./SchemaCatalog";
 
 const DEFAULT_PORTS = { mssql: 1433, mysql: 3306, postgresql: 5432 };
-const ACCESS_COLOR = "#fce499";
+const ACCESS_COLOR = "var(--accent)";
 const ACCESS_ENDUNGEN = [".mdb", ".accdb"];
 
 // ─── Connection Form ──────────────────────────────────────────────────────────
@@ -83,9 +83,9 @@ function ConnectionForm({ initial, projectId, onSaved, onCancel }) {
       </div>
       {testResult && (
         <div style={{ padding: "8px 12px", borderRadius: 5, marginBottom: 12, fontSize: 11,
-          backgroundColor: testResult.success ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)",
-          color: testResult.success ? "#6ee7b7" : "#e07070",
-          border: `1px solid ${testResult.success ? "rgba(110,231,183,0.25)" : "rgba(224,112,112,0.25)"}` }}>
+          backgroundColor: testResult.success ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err-soft) 8%, transparent)",
+          color: testResult.success ? "var(--ok)" : "var(--err-soft)",
+          border: `1px solid ${testResult.success ? "color-mix(in srgb, var(--ok) 25%, transparent)" : "color-mix(in srgb, var(--err-soft) 25%, transparent)"}` }}>
           {testResult.success ? "✓ Verbindung erfolgreich" : `✗ ${testResult.message}`}
         </div>
       )}
@@ -141,7 +141,7 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
   };
 
   const typeLabel = { mssql: "SQL Server", mysql: "MySQL", postgresql: "PostgreSQL" };
-  const typeColor = { mssql: "#93c5fd", mysql: "#6ee7b7", postgresql: "#f9a8d4" };
+  const typeColor = { mssql: "#93c5fd", mysql: "var(--ok)", postgresql: "#f9a8d4" };
 
   return (
     <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 8, padding: 20, marginBottom: 20 }}>
@@ -159,7 +159,7 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
         genau dessen Verbindung, ein übergreifendes Cockpit alle.
       </div>
       {fehler && (
-        <div style={{ fontSize: 11, color: "#f87171", marginBottom: 10 }}>{fehler}</div>
+        <div style={{ fontSize: 11, color: "var(--err)", marginBottom: 10 }}>{fehler}</div>
       )}
       {laden ? <Loader2 size={16} className="animate-spin" /> : alle.map((conn) => (
         <label key={conn.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
@@ -173,9 +173,9 @@ function ZuordnungModal({ projectId, onDone, onCancel }) {
           </span>
           {conn.is_mandant && (
             <span title={`Erscheint mit dem Haken als Mandant „${conn.mandant_label || conn.name}" im Umschalter dieses Projekts`}
-              style={{ fontSize: 9, fontWeight: 700, color: "#6ee7b7", padding: "1px 6px",
-                borderRadius: 3, backgroundColor: "rgba(110,231,183,0.12)",
-                border: "1px solid rgba(110,231,183,0.35)", whiteSpace: "nowrap" }}>
+              style={{ fontSize: 9, fontWeight: 700, color: "var(--ok)", padding: "1px 6px",
+                borderRadius: 3, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", whiteSpace: "nowrap" }}>
               Mandant{conn.mandant_label ? ` · ${conn.mandant_label}` : ""}
             </span>
           )}
@@ -323,7 +323,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", marginBottom: open ? 16 : 0 }}
         onClick={() => setOpen(v => !v)}>
-        <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: `${ACCESS_COLOR}15`,
+        <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: `color-mix(in srgb, ${ACCESS_COLOR} 8.2%, transparent)`,
           display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <Database size={14} style={{ color: ACCESS_COLOR }} />
         </div>
@@ -332,8 +332,8 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
           <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>Microsoft Access .mdb / .accdb als Dataset(s) importieren</p>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {mdbAvailable === false && <span style={{ fontSize: 9, color: "#e07070", border: "1px solid rgba(224,112,112,0.3)", padding: "2px 7px", borderRadius: 3 }}>mdbtools fehlt</span>}
-          {mdbAvailable === true && <span style={{ fontSize: 9, color: "#6ee7b7", border: "1px solid rgba(110,231,183,0.3)", padding: "2px 7px", borderRadius: 3 }}>bereit</span>}
+          {mdbAvailable === false && <span style={{ fontSize: 9, color: "var(--err-soft)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", padding: "2px 7px", borderRadius: 3 }}>mdbtools fehlt</span>}
+          {mdbAvailable === true && <span style={{ fontSize: 9, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "2px 7px", borderRadius: 3 }}>bereit</span>}
           {open ? <ChevronUp size={14} style={{ color: S.textDim }} /> : <ChevronDown size={14} style={{ color: S.textDim }} />}
         </div>
       </div>
@@ -362,7 +362,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                 {[{v:"upload",l:"Upload"},{v:"path",l:"Serverpfad"}].map(m => (
                   <button key={m.v} onClick={() => { setMode(m.v); setError(""); }}
                     style={{ flex: 1, padding: "6px 10px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer",
-                      backgroundColor: mode === m.v ? `${ACCESS_COLOR}20` : "transparent",
+                      backgroundColor: mode === m.v ? `color-mix(in srgb, ${ACCESS_COLOR} 12.5%, transparent)` : "transparent",
                       border: `1px solid ${mode === m.v ? ACCESS_COLOR : S.border}`,
                       color: mode === m.v ? ACCESS_COLOR : S.textDim }}>
                     {m.l}
@@ -374,7 +374,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                 <div onClick={() => fileInputRef.current?.click()} {...ablageProps}
                   style={{ border: `2px dashed ${uploadFile || ueberDerFlaeche ? ACCESS_COLOR : S.border}`, borderRadius: 6,
                     padding: "20px", textAlign: "center", cursor: "pointer",
-                    backgroundColor: uploadFile || ueberDerFlaeche ? `${ACCESS_COLOR}06` : "transparent", marginBottom: 12,
+                    backgroundColor: uploadFile || ueberDerFlaeche ? `color-mix(in srgb, ${ACCESS_COLOR} 2.4%, transparent)` : "transparent", marginBottom: 12,
                     transition: "border-color .12s, background-color .12s" }}>
                   <input ref={fileInputRef} type="file" accept=".mdb,.accdb" style={{ display: "none" }}
                     onChange={(e) => { const f = e.target.files?.[0]; if (f) { setUploadFile(f); setError(""); } }} />
@@ -394,7 +394,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                   <input style={iS} value={serverPath} onChange={(e) => setServerPath(e.target.value)} placeholder="/data/datenbank.accdb" />
                 </div>
               )}
-              {error && <p style={{ fontSize: 11, color: "#e07070", margin: "0 0 10px" }}>⚠ {error}</p>}
+              {error && <p style={{ fontSize: 11, color: "var(--err-soft)", margin: "0 0 10px" }}>⚠ {error}</p>}
               <button onClick={loadTables}
                 disabled={loading || mdbAvailable === false || (mode === "upload" && !uploadFile) || (mode === "path" && !serverPath.trim())}
                 style={{ width: "100%", padding: "8px", borderRadius: 5, fontSize: 12, fontWeight: 700, cursor: "pointer",
@@ -424,7 +424,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                     <div onClick={() => toggleTable(t)}
                       style={{ display: "flex", alignItems: "center", gap: 8, flex: 1,
                         padding: "7px 10px", cursor: "pointer",
-                        backgroundColor: selectedTables.includes(t) ? `${ACCESS_COLOR}08` : "transparent",
+                        backgroundColor: selectedTables.includes(t) ? `color-mix(in srgb, ${ACCESS_COLOR} 3.1%, transparent)` : "transparent",
                         borderBottom: `1px solid ${S.border}` }}>
                       <div style={{ width: 14, height: 14, borderRadius: 3, border: `2px solid ${selectedTables.includes(t) ? ACCESS_COLOR : S.border}`,
                         backgroundColor: selectedTables.includes(t) ? ACCESS_COLOR : "transparent",
@@ -461,7 +461,7 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                 <input style={iS} value={namePrefix} onChange={e => setNamePrefix(e.target.value)} placeholder="z.B. MeineDB → MeineDB – Tabelle1" />
               </div>
 
-              {error && <p style={{ fontSize: 11, color: "#e07070", margin: "0 0 10px" }}>⚠ {error}</p>}
+              {error && <p style={{ fontSize: 11, color: "var(--err-soft)", margin: "0 0 10px" }}>⚠ {error}</p>}
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={reset} style={{ flex: 1, padding: "7px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", backgroundColor: "transparent", border: `1px solid ${S.border}`, color: S.textDim }}>Zurück</button>
                 <button onClick={doImport} disabled={!selectedTables.length || importing}
@@ -484,11 +484,11 @@ function AccessImportSection({ projectId, canEdit, onDatasetCreated }) {
                 {importResults.map(r => (
                   <div key={r.table} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
                     borderRadius: 4, marginBottom: 4,
-                    backgroundColor: r.ok ? "rgba(110,231,183,0.06)" : "rgba(224,112,112,0.06)",
-                    border: `1px solid ${r.ok ? "rgba(110,231,183,0.2)" : "rgba(224,112,112,0.2)"}` }}>
-                    <span style={{ fontSize: 12, color: r.ok ? "#6ee7b7" : "#e07070" }}>{r.ok ? "✓" : "✗"}</span>
+                    backgroundColor: r.ok ? "color-mix(in srgb, var(--ok) 6%, transparent)" : "color-mix(in srgb, var(--err-soft) 6%, transparent)",
+                    border: `1px solid ${r.ok ? "color-mix(in srgb, var(--ok) 20%, transparent)" : "color-mix(in srgb, var(--err-soft) 20%, transparent)"}` }}>
+                    <span style={{ fontSize: 12, color: r.ok ? "var(--ok)" : "var(--err-soft)" }}>{r.ok ? "✓" : "✗"}</span>
                     <span style={{ fontSize: 11, color: S.textBright, flex: 1, fontFamily: "monospace" }}>{r.name}</span>
-                    {!r.ok && <span style={{ fontSize: 10, color: "#e07070" }}>{r.error}</span>}
+                    {!r.ok && <span style={{ fontSize: 10, color: "var(--err-soft)" }}>{r.error}</span>}
                   </div>
                 ))}
               </div>
@@ -621,7 +621,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
   };
 
   const typeLabel = { mssql: "SQL Server", mysql: "MySQL", postgresql: "PostgreSQL" };
-  const typeColor = { mssql: "#93c5fd", mysql: "#6ee7b7", postgresql: "#f9a8d4" };
+  const typeColor = { mssql: "#93c5fd", mysql: "var(--ok)", postgresql: "#f9a8d4" };
 
   return (
     <div>
@@ -741,15 +741,15 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                     <BookOpen size={10} />
                   </button>
                   <button onClick={() => setAiWizardConn(conn)} className="text-xs px-2 py-0.5 rounded"
-                    style={{ backgroundColor: S.bgEl, color: "#fce499", border: `1px solid rgba(252,228,153,0.3)` }}
+                    style={{ backgroundColor: S.bgEl, color: "var(--accent)", border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)` }}
                     title="KI-Dataset-Assistent">
                     <Sparkles size={10} />
                   </button>
                   <button onClick={() => testConn(conn)} className="text-xs px-2 py-0.5 rounded"
                     style={{ backgroundColor: S.bgEl, color: S.textDim, border: `1px solid ${S.border}` }} title="Verbindung testen">
                     {testResults[conn.id] === "loading" ? <Loader2 size={10} className="animate-spin" />
-                      : testResults[conn.id] === "ok" ? <CheckCircle size={10} style={{ color: "#6ee7b7" }} />
-                      : testResults[conn.id] === "error" ? <XCircle size={10} style={{ color: "#e07070" }} />
+                      : testResults[conn.id] === "ok" ? <CheckCircle size={10} style={{ color: "var(--ok)" }} />
+                      : testResults[conn.id] === "error" ? <XCircle size={10} style={{ color: "var(--err-soft)" }} />
                       : "Test"}
                   </button>
                   {canEdit && (<>
@@ -763,7 +763,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                     <button onClick={() => deleteConn(conn.id)}
                       className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                       style={{ color: S.textDim }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                       onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                       <Trash2 size={13} />
                     </button>
@@ -778,11 +778,11 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                 <span className="text-xs" style={{ color: S.textDim }}>{conn.username}</span>
                 <div className="flex items-center gap-1 ml-auto">
                   {rebuildingCache[conn.id] ? (
-                    <span style={{ fontSize: 9, color: "rgba(252,228,153,0.7)" }}>
+                    <span style={{ fontSize: 9, color: "color-mix(in srgb, var(--accent) 70%, transparent)" }}>
                       Schema wird geladen…
                     </span>
                   ) : conn.schema_cached_at ? (
-                    <span style={{ fontSize: 9, color: "rgba(252,228,153,0.5)" }} title={`${conn.schema_table_count} Tabellen gecacht`}>
+                    <span style={{ fontSize: 9, color: "color-mix(in srgb, var(--accent) 50%, transparent)" }} title={`${conn.schema_table_count} Tabellen gecacht`}>
                       ✦ {conn.schema_table_count}T · {cacheAge(conn.schema_cached_at)}
                     </span>
                   ) : (
@@ -790,7 +790,7 @@ export default function DbConnectionManager({ projectId = null, canEdit = true, 
                   )}
                   <button onClick={() => rebuildCache(conn)} disabled={rebuildingCache[conn.id]}
                     title="Schema-Cache neu aufbauen"
-                    style={{ background: "none", border: "none", color: rebuildingCache[conn.id] ? "rgba(252,228,153,0.6)" : S.textDim, cursor: rebuildingCache[conn.id] ? "wait" : "pointer", padding: "1px 2px", display: "flex" }}>
+                    style={{ background: "none", border: "none", color: rebuildingCache[conn.id] ? "color-mix(in srgb, var(--accent) 60%, transparent)" : S.textDim, cursor: rebuildingCache[conn.id] ? "wait" : "pointer", padding: "1px 2px", display: "flex" }}>
                     <RefreshCw size={9} className={rebuildingCache[conn.id] ? "animate-spin" : ""} />
                   </button>
                 </div>

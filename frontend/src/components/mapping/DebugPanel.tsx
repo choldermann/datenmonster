@@ -12,7 +12,7 @@ const STAGE_COLORS = {
   calc:      "#fb7185",
   python:    "#22c55e",
   sql:       "#a78bfa",
-  output:    "#6ee7b7",
+  output:    "var(--ok)",
 };
 
 const STAGE_ICONS = {
@@ -45,20 +45,20 @@ function FieldTooltip({ field, values }) {
 }
 
 function SampleTable({ stage, selectedRowIdx, onRowSelect }) {
-  const color = STAGE_COLORS[stage.type] || "#94a3b8";
+  const color = STAGE_COLORS[stage.type] || "var(--muted)";
   const [hoveredField, setHoveredField] = useState(null);
 
   if (!stage.sample?.length) return null;
   const cols = Object.keys(stage.sample[0]).slice(0, 7);
 
   return (
-    <div style={{ marginTop: 4, backgroundColor: "rgba(0,0,0,0.3)", border: `1px solid ${color}33`, borderRadius: 6, overflow: "auto", maxHeight: 220 }}>
+    <div style={{ marginTop: 4, backgroundColor: "rgba(0,0,0,0.3)", border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, borderRadius: 6, overflow: "auto", maxHeight: 220 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
         <thead>
           <tr style={{ backgroundColor: color + "12" }}>
-            <th style={{ padding: "4px 6px", width: 20, borderBottom: `1px solid ${color}22` }} />
+            <th style={{ padding: "4px 6px", width: 20, borderBottom: `1px solid color-mix(in srgb, ${color} 13.3%, transparent)` }} />
             {cols.map(k => (
-              <th key={k} style={{ padding: "4px 8px", textAlign: "left", color: S.textDim, fontWeight: 700, whiteSpace: "nowrap", borderBottom: `1px solid ${color}22`, fontFamily: "monospace" }}>{k}</th>
+              <th key={k} style={{ padding: "4px 8px", textAlign: "left", color: S.textDim, fontWeight: 700, whiteSpace: "nowrap", borderBottom: `1px solid color-mix(in srgb, ${color} 13.3%, transparent)`, fontFamily: "monospace" }}>{k}</th>
             ))}
           </tr>
         </thead>
@@ -73,7 +73,7 @@ function SampleTable({ stage, selectedRowIdx, onRowSelect }) {
                   borderBottom: "1px solid rgba(255,255,255,0.04)",
                   backgroundColor: isSelected ? color + "22" : "transparent",
                   cursor: "pointer",
-                  outline: isSelected ? `1px solid ${color}66` : "none",
+                  outline: isSelected ? `1px solid color-mix(in srgb, ${color} 40%, transparent)` : "none",
                 }}
                 onMouseEnter={e => { if (!isSelected) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
                 onMouseLeave={e => { if (!isSelected) e.currentTarget.style.backgroundColor = "transparent"; }}
@@ -96,7 +96,7 @@ function SampleTable({ stage, selectedRowIdx, onRowSelect }) {
 }
 
 function RowInspector({ trace, selectedRowIdx, activeStageIdx, onStageStep }) {
-  const color = STAGE_COLORS[trace[activeStageIdx]?.type] || "#94a3b8";
+  const color = STAGE_COLORS[trace[activeStageIdx]?.type] || "var(--muted)";
   const stage = trace[activeStageIdx];
   const row = stage?.sample?.[selectedRowIdx];
 
@@ -106,12 +106,12 @@ function RowInspector({ trace, selectedRowIdx, activeStageIdx, onStageStep }) {
     <div style={{
       margin: "0 16px 12px",
       borderRadius: 8,
-      border: `1px solid ${color}55`,
+      border: `1px solid color-mix(in srgb, ${color} 33.3%, transparent)`,
       backgroundColor: color + "0a",
       overflow: "hidden",
     }}>
       {/* Navigator */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: `1px solid ${color}33`, backgroundColor: color + "10" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, backgroundColor: color + "10" }}>
         <button
           onClick={() => onStageStep(-1)}
           disabled={activeStageIdx === 0}
@@ -137,7 +137,7 @@ function RowInspector({ trace, selectedRowIdx, activeStageIdx, onStageStep }) {
       {/* Stage breadcrumb dots */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 4, padding: "5px 12px" }}>
         {trace.map((s, i) => {
-          const c = STAGE_COLORS[s.type] || "#94a3b8";
+          const c = STAGE_COLORS[s.type] || "var(--muted)";
           const hasRow = s.sample && s.sample[selectedRowIdx] !== undefined;
           return (
             <button
@@ -177,7 +177,7 @@ function RowInspector({ trace, selectedRowIdx, activeStageIdx, onStageStep }) {
 
 function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSelect }) {
   const [open, setOpen] = useState(false);
-  const color = STAGE_COLORS[stage.type] || "#94a3b8";
+  const color = STAGE_COLORS[stage.type] || "var(--muted)";
   const Icon = STAGE_ICONS[stage.type] || Database;
   const dropped = stage.rows_in !== null && stage.rows_out !== null
     ? stage.rows_in - stage.rows_out : 0;
@@ -202,7 +202,7 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
           cursor: "pointer",
           transition: "border-color 0.15s, background-color 0.15s",
           position: "relative",
-          boxShadow: isActive ? `0 0 12px ${color}33` : "none",
+          boxShadow: isActive ? `0 0 12px color-mix(in srgb, ${color} 20%, transparent)` : "none",
         }}
         onMouseEnter={e => { if (!isActive) { e.currentTarget.style.borderColor = color + "88"; e.currentTarget.style.backgroundColor = color + "0a"; } }}
         onMouseLeave={e => { if (!isActive) { e.currentTarget.style.borderColor = color + "44"; e.currentTarget.style.backgroundColor = S.bgCard; } }}
@@ -213,12 +213,12 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
           </div>
           <span style={{ fontSize: 12, fontWeight: 600, color: isActive ? S.textBright : S.textMain, flex: 1 }}>{stage.label}</span>
 
-          <span style={{ fontSize: 11, fontWeight: 700, color, backgroundColor: color + "18", padding: "2px 8px", borderRadius: 10, border: `1px solid ${color}33` }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color, backgroundColor: color + "18", padding: "2px 8px", borderRadius: 10, border: `1px solid color-mix(in srgb, ${color} 20%, transparent)` }}>
             {stage.rows_out ?? "–"} Zeilen
           </span>
 
           {stage.errors > 0 && (
-            <span style={{ fontSize: 10, fontWeight: 700, color: "#f87171", backgroundColor: "#f8717118", padding: "2px 6px", borderRadius: 10, border: "1px solid #f8717133" }}>
+            <span style={{ fontSize: 10, fontWeight: 700, color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 9.4%, transparent)", padding: "2px 6px", borderRadius: 10, border: "1px solid color-mix(in srgb, var(--err) 20%, transparent)" }}>
               ⚠ {stage.errors}
             </span>
           )}
@@ -236,7 +236,7 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
               {stage.meta.mode}{stage.meta.committed ? " · committed" : ""}
             </span>
           )}
-          <pre style={{ margin: "4px 0 0", padding: "8px 10px", backgroundColor: "#0f0f1e", border: `1px solid ${color}33`, borderRadius: 6, fontSize: 10, fontFamily: "monospace", color: S.textMain, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 160, overflow: "auto" }}>
+          <pre style={{ margin: "4px 0 0", padding: "8px 10px", backgroundColor: "#0f0f1e", border: `1px solid color-mix(in srgb, ${color} 20%, transparent)`, borderRadius: 6, fontSize: 10, fontFamily: "monospace", color: S.textMain, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 160, overflow: "auto" }}>
             {stage.meta.sql}
           </pre>
         </div>
@@ -250,7 +250,7 @@ function StageCard({ stage, isLast, isActive, onSelect, selectedRowIdx, onRowSel
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 14px", color: S.textDim, fontSize: 10 }}>
           <div style={{ width: 2, height: 16, backgroundColor: S.border, margin: "0 13px" }} />
           {dropped > 0 && (
-            <span style={{ color: "#f87171" }}>↓ {dropped} ausgeschieden</span>
+            <span style={{ color: "var(--err)" }}>↓ {dropped} ausgeschieden</span>
           )}
         </div>
       )}
@@ -288,14 +288,14 @@ export default function DebugPanel({ trace = [], totalDurationMs = 0, errors = [
           Debug-Trace
         </span>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <span style={{ fontSize: 10, color: "#6ee7b7", backgroundColor: "rgba(110,231,183,0.12)", padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(110,231,183,0.25)" }}>
+          <span style={{ fontSize: 10, color: "var(--ok)", backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)", padding: "2px 8px", borderRadius: 10, border: "1px solid color-mix(in srgb, var(--ok) 25%, transparent)" }}>
             {totalOut} Datensätze
           </span>
           <span style={{ fontSize: 10, color: S.textDim }}>
             {totalDurationMs}ms gesamt
           </span>
           {totalErrors > 0 && (
-            <span style={{ fontSize: 10, color: "#f87171", backgroundColor: "rgba(248,113,113,0.12)", padding: "2px 8px", borderRadius: 10, border: "1px solid rgba(248,113,113,0.25)" }}>
+            <span style={{ fontSize: 10, color: "var(--err)", backgroundColor: "color-mix(in srgb, var(--err) 12%, transparent)", padding: "2px 8px", borderRadius: 10, border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)" }}>
               ⚠ {totalErrors} Fehler
             </span>
           )}
@@ -354,8 +354,8 @@ export default function DebugPanel({ trace = [], totalDurationMs = 0, errors = [
         ))}
 
         {errors.length > 0 && (
-          <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 6, backgroundColor: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }}>
-            <p style={{ fontSize: 10, fontWeight: 700, color: "#f87171", marginBottom: 6 }}>Fehler</p>
+          <div style={{ marginTop: 12, padding: "10px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)" }}>
+            <p style={{ fontSize: 10, fontWeight: 700, color: "var(--err)", marginBottom: 6 }}>Fehler</p>
             {errors.slice(0, 5).map((e, i) => (
               <p key={i} style={{ fontSize: 10, color: "#fca5a5", fontFamily: "monospace" }}>{e}</p>
             ))}

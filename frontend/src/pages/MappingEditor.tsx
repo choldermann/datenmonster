@@ -1118,13 +1118,13 @@ export default function MappingEditor() {
       {runErrorBanner && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          backgroundColor: S.bgCard, border: "1px solid rgba(248,113,113,0.4)",
+          backgroundColor: S.bgCard, border: "1px solid color-mix(in srgb, var(--err) 40%, transparent)",
           borderRadius: 10, padding: "14px 18px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           display: "flex", alignItems: "flex-start", gap: 12, maxWidth: 460,
         }}>
           <span style={{ fontSize: 18, flexShrink: 0 }}>✗</span>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#f87171", margin: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--err)", margin: 0 }}>
               Fehler beim Ausführen
             </p>
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 8px", wordBreak: "break-word" }}>
@@ -1149,13 +1149,13 @@ export default function MappingEditor() {
       {exportSuccess && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          backgroundColor: S.bgCard, border: "1px solid rgba(110,231,183,0.4)",
+          backgroundColor: S.bgCard, border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
           borderRadius: 10, padding: "14px 18px", boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
           display: "flex", alignItems: "center", gap: 12, minWidth: 320,
         }}>
           <span style={{ fontSize: 18 }}>✓</span>
           <div style={{ flex: 1 }}>
-            <p style={{ fontSize: 13, fontWeight: 600, color: "#6ee7b7", margin: 0 }}>
+            <p style={{ fontSize: 13, fontWeight: 600, color: "var(--ok)", margin: 0 }}>
               Export gespeichert
             </p>
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
@@ -1164,8 +1164,8 @@ export default function MappingEditor() {
           </div>
           <button onClick={() => navigate("/exports")}
             style={{ fontSize: 11, padding: "5px 10px", borderRadius: 5, cursor: "pointer",
-              backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid rgba(110,231,183,0.3)",
-              color: "#6ee7b7" }}>
+              backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)",
+              color: "var(--ok)" }}>
             Exporte →
           </button>
           <button onClick={() => setExportSuccess(null)}
@@ -1189,7 +1189,7 @@ export default function MappingEditor() {
           )}
           {canEdit && (
             <button onClick={() => setShowSmartMapping(true)}
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 4, border: "1px solid rgba(252,228,153,0.3)", background: "rgba(252,228,153,0.08)", color: S.accent, fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 11px", borderRadius: 4, border: "1px solid color-mix(in srgb, var(--accent) 30%, transparent)", background: "color-mix(in srgb, var(--accent) 8%, transparent)", color: S.accent, fontSize: 11, cursor: "pointer", fontWeight: 600 }}
               title="Smart Mapping – Tabellen automatisch erkennen">
               <Sparkles size={13} /> Smart
             </button>
@@ -1216,7 +1216,7 @@ export default function MappingEditor() {
           </button>
 
           <button onClick={handleExecuteAll} disabled={targets.length === 0 && !isExecuting}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, cursor: targets.length === 0 && !isExecuting ? "not-allowed" : "pointer", backgroundColor: isExecuting ? "rgba(239,68,68,0.15)" : "#22c55e22", border: `1px solid ${isExecuting ? "rgba(239,68,68,0.5)" : "#22c55e55"}`, color: isExecuting ? "#f87171" : "#22c55e", fontSize: 12, fontWeight: 700, opacity: targets.length === 0 && !isExecuting ? 0.4 : 1, transition: "all 0.2s" }}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 4, cursor: targets.length === 0 && !isExecuting ? "not-allowed" : "pointer", backgroundColor: isExecuting ? "rgba(239,68,68,0.15)" : "#22c55e22", border: `1px solid ${isExecuting ? "rgba(239,68,68,0.5)" : "#22c55e55"}`, color: isExecuting ? "var(--err)" : "#22c55e", fontSize: 12, fontWeight: 700, opacity: targets.length === 0 && !isExecuting ? 0.4 : 1, transition: "all 0.2s" }}
             onMouseEnter={(e) => { if (!isExecuting && targets.length > 0) e.currentTarget.style.backgroundColor = "#22c55e33"; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = isExecuting ? "rgba(239,68,68,0.15)" : "#22c55e22"; }}>
             {isExecuting
@@ -1224,13 +1224,13 @@ export default function MappingEditor() {
               : <><Play size={13} /> Ausführen</>}
           </button>
           {savedToast && (
-            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "#6ee7b7", animation: "fadeIn 0.2s ease" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--ok)", animation: "fadeIn 0.2s ease" }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               Gespeichert
             </span>
           )}
           {isExecuting && executeStatus && executeStatus.done < executeStatus.total && (
-            <span style={{ fontSize: 11, color: "#f87171" }}>
+            <span style={{ fontSize: 11, color: "var(--err)" }}>
               {executeStatus.done}/{executeStatus.total} fertig
             </span>
           )}
@@ -1402,7 +1402,7 @@ export default function MappingEditor() {
                         onDragStart={e => e.dataTransfer.setData("node_type", item.type)}
                         onClick={() => setPaletteInfo(item)}
                         title={item.title + " – klicken für Info, ziehen zum Platzieren"}
-                        style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, cursor: "grab", backgroundColor: item.color + "18", border: `1px solid ${item.color}45`, color: item.color, flexShrink: 0, transition: "background-color 0.15s, border-color 0.15s" }}
+                        style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, cursor: "grab", backgroundColor: item.color + "18", border: `1px solid color-mix(in srgb, ${item.color} 27.1%, transparent)`, color: item.color, flexShrink: 0, transition: "background-color 0.15s, border-color 0.15s" }}
                         onMouseEnter={e => { e.currentTarget.style.backgroundColor = item.color + "35"; e.currentTarget.style.borderColor = item.color + "90"; }}
                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = item.color + "18"; e.currentTarget.style.borderColor = item.color + "45"; }}>
                         <item.Icon size={15} />
@@ -1421,17 +1421,17 @@ export default function MappingEditor() {
           <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
             {/* Hints */}
             {pendingSource && !pendingJoin && (
-              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: "rgba(252,228,153,0.12)", border: `1px solid ${S.accent}`, color: S.accent }}>
+              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)", border: `1px solid ${S.accent}`, color: S.accent }}>
                 „{pendingSource.field}" ausgewählt → Zielfeld anklicken oder Quellfeld für Auto-Mapping
               </div>
             )}
             {pendingJoin && (
-              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: `${JOIN_COLOR}18`, border: `1px solid ${JOIN_COLOR}`, color: JOIN_COLOR }}>
+              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: `color-mix(in srgb, ${JOIN_COLOR} 9.4%, transparent)`, border: `1px solid ${JOIN_COLOR}`, color: JOIN_COLOR }}>
                 Join: „{pendingJoin.field}" → Feld im anderen Dataset klicken · ESC abbr.
               </div>
             )}
             {autoJoinNotice && (
-              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: "rgba(110,231,183,0.12)", border: "1px solid #6ee7b3", color: "#6ee7b3", whiteSpace: "nowrap" }}>
+              <div style={{ position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 30, padding: "6px 16px", borderRadius: 20, fontSize: 11, pointerEvents: "none", backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)", border: "1px solid #6ee7b3", color: "#6ee7b3", whiteSpace: "nowrap" }}>
                 🔗 {autoJoinNotice.count} Join{autoJoinNotice.count > 1 ? "s" : ""} automatisch erkannt: {autoJoinNotice.names.join(", ")}
               </div>
             )}
@@ -1783,7 +1783,7 @@ export default function MappingEditor() {
               {canEdit && (
                 <button onClick={() => setShowNewTarget(true)}
                   style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: S.accent, background: "none", border: "none", cursor: "pointer", padding: "2px 4px", borderRadius: 4 }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.1)"}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 10%, transparent)"}
                   onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "transparent"}>
                   <Plus size={11} /> Neues Ziel
                 </button>
@@ -1835,7 +1835,7 @@ export default function MappingEditor() {
                       setTargets((prev) => { const next = prev.filter((t) => t.id !== activeTarget.id); setActiveTargetId(next[0]?.id || null); return next; });
                     }} title="Ziel löschen"
                       style={{ padding: "3px 6px", borderRadius: 4, background: "none", border: `1px solid ${S.border}`, color: S.textDim, cursor: "pointer" }}
-                      onMouseEnter={(e) => e.currentTarget.style.color = "#e07070"}
+                      onMouseEnter={(e) => e.currentTarget.style.color = "var(--err-soft)"}
                       onMouseLeave={(e) => e.currentTarget.style.color = S.textDim}>
                       <Trash2 size={11} />
                     </button>
@@ -1898,12 +1898,12 @@ export default function MappingEditor() {
                         setTimeout(triggerLineDraw, 50);
                       }}
                       onClick={(e) => { e.stopPropagation(); if (pendingSource) { handleTargetFieldClick(conn.target_field); } }}
-                      style={{ display: "flex", flexDirection: "column", padding: "6px 10px 6px 8px", margin: "1px 6px", borderRadius: 4, cursor: "grab", borderTop: "2px solid transparent", backgroundColor: "transparent", border: `1px solid ${conn.source_field ? (ti?.color || "#6ee7b7") + "33" : "transparent"}`, transition: "background-color 0.1s" }}
+                      style={{ display: "flex", flexDirection: "column", padding: "6px 10px 6px 8px", margin: "1px 6px", borderRadius: 4, cursor: "grab", borderTop: "2px solid transparent", backgroundColor: "transparent", border: `1px solid ${conn.source_field ? (ti?.color || "var(--ok)") + "33" : "transparent"}`, transition: "background-color 0.1s" }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                         <GripVertical size={10} style={{ color: S.textDim, flexShrink: 0 }} />
-                        <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, backgroundColor: conn.source_field ? (ti?.color || "#6ee7b7") : "transparent", border: `2px solid ${conn.source_field ? (ti?.color || "#6ee7b7") : S.textDim}` }} />
+                        <div style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, backgroundColor: conn.source_field ? (ti?.color || "var(--ok)") : "transparent", border: `2px solid ${conn.source_field ? (ti?.color || "var(--ok)") : S.textDim}` }} />
                         <span style={{ fontSize: 11, fontFamily: "monospace", fontWeight: 600, color: conn.source_field ? S.textBright : S.textDim, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 0 }}>
                           {/* 🔑 Slot – feste Breite */}
                           <span style={{ width: 16, flexShrink: 0, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9 }}>
@@ -1911,7 +1911,7 @@ export default function MappingEditor() {
                           </span>
                           {/* Typ-Badge Slot – feste Breite */}
                           {(() => {
-                            const TC = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", datetime:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
+                            const TC = { integer:"#93c5fd", decimal:"var(--ok)", date:"#fcd34d", datetime:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
                             const TL = { integer:"INT", decimal:"DEC", date:"DAT", datetime:"DT", boolean:"BOL", string:"STR" };
                             // Effektiver Typ: expliziter Cast > Ziel-DB-Schema > durchgereichter Quelltyp
                             const effType = conn.target_type || targetColumnTypes[conn.target_field]?.type || _srcType;
@@ -1939,12 +1939,12 @@ export default function MappingEditor() {
                             <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conn.target_field}</span>
                           )}
                         </span>
-                        {conn.source_field && <span style={{ fontSize: 9, color: ti?.color || "#6ee7b7", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{ti?.label}</span>}
+                        {conn.source_field && <span style={{ fontSize: 9, color: ti?.color || "var(--ok)", flexShrink: 0, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 700 }}>{ti?.label}</span>}
                         {/* target_type Badge */}
                         {conn.target_type && (() => {
-                          const TYPE_COLORS = { integer:"#60a5fa", decimal:"#34d399", date:"#f59e0b", datetime:"#f59e0b", boolean:"#a78bfa", string:"#94a3b8" };
+                          const TYPE_COLORS = { integer:"#60a5fa", decimal:"#34d399", date:"#f59e0b", datetime:"#f59e0b", boolean:"#a78bfa", string:"var(--muted)" };
                           const TYPE_LABELS = { integer:"INT", decimal:"DEC", date:"DAT", datetime:"DT", boolean:"BOOL", string:"STR" };
-                          const c = TYPE_COLORS[conn.target_type] || "#94a3b8";
+                          const c = TYPE_COLORS[conn.target_type] || "var(--muted)";
                           return <span style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", color: c, border: `1px solid ${c}`, borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>{TYPE_LABELS[conn.target_type] || conn.target_type}</span>;
                         })()}
                         {/* Typ-Inkompatibilitäts-Warnung */}
@@ -1962,7 +1962,7 @@ export default function MappingEditor() {
                           </button>
                         )}
                         <button onClick={(e) => { e.stopPropagation(); removeConnection(idx); }} style={{ color: S.textDim, flexShrink: 0, lineHeight: 1, background: "none", border: "none", cursor: "pointer" }}
-                          onMouseEnter={(e) => { e.currentTarget.style.color = "#e07070"; }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = "var(--err-soft)"; }}
                           onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; }}>
                           <X size={10} />
                         </button>
@@ -1990,12 +1990,12 @@ export default function MappingEditor() {
                                 e.stopPropagation();
                               }}
                               placeholder="Standardwert…"
-                              style={{ flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid #6ee7b755", borderRadius: 3, color: "#6ee7b7", fontFamily: "monospace", fontSize: 9, padding: "1px 4px", outline: "none" }}
+                              style={{ flex: 1, background: "rgba(255,255,255,0.08)", border: "1px solid color-mix(in srgb, var(--ok) 33.3%, transparent)", borderRadius: 3, color: "var(--ok)", fontFamily: "monospace", fontSize: 9, padding: "1px 4px", outline: "none" }}
                             />
                           </div>
                         ) : conn.default_value != null && conn.default_value !== "" ? (
                           <span
-                            style={{ fontSize: 9, fontFamily: "monospace", color: "#6ee7b7", cursor: "pointer" }}
+                            style={{ fontSize: 9, fontFamily: "monospace", color: "var(--ok)", cursor: "pointer" }}
                             onClick={(e) => { e.stopPropagation(); setEditingDefault({ idx, value: conn.default_value }); }}
                             title="Standardwert bearbeiten">
                             = „{conn.default_value}"
@@ -2004,7 +2004,7 @@ export default function MappingEditor() {
                           <button
                             onClick={(e) => { e.stopPropagation(); setEditingDefault({ idx, value: "" }); }}
                             style={{ fontSize: 9, color: S.textDim, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "monospace" }}
-                            onMouseEnter={(e) => { e.currentTarget.style.color = "#6ee7b7"; }}
+                            onMouseEnter={(e) => { e.currentTarget.style.color = "var(--ok)"; }}
                             onMouseLeave={(e) => { e.currentTarget.style.color = S.textDim; }}
                             title="Standardwert setzen (wird verwendet wenn kein Quellfeld verbunden)">
                             + Standard
@@ -2017,7 +2017,7 @@ export default function MappingEditor() {
 
                 {/* Drop zone */}
                 <div style={{ margin: "4px 6px 6px", padding: "10px", borderRadius: 4, border: `1px dashed ${S.border}`, textAlign: "center", fontSize: 10, color: S.textDim }}
-                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = S.accent; e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.05)"; }}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.style.borderColor = S.accent; e.currentTarget.style.color = S.accent; e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 5%, transparent)"; }}
                   onDragLeave={(e) => { e.currentTarget.style.borderColor = S.border; e.currentTarget.style.color = S.textDim; e.currentTarget.style.backgroundColor = "transparent"; }}
                   onDrop={(e) => {
                     e.currentTarget.style.borderColor = S.border; e.currentTarget.style.color = S.textDim; e.currentTarget.style.backgroundColor = "transparent";
@@ -2059,9 +2059,9 @@ export default function MappingEditor() {
                 const totalFilters = canvasNodes.reduce((s, n) => s + Object.values(n.filters || {}).filter(Boolean).length, 0);
                 return (
                   <button onClick={() => setShowJoinList(true)}
-                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 4, cursor: "pointer", backgroundColor: `${JOIN_COLOR}10`, border: `1px solid ${JOIN_COLOR}40`, color: JOIN_COLOR }}
-                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${JOIN_COLOR}20`)}
-                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = `${JOIN_COLOR}10`)}>
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 10px", borderRadius: 4, cursor: "pointer", backgroundColor: `color-mix(in srgb, ${JOIN_COLOR} 6.3%, transparent)`, border: `1px solid color-mix(in srgb, ${JOIN_COLOR} 25.1%, transparent)`, color: JOIN_COLOR }}
+                    onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${JOIN_COLOR} 12.5%, transparent)`)}
+                    onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${JOIN_COLOR} 6.3%, transparent)`)}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                       {joins.length > 0 && <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em" }}>Joins ({joins.length})</span>}
                       {totalFilters > 0 && <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", color: "#a78bfa" }}>⊤ Filter ({totalFilters})</span>}
@@ -2107,10 +2107,10 @@ export default function MappingEditor() {
             ) : schemaData ? (
               <>
                 {schemaData.errors?.length > 0 && (
-                  <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "rgba(224,112,112,0.08)",
-                      border: "1px solid rgba(224,112,112,0.25)", borderRadius: 6 }}>
+                  <div style={{ marginBottom: 12, padding: "8px 12px", backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)", borderRadius: 6 }}>
                     {schemaData.errors.map((e, i) => (
-                      <p key={i} style={{ fontSize: 10, color: "#e07070", margin: 0 }}>⚠ {e}</p>
+                      <p key={i} style={{ fontSize: 10, color: "var(--err-soft)", margin: 0 }}>⚠ {e}</p>
                     ))}
                   </div>
                 )}
@@ -2131,10 +2131,10 @@ export default function MappingEditor() {
                     {(schemaData.columns || []).map((col, i) => {
                       const ti = schemaData.column_types?.[col];
                       const TYPE_COLORS = { integer:"#60a5fa", decimal:"#34d399", date:"#f59e0b",
-                                            datetime:"#f59e0b", boolean:"#a78bfa", bool:"#a78bfa", string:"#94a3b8" };
+                                            datetime:"#f59e0b", boolean:"#a78bfa", bool:"#a78bfa", string:"var(--muted)" };
                       const TYPE_LABELS = { integer:"INT", decimal:"DEC", date:"DAT", datetime:"DT",
                                             boolean:"BOOL", bool:"BOOL", string:"STR" };
-                      const tc = ti ? (TYPE_COLORS[ti.type] || "#94a3b8") : "#94a3b8";
+                      const tc = ti ? (TYPE_COLORS[ti.type] || "var(--muted)") : "var(--muted)";
                       const tl = ti ? (TYPE_LABELS[ti.type] || ti.type?.toUpperCase() || "?") : "?";
                       return (
                         <tr key={col} style={{ borderBottom: `1px solid ${S.border}`,
@@ -2230,7 +2230,7 @@ export default function MappingEditor() {
                       <div key={i}
                         onClick={() => { setShowJoinList(false); setEditingJoin(i); }}
                         style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", borderRadius: 5, cursor: "pointer", marginBottom: 3, border: `1px solid ${S.border}` }}
-                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `${JOIN_COLOR}10`)}
+                        onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${JOIN_COLOR} 6.3%, transparent)`)}
                         onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "transparent")}>
                         <span style={{ fontSize: 9, fontWeight: 700, color: JOIN_COLOR, textTransform: "uppercase", letterSpacing: "0.08em", width: 40, flexShrink: 0 }}>{jt.label}</span>
                         <span style={{ fontSize: 11, color: S.textMain, fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -2314,7 +2314,7 @@ export default function MappingEditor() {
               Verbindung entfernen
             </p>
             <p style={{ fontSize: 12, color: "var(--text-main)", margin: "0 0 6px" }}>
-              <span style={{ color: "#6ee7b7", fontFamily: "monospace" }}>{confirmDeleteConn.conn.source_field}</span>
+              <span style={{ color: "var(--ok)", fontFamily: "monospace" }}>{confirmDeleteConn.conn.source_field}</span>
               {" → "}
               <span style={{ color: "var(--accent)", fontFamily: "monospace" }}>{confirmDeleteConn.conn.target_field}</span>
             </p>
@@ -2332,7 +2332,7 @@ export default function MappingEditor() {
                 triggerLineDraw();
               }} style={{
                 fontSize: 12, fontWeight: 600, padding: "7px 14px", borderRadius: 6, cursor: "pointer",
-                background: "rgba(224,112,112,0.15)", border: "1px solid rgba(224,112,112,0.4)", color: "#e07070",
+                background: "color-mix(in srgb, var(--err-soft) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)", color: "var(--err-soft)",
               }}>Verbindung löschen</button>
             </div>
           </div>

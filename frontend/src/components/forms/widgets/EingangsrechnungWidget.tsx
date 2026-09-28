@@ -19,16 +19,16 @@ const STATUS = {
   matched:         { label: "Zugeordnet",       color: "#34d399" },
   no_order:        { label: "Ohne Bestellung",  color: "#60a5fa" },
   platzhalter:     { label: "Platzhalter",      color: "#a78bfa" },
-  ambiguous:       { label: "Mehrdeutig",       color: "#fbbf24" },
+  ambiguous:       { label: "Mehrdeutig",       color: "var(--warn)" },
   unknown_article: { label: "Artikel unbekannt", color: "#f97316" },
-  unklar:          { label: "Unklar",           color: "#f87171" },
+  unklar:          { label: "Unklar",           color: "var(--err)" },
 };
 
 function Badge({ status }) {
   const m = STATUS[status] || { label: status, color: S.textDim };
   return (
     <span style={{ fontSize: 10, fontWeight: 700, color: m.color,
-      background: m.color + "22", border: `1px solid ${m.color}55`,
+      background: m.color + "22", border: `1px solid color-mix(in srgb, ${m.color} 33.3%, transparent)`,
       borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{m.label}</span>
   );
 }
@@ -220,17 +220,17 @@ function NeuerArtikelModal({ connectionId, position, lieferant, stammdaten, onFe
         {(pruefung?.fehler?.length > 0 || pruefung?.hinweise?.length > 0) && (
           <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 5 }}>
             {(pruefung.fehler || []).map((t, i) => (
-              <div key={`f${i}`} style={{ display: "flex", gap: 6, fontSize: 11, color: "#f87171" }}>
+              <div key={`f${i}`} style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--err)" }}>
                 <XCircle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{t}</div>
             ))}
             {(pruefung.hinweise || []).map((t, i) => (
-              <div key={`h${i}`} style={{ display: "flex", gap: 6, fontSize: 11, color: "#fbbf24" }}>
+              <div key={`h${i}`} style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--warn)" }}>
                 <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />{t}</div>
             ))}
           </div>
         )}
         {fehler && (
-          <div style={{ marginTop: 10, fontSize: 11, color: "#f87171" }}>{fehler}</div>
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--err)" }}>{fehler}</div>
         )}
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
@@ -379,7 +379,7 @@ function QuellenVerwaltung({ connId, offen, onToggle, onAbgeholt }) {
                   </span>
                 </div>
                 {q.letzter_status && (
-                  <div style={{ fontSize: 10, color: q.letzter_fehler ? "#e07070" : S.textDim }}>
+                  <div style={{ fontSize: 10, color: q.letzter_fehler ? "var(--err-soft)" : S.textDim }}>
                     {q.letzter_fehler || q.letzter_status}
                     {q.letzter_lauf ? ` · ${new Date(q.letzter_lauf).toLocaleString("de-DE")}` : ""}
                   </div>
@@ -394,7 +394,7 @@ function QuellenVerwaltung({ connId, offen, onToggle, onAbgeholt }) {
                 ✎
               </button>
               <button onClick={() => loeschen(q)} title="Löschen"
-                style={{ background: "none", border: "none", cursor: "pointer", color: "#e07070", padding: 2 }}>
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--err-soft)", padding: 2 }}>
                 <X size={12} />
               </button>
             </div>
@@ -522,7 +522,7 @@ function QuellenVerwaltung({ connId, offen, onToggle, onAbgeholt }) {
           )}
 
           {meldung && <div style={{ fontSize: 11, color: "#34d399", marginTop: 8 }}>{meldung}</div>}
-          {fehler && <div style={{ fontSize: 11, color: "#e07070", marginTop: 8 }}>{fehler}</div>}
+          {fehler && <div style={{ fontSize: 11, color: "var(--err-soft)", marginTop: 8 }}>{fehler}</div>}
         </div>
       )}
     </div>
@@ -867,7 +867,7 @@ export default function EingangsrechnungWidget({ widget }) {
       <div onClick={() => fileRef.current?.click()} {...ablageProps}
         style={{ border: `2px dashed ${ueberDerFlaeche ? S.accent : S.border}`, borderRadius: 10,
           padding: "30px 20px", textAlign: "center", cursor: "pointer", color: S.textDim,
-          background: ueberDerFlaeche ? "rgba(252,228,153,0.06)" : "transparent",
+          background: ueberDerFlaeche ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent",
           transition: "border-color .12s, background .12s" }}>
         {loading ? <Loader2 size={26} className="animate-spin" /> : <Upload size={26} />}
         <div style={{ marginTop: 8, fontSize: 13, color: S.textMain }}>
@@ -877,7 +877,7 @@ export default function EingangsrechnungWidget({ widget }) {
       </div>
       <input ref={fileRef} type="file" accept=".pdf,.xml" style={{ display: "none" }}
         onChange={e => upload(e.target.files?.[0])} />
-      {error && <div style={{ marginTop: 10, color: "#e07070", fontSize: 12 }}>{error}</div>}
+      {error && <div style={{ marginTop: 10, color: "var(--err-soft)", fontSize: 12 }}>{error}</div>}
 
       <Posteingang belege={posteingang} holt={holt} onAbholen={abholen}
         onOeffnen={ausPosteingang} onVerwerfen={(id) => belegStatus(id, "verworfen")} />
@@ -925,7 +925,7 @@ export default function EingangsrechnungWidget({ widget }) {
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: S.textBright }}>
               {num(summen.rechnung_brutto).toFixed(2)} €</div>
-            <div style={{ fontSize: 10, color: plan.reconciliation_ok ? "#34d399" : "#f87171" }}>
+            <div style={{ fontSize: 10, color: plan.reconciliation_ok ? "#34d399" : "var(--err)" }}>
               {plan.reconciliation_ok ? "✓ Summe stimmt" : `✗ Δ ${num(summen.differenz).toFixed(2)}`}</div>
           </div>
         )}
@@ -1164,14 +1164,14 @@ export default function EingangsrechnungWidget({ widget }) {
                 <td style={{ padding: "6px 14px 3px 0", color: S.textBright, fontWeight: 700,
                   borderTop: `2px solid ${S.border}` }}>Gesamt brutto</td>
                 <td style={{ padding: "6px 0 3px 0", textAlign: "right", whiteSpace: "nowrap",
-                  color: plan.reconciliation_ok === false ? "#f87171" : "#34d399",
+                  color: plan.reconciliation_ok === false ? "var(--err)" : "#34d399",
                   fontWeight: 700, fontSize: 13, borderTop: `2px solid ${S.border}` }}>
                   {num(summen.berechnet_brutto).toFixed(2)} €</td>
                 <td style={{ padding: "6px 0 3px 12px", textAlign: "right", fontSize: 10,
                   whiteSpace: "nowrap", color: S.textDim, borderTop: `2px solid ${S.border}` }}>
                   {summen.rechnung_brutto != null
                     && Math.abs(num(summen.rechnung_brutto) - num(summen.berechnet_brutto)) >= 0.005
-                    ? <span style={{ color: "#f87171" }}>
+                    ? <span style={{ color: "var(--err)" }}>
                         Beleg {num(summen.rechnung_brutto).toFixed(2)}</span>
                     : "✓ wie im Beleg"}</td>
               </tr>
@@ -1230,7 +1230,7 @@ export default function EingangsrechnungWidget({ widget }) {
       {plan.errors?.length > 0 && (
         <div style={{ marginTop: 8 }}>
           {plan.errors.map((w, k) => (
-            <div key={k} style={{ fontSize: 11, color: "#e07070", display: "flex", gap: 6 }}>
+            <div key={k} style={{ fontSize: 11, color: "var(--err-soft)", display: "flex", gap: 6 }}>
               <XCircle size={12} style={{ flexShrink: 0, marginTop: 1 }} /> {w}</div>
           ))}
         </div>

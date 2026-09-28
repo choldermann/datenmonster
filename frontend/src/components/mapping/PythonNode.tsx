@@ -6,7 +6,7 @@ import { useNodeResize, ResizeHandle } from "./useNodeResize";
 export const PYTHON_NODE_COLOR = "#22c55e";
 
 const DOT = 10;
-const ACTIVE_BORDER = "#fce499";
+const ACTIVE_BORDER = "var(--accent)";
 
 export default function PythonNode({ node, onUpdate, onRemove, onPositionChange, outputRefs, debugHighlight, aiEnabled, mappingId, isActive, onActivate }) {
   const dragging = useRef(false);
@@ -49,9 +49,9 @@ export default function PythonNode({ node, onUpdate, onRemove, onPositionChange,
   });
 
   const activeBorder = isActive && !debugHighlight;
-  const borderColor = debugHighlight ? `${C}cc` : activeBorder ? ACTIVE_BORDER : `${C}55`;
+  const borderColor = debugHighlight ? `color-mix(in srgb, ${C} 80%, transparent)` : activeBorder ? ACTIVE_BORDER : `color-mix(in srgb, ${C} 33.3%, transparent)`;
   const boxShadow = debugHighlight
-    ? `0 0 0 2px ${C}, 0 0 20px ${C}55, 0 8px 32px rgba(0,0,0,0.5)`
+    ? `0 0 0 2px ${C}, 0 0 20px color-mix(in srgb, ${C} 33.3%, transparent), 0 8px 32px rgba(0,0,0,0.5)`
     : activeBorder
     ? `0 0 0 2px ${ACTIVE_BORDER}, 0 8px 32px rgba(0,0,0,0.5)`
     : "0 8px 32px rgba(0,0,0,0.5)";

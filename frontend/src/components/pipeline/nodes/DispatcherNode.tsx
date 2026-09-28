@@ -152,15 +152,15 @@ export default function DispatcherNode({ node, onRemove, onPositionChange, onUpd
 
         <button onClick={addCond}
           style={{ padding: "3px", borderRadius: 3, fontSize: 9, fontWeight: 600, cursor: "pointer",
-            backgroundColor: color + "10", border: `1px dashed ${color}44`, color,
+            backgroundColor: color + "10", border: `1px dashed color-mix(in srgb, ${color} 26.7%, transparent)`, color,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
           <Plus size={9} /> Bedingung hinzufügen
         </button>
 
         {/* Port-Labels */}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 2 }}>
-          <span style={{ fontSize: 8, color: "#6ee7b7", fontWeight: 700 }}>✓ JA →</span>
-          <span style={{ fontSize: 8, color: "#e07070", fontWeight: 700 }}>✗ NEIN →</span>
+          <span style={{ fontSize: 8, color: "var(--ok)", fontWeight: 700 }}>✓ JA →</span>
+          <span style={{ fontSize: 8, color: "var(--err-soft)", fontWeight: 700 }}>✗ NEIN →</span>
         </div>
       </div>
     </BaseNode>

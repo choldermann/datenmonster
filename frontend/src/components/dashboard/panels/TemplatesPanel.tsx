@@ -17,7 +17,7 @@ const INHALT_LABEL = {
   knowledge:   ["Wissensregel", "Wissensregeln"],
 };
 
-const ACCENT_HEX = "#fce499";
+const ACCENT_HEX = "var(--accent)";
 
 // Woher eine Vorlage kam. Beim Support ist das die erste Frage, wenn eine
 // Installation etwas anderes zeigt als erwartet.
@@ -106,13 +106,13 @@ function TemplateCard({ template, projectId, onInstalled }) {
     <div style={{ borderRadius: 8, border: `1px solid ${S.border}`, backgroundColor: S.bgCard, overflow: "hidden", marginBottom: 10 }}>
       {/* Header */}
       <div style={{ padding: "12px 16px", display: "flex", alignItems: "flex-start", gap: 12 }}>
-        <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: `${ACCENT_HEX}15`, border: `1px solid ${ACCENT_HEX}33`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+        <div style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: `color-mix(in srgb, ${ACCENT_HEX} 8.2%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT_HEX} 20%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
           <Package size={16} style={{ color: ACCENT_HEX }} />
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <p style={{ fontSize: 13, fontWeight: 700, color: S.textBright, margin: 0 }}>{template.name}</p>
-            <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, backgroundColor: `${ACCENT_HEX}15`, color: ACCENT_HEX, fontWeight: 700, textTransform: "uppercase" }}>
+            <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, backgroundColor: `color-mix(in srgb, ${ACCENT_HEX} 8.2%, transparent)`, color: ACCENT_HEX, fontWeight: 700, textTransform: "uppercase" }}>
               v{template.version}
             </span>
             {template.author && (
@@ -132,8 +132,8 @@ function TemplateCard({ template, projectId, onInstalled }) {
             {/* Woran man ohne Aufklappen erkennt, ob das Template ausgerollt ist. */}
             {inDiesemProjekt ? (
               <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 9,
-                padding: "1px 6px", borderRadius: 3, backgroundColor: "rgba(110,231,183,0.12)",
-                border: "1px solid rgba(110,231,183,0.35)", color: "#6ee7b7", fontWeight: 700 }}>
+                padding: "1px 6px", borderRadius: 3, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)", fontWeight: 700 }}>
                 <Check size={9} /> Installiert
               </span>
             ) : anderswoInstalliert.length > 0 ? (
@@ -222,7 +222,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
           {/* Was wird angelegt – aus der Vorlage gezählt. Hier stand bis 2026-09
               bei JEDER Vorlage der Intrastat-Text ("Zwei Mappings → INSTAT XML"). */}
           {template.contents && Object.keys(template.contents).length > 0 && (
-            <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5, backgroundColor: `${ACCENT_HEX}08`, border: `1px solid ${ACCENT_HEX}22` }}>
+            <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5, backgroundColor: `color-mix(in srgb, ${ACCENT_HEX} 3.1%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT_HEX} 13.3%, transparent)` }}>
               <p style={{ fontSize: 10, fontWeight: 700, color: ACCENT_HEX, marginBottom: 4 }}>Was wird installiert:</p>
               <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
                 {Object.entries(template.contents).map(([typ, n]) => (
@@ -236,8 +236,8 @@ function TemplateCard({ template, projectId, onInstalled }) {
           {/* Passt die Vorlage zur JTL-Version der gewählten Verbindung? */}
           {kompat && (kompat.fehlend?.length > 0 || kompat.felder?.length > 0) && (
             <div style={{ marginBottom: 14, padding: "8px 10px", borderRadius: 5,
-              backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.3)" }}>
-              <p style={{ fontSize: 10, fontWeight: 700, color: "#e07070", marginBottom: 4 }}>
+              backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)" }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--err-soft)", marginBottom: 4 }}>
                 Passt nicht zu dieser Datenbank{kompat.version ? ` (JTL ${kompat.version})` : ""}
               </p>
               <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
@@ -252,15 +252,15 @@ function TemplateCard({ template, projectId, onInstalled }) {
 
           {/* Error */}
           {error && (
-            <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
-              <p style={{ fontSize: 11, color: "#e07070", margin: 0 }}>✗ {error}</p>
+            <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)" }}>
+              <p style={{ fontSize: 11, color: "var(--err-soft)", margin: 0 }}>✗ {error}</p>
             </div>
           )}
 
           {summary && !error && (
             <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5,
-              backgroundColor: "rgba(110,231,183,0.1)", border: "1px solid rgba(110,231,183,0.3)" }}>
-              <p style={{ fontSize: 11, color: "#6ee7b7", margin: 0 }}>✓ {summary}</p>
+              backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)" }}>
+              <p style={{ fontSize: 11, color: "var(--ok)", margin: 0 }}>✓ {summary}</p>
             </div>
           )}
 
@@ -274,9 +274,9 @@ function TemplateCard({ template, projectId, onInstalled }) {
                 onInstalled(); // reload
               } catch(e) { alert(fehlerText(e)); }
             }}
-            style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)", color: "#e07070", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}
-            onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(224,112,112,0.15)"}
-            onMouseLeave={e => e.currentTarget.style.backgroundColor = "rgba(224,112,112,0.08)"}>
+            style={{ padding: "8px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)", color: "var(--err-soft)", cursor: "pointer", fontSize: 12, display: "flex", alignItems: "center", gap: 5 }}
+            onMouseEnter={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--err-soft) 15%, transparent)"}
+            onMouseLeave={e => e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--err-soft) 8%, transparent)"}>
             <Trash2 size={12} /> Löschen
           </button>
           <button
@@ -294,7 +294,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
             <Download size={12} /> Herunterladen
           </button>
           <button onClick={handleInstall} disabled={installing || installed}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, backgroundColor: installed ? "rgba(110,231,183,0.15)" : ACCENT_HEX, border: "none", color: installed ? "#6ee7b7" : "#111", cursor: installing || installed ? "default" : "pointer", fontSize: 12, fontWeight: 700 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 6, backgroundColor: installed ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT_HEX, border: "none", color: installed ? "var(--ok)" : "var(--accent-fg)", cursor: installing || installed ? "default" : "pointer", fontSize: 12, fontWeight: 700 }}>
             {installing ? <Loader2 size={13} className="animate-spin" /> : installed ? <Check size={13} /> : <Play size={13} />}
             {installing ? "Wird installiert..." : installed ? "Installiert!"
               : inDiesemProjekt ? "Erneut installieren" : "Template installieren"}
@@ -392,8 +392,8 @@ function StoreSection({ onInstalled }) {
       )}
 
       {error && (
-        <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)" }}>
-          <p style={{ fontSize: 11, color: "#e07070", margin: 0 }}>✗ {error}</p>
+        <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)" }}>
+          <p style={{ fontSize: 11, color: "var(--err-soft)", margin: 0 }}>✗ {error}</p>
         </div>
       )}
 
@@ -416,7 +416,7 @@ function StoreSection({ onInstalled }) {
                 <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>{t.name}</p>
                 <span style={{ fontSize: 9, color: S.textDim }}>v{t.version}</span>
                 {t.update_available && (
-                  <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, backgroundColor: `${ACCENT_HEX}15`, color: ACCENT_HEX, fontWeight: 700 }}>
+                  <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, backgroundColor: `color-mix(in srgb, ${ACCENT_HEX} 8.2%, transparent)`, color: ACCENT_HEX, fontWeight: 700 }}>
                     Update
                   </span>
                 )}
@@ -427,7 +427,7 @@ function StoreSection({ onInstalled }) {
               // Der Store holt nur in den Katalog. Ausgerollt wird je Projekt –
               // beides „Installiert" zu nennen war die eigentliche Verwirrung.
               <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
-                color: t.installiert_in?.length ? "#6ee7b7" : S.textDim, flexShrink: 0 }}
+                color: t.installiert_in?.length ? "var(--ok)" : S.textDim, flexShrink: 0 }}
                 title={t.installiert_in?.length
                   ? `Installiert in: ${t.installiert_in.map(p => p.name).join(", ")}`
                   : "Liegt im Katalog – unten im Reiter in ein Projekt installieren"}>
@@ -436,7 +436,7 @@ function StoreSection({ onInstalled }) {
               </span>
             ) : t.entitled ? (
               <button onClick={() => fetchTemplate(t)} disabled={busy === t.template_id}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: ACCENT_HEX, border: "none", color: "#111", cursor: busy ? "default" : "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: ACCENT_HEX, border: "none", color: "var(--accent-fg)", cursor: busy ? "default" : "pointer", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
                 {busy === t.template_id ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
                 {t.update_available ? "Aktualisieren" : "Holen"}
               </button>
@@ -451,7 +451,7 @@ function StoreSection({ onInstalled }) {
 
           {auf && (
             <div style={{ marginTop: 10, marginLeft: 20, padding: "10px 12px", borderRadius: 6,
-              backgroundColor: `${ACCENT_HEX}08`, border: `1px solid ${ACCENT_HEX}22`,
+              backgroundColor: `color-mix(in srgb, ${ACCENT_HEX} 3.1%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT_HEX} 13.3%, transparent)`,
               display: "flex", flexDirection: "column", gap: 8 }}>
               {(c.mappings > 0 || c.forms > 0 || c.knowledge > 0) && (
                 <VorschauZeile label="Umfang" text={[
@@ -535,7 +535,7 @@ export default function TemplatesPanel({ projectId, canEdit }) {
         {canEdit && (
           <div style={{ display: "flex", gap: 8 }}>
           <button onClick={() => setCreating(true)}
-            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.15)", border: "1px solid rgba(252,228,153,0.4)", color: ACCENT_HEX, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 40%, transparent)", color: ACCENT_HEX, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
             <Plus size={13} /> Template erstellen
           </button>
           {istAdmin && (

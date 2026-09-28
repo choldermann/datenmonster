@@ -163,8 +163,8 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
             disabled={loading || !description.trim()}
             style={{
               marginTop: 6, width: "100%", padding: "5px 0",
-              backgroundColor: loading ? "transparent" : `${AI_COLOR}18`,
-              border: `1px solid ${loading ? S.border : `${AI_COLOR}55`}`,
+              backgroundColor: loading ? "transparent" : `color-mix(in srgb, ${AI_COLOR} 9.4%, transparent)`,
+              border: `1px solid ${loading ? S.border : `color-mix(in srgb, ${AI_COLOR} 33.3%, transparent)`}`,
               borderRadius: 5, color: loading ? S.textDim : AI_COLOR,
               fontSize: 10, fontWeight: 700, cursor: loading ? "wait" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
@@ -185,8 +185,8 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
           )}
 
           {error && (
-            <div style={{ marginTop: 6, fontSize: 9, color: "#f87171", padding: "4px 6px",
-              backgroundColor: "rgba(248,113,113,0.08)", borderRadius: 4, border: "1px solid rgba(248,113,113,0.25)" }}>
+            <div style={{ marginTop: 6, fontSize: 9, color: "var(--err)", padding: "4px 6px",
+              backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)", borderRadius: 4, border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)" }}>
               {error}
             </div>
           )}
@@ -219,8 +219,8 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
                       style={{
                         display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
                         padding: "4px 6px", borderRadius: 4,
-                        backgroundColor: isChecked ? `${AI_COLOR}10` : "transparent",
-                        border: `1px solid ${isChecked ? `${AI_COLOR}33` : "transparent"}`,
+                        backgroundColor: isChecked ? `color-mix(in srgb, ${AI_COLOR} 6.3%, transparent)` : "transparent",
+                        border: `1px solid ${isChecked ? `color-mix(in srgb, ${AI_COLOR} 20%, transparent)` : "transparent"}`,
                         transition: "all 0.1s",
                       }}>
                       <input
@@ -234,7 +234,7 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
                         style={{ width: 10, height: 10, flexShrink: 0, accentColor: AI_COLOR }}
                       />
                       <div style={{ width: 16, height: 16, borderRadius: 3, flexShrink: 0,
-                        backgroundColor: `${def.color}18`, border: `1px solid ${def.color}33`,
+                        backgroundColor: `color-mix(in srgb, ${def.color} 9.4%, transparent)`, border: `1px solid color-mix(in srgb, ${def.color} 20%, transparent)`,
                         display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <def.Icon size={9} style={{ color: def.color }} />
                       </div>
@@ -244,7 +244,7 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
                           {f.label}
                         </div>
                         {f.required && (
-                          <div style={{ fontSize: 8, color: "#f87171" }}>Pflichtfeld</div>
+                          <div style={{ fontSize: 8, color: "var(--err)" }}>Pflichtfeld</div>
                         )}
                       </div>
                     </label>
@@ -257,8 +257,8 @@ export default function AiFieldSuggest({ existingFields, onAddFields, maxRow }: 
                 disabled={selected.size === 0}
                 style={{
                   marginTop: 6, width: "100%", padding: "5px 0",
-                  backgroundColor: selected.size > 0 ? `${AI_COLOR}18` : "transparent",
-                  border: `1px solid ${selected.size > 0 ? `${AI_COLOR}55` : S.border}`,
+                  backgroundColor: selected.size > 0 ? `color-mix(in srgb, ${AI_COLOR} 9.4%, transparent)` : "transparent",
+                  border: `1px solid ${selected.size > 0 ? `color-mix(in srgb, ${AI_COLOR} 33.3%, transparent)` : S.border}`,
                   borderRadius: 5, color: selected.size > 0 ? AI_COLOR : S.textDim,
                   fontSize: 10, fontWeight: 700, cursor: selected.size > 0 ? "pointer" : "default",
                 }}>

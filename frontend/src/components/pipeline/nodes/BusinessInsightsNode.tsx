@@ -141,7 +141,7 @@ export default function BusinessInsightsNode({
           <div style={{
             fontSize: 9, color: requiredOk ? "#4ade80" : S.textDim,
             padding: "3px 6px", borderRadius: 3,
-            backgroundColor: requiredOk ? "#4ade8010" : `${COLOR}10`,
+            backgroundColor: requiredOk ? "#4ade8010" : `color-mix(in srgb, ${COLOR} 6.3%, transparent)`,
             border: `1px solid ${requiredOk ? "#4ade8030" : COLOR + "30"}`,
           }}>
             {requiredOk
@@ -157,7 +157,7 @@ export default function BusinessInsightsNode({
             style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
               gap: 4, padding: "4px 6px", borderRadius: 3, cursor: "pointer",
-              backgroundColor: `${COLOR}15`, border: `1px solid ${COLOR}40`,
+              backgroundColor: `color-mix(in srgb, ${COLOR} 8.2%, transparent)`, border: `1px solid color-mix(in srgb, ${COLOR} 25.1%, transparent)`,
               color: COLOR, fontSize: 10, fontWeight: 600,
             }}
           >
@@ -170,7 +170,7 @@ export default function BusinessInsightsNode({
           <div style={{
             display: "flex", flexDirection: "column", gap: 8,
             padding: "8px", borderRadius: 4,
-            backgroundColor: `${COLOR}08`, border: `1px solid ${COLOR}25`,
+            backgroundColor: `color-mix(in srgb, ${COLOR} 3.1%, transparent)`, border: `1px solid color-mix(in srgb, ${COLOR} 14.5%, transparent)`,
           }}>
 
             {/* Presets */}
@@ -181,7 +181,7 @@ export default function BusinessInsightsNode({
                   {presets.map(p => (
                     <button key={p.id} onClick={() => applyPreset(p)} style={{
                       fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer",
-                      backgroundColor: `${COLOR}20`, border: `1px solid ${COLOR}50`, color: COLOR,
+                      backgroundColor: `color-mix(in srgb, ${COLOR} 12.5%, transparent)`, border: `1px solid color-mix(in srgb, ${COLOR} 31.4%, transparent)`, color: COLOR,
                     }}>
                       {p.label}
                     </button>
@@ -223,7 +223,7 @@ export default function BusinessInsightsNode({
                             display: "flex", alignItems: "center", gap: 2,
                             fontSize: 8, padding: "2px 5px", borderRadius: 3,
                             cursor: "pointer", whiteSpace: "nowrap",
-                            backgroundColor: `${COLOR}20`, border: `1px solid ${COLOR}50`,
+                            backgroundColor: `color-mix(in srgb, ${COLOR} 12.5%, transparent)`, border: `1px solid color-mix(in srgb, ${COLOR} 31.4%, transparent)`,
                             color: COLOR, flexShrink: 0,
                           }}>
                           <Sparkles size={8} />

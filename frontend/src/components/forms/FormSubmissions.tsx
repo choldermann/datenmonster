@@ -73,7 +73,7 @@ export default function FormSubmissions({ formId, onClose }) {
             {subs.length > 0 && (
               <button onClick={clearAll}
                 style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
-                  color: "#e07070", background: "none", border: `1px solid ${S.border}`,
+                  color: "var(--err-soft)", background: "none", border: `1px solid ${S.border}`,
                   borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
                 <Trash2 size={12} /> Leeren
               </button>
@@ -94,7 +94,7 @@ export default function FormSubmissions({ formId, onClose }) {
             </div>
           ) : error ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px 20px",
-              color: "#e07070", fontSize: 12 }}>
+              color: "var(--err-soft)", fontSize: 12 }}>
               <AlertCircle size={14} /> {error}
             </div>
           ) : subs.length === 0 ? (
@@ -123,8 +123,8 @@ export default function FormSubmissions({ formId, onClose }) {
                       <td style={{ ...td, color: S.textDim }}>{fmtDate(s.submitted_at)}</td>
                       <td style={td}>
                         <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-                          color: s.status === "error" ? "#e07070" : "#6ee7b7",
-                          backgroundColor: s.status === "error" ? "rgba(224,112,112,0.12)" : "rgba(110,231,183,0.12)" }}
+                          color: s.status === "error" ? "var(--err-soft)" : "var(--ok)",
+                          backgroundColor: s.status === "error" ? "color-mix(in srgb, var(--err-soft) 12%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)" }}
                           title={s.error || ""}>
                           {s.status === "error" ? "Fehler" : "OK"}
                         </span>

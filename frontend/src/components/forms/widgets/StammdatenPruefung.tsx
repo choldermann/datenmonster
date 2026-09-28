@@ -5,9 +5,9 @@ import { Loader2, Search, ExternalLink, AlertCircle, ShieldCheck, ShieldAlert,
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
 
-const ACCENT = "#fce499";
-const GRUEN = "#6ee7b7";
-const ROT = "#e07070";
+const ACCENT = "var(--accent)";
+const GRUEN = "var(--ok)";
+const ROT = "var(--err-soft)";
 
 const FELD_LABEL = {
   EAN: "EAN", Warennummer: "Warennummer (cTaric)",
@@ -26,7 +26,7 @@ function Sicherheit({ stufe, wert }) {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 5,
       padding: "3px 8px", borderRadius: 20, whiteSpace: "nowrap",
-      backgroundColor: `${farbe}1a`, border: `1px solid ${farbe}55`, color: farbe,
+      backgroundColor: `color-mix(in srgb, ${farbe} 10.2%, transparent)`, border: `1px solid color-mix(in srgb, ${farbe} 33.3%, transparent)`, color: farbe,
       fontSize: 11, fontWeight: 700 }}>
       <Icon size={12} /> {wert} % · {text}
     </span>
@@ -124,14 +124,14 @@ function PlanVorschau({ plan, onSchreiben, schreibt }) {
           {!bestaetigen ? (
             <button onClick={() => setBestaetigen(true)}
               style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px",
-                borderRadius: 7, backgroundColor: "rgba(110,231,183,0.12)",
-                border: `1px solid ${GRUEN}66`, color: GRUEN, cursor: "pointer",
+                borderRadius: 7, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
+                border: `1px solid color-mix(in srgb, ${GRUEN} 40%, transparent)`, color: GRUEN, cursor: "pointer",
                 fontSize: 12.5, fontWeight: 700 }}>
               <Upload size={14} /> {plan.anzahl_bereit} Werte in die Wawi schreiben
             </button>
           ) : (
             <div style={{ padding: "12px 14px", borderRadius: 8,
-              backgroundColor: "rgba(224,112,112,0.07)", border: `1px solid ${ROT}55` }}>
+              backgroundColor: "color-mix(in srgb, var(--err-soft) 7%, transparent)", border: `1px solid color-mix(in srgb, ${ROT} 33.3%, transparent)` }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                 <AlertTriangle size={15} style={{ color: ROT }} />
                 <p style={{ fontSize: 13, fontWeight: 800, color: S.textBright, margin: 0 }}>
@@ -314,8 +314,8 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
     borderBottom: `1px solid ${S.border}`, verticalAlign: "top" };
 
   return (
-    <div style={{ marginTop: 16, borderRadius: 10, border: `1px solid ${ACCENT}55`,
-      backgroundColor: `${ACCENT}0a`, padding: 16 }}>
+    <div style={{ marginTop: 16, borderRadius: 10, border: `1px solid color-mix(in srgb, ${ACCENT} 33.3%, transparent)`,
+      backgroundColor: `color-mix(in srgb, ${ACCENT} 3.9%, transparent)`, padding: 16 }}>
 
       <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 6 }}>
         <Search size={16} style={{ color: ACCENT }} />
@@ -355,7 +355,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
 
       {fehler && (
         <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 6,
-          backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)",
+          backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)",
           display: "flex", gap: 8, alignItems: "center" }}>
           <AlertCircle size={14} style={{ color: ROT }} />
           <span style={{ fontSize: 12, color: ROT }}>{fehler}</span>
@@ -367,7 +367,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
           <button onClick={() => stapel(stand ? offset : 0)} disabled={laeuft || stand?.fertig}
             style={{ display: "flex", alignItems: "center", gap: 7, padding: "9px 15px",
               borderRadius: 7, border: "none",
-              backgroundColor: stand?.fertig ? "rgba(110,231,183,0.15)" : ACCENT,
+              backgroundColor: stand?.fertig ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT,
               color: stand?.fertig ? GRUEN : "#111",
               cursor: laeuft || stand?.fertig ? "default" : "pointer",
               fontSize: 12.5, fontWeight: 700 }}>
@@ -401,8 +401,8 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
             </button>
             <button onClick={vorschau} disabled={!auswahl.length || planLaeuft}
               style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 15px",
-                borderRadius: 7, border: `1px solid ${GRUEN}55`,
-                backgroundColor: auswahl.length ? "rgba(110,231,183,0.15)" : "transparent",
+                borderRadius: 7, border: `1px solid color-mix(in srgb, ${GRUEN} 33.3%, transparent)`,
+                backgroundColor: auswahl.length ? "color-mix(in srgb, var(--ok) 15%, transparent)" : "transparent",
                 color: GRUEN, opacity: auswahl.length ? 1 : 0.45,
                 cursor: auswahl.length && !planLaeuft ? "pointer" : "default",
                 fontSize: 12.5, fontWeight: 700 }}>
@@ -429,7 +429,7 @@ export default function StammdatenPruefung({ hersteller, artikel, mappingId,
             <tbody>
               {zeilen.map((z, i) => (
                 <tr key={i} style={{ backgroundColor: istGewaehlt(z)
-                  ? "rgba(110,231,183,0.07)" : "transparent" }}>
+                  ? "color-mix(in srgb, var(--ok) 7%, transparent)" : "transparent" }}>
                   <td style={{ ...td, width: 30 }}>
                     {/* Standardmäßig ist nichts ausgewählt – die Übernahme ist
                         immer eine bewusste Entscheidung. */}

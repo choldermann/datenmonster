@@ -3,7 +3,7 @@ import { X, Check, ChevronDown, ChevronRight, Save, Loader2, Database, GitBranch
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 function TreeItem({ icon, label, sublabel, checked, onChange, children, defaultOpen = false }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -11,7 +11,7 @@ function TreeItem({ icon, label, sublabel, checked, onChange, children, defaultO
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, cursor: "pointer", backgroundColor: checked ? `${ACCENT}10` : "transparent" }}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 8px", borderRadius: 4, cursor: "pointer", backgroundColor: checked ? `color-mix(in srgb, ${ACCENT} 6.3%, transparent)` : "transparent" }}
         onClick={() => onChange(!checked)}>
         {hasChildren && (
           <span onClick={e => { e.stopPropagation(); setOpen(v => !v); }} style={{ color: S.textDim, flexShrink: 0 }}>
@@ -23,7 +23,7 @@ function TreeItem({ icon, label, sublabel, checked, onChange, children, defaultO
         {/* Checkbox */}
         <div style={{ width: 14, height: 14, borderRadius: 3, border: `2px solid ${checked ? ACCENT : S.border}`, backgroundColor: checked ? ACCENT : "transparent", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
           onClick={e => { e.stopPropagation(); onChange(!checked); }}>
-          {checked && <Check size={9} color="#111" strokeWidth={3} />}
+          {checked && <Check size={9} color="var(--accent-fg)" strokeWidth={3} />}
         </div>
 
         <span style={{ fontSize: 11, flexShrink: 0 }}>{icon}</span>
@@ -142,7 +142,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
-      <div style={{ width: 580, maxHeight: "88vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid ${ACCENT}44`, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
+      <div style={{ width: 580, maxHeight: "88vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 10 }}>
@@ -296,7 +296,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
           </div>
 
           {totalSelected > 0 && (
-            <div style={{ fontSize: 10, color: ACCENT, padding: "5px 10px", borderRadius: 4, backgroundColor: `${ACCENT}10`, border: `1px solid ${ACCENT}22` }}>
+            <div style={{ fontSize: 10, color: ACCENT, padding: "5px 10px", borderRadius: 4, backgroundColor: `color-mix(in srgb, ${ACCENT} 6.3%, transparent)`, border: `1px solid color-mix(in srgb, ${ACCENT} 13.3%, transparent)` }}>
               ✓ {totalSelected} Element{totalSelected !== 1 ? "e" : ""} ausgewählt
               {selectedDatasets.size > 0 && ` · ${selectedDatasets.size} Dataset${selectedDatasets.size !== 1 ? "s" : ""}`}
               {selectedMappings.size > 0 && ` · ${selectedMappings.size} Mapping${selectedMappings.size !== 1 ? "s" : ""}`}
@@ -311,7 +311,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
         <div style={{ padding: "12px 18px", borderTop: `1px solid ${S.border}`, display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <button onClick={onClose} style={{ padding: "6px 14px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer", fontSize: 12 }}>Abbrechen</button>
           <button onClick={handleSave} disabled={saving || !name.trim() || totalSelected === 0}
-            style={{ padding: "6px 16px", borderRadius: 5, backgroundColor: ACCENT, border: "none", color: "#111", cursor: saving || !name.trim() || totalSelected === 0 ? "default" : "pointer", fontSize: 12, fontWeight: 700, opacity: !name.trim() || totalSelected === 0 ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ padding: "6px 16px", borderRadius: 5, backgroundColor: ACCENT, border: "none", color: "var(--accent-fg)", cursor: saving || !name.trim() || totalSelected === 0 ? "default" : "pointer", fontSize: 12, fontWeight: 700, opacity: !name.trim() || totalSelected === 0 ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}>
             {saving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             {saving ? "Wird gespeichert..." : "Template speichern"}
           </button>

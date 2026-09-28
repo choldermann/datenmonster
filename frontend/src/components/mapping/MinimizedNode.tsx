@@ -33,7 +33,7 @@ export function MinimizedNode({ type, color, label, onExpand, portLeftRef, portR
     position: "absolute", inset: 0,
     transform: "rotate(45deg)",
     backgroundColor: color + "18",
-    border: `2px solid ${color}55`,
+    border: `2px solid color-mix(in srgb, ${color} 33.3%, transparent)`,
     borderRadius: cfg.r,
   } : cfg.shape === "hexagon" ? {
     position: "absolute", inset: 0,
@@ -43,7 +43,7 @@ export function MinimizedNode({ type, color, label, onExpand, portLeftRef, portR
     position: "absolute", inset: 0,
     borderRadius: cfg.shape === "circle" || cfg.shape === "oval" ? "50%" : cfg.r,
     backgroundColor: color + "18",
-    border: `2px solid ${color}55`,
+    border: `2px solid color-mix(in srgb, ${color} 33.3%, transparent)`,
   };
 
   return (
@@ -64,7 +64,7 @@ export function MinimizedNode({ type, color, label, onExpand, portLeftRef, portR
             width: 8, height: 8, borderRadius: "50%",
             backgroundColor: color, border: "2px solid #1e1e1e",
             cursor: "crosshair", zIndex: 20,
-            boxShadow: `0 0 4px ${color}88` }} />
+            boxShadow: `0 0 4px color-mix(in srgb, ${color} 53.3%, transparent)` }} />
 
         {/* Port Rechts */}
         <div ref={portRightRef}
@@ -75,7 +75,7 @@ export function MinimizedNode({ type, color, label, onExpand, portLeftRef, portR
             width: 8, height: 8, borderRadius: "50%",
             backgroundColor: color, border: "2px solid #1e1e1e",
             cursor: "grab", zIndex: 20,
-            boxShadow: `0 0 4px ${color}88` }} />
+            boxShadow: `0 0 4px color-mix(in srgb, ${color} 53.3%, transparent)` }} />
         {/* Hintergrundform – kein Click-Handler = nur Drag */}
         <div style={shapeStyle} />
 

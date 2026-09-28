@@ -1,17 +1,36 @@
 import { useEffect, useState } from "react";
+import { findeTheme } from "../themes";
 
-export type ThemeMode = "dark" | "light" | "system";
+/** "system" folgt Hell/Dunkel des Betriebssystems, sonst eine Theme-ID aus themes.ts. */
+export type ThemeMode = string;
+
+function aufloesen(mode: ThemeMode): { id: string; scheme: "dark" | "light" } {
+  if (mode === "system") {
+    const dunkel = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return dunkel ? { id: "dark", scheme: "dark" } : { id: "light", scheme: "light" };
+  }
+  const t = findeTheme(mode) || findeTheme("dark")!;
+  return { id: t.id, scheme: t.scheme };
+}
 
 function applyTheme(mode: ThemeMode) {
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-  const useDark = mode === "dark" || (mode === "system" && prefersDark);
-  document.documentElement.setAttribute("data-theme", useDark ? "dark" : "light");
+  const { id, scheme } = aufloesen(mode);
+  document.documentElement.setAttribute("data-theme", id);
+  document.documentElement.setAttribute("data-scheme", scheme);
+}
+
+/** Ist das tatsächlich angezeigte Theme dunkel? (für Hell/Dunkel-Umschalter) */
+export function istDunkel(mode: ThemeMode): boolean {
+  return aufloesen(mode).scheme === "dark";
+}
+
+function gespeichert(): ThemeMode {
+  const wert = localStorage.getItem("dm_theme");
+  return wert && (wert === "system" || findeTheme(wert)) ? wert : "dark";
 }
 
 export function useTheme() {
-  const [mode, setMode] = useState<ThemeMode>(
-    () => (localStorage.getItem("dm_theme") as ThemeMode) || "dark"
-  );
+  const [mode, setMode] = useState<ThemeMode>(gespeichert);
 
   useEffect(() => {
     applyTheme(mode);
@@ -31,5 +50,4 @@ export function useTheme() {
 }
 
 // Beim ersten Laden sofort anwenden (verhindert Flash)
-const saved = (localStorage.getItem("dm_theme") as ThemeMode) || "dark";
-applyTheme(saved);
+applyTheme(gespeichert());

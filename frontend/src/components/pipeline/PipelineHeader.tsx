@@ -48,7 +48,7 @@ export default function PipelineHeader({ name, onNameChange, onBack, onSave, onE
       {onDebugRun && (
         <>
           <button onClick={onToggleDryRun} title="Umschalten: Dry-Run (sicher) / Echtlauf (echte Seiteneffekte)"
-            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 5, border: `1px solid ${dryRun ? "rgba(56,189,248,0.4)" : "rgba(224,112,112,0.5)"}`, background: dryRun ? "rgba(56,189,248,0.12)" : "rgba(224,112,112,0.12)", color: dryRun ? "#38bdf8" : "#e07070", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 5, border: `1px solid ${dryRun ? "rgba(56,189,248,0.4)" : "color-mix(in srgb, var(--err-soft) 50%, transparent)"}`, background: dryRun ? "rgba(56,189,248,0.12)" : "color-mix(in srgb, var(--err-soft) 12%, transparent)", color: dryRun ? "#38bdf8" : "var(--err-soft)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
             {dryRun ? "Dry-Run" : "Echtlauf"}
           </button>
           <button onClick={onDebugRun} disabled={debugLoading}
@@ -61,7 +61,7 @@ export default function PipelineHeader({ name, onNameChange, onBack, onSave, onE
       )}
 
       <button onClick={onExecute} disabled={executing}
-        style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 5, border: "none", backgroundColor: "var(--accent)", color: "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 16px", borderRadius: 5, border: "none", backgroundColor: "var(--accent)", color: "var(--accent-fg)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
         {executing ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
         {executing ? "Läuft..." : "Ausführen"}
       </button>

@@ -194,7 +194,7 @@ export default function DbDropdownField({ field, value, onChange, inp, onRunActi
         </div>
       )}
       {err && !open && options.length === 0 &&
-        <div style={{ fontSize: 11, color: "#e07070", marginTop: 4 }}>{err}</div>}
+        <div style={{ fontSize: 11, color: "var(--err-soft)", marginTop: 4 }}>{err}</div>}
     </div>
   );
 }

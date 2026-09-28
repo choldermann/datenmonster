@@ -89,7 +89,7 @@ function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose })
             </div>
           )}
           {error && (
-            <div style={{ padding: 16, color: "#e07070", fontSize: 12 }}>⚠ {error}</div>
+            <div style={{ padding: 16, color: "var(--err-soft)", fontSize: 12 }}>⚠ {error}</div>
           )}
           {!loading && !error && filtered.length === 0 && (
             <div style={{ padding: 16, color: S.textDim, fontSize: 12, textAlign: "center" }}>Keine Spalten gefunden</div>
@@ -97,17 +97,17 @@ function FieldPickerModal({ connId, table, existingFields, onConfirm, onClose })
           {!loading && !error && filtered.map((col) => {
             const isChecked = selected.has(col);
             const detail = colDetails.find(d => d.name === col);
-            const TYPE_COLORS = { integer:"#93c5fd", decimal:"#6ee7b7", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
+            const TYPE_COLORS = { integer:"#93c5fd", decimal:"var(--ok)", date:"#fcd34d", boolean:"#c4b5fd", string:"#6a6a6a" };
             return (
               <div key={col}
                 onClick={() => toggle(col)}
                 style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 5, cursor: "pointer", marginBottom: 2, userSelect: "none",
-                  backgroundColor: isChecked ? "rgba(252,228,153,0.06)" : "transparent",
-                  border: `1px solid ${isChecked ? "rgba(252,228,153,0.2)" : "transparent"}` }}
+                  backgroundColor: isChecked ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent",
+                  border: `1px solid ${isChecked ? "color-mix(in srgb, var(--accent) 20%, transparent)" : "transparent"}` }}
                 onMouseEnter={(e) => { if (!isChecked) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"; }}
                 onMouseLeave={(e) => { if (!isChecked) e.currentTarget.style.backgroundColor = "transparent"; }}>
                 <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${isChecked ? S.accent : S.textDim}`, backgroundColor: isChecked ? S.accent : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.1s" }}>
-                  {isChecked && <Check size={10} color="#111" strokeWidth={3} />}
+                  {isChecked && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
                 </div>
                 <span style={{ fontSize: 12, fontFamily: "monospace", color: isChecked ? S.textBright : S.textMain, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5 }}>
                   {detail?.is_primary && <span title="Primärschlüssel" style={{ fontSize: 10 }}>🔑</span>}
@@ -445,7 +445,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                       <Loader2 size={13} className="animate-spin" /> Lade Tabellen…
                     </div>
                   ) : tablesError ? (
-                    <div style={{ fontSize: 11, color: "#e07070", padding: "6px 0" }}>⚠ {tablesError}</div>
+                    <div style={{ fontSize: 11, color: "var(--err-soft)", padding: "6px 0" }}>⚠ {tablesError}</div>
                   ) : availableTables.length > 0 ? (
                     <select style={iS} value={table} onChange={(e) => setTable(e.target.value)}>
                       <option value="">– Tabelle wählen –</option>
@@ -516,9 +516,9 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
             {/* Als Dataset speichern */}
             <div
               onClick={() => setSaveAsDataset((v) => !v)}
-              style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 6, border: `1px solid ${saveAsDataset ? S.accent : S.border}`, backgroundColor: saveAsDataset ? "rgba(252,228,153,0.06)" : S.bgMain, cursor: "pointer", userSelect: "none" }}>
+              style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", borderRadius: 6, border: `1px solid ${saveAsDataset ? S.accent : S.border}`, backgroundColor: saveAsDataset ? "color-mix(in srgb, var(--accent) 6%, transparent)" : S.bgMain, cursor: "pointer", userSelect: "none" }}>
               <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${saveAsDataset ? S.accent : S.textDim}`, backgroundColor: saveAsDataset ? S.accent : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                {saveAsDataset && <Check size={10} color="#111" strokeWidth={3} />}
+                {saveAsDataset && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
               </div>
               <div>
                 <p style={{ fontSize: 12, fontWeight: 600, color: saveAsDataset ? S.accent : S.textMain, marginBottom: 2 }}>Als Dataset speichern</p>
@@ -528,7 +528,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
 
             {/* Dataset Schreibmodus – nur wenn save_as_dataset aktiv */}
             {saveAsDataset && (
-              <div style={{ padding: "10px 12px", borderRadius: 6, border: `1px solid ${S.accent}33`, backgroundColor: "rgba(252,228,153,0.04)" }}>
+              <div style={{ padding: "10px 12px", borderRadius: 6, border: `1px solid color-mix(in srgb, ${S.accent} 20%, transparent)`, backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)" }}>
                 <label style={lS}>Schreibmodus</label>
                 <div style={{ display: "flex", gap: 6 }}>
                   {[
@@ -537,14 +537,14 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                     { v: "upsert",  l: "Upsert",        desc: "Zeilen mit gleichem Primärschlüssel werden aktualisiert, neue werden eingefügt" },
                   ].map(({ v, l, desc }) => (
                     <div key={v} onClick={(e) => { e.stopPropagation(); setDatasetWriteMode(v); }}
-                      style={{ flex: 1, padding: "8px 10px", borderRadius: 5, cursor: "pointer", border: `1px solid ${datasetWriteMode === v ? S.accent : S.border}`, backgroundColor: datasetWriteMode === v ? "rgba(252,228,153,0.1)" : "transparent" }}>
+                      style={{ flex: 1, padding: "8px 10px", borderRadius: 5, cursor: "pointer", border: `1px solid ${datasetWriteMode === v ? S.accent : S.border}`, backgroundColor: datasetWriteMode === v ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent" }}>
                       <p style={{ fontSize: 11, fontWeight: 600, color: datasetWriteMode === v ? S.accent : S.textMain, marginBottom: 2 }}>{l}</p>
                       <p style={{ fontSize: 10, color: S.textDim, lineHeight: 1.4 }}>{desc}</p>
                     </div>
                   ))}
                 </div>
                 {datasetWriteMode === "upsert" && (
-                  <p style={{ fontSize: 10, color: "#fbbf24", marginTop: 8, lineHeight: 1.4 }}>
+                  <p style={{ fontSize: 10, color: "var(--warn)", marginTop: 8, lineHeight: 1.4 }}>
                     🔑 Upsert benötigt mindestens ein als Primärschlüssel markiertes Feld im Ziel-Dataset. Primärschlüssel können im Dataset-Editor gesetzt werden.
                   </p>
                 )}
@@ -586,7 +586,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                     </button>
                     <button onClick={() => setSortFields(prev => prev.filter((_, idx) => idx !== i))}
                       style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}
-                      onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+                      onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
                       onMouseLeave={e => e.currentTarget.style.color = S.textDim}>✕</button>
                   </div>
                 ))}
@@ -625,7 +625,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                     const active = requiredFields.includes(f);
                     return (
                       <button key={f} onClick={() => setRequiredFields(prev => active ? prev.filter(x => x !== f) : [...prev, f])}
-                        style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${active ? "#e07070" : S.border}`, backgroundColor: active ? "rgba(224,112,112,0.12)" : "transparent", color: active ? "#e07070" : S.textDim }}>
+                        style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${active ? "var(--err-soft)" : S.border}`, backgroundColor: active ? "color-mix(in srgb, var(--err-soft) 12%, transparent)" : "transparent", color: active ? "var(--err-soft)" : S.textDim }}>
                         {active ? "✕ " : ""}{f}
                       </button>
                     );
@@ -638,7 +638,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}
                   onClick={() => setDeduplicateEnabled(v => !v)}>
                   <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${deduplicateEnabled ? S.accent : S.textDim}`, backgroundColor: deduplicateEnabled ? S.accent : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    {deduplicateEnabled && <Check size={10} color="#111" strokeWidth={3} />}
+                    {deduplicateEnabled && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
                   </div>
                   <p style={{ fontSize: 11, fontWeight: 600, color: deduplicateEnabled ? S.accent : S.textMain, cursor: "pointer" }}>Duplikate entfernen</p>
                 </div>
@@ -650,7 +650,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                         const active = deduplicateFields.includes(f);
                         return (
                           <button key={f} onClick={() => setDeduplicateFields(prev => active ? prev.filter(x => x !== f) : [...prev, f])}
-                            style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${active ? S.accent : S.border}`, backgroundColor: active ? "rgba(252,228,153,0.12)" : "transparent", color: active ? S.accent : S.textDim }}>
+                            style={{ padding: "3px 10px", borderRadius: 4, fontSize: 10, fontWeight: 600, cursor: "pointer", border: `1px solid ${active ? S.accent : S.border}`, backgroundColor: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent", color: active ? S.accent : S.textDim }}>
                             {active ? "✓ " : ""}{f}
                           </button>
                         );
@@ -693,10 +693,10 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 </div>
               )}
               {safetyData && safetyData.checks.map((c: any) => {
-                const color = c.status === "ok" ? "#6ee7b7" : c.status === "warn" ? "#fbbf24" : "#e07070";
+                const color = c.status === "ok" ? "var(--ok)" : c.status === "warn" ? "var(--warn)" : "var(--err-soft)";
                 const icon = c.status === "ok" ? "✓" : c.status === "warn" ? "⚠" : "✗";
                 return (
-                  <div key={c.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: color + "10", border: `1px solid ${color}33` }}>
+                  <div key={c.id} style={{ display: "flex", gap: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: color + "10", border: `1px solid color-mix(in srgb, ${color} 20%, transparent)` }}>
                     <span style={{ color, fontWeight: 700, fontSize: 13, flexShrink: 0, width: 16, textAlign: "center" }}>{icon}</span>
                     <div>
                       <p style={{ fontSize: 12, fontWeight: 600, color }}>{c.label}</p>
@@ -710,7 +710,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                   onClick={() => setSafetyConfirmed(v => !v)}
                   style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8, padding: "10px 12px", borderRadius: 6, border: `1px solid ${safetyConfirmed ? "#f97316" : S.border}`, backgroundColor: safetyConfirmed ? "rgba(249,115,22,0.07)" : S.bgMain, cursor: "pointer", userSelect: "none" }}>
                   <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${safetyConfirmed ? "#f97316" : S.textDim}`, backgroundColor: safetyConfirmed ? "#f97316" : "transparent", flexShrink: 0, marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {safetyConfirmed && <Check size={10} color="#111" strokeWidth={3} />}
+                    {safetyConfirmed && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
                   </div>
                   <p style={{ fontSize: 11, color: safetyConfirmed ? "#f97316" : S.textMain, lineHeight: 1.5 }}>
                     Ich bin mir bewusst, dass Daten in die Datenbank geschrieben werden. Bei Modus „Truncate + Insert" oder „Replace" werden vorhandene Daten unwiderruflich gelöscht.

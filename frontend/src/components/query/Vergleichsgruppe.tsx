@@ -73,8 +73,8 @@ export default function Vergleichsgruppe({ projectId, gewaehlt, onChange, hinwei
           {gewaehlt.map((v) => (
             <span key={v} style={{ display: "flex", alignItems: "center", gap: 6,
               padding: "4px 8px", borderRadius: 5, fontSize: 11.5,
-              backgroundColor: "rgba(252,228,153,0.12)",
-              border: "1px solid rgba(252,228,153,0.35)", color: "var(--accent)" }}>
+              backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)",
+              border: "1px solid color-mix(in srgb, var(--accent) 35%, transparent)", color: "var(--accent)" }}>
               <Users size={11} />
               {beschriftung(v)}
               <button onClick={() => umschalten(v)} title="Entfernen"
@@ -94,7 +94,7 @@ export default function Vergleichsgruppe({ projectId, gewaehlt, onChange, hinwei
           disabled={laedt} style={feld} />
       </div>
 
-      {fehler && <p style={{ fontSize: 11.5, color: "#f87171", margin: 0 }}>{fehler}</p>}
+      {fehler && <p style={{ fontSize: 11.5, color: "var(--err)", margin: 0 }}>{fehler}</p>}
 
       {treffer.length > 0 && (
         <div style={{ maxHeight: 190, overflowY: "auto", maxWidth: 560,
@@ -105,7 +105,7 @@ export default function Vergleichsgruppe({ projectId, gewaehlt, onChange, hinwei
               <label key={o.value}
                 style={{ display: "flex", alignItems: "center", gap: 8,
                   padding: "6px 10px", cursor: "pointer", fontSize: 11.5,
-                  backgroundColor: an ? "rgba(252,228,153,0.08)" : "transparent",
+                  backgroundColor: an ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
                   color: an ? S.textBright : S.textMain }}>
                 <input type="checkbox" checked={an} onChange={() => umschalten(o.value)}
                   style={{ accentColor: "var(--accent)" }} />

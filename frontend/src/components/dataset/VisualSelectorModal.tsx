@@ -10,12 +10,12 @@ const S = {
   bgEl:     "#1e2535",
   bgMain:   "#12161f",
   border:   "#232c40",
-  accent:   "#fce499",
-  green:    "#6ee7b7",
+  accent:   "var(--accent)",
+  green:    "var(--ok)",
   textBright: "#f1f5f9",
-  textMain:   "#94a3b8",
-  textDim:    "#475569",
-  red:      "#e07070",
+  textMain:   "var(--muted)",
+  textDim:    "var(--muted-3)",
+  red:      "var(--err-soft)",
 };
 
 const TRANSFORMS = [
@@ -48,8 +48,8 @@ function PendingFieldForm({ pending, onConfirm, onCancel }) {
   };
 
   return (
-    <div style={{ padding: "10px 12px", borderRadius: 6, border: `1px solid ${S.accent}44`,
-      backgroundColor: "rgba(252,228,153,0.06)", display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ padding: "10px 12px", borderRadius: 6, border: `1px solid color-mix(in srgb, ${S.accent} 26.7%, transparent)`,
+      backgroundColor: "color-mix(in srgb, var(--accent) 6%, transparent)", display: "flex", flexDirection: "column", gap: 8 }}>
       <p style={{ fontSize: 10, color: S.accent, fontWeight: 700, textTransform: "uppercase",
         letterSpacing: "0.08em" }}>Feld definieren</p>
       <div style={{ fontSize: 10, color: S.textDim, fontFamily: "monospace",
@@ -72,7 +72,7 @@ function PendingFieldForm({ pending, onConfirm, onCancel }) {
         <button onClick={() => name.trim() && onConfirm(name.trim(), transform)}
           disabled={!name.trim()}
           style={{ flex: 1, padding: "5px", borderRadius: 4, cursor: name.trim() ? "pointer" : "not-allowed",
-            backgroundColor: name.trim() ? "rgba(252,228,153,0.15)" : "transparent",
+            backgroundColor: name.trim() ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
             border: `1px solid ${name.trim() ? S.accent : S.border}`, color: name.trim() ? S.accent : S.textDim,
             fontSize: 11, fontWeight: 600 }}>
           <Check size={11} style={{ display: "inline", marginRight: 4 }} />Hinzufügen
@@ -108,7 +108,7 @@ function PreviewTable({ rows, columns }) {
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: `1px solid ${S.border}22`,
+            <tr key={i} style={{ borderBottom: `1px solid color-mix(in srgb, ${S.border} 13.3%, transparent)`,
               backgroundColor: i % 2 === 0 ? "transparent" : S.bgEl + "44" }}>
               {columns.map(c => (
                 <td key={c} style={{ padding: "4px 10px", color: S.textMain,
@@ -266,7 +266,7 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
   const btnMode = (active) => ({
     display: "flex", alignItems: "center", gap: 5, padding: "6px 10px", borderRadius: 4,
     cursor: "pointer", fontSize: 11, fontWeight: 600, border: `1px solid ${active ? S.accent : S.border}`,
-    backgroundColor: active ? "rgba(252,228,153,0.12)" : S.bgEl, color: active ? S.accent : S.textMain,
+    backgroundColor: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : S.bgEl, color: active ? S.accent : S.textMain,
   });
 
   const iS = {
@@ -308,7 +308,7 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
           <button onClick={loadPage} disabled={pageLoading || !url.trim()}
             style={{ padding: "6px 16px", borderRadius: 4, fontSize: 12, fontWeight: 600,
               cursor: pageLoading || !url.trim() ? "not-allowed" : "pointer",
-              backgroundColor: "rgba(252,228,153,0.12)", border: `1px solid ${S.accent}66`,
+              backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)", border: `1px solid color-mix(in srgb, ${S.accent} 40%, transparent)`,
               color: S.accent, display: "flex", alignItems: "center", gap: 6,
               opacity: pageLoading || !url.trim() ? 0.5 : 1 }}>
             {pageLoading ? <Loader2 size={13} className="animate-spin" /> : <Globe size={13} />}
@@ -345,7 +345,7 @@ export default function VisualSelectorModal({ initialUrl = "", initialConfig = n
               <>
                 {mode && (
                   <div style={{ position: "absolute", top: 8, left: "50%", transform: "translateX(-50%)",
-                    zIndex: 20, backgroundColor: mode === "row" ? "#6ee7b744" : "#fce49944",
+                    zIndex: 20, backgroundColor: mode === "row" ? "color-mix(in srgb, var(--ok) 26.7%, transparent)" : "color-mix(in srgb, var(--accent) 26.7%, transparent)",
                     border: `1px solid ${mode === "row" ? S.green : S.accent}`,
                     color: mode === "row" ? S.green : S.accent,
                     padding: "5px 14px", borderRadius: 20, fontSize: 11, fontWeight: 600,

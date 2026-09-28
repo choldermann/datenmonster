@@ -11,8 +11,8 @@ export default function DatenmonsterLogo({ size = 96, className = "" }) {
     >
       <style>{`
         .dm-bg { fill: #111111; }
-        .dm-panel { fill: #1a1a1a; stroke: #fce499; stroke-width: 1.5; }
-        .dm-gold { fill: #fce499; }
+        .dm-panel { fill: #1a1a1a; stroke: var(--accent); stroke-width: 1.5; }
+        .dm-gold { fill: var(--accent); }
         .dm-cyan { fill: #00ffff; }
         .dm-magenta { fill: #ff00ff; }
 
@@ -131,7 +131,7 @@ export default function DatenmonsterLogo({ size = 96, className = "" }) {
               height="14"
               rx="2"
               fill="#111111"
-              stroke="#fce499"
+              stroke="var(--accent)"
               strokeWidth="1"
             />
             <rect x="32" y="48" width="5" height="5" className="dm-gold" />

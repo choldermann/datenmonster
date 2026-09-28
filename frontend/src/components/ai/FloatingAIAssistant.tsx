@@ -4,7 +4,7 @@ import { useAIAssistant, PageContext } from "../../contexts/AIAssistantContext";
 import { streamRequest, generateNodes, searchSchema, suggestTables } from "../../services/aiService";
 import { createSolution, createCorrection } from "../../api/aiMemory";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 const BG = "rgba(14, 14, 28, 0.97)";
 const BG_CARD = "#1a1a2e";
 const BORDER = "rgba(255,255,255,0.1)";
@@ -581,14 +581,14 @@ export default function FloatingAIAssistant() {
           gap: 6,
           padding: "7px 13px",
           borderRadius: 20,
-          border: `1px solid ${isOpen ? ACCENT : "rgba(252,228,153,0.3)"}`,
-          backgroundColor: isOpen ? "rgba(252,228,153,0.12)" : "rgba(14,14,28,0.92)",
+          border: `1px solid ${isOpen ? ACCENT : "color-mix(in srgb, var(--accent) 30%, transparent)"}`,
+          backgroundColor: isOpen ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "rgba(14,14,28,0.92)",
           color: ACCENT,
           cursor: "pointer",
           fontSize: 12,
           fontWeight: 600,
           backdropFilter: "blur(8px)",
-          boxShadow: isOpen ? `0 0 0 1px rgba(252,228,153,0.2), 0 4px 20px rgba(0,0,0,0.5)` : "0 2px 12px rgba(0,0,0,0.4)",
+          boxShadow: isOpen ? `0 0 0 1px color-mix(in srgb, var(--accent) 20%, transparent), 0 4px 20px rgba(0,0,0,0.5)` : "0 2px 12px rgba(0,0,0,0.4)",
           transition: "all 0.2s ease",
         }}
       >
@@ -617,9 +617,9 @@ export default function FloatingAIAssistant() {
             display: "flex",
             flexDirection: "column",
             backgroundColor: BG,
-            border: `1px solid rgba(252,228,153,0.2)`,
+            border: `1px solid color-mix(in srgb, var(--accent) 20%, transparent)`,
             borderRadius: 12,
-            boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(252,228,153,0.08)",
+            boxShadow: "0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent)",
             backdropFilter: "blur(12px)",
             overflow: "hidden",
             userSelect: dragging ? "none" : "auto",
@@ -652,9 +652,9 @@ export default function FloatingAIAssistant() {
                 position: "absolute", left: "50%", top: "50%",
                 transform: "translate(-50%, -50%)",
                 fontSize: 9, fontFamily: "monospace", fontWeight: 600,
-                color: "rgba(252,228,153,0.55)",
-                backgroundColor: "rgba(252,228,153,0.06)",
-                border: "1px solid rgba(252,228,153,0.12)",
+                color: "color-mix(in srgb, var(--accent) 55%, transparent)",
+                backgroundColor: "color-mix(in srgb, var(--accent) 6%, transparent)",
+                border: "1px solid color-mix(in srgb, var(--accent) 12%, transparent)",
                 borderRadius: 10, padding: "2px 8px",
                 whiteSpace: "nowrap", pointerEvents: "none",
               }}>
@@ -673,7 +673,7 @@ export default function FloatingAIAssistant() {
                     padding: "2px 6px",
                     borderRadius: 5,
                     border: `1px solid ${aiMode === m.id ? ACCENT : "rgba(255,255,255,0.1)"}`,
-                    backgroundColor: aiMode === m.id ? "rgba(252,228,153,0.12)" : "transparent",
+                    backgroundColor: aiMode === m.id ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
                     color: aiMode === m.id ? ACCENT : "rgba(255,255,255,0.3)",
                     cursor: "pointer",
                     fontSize: 13,
@@ -692,8 +692,8 @@ export default function FloatingAIAssistant() {
                 style={{
                   background: "none", border: "none", cursor: schemaLoading ? "default" : "pointer", padding: 4,
                   display: "flex", alignItems: "center",
-                  color: schemaEnabled ? "#6ee7b7" : "rgba(255,255,255,0.3)",
-                  filter: schemaEnabled ? "drop-shadow(0 0 4px rgba(110,231,183,0.4))" : "none",
+                  color: schemaEnabled ? "var(--ok)" : "rgba(255,255,255,0.3)",
+                  filter: schemaEnabled ? "drop-shadow(0 0 4px color-mix(in srgb, var(--ok) 40%, transparent))" : "none",
                   opacity: schemaLoading ? 0.5 : 1,
                 }}
               >
@@ -707,7 +707,7 @@ export default function FloatingAIAssistant() {
                 background: "none", border: "none", cursor: "pointer", padding: 4,
                 display: "flex", alignItems: "center",
                 color: expertMode ? ACCENT : "rgba(255,255,255,0.3)",
-                filter: expertMode ? "drop-shadow(0 0 4px rgba(252,228,153,0.4))" : "none",
+                filter: expertMode ? "drop-shadow(0 0 4px color-mix(in srgb, var(--accent) 40%, transparent))" : "none",
               }}
             >
               <Settings size={12} />
@@ -744,7 +744,7 @@ export default function FloatingAIAssistant() {
                   <button key={id} onClick={() => setExpertSection(expertSection === id ? null : id)}
                     style={{
                       flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
-                      backgroundColor: expertSection === id ? "rgba(252,228,153,0.08)" : "transparent",
+                      backgroundColor: expertSection === id ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "transparent",
                       color: expertSection === id ? ACCENT : "rgba(255,255,255,0.3)",
                       fontSize: 10, fontWeight: 600,
                       borderBottom: expertSection === id ? `1px solid ${ACCENT}` : "1px solid transparent",
@@ -775,7 +775,7 @@ export default function FloatingAIAssistant() {
                       {Object.entries(debugInfo.params).map(([k, v]) => (
                         <div key={k} style={{ display: "flex", gap: 3, alignItems: "center" }}>
                           <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)" }}>{k}</span>
-                          <span style={{ fontSize: 10, fontFamily: "monospace", color: String(v) === "true" ? "#6ee7b7" : String(v) === "false" ? "#e07070" : ACCENT, backgroundColor: "rgba(255,255,255,0.04)", padding: "1px 5px", borderRadius: 4 }}>{String(v)}</span>
+                          <span style={{ fontSize: 10, fontFamily: "monospace", color: String(v) === "true" ? "var(--ok)" : String(v) === "false" ? "var(--err-soft)" : ACCENT, backgroundColor: "rgba(255,255,255,0.04)", padding: "1px 5px", borderRadius: 4 }}>{String(v)}</span>
                         </div>
                       ))}
                     </div>
@@ -788,7 +788,7 @@ export default function FloatingAIAssistant() {
                   {debugInfo?.caps && (
                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {Object.entries(debugInfo.caps).map(([k, v]) => (
-                        <span key={k} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, border: `1px solid ${v ? "rgba(110,231,183,0.3)" : "rgba(255,255,255,0.1)"}`, color: v ? "#6ee7b7" : "rgba(255,255,255,0.25)" }}>
+                        <span key={k} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, border: `1px solid ${v ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "rgba(255,255,255,0.1)"}`, color: v ? "var(--ok)" : "rgba(255,255,255,0.25)" }}>
                           {k.replace("supports", "")} {v ? "✓" : "✗"}
                         </span>
                       ))}
@@ -806,7 +806,7 @@ export default function FloatingAIAssistant() {
                         <div style={{ fontSize: 9, fontWeight: 700, color: ACCENT, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3 }}>
                           {sec.label}
                         </div>
-                        <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5, backgroundColor: "rgba(255,255,255,0.03)", padding: "6px 8px", borderRadius: 5, borderLeft: `2px solid rgba(252,228,153,0.2)` }}>
+                        <pre style={{ margin: 0, fontSize: 10, fontFamily: "monospace", color: "rgba(255,255,255,0.6)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5, backgroundColor: "rgba(255,255,255,0.03)", padding: "6px 8px", borderRadius: 5, borderLeft: `2px solid color-mix(in srgb, var(--accent) 20%, transparent)` }}>
                           {sec.content}
                         </pre>
                       </div>
@@ -847,10 +847,10 @@ export default function FloatingAIAssistant() {
               alignItems: "center",
               gap: 6,
               flexShrink: 0,
-              backgroundColor: "rgba(252,228,153,0.04)",
+              backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)",
             }}>
-              <span style={{ fontSize: 9, color: "rgba(252,228,153,0.4)", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>Ausgewählt</span>
-              <span style={{ fontSize: 10, fontFamily: "monospace", color: "rgba(252,228,153,0.8)", backgroundColor: "rgba(252,228,153,0.08)", border: "1px solid rgba(252,228,153,0.18)", borderRadius: 6, padding: "1px 7px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 9, color: "color-mix(in srgb, var(--accent) 40%, transparent)", textTransform: "uppercase", letterSpacing: 0.5, flexShrink: 0 }}>Ausgewählt</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: "color-mix(in srgb, var(--accent) 80%, transparent)", backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 18%, transparent)", borderRadius: 6, padding: "1px 7px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {getActiveNodeLabel((pageContext.currentData as any).activeNode)}
               </span>
             </div>
@@ -862,10 +862,10 @@ export default function FloatingAIAssistant() {
               padding: "3px 14px",
               borderBottom: `1px solid ${BORDER}`,
               display: "flex", alignItems: "center", gap: 6, flexShrink: 0,
-              backgroundColor: "rgba(110,231,183,0.04)",
+              backgroundColor: "color-mix(in srgb, var(--ok) 4%, transparent)",
             }}>
-              <Database size={9} color="rgba(110,231,183,0.5)" />
-              <span style={{ fontSize: 9, color: "rgba(110,231,183,0.6)", letterSpacing: 0.3 }}>
+              <Database size={9} color="color-mix(in srgb, var(--ok) 50%, transparent)" />
+              <span style={{ fontSize: 9, color: "color-mix(in srgb, var(--ok) 60%, transparent)", letterSpacing: 0.3 }}>
                 Schema-Wissensdatenbank aktiv
               </span>
             </div>
@@ -911,8 +911,8 @@ export default function FloatingAIAssistant() {
               borderRadius: "0 0 12px 12px", overflowY: "auto",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                <Database size={14} color="#6ee7b7" />
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#6ee7b7" }}>Tabellen vorschlagen</span>
+                <Database size={14} color="var(--ok)" />
+                <span style={{ fontSize: 12, fontWeight: 700, color: "var(--ok)" }}>Tabellen vorschlagen</span>
                 <button onClick={resetSugMode} style={{ marginLeft: "auto", background: "none", border: "none", color: "rgba(255,255,255,0.35)", cursor: "pointer", padding: 2, display: "flex" }}>
                   <X size={12} />
                 </button>
@@ -942,7 +942,7 @@ export default function FloatingAIAssistant() {
                     onClick={handleSuggest}
                     style={{
                       padding: "9px 14px", borderRadius: 8, border: "none",
-                      backgroundColor: "#6ee7b7", color: "#111",
+                      backgroundColor: "var(--ok)", color: "#111",
                       fontSize: 12, fontWeight: 700, cursor: "pointer",
                       display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0,
                     }}
@@ -976,10 +976,10 @@ export default function FloatingAIAssistant() {
                   </div>
                   <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 5 }}>
                     {sugResult.tables.map((t: any, i: number) => (
-                      <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 10px", borderRadius: 8, backgroundColor: "rgba(110,231,183,0.04)", border: `1px solid rgba(110,231,183,0.15)`, fontSize: 11 }}>
+                      <div key={i} style={{ display: "flex", flexDirection: "column", gap: 3, padding: "7px 10px", borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--ok) 4%, transparent)", border: `1px solid color-mix(in srgb, var(--ok) 15%, transparent)`, fontSize: 11 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ color: "#6ee7b7", fontWeight: 700, fontFamily: "monospace", fontSize: 10 }}>{t.full_name || `${t.schema}.${t.name}`}</span>
-                          {t.already_exists && <span style={{ fontSize: 9, color: "rgba(110,231,183,0.5)", border: "1px solid rgba(110,231,183,0.2)", borderRadius: 4, padding: "0 4px" }}>vorhanden</span>}
+                          <span style={{ color: "var(--ok)", fontWeight: 700, fontFamily: "monospace", fontSize: 10 }}>{t.full_name || `${t.schema}.${t.name}`}</span>
+                          {t.already_exists && <span style={{ fontSize: 9, color: "color-mix(in srgb, var(--ok) 50%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)", borderRadius: 4, padding: "0 4px" }}>vorhanden</span>}
                         </div>
                         {t.reason && <div style={{ color: "rgba(255,255,255,0.5)", fontSize: 10, lineHeight: 1.4 }}>{t.reason}</div>}
                       </div>
@@ -998,7 +998,7 @@ export default function FloatingAIAssistant() {
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button
                       onClick={handleApplyTables}
-                      style={{ flex: 1, padding: "9px 8px", borderRadius: 8, border: "none", backgroundColor: "#6ee7b7", color: "#111", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                      style={{ flex: 1, padding: "9px 8px", borderRadius: 8, border: "none", backgroundColor: "var(--ok)", color: "#111", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                     >
                       <Check size={13} /> Übernehmen
                     </button>
@@ -1294,16 +1294,16 @@ export default function FloatingAIAssistant() {
                           width: "100%",
                           padding: "10px 12px",
                           borderRadius: 10,
-                          border: `1px dashed rgba(110,231,183,0.3)`,
-                          backgroundColor: "rgba(110,231,183,0.05)",
-                          color: "#6ee7b7",
+                          border: `1px dashed color-mix(in srgb, var(--ok) 30%, transparent)`,
+                          backgroundColor: "color-mix(in srgb, var(--ok) 5%, transparent)",
+                          color: "var(--ok)",
                           cursor: "pointer",
                           fontSize: 11, fontWeight: 600,
                           display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                           transition: "all 0.15s",
                         }}
-                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.1)"; e.currentTarget.style.borderColor = "rgba(110,231,183,0.5)"; }}
-                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "rgba(110,231,183,0.05)"; e.currentTarget.style.borderColor = "rgba(110,231,183,0.3)"; }}
+                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--ok) 10%, transparent)"; e.currentTarget.style.borderColor = "color-mix(in srgb, var(--ok) 50%, transparent)"; }}
+                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--ok) 5%, transparent)"; e.currentTarget.style.borderColor = "color-mix(in srgb, var(--ok) 30%, transparent)"; }}
                       >
                         <Database size={13} />
                         Tabellen für Canvas vorschlagen
@@ -1317,8 +1317,8 @@ export default function FloatingAIAssistant() {
                           width: "100%",
                           padding: "10px 12px",
                           borderRadius: 10,
-                          border: `1px dashed rgba(252,228,153,0.3)`,
-                          backgroundColor: "rgba(252,228,153,0.05)",
+                          border: `1px dashed color-mix(in srgb, var(--accent) 30%, transparent)`,
+                          backgroundColor: "color-mix(in srgb, var(--accent) 5%, transparent)",
                           color: ACCENT,
                           cursor: "pointer",
                           fontSize: 11,
@@ -1329,8 +1329,8 @@ export default function FloatingAIAssistant() {
                           gap: 7,
                           transition: "all 0.15s",
                         }}
-                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.1)"; e.currentTarget.style.borderColor = "rgba(252,228,153,0.5)"; }}
-                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "rgba(252,228,153,0.05)"; e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; }}
+                        onMouseOver={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 10%, transparent)"; e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 50%, transparent)"; }}
+                        onMouseOut={e => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 5%, transparent)"; e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 30%, transparent)"; }}
                       >
                         <Wand2 size={13} />
                         Nodes aus Beschreibung generieren
@@ -1372,8 +1372,8 @@ export default function FloatingAIAssistant() {
                   maxWidth: "85%",
                   padding: "8px 11px",
                   borderRadius: msg.role === "user" ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
-                  backgroundColor: msg.role === "user" ? "rgba(252,228,153,0.12)" : BG_CARD,
-                  border: `1px solid ${msg.role === "user" ? "rgba(252,228,153,0.2)" : BORDER}`,
+                  backgroundColor: msg.role === "user" ? "color-mix(in srgb, var(--accent) 12%, transparent)" : BG_CARD,
+                  border: `1px solid ${msg.role === "user" ? "color-mix(in srgb, var(--accent) 20%, transparent)" : BORDER}`,
                   fontSize: 12,
                   color: msg.role === "user" ? ACCENT : "rgba(255,255,255,0.85)",
                   lineHeight: 1.55,
@@ -1507,7 +1507,7 @@ export default function FloatingAIAssistant() {
               alignItems: "center",
               gap: 8,
               flexShrink: 0,
-              backgroundColor: "rgba(252,228,153,0.04)",
+              backgroundColor: "color-mix(in srgb, var(--accent) 4%, transparent)",
             }}>
               <Loader2 size={11} className="animate-spin" color={ACCENT} />
               <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", flex: 1 }}>
@@ -1522,9 +1522,9 @@ export default function FloatingAIAssistant() {
                 style={{
                   display: "flex", alignItems: "center", gap: 4,
                   padding: "3px 9px", borderRadius: 6,
-                  border: "1px solid rgba(224,112,112,0.4)",
-                  backgroundColor: "rgba(224,112,112,0.08)",
-                  color: "#e07070", cursor: "pointer", fontSize: 11, fontWeight: 600,
+                  border: "1px solid color-mix(in srgb, var(--err-soft) 40%, transparent)",
+                  backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)",
+                  color: "var(--err-soft)", cursor: "pointer", fontSize: 11, fontWeight: 600,
                 }}
               >
                 <X size={10} /> Abbrechen
@@ -1638,7 +1638,7 @@ function SuggestedList({ questions, onSelect }: { questions: string[]; onSelect:
       {questions.map(q => (
         <button key={q} onClick={() => onSelect(q)}
           style={{ background: "none", border: `1px solid rgba(255,255,255,0.1)`, borderRadius: 8, padding: "6px 10px", fontSize: 11, color: "rgba(255,255,255,0.5)", cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}
-          onMouseOver={e => { e.currentTarget.style.borderColor = "rgba(252,228,153,0.3)"; e.currentTarget.style.color = "rgba(252,228,153,0.8)"; }}
+          onMouseOver={e => { e.currentTarget.style.borderColor = "color-mix(in srgb, var(--accent) 30%, transparent)"; e.currentTarget.style.color = "color-mix(in srgb, var(--accent) 80%, transparent)"; }}
           onMouseOut={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = "rgba(255,255,255,0.5)"; }}>
           {q}
         </button>

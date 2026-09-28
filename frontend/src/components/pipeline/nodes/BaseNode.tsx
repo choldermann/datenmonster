@@ -21,13 +21,13 @@ function MiniShape({ type, color, icon, label, onExpand }) {
     position: "absolute", inset: 0,
     transform: "rotate(45deg)",
     backgroundColor: color + "22",
-    border: `2px solid ${color}55`,
+    border: `2px solid color-mix(in srgb, ${color} 33.3%, transparent)`,
     borderRadius: 6,
   } : {
     position: "absolute", inset: 0,
     borderRadius: "50%",
     backgroundColor: color + "22",
-    border: `2px solid ${color}55`,
+    border: `2px solid color-mix(in srgb, ${color} 33.3%, transparent)`,
   };
 
   return (
@@ -79,7 +79,7 @@ function Port({ side, index = 0, total = 1, color, portRef, draggable,
     backgroundColor: color,
     border: `2px solid ${S.bgCard}`,
     cursor: draggable ? "grab" : "crosshair",
-    boxShadow: `0 0 4px ${color}88`,
+    boxShadow: `0 0 4px color-mix(in srgb, ${color} 53.3%, transparent)`,
     zIndex: 20,
     ...(side === "left"
       ? { left: -sz / 2 - 2, top: `calc(50% + ${offset}px)`, transform: "translateY(-50%)" }
@@ -191,10 +191,10 @@ export default function BaseNode({
         position: "absolute", left: node.x, top: node.y, width,
         zIndex: isActive ? 20 : 10, userSelect: "none",
         boxShadow: isActive
-          ? `0 0 0 2px #fce499, 0 8px 32px rgba(0,0,0,0.5)`
+          ? `0 0 0 2px var(--accent), 0 8px 32px rgba(0,0,0,0.5)`
           : "0 8px 32px rgba(0,0,0,0.5)",
         borderRadius: 8, overflow: "visible",
-        border: isActive ? `1px solid #fce499` : `1px solid ${nodeColor}55`,
+        border: isActive ? `1px solid var(--accent)` : `1px solid color-mix(in srgb, ${nodeColor} 33.3%, transparent)`,
         backgroundColor: S.bgCard,
       }}
     >
@@ -218,11 +218,11 @@ export default function BaseNode({
         display: "flex", alignItems: "center", gap: 6,
         padding: "7px 10px", cursor: "grab",
         backgroundColor: runResult
-          ? (runResult.status === "ok" ? "rgba(110,231,183,0.12)"
-            : runResult.status === "error" ? "rgba(224,112,112,0.12)"
-            : "rgba(251,191,36,0.12)")
+          ? (runResult.status === "ok" ? "color-mix(in srgb, var(--ok) 12%, transparent)"
+            : runResult.status === "error" ? "color-mix(in srgb, var(--err-soft) 12%, transparent)"
+            : "color-mix(in srgb, var(--warn) 12%, transparent)")
           : nodeColor + "18",
-        borderBottom: `1px solid ${nodeColor}33`,
+        borderBottom: `1px solid color-mix(in srgb, ${nodeColor} 20%, transparent)`,
         borderRadius: "8px 8px 0 0",
         transition: "background-color 0.3s",
       }}>
@@ -234,14 +234,14 @@ export default function BaseNode({
         <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
           textTransform: "uppercase",
           color: runResult
-            ? (runResult.status === "ok" ? "#6ee7b7" : runResult.status === "error" ? "#e07070" : "#fbbf24")
+            ? (runResult.status === "ok" ? "var(--ok)" : runResult.status === "error" ? "var(--err-soft)" : "var(--warn)")
             : nodeColor,
           flex: 1 }}>
           {label}
         </span>
         {runResult && (
           <span style={{ fontSize: 9,
-            color: runResult.status === "ok" ? "#6ee7b7" : runResult.status === "error" ? "#e07070" : "#fbbf24",
+            color: runResult.status === "ok" ? "var(--ok)" : runResult.status === "error" ? "var(--err-soft)" : "var(--warn)",
             backgroundColor: "rgba(0,0,0,0.2)", padding: "1px 5px", borderRadius: 3,
             maxWidth: 90, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
             title={runResult.message || ""}>
@@ -257,7 +257,7 @@ export default function BaseNode({
         </button>
         <button onClick={() => onRemove(node.id)}
           style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0, lineHeight: 1 }}
-          onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+          onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
           onMouseLeave={e => e.currentTarget.style.color = S.textDim}>
           <X size={11} />
         </button>
@@ -268,8 +268,8 @@ export default function BaseNode({
         {children}
         {runResult?.status === "error" && runResult.message && (
           <div style={{ marginTop: 6, padding: "4px 7px", borderRadius: 4,
-            backgroundColor: "rgba(224,112,112,0.08)", border: "1px solid rgba(224,112,112,0.25)",
-            fontSize: 9, color: "#e07070", lineHeight: 1.4 }}>
+            backgroundColor: "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 25%, transparent)",
+            fontSize: 9, color: "var(--err-soft)", lineHeight: 1.4 }}>
             {runResult.message}
           </div>
         )}

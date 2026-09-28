@@ -14,8 +14,8 @@ const BASE = "/api/api-studio";
 
 // Farbe je HTTP-Methode – dieselbe Sprache, die man aus API-Werkzeugen kennt.
 const METHOD_COLOR = {
-  GET: "#6ee7b7", POST: "#fbbf24", PUT: "#60a5fa", PATCH: "#c084fc",
-  DELETE: "#f87171", HEAD: "#94a3b8", OPTIONS: "#94a3b8",
+  GET: "var(--ok)", POST: "var(--warn)", PUT: "#60a5fa", PATCH: "#c084fc",
+  DELETE: "var(--err)", HEAD: "var(--muted)", OPTIONS: "var(--muted)",
 };
 
 const LEER_REQUEST = {
@@ -29,16 +29,16 @@ const LEER_REQUEST = {
 };
 
 const iS = { width: "100%", backgroundColor: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 6, color: "#f1f5f9", fontSize: 12, padding: "7px 10px", outline: "none", boxSizing: "border-box" as const };
-const lS = { fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", color: "#64748b", display: "block", marginBottom: 4 };
-const btn = { padding: "7px 14px", borderRadius: 6, fontSize: 12, cursor: "pointer", backgroundColor: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "#94a3b8" };
+const lS = { fontSize: 10, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: "0.07em", color: "var(--muted-2)", display: "block", marginBottom: 4 };
+const btn = { padding: "7px 14px", borderRadius: 6, fontSize: 12, cursor: "pointer", backgroundColor: "transparent", border: "1px solid rgba(255,255,255,0.12)", color: "var(--muted)" };
 const btnPrimary = { ...btn, backgroundColor: C, color: "#083344", border: "none", fontWeight: 700 };
 
 function statusFarbe(code) {
-  if (!code) return "#64748b";
-  if (code < 300) return "#6ee7b7";
+  if (!code) return "var(--muted-2)";
+  if (code < 300) return "var(--ok)";
   if (code < 400) return "#60a5fa";
-  if (code < 500) return "#fbbf24";
-  return "#f87171";
+  if (code < 500) return "var(--warn)";
+  return "var(--err)";
 }
 
 function groesse(bytes) {
@@ -55,17 +55,17 @@ function JsonAnsicht({ text }) {
     const re = /("(?:\\.|[^"\\])*"\s*:)|("(?:\\.|[^"\\])*")|(\b-?\d+\.?\d*(?:[eE][+-]?\d+)?\b)|(\btrue\b|\bfalse\b|\bnull\b)/g;
     let last = 0, m;
     while ((m = re.exec(text)) !== null) {
-      if (m.index > last) out.push({ t: text.slice(last, m.index), f: "#64748b" });
-      const farbe = m[1] ? "#7dd3fc" : m[2] ? "#a5b4fc" : m[3] ? "#fbbf24" : "#f472b6";
+      if (m.index > last) out.push({ t: text.slice(last, m.index), f: "var(--muted-2)" });
+      const farbe = m[1] ? "#7dd3fc" : m[2] ? "#a5b4fc" : m[3] ? "var(--warn)" : "#f472b6";
       out.push({ t: m[0], f: farbe });
       last = m.index + m[0].length;
     }
-    if (last < text.length) out.push({ t: text.slice(last), f: "#64748b" });
+    if (last < text.length) out.push({ t: text.slice(last), f: "var(--muted-2)" });
     return out;
   }, [text]);
 
   return (
-    <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre", color: "#94a3b8" }}>
+    <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre", color: "var(--muted)" }}>
       {teile.map((p, i) => <span key={i} style={{ color: p.f }}>{p.t}</span>)}
     </pre>
   );
@@ -78,8 +78,8 @@ function Schalter({ an, onChange, label, hinweis }) {
     <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
       <input type="checkbox" checked={an} onChange={e => onChange(e.target.checked)} style={{ marginTop: 2 }} />
       <span>
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>{label}</span>
-        {hinweis && <span style={{ display: "block", fontSize: 10, color: "#475569", marginTop: 1 }}>{hinweis}</span>}
+        <span style={{ fontSize: 12, color: "var(--muted)" }}>{label}</span>
+        {hinweis && <span style={{ display: "block", fontSize: 10, color: "var(--muted-3)", marginTop: 1 }}>{hinweis}</span>}
       </span>
     </label>
   );
@@ -119,11 +119,11 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
   useEffect(() => { setDaten(null); setFehler(""); analysieren(false); }, [antwort]);
 
   if (laedt && !daten) return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748b", fontSize: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted-2)", fontSize: 12 }}>
       <Loader2 size={14} className="animate-spin" /> Antwort wird untersucht…
     </div>
   );
-  if (!daten) return <p style={{ fontSize: 12, color: "#f87171" }}>{fehler || "Keine Analyse verfügbar."}</p>;
+  if (!daten) return <p style={{ fontSize: 12, color: "var(--err)" }}>{fehler || "Keine Analyse verfügbar."}</p>;
 
   const bedeutungen = {};
   (daten.ki?.felder || []).forEach(f => { bedeutungen[f.pfad] = f.bedeutung; });
@@ -136,16 +136,16 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
         <p style={{ ...lS, marginBottom: 6 }}>Wo die Daten liegen</p>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
           {(daten.datenpfad_kandidaten || []).length === 0 && (
-            <span style={{ fontSize: 11, color: "#475569" }}>Keine Liste gefunden – die Antwort ist ein Einzelobjekt.</span>
+            <span style={{ fontSize: 11, color: "var(--muted-3)" }}>Keine Liste gefunden – die Antwort ist ein Einzelobjekt.</span>
           )}
           {(daten.datenpfad_kandidaten || []).map(k => (
             <button key={k.pfad} onClick={() => aufDatenpfad(k.pfad)}
               title="Als Datenpfad übernehmen"
               style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, cursor: "pointer", fontFamily: "monospace",
                 border: `1px solid ${daten.datenpfad === k.pfad ? C : "rgba(255,255,255,0.12)"}`,
-                backgroundColor: daten.datenpfad === k.pfad ? `${C}18` : "transparent",
-                color: daten.datenpfad === k.pfad ? C : "#94a3b8" }}>
-              {k.pfad || "(Wurzel)"} <span style={{ color: "#475569" }}>· {k.zeilen}×{k.spalten}</span>
+                backgroundColor: daten.datenpfad === k.pfad ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent",
+                color: daten.datenpfad === k.pfad ? C : "var(--muted)" }}>
+              {k.pfad || "(Wurzel)"} <span style={{ color: "var(--muted-3)" }}>· {k.zeilen}×{k.spalten}</span>
             </button>
           ))}
         </div>
@@ -155,10 +155,10 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
       <div>
         <p style={{ ...lS, marginBottom: 6 }}>Weitere Seiten</p>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: pag.config ? "#6ee7b7" : "#64748b" }}>{pag.begruendung}</span>
+          <span style={{ fontSize: 11, color: pag.config ? "var(--ok)" : "var(--muted-2)" }}>{pag.begruendung}</span>
           {pag.config && (
             <button onClick={() => aufPaginierung(pag.config)}
-              style={{ ...btn, padding: "3px 10px", fontSize: 11, color: C, borderColor: `${C}55` }}>
+              style={{ ...btn, padding: "3px 10px", fontSize: 11, color: C, borderColor: `color-mix(in srgb, ${C} 33.3%, transparent)` }}>
               Paginierung übernehmen ({pag.typ})
             </button>
           )}
@@ -170,8 +170,8 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
         {!daten.ki ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <ShieldCheck size={14} style={{ color: "#6ee7b7", flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: "#64748b" }}>
+              <ShieldCheck size={14} style={{ color: "var(--ok)", flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: "var(--muted-2)" }}>
                 Bisher blieb alles auf dieser Maschine. Für die Deutung geht das Feld-Inventar an die KI –
                 Beispielwerte maskiert (<code style={{ fontFamily: "monospace" }}>&lt;email&gt;</code>,
                 <code style={{ fontFamily: "monospace" }}> &lt;text:12&gt;</code>), nie die vollständige Antwort.
@@ -189,14 +189,14 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <p style={{ fontSize: 12, color: "#e2e8f0", margin: 0, lineHeight: 1.6 }}>{daten.ki.zusammenfassung}</p>
             {daten.ki.vorgeschlagener_dataset_name && (
-              <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+              <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
                 Vorgeschlagener Name: <strong style={{ color: C }}>{daten.ki.vorgeschlagener_dataset_name}</strong>
               </p>
             )}
             {(daten.ki.hinweise || []).length > 0 && (
               <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
                 {daten.ki.hinweise.map((h, i) => (
-                  <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.6 }}>{h}</li>
+                  <li key={i} style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.6 }}>{h}</li>
                 ))}
               </ul>
             )}
@@ -204,12 +204,12 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
         )}
       </div>
 
-      {fehler && <p style={{ fontSize: 11, color: "#fbbf24" }}>{fehler}</p>}
+      {fehler && <p style={{ fontSize: 11, color: "var(--warn)" }}>{fehler}</p>}
 
       {/* Weiterverarbeiten */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 12, borderRadius: 8, backgroundColor: `${C}0a`, border: `1px solid ${C}2a`, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: 12, borderRadius: 8, backgroundColor: `color-mix(in srgb, ${C} 3.9%, transparent)`, border: `1px solid color-mix(in srgb, ${C} 16.5%, transparent)`, flexWrap: "wrap" }}>
         <Workflow size={15} style={{ color: C, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, color: "#94a3b8", flex: 1, minWidth: 200 }}>
+        <span style={{ fontSize: 11, color: "var(--muted)", flex: 1, minWidth: 200 }}>
           {kontext.restSourceId
             ? "Aus dieser Antwort einen Datenfluss machen: Dataset, wahlweise Mapping und Pipeline."
             : "Request zuerst speichern – danach lässt sich daraus ein Datenfluss anlegen."}
@@ -228,7 +228,7 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
           <table style={{ fontSize: 11, borderCollapse: "collapse", width: "100%" }}>
             <thead>
               <tr>{["Feld", "Typ", "Gefüllt", "Beispiel", ...(daten.ki ? ["Bedeutung"] : [])].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "4px 10px 6px 0", color: "#64748b", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>{h}</th>
+                <th key={h} style={{ textAlign: "left", padding: "4px 10px 6px 0", color: "var(--muted-2)", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>{h}</th>
               ))}</tr>
             </thead>
             <tbody>
@@ -236,19 +236,19 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
                 <tr key={f.pfad}>
                   <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#e2e8f0", whiteSpace: "nowrap" }}>
                     {f.pfad}
-                    {f.wirkt_wie_schluessel && <span title="Wert ist in allen Datensätzen eindeutig" style={{ marginLeft: 6, fontSize: 9, color: "#fbbf24" }}>◆</span>}
+                    {f.wirkt_wie_schluessel && <span title="Wert ist in allen Datensätzen eindeutig" style={{ marginLeft: 6, fontSize: 9, color: "var(--warn)" }}>◆</span>}
                   </td>
-                  <td style={{ padding: "4px 10px 4px 0", color: "#94a3b8", whiteSpace: "nowrap" }}>{f.typ}</td>
+                  <td style={{ padding: "4px 10px 4px 0", color: "var(--muted)", whiteSpace: "nowrap" }}>{f.typ}</td>
                   <td style={{ padding: "4px 10px 4px 0", whiteSpace: "nowrap" }}>
                     <span style={{ display: "inline-block", width: 42, height: 5, borderRadius: 3, backgroundColor: "rgba(255,255,255,0.08)", verticalAlign: "middle", overflow: "hidden" }}>
-                      <span style={{ display: "block", width: `${f.anteil_gefuellt * 100}%`, height: "100%", backgroundColor: f.anteil_gefuellt < 0.5 ? "#fbbf24" : "#6ee7b7" }} />
+                      <span style={{ display: "block", width: `${f.anteil_gefuellt * 100}%`, height: "100%", backgroundColor: f.anteil_gefuellt < 0.5 ? "var(--warn)" : "var(--ok)" }} />
                     </span>
-                    <span style={{ fontSize: 10, color: "#64748b", marginLeft: 6 }}>{Math.round(f.anteil_gefuellt * 100)}%</span>
+                    <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 6 }}>{Math.round(f.anteil_gefuellt * 100)}%</span>
                   </td>
-                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#64748b", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "var(--muted-2)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {f.beispiel === null || f.beispiel === undefined ? "–" : String(f.beispiel)}
                   </td>
-                  {daten.ki && <td style={{ padding: "4px 0", color: "#94a3b8" }}>{bedeutungen[f.pfad] || ""}</td>}
+                  {daten.ki && <td style={{ padding: "4px 0", color: "var(--muted)" }}>{bedeutungen[f.pfad] || ""}</td>}
                 </tr>
               ))}
             </tbody>
@@ -285,16 +285,16 @@ function DebugKasten({ antwort, kontext, onUebernehmen }) {
   };
 
   return (
-    <div style={{ margin: "12px 16px 0", padding: 12, borderRadius: 8, backgroundColor: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.2)" }}>
+    <div style={{ margin: "12px 16px 0", padding: 12, borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--warn) 5%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 20%, transparent)" }}>
       {!d ? (
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-          <Bug size={14} style={{ color: "#fbbf24", flexShrink: 0 }} />
-          <span style={{ fontSize: 11, color: "#94a3b8", flex: 1 }}>
+          <Bug size={14} style={{ color: "var(--warn)", flexShrink: 0 }} />
+          <span style={{ fontSize: 11, color: "var(--muted)", flex: 1 }}>
             Die Anfrage kam nicht durch. Die KI kann Anfrage und Fehlermeldung durchsehen –
             Zugangsdaten werden dabei maskiert.
           </span>
           <button onClick={untersuchen} disabled={laedt}
-            style={{ ...btn, padding: "4px 12px", fontSize: 11, color: "#fbbf24", borderColor: "rgba(251,191,36,0.35)", display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ ...btn, padding: "4px 12px", fontSize: 11, color: "var(--warn)", borderColor: "color-mix(in srgb, var(--warn) 35%, transparent)", display: "flex", alignItems: "center", gap: 6 }}>
             {laedt ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />} Fehler untersuchen
           </button>
         </div>
@@ -303,7 +303,7 @@ function DebugKasten({ antwort, kontext, onUebernehmen }) {
           <p style={{ fontSize: 12, color: "#e2e8f0", margin: 0, lineHeight: 1.6 }}>{d.diagnose}</p>
           {(d.pruefpunkte || []).length > 0 && (
             <ol style={{ margin: 0, paddingLeft: 18 }}>
-              {d.pruefpunkte.map((p, i) => <li key={i} style={{ fontSize: 11, color: "#94a3b8", lineHeight: 1.7 }}>{p}</li>)}
+              {d.pruefpunkte.map((p, i) => <li key={i} style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.7 }}>{p}</li>)}
             </ol>
           )}
           {(d.vorschlaege || []).length > 0 && (
@@ -314,7 +314,7 @@ function DebugKasten({ antwort, kontext, onUebernehmen }) {
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 6, backgroundColor: "rgba(255,255,255,0.03)" }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <code style={{ fontSize: 11, fontFamily: "monospace", color: C }}>{v.feld} = {v.neuer_wert}</code>
-                      <p style={{ fontSize: 10, color: "#64748b", margin: "2px 0 0" }}>{v.begruendung}</p>
+                      <p style={{ fontSize: 10, color: "var(--muted-2)", margin: "2px 0 0" }}>{v.begruendung}</p>
                     </div>
                     <button onClick={() => onUebernehmen(v.feld, v.neuer_wert)}
                       style={{ ...btn, padding: "3px 10px", fontSize: 11, flexShrink: 0 }}>Übernehmen</button>
@@ -325,7 +325,7 @@ function DebugKasten({ antwort, kontext, onUebernehmen }) {
           )}
         </div>
       )}
-      {fehler && <p style={{ fontSize: 11, color: "#f87171", margin: "8px 0 0" }}>{fehler}</p>}
+      {fehler && <p style={{ fontSize: 11, color: "var(--err)", margin: "8px 0 0" }}>{fehler}</p>}
     </div>
   );
 }
@@ -381,14 +381,14 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
   return (
     <Dialog titel="Variablen vorschlagen" onClose={onClose}>
       {!vorschlaege ? (
-        <p style={{ fontSize: 12, color: "#64748b" }}>{fehler || "Wird geprüft…"}</p>
+        <p style={{ fontSize: 12, color: "var(--muted-2)" }}>{fehler || "Wird geprüft…"}</p>
       ) : vorschlaege.length === 0 ? (
-        <p style={{ fontSize: 12, color: "#64748b" }}>
+        <p style={{ fontSize: 12, color: "var(--muted-2)" }}>
           In dieser Anfrage steckt nichts, was sich offensichtlich in eine Umgebung auslagern ließe.
         </p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+          <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
             Ausgelagerte Werte stehen danach als <code style={{ fontFamily: "monospace" }}>{"{{name}}"}</code> in
             der Anfrage – so lässt sich zwischen Test und Produktion umschalten, ohne den Request anzufassen.
           </p>
@@ -399,11 +399,11 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
               <div style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                   <code style={{ fontSize: 11, fontFamily: "monospace", color: C }}>{`{{${v.key}}}`}</code>
-                  {v.secret && <span style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.12)", padding: "1px 5px", borderRadius: 3 }}>geheim</span>}
-                  <span style={{ fontSize: 10, color: "#475569" }}>aus {v.quelle}</span>
+                  {v.secret && <span style={{ fontSize: 9, color: "var(--warn)", backgroundColor: "color-mix(in srgb, var(--warn) 12%, transparent)", padding: "1px 5px", borderRadius: 3 }}>geheim</span>}
+                  <span style={{ fontSize: 10, color: "var(--muted-3)" }}>aus {v.quelle}</span>
                 </div>
-                <p style={{ fontSize: 10, color: "#64748b", margin: "3px 0 0" }}>{v.begruendung}</p>
-                <p style={{ fontSize: 10, color: "#475569", margin: "2px 0 0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <p style={{ fontSize: 10, color: "var(--muted-2)", margin: "3px 0 0" }}>{v.begruendung}</p>
+                <p style={{ fontSize: 10, color: "var(--muted-3)", margin: "2px 0 0", fontFamily: "monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {v.secret ? "•".repeat(Math.min(v.wert.length, 24)) : v.wert}
                 </p>
               </div>
@@ -421,7 +421,7 @@ function VariablenDialog({ kontext, umgebungen, projectId, onFertig, onClose }) 
                 value={neuName} onChange={e => setNeuName(e.target.value)} />
             )}
           </div>
-          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+          {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
         </div>
       )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
@@ -533,15 +533,15 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
   if (erg) return (
     <Dialog titel="Import abgeschlossen" onClose={onClose}>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
-          <Check size={13} style={{ color: "#6ee7b7" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)" }}>
+          <Check size={13} style={{ color: "var(--ok)" }} />
           <span style={{ fontSize: 12, color: "#e2e8f0" }}>
             Sammlung <strong>{erg.sammlung.name}</strong> mit {erg.requests} Requests
             {erg.umgebung ? ` und Umgebung „${erg.umgebung.name}"` : ""}
           </span>
         </div>
         {erg.umgebung && (
-          <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+          <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
             Die Platzhalter in der Umgebung sind noch leer – dort die passenden Werte eintragen,
             dann laufen die Requests.
           </p>
@@ -562,8 +562,8 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
               <button key={v} onClick={() => setQuelle(v)}
                 style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
                   border: `1px solid ${quelle === v ? C : "rgba(255,255,255,0.1)"}`,
-                  backgroundColor: quelle === v ? `${C}18` : "transparent",
-                  color: quelle === v ? C : "#64748b" }}>{l}</button>
+                  backgroundColor: quelle === v ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent",
+                  color: quelle === v ? C : "var(--muted-2)" }}>{l}</button>
             ))}
           </div>
           {quelle === "url" ? (
@@ -572,7 +572,7 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
               <input style={iS} value={url} onChange={e => setUrl(e.target.value)} autoFocus
                 placeholder="https://api.example.com/openapi.json"
                 onKeyDown={e => { if (e.key === "Enter" && url) einlesen(); }} />
-              <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+              <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>
                 Wird über denselben Netz-Schutz geladen wie jeder andere Request. JSON oder YAML, OpenAPI 3.x oder Swagger 2.0.
               </p>
             </div>
@@ -584,7 +584,7 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
                 placeholder='{ "openapi": "3.0.0", … }  oder  openapi: 3.0.0' />
             </div>
           )}
-          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+          {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -592,17 +592,17 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
           <div style={{ padding: 10, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.03)" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <strong style={{ fontSize: 12, color: "#e2e8f0" }}>{spec.titel}</strong>
-              {spec.api_version && <span style={{ fontSize: 10, color: "#64748b" }}>v{spec.api_version}</span>}
-              <span style={{ fontSize: 9, color: "#64748b", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 3 }}>Spec {spec.version}</span>
+              {spec.api_version && <span style={{ fontSize: 10, color: "var(--muted-2)" }}>v{spec.api_version}</span>}
+              <span style={{ fontSize: 9, color: "var(--muted-2)", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 6px", borderRadius: 3 }}>Spec {spec.version}</span>
               {spec.auth_type !== "none" && (
-                <span style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.1)", padding: "1px 6px", borderRadius: 3 }}>{spec.auth_type}</span>
+                <span style={{ fontSize: 9, color: "var(--warn)", backgroundColor: "color-mix(in srgb, var(--warn) 10%, transparent)", padding: "1px 6px", borderRadius: 3 }}>{spec.auth_type}</span>
               )}
             </div>
-            <p style={{ fontSize: 10, color: "#64748b", margin: "4px 0 0", fontFamily: "monospace" }}>
+            <p style={{ fontSize: 10, color: "var(--muted-2)", margin: "4px 0 0", fontFamily: "monospace" }}>
               {spec.basis_url || "— keine Basis-URL in der Datei —"}
             </p>
             {spec.abgeschnitten && (
-              <p style={{ fontSize: 10, color: "#fbbf24", margin: "4px 0 0" }}>
+              <p style={{ fontSize: 10, color: "var(--warn)", margin: "4px 0 0" }}>
                 Sehr viele Endpunkte – es werden die ersten {spec.endpunkte.length} angezeigt.
               </p>
             )}
@@ -625,10 +625,10 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
               <button style={{ ...btn, padding: "2px 8px", fontSize: 10 }} onClick={() => alleUmschalten(false)}>keine</button>
             </div>
             <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
-              {gruppen.length === 0 && <p style={{ fontSize: 11, color: "#475569", padding: 12, margin: 0 }}>Nichts gefunden.</p>}
+              {gruppen.length === 0 && <p style={{ fontSize: 11, color: "var(--muted-3)", padding: 12, margin: 0 }}>Nichts gefunden.</p>}
               {gruppen.map(([tag, eps]) => (
                 <div key={tag}>
-                  <div style={{ padding: "5px 10px", backgroundColor: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em", position: "sticky", top: 0 }}>
+                  <div style={{ padding: "5px 10px", backgroundColor: "rgba(255,255,255,0.03)", fontSize: 10, fontWeight: 700, color: "var(--muted-2)", textTransform: "uppercase", letterSpacing: "0.06em", position: "sticky", top: 0 }}>
                     {tag}
                   </div>
                   {eps.map(e => (
@@ -636,10 +636,10 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
                       style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", cursor: "pointer", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
                       <input type="checkbox" checked={!!gewaehlt[e.id]}
                         onChange={ev => setGewaehlt(g => ({ ...g, [e.id]: ev.target.checked }))} />
-                      <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "#94a3b8" }}>{e.methode}</span>
-                      <span style={{ fontSize: 11, fontFamily: "monospace", color: "#94a3b8", flexShrink: 0 }}>{e.pfad}</span>
-                      <span style={{ fontSize: 10, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
-                      {e.veraltet && <span style={{ fontSize: 9, color: "#f87171", flexShrink: 0, marginLeft: "auto" }}>veraltet</span>}
+                      <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "var(--muted)" }}>{e.methode}</span>
+                      <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--muted)", flexShrink: 0 }}>{e.pfad}</span>
+                      <span style={{ fontSize: 10, color: "var(--muted-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
+                      {e.veraltet && <span style={{ fontSize: 9, color: "var(--err)", flexShrink: 0, marginLeft: "auto" }}>veraltet</span>}
                     </label>
                   ))}
                 </div>
@@ -667,7 +667,7 @@ function OpenApiDialog({ projectId, onFertig, onClose }) {
             </div>
           )}
 
-          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+          {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
         </div>
       )}
 
@@ -756,14 +756,14 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
 
   if (erg) return (
     <Dialog titel="Kette angelegt" onClose={onClose}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
-        <Check size={13} style={{ color: "#6ee7b7" }} />
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)" }}>
+        <Check size={13} style={{ color: "var(--ok)" }} />
         <span style={{ fontSize: 12, color: "#e2e8f0" }}>
           Pipeline <strong>{erg.name}</strong> mit {erg.schritte} Schritten
           {erg.cron ? ` (Zeitplan ${erg.cron})` : ""}
         </span>
       </div>
-      <p style={{ fontSize: 11, color: "#64748b", margin: "10px 0 0" }}>
+      <p style={{ fontSize: 11, color: "var(--muted-2)", margin: "10px 0 0" }}>
         Sie steht ab jetzt unter Pipelines und lässt sich dort wie jede andere
         starten, bearbeiten und überwachen.
       </p>
@@ -784,7 +784,7 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
             Reihenfolge {kette.length > 0 && `(${kette.length} Schritte)`}
           </span>
           {kette.length === 0 && (
-            <p style={{ fontSize: 11, color: "#475569", padding: "10px 0", margin: 0 }}>
+            <p style={{ fontSize: 11, color: "var(--muted-3)", padding: "10px 0", margin: 0 }}>
               Unten Requests anklicken. Der erste holt die Liste, die folgenden
               verwenden deren Werte als <code style={{ fontFamily: "monospace", color: C }}>{"{{feld}}"}</code>.
             </p>
@@ -794,34 +794,34 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
             return (
               <div key={r.id} style={{ padding: "6px 10px", marginBottom: 4, borderRadius: 6,
                 backgroundColor: "rgba(255,255,255,0.03)",
-                border: `1px solid ${s?.offen?.length ? "rgba(251,191,36,0.3)" : "rgba(255,255,255,0.07)"}` }}>
+                border: `1px solid ${s?.offen?.length ? "color-mix(in srgb, var(--warn) 30%, transparent)" : "rgba(255,255,255,0.07)"}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 10, color: "#64748b", width: 14 }}>{i + 1}.</span>
-                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "#94a3b8" }}>{r.method}</span>
+                  <span style={{ fontSize: 10, color: "var(--muted-2)", width: 14 }}>{i + 1}.</span>
+                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "var(--muted)" }}>{r.method}</span>
                   <span style={{ fontSize: 11, color: "#e2e8f0", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {r.name} <span style={{ color: "#475569", fontFamily: "monospace" }}>{r.url}</span>
+                    {r.name} <span style={{ color: "var(--muted-3)", fontFamily: "monospace" }}>{r.url}</span>
                   </span>
                   <button title="nach oben" disabled={i === 0} onClick={() => schieben(i, -1)}
-                    style={{ background: "none", border: "none", color: i === 0 ? "#334155" : "#64748b", cursor: i === 0 ? "default" : "pointer", padding: 2 }}>↑</button>
+                    style={{ background: "none", border: "none", color: i === 0 ? "#334155" : "var(--muted-2)", cursor: i === 0 ? "default" : "pointer", padding: 2 }}>↑</button>
                   <button title="nach unten" disabled={i === kette.length - 1} onClick={() => schieben(i, 1)}
-                    style={{ background: "none", border: "none", color: i === kette.length - 1 ? "#334155" : "#64748b", cursor: i === kette.length - 1 ? "default" : "pointer", padding: 2 }}>↓</button>
+                    style={{ background: "none", border: "none", color: i === kette.length - 1 ? "#334155" : "var(--muted-2)", cursor: i === kette.length - 1 ? "default" : "pointer", padding: 2 }}>↓</button>
                   <button title="entfernen" onClick={() => weg(i)}
-                    style={{ background: "none", border: "none", color: "#64748b", cursor: "pointer", padding: 2 }}><X size={11} /></button>
+                    style={{ background: "none", border: "none", color: "var(--muted-2)", cursor: "pointer", padding: 2 }}><X size={11} /></button>
                 </div>
                 {s && (
                   <div style={{ marginLeft: 22, marginTop: 4, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                     {s.gedeckt.map(g => (
-                      <span key={g.name} style={{ fontSize: 9, color: "#6ee7b7", backgroundColor: "rgba(110,231,183,0.1)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
+                      <span key={g.name} style={{ fontSize: 9, color: "var(--ok)", backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
                         {`{{${g.name}}}`} ← {g.quelle}
                       </span>
                     ))}
                     {s.offen.map(n => (
-                      <span key={n} style={{ fontSize: 9, color: "#fbbf24", backgroundColor: "rgba(251,191,36,0.1)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
+                      <span key={n} style={{ fontSize: 9, color: "var(--warn)", backgroundColor: "color-mix(in srgb, var(--warn) 10%, transparent)", padding: "1px 6px", borderRadius: 3, fontFamily: "monospace" }}>
                         {`{{${n}}}`} ohne Wert
                       </span>
                     ))}
                     {!s.platzhalter.length && (
-                      <span style={{ fontSize: 9, color: "#475569" }}>keine Platzhalter</span>
+                      <span style={{ fontSize: 9, color: "var(--muted-3)" }}>keine Platzhalter</span>
                     )}
                   </div>
                 )}
@@ -830,9 +830,9 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
                     <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                       <input type="checkbox" checked={!!forEach[i]}
                         onChange={e => setForEach(f => ({ ...f, [i]: e.target.checked }))} />
-                      <span style={{ fontSize: 10, color: "#94a3b8" }}>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>
                         für <strong>jede</strong> Zeile des Vorgängers aufrufen
-                        <span style={{ color: "#475569" }}> – sonst nur für die erste</span>
+                        <span style={{ color: "var(--muted-3)" }}> – sonst nur für die erste</span>
                       </span>
                     </label>
                   </div>
@@ -850,10 +850,10 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
               {frei.map(r => (
                 <button key={r.id} onClick={() => hinzu(r)}
                   style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "5px 10px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.03)", cursor: "pointer", textAlign: "left" }}>
-                  <Plus size={10} style={{ color: "#64748b", flexShrink: 0 }} />
-                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "#94a3b8" }}>{r.method}</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {r.name} <span style={{ color: "#475569", fontFamily: "monospace" }}>{r.url}</span>
+                  <Plus size={10} style={{ color: "var(--muted-2)", flexShrink: 0 }} />
+                  <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 44, color: METHOD_COLOR[r.method] || "var(--muted)" }}>{r.method}</span>
+                  <span style={{ fontSize: 11, color: "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {r.name} <span style={{ color: "var(--muted-3)", fontFamily: "monospace" }}>{r.url}</span>
                   </span>
                 </button>
               ))}
@@ -865,7 +865,7 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
         {vorschau && (
           <div style={{ padding: 10, borderRadius: 6, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
             {vorschau.erster_schritt.fehler ? (
-              <p style={{ fontSize: 11, color: "#f87171", margin: 0 }}>
+              <p style={{ fontSize: 11, color: "var(--err)", margin: 0 }}>
                 Schritt 1 lief nicht durch: {vorschau.erster_schritt.fehler}
               </p>
             ) : (
@@ -875,13 +875,13 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
                 </p>
                 <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>
                   {vorschau.erster_schritt.spalten.slice(0, 24).map(s => (
-                    <code key={s} style={{ fontSize: 9, fontFamily: "monospace", color: "#94a3b8", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 3 }}>{s}</code>
+                    <code key={s} style={{ fontSize: 9, fontFamily: "monospace", color: "var(--muted)", backgroundColor: "rgba(255,255,255,0.05)", padding: "1px 5px", borderRadius: 3 }}>{s}</code>
                   ))}
                 </div>
               </>
             )}
             {offeneGesamt > 0 && (
-              <p style={{ fontSize: 11, color: "#fbbf24", margin: "8px 0 0" }}>
+              <p style={{ fontSize: 11, color: "var(--warn)", margin: "8px 0 0" }}>
                 {offeneGesamt} Platzhalter ohne Wert – die Kette läuft so nicht durch.
                 Entweder liefert Schritt 1 das Feld nicht, oder es fehlt in der Umgebung.
               </p>
@@ -908,7 +908,7 @@ function KettenDialog({ requests, projectId, envId, onFertig, onClose }) {
           </div>
         )}
 
-        {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
       </div>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
@@ -965,24 +965,24 @@ function DokuDialog({ sammlung, onClose }) {
               {laedt ? <Loader2 size={12} className="animate-spin" /> : "Fragen"}
             </button>
           </div>
-          <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+          <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>
             Beantwortet wird nur, was beim Import mitkam – {sammlung.doku_endpunkte} Endpunkte.
             Allgemeinwissen über die API fließt bewusst nicht ein.
           </p>
         </div>
 
-        {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+        {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
 
         {erg && (
           <>
             {ki && (
               <div style={{ padding: 12, borderRadius: 8,
-                backgroundColor: ki.in_der_doku ? "rgba(255,255,255,0.03)" : "rgba(251,191,36,0.07)",
-                border: `1px solid ${ki.in_der_doku ? "rgba(255,255,255,0.07)" : "rgba(251,191,36,0.2)"}` }}>
+                backgroundColor: ki.in_der_doku ? "rgba(255,255,255,0.03)" : "color-mix(in srgb, var(--warn) 7%, transparent)",
+                border: `1px solid ${ki.in_der_doku ? "rgba(255,255,255,0.07)" : "color-mix(in srgb, var(--warn) 20%, transparent)"}` }}>
                 {!ki.in_der_doku && (
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                    <AlertTriangle size={12} style={{ color: "#fbbf24" }} />
-                    <span style={{ fontSize: 11, color: "#fbbf24" }}>
+                    <AlertTriangle size={12} style={{ color: "var(--warn)" }} />
+                    <span style={{ fontSize: 11, color: "var(--warn)" }}>
                       Dazu steht nichts in der importierten Beschreibung.
                     </span>
                   </div>
@@ -994,13 +994,13 @@ function DokuDialog({ sammlung, onClose }) {
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
                     {ki.endpunkte.map(e => (
                       <code key={e} style={{ fontSize: 10, fontFamily: "monospace", color: C,
-                        backgroundColor: `${C}12`, padding: "2px 6px", borderRadius: 3 }}>{e}</code>
+                        backgroundColor: `color-mix(in srgb, ${C} 7.1%, transparent)`, padding: "2px 6px", borderRadius: 3 }}>{e}</code>
                     ))}
                   </div>
                 )}
               </div>
             )}
-            {erg.hinweis && <p style={{ fontSize: 11, color: "#fbbf24", margin: 0 }}>{erg.hinweis}</p>}
+            {erg.hinweis && <p style={{ fontSize: 11, color: "var(--warn)", margin: 0 }}>{erg.hinweis}</p>}
 
             <div>
               <span style={{ ...lS, display: "block", marginBottom: 6 }}>
@@ -1011,9 +1011,9 @@ function DokuDialog({ sammlung, onClose }) {
               <div style={{ maxHeight: 220, overflowY: "auto", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 6 }}>
                 {erg.endpunkte.map((e, i) => (
                   <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 10px", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "#94a3b8" }}>{e.methode}</span>
-                    <span style={{ fontSize: 11, fontFamily: "monospace", color: "#94a3b8", flexShrink: 0 }}>{e.pfad}</span>
-                    <span style={{ fontSize: 10, color: "#475569", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
+                    <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", width: 48, flexShrink: 0, color: METHOD_COLOR[e.methode] || "var(--muted)" }}>{e.methode}</span>
+                    <span style={{ fontSize: 11, fontFamily: "monospace", color: "var(--muted)", flexShrink: 0 }}>{e.pfad}</span>
+                    <span style={{ fontSize: 10, color: "var(--muted-3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{e.titel}</span>
                   </div>
                 ))}
               </div>
@@ -1093,13 +1093,13 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
           ["Mapping", erg.mapping && `${erg.mapping.name} → ${erg.mapping.ziel_dataset}`],
           ["Pipeline", erg.pipeline && `${erg.pipeline.name}${erg.pipeline.cron ? ` · ${erg.pipeline.cron}` : " · manuell"}`],
         ].filter(([, w]) => w).map(([l, w]) => (
-          <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.06)", border: "1px solid rgba(110,231,183,0.2)" }}>
-            <Check size={13} style={{ color: "#6ee7b7", flexShrink: 0 }} />
-            <span style={{ fontSize: 11, color: "#64748b", width: 60 }}>{l}</span>
+          <div key={l} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)" }}>
+            <Check size={13} style={{ color: "var(--ok)", flexShrink: 0 }} />
+            <span style={{ fontSize: 11, color: "var(--muted-2)", width: 60 }}>{l}</span>
             <span style={{ fontSize: 12, color: "#e2e8f0" }}>{w}</span>
           </div>
         ))}
-        <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+        <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
           Zu finden unter Datasets{erg.mapping ? ", Mappings" : ""}{erg.pipeline ? " und Pipelines" : ""}.
         </p>
       </div>
@@ -1112,9 +1112,9 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
   return (
     <Dialog titel="Integration erstellen" onClose={onClose} breit>
       {laedt && !vs ? (
-        <p style={{ fontSize: 12, color: "#64748b" }}>{fehler || "Vorschlag wird erstellt…"}</p>
+        <p style={{ fontSize: 12, color: "var(--muted-2)" }}>{fehler || "Vorschlag wird erstellt…"}</p>
       ) : !vs ? (
-        <p style={{ fontSize: 12, color: "#f87171" }}>{fehler}</p>
+        <p style={{ fontSize: 12, color: "var(--err)" }}>{fehler}</p>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
@@ -1138,15 +1138,15 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
                       <td style={{ padding: "4px 8px", width: 26 }}>
                         <input type="checkbox" checked={f.uebernehmen} onChange={e => setFeld(i, "uebernehmen", e.target.checked)} />
                       </td>
-                      <td style={{ padding: "4px 8px", fontFamily: "monospace", color: "#64748b", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "4px 8px", fontFamily: "monospace", color: "var(--muted-2)", whiteSpace: "nowrap" }}>
                         {f.quelle}
                         {f.anteil_gefuellt < 0.5 && (
-                          <span title="Nur selten gefüllt" style={{ marginLeft: 5, fontSize: 9, color: "#fbbf24" }}>
+                          <span title="Nur selten gefüllt" style={{ marginLeft: 5, fontSize: 9, color: "var(--warn)" }}>
                             {Math.round(f.anteil_gefuellt * 100)}%
                           </span>
                         )}
                       </td>
-                      <td style={{ padding: "4px 4px", color: "#475569" }}>→</td>
+                      <td style={{ padding: "4px 4px", color: "var(--muted-3)" }}>→</td>
                       <td style={{ padding: "4px 8px" }}>
                         <input style={{ ...iS, fontSize: 11, padding: "3px 6px" }} value={f.ziel}
                           title={f.hinweis || undefined}
@@ -1166,7 +1166,7 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 12, borderRadius: 8, backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
-            <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+            <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
               Das Dataset wird immer angelegt und sofort mit echten Daten gefüllt
               {vs.paginierung?.config ? " (inklusive aller Seiten)" : ""}.
             </p>
@@ -1190,14 +1190,14 @@ function IntegrationDialog({ antwort, kontext, restSourceId, umgebungen, envId, 
                 <option value="">Ohne Umgebung</option>
                 {umgebungen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
               </select>
-              <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+              <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>
                 Wird am Request hinterlegt – sonst stünden Platzhalter wie <code style={{ fontFamily: "monospace" }}>{"{{basis_url}}"}</code> beim
                 geplanten Lauf wörtlich in der URL.
               </p>
             </div>
           </div>
 
-          {fehler && <p style={{ fontSize: 12, color: "#f87171", margin: 0 }}>{fehler}</p>}
+          {fehler && <p style={{ fontSize: 12, color: "var(--err)", margin: 0 }}>{fehler}</p>}
         </div>
       )}
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
@@ -1217,7 +1217,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
   const [reiter, setReiter] = useState("pretty");
 
   if (!antwort) return (
-    <div style={{ padding: "48px 24px", textAlign: "center", color: "#475569" }}>
+    <div style={{ padding: "48px 24px", textAlign: "center", color: "var(--muted-3)" }}>
       <Send size={28} style={{ marginBottom: 10, opacity: 0.35 }} />
       <p style={{ fontSize: 13, margin: 0 }}>Noch keine Antwort – Request abschicken.</p>
     </div>
@@ -1225,10 +1225,10 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
 
   if (!antwort.success) return (
     <div style={{ paddingBottom: 16 }}>
-      <div style={{ display: "flex", gap: 10, padding: 14, margin: 16, marginBottom: 0, borderRadius: 8, backgroundColor: "rgba(248,113,113,0.07)", border: "1px solid rgba(248,113,113,0.25)" }}>
-        <AlertTriangle size={16} style={{ color: "#f87171", flexShrink: 0, marginTop: 1 }} />
+      <div style={{ display: "flex", gap: 10, padding: 14, margin: 16, marginBottom: 0, borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--err) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--err) 25%, transparent)" }}>
+        <AlertTriangle size={16} style={{ color: "var(--err)", flexShrink: 0, marginTop: 1 }} />
         <div>
-          <p style={{ fontSize: 12, color: "#f87171", fontWeight: 700, margin: 0 }}>Request nicht zustande gekommen</p>
+          <p style={{ fontSize: 12, color: "var(--err)", fontWeight: 700, margin: 0 }}>Request nicht zustande gekommen</p>
           <p style={{ fontSize: 11, color: "#fca5a5", fontFamily: "monospace", margin: "6px 0 0", wordBreak: "break-word" }}>{antwort.error}</p>
         </div>
       </div>
@@ -1253,15 +1253,15 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
         <span style={{ fontSize: 13, fontWeight: 700, color: statusFarbe(antwort.status_code), fontFamily: "monospace" }}>
           {antwort.status_code} {antwort.reason}
         </span>
-        <span style={{ fontSize: 11, color: "#64748b" }}>{antwort.duration_ms} ms</span>
-        <span style={{ fontSize: 11, color: "#64748b" }}>{groesse(antwort.size_bytes)}</span>
+        <span style={{ fontSize: 11, color: "var(--muted-2)" }}>{antwort.duration_ms} ms</span>
+        <span style={{ fontSize: 11, color: "var(--muted-2)" }}>{groesse(antwort.size_bytes)}</span>
         {antwort.content_type && (
-          <span style={{ fontSize: 10, color: "#64748b", fontFamily: "monospace", backgroundColor: "rgba(255,255,255,0.04)", padding: "2px 6px", borderRadius: 3 }}>
+          <span style={{ fontSize: 10, color: "var(--muted-2)", fontFamily: "monospace", backgroundColor: "rgba(255,255,255,0.04)", padding: "2px 6px", borderRadius: 3 }}>
             {antwort.content_type.split(";")[0]}
           </span>
         )}
         {antwort.truncated && (
-          <span style={{ fontSize: 10, color: "#fbbf24" }}>Antwort gekürzt angezeigt</span>
+          <span style={{ fontSize: 10, color: "var(--warn)" }}>Antwort gekürzt angezeigt</span>
         )}
       </div>
 
@@ -1270,13 +1270,13 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
 
       {/* Hinweis, wo die Daten stecken */}
       {antwort.table_hint && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 16px 0", padding: "8px 12px", borderRadius: 6, backgroundColor: `${C}0e`, border: `1px solid ${C}33` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "12px 16px 0", padding: "8px 12px", borderRadius: 6, backgroundColor: `color-mix(in srgb, ${C} 5.5%, transparent)`, border: `1px solid color-mix(in srgb, ${C} 20%, transparent)` }}>
           <Table2 size={13} style={{ color: C, flexShrink: 0 }} />
-          <span style={{ fontSize: 11, color: "#94a3b8" }}>
+          <span style={{ fontSize: 11, color: "var(--muted)" }}>
             Die Liste steckt vermutlich unter <code style={{ fontFamily: "monospace", color: C }}>{antwort.table_hint}</code>
           </span>
           <button onClick={() => aufDatenpfad(antwort.table_hint)}
-            style={{ ...btn, marginLeft: "auto", padding: "3px 10px", fontSize: 11, borderColor: `${C}55`, color: C }}>
+            style={{ ...btn, marginLeft: "auto", padding: "3px 10px", fontSize: 11, borderColor: `color-mix(in srgb, ${C} 33.3%, transparent)`, color: C }}>
             Als Datenpfad übernehmen
           </button>
         </div>
@@ -1287,7 +1287,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
         {REITER.map(r => (
           <button key={r.id} onClick={() => setReiter(r.id)}
             style={{ padding: "5px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "none", borderRadius: 5,
-              backgroundColor: aktiv === r.id ? `${C}18` : "transparent", color: aktiv === r.id ? C : "#64748b" }}>
+              backgroundColor: aktiv === r.id ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent", color: aktiv === r.id ? C : "var(--muted-2)" }}>
             {r.l}
           </button>
         ))}
@@ -1296,7 +1296,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
       <div style={{ padding: 16, maxHeight: 420, overflow: "auto" }}>
         {aktiv === "pretty" && <JsonAnsicht text={pretty} />}
         {aktiv === "raw" && (
-          <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "#94a3b8" }}>
+          <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", color: "var(--muted)" }}>
             {antwort.body_text || "(leerer Antwortkörper)"}
           </pre>
         )}
@@ -1306,7 +1306,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
               {Object.entries(antwort.response_headers || {}).map(([k, v]) => (
                 <tr key={k}>
                   <td style={{ padding: "3px 12px 3px 0", color: "#7dd3fc", fontFamily: "monospace", verticalAlign: "top", whiteSpace: "nowrap" }}>{k}</td>
-                  <td style={{ padding: "3px 0", color: "#94a3b8", fontFamily: "monospace", wordBreak: "break-all" }}>{String(v)}</td>
+                  <td style={{ padding: "3px 0", color: "var(--muted)", fontFamily: "monospace", wordBreak: "break-all" }}>{String(v)}</td>
                 </tr>
               ))}
             </tbody>
@@ -1317,13 +1317,13 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
             <table style={{ fontSize: 10, borderCollapse: "collapse", minWidth: "max-content" }}>
               <thead>
                 <tr>{antwort.columns.map(c => (
-                  <th key={c} style={{ textAlign: "left", padding: "4px 10px", color: "#64748b", borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap", fontFamily: "monospace" }}>{c}</th>
+                  <th key={c} style={{ textAlign: "left", padding: "4px 10px", color: "var(--muted-2)", borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap", fontFamily: "monospace" }}>{c}</th>
                 ))}</tr>
               </thead>
               <tbody>
                 {antwort.preview.map((row, i) => (
                   <tr key={i}>{antwort.columns.map(c => (
-                    <td key={c} style={{ padding: "3px 10px", color: "#94a3b8", fontFamily: "monospace", whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <td key={c} style={{ padding: "3px 10px", color: "var(--muted)", fontFamily: "monospace", whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
                       {row[c] === null || row[c] === undefined ? "–" : String(row[c])}
                     </td>
                   ))}</tr>
@@ -1331,7 +1331,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
               </tbody>
             </table>
             {antwort.rows > antwort.preview.length && (
-              <p style={{ fontSize: 10, color: "#475569", marginTop: 8 }}>
+              <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 8 }}>
                 Vorschau der ersten {antwort.preview.length} von {antwort.rows} Zeilen.
               </p>
             )}
@@ -1376,7 +1376,7 @@ function SammlungsDialog({ initial, projectId, onSaved, onClose }) {
           <input style={iS} value={f.name} onChange={e => set("name", e.target.value)} placeholder="z.B. Shopware Shop" autoFocus /></div>
         <div><label style={lS}>Basis-URL</label>
           <input style={iS} value={f.base_url || ""} onChange={e => set("base_url", e.target.value)} placeholder="https://api.example.com/v1" />
-          <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>Requests dürfen dann nur noch den Pfad angeben, z.B. <code style={{ fontFamily: "monospace" }}>/orders</code>. Eine vollständige URL im Request gewinnt.</p>
+          <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>Requests dürfen dann nur noch den Pfad angeben, z.B. <code style={{ fontFamily: "monospace" }}>/orders</code>. Eine vollständige URL im Request gewinnt.</p>
         </div>
         <div><label style={lS}>Beschreibung</label>
           <input style={iS} value={f.description || ""} onChange={e => set("description", e.target.value)} /></div>
@@ -1388,13 +1388,13 @@ function SammlungsDialog({ initial, projectId, onSaved, onClose }) {
               <button key={a.v} onClick={() => { set("auth_type", a.v); set("auth_config", {}); }}
                 style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
                   border: `1px solid ${f.auth_type === a.v ? C : "rgba(255,255,255,0.1)"}`,
-                  backgroundColor: f.auth_type === a.v ? `${C}18` : "transparent",
-                  color: f.auth_type === a.v ? C : "#64748b" }}>{a.l}</button>
+                  backgroundColor: f.auth_type === a.v ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent",
+                  color: f.auth_type === a.v ? C : "var(--muted-2)" }}>{a.l}</button>
             ))}
           </div>
           <AuthEditor authType={f.auth_type} authConfig={f.auth_config || {}} onChange={v => set("auth_config", v)} />
         </div>
-        {fehler && <p style={{ fontSize: 12, color: "#f87171" }}>{fehler}</p>}
+        {fehler && <p style={{ fontSize: 12, color: "var(--err)" }}>{fehler}</p>}
       </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
         <button style={btn} onClick={onClose}>Abbrechen</button>
@@ -1444,12 +1444,12 @@ function UmgebungsDialog({ umgebungen, projectId, onChanged, onClose }) {
           {umgebungen.map(u => (
             <button key={u.id} onClick={() => waehlen(u)}
               style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", borderRadius: 5, fontSize: 12, cursor: "pointer", border: "none", marginBottom: 2,
-                backgroundColor: f.id === u.id ? `${C}18` : "transparent", color: f.id === u.id ? C : "#94a3b8" }}>
+                backgroundColor: f.id === u.id ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent", color: f.id === u.id ? C : "var(--muted)" }}>
               {u.name}
             </button>
           ))}
           <button onClick={() => waehlen(null)}
-            style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", padding: "6px 8px", borderRadius: 5, fontSize: 12, cursor: "pointer", border: "none", backgroundColor: "transparent", color: "#64748b", marginTop: 4 }}>
+            style={{ display: "flex", alignItems: "center", gap: 5, width: "100%", padding: "6px 8px", borderRadius: 5, fontSize: 12, cursor: "pointer", border: "none", backgroundColor: "transparent", color: "var(--muted-2)", marginTop: 4 }}>
             <Plus size={12} /> Neue Umgebung
           </button>
         </div>
@@ -1460,7 +1460,7 @@ function UmgebungsDialog({ umgebungen, projectId, onChanged, onClose }) {
           <input style={{ ...iS, marginBottom: 14 }} value={f.name || ""} onChange={e => setF(p => ({ ...p, name: e.target.value }))} placeholder="z.B. Produktion" />
 
           <label style={lS}>Variablen</label>
-          <p style={{ fontSize: 10, color: "#475569", margin: "0 0 8px" }}>
+          <p style={{ fontSize: 10, color: "var(--muted-3)", margin: "0 0 8px" }}>
             Im Request als <code style={{ fontFamily: "monospace" }}>{"{{name}}"}</code> einsetzbar. Geheime Werte werden verschlüsselt gespeichert und nie zurückgegeben.
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 5, marginBottom: 8 }}>
@@ -1471,25 +1471,25 @@ function UmgebungsDialog({ umgebungen, projectId, onChanged, onClose }) {
                 <input style={{ ...iS, fontSize: 11, padding: "4px 8px", flex: 1 }} placeholder="Wert"
                   type={v.secret ? "password" : "text"}
                   value={v.value || ""} onChange={e => setVar(i, "value", e.target.value)} />
-                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b", cursor: "pointer", whiteSpace: "nowrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "var(--muted-2)", cursor: "pointer", whiteSpace: "nowrap" }}>
                   <input type="checkbox" checked={!!v.secret} onChange={e => setVar(i, "secret", e.target.checked)} /> geheim
                 </label>
                 <button onClick={() => setF(p => ({ ...p, variables: p.variables.filter((_, j) => j !== i) }))}
-                  style={{ color: "#f87171", fontSize: 14, padding: "2px 4px", background: "none", border: "none", cursor: "pointer" }}>×</button>
+                  style={{ color: "var(--err)", fontSize: 14, padding: "2px 4px", background: "none", border: "none", cursor: "pointer" }}>×</button>
               </div>
             ))}
           </div>
           <button onClick={() => setF(p => ({ ...p, variables: [...(p.variables || []), { key: "", value: "", secret: false }] }))}
-            style={{ ...btn, padding: "4px 10px", fontSize: 11, color: C, borderColor: `${C}44` }}>
+            style={{ ...btn, padding: "4px 10px", fontSize: 11, color: C, borderColor: `color-mix(in srgb, ${C} 26.7%, transparent)` }}>
             <Plus size={11} style={{ display: "inline", marginRight: 4 }} /> Variable
           </button>
 
-          {fehler && <p style={{ fontSize: 12, color: "#f87171", marginTop: 10 }}>{fehler}</p>}
+          {fehler && <p style={{ fontSize: 12, color: "var(--err)", marginTop: 10 }}>{fehler}</p>}
         </div>
       </div>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
-        {f.id && <button style={{ ...btn, color: "#f87171", borderColor: "rgba(248,113,113,0.25)", marginRight: "auto" }} onClick={loeschen}>Löschen</button>}
+        {f.id && <button style={{ ...btn, color: "var(--err)", borderColor: "color-mix(in srgb, var(--err) 25%, transparent)", marginRight: "auto" }} onClick={loeschen}>Löschen</button>}
         <button style={btn} onClick={onClose}>Schließen</button>
         <button style={{ ...btnPrimary, opacity: !f.name || saving ? 0.5 : 1 }} disabled={!f.name || saving} onClick={speichern}>
           {saving ? "Speichern…" : "Speichern"}
@@ -1503,13 +1503,13 @@ function UmgebungsDialog({ umgebungen, projectId, onChanged, onClose }) {
 
 function VerlaufsListe({ eintraege, onLaden, onLeeren, canEdit }) {
   if (!eintraege.length) return (
-    <p style={{ fontSize: 12, color: "#475569", padding: "24px 16px", textAlign: "center" }}>Noch keine Requests geschickt.</p>
+    <p style={{ fontSize: 12, color: "var(--muted-3)", padding: "24px 16px", textAlign: "center" }}>Noch keine Requests geschickt.</p>
   );
   return (
     <div>
       {canEdit && (
         <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 12px" }}>
-          <button style={{ ...btn, padding: "3px 10px", fontSize: 11, color: "#f87171", borderColor: "rgba(248,113,113,0.22)" }} onClick={onLeeren}>
+          <button style={{ ...btn, padding: "3px 10px", fontSize: 11, color: "var(--err)", borderColor: "color-mix(in srgb, var(--err) 22%, transparent)" }} onClick={onLeeren}>
             Verlauf leeren
           </button>
         </div>
@@ -1518,11 +1518,11 @@ function VerlaufsListe({ eintraege, onLaden, onLeeren, canEdit }) {
         {eintraege.map(h => (
           <button key={h.id} onClick={() => onLaden(h)}
             style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", background: "none", border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", width: "100%" }}>
-            <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", color: METHOD_COLOR[h.method] || "#94a3b8", flex: "0 0 52px" }}>{h.method}</span>
+            <span style={{ fontSize: 9, fontWeight: 700, fontFamily: "monospace", color: METHOD_COLOR[h.method] || "var(--muted)", flex: "0 0 52px" }}>{h.method}</span>
             <span style={{ fontSize: 11, fontWeight: 700, fontFamily: "monospace", color: statusFarbe(h.status_code), flex: "0 0 34px" }}>{h.status_code ?? "—"}</span>
-            <span style={{ fontSize: 11, color: "#94a3b8", fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.url}</span>
-            <span style={{ fontSize: 10, color: "#475569", flexShrink: 0 }}>{h.duration_ms} ms</span>
-            <span style={{ fontSize: 10, color: "#475569", flexShrink: 0 }}>{new Date(h.created_at).toLocaleTimeString("de-DE")}</span>
+            <span style={{ fontSize: 11, color: "var(--muted)", fontFamily: "monospace", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.url}</span>
+            <span style={{ fontSize: 10, color: "var(--muted-3)", flexShrink: 0 }}>{h.duration_ms} ms</span>
+            <span style={{ fontSize: 10, color: "var(--muted-3)", flexShrink: 0 }}>{new Date(h.created_at).toLocaleTimeString("de-DE")}</span>
           </button>
         ))}
       </div>
@@ -1539,7 +1539,7 @@ function Dialog({ titel, children, onClose, breit }) {
         style={{ backgroundColor: "#0f172a", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, width: breit ? 760 : 520, maxWidth: "100%", maxHeight: "88vh", overflowY: "auto", padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ fontSize: 14, fontWeight: 700, color: "#f1f5f9", margin: 0 }}>{titel}</h3>
-          <button onClick={onClose} style={{ marginLeft: "auto", color: "#64748b", background: "none", border: "none", cursor: "pointer" }}><X size={16} /></button>
+          <button onClick={onClose} style={{ marginLeft: "auto", color: "var(--muted-2)", background: "none", border: "none", cursor: "pointer" }}><X size={16} /></button>
         </div>
         {children}
       </div>
@@ -1730,12 +1730,12 @@ function ApiStudioPanel({ projectId, canEdit }) {
     <div style={{ maxWidth: 1400, margin: "0 auto", padding: "20px 0" }}>
       {/* Kopfzeile */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <div style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: `${C}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: `color-mix(in srgb, ${C} 9.4%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Globe size={18} style={{ color: C }} />
         </div>
         <div>
           <h2 style={{ fontSize: 15, fontWeight: 700, color: "#f1f5f9", margin: 0 }}>API Studio</h2>
-          <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>REST-APIs testen, verstehen und als Connector speichern</p>
+          <p style={{ fontSize: 12, color: "var(--muted-2)", margin: 0 }}>REST-APIs testen, verstehen und als Connector speichern</p>
         </div>
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
           <select style={{ ...iS, width: "auto", fontSize: 11, padding: "6px 8px" }}
@@ -1757,7 +1757,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
         <div style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: 10, position: "sticky", top: 20 }}>
           {canEdit && (
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
-              <button style={{ ...btn, flex: 1, padding: "5px 8px", fontSize: 11, color: C, borderColor: `${C}44` }}
+              <button style={{ ...btn, flex: 1, padding: "5px 8px", fontSize: 11, color: C, borderColor: `color-mix(in srgb, ${C} 26.7%, transparent)` }}
                 onClick={() => { setSammlungEdit(null); setDialog("sammlung"); }}>
                 <Plus size={11} style={{ display: "inline", marginRight: 4 }} />Sammlung
               </button>
@@ -1784,7 +1784,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
           )}
 
           {sammlungen.length === 0 && requests.length === 0 && (
-            <p style={{ fontSize: 11, color: "#475569", padding: "16px 6px", textAlign: "center", lineHeight: 1.6 }}>
+            <p style={{ fontSize: 11, color: "var(--muted-3)", padding: "16px 6px", textAlign: "center", lineHeight: 1.6 }}>
               Noch nichts angelegt. Einfach rechts eine URL eintippen und senden – speichern kannst du später.
             </p>
           )}
@@ -1797,7 +1797,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
                 <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 2px" }}>
                   <button onClick={() => setOffen(o => ({ ...o, [c.id]: !auf }))}
                     style={{ display: "flex", alignItems: "center", gap: 5, flex: 1, minWidth: 0, background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left" }}>
-                    {auf ? <ChevronDown size={12} style={{ color: "#64748b", flexShrink: 0 }} /> : <ChevronRight size={12} style={{ color: "#64748b", flexShrink: 0 }} />}
+                    {auf ? <ChevronDown size={12} style={{ color: "var(--muted-2)", flexShrink: 0 }} /> : <ChevronRight size={12} style={{ color: "var(--muted-2)", flexShrink: 0 }} />}
                     <FolderOpen size={12} style={{ color: C, flexShrink: 0 }} />
                     <span style={{ fontSize: 12, fontWeight: 600, color: "#e2e8f0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
                   </button>
@@ -1809,17 +1809,17 @@ function ApiStudioPanel({ projectId, canEdit }) {
                   {canEdit && (
                     <>
                       <button title="Request in dieser Sammlung" onClick={() => neuerRequest(c.id)}
-                        style={{ color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Plus size={11} /></button>
+                        style={{ color: "var(--muted-2)", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Plus size={11} /></button>
                       <button title="Sammlung bearbeiten" onClick={() => { setSammlungEdit(c); setDialog("sammlung"); }}
-                        style={{ color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Pencil size={10} /></button>
+                        style={{ color: "var(--muted-2)", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Pencil size={10} /></button>
                       <button title="Sammlung löschen" onClick={() => sammlungLoeschen(c)}
-                        style={{ color: "#64748b", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Trash2 size={10} /></button>
+                        style={{ color: "var(--muted-2)", background: "none", border: "none", cursor: "pointer", padding: 2 }}><Trash2 size={10} /></button>
                     </>
                   )}
                 </div>
                 {auf && (
                   <div style={{ marginLeft: 14, borderLeft: "1px solid rgba(255,255,255,0.06)", paddingLeft: 6 }}>
-                    {kinder.length === 0 && <p style={{ fontSize: 10, color: "#475569", padding: "3px 4px", margin: 0 }}>leer</p>}
+                    {kinder.length === 0 && <p style={{ fontSize: 10, color: "var(--muted-3)", padding: "3px 4px", margin: 0 }}>leer</p>}
                     {kinder.map(r => <RequestZeile key={r.id} r={r} aktiv={aktiveId === r.id} onClick={() => requestLaden(r)} onDelete={canEdit ? () => requestLoeschen(r) : null} />)}
                   </div>
                 )}
@@ -1829,7 +1829,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
 
           {ohneSammlung.length > 0 && (
             <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <p style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "#475569", margin: "0 0 4px 2px" }}>Ohne Sammlung</p>
+              <p style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--muted-3)", margin: "0 0 4px 2px" }}>Ohne Sammlung</p>
               {ohneSammlung.map(r => <RequestZeile key={r.id} r={r} aktiv={aktiveId === r.id} onClick={() => requestLaden(r)} onDelete={canEdit ? () => requestLoeschen(r) : null} />)}
             </div>
           )}
@@ -1874,7 +1874,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
               {alleVars.map(v => (
                 <code key={v} title="In die URL einfügen"
                   onClick={() => set("url", (f.url || "") + v)}
-                  style={{ fontSize: 10, backgroundColor: `${C}12`, color: C, padding: "2px 6px", borderRadius: 3, cursor: "pointer", fontFamily: "monospace" }}>{v}</code>
+                  style={{ fontSize: 10, backgroundColor: `color-mix(in srgb, ${C} 7.1%, transparent)`, color: C, padding: "2px 6px", borderRadius: 3, cursor: "pointer", fontFamily: "monospace" }}>{v}</code>
               ))}
               {canEdit && f.url && (
                 <button onClick={() => setDialog("variablen")}
@@ -1885,13 +1885,13 @@ function ApiStudioPanel({ projectId, canEdit }) {
             </div>
 
             {offenePlatzhalter.length > 0 && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8, padding: "6px 10px", borderRadius: 6, backgroundColor: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.2)" }}>
-                <AlertTriangle size={12} style={{ color: "#fbbf24", flexShrink: 0 }} />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 8, padding: "6px 10px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--warn) 7%, transparent)", border: "1px solid color-mix(in srgb, var(--warn) 20%, transparent)" }}>
+                <AlertTriangle size={12} style={{ color: "var(--warn)", flexShrink: 0 }} />
                 <span style={{ fontSize: 11, color: "#e2e8f0" }}>
                   Ohne Wert: {offenePlatzhalter.map(n => (
-                    <code key={n} style={{ fontFamily: "monospace", color: "#fbbf24", marginRight: 6 }}>{`{{${n}}}`}</code>
+                    <code key={n} style={{ fontFamily: "monospace", color: "var(--warn)", marginRight: 6 }}>{`{{${n}}}`}</code>
                   ))}
-                  <span style={{ color: "#64748b" }}>
+                  <span style={{ color: "var(--muted-2)" }}>
                     – so geht der Platzhalter wörtlich an die API.
                     {umgebungen.length === 0
                       ? " Dafür braucht es eine Umgebung."
@@ -1912,7 +1912,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
               {REITER.map(t => (
                 <button key={t.id} onClick={() => setReiter(t.id)}
                   style={{ padding: "7px 12px", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "none", border: "none",
-                    borderBottom: `2px solid ${reiter === t.id ? C : "transparent"}`, color: reiter === t.id ? C : "#64748b" }}>
+                    borderBottom: `2px solid ${reiter === t.id ? C : "transparent"}`, color: reiter === t.id ? C : "var(--muted-2)" }}>
                   {t.l}
                 </button>
               ))}
@@ -1928,8 +1928,8 @@ function ApiStudioPanel({ projectId, canEdit }) {
                       <button key={b.v} onClick={() => set("body_type", b.v)}
                         style={{ padding: "4px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer",
                           border: `1px solid ${f.body_type === b.v ? C : "rgba(255,255,255,0.1)"}`,
-                          backgroundColor: f.body_type === b.v ? `${C}18` : "transparent",
-                          color: f.body_type === b.v ? C : "#64748b" }}>{b.l}</button>
+                          backgroundColor: f.body_type === b.v ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent",
+                          color: f.body_type === b.v ? C : "var(--muted-2)" }}>{b.l}</button>
                     ))}
                   </div>
                   {f.body_type !== "none" && (
@@ -1949,14 +1949,14 @@ function ApiStudioPanel({ projectId, canEdit }) {
                       <button key={a.v} onClick={() => { set("auth_type", a.v); set("auth_config", {}); }}
                         style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, cursor: "pointer",
                           border: `1px solid ${f.auth_type === a.v ? C : "rgba(255,255,255,0.1)"}`,
-                          backgroundColor: f.auth_type === a.v ? `${C}18` : "transparent",
-                          color: f.auth_type === a.v ? C : "#64748b" }}>{a.l}</button>
+                          backgroundColor: f.auth_type === a.v ? `color-mix(in srgb, ${C} 9.4%, transparent)` : "transparent",
+                          color: f.auth_type === a.v ? C : "var(--muted-2)" }}>{a.l}</button>
                     ))}
                   </div>
                   {f.auth_type === "inherit" && (
-                    <p style={{ fontSize: 11, color: "#64748b", margin: 0 }}>
+                    <p style={{ fontSize: 11, color: "var(--muted-2)", margin: 0 }}>
                       {f.collection_id
-                        ? <>Nutzt die Auth der Sammlung <strong style={{ color: "#94a3b8" }}>{sammlungen.find(c => c.id === f.collection_id)?.name}</strong>.</>
+                        ? <>Nutzt die Auth der Sammlung <strong style={{ color: "var(--muted)" }}>{sammlungen.find(c => c.id === f.collection_id)?.name}</strong>.</>
                         : "Ohne Sammlung bedeutet das: keine Authentifizierung."}
                     </p>
                   )}
@@ -1969,17 +1969,17 @@ function ApiStudioPanel({ projectId, canEdit }) {
                     <label style={lS}>Datenpfad in der Antwort</label>
                     <input style={{ ...iS, fontFamily: "monospace" }} value={f.data_path || ""} onChange={e => set("data_path", e.target.value)}
                       placeholder='z.B. "data", "results.items"' />
-                    <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>Wo die Liste in der Antwort steckt. Leer lassen, wenn die Antwort direkt ein Array ist.</p>
+                    <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>Wo die Liste in der Antwort steckt. Leer lassen, wenn die Antwort direkt ein Array ist.</p>
                   </div>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!f.flatten} onChange={e => set("flatten", e.target.checked ? 1 : 0)} />
-                    <span style={{ fontSize: 12, color: "#94a3b8" }}>Verschachtelte Objekte flach machen</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Verschachtelte Objekte flach machen</span>
                   </label>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!f.store_response} onChange={e => set("store_response", e.target.checked ? 1 : 0)} />
-                    <span style={{ fontSize: 12, color: "#94a3b8" }}>Antwortkörper im Verlauf speichern</span>
+                    <span style={{ fontSize: 12, color: "var(--muted)" }}>Antwortkörper im Verlauf speichern</span>
                   </label>
-                  <p style={{ fontSize: 10, color: "#475569", margin: 0 }}>
+                  <p style={{ fontSize: 10, color: "var(--muted-3)", margin: 0 }}>
                     Standardmäßig merkt sich der Verlauf nur Status, Dauer und Größe – Antworten können personenbezogene Daten enthalten.
                   </p>
                   <div style={{ paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
@@ -1989,7 +1989,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
                       <option value="">Ohne Umgebung</option>
                       {umgebungen.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
                     </select>
-                    <p style={{ fontSize: 10, color: "#475569", marginTop: 4 }}>
+                    <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 4 }}>
                       Die Auswahl oben rechts gilt nur fürs Ausprobieren. Für Scheduler, Pipeline und Import
                       zählt die hier hinterlegte Umgebung.
                     </p>
@@ -2003,7 +2003,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
             </div>
 
             {fehler && (
-              <p style={{ fontSize: 12, color: "#f87171", marginTop: 12, padding: "8px 12px", backgroundColor: "rgba(248,113,113,0.08)", borderRadius: 6 }}>{fehler}</p>
+              <p style={{ fontSize: 12, color: "var(--err)", marginTop: 12, padding: "8px 12px", backgroundColor: "color-mix(in srgb, var(--err) 8%, transparent)", borderRadius: 6 }}>{fehler}</p>
             )}
           </div>
 
@@ -2096,15 +2096,15 @@ function ApiStudioPanel({ projectId, canEdit }) {
 
 function RequestZeile({ r, aktiv, onClick, onDelete }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: 5, backgroundColor: aktiv ? `${C}14` : "transparent" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 4, borderRadius: 5, backgroundColor: aktiv ? `color-mix(in srgb, ${C} 7.8%, transparent)` : "transparent" }}>
       <button onClick={onClick}
         style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, minWidth: 0, padding: "4px 6px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <span style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", flex: "0 0 34px", color: METHOD_COLOR[r.method] || "#94a3b8" }}>{r.method}</span>
-        <span style={{ fontSize: 11, color: aktiv ? C : "#94a3b8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+        <span style={{ fontSize: 8, fontWeight: 700, fontFamily: "monospace", flex: "0 0 34px", color: METHOD_COLOR[r.method] || "var(--muted)" }}>{r.method}</span>
+        <span style={{ fontSize: 11, color: aktiv ? C : "var(--muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
       </button>
       {onDelete && (
         <button onClick={onDelete} title="Request löschen"
-          style={{ color: "#475569", background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}><Trash2 size={10} /></button>
+          style={{ color: "var(--muted-3)", background: "none", border: "none", cursor: "pointer", padding: 2, flexShrink: 0 }}><Trash2 size={10} /></button>
       )}
     </div>
   );

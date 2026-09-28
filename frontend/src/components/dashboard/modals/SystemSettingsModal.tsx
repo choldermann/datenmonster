@@ -1,6 +1,8 @@
-import { useState, useEffect } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Moon, Sun, Monitor, Zap } from "lucide-react";
+import { useState, useEffect, type ReactNode } from "react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Zap } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
+import { THEMES, GRUPPEN } from "../../../themes";
+import ThemeVorschau from "../../ThemeVorschau";
 import api, { fehlerText } from "../../../api/client";
 import { useAuth } from "../../../context/AuthContext";
 import { testConnection as testAiConnection, listModels, pullModel, deleteModel } from "../../../services/aiService";
@@ -8,7 +10,7 @@ import { aiDownloadStore } from "../../../store/aiDownloadStore";
 import { getAiProvider, setAiProvider, onAiProviderChange } from "../../../services/aiProvider";
 import { S } from "../constants";
 
-const ACCENT = "#fce499";
+const ACCENT = "var(--accent)";
 
 const TABS = [
   { id: "email", label: "E-Mail", icon: "📧" },
@@ -118,14 +120,14 @@ function EmailSettings() {
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }} onClick={() => set("smtp_tls", !form.smtp_tls)}>
         <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.smtp_tls ? ACCENT : S.border}`, backgroundColor: form.smtp_tls ? ACCENT : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {form.smtp_tls && <Check size={10} color="#111" strokeWidth={3} />}
+          {form.smtp_tls && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
         </div>
         <span style={{ fontSize: 11, color: S.textMain }}>TLS/STARTTLS verwenden</span>
       </div>
 
       {testResult && (
-        <div style={{ padding: "8px 12px", borderRadius: 5, backgroundColor: testResult.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${testResult.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
-          <p style={{ fontSize: 11, color: testResult.ok ? "#6ee7b7" : "#e07070", margin: 0 }}>
+        <div style={{ padding: "8px 12px", borderRadius: 5, backgroundColor: testResult.ok ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: `1px solid ${testResult.ok ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--err-soft) 30%, transparent)"}` }}>
+          <p style={{ fontSize: 11, color: testResult.ok ? "var(--ok)" : "var(--err-soft)", margin: 0 }}>
             {testResult.ok ? "✓" : "✗"} {testResult.msg}
           </p>
         </div>
@@ -138,7 +140,7 @@ function EmailSettings() {
           Test-Mail senden
         </button>
         <button onClick={handleSave} disabled={saving}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT, color: saved ? "var(--ok)" : "var(--accent-fg)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
           {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
           {saved ? "Gespeichert!" : "Speichern"}
         </button>
@@ -246,8 +248,8 @@ function ProviderSelector({ value, onChange }) {
           return (
             <div key={o.id} onClick={() => onChange(o.id)}
               style={{ flex: 1, cursor: "pointer", padding: "10px 12px", borderRadius: 6,
-                backgroundColor: sel ? "rgba(252,228,153,0.08)" : S.bgEl,
-                border: `1px solid ${sel ? "rgba(252,228,153,0.4)" : S.border}` }}>
+                backgroundColor: sel ? "color-mix(in srgb, var(--accent) 8%, transparent)" : S.bgEl,
+                border: `1px solid ${sel ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}` }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: sel ? ACCENT : S.textMain }}>{o.label}</div>
               <div style={{ fontSize: 10, color: S.textDim, marginTop: 2, lineHeight: 1.4 }}>{o.desc}</div>
             </div>
@@ -296,7 +298,7 @@ function TopUpPanel({ onDone }) {
   if (packages === null)
     return <div style={{ fontSize: 11, color: S.textDim }}>Lade Pakete…</div>;
   if (packages.length === 0)
-    return <div style={{ fontSize: 11, color: "#e07070" }}>Pakete momentan nicht verfügbar.</div>;
+    return <div style={{ fontSize: 11, color: "var(--err-soft)" }}>Pakete momentan nicht verfügbar.</div>;
 
   const requestInvoice = async () => {
     if (!selected) return;
@@ -323,8 +325,8 @@ function TopUpPanel({ onDone }) {
           return (
             <div key={p.code} onClick={() => { setSelected(p.code); setMsg(null); setDone(false); }}
               style={{ flex: 1, cursor: "pointer", padding: "8px 6px", borderRadius: 5, textAlign: "center",
-                backgroundColor: s ? "rgba(252,228,153,0.10)" : S.bgEl,
-                border: `1px solid ${s ? "rgba(252,228,153,0.45)" : S.border}` }}>
+                backgroundColor: s ? "color-mix(in srgb, var(--accent) 10%, transparent)" : S.bgEl,
+                border: `1px solid ${s ? "color-mix(in srgb, var(--accent) 45%, transparent)" : S.border}` }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: s ? ACCENT : S.textMain }}>{p.name}</div>
               <div style={{ fontSize: 13, fontWeight: 800, color: s ? ACCENT : S.textMain, marginTop: 2 }}>{p.credits} Cr.</div>
               <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{Number(p.price_eur).toFixed(2)} €</div>
@@ -332,11 +334,11 @@ function TopUpPanel({ onDone }) {
           );
         })}
       </div>
-      {msg && <div style={{ fontSize: 11, color: msg.type === "ok" ? "#7fd07f" : "#e07070" }}>{msg.text}</div>}
+      {msg && <div style={{ fontSize: 11, color: msg.type === "ok" ? "#7fd07f" : "var(--err-soft)" }}>{msg.text}</div>}
       {!done && (
         <button onClick={requestInvoice} disabled={!selected || busy}
           style={{ padding: "8px 12px", borderRadius: 5, border: "none", fontSize: 12, fontWeight: 700,
-            backgroundColor: selected ? ACCENT : S.bgEl, color: selected ? "#111" : S.textDim,
+            backgroundColor: selected ? ACCENT : S.bgEl, color: selected ? "var(--accent-fg)" : S.textDim,
             cursor: selected && !busy ? "pointer" : "default", opacity: busy ? 0.6 : 1 }}>
           {busy ? "Rechnung wird erstellt…" : "Rechnung anfordern"}
         </button>
@@ -388,11 +390,11 @@ function DatenmonsterAiPanel({ model, onModel }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* Guthaben */}
-      <div style={{ padding: "12px 14px", borderRadius: 6, backgroundColor: "rgba(252,228,153,0.06)", border: "1px solid rgba(252,228,153,0.2)" }}>
+      <div style={{ padding: "12px 14px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--accent) 6%, transparent)", border: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}>
         {loading ? (
           <span style={{ fontSize: 11, color: S.textDim }}>Lade Guthaben…</span>
         ) : credits?.error ? (
-          <span style={{ fontSize: 11, color: "#e07070" }}>Guthaben nicht abrufbar: {credits.error}</span>
+          <span style={{ fontSize: 11, color: "var(--err-soft)" }}>Guthaben nicht abrufbar: {credits.error}</span>
         ) : (
           <>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
@@ -408,7 +410,7 @@ function DatenmonsterAiPanel({ model, onModel }) {
         )}
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <button onClick={() => setShowTopUp(v => !v)}
-            style={{ padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+            style={{ padding: "6px 12px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "var(--accent-fg)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
             {showTopUp ? "Schließen" : "Guthaben aufladen"}
           </button>
           {!credits?.error && (
@@ -419,11 +421,11 @@ function DatenmonsterAiPanel({ model, onModel }) {
           )}
         </div>
         {zeigeVerbrauch && (
-          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(252,228,153,0.2)" }}>
+          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}>
             {!verbrauch ? (
               <span style={{ fontSize: 11, color: S.textDim }}>Lade Verbrauch…</span>
             ) : verbrauch.error ? (
-              <span style={{ fontSize: 11, color: "#e07070" }}>Verbrauch nicht abrufbar: {verbrauch.error}</span>
+              <span style={{ fontSize: 11, color: "var(--err-soft)" }}>Verbrauch nicht abrufbar: {verbrauch.error}</span>
             ) : (
               <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                 {[["Nach Modell", verbrauch.by_model, (z) => z.model],
@@ -450,7 +452,7 @@ function DatenmonsterAiPanel({ model, onModel }) {
           </div>
         )}
         {showTopUp && (
-          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid rgba(252,228,153,0.2)" }}>
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid color-mix(in srgb, var(--accent) 20%, transparent)" }}>
             <TopUpPanel onDone={loadCredits} />
           </div>
         )}
@@ -464,8 +466,8 @@ function DatenmonsterAiPanel({ model, onModel }) {
             return (
               <div key={m.id} onClick={() => onModel(m.id)}
                 style={{ cursor: "pointer", padding: "8px 10px", borderRadius: 5,
-                  backgroundColor: sel ? "rgba(252,228,153,0.08)" : S.bgEl,
-                  border: `1px solid ${sel ? "rgba(252,228,153,0.35)" : S.border}` }}>
+                  backgroundColor: sel ? "color-mix(in srgb, var(--accent) 8%, transparent)" : S.bgEl,
+                  border: `1px solid ${sel ? "color-mix(in srgb, var(--accent) 35%, transparent)" : S.border}` }}>
                 <div style={{ fontSize: 11, fontWeight: 600, color: sel ? ACCENT : S.textMain }}>{m.label}</div>
                 {m.desc && <div style={{ fontSize: 10, color: S.textDim, marginTop: 1 }}>{m.desc}</div>}
                 {m.id === "auto" && schwereAufgaben.length > 0 && (
@@ -634,8 +636,8 @@ function AiSettings() {
   // Bereitschafts-Badge: lädt gerade / im Speicher bereit / noch nicht geladen (Kaltstart).
   const readyBadge = (ready) => {
     const base = { fontSize: 9, display: "inline-flex", alignItems: "center", gap: 3, padding: "1px 6px", borderRadius: 8, fontWeight: 600 };
-    if (warming) return <span style={{ ...base, color: ACCENT, backgroundColor: "rgba(252,228,153,0.12)" }}><Loader2 size={9} className="animate-spin" /> lädt…</span>;
-    if (ready)   return <span style={{ ...base, color: "#6ee7b7", backgroundColor: "rgba(110,231,183,0.1)" }}><Check size={9} /> bereit</span>;
+    if (warming) return <span style={{ ...base, color: ACCENT, backgroundColor: "color-mix(in srgb, var(--accent) 12%, transparent)" }}><Loader2 size={9} className="animate-spin" /> lädt…</span>;
+    if (ready)   return <span style={{ ...base, color: "var(--ok)", backgroundColor: "color-mix(in srgb, var(--ok) 10%, transparent)" }}><Check size={9} /> bereit</span>;
     return <span style={{ ...base, color: S.textDim, backgroundColor: "rgba(255,255,255,0.05)" }}>○ Kaltstart</span>;
   };
 
@@ -650,10 +652,10 @@ function AiSettings() {
       </p>
 
       {/* KI aktivieren */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.ai_enabled ? "rgba(252,228,153,0.07)" : S.bgEl, border: `1px solid ${form.ai_enabled ? "rgba(252,228,153,0.25)" : S.border}` }}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.ai_enabled ? "color-mix(in srgb, var(--accent) 7%, transparent)" : S.bgEl, border: `1px solid ${form.ai_enabled ? "color-mix(in srgb, var(--accent) 25%, transparent)" : S.border}` }}
         onClick={() => set("ai_enabled", !form.ai_enabled)}>
         <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.ai_enabled ? ACCENT : S.border}`, backgroundColor: form.ai_enabled ? ACCENT : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {form.ai_enabled && <Check size={10} color="#111" strokeWidth={3} />}
+          {form.ai_enabled && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
         </div>
         <span style={{ fontSize: 11, color: form.ai_enabled ? ACCENT : S.textMain, fontWeight: form.ai_enabled ? 700 : 400 }}>
           KI-Integration aktivieren
@@ -715,7 +717,7 @@ function AiSettings() {
                       style={{
                         padding: "7px 10px", borderRadius: 5, cursor: "pointer",
                         border: `1px solid ${isSelected ? ACCENT : S.border}`,
-                        backgroundColor: isSelected ? "rgba(252,228,153,0.06)" : S.bgEl,
+                        backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 6%, transparent)" : S.bgEl,
                         transition: "border-color 0.15s",
                       }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -723,12 +725,12 @@ function AiSettings() {
                           {m.name}
                         </span>
                         {m.recommended && (
-                          <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 8, backgroundColor: "rgba(252,228,153,0.15)", color: ACCENT, border: `1px solid rgba(252,228,153,0.3)`, fontWeight: 700 }}>
+                          <span style={{ fontSize: 8, padding: "1px 5px", borderRadius: 8, backgroundColor: "color-mix(in srgb, var(--accent) 15%, transparent)", color: ACCENT, border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)`, fontWeight: 700 }}>
                             ★ Empfohlen
                           </span>
                         )}
                         {isInstalled && (
-                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "#6ee7b7" }}>
+                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "var(--ok)" }}>
                             <Check size={10} /> installiert
                           </span>
                         )}
@@ -739,9 +741,9 @@ function AiSettings() {
                         </span>
                         <span style={{
                           fontSize: 9, padding: "1px 5px", borderRadius: 4, fontWeight: 700,
-                          backgroundColor: m.cpu ? "rgba(110,231,183,0.1)" : "rgba(139,92,246,0.1)",
-                          color: m.cpu ? "#6ee7b7" : "#a78bfa",
-                          border: `1px solid ${m.cpu ? "rgba(110,231,183,0.25)" : "rgba(139,92,246,0.25)"}`,
+                          backgroundColor: m.cpu ? "color-mix(in srgb, var(--ok) 10%, transparent)" : "rgba(139,92,246,0.1)",
+                          color: m.cpu ? "var(--ok)" : "#a78bfa",
+                          border: `1px solid ${m.cpu ? "color-mix(in srgb, var(--ok) 25%, transparent)" : "rgba(139,92,246,0.25)"}`,
                         }}>
                           {m.cpu ? "CPU" : "GPU"}
                         </span>
@@ -766,14 +768,14 @@ function AiSettings() {
                         style={{
                           padding: "7px 10px", borderRadius: 5, cursor: "pointer",
                           border: `1px solid ${isSelected ? ACCENT : S.border}`,
-                          backgroundColor: isSelected ? "rgba(252,228,153,0.06)" : S.bgEl,
+                          backgroundColor: isSelected ? "color-mix(in srgb, var(--accent) 6%, transparent)" : S.bgEl,
                           transition: "border-color 0.15s",
                         }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                           <span style={{ fontSize: 11, fontWeight: 600, color: isSelected ? ACCENT : S.textBright, flex: 1 }}>
                             {m.name}
                           </span>
-                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "#6ee7b7" }}>
+                          <span style={{ fontSize: 9, display: "flex", alignItems: "center", gap: 3, color: "var(--ok)" }}>
                             <Check size={10} /> installiert
                           </span>
                         </div>
@@ -794,16 +796,16 @@ function AiSettings() {
             {/* Download-Bereich */}
             {!modelInstalled && effectiveModel && !pulling && !pullProgress && (
               <button onClick={handlePull}
-                style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, border: "1px solid rgba(251,191,36,0.4)", backgroundColor: "rgba(251,191,36,0.08)", color: "#fbbf24", fontSize: 11, fontWeight: 600, cursor: "pointer", width: "100%" }}>
+                style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, border: "1px solid color-mix(in srgb, var(--warn) 40%, transparent)", backgroundColor: "color-mix(in srgb, var(--warn) 8%, transparent)", color: "var(--warn)", fontSize: 11, fontWeight: 600, cursor: "pointer", width: "100%" }}>
                 <Download size={12} /> Modell jetzt herunterladen
               </button>
             )}
 
             {/* Fortschrittsanzeige */}
             {(pulling || pullProgress) && (
-              <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 4, backgroundColor: "rgba(0,0,0,0.25)", border: `1px solid ${pullProgress?.error ? "rgba(224,112,112,0.3)" : pullProgress?.done ? "rgba(110,231,183,0.3)" : "rgba(252,228,153,0.2)"}` }}>
+              <div style={{ marginTop: 8, padding: "8px 10px", borderRadius: 4, backgroundColor: "rgba(0,0,0,0.25)", border: `1px solid ${pullProgress?.error ? "color-mix(in srgb, var(--err-soft) 30%, transparent)" : pullProgress?.done ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--accent) 20%, transparent)"}` }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: pullProgress?.percent != null ? 6 : 0 }}>
-                  <span style={{ fontSize: 10, color: pullProgress?.error ? "#e07070" : pullProgress?.done ? "#6ee7b7" : ACCENT }}>
+                  <span style={{ fontSize: 10, color: pullProgress?.error ? "var(--err-soft)" : pullProgress?.done ? "var(--ok)" : ACCENT }}>
                     {pullProgress?.error ? "✗ " : pullProgress?.done ? "✓ " : "⬇ "}
                     {pullProgress?.status || "Verbinde..."}
                   </span>
@@ -885,8 +887,8 @@ function AiSettings() {
 
           {/* Verbindungstest */}
           {testResult && (
-            <div style={{ padding: "8px 12px", borderRadius: 5, backgroundColor: testResult.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${testResult.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
-              <p style={{ fontSize: 11, color: testResult.ok ? "#6ee7b7" : "#e07070", margin: 0, lineHeight: 1.5 }}>{testResult.msg}</p>
+            <div style={{ padding: "8px 12px", borderRadius: 5, backgroundColor: testResult.ok ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: `1px solid ${testResult.ok ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--err-soft) 30%, transparent)"}` }}>
+              <p style={{ fontSize: 11, color: testResult.ok ? "var(--ok)" : "var(--err-soft)", margin: 0, lineHeight: 1.5 }}>{testResult.msg}</p>
             </div>
           )}
         </>
@@ -901,7 +903,7 @@ function AiSettings() {
           </button>
         )}
         <button onClick={handleSave} disabled={saving}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT, color: saved ? "var(--ok)" : "var(--accent-fg)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
           {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
           {saved ? "Gespeichert!" : "Speichern"}
         </button>
@@ -911,9 +913,9 @@ function AiSettings() {
 }
 
 const ROLE_META = {
-  admin:  { label: "Admin",  color: "#fca5a5", bg: "rgba(224,112,112,0.12)", border: "rgba(224,112,112,0.35)", hint: "Vollzugriff inkl. Benutzerverwaltung" },
+  admin:  { label: "Admin",  color: "#fca5a5", bg: "color-mix(in srgb, var(--err-soft) 12%, transparent)", border: "color-mix(in srgb, var(--err-soft) 35%, transparent)", hint: "Vollzugriff inkl. Benutzerverwaltung" },
   editor: { label: "Editor", color: "#93c5fd", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.35)", hint: "Zugriff auf die volle Plattform (Mappings, Pipelines …)" },
-  portal: { label: "Portal", color: "#fce499", bg: "rgba(252,228,153,0.10)", border: "rgba(252,228,153,0.35)", hint: "Sieht nur veröffentlichte Formulare, keinen Editor" },
+  portal: { label: "Portal", color: "var(--accent)", bg: "color-mix(in srgb, var(--accent) 10%, transparent)", border: "color-mix(in srgb, var(--accent) 35%, transparent)", hint: "Sieht nur veröffentlichte Formulare, keinen Editor" },
 };
 
 
@@ -1044,10 +1046,10 @@ function NachtwacheSettings() {
 
       <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         <button onClick={speichern}
-          style={{ padding: "7px 14px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
+          style={{ padding: "7px 14px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "var(--accent-fg)", cursor: "pointer", fontSize: 11, fontWeight: 700 }}>
           Speichern
         </button>
-        {status && <span style={{ fontSize: 11, color: status === "gespeichert" ? "#6ee7b7" : S.textDim }}>{status}</span>}
+        {status && <span style={{ fontSize: 11, color: status === "gespeichert" ? "var(--ok)" : S.textDim }}>{status}</span>}
       </div>
     </div>
   );
@@ -1173,7 +1175,7 @@ function BackupSettings() {
         </p>
       </div>
 
-      <div style={kasten("rgba(252,228,153,0.08)", "rgba(252,228,153,0.3)")}>
+      <div style={kasten("color-mix(in srgb, var(--accent) 8%, transparent)", "color-mix(in srgb, var(--accent) 30%, transparent)")}>
         <strong>Lade die Sicherung herunter.</strong> Sie liegt sonst auf demselben Server
         wie die Daten – beim Ausfall dieses Servers wäre auch sie verloren. Das Archiv
         enthält die Zugangsdaten aller Verbindungen (verschlüsselt) und gehört an einen
@@ -1208,14 +1210,14 @@ function BackupSettings() {
 
       {meldung && (
         <div style={kasten(
-          meldung.art === "fehler" ? "rgba(224,112,112,0.1)" : "rgba(110,231,183,0.08)",
-          meldung.art === "fehler" ? "rgba(224,112,112,0.35)" : "rgba(110,231,183,0.3)")}>
+          meldung.art === "fehler" ? "color-mix(in srgb, var(--err-soft) 10%, transparent)" : "color-mix(in srgb, var(--ok) 8%, transparent)",
+          meldung.art === "fehler" ? "color-mix(in srgb, var(--err-soft) 35%, transparent)" : "color-mix(in srgb, var(--ok) 30%, transparent)")}>
           {meldung.text}
         </div>
       )}
 
       {fertig && (
-        <div style={kasten("rgba(252,228,153,0.12)", "rgba(252,228,153,0.45)")}>
+        <div style={kasten("color-mix(in srgb, var(--accent) 12%, transparent)", "color-mix(in srgb, var(--accent) 45%, transparent)")}>
           <strong>Zurückgespielt.</strong> {fertig.hinweis}
           <br />
           Der vorherige Stand wurde vorher gesichert als <code>{fertig.sicherheitskopie}</code>.
@@ -1223,7 +1225,7 @@ function BackupSettings() {
       )}
 
       {pruefung && (
-        <div style={kasten("rgba(224,112,112,0.1)", "rgba(224,112,112,0.4)")}>
+        <div style={kasten("color-mix(in srgb, var(--err-soft) 10%, transparent)", "color-mix(in srgb, var(--err-soft) 40%, transparent)")}>
           <strong>Wirklich zurückspielen?</strong>
           <br />
           Archiv <code>{pruefung.name}</code> enthält:{" "}
@@ -1249,7 +1251,7 @@ function BackupSettings() {
           <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
             <button onClick={zurueckspielen} disabled={arbeitet}
               style={{ padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 700,
-                       cursor: "pointer", border: "none", background: "#e07070", color: "#fff" }}>
+                       cursor: "pointer", border: "none", background: "var(--err-soft)", color: "#fff" }}>
               Ja, zurückspielen
             </button>
             <button onClick={() => setPruefung(null)}
@@ -1450,7 +1452,7 @@ function MandantenSettings() {
           )}
         </div>
         {hinweis && (
-          <p style={{ fontSize: 10.5, color: "#6ee7b7", margin: "6px 0 0" }}>✓ {hinweis}</p>
+          <p style={{ fontSize: 10.5, color: "var(--ok)", margin: "6px 0 0" }}>✓ {hinweis}</p>
         )}
       </div>
 
@@ -1672,12 +1674,12 @@ function UserManagement() {
           <p style={{ fontSize: 10, color: S.textDim, margin: "4px 0 0" }}>{ROLE_META[form.role].hint}</p>
         </div>
         {result && (
-          <div style={{ padding: "7px 10px", borderRadius: 4, backgroundColor: result.ok ? "rgba(110,231,183,0.08)" : "rgba(224,112,112,0.08)", border: `1px solid ${result.ok ? "rgba(110,231,183,0.3)" : "rgba(224,112,112,0.3)"}` }}>
-            <p style={{ fontSize: 11, color: result.ok ? "#6ee7b7" : "#e07070", margin: 0 }}>{result.ok ? "✓" : "✗"} {result.msg}</p>
+          <div style={{ padding: "7px 10px", borderRadius: 4, backgroundColor: result.ok ? "color-mix(in srgb, var(--ok) 8%, transparent)" : "color-mix(in srgb, var(--err-soft) 8%, transparent)", border: `1px solid ${result.ok ? "color-mix(in srgb, var(--ok) 30%, transparent)" : "color-mix(in srgb, var(--err-soft) 30%, transparent)"}` }}>
+            <p style={{ fontSize: 11, color: result.ok ? "var(--ok)" : "var(--err-soft)", margin: 0 }}>{result.ok ? "✓" : "✗"} {result.msg}</p>
           </div>
         )}
         <button onClick={handleCreate} disabled={creating}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "#111", cursor: "pointer", fontSize: 12, fontWeight: 700, alignSelf: "flex-start" }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: ACCENT, color: "var(--accent-fg)", cursor: "pointer", fontSize: 12, fontWeight: 700, alignSelf: "flex-start" }}>
           {creating ? <Loader2 size={12} className="animate-spin" /> : <UserPlus size={12} />}
           Benutzer anlegen
         </button>
@@ -1874,14 +1876,14 @@ function ModelLibrary() {
   const chipStyle = (active: boolean) => ({
     padding: "3px 9px", borderRadius: 20, fontSize: 10, fontWeight: 600,
     cursor: "pointer", border: `1px solid ${active ? ACCENT : "rgba(255,255,255,0.12)"}`,
-    backgroundColor: active ? "rgba(252,228,153,0.12)" : "transparent",
+    backgroundColor: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
     color: active ? ACCENT : S.textDim, transition: "all 0.15s",
   });
 
   const toggleStyle = (active: boolean) => ({
     padding: "4px 14px", borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: "pointer",
     border: `1px solid ${active ? ACCENT : S.border}`,
-    backgroundColor: active ? "rgba(252,228,153,0.1)" : "transparent",
+    backgroundColor: active ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent",
     color: active ? ACCENT : S.textDim,
   });
 
@@ -1952,7 +1954,7 @@ function ModelLibrary() {
           <Loader2 size={14} className="animate-spin" /> Modelle werden geladen...
         </div>
       )}
-      {error && <p style={{ color: "#e07070", fontSize: 12 }}>{error}</p>}
+      {error && <p style={{ color: "var(--err-soft)", fontSize: 12 }}>{error}</p>}
 
       {/* Installiert */}
       {view === "installed" && !loading && !error && (
@@ -1976,7 +1978,7 @@ function ModelLibrary() {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: S.textBright, wordBreak: "break-all" }}>{m.name}</div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
-                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{size}</span>
+                        <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)", color: ACCENT, border: `1px solid color-mix(in srgb, var(--accent) 20%, transparent)` }}>{size}</span>
                         {types.map(t => (
                           <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
                         ))}
@@ -1991,7 +1993,7 @@ function ModelLibrary() {
                       {isConfirming ? (
                         <>
                           <button onClick={() => setConfirmDelete(null)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: `1px solid ${S.border}`, background: "none", color: S.textDim, cursor: "pointer" }}>Abbruch</button>
-                          <button onClick={() => handleDelete(m.name)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid #e07070", backgroundColor: "rgba(224,112,112,0.15)", color: "#e07070", cursor: "pointer" }}>
+                          <button onClick={() => handleDelete(m.name)} style={{ fontSize: 10, padding: "3px 8px", borderRadius: 5, border: "1px solid var(--err-soft)", backgroundColor: "color-mix(in srgb, var(--err-soft) 15%, transparent)", color: "var(--err-soft)", cursor: "pointer" }}>
                             {isDeleting ? <Loader2 size={10} /> : "Löschen"}
                           </button>
                         </>
@@ -2029,12 +2031,12 @@ function ModelLibrary() {
               const isPulling = pulling === m.name;
               const langs = guessModelLanguages(m.name);
               return (
-                <div key={m.name} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${isInstalled ? "rgba(110,231,183,0.2)" : S.border}`, backgroundColor: isInstalled ? "rgba(110,231,183,0.04)" : "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
+                <div key={m.name} style={{ padding: "9px 12px", borderRadius: 8, border: `1px solid ${isInstalled ? "color-mix(in srgb, var(--ok) 20%, transparent)" : S.border}`, backgroundColor: isInstalled ? "color-mix(in srgb, var(--ok) 4%, transparent)" : "rgba(255,255,255,0.02)", display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 11, fontWeight: 600, color: S.textBright }}>{m.name}</div>
                     <div style={{ fontSize: 10, color: S.textDim, marginTop: 2 }}>{m.description}</div>
                     <div style={{ display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(252,228,153,0.1)", color: ACCENT, border: `1px solid rgba(252,228,153,0.2)` }}>{m.sizeLabel}</span>
+                      <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "color-mix(in srgb, var(--accent) 10%, transparent)", color: ACCENT, border: `1px solid color-mix(in srgb, var(--accent) 20%, transparent)` }}>{m.sizeLabel}</span>
                       {m.types.map(t => (
                         <span key={t} style={{ fontSize: 9, padding: "1px 6px", borderRadius: 10, backgroundColor: "rgba(255,255,255,0.06)", color: S.textDim, border: `1px solid rgba(255,255,255,0.1)` }}>{t}</span>
                       ))}
@@ -2046,14 +2048,14 @@ function ModelLibrary() {
                   </div>
                   <div style={{ flexShrink: 0 }}>
                     {isInstalled ? (
-                      <span style={{ fontSize: 10, color: "#6ee7b7", display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ fontSize: 10, color: "var(--ok)", display: "flex", alignItems: "center", gap: 4 }}>
                         <Check size={11} /> Installiert
                       </span>
                     ) : (
                       <button
                         onClick={() => handlePull(m.name)}
                         disabled={isPulling || pulling !== null}
-                        style={{ fontSize: 10, padding: "4px 10px", borderRadius: 6, border: `1px solid ${ACCENT}`, backgroundColor: "rgba(252,228,153,0.08)", color: ACCENT, cursor: isPulling || pulling !== null ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5, opacity: pulling !== null && !isPulling ? 0.5 : 1 }}
+                        style={{ fontSize: 10, padding: "4px 10px", borderRadius: 6, border: `1px solid ${ACCENT}`, backgroundColor: "color-mix(in srgb, var(--accent) 8%, transparent)", color: ACCENT, cursor: isPulling || pulling !== null ? "default" : "pointer", display: "flex", alignItems: "center", gap: 5, opacity: pulling !== null && !isPulling ? 0.5 : 1 }}
                       >
                         {isPulling ? <><Loader2 size={10} className="animate-spin" /> Laden...</> : <><Download size={10} /> Laden</>}
                       </button>
@@ -2124,10 +2126,10 @@ function NetworkSettings() {
           placeholder={"169.254.0.0/16\nsecret-host.example"} />
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.allow_loopback ? "rgba(252,228,153,0.07)" : S.bgEl, border: `1px solid ${form.allow_loopback ? "rgba(252,228,153,0.25)" : S.border}` }}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", padding: "10px 12px", borderRadius: 6, backgroundColor: form.allow_loopback ? "color-mix(in srgb, var(--accent) 7%, transparent)" : S.bgEl, border: `1px solid ${form.allow_loopback ? "color-mix(in srgb, var(--accent) 25%, transparent)" : S.border}` }}
         onClick={() => set("allow_loopback", !form.allow_loopback)}>
         <div style={{ width: 16, height: 16, borderRadius: 3, border: `2px solid ${form.allow_loopback ? ACCENT : S.border}`, backgroundColor: form.allow_loopback ? ACCENT : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {form.allow_loopback && <Check size={10} color="#111" strokeWidth={3} />}
+          {form.allow_loopback && <Check size={10} color="var(--accent-fg)" strokeWidth={3} />}
         </div>
         <div>
           <span style={{ fontSize: 11, color: form.allow_loopback ? ACCENT : S.textMain, fontWeight: form.allow_loopback ? 700 : 400 }}>
@@ -2141,7 +2143,7 @@ function NetworkSettings() {
 
       <div>
         <button onClick={handleSave} disabled={saving}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "rgba(110,231,183,0.15)" : ACCENT, color: saved ? "#6ee7b7" : "#111", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 16px", borderRadius: 5, border: "none", backgroundColor: saved ? "color-mix(in srgb, var(--ok) 15%, transparent)" : ACCENT, color: saved ? "var(--ok)" : "var(--accent-fg)", cursor: "pointer", fontSize: 12, fontWeight: 700 }}>
           {saving ? <Loader2 size={12} className="animate-spin" /> : saved ? <Check size={12} /> : <Save size={12} />}
           {saved ? "Gespeichert!" : "Speichern"}
         </button>
@@ -2153,39 +2155,48 @@ function NetworkSettings() {
 function AppearanceSettings() {
   const { mode, setMode } = useTheme();
 
-  const options: { value: ThemeMode; label: string; desc: string; Icon: any }[] = [
-    { value: "dark",   label: "Dunkel",  desc: "Dunkles Theme (Standard)",          Icon: Moon    },
-    { value: "light",  label: "Hell",    desc: "Helles Theme",                       Icon: Sun     },
-    { value: "system", label: "System",  desc: "Folgt den Systemeinstellungen",      Icon: Monitor },
-  ];
+  const kachel = (value: ThemeMode, label: string, desc: string, vorschau: ReactNode) => {
+    const active = mode === value;
+    return (
+      <button key={value} onClick={() => setMode(value)} title={desc}
+        style={{
+          display: "flex", flexDirection: "column", padding: 0, overflow: "hidden",
+          borderRadius: 8, cursor: "pointer", textAlign: "left", width: "100%",
+          border: `${active ? 2 : 1}px solid ${active ? ACCENT : "var(--border)"}`,
+          background: "var(--bg-elevated)",
+        }}>
+        {vorschau}
+        <div style={{ padding: "7px 10px", display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: active ? ACCENT : "var(--text-bright)" }}>{label}</div>
+            <div style={{ fontSize: 10.5, color: "var(--text-dim)", lineHeight: 1.35 }}>{desc}</div>
+          </div>
+          {active && <Check size={14} style={{ marginLeft: "auto", color: ACCENT, flexShrink: 0 }} />}
+        </div>
+      </button>
+    );
+  };
 
   return (
-    <div style={{ maxWidth: 420 }}>
-      <p className="section-title" style={{ marginBottom: 16 }}>Farbschema</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {options.map(({ value, label, desc, Icon }) => {
-          const active = mode === value;
-          return (
-            <button key={value} onClick={() => setMode(value)}
-              style={{
-                display: "flex", alignItems: "center", gap: 14,
-                padding: "12px 16px", borderRadius: 8, cursor: "pointer",
-                border: `1px solid ${active ? ACCENT : "var(--border)"}`,
-                background: active ? "var(--accent-dim)" : "var(--bg-elevated)",
-                textAlign: "left", width: "100%",
-              }}>
-              <Icon size={18} style={{ color: active ? ACCENT : "var(--text-dim)", flexShrink: 0 }} />
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: active ? ACCENT : "var(--text-bright)" }}>
-                  {label}
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-dim)", marginTop: 1 }}>{desc}</div>
-              </div>
-              {active && <Check size={14} style={{ marginLeft: "auto", color: ACCENT }} />}
-            </button>
-          );
-        })}
-      </div>
+    <div style={{ maxWidth: 640 }}>
+      <p className="section-title" style={{ marginBottom: 6 }}>Farbschema</p>
+      <p style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 16 }}>
+        Gilt für diesen Browser. Andere Benutzer behalten ihr eigenes Farbschema.
+      </p>
+      {GRUPPEN.map(g => (
+        <div key={g.id} style={{ marginBottom: 18 }}>
+          <div className="label">{g.label}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+            {THEMES.filter(t => t.gruppe === g.id).map(t =>
+              kachel(t.id, t.label, t.desc, <ThemeVorschau id={t.id} />))}
+            {g.id === "klassisch" && kachel("system", "System", "Hell oder Dunkel wie das Betriebssystem",
+              <div style={{ display: "flex", height: 74, borderBottom: "1px solid var(--border)" }}>
+                <div style={{ flex: 1, overflow: "hidden" }}><ThemeVorschau id="light" /></div>
+                <div style={{ flex: 1, overflow: "hidden" }}><ThemeVorschau id="dark" /></div>
+              </div>)}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

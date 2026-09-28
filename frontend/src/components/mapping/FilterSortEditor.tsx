@@ -20,7 +20,7 @@ function SortEditor({ node, onSave, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${SORT_COLOR}55`, borderRadius: 8, padding: 20, width: 420, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
+      <div style={{ backgroundColor: S.bgCard, border: `1px solid color-mix(in srgb, ${SORT_COLOR} 33.3%, transparent)`, borderRadius: 8, padding: 20, width: 420, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
@@ -41,7 +41,7 @@ function SortEditor({ node, onSave, onClose }) {
               <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>
                 {[["asc", "↑ A→Z"], ["desc", "↓ Z→A"]].map(([val, label]) => (
                   <button key={val} onClick={() => update(i, "dir", val)}
-                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${s.dir === val ? SORT_COLOR : S.border}`, backgroundColor: s.dir === val ? `${SORT_COLOR}20` : "transparent", color: s.dir === val ? SORT_COLOR : S.textDim }}>
+                    style={{ padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${s.dir === val ? SORT_COLOR : S.border}`, backgroundColor: s.dir === val ? `color-mix(in srgb, ${SORT_COLOR} 12.5%, transparent)` : "transparent", color: s.dir === val ? SORT_COLOR : S.textDim }}>
                     {label}
                   </button>
                 ))}
@@ -52,7 +52,7 @@ function SortEditor({ node, onSave, onClose }) {
         </div>
 
         <button onClick={addSort}
-          style={{ width: "100%", padding: "6px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", backgroundColor: `${SORT_COLOR}12`, border: `1px dashed ${SORT_COLOR}55`, color: SORT_COLOR, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+          style={{ width: "100%", padding: "6px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", backgroundColor: `color-mix(in srgb, ${SORT_COLOR} 7.1%, transparent)`, border: `1px dashed color-mix(in srgb, ${SORT_COLOR} 33.3%, transparent)`, color: SORT_COLOR, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
           <Plus size={11} /> Spalte hinzufügen
         </button>
 
@@ -63,7 +63,7 @@ function SortEditor({ node, onSave, onClose }) {
           </button>
           {(node.sorts || []).length > 0 && (
             <button onClick={() => { onSave([]); onClose(); }}
-              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 12 }}>
+              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
               Entfernen
             </button>
           )}
@@ -85,7 +85,7 @@ function FilterEditor({ datasetId, field, currentFilter, onSave, onClose }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${FILTER_COLOR}55`, borderRadius: 8, padding: 20, width: 380, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ backgroundColor: S.bgCard, border: `1px solid color-mix(in srgb, ${FILTER_COLOR} 33.3%, transparent)`, borderRadius: 8, padding: 20, width: 380, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
@@ -99,7 +99,7 @@ function FilterEditor({ datasetId, field, currentFilter, onSave, onClose }) {
         {/* Input */}
         <div style={{ marginBottom: 12 }}>
           <p style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Bedingung</p>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.bgMain, border: `1px solid ${FILTER_COLOR}66`, borderRadius: 4, padding: "6px 10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, backgroundColor: S.bgMain, border: `1px solid color-mix(in srgb, ${FILTER_COLOR} 40%, transparent)`, borderRadius: 4, padding: "6px 10px" }}>
             <span style={{ fontSize: 11, fontFamily: "monospace", color: S.textDim, flexShrink: 0 }}>{field}</span>
             <input
               ref={inputRef}
@@ -137,7 +137,7 @@ function FilterEditor({ datasetId, field, currentFilter, onSave, onClose }) {
           </button>
           {currentFilter && (
             <button onClick={() => { onSave(datasetId, field, ""); onClose(); }}
-              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 12 }}>
+              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
               Entfernen
             </button>
           )}
@@ -155,9 +155,9 @@ const CAST_COLOR = "#38bdf8"; // sky
 const CAST_TYPES = [
   { v: "string",   l: "Text",    c: "#6a6a6a" },
   { v: "integer",  l: "Ganzzahl", c: "#93c5fd" },
-  { v: "decimal",  l: "Dezimal", c: "#6ee7b7" },
+  { v: "decimal",  l: "Dezimal", c: "var(--ok)" },
   { v: "date",     l: "Datum",   c: "#fcd34d" },
-  { v: "datetime", l: "Datum+Zeit", c: "#fbbf24" },
+  { v: "datetime", l: "Datum+Zeit", c: "var(--warn)" },
   { v: "boolean",  l: "Boolean", c: "#c4b5fd" },
 ];
 
@@ -197,7 +197,7 @@ function TypeConvertEditor({ datasetId, field, currentCast, onSave, onClose, mod
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)" }} onClick={onClose}>
-      <div style={{ backgroundColor: S.bgCard, border: `1px solid ${CAST_COLOR}55`, borderRadius: 8, padding: 20, width: 360, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
+      <div style={{ backgroundColor: S.bgCard, border: `1px solid color-mix(in srgb, ${CAST_COLOR} 33.3%, transparent)`, borderRadius: 8, padding: 20, width: 360, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={e => e.stopPropagation()}>
 
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
           <div>
@@ -211,7 +211,7 @@ function TypeConvertEditor({ datasetId, field, currentCast, onSave, onClose, mod
           <p style={{ fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 }}>Zieltyp</p>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
             <button onClick={() => setCastType("")}
-              style={{ padding: "4px 10px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${!castType ? CAST_COLOR : S.border}`, backgroundColor: !castType ? `${CAST_COLOR}20` : "transparent", color: !castType ? CAST_COLOR : S.textDim }}>
+              style={{ padding: "4px 10px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${!castType ? CAST_COLOR : S.border}`, backgroundColor: !castType ? `color-mix(in srgb, ${CAST_COLOR} 12.5%, transparent)` : "transparent", color: !castType ? CAST_COLOR : S.textDim }}>
               Keine
             </button>
             {CAST_TYPES.map(t => (
@@ -239,7 +239,7 @@ function TypeConvertEditor({ datasetId, field, currentCast, onSave, onClose, mod
             <div style={{ display: "flex", gap: 6 }}>
               {DECIMAL_SEPS.map(s => (
                 <button key={s.v} onClick={() => setDecSep(s.v)}
-                  style={{ flex: 1, padding: "5px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${decSep === s.v ? CAST_COLOR : S.border}`, backgroundColor: decSep === s.v ? `${CAST_COLOR}20` : "transparent", color: decSep === s.v ? CAST_COLOR : S.textDim }}>
+                  style={{ flex: 1, padding: "5px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${decSep === s.v ? CAST_COLOR : S.border}`, backgroundColor: decSep === s.v ? `color-mix(in srgb, ${CAST_COLOR} 12.5%, transparent)` : "transparent", color: decSep === s.v ? CAST_COLOR : S.textDim }}>
                   {s.l}
                 </button>
               ))}
@@ -252,7 +252,7 @@ function TypeConvertEditor({ datasetId, field, currentCast, onSave, onClose, mod
           <div style={{ display: "flex", gap: 6 }}>
             {[["null", "Leer lassen"], ["skip", "Zeile überspringen"], ["error", "Fehler werfen"]].map(([v, l]) => (
               <button key={v} onClick={() => setOnError(v)}
-                style={{ flex: 1, padding: "5px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${onError === v ? CAST_COLOR : S.border}`, backgroundColor: onError === v ? `${CAST_COLOR}20` : "transparent", color: onError === v ? CAST_COLOR : S.textDim }}>
+                style={{ flex: 1, padding: "5px", borderRadius: 4, fontSize: 10, cursor: "pointer", border: `1px solid ${onError === v ? CAST_COLOR : S.border}`, backgroundColor: onError === v ? `color-mix(in srgb, ${CAST_COLOR} 12.5%, transparent)` : "transparent", color: onError === v ? CAST_COLOR : S.textDim }}>
                 {l}
               </button>
             ))}
@@ -266,7 +266,7 @@ function TypeConvertEditor({ datasetId, field, currentCast, onSave, onClose, mod
           </button>
           {currentCast && (
             <button onClick={() => { onSave(datasetId, field, null); onClose(); }}
-              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "rgba(224,112,112,0.1)", border: "1px solid rgba(224,112,112,0.3)", color: "#e07070", fontSize: 12 }}>
+              style={{ padding: "8px 14px", borderRadius: 4, cursor: "pointer", backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)", color: "var(--err-soft)", fontSize: 12 }}>
               Entfernen
             </button>
           )}

@@ -150,10 +150,10 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
   return createPortal(
     <div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.85)" }}
       onClick={(e) => e.stopPropagation()}>
-      <div style={{ width: "min(1100px, 95vw)", height: "85vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid ${SQL_NODE_COLOR}44`, boxShadow: "0 32px 80px rgba(0,0,0,0.9)", overflow: "hidden" }}>
+      <div style={{ width: "min(1100px, 95vw)", height: "85vh", display: "flex", flexDirection: "column", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 26.7%, transparent)`, boxShadow: "0 32px 80px rgba(0,0,0,0.9)", overflow: "hidden" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: `1px solid ${SQL_NODE_COLOR}33`, backgroundColor: `${SQL_NODE_COLOR}0d`, flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 18px", borderBottom: `1px solid color-mix(in srgb, ${SQL_NODE_COLOR} 20%, transparent)`, backgroundColor: `color-mix(in srgb, ${SQL_NODE_COLOR} 5.1%, transparent)`, flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <Database size={14} style={{ color: SQL_NODE_COLOR }} />
             <span style={{ fontSize: 13, fontWeight: 700, color: SQL_NODE_COLOR, letterSpacing: "0.06em" }}>SQL EDITOR</span>
@@ -165,7 +165,7 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
             </select>
           </div>
           <button onClick={onClose} style={{ color: S.textDim, background: "none", border: "none", cursor: "pointer", fontSize: 18, lineHeight: 1 }}
-            onMouseEnter={e => e.currentTarget.style.color = "#e07070"}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--err-soft)"}
             onMouseLeave={e => e.currentTarget.style.color = S.textDim}>✕</button>
         </div>
 
@@ -204,9 +204,9 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
                       <div onClick={() => handleTableClick(tbl)}
                         onDoubleClick={() => handleTableDoubleClick(tbl)}
                         style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", cursor: "pointer", userSelect: "none",
-                          backgroundColor: expandedTable === tbl ? `${SQL_NODE_COLOR}12` : "transparent" }}
-                        onMouseEnter={e => e.currentTarget.style.backgroundColor = `${SQL_NODE_COLOR}08`}
-                        onMouseLeave={e => e.currentTarget.style.backgroundColor = expandedTable === tbl ? `${SQL_NODE_COLOR}12` : "transparent"}>
+                          backgroundColor: expandedTable === tbl ? `color-mix(in srgb, ${SQL_NODE_COLOR} 7.1%, transparent)` : "transparent" }}
+                        onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${SQL_NODE_COLOR} 3.1%, transparent)`}
+                        onMouseLeave={e => e.currentTarget.style.backgroundColor = expandedTable === tbl ? `color-mix(in srgb, ${SQL_NODE_COLOR} 7.1%, transparent)` : "transparent"}>
                         {fieldsLoading === tbl
                           ? <span style={{ fontSize: 9, color: S.textDim }}>…</span>
                           : expandedTable === tbl
@@ -218,7 +218,7 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
                       {expandedTable === tbl && (tableFields[tbl] || []).map(col => (
                         <div key={col.name || col} onClick={() => handleFieldClick(col.name || col)}
                           style={{ display: "flex", alignItems: "center", gap: 5, padding: "3px 10px 3px 26px", cursor: "pointer" }}
-                          onMouseEnter={e => e.currentTarget.style.backgroundColor = `${SQL_NODE_COLOR}08`}
+                          onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${SQL_NODE_COLOR} 3.1%, transparent)`}
                           onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                           <span style={{ fontSize: 8, color: "#6a6a6a", backgroundColor: "#6a6a6a18", borderRadius: 2, padding: "1px 3px", fontFamily: "monospace", flexShrink: 0 }}>
                             {(col.type || col.raw || "").slice(0, 4).toUpperCase()}
@@ -245,9 +245,9 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
                           <div onClick={() => loadSqliteFields(dsId)}
                             onDoubleClick={() => insertAtCursor(safeName)}
                             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", cursor: "pointer", userSelect: "none",
-                              backgroundColor: expandedSqlite === dsId ? `${SQLITE_COLOR}12` : "transparent" }}
-                            onMouseEnter={e => e.currentTarget.style.backgroundColor = `${SQLITE_COLOR}08`}
-                            onMouseLeave={e => e.currentTarget.style.backgroundColor = expandedSqlite === dsId ? `${SQLITE_COLOR}12` : "transparent"}>
+                              backgroundColor: expandedSqlite === dsId ? `color-mix(in srgb, ${SQLITE_COLOR} 7.1%, transparent)` : "transparent" }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${SQLITE_COLOR} 3.1%, transparent)`}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = expandedSqlite === dsId ? `color-mix(in srgb, ${SQLITE_COLOR} 7.1%, transparent)` : "transparent"}>
                             {expandedSqlite === dsId
                               ? <ChevronDown size={9} style={{ color: SQLITE_COLOR, flexShrink: 0 }} />
                               : <ChevronRight size={9} style={{ color: S.textDim, flexShrink: 0 }} />}
@@ -257,7 +257,7 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
                           {expandedSqlite === dsId && (sqliteFields[dsId] || []).map(col => (
                             <div key={col} onClick={() => handleFieldClick(col)}
                               style={{ padding: "3px 10px 3px 26px", cursor: "pointer", fontSize: 10, color: S.textDim, fontFamily: "monospace" }}
-                              onMouseEnter={e => e.currentTarget.style.backgroundColor = `${SQLITE_COLOR}08`}
+                              onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${SQLITE_COLOR} 3.1%, transparent)`}
                               onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}>
                               {col}
                             </div>
@@ -285,9 +285,9 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
 
             {/* Preview strip */}
             {previewResult && (
-              <div style={{ padding: "6px 16px", backgroundColor: previewResult.error ? "rgba(224,112,112,0.06)" : "rgba(52,211,153,0.06)", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
+              <div style={{ padding: "6px 16px", backgroundColor: previewResult.error ? "color-mix(in srgb, var(--err-soft) 6%, transparent)" : "rgba(52,211,153,0.06)", borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
                 {previewResult.error
-                  ? <span style={{ fontSize: 10, color: "#e07070" }}>⚠ {previewResult.error}</span>
+                  ? <span style={{ fontSize: 10, color: "var(--err-soft)" }}>⚠ {previewResult.error}</span>
                   : <span style={{ fontSize: 10, color: SQLITE_COLOR }}>✓ Spalten erkannt: {previewResult.columns.join(", ")}</span>
                 }
               </div>
@@ -312,9 +312,9 @@ export default function SqlEditorModal({ sql, connectionId, dbConnections, canva
               Abbrechen
             </button>
             <button onClick={() => onSave(sqlValue)}
-              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 22px", borderRadius: 5, border: `1px solid ${SQL_NODE_COLOR}`, background: `${SQL_NODE_COLOR}22`, color: SQL_NODE_COLOR, cursor: "pointer", fontSize: 12, fontWeight: 700 }}
-              onMouseEnter={e => e.currentTarget.style.background = `${SQL_NODE_COLOR}33`}
-              onMouseLeave={e => e.currentTarget.style.background = `${SQL_NODE_COLOR}22`}>
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 22px", borderRadius: 5, border: `1px solid ${SQL_NODE_COLOR}`, background: `color-mix(in srgb, ${SQL_NODE_COLOR} 13.3%, transparent)`, color: SQL_NODE_COLOR, cursor: "pointer", fontSize: 12, fontWeight: 700 }}
+              onMouseEnter={e => e.currentTarget.style.background = `color-mix(in srgb, ${SQL_NODE_COLOR} 20%, transparent)`}
+              onMouseLeave={e => e.currentTarget.style.background = `color-mix(in srgb, ${SQL_NODE_COLOR} 13.3%, transparent)`}>
               <Check size={13} />
               Speichern
             </button>

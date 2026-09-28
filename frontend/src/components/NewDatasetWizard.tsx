@@ -39,7 +39,7 @@ function StepChoose({ onChoose }) {
           title: "SQL-Abfrage", sub: "Dataset aus einer Datenbankverbindung abfragen",
         },
         {
-          key: "plugin", icon: Puzzle, color: "#6ee7b7", bg: "rgba(110,231,183,0.1)",
+          key: "plugin", icon: Puzzle, color: "var(--ok)", bg: "color-mix(in srgb, var(--ok) 10%, transparent)",
           title: "Plugin-Quelle", sub: "Dataset aus einem installierten Plugin generieren",
         },
       ].map(({ key, icon: Icon, color, bg, title, sub }) => (
@@ -78,7 +78,7 @@ function StepFileUpload({ onDone, projectId }) {
   const [detectedDelimiter, setDetectedDelimiter] = useState(null);
   const inputRef = useRef();
 
-  const extColor = { csv: "#6ee7b7", xlsx: "#93c5fd", xls: "#93c5fd", xml: "#fcd34d", ods: "#86efac" };
+  const extColor = { csv: "var(--ok)", xlsx: "#93c5fd", xls: "#93c5fd", xml: "#fcd34d", ods: "#86efac" };
 
   const detectDelimiter = (f) => {
     const reader = new FileReader();
@@ -135,7 +135,7 @@ function StepFileUpload({ onDone, projectId }) {
 
   if (success) return (
     <div className="flex flex-col items-center justify-center py-12 gap-3">
-      <CheckCircle size={40} style={{ color: "#6ee7b7" }} />
+      <CheckCircle size={40} style={{ color: "var(--ok)" }} />
       <p className="text-sm font-medium" style={{ color: S.textBright }}>Dataset erstellt!</p>
     </div>
   );
@@ -154,8 +154,8 @@ function StepFileUpload({ onDone, projectId }) {
         onClick={() => inputRef.current?.click()}
         className="rounded-xl flex flex-col items-center justify-center gap-3 py-10 cursor-pointer transition-all"
         style={{
-          border: `2px dashed ${dragging ? S.accent : file ? "rgba(110,231,183,0.4)" : S.border}`,
-          backgroundColor: dragging ? "rgba(252,228,153,0.04)" : file ? "rgba(110,231,183,0.03)" : "transparent",
+          border: `2px dashed ${dragging ? S.accent : file ? "color-mix(in srgb, var(--ok) 40%, transparent)" : S.border}`,
+          backgroundColor: dragging ? "color-mix(in srgb, var(--accent) 4%, transparent)" : file ? "color-mix(in srgb, var(--ok) 3%, transparent)" : "transparent",
         }}
       >
         <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls,.xml,.ods" className="hidden"
@@ -195,13 +195,13 @@ function StepFileUpload({ onDone, projectId }) {
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {["auto", ",", ";", "\t", "|"].map(d => (
               <button key={d} onClick={() => setDelimiter(d)}
-                style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${delimiter === d ? S.accent : S.border}`, backgroundColor: delimiter === d ? "rgba(252,228,153,0.1)" : "transparent", color: delimiter === d ? S.accent : S.textDim }}>
+                style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${delimiter === d ? S.accent : S.border}`, backgroundColor: delimiter === d ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent", color: delimiter === d ? S.accent : S.textDim }}>
                 {delimiterLabels[d]}
               </button>
             ))}
           </div>
           {delimiter === "auto" && detectedDelimiter && (
-            <p style={{ fontSize: 11, color: "#6ee7b7", marginTop: 6 }}>
+            <p style={{ fontSize: 11, color: "var(--ok)", marginTop: 6 }}>
               ✓ Erkannt: <strong>{delimiterLabels[detectedDelimiter] || detectedDelimiter}</strong>
             </p>
           )}
@@ -232,7 +232,7 @@ function StepFileUpload({ onDone, projectId }) {
             </span>
           </div>
           {skipRows > 0 && (
-            <p style={{ fontSize: 11, color: "#6ee7b7", marginTop: 6 }}>
+            <p style={{ fontSize: 11, color: "var(--ok)", marginTop: 6 }}>
               ✓ Import beginnt ab Zeile {skipRows + 1}
             </p>
           )}
@@ -241,7 +241,7 @@ function StepFileUpload({ onDone, projectId }) {
 
       {error && (
         <div className="flex items-center gap-2 text-xs px-3 py-2 rounded"
-          style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "#e07070" }}>
+          style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "var(--err-soft)" }}>
           <AlertCircle size={13} /> {error}
         </div>
       )}
@@ -272,7 +272,7 @@ const rowBtn = (active, accent, border) => ({
   display: "flex", alignItems: "center", gap: 6, width: "100%", textAlign: "left",
   padding: "5px 10px", fontSize: 11, fontFamily: "monospace",
   color: active ? accent : "var(--text-main)",
-  backgroundColor: active ? "rgba(252,228,153,0.06)" : "transparent",
+  backgroundColor: active ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent",
   border: "none", cursor: "pointer", whiteSpace: "nowrap",
   borderBottom: `1px solid ${border}`,
 });
@@ -282,7 +282,7 @@ function Checkbox({ active, accent, border }) {
     <span style={{
       width: 12, height: 12, borderRadius: 3, flexShrink: 0,
       border: `1px solid ${active ? accent : border}`,
-      backgroundColor: active ? "rgba(252,228,153,0.2)" : "transparent",
+      backgroundColor: active ? "color-mix(in srgb, var(--accent) 20%, transparent)" : "transparent",
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       {active && <span style={{ width: 6, height: 6, borderRadius: 1, backgroundColor: accent, display: "block" }} />}
@@ -313,7 +313,7 @@ function TableFieldPicker({ connId, tables, label, selectedTable, selectedFields
             : tables.map((t) => (
               <button key={t} onClick={() => onTableClick(t)} style={rowBtn(selectedTable === t, S.accent, S.border)}
                 onMouseEnter={(e) => { if (selectedTable !== t) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedTable === t ? "rgba(252,228,153,0.06)" : "transparent"; }}>
+                onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = selectedTable === t ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent"; }}>
                 {t}
               </button>
             ))}
@@ -329,7 +329,7 @@ function TableFieldPicker({ connId, tables, label, selectedTable, selectedFields
               return (
                 <button key={col} onClick={() => onFieldClick(col)} style={rowBtn(active, S.accent, S.border)}
                   onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = active ? "rgba(252,228,153,0.06)" : "transparent"; }}>
+                  onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = active ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent"; }}>
                   <Checkbox active={active} accent={S.accent} border={S.border} />
                   {col}
                 </button>
@@ -409,7 +409,7 @@ function StepPluginSource({ onDone, projectId }) {
 
   if (success) return (
     <div className="flex flex-col items-center justify-center py-12 gap-3">
-      <CheckCircle size={40} style={{ color: "#6ee7b7" }} />
+      <CheckCircle size={40} style={{ color: "var(--ok)" }} />
       <p className="text-sm font-medium" style={{ color: S.textBright }}>Dataset erstellt!</p>
     </div>
   );
@@ -439,16 +439,16 @@ function StepPluginSource({ onDone, projectId }) {
               <button key={st.id} onClick={() => selectType(st)}
                 className="flex items-center gap-4 p-3 rounded-lg text-left transition-all"
                 style={{
-                  backgroundColor: selected?.id === st.id ? "rgba(110,231,183,0.08)" : S.bgEl,
-                  border: `1px solid ${selected?.id === st.id ? "#6ee7b7" : S.border}`,
+                  backgroundColor: selected?.id === st.id ? "color-mix(in srgb, var(--ok) 8%, transparent)" : S.bgEl,
+                  border: `1px solid ${selected?.id === st.id ? "var(--ok)" : S.border}`,
                 }}>
-                <Puzzle size={16} style={{ color: "#6ee7b7", flexShrink: 0 }} />
+                <Puzzle size={16} style={{ color: "var(--ok)", flexShrink: 0 }} />
                 <div>
                   <p className="text-xs font-medium" style={{ color: S.textBright }}>{st.label}</p>
                   <p className="text-xs" style={{ color: S.textDim }}>{st.id}</p>
                 </div>
                 {selected?.id === st.id && (
-                  <CheckCircle size={14} style={{ color: "#6ee7b7", marginLeft: "auto" }} />
+                  <CheckCircle size={14} style={{ color: "var(--ok)", marginLeft: "auto" }} />
                 )}
               </button>
             ))}
@@ -537,9 +537,9 @@ function StepPluginSource({ onDone, projectId }) {
               </button>
               {testResult && (
                 <div className="flex items-start gap-2 text-xs px-3 py-2 rounded" style={{
-                  backgroundColor: testResult.ok ? "rgba(110,231,183,0.07)" : "rgba(220,50,50,0.07)",
-                  border: `1px solid ${testResult.ok ? "rgba(110,231,183,0.25)" : "rgba(220,50,50,0.2)"}`,
-                  color: testResult.ok ? "#6ee7b7" : "#e07070",
+                  backgroundColor: testResult.ok ? "color-mix(in srgb, var(--ok) 7%, transparent)" : "rgba(220,50,50,0.07)",
+                  border: `1px solid ${testResult.ok ? "color-mix(in srgb, var(--ok) 25%, transparent)" : "rgba(220,50,50,0.2)"}`,
+                  color: testResult.ok ? "var(--ok)" : "var(--err-soft)",
                 }}>
                   {testResult.ok ? <CheckCircle size={12} style={{ marginTop: 1, flexShrink: 0 }} /> : <AlertCircle size={12} style={{ marginTop: 1, flexShrink: 0 }} />}
                   <span>{testResult.message}</span>
@@ -558,12 +558,12 @@ function StepPluginSource({ onDone, projectId }) {
                   display: "flex", alignItems: "center", gap: 8, padding: "9px 12px",
                   borderRadius: 6, cursor: config.url?.trim() ? "pointer" : "not-allowed",
                   border: config.visual_selector_config
-                    ? "1px solid rgba(110,231,183,0.5)"
-                    : "1px solid rgba(252,228,153,0.3)",
+                    ? "1px solid color-mix(in srgb, var(--ok) 50%, transparent)"
+                    : "1px solid color-mix(in srgb, var(--accent) 30%, transparent)",
                   backgroundColor: config.visual_selector_config
-                    ? "rgba(110,231,183,0.07)"
-                    : "rgba(252,228,153,0.05)",
-                  color: config.visual_selector_config ? "#6ee7b7" : "var(--accent)",
+                    ? "color-mix(in srgb, var(--ok) 7%, transparent)"
+                    : "color-mix(in srgb, var(--accent) 5%, transparent)",
+                  color: config.visual_selector_config ? "var(--ok)" : "var(--accent)",
                   fontSize: 12, fontWeight: 600, width: "100%",
                   opacity: config.url?.trim() ? 1 : 0.4,
                 }}>
@@ -592,7 +592,7 @@ function StepPluginSource({ onDone, projectId }) {
 
       {error && (
         <div className="flex items-center gap-2 text-xs px-3 py-2 rounded"
-          style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "#e07070" }}>
+          style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "var(--err-soft)" }}>
           <AlertCircle size={13} /> {error}
         </div>
       )}
@@ -895,7 +895,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
     <button onClick={() => setActiveClause(activeClause === key ? null : key)}
       style={{
         padding: "4px 12px", borderRadius: 6, fontSize: 11, cursor: "pointer",
-        backgroundColor: activeClause === key ? "rgba(252,228,153,0.12)" : S.bgEl,
+        backgroundColor: activeClause === key ? "color-mix(in srgb, var(--accent) 12%, transparent)" : S.bgEl,
         border: `1px solid ${activeClause === key ? S.accent : S.border}`,
         color: activeClause === key ? S.accent : S.textMain,
       }}>
@@ -905,7 +905,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
 
   if (success) return (
     <div className="flex flex-col items-center justify-center py-12 gap-3">
-      <CheckCircle size={40} style={{ color: "#6ee7b7" }} />
+      <CheckCircle size={40} style={{ color: "var(--ok)" }} />
       <p className="text-sm font-medium" style={{ color: S.textBright }}>Dataset erstellt!</p>
     </div>
   );
@@ -918,7 +918,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
     </div>
   );
 
-  const typeColor = { mssql: "#93c5fd", mysql: "#6ee7b7" };
+  const typeColor = { mssql: "#93c5fd", mysql: "var(--ok)" };
   const typeLabel = { mssql: "SQL Server", mysql: "MySQL" };
 
   return (
@@ -929,7 +929,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
         {connections.map((conn) => (
           <button key={conn.id} onClick={() => selectConn(conn)}
             className="flex items-center gap-2 px-3 py-2 rounded-lg transition-all"
-            style={{ backgroundColor: selectedConn?.id === conn.id ? "rgba(252,228,153,0.06)" : S.bgEl, border: `1px solid ${selectedConn?.id === conn.id ? S.accent : S.border}` }}>
+            style={{ backgroundColor: selectedConn?.id === conn.id ? "color-mix(in srgb, var(--accent) 6%, transparent)" : S.bgEl, border: `1px solid ${selectedConn?.id === conn.id ? S.accent : S.border}` }}>
             <Database size={13} style={{ color: typeColor[conn.db_type] || S.textDim }} />
             <span className="text-xs font-medium" style={{ color: S.textBright }}>{conn.name}</span>
             <span className="text-xs px-1.5 py-0.5 rounded font-mono" style={{ backgroundColor: "rgba(255,255,255,0.04)", color: typeColor[conn.db_type] }}>{typeLabel[conn.db_type]}</span>
@@ -960,10 +960,10 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
                       <button key={t} onClick={() => handleTableClick(t)} title={t}
                         style={{
                           ...rowBtn(isMain || isJoinTarget, S.accent, S.border),
-                          color: isMain ? S.accent : isJoinTarget ? "#93c5fd" : isExistingJoin ? "#6ee7b7" : S.textMain,
+                          color: isMain ? S.accent : isJoinTarget ? "#93c5fd" : isExistingJoin ? "var(--ok)" : S.textMain,
                         }}
                         onMouseEnter={(e) => { if (!isMain && !isJoinTarget) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = (isMain || isJoinTarget) ? "rgba(252,228,153,0.06)" : "transparent"; }}>
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = (isMain || isJoinTarget) ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent"; }}>
                         {t}
                       </button>
                     );
@@ -1007,7 +1007,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
                         <button key={col} onClick={() => handleMainFieldClick(col)} title={col}
                           style={rowBtn(active, S.accent, S.border)}
                           onMouseEnter={(e) => { if (!active) e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)"; }}
-                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = active ? "rgba(252,228,153,0.06)" : "transparent"; }}>
+                          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = active ? "color-mix(in srgb, var(--accent) 6%, transparent)" : "transparent"; }}>
                           <Checkbox active={active} accent={S.accent} border={S.border} />{col}
                         </button>
                       );
@@ -1197,7 +1197,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
                           <span key={i} style={tagStyle}>
                             {o.field}&nbsp;
                             <button onClick={() => toggleObDir(i)}
-                              style={{ border: `1px solid ${S.border}`, borderRadius: 3, background: "rgba(255,255,255,0.05)", cursor: "pointer", color: "#6ee7b7", padding: "0 4px", fontSize: 9 }}>
+                              style={{ border: `1px solid ${S.border}`, borderRadius: 3, background: "rgba(255,255,255,0.05)", cursor: "pointer", color: "var(--ok)", padding: "0 4px", fontSize: 9 }}>
                               {o.dir}
                             </button>
                             <button onClick={() => removeOrderBy(i)} style={{ border: "none", background: "none", cursor: "pointer", color: S.textDim, padding: 0, marginLeft: 2 }}>×</button>
@@ -1234,7 +1234,7 @@ function StepSqlQuery({ onDone, name, setName, editDataset, projectId }) {
           {/* ── Fehler ── */}
           {error && (
             <div className="flex items-center gap-2 text-xs px-3 py-2 rounded shrink-0"
-              style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "#e07070" }}>
+              style={{ backgroundColor: "rgba(220,50,50,0.08)", border: "1px solid rgba(220,50,50,0.2)", color: "var(--err-soft)" }}>
               <AlertCircle size={13} /> {error}
             </div>
           )}
@@ -1334,7 +1334,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
                   backgroundColor: "transparent",
                   border: `1px solid ${dsName.trim() ? "rgba(110,231,170,0.5)" : "rgba(220,80,80,0.4)"}`,
                   borderRadius: 6, padding: "3px 10px", fontSize: 12,
-                  color: dsName.trim() ? "#6ee7aa" : "#e07070",
+                  color: dsName.trim() ? "#6ee7aa" : "var(--err-soft)",
                   outline: "none",
                 }}
               />

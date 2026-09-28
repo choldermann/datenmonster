@@ -24,8 +24,8 @@ const leer = { op: "UND", kinder: [] };
 
 const knopf = (primary) => ({
   padding: "8px 15px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
-  backgroundColor: primary ? "rgba(252,228,153,0.15)" : "transparent",
-  border: `1px solid ${primary ? "rgba(252,228,153,0.4)" : S.border}`,
+  backgroundColor: primary ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+  border: `1px solid ${primary ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
   color: primary ? "var(--accent)" : S.textMain,
 });
 
@@ -222,8 +222,8 @@ export default function QueryBuilder({ projectId, onClose }) {
                       }}
                       style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
                         cursor: "pointer",
-                        backgroundColor: koernung === x.key ? "rgba(252,228,153,0.15)" : "transparent",
-                        border: `1px solid ${koernung === x.key ? "rgba(252,228,153,0.4)" : S.border}`,
+                        backgroundColor: koernung === x.key ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                        border: `1px solid ${koernung === x.key ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                         color: koernung === x.key ? "var(--accent)" : S.textMain }}>
                       {x.label}
                     </button>
@@ -268,8 +268,8 @@ export default function QueryBuilder({ projectId, onClose }) {
                     <button onClick={() => { setGruppierung(""); setKennzahlfilter(leer); }}
                       style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
                         cursor: "pointer",
-                        backgroundColor: !gruppierung ? "rgba(252,228,153,0.15)" : "transparent",
-                        border: `1px solid ${!gruppierung ? "rgba(252,228,153,0.4)" : S.border}`,
+                        backgroundColor: !gruppierung ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                        border: `1px solid ${!gruppierung ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                         color: !gruppierung ? "var(--accent)" : S.textMain }}>
                       Einzelne Zeilen
                     </button>
@@ -277,8 +277,8 @@ export default function QueryBuilder({ projectId, onClose }) {
                       <button key={gr.key} onClick={() => setGruppierung(gr.key)}
                         style={{ padding: "6px 12px", borderRadius: 5, fontSize: 11.5,
                           cursor: "pointer",
-                          backgroundColor: gruppierung === gr.key ? "rgba(252,228,153,0.15)" : "transparent",
-                          border: `1px solid ${gruppierung === gr.key ? "rgba(252,228,153,0.4)" : S.border}`,
+                          backgroundColor: gruppierung === gr.key ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                          border: `1px solid ${gruppierung === gr.key ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                           color: gruppierung === gr.key ? "var(--accent)" : S.textMain }}>
                         {gr.label}{gr.verlauf ? " ↗" : ""}
                       </button>
@@ -316,8 +316,8 @@ export default function QueryBuilder({ projectId, onClose }) {
                         style={{ padding: "5px 11px", borderRadius: 5, fontSize: 11.5,
                           cursor: gesperrt ? "not-allowed" : "pointer",
                           opacity: gesperrt ? 0.4 : 1,
-                          backgroundColor: an ? "rgba(252,228,153,0.15)" : "transparent",
-                          border: `1px solid ${an ? "rgba(252,228,153,0.4)" : S.border}`,
+                          backgroundColor: an ? "color-mix(in srgb, var(--accent) 15%, transparent)" : "transparent",
+                          border: `1px solid ${an ? "color-mix(in srgb, var(--accent) 40%, transparent)" : S.border}`,
                           color: an ? "var(--accent)" : S.textMain }}>
                         {m.label}
                       </button>
@@ -358,7 +358,7 @@ export default function QueryBuilder({ projectId, onClose }) {
               {/* Ergebnis */}
               {fehler && (
                 <div style={{ display: "flex", gap: 7, alignItems: "flex-start",
-                  fontSize: 11.5, color: "#f87171" }}>
+                  fontSize: 11.5, color: "var(--err)" }}>
                   <AlertTriangle size={13} style={{ flexShrink: 0, marginTop: 1 }} />
                   <span>{fehler}</span>
                 </div>

@@ -116,7 +116,7 @@ export default function NodePaletteModal({ info, onClose }) {
       >
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: `1px solid ${S.border}`, backgroundColor: info.color + "12" }}>
-          <div style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: info.color + "22", border: `1px solid ${info.color}55`, display: "flex", alignItems: "center", justifyContent: "center", color: info.color, flexShrink: 0 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 8, backgroundColor: info.color + "22", border: `1px solid color-mix(in srgb, ${info.color} 33.3%, transparent)`, display: "flex", alignItems: "center", justifyContent: "center", color: info.color, flexShrink: 0 }}>
             <info.Icon size={18} />
           </div>
           <div style={{ flex: 1 }}>
@@ -149,9 +149,9 @@ export default function NodePaletteModal({ info, onClose }) {
           )}
 
           {meta.status && (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 16, padding: "7px 10px", borderRadius: 6, backgroundColor: "rgba(110,231,183,0.08)", border: "1px solid rgba(110,231,183,0.2)" }}>
-              <CheckCircle size={13} style={{ color: "#6ee7b7", flexShrink: 0 }} />
-              <span style={{ fontSize: 11, color: "#6ee7b7" }}>{meta.status}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 16, padding: "7px 10px", borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 20%, transparent)" }}>
+              <CheckCircle size={13} style={{ color: "var(--ok)", flexShrink: 0 }} />
+              <span style={{ fontSize: 11, color: "var(--ok)" }}>{meta.status}</span>
             </div>
           )}
         </div>
@@ -165,7 +165,7 @@ export default function NodePaletteModal({ info, onClose }) {
             Schließen
           </button>
           <button onClick={() => { info.onAdd(); onClose(); }}
-            style={{ padding: "7px 16px", borderRadius: 5, border: `1px solid ${info.color}55`, backgroundColor: info.color + "20", color: info.color, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            style={{ padding: "7px 16px", borderRadius: 5, border: `1px solid color-mix(in srgb, ${info.color} 33.3%, transparent)`, backgroundColor: info.color + "20", color: info.color, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
             onMouseEnter={e => e.currentTarget.style.backgroundColor = info.color + "35"}
             onMouseLeave={e => e.currentTarget.style.backgroundColor = info.color + "20"}>
             Auf Canvas hinzufügen

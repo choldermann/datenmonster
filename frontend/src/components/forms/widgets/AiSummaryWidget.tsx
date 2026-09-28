@@ -988,7 +988,7 @@ export default function AiSummaryWidget({ widget, result, results, onAiText }) {
       {!rows.length ? (
         <p style={{ fontSize: 12, color: S.textDim, margin: 0 }}>Warten auf Kennzahlen …</p>
       ) : err ? (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#e07070", fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--err-soft)", fontSize: 12 }}>
           <AlertCircle size={13} /> {err}
         </div>
       ) : text ? (

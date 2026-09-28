@@ -52,7 +52,7 @@ export default function Login() {
               <label className="block text-xs uppercase tracking-widest mb-1.5" style={{ color: S.textDim }}>Passwort</label>
               <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={handleKey} placeholder="••••••••" />
             </div>
-            {error && <p className="text-xs text-center" style={{ color: "#e07070" }}>{error}</p>}
+            {error && <p className="text-xs text-center" style={{ color: "var(--err-soft)" }}>{error}</p>}
             <button onClick={handleLogin} disabled={loading || !username || !password} className="btn-primary w-full justify-center mt-1">
               {loading ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />} Anmelden
             </button>

@@ -26,7 +26,7 @@ const btn = {
 export default function BestaetigenModal({ titel, punkte = [], label = "OK", gefahr = false,
                                            onBestaetigen, onClose }) {
   const [busy, setBusy] = useState(false);
-  const farbe = gefahr ? "#e07070" : S.accent;
+  const farbe = gefahr ? "var(--err-soft)" : S.accent;
 
   const los = async () => {
     setBusy(true);

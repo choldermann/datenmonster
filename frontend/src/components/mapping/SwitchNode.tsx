@@ -14,7 +14,7 @@ const SWITCH_CONDITIONS = [
   { v: "always",       l: "Immer (Fallback)" },
 ];
 
-const SWITCH_ACTIVE_BORDER = "#fce499";
+const SWITCH_ACTIVE_BORDER = "var(--accent)";
 
 function SwitchNode({ node, onRemove, onPositionChange, onUpdate, outputRefs, allDatasets, onMiniPortsReady, isActive, onActivate }) {
   const dragging = useRef(false);

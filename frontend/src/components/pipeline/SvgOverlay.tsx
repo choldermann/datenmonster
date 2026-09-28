@@ -32,8 +32,8 @@ export default function PipelineSvgOverlay({ connections, nodes, nodeRefs, canva
 
     // Farbe der Ausgangsnode, No-Match immer rot
     const fromNode = (nodes || []).find(n => n.id === conn.from_node);
-    let color = NODE_COLORS[fromNode?.type] || "#6ee7b7";
-    if (conn.from_port === "no_match") color = "#e07070";
+    let color = NODE_COLORS[fromNode?.type] || "var(--ok)";
+    if (conn.from_port === "no_match") color = "var(--err-soft)";
 
     const markerId = `arr-${color.replace("#", "")}`;
     usedColors.add(color);

@@ -61,7 +61,7 @@ export default function CockpitDokuModal({ formId, onClose }) {
           flexDirection: "column", gap: 20 }}>
 
           {fehler && (
-            <p style={{ fontSize: 12, color: "#e07070", margin: 0 }}>
+            <p style={{ fontSize: 12, color: "var(--err-soft)", margin: 0 }}>
               Erklärung konnte nicht geladen werden: {fehler}
             </p>
           )}
