@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, Wifi, Download, Zap } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, KeyRound, Wifi, Download, Zap } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import { THEMES, GRUPPEN } from "../../../themes";
 import ThemeVorschau from "../../ThemeVorschau";
@@ -1524,6 +1524,9 @@ function UserManagement() {
   const [result, setResult] = useState(null);
   const [showPw, setShowPw] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  const [pwFor, setPwFor] = useState(null);      // Benutzer-ID, deren Passwort gerade gesetzt wird
+  const [pwNeu, setPwNeu] = useState("");
+  const [pwMsg, setPwMsg] = useState(null);
 
   const load = () => api.get("/api/auth/users").then(({ data }) => setUsers(data)).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -1567,6 +1570,26 @@ function UserManagement() {
       await load();
     } catch (e) {
       alert(fehlerText(e, "Aktivieren/Deaktivieren fehlgeschlagen"));
+    } finally { setBusyId(null); }
+  };
+
+  const openPw = (u) => {
+    setPwFor(pwFor === u.id ? null : u.id);
+    setPwNeu(""); setPwMsg(null);
+  };
+
+  const handleSetPassword = async (u) => {
+    if (pwNeu.length < 6) {
+      setPwMsg({ ok: false, msg: "Mindestens 6 Zeichen" });
+      return;
+    }
+    setBusyId(u.id); setPwMsg(null);
+    try {
+      await api.post(`/api/auth/users/${u.id}/password`, { new_password: pwNeu });
+      setPwNeu("");
+      setPwMsg({ ok: true, msg: `Passwort für "${u.username}" neu gesetzt` });
+    } catch (e) {
+      setPwMsg({ ok: false, msg: fehlerText(e, "Passwort setzen fehlgeschlagen") });
     } finally { setBusyId(null); }
   };
 
@@ -1615,7 +1638,8 @@ function UserManagement() {
             const rm = ROLE_META[roleOf(u)];
             const aktiv = u.is_active !== false;
             return (
-              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, opacity: aktiv ? 1 : 0.55 }}>
+              <div key={u.id}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${pwFor === u.id ? ACCENT : S.border}`, opacity: aktiv ? 1 : 0.55 }}>
                 <span style={{ fontSize: 12, color: S.textMain, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration: aktiv ? "none" : "line-through" }}>{u.username}</span>
                 <span title={rm.hint} style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: rm.color, backgroundColor: rm.bg, border: `1px solid ${rm.border}`, borderRadius: 4, padding: "2px 6px", whiteSpace: "nowrap" }}>{rm.label}</span>
                 {isSelf ? (
@@ -1635,11 +1659,48 @@ function UserManagement() {
                     {aktiv ? "aktiv" : "deaktiviert"}
                   </button>
                 )}
+                {!isSelf && (
+                  <button onClick={() => openPw(u)}
+                    style={{ background: "none", border: "none", color: pwFor === u.id ? ACCENT : S.textDim, cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
+                    title="Passwort neu setzen">
+                    <KeyRound size={12} />
+                  </button>
+                )}
                 <button onClick={() => handleDelete(u.id, u.username)} disabled={isSelf}
                   style={{ background: "none", border: "none", color: isSelf ? S.border : S.textDim, cursor: isSelf ? "not-allowed" : "pointer", padding: 2, display: "flex", alignItems: "center" }}
                   title={isSelf ? "Eigenen Account kann man nicht löschen" : "Benutzer löschen"}>
                   <Trash2 size={12} />
                 </button>
+              </div>
+              {pwFor === u.id && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "8px 10px", marginTop: 2, borderRadius: 4, backgroundColor: S.bgEl, border: `1px solid ${S.border}` }}>
+                  <label style={lS}>Neues Passwort für „{u.username}“</label>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <div style={{ position: "relative", flex: 1 }}>
+                      <input style={{ ...iS, paddingRight: 36 }} type={showPw ? "text" : "password"} autoFocus
+                        autoComplete="new-password" value={pwNeu} placeholder="min. 6 Zeichen"
+                        onChange={e => setPwNeu(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") handleSetPassword(u); if (e.key === "Escape") setPwFor(null); }} />
+                      <button onClick={() => setShowPw(v => !v)}
+                        style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 0 }}>
+                        {showPw ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                    <button onClick={() => handleSetPassword(u)} disabled={busyId === u.id}
+                      style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 4, border: "none", backgroundColor: ACCENT, color: "var(--accent-fg)", cursor: "pointer", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>
+                      {busyId === u.id ? <Loader2 size={12} className="animate-spin" /> : <KeyRound size={12} />}
+                      Setzen
+                    </button>
+                  </div>
+                  {pwMsg && (
+                    <p style={{ fontSize: 11, color: pwMsg.ok ? "var(--ok)" : "var(--err-soft)", margin: 0 }}>{pwMsg.ok ? "✓" : "✗"} {pwMsg.msg}</p>
+                  )}
+                  <p style={{ fontSize: 10, color: S.textDim, margin: 0 }}>
+                    Das alte Passwort wird nicht benötigt. Teile das neue dem Benutzer auf sicherem Weg mit;
+                    er kann es danach selbst unter „Passwort ändern“ ersetzen.
+                  </p>
+                </div>
+              )}
               </div>
             );
           })}

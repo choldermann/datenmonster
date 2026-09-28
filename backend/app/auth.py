@@ -223,6 +223,31 @@ def change_password(data: ChangePassword, db: Session = Depends(get_db), user: U
     return {"ok": True}
 
 
+class PasswortSetzen(BaseModel):
+    new_password: str
+
+
+@router.post("/users/{user_id}/password")
+def set_user_password(user_id: int, data: PasswortSetzen, db: Session = Depends(get_db),
+                      admin: User = Depends(get_current_user)):
+    """Admin setzt das Passwort eines anderen Benutzers neu, ohne das alte zu
+    kennen. Das eigene aendert man ueber /change-password (mit altem Passwort)."""
+    if not getattr(admin, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+    if admin.id == user_id:
+        raise HTTPException(400, "Das eigene Passwort bitte über „Passwort ändern“ setzen")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Benutzer nicht gefunden")
+    if len(data.new_password) < 6:
+        raise HTTPException(400, "Neues Passwort mindestens 6 Zeichen")
+    target.hashed_password = hash_password(data.new_password)
+    db.commit()
+    # Eine Sperre nach Fehlversuchen soll den neuen Start nicht blockieren.
+    _clear_attempts(f"user:{target.username}")
+    return {"ok": True}
+
+
 class ThemeWahl(BaseModel):
     theme: str | None = None
 
