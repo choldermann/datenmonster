@@ -28,6 +28,37 @@ def _check_editor(user: User):
         raise HTTPException(403, "Nur Admins und Editoren können Abfragen bauen")
 
 
+def _projekt_pruefen(db, project_id, user: User, schreiben: bool, erstellt_von=None) -> None:
+    """Der Mandant wird aus dem Projekt aufgelöst – mit fremder project_id liefe
+    die Abfrage sonst gegen die Wawi eines anderen Projekts. Ohne Projekt:
+    neue Abfragen erlaubt, bestehende nur für den, der sie angelegt hat."""
+    from app.core.zugriff import ist_admin, lesen_pruefen, schreiben_pruefen
+    if ist_admin(user) or project_id is None and (
+            erstellt_von is None or erstellt_von == user.id):
+        return
+    (schreiben_pruefen if schreiben else lesen_pruefen)(project_id, user, db)
+
+
+def _mandant_pruefen(db, mandant_id, project_id, user: User) -> None:
+    """Frei übergebene mandant_id = beliebige Verbindung; nur freigegebene."""
+    from app.core.zugriff import ist_admin, verbindung_pruefen
+    from app.services import mandant_service
+    if ist_admin(user) or not mandant_id:
+        return
+    if not mandant_service.darf_nutzen(mandant_id, user, db, project_id):
+        raise HTTPException(403, "Dieser Mandant ist für Sie nicht freigegeben")
+    verbindung_pruefen(mandant_id, user, db)
+
+
+def _lade_abfrage(db, query_id: int, user: User, schreiben: bool = False):
+    from app.models.report import AdHocQuery
+    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
+    if not q:
+        raise HTTPException(404, "Auswertung nicht gefunden")
+    _projekt_pruefen(db, q.project_id, user, schreiben, erstellt_von=q.created_by or -1)
+    return q
+
+
 class VorschauRequest(BaseModel):
     definition: dict
     project_id: Optional[int] = None
@@ -58,6 +89,8 @@ def preview(data: VorschauRequest, db: Session = Depends(get_db),
     # Der Mandant bestimmt, gegen welche Wawi gerechnet wird. Ohne ihn liefe die
     # Vorschau womöglich gegen den anderen Betrieb – Zahlen, die in sich stimmen
     # und trotzdem falsch sind.
+    _projekt_pruefen(db, data.project_id, user, False)
+    _mandant_pruefen(db, data.mandant_id, data.project_id, user)
     mandant_id = data.mandant_id or mandant_service.aktiver(data.project_id, user, db)
     if not mandant_id:
         raise HTTPException(400, "Kein Mandant gewählt – es ist unklar, gegen welche "
@@ -99,7 +132,14 @@ def liste(project_id: Optional[int] = None, db: Session = Depends(get_db),
     q = db.query(AdHocQuery)
     if project_id is not None:
         q = q.filter(AdHocQuery.project_id == project_id)
-    return [_abfrage_out(x) for x in q.order_by(AdHocQuery.id.desc()).all()]
+    raus = []
+    for x in q.order_by(AdHocQuery.id.desc()).all():
+        try:
+            _projekt_pruefen(db, x.project_id, user, False, erstellt_von=x.created_by or -1)
+        except HTTPException:
+            continue  # Auswertungen fremder Projekte nicht zeigen
+        raus.append(_abfrage_out(x))
+    return raus
 
 
 @router.post("/save")
@@ -113,6 +153,8 @@ def speichern(data: SpeichernRequest, db: Session = Depends(get_db),
     from app.services import mandant_service
     from app.services.query_builder import erzeugen
 
+    _projekt_pruefen(db, data.project_id, user, True)
+    _mandant_pruefen(db, data.mandant_id, data.project_id, user)
     mandant_id = data.mandant_id or mandant_service.aktiver(data.project_id, user, db)
     if not mandant_id:
         raise HTTPException(400, "Kein Mandant gewählt.")
@@ -146,11 +188,7 @@ def holen(query_id: int, db: Session = Depends(get_db),
           user: User = Depends(get_current_user)):
     """Die gespeicherte Definition, um den Generator damit zu öffnen."""
     _check_editor(user)
-    from app.models.report import AdHocQuery
-    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
-    if not q:
-        raise HTTPException(404, "Auswertung nicht gefunden")
-    return _abfrage_out(q)
+    return _abfrage_out(_lade_abfrage(db, query_id, user))
 
 
 @router.put("/{query_id}")
@@ -168,9 +206,8 @@ def aktualisieren(query_id: int, data: SpeichernRequest,
     from app.services import mandant_service
     from app.services.query_builder import erzeugen
 
-    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
-    if not q:
-        raise HTTPException(404, "Auswertung nicht gefunden")
+    q = _lade_abfrage(db, query_id, user, schreiben=True)
+    _mandant_pruefen(db, data.mandant_id, q.project_id, user)
 
     mandant_id = data.mandant_id or mandant_service.aktiver(q.project_id, user, db)
     if not mandant_id:
@@ -203,9 +240,7 @@ def loeschen(query_id: int, db: Session = Depends(get_db),
     from app.models.report import AdHocQuery
     from app.services.query_builder import erzeugen
 
-    q = db.query(AdHocQuery).filter(AdHocQuery.id == query_id).first()
-    if not q:
-        raise HTTPException(404, "Auswertung nicht gefunden")
+    q = _lade_abfrage(db, query_id, user, schreiben=True)
     name = q.name
     entfernt = erzeugen.entfernen(db, q)
     safe_commit(db)

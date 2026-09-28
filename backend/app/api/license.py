@@ -28,6 +28,7 @@ from pydantic import BaseModel
 import httpx
 from app.core.database import get_db
 from app.api.auth import get_current_user
+from app.core.zugriff import nur_admin
 from app.models.setting import SystemSetting
 from app.models.user import User
 
@@ -312,7 +313,9 @@ class ActivateRequest(BaseModel):
     email: str
 
 @router.post("/activate")
-def activate(req: ActivateRequest, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def activate(req: ActivateRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Lizenz gilt für die ganze Instanz – nur der Betreiber ändert sie
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     key   = req.key.strip()
     email = req.email.strip()
 
@@ -390,8 +393,10 @@ def _speichere_lizenz(db: Session, key: str, email: str, result: dict) -> None:
     vorlagen_cache_leeren()
 
 @router.post("/free-request")
-def free_request(req: FreeRequestBody, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def free_request(req: FreeRequestBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kostenlosen Zugang anfordern — verschickt die Bestaetigungsmail."""
+    # Lizenz gilt für die ganze Instanz – nur der Betreiber ändert sie
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     email = req.email.strip()
     if not email:
         return {"ok": False, "error": "Bitte E-Mail-Adresse eingeben"}
@@ -421,8 +426,10 @@ def free_request(req: FreeRequestBody, db: Session = Depends(get_db), _: User = 
             "message": data.get("message") or f"Bestätigungsmail an {email} verschickt."}
 
 @router.post("/free-claim")
-def free_claim(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def free_claim(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Nachsehen, ob die E-Mail bestaetigt wurde — und den Schluessel dann eintragen."""
+    # Lizenz gilt für die ganze Instanz – nur der Betreiber ändert sie
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     token = _get(db, "license_free_claim")
     if not token:
         return {"ok": False, "status": "none", "error": "Keine offene Anforderung"}
@@ -467,15 +474,19 @@ def free_claim(db: Session = Depends(get_db), _: User = Depends(get_current_user
             "email": email, "features": result.get("features", [])}
 
 @router.delete("/free-request")
-def free_request_abbrechen(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def free_request_abbrechen(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Offene Anforderung verwerfen (z.B. falsche E-Mail eingetippt)."""
+    # Lizenz gilt für die ganze Instanz – nur der Betreiber ändert sie
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     _set(db, "license_free_claim", "")
     _set(db, "license_free_email", "")
     db.commit()
     return {"ok": True}
 
 @router.post("/refresh")
-def refresh(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def refresh(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Kann die Lizenz neu aktivieren (belegt Aktivierung am Server)
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     key   = _get(db, "license_key")
     email = _get(db, "license_email")
     if not key:
@@ -493,7 +504,9 @@ def refresh(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     return {"ok": False, "error": (result or {}).get("message") or (result or {}).get("error") or "Lizenz ungültig"}
 
 @router.delete("/")
-def deactivate(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
+def deactivate(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    # Lizenz gilt für die ganze Instanz – nur der Betreiber ändert sie
+    nur_admin(user, "Nur Administratoren dürfen die Lizenz ändern")
     for k in ("license_key", "license_email", "license_cache_json", "license_cache_at",
               "license_free_claim", "license_free_email"):
         _set(db, k, "")

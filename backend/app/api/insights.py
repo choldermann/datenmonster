@@ -37,12 +37,11 @@ def suggest(body: SuggestRequest, current_user=Depends(get_current_user)):
 @router.post("/api/insights/run")
 def run_insights(body: InsightsRunRequest, db: Session = Depends(get_db),
                  current_user=Depends(get_current_user)):
-    from app.models.dataset import Dataset
+    from app.core.zugriff import lade_dataset
     from app.services.file_service import _load_parquet
 
-    ds = db.query(Dataset).filter(Dataset.id == body.dataset_id).first()
-    if not ds:
-        raise HTTPException(404, "Dataset nicht gefunden")
+    # Sonst liefert die Auswertung Kennzahlen aus Datasets fremder Projekte
+    lade_dataset(body.dataset_id, current_user, db)
 
     try:
         df = _load_parquet(body.dataset_id)

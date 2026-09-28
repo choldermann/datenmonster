@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.core.zugriff import nur_admin
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 
@@ -15,6 +16,8 @@ def get_event_history(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    # Das Protokoll ist instanzweit (Payloads und Mappings aller Projekte).
+    nur_admin(user, "Nur Administratoren sehen das Event-Protokoll")
     from app.models.event_log import EventLog
     events = (
         db.query(EventLog)
@@ -50,6 +53,9 @@ def manual_trigger(
     user: User = Depends(get_current_user),
 ):
     """Manueller Test-Trigger – veröffentlicht ein Plugin-Event auf dem EventBus."""
+    # Das Event ist an kein Projekt gebunden: der Listener startet jedes Mapping
+    # aller Projekte, das ein Dataset dieses source_type_id nutzt.
+    nur_admin(user, "Nur Administratoren dürfen Events auslösen")
     from app.services.eventbus import publish, CHANNEL_PLUGIN_TRIGGER
     payload = {"plugin_id": body.plugin_id, "source_type_id": body.source_type_id, **body.payload}
     publish(CHANNEL_PLUGIN_TRIGGER, payload)

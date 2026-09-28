@@ -54,10 +54,21 @@ class AiSuggestRequest(BaseModel):
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _get_conn(conn_id: int, db: Session, user: User) -> DbConnection:
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+def _get_conn(conn_id: int, db: Session, user: User, schreiben: bool = False) -> DbConnection:
+    """Verbindung laden und Zugriff prüfen.
+
+    Der Katalog hängt an der Verbindung und gilt damit für ALLE Projekte, die sie
+    nutzen. Ändern darf ihn deshalb nur, wer in einem dieser Projekte Editor
+    ist – bloßes Betrachten reicht nicht."""
+    from app.core.zugriff import lade_verbindung, ist_admin, projekte_mit_rolle
+    conn = lade_verbindung(conn_id, user, db)
+    if schreiben and not ist_admin(user):
+        from app.api.projects import get_project_role
+        from app.services.db_service import verbundene_ids
+        if not any(get_project_role(pid, user, db) in ("owner", "editor")
+                   and conn.id in verbundene_ids(pid, db)
+                   for pid in projekte_mit_rolle(user, db)):
+            raise HTTPException(403, "Betrachter dürfen den Schema-Katalog nicht ändern")
     return conn
 
 def _upsert_table_meta(db: Session, conn_id: int, table_full_name: str, **kwargs) -> SchemaTableMeta:
@@ -84,7 +95,7 @@ def sync_catalog(
     user: User = Depends(get_current_user),
 ):
     """Erstellt fehlende SchemaTableMeta-Einträge für alle Tabellen im Schema-Cache."""
-    conn = _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user, schreiben=True)
     if not conn.schema_cache:
         return {"synced": 0, "existing": 0}
 
@@ -170,7 +181,7 @@ def upsert_table_meta(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _get_conn(conn_id, db, user)
+    _get_conn(conn_id, db, user, schreiben=True)
     meta = _upsert_table_meta(
         db, conn_id, body.table_full_name,
         business_name=body.business_name,
@@ -190,7 +201,7 @@ def upsert_column_meta(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _get_conn(conn_id, db, user)
+    _get_conn(conn_id, db, user, schreiben=True)
     col = db.query(SchemaColumnMeta).filter_by(
         connection_id=conn_id,
         table_full_name=body.table_full_name,
@@ -218,7 +229,7 @@ def add_relation(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    _get_conn(conn_id, db, user)
+    _get_conn(conn_id, db, user, schreiben=True)
     rel = SchemaRelationMeta(
         connection_id=conn_id,
         from_table=body.from_table, from_col=body.from_col,
@@ -249,7 +260,7 @@ def derive_relations(
     keine, alle (gedeckelt). Bei 1.158 Tabellen kämen sonst ~1.250 Vorschläge
     heraus, die niemand durchsieht.
     """
-    conn = _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user, schreiben=True)
     if not conn.schema_cache:
         raise HTTPException(400, "Kein Schema-Cache — bitte erst den Schema-Cache aufbauen.")
 
@@ -295,7 +306,7 @@ def add_relations_bulk(
     user: User = Depends(get_current_user),
 ):
     """Mehrere Beziehungen auf einmal übernehmen (Dubletten werden übersprungen)."""
-    _get_conn(conn_id, db, user)
+    _get_conn(conn_id, db, user, schreiben=True)
     vorhanden = {
         (r.from_table, r.from_col, r.to_table, r.to_col)
         for r in db.query(SchemaRelationMeta).filter_by(connection_id=conn_id).all()
@@ -321,6 +332,7 @@ def delete_relation(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _get_conn(conn_id, db, user, schreiben=True)
     rel = db.query(SchemaRelationMeta).filter_by(id=rel_id, connection_id=conn_id).first()
     if rel:
         db.delete(rel)
@@ -439,7 +451,7 @@ def import_catalog(
     user: User = Depends(get_current_user),
 ):
     """Importiert einen Katalog-Export (Upsert — vorhandene Daten werden überschrieben)."""
-    _get_conn(conn_id, db, user)
+    _get_conn(conn_id, db, user, schreiben=True)
 
     tables_done = 0
     cols_done   = 0
@@ -503,7 +515,7 @@ async def ai_suggest(
     """KI generiert Beschreibungen für Tabellen und speichert sie direkt."""
     from app.services.ai_service import build_ai_service
 
-    conn = _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user, schreiben=True)
     if not conn.schema_cache:
         raise HTTPException(400, "Kein Schema-Cache vorhanden")
 
@@ -755,12 +767,22 @@ def erkundung_uebernehmen(
     """
     from app.models.ai_memory import AiMemoryKnowledge
 
-    conn = _get_conn(conn_id, db, user)
+    conn = _get_conn(conn_id, db, user, schreiben=True)
     # scope_id ist der VerbindungsNAME (so sucht ai_context_builder das Wissen
     # später wieder heraus), nicht die Id — mehrere Verbindungen auf dieselbe
     # Wawi teilen sich damit von selbst einen Wissensstand.
     scope    = body.scope or "datasource"
     scope_id = body.scope_id or (conn.name if scope == "datasource" else None)
+    # Wissen für DIESE Verbindung reicht der Katalog-Schreibzugriff; globales
+    # oder das einer anderen Verbindung ginge in fremde Prompts.
+    from app.core.zugriff import nur_admin, schreiben_pruefen
+    if scope == "project":
+        try:
+            schreiben_pruefen(int(scope_id), user, db)
+        except (TypeError, ValueError):
+            raise HTTPException(400, "Ungültige Projekt-ID")
+    elif not (scope == "datasource" and scope_id == conn.name):
+        nur_admin(user, "Globales KI-Wissen dürfen nur Administratoren ändern")
 
     neu = akt = 0
     for e in body.eintraege:

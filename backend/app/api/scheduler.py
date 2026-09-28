@@ -55,6 +55,27 @@ def _job_out(job: ScheduledJob, db: Session) -> dict:
     }
 
 
+def _job_projekt(job: ScheduledJob, db: Session) -> Optional[int]:
+    """Maßgeblich ist das Projekt des Mappings – das führt der Job aus. Ältere
+    Jobs tragen oft keine eigene project_id."""
+    mapping = db.query(Mapping).filter(Mapping.id == job.mapping_id).first()
+    if mapping is not None:
+        return mapping.project_id
+    return job.project_id
+
+
+def _lade_job(job_id: int, user: User, db: Session, schreiben: bool = True) -> ScheduledJob:
+    job = db.query(ScheduledJob).filter(ScheduledJob.id == job_id).first()
+    if not job:
+        raise HTTPException(404, "Job nicht gefunden")
+    pid = _job_projekt(job, db)
+    if schreiben:
+        require_editor(pid, user, db)
+    elif not can_read_project(pid, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    return job
+
+
 def _validate_cron(expr: str):
     for part in expr.split(";"):
         part = part.strip()
@@ -102,6 +123,11 @@ def list_jobs(
     elif accessible is not None:
         q = q.filter((ScheduledJob.project_id.in_(accessible)) | (ScheduledJob.project_id.is_(None)))
     jobs = q.order_by(ScheduledJob.id.desc()).all()
+    if accessible is not None:
+        # Jobs ohne eigene project_id: nach dem Projekt ihres Mappings filtern,
+        # sonst sähe jeder die Jobs fremder Projekte.
+        jobs = [j for j in jobs if j.project_id is not None
+                or can_read_project(_job_projekt(j, db), user, db)]
     return [_job_out(j, db) for j in jobs]
 
 
@@ -128,7 +154,9 @@ def create_job(
         active=data.active,
         start_date=date.fromisoformat(data.start_date) if data.start_date else None,
         end_date=date.fromisoformat(data.end_date) if data.end_date else None,
-        project_id=data.project_id,
+        # Immer das Mapping-Projekt eintragen – ohne landete der Job projektlos
+        # und damit in der Liste jedes Benutzers.
+        project_id=mapping.project_id,
     )
     db.add(job)
     db.commit()
@@ -147,9 +175,7 @@ def update_job(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    job = db.query(ScheduledJob).filter(ScheduledJob.id == job_id).first()
-    if not job:
-        raise HTTPException(404, "Job nicht gefunden")
+    job = _lade_job(job_id, user, db)
     if data.name is not None:
         job.name = data.name
     if data.cron_expr is not None:
@@ -181,9 +207,7 @@ def delete_job(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    job = db.query(ScheduledJob).filter(ScheduledJob.id == job_id).first()
-    if not job:
-        raise HTTPException(404, "Job nicht gefunden")
+    job = _lade_job(job_id, user, db)
     from app.services.scheduler_service import unregister_job
     unregister_job(job_id)
     db.delete(job)
@@ -197,9 +221,8 @@ def trigger_job(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    job = db.query(ScheduledJob).filter(ScheduledJob.id == job_id).first()
-    if not job:
-        raise HTTPException(404, "Job nicht gefunden")
+    # Auslösen führt das Mapping aus (schreibt ggf. ins Ziel) – nur Editoren.
+    job = _lade_job(job_id, user, db)
     from app.services.scheduler_service import trigger_job_now
     trigger_job_now(job.id, job.mapping_id)
     return {"ok": True, "message": "Job wird ausgeführt..."}
@@ -211,6 +234,7 @@ def get_runs(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _lade_job(job_id, user, db, schreiben=False)
     runs = (
         db.query(JobRun)
         .filter(JobRun.scheduled_job_id == job_id)

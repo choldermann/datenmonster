@@ -160,6 +160,11 @@ def suggest_mapping(
     Analysiert Query/Preset und schlägt Tabellen + JOINs vor.
     Prüft welche Tabellen bereits als Dataset vorhanden sind.
     """
+    # Schema und Datasets fremder Verbindungen/Projekte bleiben außen vor
+    from app.core.zugriff import verbindung_pruefen, lesen_pruefen
+    verbindung_pruefen(body.connection_id, user, db)
+    if body.project_id:
+        lesen_pruefen(body.project_id, user, db)
     tables = []
     joins = []
     used_ai = False

@@ -18,6 +18,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.preisregel import PriceRuleset, PriceRule, PriceRun, PriceChange
 from app.api.projects import can_read_project, require_editor
+from app.core.zugriff import verbindung_pruefen
 from app.services import preisregel_service as dienst
 from app.services import mandant_service
 
@@ -160,6 +161,9 @@ def anlegen(body: RegelwerkIn, db: Session = Depends(get_db),
     if not conn:
         raise HTTPException(400, "Kein Mandant gewählt – ein Regelwerk gehört zu "
                                  "genau einer JTL-Verbindung.")
+    # Regelwerke lesen und schreiben Preise in dieser Wawi – fremde Mandanten
+    # dürfen hier nicht landen.
+    verbindung_pruefen(conn, user, db)
     daten = body.model_dump(exclude_none=True)
     daten.pop("connection_id", None)
     rs = PriceRuleset(connection_id=conn, **daten)
@@ -178,6 +182,8 @@ def aendern(rid: int, body: RegelwerkIn, db: Session = Depends(get_db),
             continue
         if feld == "connection_id" and not wert:
             continue
+        if feld == "connection_id" and wert != rs.connection_id:
+            verbindung_pruefen(wert, user, db)
         setattr(rs, feld, wert)
     db.commit()
     _zeitplan_uebernehmen(rs)
@@ -334,6 +340,17 @@ def aenderungen(rid: int, zustand: Optional[str] = None, limit: int = 500,
     return {"rows": [_aenderung_out(c) for c in rows], "zaehler": zaehler}
 
 
+def _alle_regelwerke_pruefen(db, ids: list, user) -> None:
+    """Jede betroffene Änderung prüfen, nicht nur die erste – sonst ließen sich
+    hinter einer eigenen ID fremde Änderungen mitschicken."""
+    rulesets = {r for (r,) in db.query(PriceChange.ruleset_id)
+                .filter(PriceChange.id.in_(ids)).distinct().all()}
+    if not rulesets:
+        raise HTTPException(404, "Änderung nicht gefunden")
+    for rid in rulesets:
+        _regelwerk(db, rid, user, schreibend=True)
+
+
 @router.post("/aenderungen/zustand")
 def zustand(body: IdsIn, db: Session = Depends(get_db),
             user: User = Depends(get_current_user)):
@@ -343,10 +360,7 @@ def zustand(body: IdsIn, db: Session = Depends(get_db),
                                  "die Kontrolle.")
     if not body.ids:
         raise HTTPException(400, "Keine Änderungen ausgewählt")
-    erste = db.query(PriceChange).filter(PriceChange.id == body.ids[0]).first()
-    if not erste:
-        raise HTTPException(404, "Änderung nicht gefunden")
-    _regelwerk(db, erste.ruleset_id, user, schreibend=True)
+    _alle_regelwerke_pruefen(db, body.ids, user)
     return {"geaendert": dienst.zustand_setzen(db, body.ids, body.zustand, user)}
 
 
@@ -375,8 +389,5 @@ def ruecknahme(body: IdsIn, db: Session = Depends(get_db),
                user: User = Depends(get_current_user)):
     if not body.ids:
         raise HTTPException(400, "Keine Änderungen ausgewählt")
-    erste = db.query(PriceChange).filter(PriceChange.id == body.ids[0]).first()
-    if not erste:
-        raise HTTPException(404, "Änderung nicht gefunden")
-    _regelwerk(db, erste.ruleset_id, user, schreibend=True)
+    _alle_regelwerke_pruefen(db, body.ids, user)
     return dienst.ruecknahme(db, body.ids, user)

@@ -83,6 +83,10 @@ def get_template(template_id: str, db: Session = Depends(get_db), user: User = D
     if not t:
         raise HTTPException(404, "Template nicht gefunden")
     content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
+    # Ältere Eigenbau-Vorlagen tragen noch REST-Zugangsdaten im Inhalt; der
+    # Katalog ist für alle lesbar, die Geheimnisse sieht nur ein Admin.
+    if not getattr(user, "is_admin", False):
+        content = _inhalt_ohne_zugangsdaten(content)
     projekt_namen = {p.id: p.name for p in db.query(Project).all()}
     return {**template_out(t, projekt_namen), "content": content}
 
@@ -194,6 +198,35 @@ def _rest_nodes_ohne_zugangsdaten(rest_nodes: list) -> list:
                     if werte.get(schluessel):
                         werte[schluessel] = ""
     return sauber
+
+
+_HEADER_GEHEIM = ("authorization", "api-key", "apikey", "x-api-key", "token", "cookie")
+
+
+def _rest_config_ohne_zugangsdaten(cfg):
+    """REST-Dataset-Konfiguration für den Export: auth wie bei den REST-Knoten
+    leeren, dazu Kopfzeilen, die erkennbar Anmeldedaten tragen."""
+    if not isinstance(cfg, dict):
+        return cfg
+    sauber = _rest_nodes_ohne_zugangsdaten([cfg])[0]
+    kopf = sauber.get("headers")
+    if isinstance(kopf, dict):
+        for k in list(kopf):
+            if any(g in str(k).lower() for g in _HEADER_GEHEIM) and kopf[k]:
+                kopf[k] = ""
+    return sauber
+
+
+def _inhalt_ohne_zugangsdaten(content: dict) -> dict:
+    import copy as _c
+    content = _c.deepcopy(content or {})
+    for ds in content.get("datasets") or []:
+        if isinstance(ds, dict) and isinstance(ds.get("rest_config"), dict):
+            ds["rest_config"] = _rest_config_ohne_zugangsdaten(ds["rest_config"])
+    for m in content.get("mappings") or []:
+        if isinstance(m, dict) and m.get("rest_nodes"):
+            m["rest_nodes"] = _rest_nodes_ohne_zugangsdaten(m["rest_nodes"])
+    return content
 
 
 def _als_conn_id(v):
@@ -1465,6 +1498,30 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
     from app.models.form import Form
     from app.models.report import Report
     import copy
+    from app.core.zugriff import lesen_pruefen
+
+    # Jedes Objekt muss der Benutzer lesen dürfen – sonst zöge er über die IDs
+    # Mappings, SQL und REST-Konfigurationen fremder Projekte in eine Vorlage,
+    # die er anschließend herunterlädt.
+    def _lesbar(modell, ids):
+        for oid in ids or []:
+            obj = db.query(modell).filter(modell.id == oid).first()
+            if obj is not None:
+                lesen_pruefen(obj.project_id, user, db)
+    _lesbar(Dataset, body.dataset_ids)
+    _lesbar(Mapping, body.mapping_ids)
+    _lesbar(Pipeline, body.pipeline_ids)
+    _lesbar(Form, body.form_ids)
+    _lesbar(Report, body.report_ids)
+    if body.knowledge_ids and not getattr(user, "is_admin", False):
+        from app.models.ai_memory import AiMemoryKnowledge
+        for w in db.query(AiMemoryKnowledge).filter(
+                AiMemoryKnowledge.id.in_(body.knowledge_ids)).all():
+            if w.scope == "project" and w.scope_id:
+                try:
+                    lesen_pruefen(int(w.scope_id), user, db)
+                except (TypeError, ValueError):
+                    pass
 
     content = {
         "template_id": "custom_" + re.sub(r"[^a-z0-9]", "_", body.name.lower())[:40] + "_" + str(int(__import__("time").time())),
@@ -1499,7 +1556,10 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 "row_count": ds.row_count or 0,
             }
             if ds.file_type == "rest_api" and ds.query_config:
-                ds_entry["rest_config"] = ds.query_config
+                # Zugangsdaten bleiben hier – wie bei DB-Verbindungen
+                ds_entry["rest_config"] = _rest_config_ohne_zugangsdaten(
+                    ds.query_config if isinstance(ds.query_config, dict)
+                    else json.loads(ds.query_config or "{}"))
             elif ds.file_type == "db_query" and ds.source_sql:
                 ds_entry["sql"] = ds.source_sql
                 if ds.source_connection_id:

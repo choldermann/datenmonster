@@ -17,11 +17,10 @@ from app.services.db_service import get_engine_str
 router = APIRouter(prefix="/api/db-write", tags=["db-write"])
 
 
-def _get_conn(connection_id: int, db: Session) -> DbConnection:
-    conn = db.query(DbConnection).filter(DbConnection.id == connection_id).first()
-    if not conn:
-        raise HTTPException(status_code=404, detail="Verbindung nicht gefunden")
-    return conn
+def _get_conn(connection_id: int, db: Session, user: User) -> DbConnection:
+    # Sonst ließe sich über die ID jede Verbindung der Instanz ausleuchten
+    from app.core.zugriff import lade_verbindung
+    return lade_verbindung(connection_id, user, db)
 
 
 @router.get("/tables")
@@ -31,7 +30,7 @@ def list_tables(
     user: User = Depends(get_current_user),
 ):
     """Gibt alle Tabellen der Verbindung zurück."""
-    conn = _get_conn(connection_id, db)
+    conn = _get_conn(connection_id, db, user)
     try:
         engine = create_engine(get_engine_str(conn))
         insp = inspect(engine)
@@ -49,7 +48,7 @@ def get_columns(
     user: User = Depends(get_current_user),
 ):
     """Gibt Spalten einer Tabelle zurück (Name, Typ, nullable, PK)."""
-    conn = _get_conn(connection_id, db)
+    conn = _get_conn(connection_id, db, user)
     try:
         engine = create_engine(get_engine_str(conn))
         insp = inspect(engine)
@@ -84,7 +83,7 @@ def check_write(
     Führt Sicherheitsprüfungen durch OHNE zu schreiben.
     Gibt Prüfergebnisse und Zieltabellen-Schema zurück.
     """
-    conn = _get_conn(body.connection_id, db)
+    conn = _get_conn(body.connection_id, db, user)
     checks = []
     table_columns = []
     can_proceed = True

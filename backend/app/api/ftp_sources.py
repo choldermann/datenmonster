@@ -11,6 +11,7 @@ from app.models.user import User
 from app.models.ftp_source import FtpSource
 from app.api.projects import require_editor
 from app.core.security import encrypt_credential, decrypt_credential
+from app.core.zugriff import ist_admin, lesen_pruefen, dataset_pruefen
 
 router = APIRouter(prefix="/api/ftp-sources", tags=["ftp-sources"])
 
@@ -37,6 +38,17 @@ class FtpSourceCreate(BaseModel):
     start_date: Optional[str] = None
     end_date: Optional[str] = None
     project_id: Optional[int] = None
+
+
+def _lade(source_id: int, user, db, schreiben: bool = False) -> FtpSource:
+    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
+    if not s:
+        raise HTTPException(404, "FTP-Quelle nicht gefunden")
+    if schreiben:
+        require_editor(s.project_id, user, db)
+    else:
+        lesen_pruefen(s.project_id, user, db)
+    return s
 
 
 def _out(s: FtpSource) -> dict:
@@ -95,6 +107,8 @@ def create_ftp_source(
     user: User = Depends(get_current_user),
 ):
     require_editor(data.project_id, user, db)
+    # Der Sync schreibt ins Ziel-Dataset – das muss man selbst ändern dürfen.
+    dataset_pruefen(data.dataset_id, user, db, schreiben=True)
     d = data.model_dump()
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
@@ -106,9 +120,7 @@ def create_ftp_source(
 
 @router.get("/{source_id}")
 def get_ftp_source(source_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
-    if not s: raise HTTPException(404, "FTP-Quelle nicht gefunden")
-    return _out(s)
+    return _out(_lade(source_id, user, db))
 
 
 @router.put("/{source_id}")
@@ -118,12 +130,25 @@ def update_ftp_source(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
-    if not s: raise HTTPException(404, "FTP-Quelle nicht gefunden")
-    require_editor(s.project_id, user, db)
-    for k, v in data.model_dump().items():
-        if k == "password" and not v:
-            continue  # Passwort nicht überschreiben wenn leer
+    s = _lade(source_id, user, db, schreiben=True)
+    d = data.model_dump()
+    if d.get("project_id") != s.project_id:
+        if d.get("project_id") is None and not ist_admin(user):
+            # Ohne Projektangabe bleibt die Quelle, wo sie ist – projektlos wäre
+            # sie für Nicht-Admins nur noch lesbar.
+            d["project_id"] = s.project_id
+        else:
+            # Verschieben nur in ein Projekt, in dem man selbst Editor ist.
+            require_editor(d.get("project_id"), user, db)
+    if d.get("dataset_id") != s.dataset_id:
+        dataset_pruefen(d.get("dataset_id"), user, db, schreiben=True)
+    for k, v in d.items():
+        if k == "password":
+            if not v or set(v) <= {"•", "*"}:
+                continue  # leer/Maske = Passwort unverändert lassen
+            # Wie beim Anlegen verschlüsselt ablegen – vorher landete ein
+            # geändertes Passwort im Klartext in der DB.
+            v = encrypt_credential(v)
         setattr(s, k, v)
     db.commit(); db.refresh(s)
     _sync_scheduler(s)
@@ -132,9 +157,7 @@ def update_ftp_source(
 
 @router.delete("/{source_id}")
 def delete_ftp_source(source_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
-    if not s: raise HTTPException(404, "FTP-Quelle nicht gefunden")
-    require_editor(s.project_id, user, db)
+    _lade(source_id, user, db, schreiben=True)
     _unregister_ftp_job(source_id)
     db.delete(s); db.commit()
     return {"ok": True}
@@ -143,8 +166,8 @@ def delete_ftp_source(source_id: int, db: Session = Depends(get_db), user: User 
 @router.post("/{source_id}/trigger")
 def trigger_ftp_source(source_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Manueller Sofort-Sync."""
-    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
-    if not s: raise HTTPException(404, "FTP-Quelle nicht gefunden")
+    # Der Sync schreibt ins Dataset – also Editor-Recht nötig.
+    _lade(source_id, user, db, schreiben=True)
     import threading
     from app.services.ftp_service import run_ftp_sync
     from app.core.database import SessionLocal, safe_commit
@@ -175,8 +198,8 @@ def trigger_ftp_source(source_id: int, db: Session = Depends(get_db), user: User
 @router.post("/{source_id}/test")
 def test_ftp_connection(source_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Verbindungstest + Dateilisting."""
-    s = db.query(FtpSource).filter(FtpSource.id == source_id).first()
-    if not s: raise HTTPException(404, "FTP-Quelle nicht gefunden")
+    # Nur gespeicherter Host + Passwort, daher genügt Leserecht im Projekt.
+    s = _lade(source_id, user, db)
     try:
         from app.services.ftp_service import (
             _connect_ftp, _connect_sftp,

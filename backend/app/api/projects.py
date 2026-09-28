@@ -49,11 +49,15 @@ def get_accessible_project(project_id: int, user: User, db: Session) -> Project:
 
 
 def get_project_role(project_id: Optional[int], user: User, db: Session) -> str:
-    """Returns 'owner', 'editor', 'viewer', or 'none'. None project_id → 'owner' (legacy)."""
+    """Returns 'owner', 'editor', 'viewer', or 'none'.
+
+    Objekte ohne Projekt (Altbestand) sind für Nicht-Admins nur noch lesbar.
+    Früher galt hier 'owner' – damit konnte jeder angemeldete Benutzer
+    projektlose Mappings anlegen und ändern, samt Knoten, die Code ausführen."""
     if getattr(user, "is_admin", False):
         return "owner"  # Admins haben überall vollen Zugriff
     if project_id is None:
-        return "owner"
+        return "viewer"
     p = db.query(Project).filter(Project.id == project_id).first()
     if not p:
         return "none"

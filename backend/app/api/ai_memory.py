@@ -12,6 +12,44 @@ from app.models.ai_memory import AiMemorySolution
 router = APIRouter(prefix="/api/ai-memory", tags=["ai-memory"])
 
 
+# ── Zugriff ───────────────────────────────────────────────────────────────────
+# Das KI-Gedächtnis landet in den Prompts ANDERER Benutzer (always_include sogar
+# in jedem). Globales und verbindungsweites Wissen darf deshalb nur ein Admin
+# ändern; projektgebundenes der Editor des Projekts. Lesen: nur eigene Projekte.
+
+def _projekt_id(scope: Optional[str], scope_id) -> Optional[int]:
+    if scope != "project" or scope_id in (None, ""):
+        return None
+    try:
+        return int(scope_id)
+    except (TypeError, ValueError):
+        return None
+
+
+def _darf_schreiben(project_id: Optional[int], user, db) -> None:
+    from app.core.zugriff import nur_admin, schreiben_pruefen
+    if project_id is None:
+        nur_admin(user, "Globales KI-Wissen dürfen nur Administratoren ändern")
+    else:
+        schreiben_pruefen(project_id, user, db)
+
+
+def _wissen_schreiben(scope, scope_id, user, db) -> None:
+    _darf_schreiben(_projekt_id(scope, scope_id), user, db)
+
+
+def _lesbare_projekte(user, db) -> Optional[set]:
+    """None = alles sichtbar (Admin)."""
+    from app.core.zugriff import ist_admin, projekte_mit_rolle
+    return None if ist_admin(user) else projekte_mit_rolle(user, db)
+
+
+def _projekt_lesen(project_id, user, db) -> None:
+    if project_id:
+        from app.core.zugriff import lesen_pruefen
+        lesen_pruefen(project_id, user, db)
+
+
 # ── Knowledge ─────────────────────────────────────────────────────────────────
 
 class KnowledgeBody(BaseModel):
@@ -32,6 +70,10 @@ def list_knowledge(
     user: User = Depends(get_current_user),
 ):
     rows = svc.list_knowledge(db, scope=scope, scope_id=scope_id)
+    erlaubt = _lesbare_projekte(user, db)
+    if erlaubt is not None:
+        rows = [r for r in rows if r.scope != "project"
+                or _projekt_id(r.scope, r.scope_id) in erlaubt]
     return [_serialize_knowledge(r) for r in rows]
 
 
@@ -41,6 +83,7 @@ def create_knowledge(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _wissen_schreiben(body.scope, body.scope_id, user, db)
     row = svc.create_knowledge(db, body.model_dump())
     return _serialize_knowledge(row)
 
@@ -52,6 +95,14 @@ def update_knowledge(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from app.models.ai_memory import AiMemoryKnowledge
+    alt = db.query(AiMemoryKnowledge).filter(AiMemoryKnowledge.id == id).first()
+    if not alt:
+        raise HTTPException(404, "Nicht gefunden")
+    # Bisheriger UND neuer Geltungsbereich: sonst ließe sich ein fremder
+    # Eintrag per Umzug ins eigene Projekt übernehmen (oder umgekehrt).
+    _wissen_schreiben(alt.scope, alt.scope_id, user, db)
+    _wissen_schreiben(body.scope, body.scope_id, user, db)
     row = svc.update_knowledge(db, id, body.model_dump())
     if not row:
         raise HTTPException(404, "Nicht gefunden")
@@ -64,6 +115,10 @@ def delete_knowledge(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from app.models.ai_memory import AiMemoryKnowledge
+    alt = db.query(AiMemoryKnowledge).filter(AiMemoryKnowledge.id == id).first()
+    if alt:
+        _wissen_schreiben(alt.scope, alt.scope_id, user, db)
     if not svc.delete_knowledge(db, id):
         raise HTTPException(404, "Nicht gefunden")
     return {"ok": True}
@@ -87,7 +142,11 @@ def list_solutions(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _projekt_lesen(project_id, user, db)
     rows = svc.list_solutions(db, project_id=project_id, category=category)
+    erlaubt = _lesbare_projekte(user, db)
+    if erlaubt is not None:
+        rows = [r for r in rows if r.project_id is None or r.project_id in erlaubt]
     return [_serialize_solution(r) for r in rows]
 
 
@@ -97,6 +156,7 @@ def create_solution(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _darf_schreiben(body.project_id, user, db)
     row = svc.create_solution(db, body.model_dump())
     return _serialize_solution(row)
 
@@ -108,6 +168,11 @@ def update_solution(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    alt = db.query(AiMemorySolution).filter(AiMemorySolution.id == id).first()
+    if not alt:
+        raise HTTPException(404, "Nicht gefunden")
+    _darf_schreiben(alt.project_id, user, db)
+    _darf_schreiben(body.project_id, user, db)
     row = svc.update_solution(db, id, body.model_dump())
     if not row:
         raise HTTPException(404, "Nicht gefunden")
@@ -120,6 +185,9 @@ def use_solution(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    sol = db.query(AiMemorySolution).filter(AiMemorySolution.id == id).first()
+    if sol:
+        _projekt_lesen(sol.project_id, user, db)
     svc.increment_solution_use(db, id)
     return {"ok": True}
 
@@ -130,6 +198,9 @@ def delete_solution(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    alt = db.query(AiMemorySolution).filter(AiMemorySolution.id == id).first()
+    if alt:
+        _darf_schreiben(alt.project_id, user, db)
     if not svc.delete_solution(db, id):
         raise HTTPException(404, "Nicht gefunden")
     return {"ok": True}
@@ -151,7 +222,11 @@ def list_corrections(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _projekt_lesen(project_id, user, db)
     rows = svc.list_corrections(db, project_id=project_id)
+    erlaubt = _lesbare_projekte(user, db)
+    if erlaubt is not None:
+        rows = [r for r in rows if r.project_id is None or r.project_id in erlaubt]
     return [_serialize_correction(r) for r in rows]
 
 
@@ -161,6 +236,7 @@ def create_correction(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _darf_schreiben(body.project_id, user, db)
     row = svc.create_correction(db, body.model_dump())
     return _serialize_correction(row)
 
@@ -171,6 +247,10 @@ def delete_correction(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from app.models.ai_memory import AiMemoryCorrection
+    alt = db.query(AiMemoryCorrection).filter(AiMemoryCorrection.id == id).first()
+    if alt:
+        _darf_schreiben(alt.project_id, user, db)
     if not svc.delete_correction(db, id):
         raise HTTPException(404, "Nicht gefunden")
     return {"ok": True}
@@ -191,6 +271,8 @@ def clear_cache(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    from app.core.zugriff import nur_admin
+    nur_admin(user)  # Cache ist instanzweit
     count = svc.cache_clear(db)
     return {"ok": True, "cleared": count}
 
@@ -204,7 +286,16 @@ def get_suggestions(
     user: User = Depends(get_current_user),
 ):
     """Gibt Lern-Vorschläge zurück (Lösungen die oft verwendet wurden, aber noch kein Projektwissen sind)."""
-    return svc.get_learning_suggestions(db, project_id=project_id)
+    _projekt_lesen(project_id, user, db)
+    vorschlaege = svc.get_learning_suggestions(db, project_id=project_id)
+    erlaubt = _lesbare_projekte(user, db)
+    if erlaubt is not None:
+        ids = {v.get("solution_id") or v.get("id") for v in vorschlaege if isinstance(v, dict)}
+        ok = {s.id for s in db.query(AiMemorySolution).filter(AiMemorySolution.id.in_(ids)).all()
+              if s.project_id is None or s.project_id in erlaubt}
+        vorschlaege = [v for v in vorschlaege
+                       if isinstance(v, dict) and (v.get("solution_id") or v.get("id")) in ok]
+    return vorschlaege
 
 
 class PromoteSolutionBody(BaseModel):
@@ -224,6 +315,8 @@ def promote_solution(
     sol = db.query(AiMemorySolution).filter(AiMemorySolution.id == body.solution_id).first()
     if not sol:
         raise HTTPException(404, "Lösung nicht gefunden")
+    _projekt_lesen(sol.project_id, user, db)
+    _wissen_schreiben(body.scope, body.scope_id, user, db)
     knowledge = svc.create_knowledge(db, {
         "scope":    body.scope,
         "scope_id": body.scope_id,
@@ -253,6 +346,7 @@ def import_schema(
     Schnell-Import von Feld-Definitionen im Format 'feldname = bedeutung'.
     Erstellt für jede Zeile einen Wissenseintrag vom Typ 'field_mapping'.
     """
+    _wissen_schreiben(body.scope, body.scope_id, user, db)
     created = []
     for line in body.text.strip().splitlines():
         line = line.strip()
@@ -297,6 +391,7 @@ def context_preview(
     Einträge, die nicht mehr ins Budget passten. Ohne diese Zahlen lässt sich
     nicht beurteilen, ob die Wissensdatenbank den Assistenten überlädt.
     """
+    _projekt_lesen(body.project_id, user, db)
     ctx, stats = svc.build_memory_context_details(
         db,
         project_id=body.project_id,

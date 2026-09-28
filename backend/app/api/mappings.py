@@ -279,6 +279,11 @@ def _build_context_from_request(data, db: Session, user: User) -> "MappingContex
     python_nodes_pruefen(getattr(data, "python_nodes", None) or [],
                          _gespeicherte_python_nodes(getattr(data, "mapping_id", None), user, db),
                          user)
+    # Jede Verbindung und jedes Dataset, auf das Knoten und Ziele zeigen, muss
+    # für den Benutzer erreichbar sein – sonst liefe hierüber SQL gegen jede
+    # Verbindung der Instanz (auch die WaWi eines fremden Mandanten).
+    from app.core.zugriff import knoten_pruefen
+    knoten_pruefen([data.model_dump()], user, db)
 
     # Targets bevorzugen; Fallback: Legacy-Felder
     targets = getattr(data, "targets", None) or []
@@ -320,6 +325,20 @@ def _build_context_from_request(data, db: Session, user: User) -> "MappingContex
         run_params      = getattr(data, "run_params",      None) or {},
         targets         = targets,
     )
+
+
+def _ausfuehren_pruefen(data, user, db: Session, schreiben: bool = True) -> None:
+    """Ausführen kann in Datenbank-Ziele schreiben – dafür braucht es Editorrecht
+    im Projekt des Mappings bzw. im angegebenen Projekt. Nur eine Exportdatei
+    erzeugen (execute-download) darf auch, wer das Projekt lesen kann."""
+    from app.core.zugriff import schreiben_pruefen, lesen_pruefen
+    projekt = getattr(data, "project_id", None)
+    if getattr(data, "mapping_id", None):
+        m = db.query(Mapping).filter(Mapping.id == data.mapping_id).first()
+        if not m:
+            raise HTTPException(404, "Mapping nicht gefunden")
+        projekt = m.project_id
+    (schreiben_pruefen if schreiben else lesen_pruefen)(projekt, user, db)
 
 
 def mapping_out(m: Mapping, db: Session) -> dict:
@@ -514,6 +533,8 @@ def preview_mapping(data: PreviewRequest, db: Session = Depends(get_db),
 
         result = run_mapping_object(ctx, preview_rows=data.preview_rows or 50)
         return result
+    except HTTPException:
+        raise  # Rechte-/Eingabefehler nicht als Serverfehler melden
     except Exception as e:
         import traceback, logging
         logging.error("Preview error: " + traceback.format_exc())
@@ -586,6 +607,8 @@ def debug_run_mapping(data: PreviewRequest, db: Session = Depends(get_db),
             "result": result,
             "total_duration_ms": total_ms,
         }
+    except HTTPException:
+        raise  # Rechte-/Eingabefehler nicht als Serverfehler melden
     except Exception as e:
         import traceback, logging
         logging.error("Debug-Run error: " + traceback.format_exc())
@@ -611,6 +634,11 @@ def get_sql_schema(
 
     if not sql_text:
         return {"columns": [], "error": "Kein SQL angegeben"}
+
+    from app.core.zugriff import verbindung_pruefen, dataset_pruefen
+    verbindung_pruefen(conn_id, user, db)
+    for _dsid in dataset_ids:
+        dataset_pruefen(_dsid, user, db)
 
     # Markdown-Codeblöcke entfernen (KI packt manchmal ```sql ... ``` drum)
     import re as _re_schema
@@ -717,6 +745,7 @@ def execute_mapping_endpoint(data: ExecuteRequest, db: Session = Depends(get_db)
     from app.core import vorlagen_gate
     vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
+    _ausfuehren_pruefen(data, user, db)
     ctx = _build_context_from_request(data, db, user)
 
     # save_as_dataset Flag in Target eintragen falls gesetzt
@@ -839,6 +868,7 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     from app.core import vorlagen_gate
     vorlagen_gate.pruefe_objekt(db, "mappings", data.mapping_id)
 
+    _ausfuehren_pruefen(data, user, db, schreiben=False)
     ctx = _build_context_from_request(data, db, user)
     if not ctx.targets:
         raise HTTPException(400, "Kein Ziel definiert")
@@ -851,6 +881,7 @@ def execute_download(data: ExecuteRequest, db: Session = Depends(get_db),
     if t_type == "db":
         from app.services.export_service import export_to_db
         from app.models.dataset import DbConnection
+        _ausfuehren_pruefen(data, user, db)  # schreibt in eine Datenbank: Editorrecht
         try:
             result = execute_mapping(**ctx.to_execute_kwargs(t_fields, 999999))
         except Exception as e:

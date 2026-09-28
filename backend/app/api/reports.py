@@ -13,6 +13,8 @@ from app.api.auth import get_current_user
 from app.models.user import User
 from app.models.form import Form
 from app.services import report_catalog
+from app.core.zugriff import (ist_admin, lesen_pruefen, schreiben_pruefen,
+                              verbindung_pruefen)
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
 
@@ -20,6 +22,25 @@ router = APIRouter(prefix="/api/reports", tags=["reports"])
 def _check_editor(user: User):
     if getattr(user, "is_portal_only", False):
         raise HTTPException(403, "Nur Admins und Editoren können Reports bauen")
+
+
+def _quellen_pruefen(entries, user, db) -> None:
+    """Jedes Quell-Cockpit muss lesbar sein – sonst ließen sich Abfragen fremder
+    Projekte über einen eigenen Report herauskopieren."""
+    ids = {e.form_id for e in entries}
+    for f in db.query(Form).filter(Form.id.in_(ids)).all() if ids else []:
+        lesen_pruefen(f.project_id, user, db)
+
+
+def _lade_form(form_id, user, db, schreiben: bool = False, meldung="Formular nicht gefunden"):
+    f = db.query(Form).filter(Form.id == form_id).first()
+    if not f:
+        raise HTTPException(404, meldung)
+    if schreiben:
+        schreiben_pruefen(f.project_id, user, db)
+    else:
+        lesen_pruefen(f.project_id, user, db)
+    return f
 
 
 class CatalogEntry(BaseModel):
@@ -39,7 +60,14 @@ def catalog(project_id: Optional[int] = None, db: Session = Depends(get_db),
             user: User = Depends(get_current_user)):
     """Alle wählbaren Bausteine, gruppiert nach Cockpit und Reiter."""
     _check_editor(user)
+    if project_id is not None:
+        lesen_pruefen(project_id, user, db)
     cockpits = report_catalog.build_catalog(db, project_id)
+    if not ist_admin(user):
+        # Ohne Projektfilter kämen sonst die Cockpits aller Projekte mit.
+        from app.api.projects import can_read_project
+        cockpits = [c for c in cockpits
+                    if can_read_project(c.get("project_id"), user, db)]
     gesamt = sum(c["anzahl"] for c in cockpits)
     gesperrt = sum(1 for c in cockpits for r in c["reiter"]
                    for e in r["eintraege"] if not e["uebernehmbar"])
@@ -54,6 +82,7 @@ def build(data: BuildRequest, db: Session = Depends(get_db),
     name = (data.name or "").strip()
     if not name:
         raise HTTPException(400, "Bitte einen Namen für den Report angeben")
+    _quellen_pruefen(data.entries, user, db)
 
     try:
         gebaut = report_catalog.assemble(
@@ -64,6 +93,8 @@ def build(data: BuildRequest, db: Session = Depends(get_db),
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
+    # Zielprojekt erst nach assemble bekannt (ohne Angabe = Projekt der Quellen).
+    schreiben_pruefen(gebaut["project_id"], user, db)
 
     f = Form(name=name, project_id=gebaut["project_id"],
              schema=gebaut["schema"], created_by=user.id)
@@ -87,9 +118,7 @@ def selection(form_id: int, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """Die Bauteil-Auswahl eines Reports, um den Baukasten damit zu öffnen."""
     _check_editor(user)
-    f = db.query(Form).filter(Form.id == form_id).first()
-    if not f:
-        raise HTTPException(404, "Formular nicht gefunden")
+    f = _lade_form(form_id, user, db)
     bau = (f.schema or {}).get("report_builder") or {}
     zeitraum = next((fd.get("config", {}).get("default")
                      for fd in (f.schema or {}).get("fields") or []
@@ -114,9 +143,8 @@ def rebuild(form_id: int, data: BuildRequest, db: Session = Depends(get_db),
     verschickter Link und ein laufender Zustellplan nicht ins Leere zeigen.
     """
     _check_editor(user)
-    f = db.query(Form).filter(Form.id == form_id).first()
-    if not f:
-        raise HTTPException(404, "Formular nicht gefunden")
+    f = _lade_form(form_id, user, db, schreiben=True)
+    _quellen_pruefen(data.entries, user, db)
     if not ((f.schema or {}).get("report_builder")):
         raise HTTPException(400, "Dieses Formular wurde nicht mit dem Baukasten "
                                  "gebaut und lässt sich hier nicht ändern.")
@@ -163,6 +191,17 @@ class ScheduleIn(BaseModel):
     email_subject: Optional[str] = None
 
 
+def _schedule_pruefen(s, user, db, schreiben: bool = True) -> None:
+    """Ein Zeitplan gehört zum Projekt seines Formulars. Fehlt das Formular,
+    zählt das im Plan hinterlegte Projekt."""
+    f = db.query(Form).filter(Form.id == s.form_id).first() if s.form_id else None
+    pid = f.project_id if f else s.project_id
+    if schreiben:
+        schreiben_pruefen(pid, user, db)
+    else:
+        lesen_pruefen(pid, user, db)
+
+
 def _schedule_out(s) -> dict:
     return {
         "id": s.id, "name": s.name, "form_id": s.form_id,
@@ -184,7 +223,15 @@ def list_schedules(form_id: Optional[int] = None, db: Session = Depends(get_db),
     q = db.query(ReportSchedule)
     if form_id is not None:
         q = q.filter(ReportSchedule.form_id == form_id)
-    return [_schedule_out(s) for s in q.order_by(ReportSchedule.id.desc()).all()]
+    plaene = q.order_by(ReportSchedule.id.desc()).all()
+    if not ist_admin(user):
+        # Pläne tragen Empfänger und Mandant – nur die eigener Projekte zeigen.
+        from app.api.projects import can_read_project
+        projekt_je_form = {f.id: f.project_id for f in db.query(Form).filter(
+            Form.id.in_({s.form_id for s in plaene if s.form_id})).all()} if plaene else {}
+        plaene = [s for s in plaene if can_read_project(
+            projekt_je_form.get(s.form_id, s.project_id), user, db)]
+    return [_schedule_out(s) for s in plaene]
 
 
 @router.post("/schedules")
@@ -196,9 +243,12 @@ def create_schedule(data: ScheduleIn, db: Session = Depends(get_db),
 
     if not data.form_id:
         raise HTTPException(400, "form_id fehlt")
-    f = db.query(Form).filter(Form.id == data.form_id).first()
-    if not f:
-        raise HTTPException(404, "Report-Formular nicht gefunden")
+    f = _lade_form(data.form_id, user, db, schreiben=True,
+                   meldung="Report-Formular nicht gefunden")
+    # Der Plan läuft mit dem Projekt des Formulars; ein anderes Projekt hieße,
+    # fremde Zahlen über das eigene Formular zu verschicken.
+    if data.project_id is not None and data.project_id != f.project_id:
+        raise HTTPException(403, "Der Zeitplan muss im Projekt des Formulars liegen")
 
     # Ohne ausdrückliche Wahl gilt der Mandant, den der Anlegende gerade offen
     # hat. Sonst fiele der Plan stumm auf den Projekt-Standard zurück und
@@ -209,6 +259,8 @@ def create_schedule(data: ScheduleIn, db: Session = Depends(get_db),
     if mandant_id is None:
         from app.services import mandant_service
         mandant_id = mandant_service.aktiver(pid, user, db)
+    else:
+        verbindung_pruefen(mandant_id, user, db)
 
     s = ReportSchedule(
         name=(data.name or f.name), form_id=data.form_id,
@@ -239,6 +291,13 @@ def update_schedule(schedule_id: int, data: ScheduleIn, db: Session = Depends(ge
     s = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not s:
         raise HTTPException(404, "Zeitplan nicht gefunden")
+    _schedule_pruefen(s, user, db)
+    if data.project_id is not None:
+        f = db.query(Form).filter(Form.id == s.form_id).first() if s.form_id else None
+        if data.project_id != (f.project_id if f else s.project_id):
+            raise HTTPException(403, "Der Zeitplan muss im Projekt des Formulars liegen")
+    if data.mandant_id is not None:
+        verbindung_pruefen(data.mandant_id, user, db)
 
     for feld in ("name", "cron_expr", "active", "zeitraum_preset", "params",
                  "sections", "email_to", "email_subject", "mandant_id", "project_id"):
@@ -265,6 +324,7 @@ def delete_schedule(schedule_id: int, db: Session = Depends(get_db),
     s = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not s:
         raise HTTPException(404, "Zeitplan nicht gefunden")
+    _schedule_pruefen(s, user, db)
     unregister_report_job(s.id)
     db.delete(s)
     safe_commit(db)
@@ -283,6 +343,8 @@ def run_schedule_now(schedule_id: int, db: Session = Depends(get_db),
     s = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not s:
         raise HTTPException(404, "Zeitplan nicht gefunden")
+    # Sofortlauf verschickt Mails – das ist eine Änderung, kein Lesen.
+    _schedule_pruefen(s, user, db)
 
     # Ein fehlender SMTP-Server ist der wahrscheinlichste Grund, warum keine Mail
     # ankommt. Das gehört als klare Ansage nach vorn, nicht als stiller Fehlschlag

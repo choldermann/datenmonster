@@ -33,11 +33,34 @@ def _check_editor(user: User):
         raise HTTPException(403, "Nur Admins und Editoren können Vorhaben bauen")
 
 
-def _hole(db: Session, vorhaben_id: int) -> Vorhaben:
+def _hole(db: Session, vorhaben_id: int, user: User, schreiben: bool = False) -> Vorhaben:
+    """Vorhaben laden und am Projekt prüfen. Bauen und Rückbau legen Objekte an
+    bzw. LÖSCHEN sie – das darf nur, wer im Projekt Editor ist."""
     v = db.query(Vorhaben).filter(Vorhaben.id == vorhaben_id).first()
     if not v:
         raise HTTPException(404, "Vorhaben nicht gefunden")
+    _projekt_pruefen(db, v.project_id, user, schreiben, erstellt_von=v.created_by)
     return v
+
+
+def _projekt_pruefen(db: Session, project_id, user: User, schreiben: bool,
+                     erstellt_von=None) -> None:
+    from app.core.zugriff import ist_admin, lesen_pruefen, schreiben_pruefen
+    if ist_admin(user):
+        return
+    # Projektlose Vorhaben gehören dem, der sie angelegt hat – sonst könnte ein
+    # Editor ohne Projektauswahl sein eigenes Vorhaben nie bauen.
+    if project_id is None and erstellt_von is not None and erstellt_von == user.id:
+        return
+    (schreiben_pruefen if schreiben else lesen_pruefen)(project_id, user, db)
+
+
+def _sichtbar(db: Session, v: Vorhaben, user: User) -> bool:
+    try:
+        _projekt_pruefen(db, v.project_id, user, False, erstellt_von=v.created_by)
+        return True
+    except HTTPException:
+        return False
 
 
 def _artefakte_out(db: Session, v: Vorhaben) -> list:
@@ -94,6 +117,8 @@ def betrieb_lesen(project_id: Optional[int] = None, db: Session = Depends(get_db
     wissen, aus welcher Datenbank sie stammt.
     """
     _check_editor(user)
+    if project_id is not None:
+        _projekt_pruefen(db, project_id, user, False)
     return betrieb.aufloesen(db, project_id, user)
 
 
@@ -110,6 +135,8 @@ async def verstehen(data: VerstehenRequest, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     """Satz → Bauzettel. Legt das Vorhaben als **Entwurf** an, baut nichts."""
     _check_editor(user)
+    if data.project_id is not None:
+        _projekt_pruefen(db, data.project_id, user, True)
     from app.api.ai import _require_ai
 
     svc = _require_ai(db)
@@ -170,14 +197,15 @@ def liste(project_id: Optional[int] = None, db: Session = Depends(get_db),
     q = db.query(Vorhaben)
     if project_id is not None:
         q = q.filter(Vorhaben.project_id == project_id)
-    return [_out(db, v) for v in q.order_by(Vorhaben.id.desc()).all()]
+    return [_out(db, v) for v in q.order_by(Vorhaben.id.desc()).all()
+            if _sichtbar(db, v, user)]
 
 
 @router.get("/vorhaben/{vorhaben_id}")
 def holen(vorhaben_id: int, db: Session = Depends(get_db),
           user: User = Depends(get_current_user)):
     _check_editor(user)
-    return _out(db, _hole(db, vorhaben_id), mit_artefakten=True)
+    return _out(db, _hole(db, vorhaben_id, user), mit_artefakten=True)
 
 
 class VorhabenPatch(BaseModel):
@@ -192,7 +220,7 @@ def aendern(vorhaben_id: int, data: VorhabenPatch, db: Session = Depends(get_db)
             user: User = Depends(get_current_user)):
     """Bauzettel nachbessern: Häkchen setzen, Eingaben korrigieren, umbenennen."""
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
 
     if data.name is not None:
         v.name = data.name.strip() or v.name
@@ -234,7 +262,7 @@ def aufloesen(vorhaben_id: int, db: Session = Depends(get_db),
     er löscht.
     """
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
     n = (db.query(VorhabenArtefakt)
            .filter(VorhabenArtefakt.vorhaben_id == v.id).delete())
     db.delete(v)
@@ -253,7 +281,7 @@ def eintrag_loeschen(vorhaben_id: int, db: Session = Depends(get_db),
     das ganze Verfahren antritt.
     """
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
     offen = (db.query(VorhabenArtefakt)
                .filter(VorhabenArtefakt.vorhaben_id == v.id).count())
     if offen:
@@ -271,8 +299,38 @@ def adoptieren_vorschau(project_id: Optional[int] = None, db: Session = Depends(
                         user: User = Depends(get_current_user)):
     """Vorhandene Auswertungen und Reports, die noch zu keinem Vorhaben gehören."""
     _check_editor(user)
-    eintraege = adoptieren.finden(db, project_id)
+    if project_id is not None:
+        _projekt_pruefen(db, project_id, user, False)
+    eintraege = [e for e in adoptieren.finden(db, project_id)
+                 if _adoptierbar(db, e, user, False)]
     return {"eintraege": eintraege, "anzahl": len(eintraege)}
+
+
+def _adoptierbar(db: Session, e: dict, user: User, schreiben: bool) -> bool:
+    """Auswertungen und Reports fremder Projekte weder zeigen noch übernehmen."""
+    from app.core.zugriff import ist_admin
+    if ist_admin(user):
+        return True
+    art = (e or {}).get("art")
+    try:
+        ziel = int((e or {}).get("id"))
+    except (TypeError, ValueError):
+        return False
+    if art == "adhoc_query":
+        from app.models.report import AdHocQuery
+        obj = db.query(AdHocQuery).filter(AdHocQuery.id == ziel).first()
+    elif art == "report":
+        from app.models.form import Form
+        obj = db.query(Form).filter(Form.id == ziel).first()
+    else:
+        return True  # unbekannte Art überspringt der Dienst ohnehin
+    if obj is None:
+        return True
+    try:
+        _projekt_pruefen(db, obj.project_id, user, schreiben)
+        return True
+    except HTTPException:
+        return False
 
 
 class AdoptionRequest(BaseModel):
@@ -289,6 +347,11 @@ def adoptieren_ausfuehren(data: AdoptionRequest, db: Session = Depends(get_db),
     damit Rückbau und Fremdnutzungsprüfung.
     """
     _check_editor(user)
+    if data.project_id is not None:
+        _projekt_pruefen(db, data.project_id, user, True)
+    for e in data.auswahl or []:
+        if not _adoptierbar(db, e, user, True):
+            raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     try:
         return adoptieren.uebernehmen(db, data.auswahl, data.project_id, user.id)
     except Exception as e:
@@ -304,7 +367,7 @@ def vorschau(vorhaben_id: int, db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
     """Rechnet die Schritte mit echten Zahlen – ohne irgendetwas zu speichern."""
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user)
     try:
         return {"schritte": bauen_service.vorschau(db, v, user.id)}
     except WerkzeugFehler as e:
@@ -316,7 +379,7 @@ def bauen(vorhaben_id: int, db: Session = Depends(get_db),
           user: User = Depends(get_current_user)):
     """Baut das Vorhaben – ganz oder gar nicht."""
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
     if v.status == "installiert":
         raise HTTPException(409, "Das Vorhaben ist schon gebaut. Zum Ändern „Neu "
                                  "bauen“ verwenden.")
@@ -337,7 +400,7 @@ def neu_bauen(vorhaben_id: int, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """Zurückbauen und mit dem geänderten Bauplan neu bauen."""
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
     try:
         erg = bauen_service.neu_bauen(db, v, user.id)
     except WerkzeugFehler as e:
@@ -375,7 +438,7 @@ def als_template(vorhaben_id: int, data: TemplateRequest,
     from app.api.templates import CreateTemplateBody, create_template_from_project
     from app.models.report import AdHocQuery
 
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user)
     if v.status != "installiert":
         raise HTTPException(400, "Nur ein gebautes Vorhaben lässt sich ausgeben.")
 
@@ -434,7 +497,7 @@ def rueckbau_vorschau(vorhaben_id: int, db: Session = Depends(get_db),
                       user: User = Depends(get_current_user)):
     """Was gelöscht würde, was nur bereinigt wird und was noch benutzt wird."""
     _check_editor(user)
-    return rueckbau.pruefen(db, _hole(db, vorhaben_id))
+    return rueckbau.pruefen(db, _hole(db, vorhaben_id, user))
 
 
 @router.delete("/vorhaben/{vorhaben_id}")
@@ -448,7 +511,7 @@ def rueckbau_ausfuehren(vorhaben_id: int, nur_ungenutzte: bool = True,
     gelöscht – dann aber sehenden Auges.
     """
     _check_editor(user)
-    v = _hole(db, vorhaben_id)
+    v = _hole(db, vorhaben_id, user, schreiben=True)
     try:
         return rueckbau.ausfuehren(db, v, nur_ungenutzte=nur_ungenutzte)
     except Exception as e:

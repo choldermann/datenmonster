@@ -109,14 +109,13 @@ def _schema_table_count(c: DbConnection) -> int | None:
 
 
 def _require_read_conn(conn_id: int, user, db) -> "DbConnection":
-    """Lädt eine Verbindung und prüft Lesezugriff."""
-    from app.api.projects import can_read_project
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
-    if not can_read_project(conn.project_id, user, db):
-        raise HTTPException(403, "Kein Zugriff auf diese Verbindung")
-    return conn
+    """Lädt eine Verbindung und prüft Lesezugriff.
+
+    Früher nur über die alte db_connections.project_id – und projektlose
+    (zentrale) Verbindungen waren damit für jeden lesbar. Jetzt zählt die
+    Zuordnung zu einem Projekt des Benutzers (app.core.zugriff)."""
+    from app.core.zugriff import lade_verbindung
+    return lade_verbindung(conn_id, user, db)
 
 
 @router.get("/")
@@ -132,15 +131,15 @@ def list_connections(project_id: Optional[int] = None, db: Session = Depends(get
             return []
         q = q.filter(DbConnection.id.in_(erlaubt))
     else:
-        accessible = get_accessible_project_ids(user, db)
-        if accessible is not None:
-            # Administratoren sehen alles; sonst zählt jede Zuordnung zu einem
-            # zugänglichen Projekt, dazu die projektlosen (globalen).
-            zugeordnet = {r.connection_id for r in db.query(ProjektVerbindung)
-                          .filter(ProjektVerbindung.project_id.in_(accessible)).all()}
-            q = q.filter((DbConnection.project_id.in_(accessible))
-                         | (DbConnection.project_id.is_(None))
-                         | (DbConnection.id.in_(zugeordnet) if zugeordnet else False))
+        # Administratoren sehen alles; sonst, was einem eigenen Projekt
+        # zugeordnet ist. Projektlose (zentrale) Verbindungen gehören nicht mehr
+        # automatisch dazu – zentral heißt: erst die Zuordnung macht sie nutzbar.
+        from app.core.zugriff import erreichbare_verbindungen
+        erreichbar = erreichbare_verbindungen(user, db)
+        if erreichbar is not None:
+            if not erreichbar:
+                return []
+            q = q.filter(DbConnection.id.in_(erreichbar))
     return [conn_out(c) for c in q.order_by(DbConnection.id).all()]
 
 
@@ -165,7 +164,7 @@ def create_connection(data: ConnectionCreate, db: Session = Depends(get_db), use
 @router.post("/import-connection")
 def import_connection(data: ConnectionCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Kopiert eine bestehende Verbindungskonfiguration in ein neues Projekt."""
-    require_editor(data.project_id, user, db)
+    _nur_admin(user)  # legt eine Verbindung an – wie POST / nur für Admins
     kontingent.pruefe(db, "verbindungen")
     d = data.model_dump()
     if d.get("password"):
@@ -323,9 +322,8 @@ def list_columns(conn_id: int, table: str, db: Session = Depends(get_db), user: 
 
 @router.post("/{conn_id}/preview")
 def preview_query(conn_id: int, req: PreviewRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    from app.core.zugriff import verbindung_bearbeiten_pruefen
+    conn = verbindung_bearbeiten_pruefen(conn_id, user, db)
     try:
         return query_preview(conn, req.sql)
     except Exception as e:
@@ -334,9 +332,8 @@ def preview_query(conn_id: int, req: PreviewRequest, db: Session = Depends(get_d
 
 @router.post("/{conn_id}/import")
 def import_query(conn_id: int, req: ImportRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    from app.core.zugriff import verbindung_bearbeiten_pruefen
+    conn = verbindung_bearbeiten_pruefen(conn_id, user, db)
     require_editor(req.project_id, user, db)
     try:
         df, raw_types = query_full_with_types(conn, req.sql)
@@ -374,9 +371,8 @@ class ReimportRequest(BaseModel):
 
 @router.post("/{conn_id}/reimport/{dataset_id}")
 def reimport_query(conn_id: int, dataset_id: int, req: ReimportRequest, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    conn = db.query(DbConnection).filter(DbConnection.id == conn_id).first()
-    if not conn:
-        raise HTTPException(404, "Verbindung nicht gefunden")
+    from app.core.zugriff import verbindung_bearbeiten_pruefen
+    conn = verbindung_bearbeiten_pruefen(conn_id, user, db)
     ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
     if not ds:
         raise HTTPException(404, "Dataset nicht gefunden")
@@ -963,6 +959,10 @@ def zuordnung_lesen(project_id: int, db: Session = Depends(get_db),
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
     erlaubt = _verbundene_ids(project_id, db)
     alle = db.query(DbConnection).order_by(DbConnection.id).all()
+    if not getattr(user, "is_admin", False):
+        # Zuordnen dürfen nur Admins; alle anderen sehen nur, was schon da ist –
+        # nicht Host und Benutzer sämtlicher Verbindungen der Instanz.
+        alle = [c for c in alle if c.id in erlaubt]
     # is_mandant kommt mit, damit im Dialog steht, was die Zuordnung nebenbei
     # bewirkt: eine als Mandant gekennzeichnete Verbindung landet mit dem Haken
     # auch im Umschalter dieses Projekts.

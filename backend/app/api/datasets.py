@@ -294,7 +294,7 @@ def xml_structure(
     user: User = Depends(get_current_user),
 ):
     from app.api.projects import can_read_project
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     if not can_read_project(ds.project_id, user, db):
         raise HTTPException(403, "Kein Zugriff")
     if ds.file_type != "xml" or not ds.file_path:
@@ -320,7 +320,7 @@ def xml_node_fields(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     if ds.file_type != "xml" or not ds.file_path:
         raise HTTPException(400, "Kein XML-Dataset")
     with open(ds.file_path, "rb") as f:
@@ -343,7 +343,7 @@ def xml_configure(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user, schreiben=True)
     if ds.file_type != "xml" or not ds.file_path:
         raise HTTPException(400, "Kein XML-Dataset")
     try:
@@ -383,7 +383,7 @@ def get_filtered_preview(
     from app.connectors.factory import get_connector
     from app.services.mapping_service import _apply_filter
 
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     connector = get_connector(dataset_id)
 
     try:
@@ -419,7 +419,7 @@ def get_dataset_data(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
 
     _FILE_TYPES = {"csv", "xlsx", "xls", "xml", "json", "ods", "static"}
     _DB_TYPES = {"db_mssql", "db_mysql", "db_postgresql"}
@@ -659,7 +659,7 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
     from app.models.dataset import DbConnection
     from app.services.db_service import query_full
 
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
 
     # ── Plugin-Dataset: Spalten + Zeilenzahl live holen ──────────────────────
@@ -711,7 +711,7 @@ def detect_schema(dataset_id: int, db: Session = Depends(get_db), user: User = D
     from app.models.dataset import DbConnection
     from sqlalchemy.orm.attributes import flag_modified
 
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
 
     if not ds.source_connection_id or not ds.source_sql:
@@ -745,13 +745,13 @@ class DatasetUpdate(BaseModel):
 @router.get("/{dataset_id}")
 def get_dataset(dataset_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Gibt ein einzelnes Dataset zurück – inkl. aktueller column_types."""
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     return dataset_out(ds)
 
 
 @router.patch("/{dataset_id}")
 def update_dataset(dataset_id: int, data: DatasetUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
     if data.name:
         ds.name = data.name
@@ -787,7 +787,7 @@ def update_column_types(
     Body: { "col_name": "integer" | "decimal" | "string" | "date" | "datetime" | "bool" }
     Bereits vorhandene Typen bleiben erhalten, nur die übermittelten werden geändert.
     """
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
 
     VALID_TYPES = {"string", "integer", "decimal", "date", "datetime", "bool", "boolean"}
@@ -823,7 +823,7 @@ def put_column_types(
     Body: { "col_name": { "type": "integer", "raw": "...", "is_primary": true, "autoincrement": true } }
     Wird vom EditDatasetModal und ManualDatasetModal verwendet.
     """
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
 
     VALID_TYPES = {"string", "integer", "decimal", "date", "datetime", "bool", "boolean"}
@@ -857,7 +857,7 @@ def delete_dataset(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    ds = _get_ds(dataset_id, db)
+    ds = _get_ds(dataset_id, db, user)
     require_editor(ds.project_id, user, db)
 
     # Prüfen ob Dataset in Mappings verwendet wird
@@ -952,11 +952,12 @@ def _sanitize_server_path(path: str) -> str:
     return path
 
 
-def _get_ds(dataset_id: int, db: Session) -> Dataset:
-    ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not ds:
-        raise HTTPException(404, "Dataset nicht gefunden")
-    return ds
+def _get_ds(dataset_id: int, db: Session, user, schreiben: bool = False) -> Dataset:
+    """Dataset laden UND Zugriff prüfen. Früher lud diese Funktion nur – jeder
+    angemeldete Benutzer konnte fremde Datasets lesen und sogar überschreiben.
+    Der Benutzer ist deshalb Pflicht: kein Aufruf kann die Prüfung vergessen."""
+    from app.core.zugriff import lade_dataset
+    return lade_dataset(dataset_id, user, db, schreiben=schreiben)
 
 
 # ─── Access Import ────────────────────────────────────────────────────────────
@@ -1179,9 +1180,7 @@ class RowsBody(BaseModel):
 def get_rows(dataset_id: int, db: Session = Depends(get_db),
              user: User = Depends(get_current_user)):
     """Liest alle Zeilen eines Datasets."""
-    ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not ds:
-        raise HTTPException(404, "Dataset nicht gefunden")
+    ds = _get_ds(dataset_id, db, user)
     try:
         from app.services.file_service import read_dataset
         result = read_dataset(dataset_id, page=0, page_size=99999)
@@ -1196,9 +1195,7 @@ def get_rows(dataset_id: int, db: Session = Depends(get_db),
 def save_rows(dataset_id: int, body: RowsBody, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
     """Ersetzt alle Zeilen eines Datasets. Autoincrement-Felder werden automatisch befüllt."""
-    ds = db.query(Dataset).filter(Dataset.id == dataset_id).first()
-    if not ds:
-        raise HTTPException(404, "Dataset nicht gefunden")
+    ds = _get_ds(dataset_id, db, user, schreiben=True)
     import json, os
     from app.services.file_service import UPLOAD_DIR, infer_column_types
     import pandas as pd

@@ -30,6 +30,27 @@ def _require_admin(user: User) -> None:
         raise HTTPException(403, "Nur Administratoren")
 
 
+def _kontext_pruefen(db, user, connection_id=None, mapping_id=None,
+                     dataset_ids=(), knoten=()) -> None:
+    """Die KI-Endpunkte bauen ihren Kontext aus Schema, Mapping und Datasets der
+    übergebenen IDs – ohne Prüfung landete so Wissen aus fremden Projekten und
+    Verbindungen im Prompt (und bei der SQL-Probe sogar echte Abfragen)."""
+    from app.core.zugriff import ist_admin, verbindung_pruefen, dataset_pruefen, \
+        knoten_pruefen, lesen_pruefen
+    if ist_admin(user):
+        return
+    verbindung_pruefen(connection_id, user, db)
+    for d in dataset_ids or ():
+        dataset_pruefen(d, user, db)
+    if knoten:
+        knoten_pruefen(knoten, user, db)
+    if mapping_id:
+        from app.models.mapping import Mapping
+        m = db.query(Mapping).filter(Mapping.id == mapping_id).first()
+        if m:
+            lesen_pruefen(m.project_id, user, db)
+
+
 def _require_ai(db, provider: Optional[str] = None):
     """`provider` übersteuert die globale Einstellung für DIESEN Aufruf – für
     Oberflächen, die die Wahl selbst anbieten. Unbekannte Werte werden ignoriert,
@@ -75,6 +96,7 @@ class DeleteModelRequest(BaseModel):
 @router.post("/models/delete")
 async def delete_model(body: DeleteModelRequest, user: User = Depends(get_current_user)):
     """Delete a locally installed Ollama model."""
+    _require_admin(user)  # Modelle gehören der ganzen Instanz
     from app.api.settings import get_setting
     from app.core.database import SessionLocal
     db = SessionLocal()
@@ -101,6 +123,7 @@ async def pull_model(
     user: User = Depends(get_current_user),
 ):
     """Stream Ollama pull progress as SSE."""
+    _require_admin(user)  # Download belegt Platte und Bandbreite der Instanz
     from app.api.settings import get_setting
     from app.core.database import SessionLocal
     db = SessionLocal()
@@ -360,6 +383,7 @@ def ai_purchase_invoice(req: PurchaseInvoiceReq, db: Session = Depends(get_db),
                         user: User = Depends(get_current_user)):
     """Credit-Paket bestellen → Gateway erstellt eine Lexware-Rechnung. Credits
     werden erst nach Zahlungseingang manuell freigeschaltet."""
+    _require_admin(user)  # löst eine kostenpflichtige Bestellung aus
     try:
         data, status = _gateway_post(db, "/purchase/invoice", {"package_code": req.package_code})
     except Exception as e:
@@ -379,6 +403,8 @@ async def test_connection(
     user: User = Depends(get_current_user),
 ):
     """Tests a given Ollama URL and model without requiring ai_enabled=true."""
+    # Frei wählbare URL = Anfrage vom Server aus an beliebige Adressen (SSRF)
+    _require_admin(user)
     from app.services.ai_service import AIService
     svc = AIService(base_url=body.base_url, model=body.model)
     status = await svc.check_status()
@@ -398,6 +424,7 @@ async def explain_sql(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, body.connection_id, body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.sql_explain_context(body.sql, body.connection_id, body.mapping_id)
@@ -419,6 +446,7 @@ async def generate_sql(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, body.connection_id, body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.sql_generate_context(body.description, body.connection_id, body.mapping_id)
@@ -446,6 +474,7 @@ async def generate_python(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, mapping_id=body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.python_generate_context(body.mapping_id, body.node_id, body.current_script,
@@ -470,6 +499,7 @@ async def explain_error(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, mapping_id=body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.error_explain_context(body.error, body.node_type, body.code, body.mapping_id)
@@ -1177,6 +1207,7 @@ async def generate_expression(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, mapping_id=body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.expression_generate_context(body.mapping_id, body.node_id, body.field_name,
@@ -1199,6 +1230,7 @@ async def table_context(
     user: User = Depends(get_current_user),
 ):
     """Return keyword+FK filtered table list for the dataset wizard UI."""
+    _kontext_pruefen(db, user, body.connection_id)
     ctx = AIContextBuilder(db)
     return ctx.get_table_context(body.connection_id, body.description)
 
@@ -1215,6 +1247,7 @@ async def suggest_datasets(
     user: User = Depends(get_current_user),
 ):
     """Stream AI dataset suggestions as SSE; final event contains parsed JSON."""
+    _kontext_pruefen(db, user, body.connection_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context = ctx.dataset_suggest_context(body.connection_id, body.description, body.selected_tables)
@@ -1557,6 +1590,15 @@ async def chat(
 
     # Memory-Kontext aufbauen
     project_id = body.page_context.get("project_id") or body.page_context.get("currentData", {}).get("project_id")
+    # Projektwissen nur aus Projekten, die der Benutzer lesen darf. Still statt
+    # 403: der Chat läuft auch im Portal und soll dort nicht abbrechen.
+    if project_id:
+        from app.api.projects import can_read_project
+        try:
+            if not can_read_project(int(project_id), user, db):
+                project_id = None
+        except (TypeError, ValueError):
+            project_id = None
     memory_context = ""
     try:
         from app.services.ai_memory_service import build_memory_context
@@ -1570,6 +1612,8 @@ async def chat(
         # Verbindungsnamen für Datasource-Wissen ermitteln
         _conn_ids = (body.page_context.get("currentData") or {}).get("connectionIds", [])
         _ds_names: list[str] = []
+        from app.core.zugriff import darf_verbindung
+        _conn_ids = [c for c in (_conn_ids or []) if darf_verbindung(c, user, db)]
         if _conn_ids:
             _conns = db.query(DbConnection).filter(DbConnection.id.in_(_conn_ids)).all()
             _ds_names = [c.name for c in _conns if c.name]
@@ -1848,6 +1892,7 @@ def get_mapping_context(
     """Gibt FK-Beziehungen zwischen Canvas-Datasets zurück (aus Schema-Cache)."""
     if not body.dataset_ids:
         return {"relationships": []}
+    _kontext_pruefen(db, user, dataset_ids=body.dataset_ids)
 
     from app.models.dataset import Dataset, DbConnection
 
@@ -1933,6 +1978,8 @@ def schema_search(
     """Schema-Wissensdatenbank: Canvas-Tabellen + implizite FK-Nachbarn (Tiefe 1)."""
     if not body.connection_ids:
         return {"schema_text": "", "table_count": 0}
+    for _cid in body.connection_ids:
+        _kontext_pruefen(db, user, _cid)
 
     from app.models.dataset import DbConnection
 
@@ -2146,6 +2193,8 @@ async def suggest_tables(
     user: User = Depends(get_current_user),
 ):
     """KI analysiert DB-Schema und schlägt passende Canvas-Tabellen vor (SSE)."""
+    for _cid in body.connection_ids:
+        _kontext_pruefen(db, user, _cid)
     from app.api.settings import get_setting
     from app.models.dataset import Dataset, DbConnection
     from app.services.schema_cache_service import filter_schema_by_keywords, schema_json_to_text
@@ -2735,6 +2784,9 @@ async def generate_nodes(
     user: User = Depends(get_current_user),
 ):
     """Generiert Mapping-Nodes aus einer natürlichsprachlichen Beschreibung (SSE)."""
+    # Die SQL-Probe läuft echt gegen connection_id bzw. liest die Canvas-Datasets
+    _kontext_pruefen(db, user, body.connection_id, body.mapping_id,
+                     knoten=[body.canvas_nodes])
     svc = _require_ai(db)
 
     ds_info = ""
@@ -2839,6 +2891,7 @@ async def suggest_mapping(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    _kontext_pruefen(db, user, mapping_id=body.mapping_id)
     svc = _require_ai(db)
     ctx = AIContextBuilder(db)
     system, context, source_fields, target_fields = ctx.mapping_suggest_context(body.mapping_id)
