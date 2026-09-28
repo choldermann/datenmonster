@@ -12,4 +12,5 @@ class User(Base):
     is_active = Column(Boolean, default=True)
     is_admin = Column(Boolean, default=False)
     is_portal_only = Column(Boolean, default=False)  # sieht nur /portal, kein Editor
+    theme = Column(String, nullable=True)  # Farbschema-ID aus frontend/src/themes.ts, None = Standard
     created_at = Column(DateTime(timezone=True), server_default=func.now())

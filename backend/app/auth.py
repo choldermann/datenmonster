@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.security import verify_password, hash_password, create_access_token, get_current_user, ist_deaktiviert
 from app.core import kontingent
 from app.models.user import User
+import re
 import time
 import threading
 
@@ -68,6 +69,7 @@ class Token(BaseModel):
     username: str
     is_admin: bool = False
     is_portal_only: bool = False
+    theme: str | None = None  # fehlt es hier, filtert FastAPI es aus der Antwort
 
 
 @router.post("/token", response_model=Token)
@@ -108,6 +110,7 @@ def login(
         "username":       user.username,
         "is_admin":       bool(getattr(user, "is_admin", False)),
         "is_portal_only": bool(getattr(user, "is_portal_only", False)),
+        "theme":          user.theme,
     }
 
 
@@ -118,6 +121,7 @@ def me(current_user: User = Depends(get_current_user)):
         "username":       current_user.username,
         "is_admin":       bool(getattr(current_user, "is_admin", False)),
         "is_portal_only": bool(getattr(current_user, "is_portal_only", False)),
+        "theme":          current_user.theme,
     }
 
 
@@ -217,3 +221,20 @@ def change_password(data: ChangePassword, db: Session = Depends(get_db), user: U
     user.hashed_password = hash_password(data.new_password)
     db.commit()
     return {"ok": True}
+
+
+class ThemeWahl(BaseModel):
+    theme: str | None = None
+
+
+@router.put("/theme")
+def set_theme(data: ThemeWahl, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Farbschema des angemeldeten Benutzers. Die Liste der Themes kennt nur das
+    Frontend (themes.ts); hier wird nur die Form geprueft, ein unbekannter Wert
+    faellt dort auf Dunkel zurueck."""
+    wert = (data.theme or "").strip() or None
+    if wert is not None and not re.fullmatch(r"[a-z0-9-]{1,32}", wert):
+        raise HTTPException(status_code=400, detail="Ungültiges Farbschema")
+    user.theme = wert
+    db.commit()
+    return {"theme": user.theme}

@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
-import { Sun, Moon, Sparkles, Cpu } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type React from "react";
+import { Sparkles, Cpu, Palette, Check } from "lucide-react";
 import api from "../../api/client";
-import { useTheme, istDunkel } from "../../hooks/useTheme";
+import { useTheme } from "../../hooks/useTheme";
+import { THEMES, GRUPPEN, findeTheme } from "../../themes";
 import { getAiProvider, setAiProvider, onAiProviderChange } from "../../services/aiProvider";
 
 const S = {
@@ -10,25 +12,76 @@ const S = {
 };
 const ACCENT = "var(--accent)";
 
-/** Hell/Dunkel umschalten. Nutzt denselben Speicher wie der Editor (dm_theme),
- *  d.h. die Wahl gilt geräteweit und bleibt nach dem Abmelden erhalten. */
+/** Farbschema wählen – dieselbe Auswahl wie in den Systemeinstellungen, damit
+ *  auch reine Portal-Benutzer ihr Theme bekommen. Gespeichert wird im Konto. */
 export function ThemeUmschalter() {
   const { mode, setMode } = useTheme();
-  // Aus dem Zustand ableiten, nicht aus dem DOM: das Attribut wird erst im Effekt
-  // gesetzt, die Beschriftung hinkte sonst einen Klick hinterher.
-  // Bei einem Retro-/Ruhig-Theme zählt, ob es hell oder dunkel ist.
-  const dunkel = istDunkel(mode);
+  const [offen, setOffen] = useState(false);
+  const rahmen = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!offen) return;
+    const zu = (e: MouseEvent) => { if (!rahmen.current?.contains(e.target as Node)) setOffen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOffen(false); };
+    document.addEventListener("mousedown", zu);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", zu); document.removeEventListener("keydown", esc); };
+  }, [offen]);
+
+  const name = mode === "system" ? "System" : (findeTheme(mode)?.label || "Dunkel");
+  const eintrag = (wert: string, label: string, farbfeld: React.ReactNode) => {
+    const aktiv = mode === wert;
+    return (
+      <button key={wert} onClick={() => { setMode(wert); setOffen(false); }}
+        style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", padding: "6px 8px",
+          borderRadius: 6, border: "none", cursor: "pointer", textAlign: "left", fontSize: 12,
+          backgroundColor: aktiv ? "var(--accent-dim)" : "transparent",
+          color: aktiv ? ACCENT : S.textBright }}>
+        {farbfeld}
+        <span style={{ flex: 1 }}>{label}</span>
+        {aktiv && <Check size={13} />}
+      </button>
+    );
+  };
+
   return (
-    <button
-      onClick={() => setMode(dunkel ? "light" : "dark")}
-      title={dunkel ? "Zur hellen Ansicht wechseln" : "Zur dunklen Ansicht wechseln"}
-      aria-label={dunkel ? "Helle Ansicht" : "Dunkle Ansicht"}
-      style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 9px",
-        borderRadius: 7, border: `1px solid ${S.border}`, backgroundColor: "transparent",
-        color: S.textDim, cursor: "pointer", fontSize: 11.5 }}>
-      {dunkel ? <Sun size={13} /> : <Moon size={13} />}
-      {dunkel ? "Hell" : "Dunkel"}
-    </button>
+    <div ref={rahmen} style={{ position: "relative" }}>
+      <button onClick={() => setOffen(o => !o)} title="Farbschema wählen" aria-label="Farbschema wählen"
+        aria-expanded={offen}
+        style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 9px",
+          borderRadius: 7, border: `1px solid ${S.border}`, backgroundColor: "transparent",
+          color: S.textDim, cursor: "pointer", fontSize: 11.5 }}>
+        <Palette size={13} />
+        {name}
+      </button>
+      {offen && (
+        <div style={{ position: "absolute", right: 0, top: "calc(100% + 6px)", zIndex: 1000, width: 230,
+          maxHeight: "70vh", overflowY: "auto", padding: 6, borderRadius: 8,
+          backgroundColor: "var(--bg-card)", border: `1px solid ${S.border}`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.35)" }}>
+          {GRUPPEN.map(g => (
+            <div key={g.id} style={{ marginBottom: 4 }}>
+              <div className="label" style={{ padding: "6px 8px 2px", marginBottom: 0 }}>{g.label}</div>
+              {THEMES.filter(t => t.gruppe === g.id).map(t => eintrag(t.id, t.label, <Farbfeld id={t.id} />))}
+              {g.id === "klassisch" && eintrag("system", "System",
+                <span style={{ display: "flex" }}><Farbfeld id="light" halb /><Farbfeld id="dark" halb /></span>)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Kleines Farbmuster eines Themes (Hintergrund, Karte, Akzent). */
+function Farbfeld({ id, halb = false }: { id: string; halb?: boolean }) {
+  return (
+    <span data-theme={id} style={{ display: "flex", alignItems: "center", gap: 2, padding: 3,
+      width: halb ? 17 : 34, height: 20, overflow: "hidden", flexShrink: 0,
+      backgroundColor: "var(--bg-main)", border: "1px solid var(--border)", borderRadius: 4 }}>
+      <span style={{ width: 12, height: 12, flexShrink: 0, backgroundColor: "var(--bg-card)", border: "1px solid var(--border)" }} />
+      <span style={{ width: 12, height: 12, flexShrink: 0, backgroundColor: "var(--accent)" }} />
+    </span>
   );
 }
 

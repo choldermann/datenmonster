@@ -17,7 +17,7 @@ import re
 ALLE = None  # jede Methode
 
 _REGELN = [
-    (ALLE,               r"/api/auth/(me|change-password)"),
+    (ALLE,               r"/api/auth/(me|change-password|theme)"),
     (ALLE,               r"/api/portal(/.*)?"),
     ({"GET"},            r"/api/license(/kontingent)?"),
     ({"GET"},            r"/api/mandanten"),

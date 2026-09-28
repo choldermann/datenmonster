@@ -2181,7 +2181,7 @@ function AppearanceSettings() {
     <div style={{ maxWidth: 640 }}>
       <p className="section-title" style={{ marginBottom: 6 }}>Farbschema</p>
       <p style={{ fontSize: 12, color: "var(--text-dim)", marginBottom: 16 }}>
-        Gilt für diesen Browser. Andere Benutzer behalten ihr eigenes Farbschema.
+        Wird im Benutzerkonto gespeichert und gilt auf jedem Gerät – auch im Portal.
       </p>
       {GRUPPEN.map(g => (
         <div key={g.id} style={{ marginBottom: 18 }}>

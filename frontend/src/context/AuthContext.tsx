@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import api from "../api/client";
+import { kontoThemeUebernehmen } from "../hooks/useTheme";
 
 const AuthContext = createContext(null);
 
@@ -11,7 +12,7 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem("dm_token");
     if (!token) { setLoading(false); return; }
     api.get("/api/auth/me")
-      .then(({ data }) => setUser(data))
+      .then(({ data }) => { setUser(data); kontoThemeUebernehmen(data.theme); })
       .catch(() => localStorage.removeItem("dm_token"))
       .finally(() => setLoading(false));
   }, []);
@@ -22,6 +23,8 @@ export function AuthProvider({ children }) {
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
     });
     localStorage.setItem("dm_token", data.access_token);
+    // Farbschema gehört zum Konto – auch am geteilten Rechner das eigene
+    kontoThemeUebernehmen(data.theme);
     setUser({
       username:       data.username,
       is_admin:       data.is_admin ?? false,
