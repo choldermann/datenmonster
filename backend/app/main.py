@@ -604,7 +604,10 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="Datenmonster ETL", version="2.0.0", lifespan=lifespan)
+# Keine öffentliche API-Doku: /docs, /redoc und /openapi.json beschrieben jedem
+# ohne Anmeldung sämtliche Endpunkte samt Parametern.
+app = FastAPI(title="Datenmonster ETL", version="2.0.0", lifespan=lifespan,
+              docs_url=None, redoc_url=None, openapi_url=None)
 
 # ─── Security-Header Middleware ───────────────────────────────────────────────
 from starlette.middleware.base import BaseHTTPMiddleware

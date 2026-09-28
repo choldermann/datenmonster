@@ -339,5 +339,18 @@ def health():
     return jsonify({"ok": True})
 
 
+def _env_absichern():
+    """Bestehende Installationen: .env (SECRET_KEY, Admin-Passwort) war für alle
+    Benutzer des Servers lesbar. Neue Installationen setzt install.sh selbst."""
+    pfad = os.path.join(os.path.dirname(COMPOSE_FILE), ".env")
+    try:
+        if os.path.exists(pfad) and os.stat(pfad).st_mode & 0o077:
+            os.chmod(pfad, 0o600)
+            logger.info(".env auf 600 gesetzt")
+    except OSError as e:
+        logger.warning(f".env-Rechte nicht gesetzt: {e}")
+
+
 if __name__ == "__main__":
+    _env_absichern()
     app.run(host="0.0.0.0", port=9000, threaded=True)

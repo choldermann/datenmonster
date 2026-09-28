@@ -168,6 +168,7 @@ configure() {
   if [[ -f "/tmp/datenmonster_env_backup" ]]; then
     cp "/tmp/datenmonster_env_backup" "$env_file"
     rm -f "/tmp/datenmonster_env_backup"
+    chmod 600 "$env_file"
     log_ok ".env aus vorheriger Installation wiederhergestellt"
     return
   fi
@@ -207,6 +208,8 @@ ALLOWED_ORIGINS=http://${SERVER_IP}:${FRONTEND_PORT},http://localhost:${FRONTEND
 GITHUB_TOKEN=
 EOF
 
+  # Enthält SECRET_KEY und Admin-Passwort – nur für den Besitzer lesbar.
+  chmod 600 "$env_file"
   log_ok ".env mit zufälligen Passwörtern generiert"
   log_info "Admin-Passwort: ${BOLD}${ADMIN_PASSWORD}${NC}"
   log_warn "Das Passwort wird nur einmal angezeigt – bitte jetzt notieren!"

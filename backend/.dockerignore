@@ -9,3 +9,9 @@ debug_*.py
 fix_*.py
 app/uploads/
 data/
+# Lokale Daten – bei einem Build auf dem eigenen Rechner sonst im Image
+*.db
+*.db-*
+backups/
+exports/
+templates_export/

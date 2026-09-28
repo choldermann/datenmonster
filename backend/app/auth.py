@@ -7,6 +7,7 @@ from app.core.security import verify_password, hash_password, create_access_toke
 from app.core import kontingent
 from app.models.user import User
 import re
+import socket
 import time
 import threading
 
@@ -18,6 +19,28 @@ _attempts_lock = threading.Lock()
 MAX_ATTEMPTS  = 10        # Max. Versuche im Zeitfenster
 WINDOW_SEC    = 300       # Zeitfenster: 5 Minuten
 LOCKOUT_SEC   = 900       # Sperre: 15 Minuten nach zu vielen Versuchen
+
+
+def _client_ip(request: Request) -> str:
+    """IP des Browsers, nicht die des nginx davor.
+
+    Alle Anmeldungen laufen über den nginx im Frontend-Container, das Backend
+    sieht also immer dieselbe Absenderadresse – die Sperre nach Fehlversuchen
+    hätte sonst alle Benutzer auf einmal ausgesperrt. nginx setzt X-Real-IP
+    selbst (überschreibt, was der Browser schickt). Geglaubt wird der Kopfzeile
+    aber nur, wenn die Anfrage wirklich von diesem nginx kommt: solange Port
+    8000 nach außen offen ist, könnte sie sonst jeder frei erfinden.
+    """
+    direkt = request.client.host if request.client else "unknown"
+    weitergereicht = request.headers.get("x-real-ip")
+    if weitergereicht:
+        try:
+            nginx = {info[4][0] for info in socket.getaddrinfo("frontend", None)}
+        except OSError:
+            nginx = set()
+        if direkt in nginx:
+            return weitergereicht.strip()
+    return direkt
 
 
 def _check_rate_limit(key: str):
@@ -79,7 +102,7 @@ def login(
     db: Session = Depends(get_db),
 ):
     # Rate-Limiting: per IP + per Username
-    client_ip = request.client.host if request.client else "unknown"
+    client_ip = _client_ip(request)
     _check_rate_limit(f"ip:{client_ip}")
     _check_rate_limit(f"user:{form.username}")
 
