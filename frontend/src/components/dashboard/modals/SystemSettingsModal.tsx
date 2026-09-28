@@ -2283,11 +2283,11 @@ export default function SystemSettingsModal({ onClose }) {
         </div>
 
         {/* Tabs */}
-        <div style={{ display: "flex", borderBottom: `1px solid ${S.border}`, padding: "0 18px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", borderBottom: `1px solid ${S.border}`, padding: "0 12px" }}>
           {sichtbareTabs.map(tab => (
             <button key={tab.id}
               onClick={() => !tab.disabled && setActiveTab(tab.id)}
-              style={{ padding: "8px 14px", fontSize: 11, fontWeight: 600, background: "none", border: "none", cursor: tab.disabled ? "default" : "pointer", color: activeTab === tab.id ? ACCENT : S.textDim, borderBottom: `2px solid ${activeTab === tab.id ? ACCENT : "transparent"}`, opacity: tab.disabled ? 0.4 : 1, display: "flex", alignItems: "center", gap: 5 }}>
+              style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", background: "none", border: "none", cursor: tab.disabled ? "default" : "pointer", color: activeTab === tab.id ? ACCENT : S.textDim, borderBottom: `2px solid ${activeTab === tab.id ? ACCENT : "transparent"}`, opacity: tab.disabled ? 0.4 : 1, display: "flex", alignItems: "center", gap: 5 }}>
               {tab.icon} {tab.label}
               {tab.disabled && <span style={{ fontSize: 8, color: S.textDim }}>bald</span>}
             </button>
