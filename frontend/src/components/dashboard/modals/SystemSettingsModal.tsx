@@ -964,6 +964,7 @@ function NachtwacheSettings() {
     finally { setLaeuft(false); }
   };
 
+  const iS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%" };
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
   const kasten = { padding: "12px 14px", borderRadius: 6, backgroundColor: S.bgEl, border: `1px solid ${S.border}`, marginBottom: 12 };
   if (!vorlagen || !guthaben) return <span style={{ fontSize: 11, color: S.textDim }}>Lade…</span>;
