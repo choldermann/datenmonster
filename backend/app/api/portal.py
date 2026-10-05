@@ -189,7 +189,9 @@ def list_portal_form_exports(slug: str, db: Session = Depends(get_db),
                      ExportFile.mapping_id.in_(mapping_ids))
              .order_by(ExportFile.created_at.desc())
              .limit(50).all())
-    return [_out(x) for x in files]
+    import os
+    return [{**_out(x), "vorhanden": bool(x.file_path) and os.path.exists(x.file_path)}
+            for x in files]
 
 
 @router.post("/forms/{slug}/report")

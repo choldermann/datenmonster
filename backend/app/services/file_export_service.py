@@ -2,8 +2,12 @@
 file_export_service – schreibt Exports in strukturierte Verzeichnisse
 und registriert sie in der DB.
 
-Pfad: /app/exports/{user_id}/{project_slug}/{context}/{name}_{ts}.{ext}
+Pfad: /app/uploads/exports/{user_id}/{project_slug}/{context}/{name}_{ts}.{ext}
 context = "job_{job_id}" | "manual"
+
+Die Dateien liegen im Daten-Volume (/app/uploads). Frueher lagen sie unter
+/app/exports im Container selbst – jedes Update legt den Container neu an, und
+die Dateien waren weg, waehrend die Liste sie weiter anbot (Download: 410).
 """
 import os
 import re
@@ -11,7 +15,33 @@ from datetime import datetime
 from typing import Optional
 import pandas as pd
 
-EXPORT_BASE = os.environ.get("EXPORT_BASE_DIR", "/app/exports")
+EXPORT_BASE = os.environ.get("EXPORT_BASE_DIR", "/app/uploads/exports")
+ALTE_BASIS = "/app/exports"
+
+
+def alte_exporte_umziehen(db) -> int:
+    """Zieht noch vorhandene Dateien aus /app/exports ins Daten-Volume um.
+
+    Laeuft beim Start. Was ein frueheres Update schon geloescht hat, ist nicht
+    zu retten; der Eintrag bleibt stehen und meldet sich als „nicht mehr vorhanden“."""
+    import shutil
+    from app.models.export_file import ExportFile
+    if os.path.abspath(EXPORT_BASE) == ALTE_BASIS:
+        return 0
+    umgezogen = 0
+    for ef in db.query(ExportFile).filter(ExportFile.file_path.like(ALTE_BASIS + "/%")).all():
+        ziel = os.path.join(EXPORT_BASE, os.path.relpath(ef.file_path, ALTE_BASIS))
+        if os.path.exists(ef.file_path):
+            os.makedirs(os.path.dirname(ziel), exist_ok=True)
+            shutil.move(ef.file_path, ziel)
+        elif not os.path.exists(ziel):
+            continue   # schon vor dem Umzug verloren
+        # sonst: zweiter Eintrag auf dieselbe Datei, die schon umgezogen ist
+        ef.file_path = ziel
+        umgezogen += 1
+    if umgezogen:
+        db.commit()
+    return umgezogen
 
 
 def _slug(text: str) -> str:

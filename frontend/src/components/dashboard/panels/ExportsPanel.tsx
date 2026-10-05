@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { HardDrive, Download, Trash2, RefreshCw, Inbox, X, Check, Loader2 } from "lucide-react";
+import { ladeExportHerunter } from "../../forms/ExportDateien";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
@@ -49,10 +50,7 @@ function ExportsPanel({ projectId }) {
 
   const downloadFile = async (f) => {
     try {
-      const resp = await api.get(`/api/exports/${f.id}/download`, { responseType: "blob" });
-      const url = URL.createObjectURL(new Blob([resp.data]));
-      const a = document.createElement("a"); a.href = url; a.download = f.file_name; a.click();
-      URL.revokeObjectURL(url);
+      await ladeExportHerunter(f.id, f.file_name);
     } catch (e) {
       alert(`Fehler: ${fehlerText(e)}`);
     }

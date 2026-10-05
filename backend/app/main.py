@@ -538,6 +538,16 @@ async def lifespan(app: FastAPI):
                 db.flush()   # sonst sieht die nächste Prüfung den neuen Slug nicht
             db.commit()
             print(f"Slug für {len(_ohne_slug)} Formular(e) nachgetragen")
+        # Exportdateien aus dem Container ins Daten-Volume holen – sonst nimmt
+        # das nächste Update sie mit.
+        try:
+            from app.services.file_export_service import alte_exporte_umziehen
+            _n = alte_exporte_umziehen(db)
+            if _n:
+                print(f"{_n} Exportdatei(en) ins Daten-Volume umgezogen")
+        except Exception as _e:
+            db.rollback()
+            print(f"Umzug der Exportdateien fehlgeschlagen: {_e}")
     finally:
         db.close()
     from app.services.scheduler_service import (start_scheduler, reload_all_jobs,

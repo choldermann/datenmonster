@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Download, AlertCircle, Check, History, ChevronDown, ChevronRight } from "lucide-react";
+import { Download, AlertCircle, Check, History, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 
 // Export-Aktionen (export_mapping) schreiben Dateien. Gemeinsam für Editor- und
@@ -14,7 +14,18 @@ const S = {
 
 /** Lädt eine Exportdatei und stößt den Browser-Download an. */
 export async function ladeExportHerunter(fileId, fileName) {
-  const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
+  let resp;
+  try {
+    resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
+  } catch (e) {
+    // Bei responseType "blob" steckt auch die Fehlermeldung in einem Blob –
+    // ohne Auspacken stünde nur „Download fehlgeschlagen“ da.
+    const daten = e?.response?.data;
+    if (daten instanceof Blob) {
+      try { e.response.data = JSON.parse(await daten.text()); } catch { /* kein JSON */ }
+    }
+    throw e;
+  }
   const url = URL.createObjectURL(resp.data);
   const a = document.createElement("a");
   a.href = url;
@@ -118,6 +129,12 @@ function DateiKnopf({ datei, onDownload, untertitel = null }) {
   );
 }
 
+const kleinKnopf = {
+  display: "inline-flex", alignItems: "center", padding: "4px 8px", borderRadius: 6,
+  background: "none", border: `1px solid ${S.border}`, color: S.textBright,
+  cursor: "pointer", fontSize: 12,
+};
+
 function zeitpunkt(iso) {
   if (!iso) return "";
   // Der Server liefert UTC ohne Zonenangabe – sonst stünde die Uhrzeit 1–2 h zu früh da.
@@ -139,6 +156,15 @@ export function ExportVerlauf({ slug, aktualisiert, onDownload }) {
   }, [slug]);
 
   useEffect(() => { laden(); }, [laden, aktualisiert]);
+
+  const [fragt, setFragt] = useState(null);   // id, deren Löschen gerade bestätigt wird
+  const loeschen = async (id) => {
+    try {
+      await api.delete(`/api/exports/${id}`);
+      setDateien(d => (d || []).filter(x => x.id !== id));
+    } catch (e) { setFehler(fehlerText(e)); }
+    finally { setFragt(null); }
+  };
 
   if (dateien && dateien.length === 0 && !fehler) return null;
   return (
@@ -167,7 +193,29 @@ export function ExportVerlauf({ slug, aktualisiert, onDownload }) {
                       {zeitpunkt(f.created_at)}
                     </td>
                     <td style={{ padding: "6px 12px" }}>
-                      <DateiKnopf datei={f} onDownload={onDownload} untertitel={f.mapping_name} />
+                      {f.vorhanden === false ? (
+                        <span style={{ color: S.textDim }}>
+                          {f.file_name} · <i>Datei nicht mehr auf dem Server</i>
+                        </span>
+                      ) : (
+                        <DateiKnopf datei={f} onDownload={onDownload} untertitel={f.mapping_name} />
+                      )}
+                    </td>
+                    <td style={{ padding: "6px 0", textAlign: "right", whiteSpace: "nowrap", width: 1 }}>
+                      {fragt === f.id ? (
+                        <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: 12 }}>
+                          <span style={{ color: S.textDim }}>Löschen?</span>
+                          <button onClick={() => loeschen(f.id)}
+                            style={{ ...kleinKnopf, color: "var(--err-soft)",
+                              borderColor: "color-mix(in srgb, var(--err-soft) 40%, transparent)" }}>Ja</button>
+                          <button onClick={() => setFragt(null)} style={kleinKnopf}>Nein</button>
+                        </span>
+                      ) : (
+                        <button onClick={() => setFragt(f.id)} title="Export löschen"
+                          style={{ ...kleinKnopf, border: "none", color: S.textDim }}>
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

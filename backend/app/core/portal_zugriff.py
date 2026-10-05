@@ -28,6 +28,8 @@ _REGELN = [
     ({"POST"},           r"/api/ai/(summarize-data|recommend-action|chat)"),
     ({"POST"},           r"/api/forms/(drilldown|email-table)"),
     ({"GET"},            r"/api/exports/\d+/download"),
+    # „Bisherige Exporte“ im Portal: eigene Datei löschen (exports.py filtert auf user_id)
+    ({"DELETE"},         r"/api/exports/\d+"),
     # Verbindungsauswahl im Intrastat-Ausschluss-Widget (nur die Liste)
     ({"GET"},            r"/api/connections"),
     # Fach-Widgets mit eigenen Portal-Pruefungen im jeweiligen Router
