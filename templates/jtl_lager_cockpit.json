@@ -5309,7 +5309,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "SELECT\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht < :von THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandAnfang,\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis) AND H.fAnzahl > 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Zugang,\n    CAST(ISNULL(-SUM(CASE WHEN H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis) AND H.fAnzahl < 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Abgang,\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht < DATEADD(DAY, 1, :bis) THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandEnde\nFROM dbo.vArtikelHistorie H\nWHERE H.kArtikel = :artikel_hist",
+          "sql": "SELECT\n    CAST(ISNULL(SUM(CASE WHEN CAST(:ah_gesamt AS int) = 0 AND H.dGebucht < :von THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandAnfang,\n    CAST(ISNULL(SUM(CASE WHEN (CAST(:ah_gesamt AS int) = 1 OR (H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis))) AND H.fAnzahl > 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Zugang,\n    CAST(ISNULL(-SUM(CASE WHEN (CAST(:ah_gesamt AS int) = 1 OR (H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis))) AND H.fAnzahl < 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Abgang,\n    CAST(ISNULL(SUM(CASE WHEN (CAST(:ah_gesamt AS int) = 1 OR H.dGebucht < DATEADD(DAY, 1, :bis)) THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandEnde\nFROM dbo.vArtikelHistorie H\nWHERE H.kArtikel = :artikel_hist",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5395,7 +5395,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH tag AS (\n    SELECT CAST(H.dGebucht AS date) AS Tag, SUM(H.fAnzahl) AS Netto,\n        SUM(CASE WHEN H.fAnzahl > 0 THEN H.fAnzahl ELSE 0 END) AS Zugang,\n        -SUM(CASE WHEN H.fAnzahl < 0 THEN H.fAnzahl ELSE 0 END) AS Abgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY CAST(H.dGebucht AS date)\n), lauf AS (\n    SELECT Tag, Zugang, Abgang, SUM(Netto) OVER (ORDER BY Tag ROWS UNBOUNDED PRECEDING) AS Bestand\n    FROM tag\n)\nSELECT CONVERT(varchar(10), Tag, 23) AS Tag,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(Zugang AS DECIMAL(18,2)) AS Zugang,\n    CAST(Abgang AS DECIMAL(18,2)) AS Abgang\nFROM lauf\nWHERE Tag >= :von\nORDER BY Tag",
+          "sql": "WITH tag AS (\n    SELECT CAST(H.dGebucht AS date) AS Tag, SUM(H.fAnzahl) AS Netto,\n        SUM(CASE WHEN H.fAnzahl > 0 THEN H.fAnzahl ELSE 0 END) AS Zugang,\n        -SUM(CASE WHEN H.fAnzahl < 0 THEN H.fAnzahl ELSE 0 END) AS Abgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND (CAST(:ah_gesamt AS int) = 1 OR H.dGebucht < DATEADD(DAY, 1, :bis))\n    GROUP BY CAST(H.dGebucht AS date)\n), lauf AS (\n    SELECT Tag, Zugang, Abgang, SUM(Netto) OVER (ORDER BY Tag ROWS UNBOUNDED PRECEDING) AS Bestand\n    FROM tag\n)\nSELECT CONVERT(varchar(10), Tag, 23) AS Tag,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(Zugang AS DECIMAL(18,2)) AS Zugang,\n    CAST(Abgang AS DECIMAL(18,2)) AS Abgang\nFROM lauf\nWHERE (CAST(:ah_gesamt AS int) = 1 OR Tag >= :von)\nORDER BY Tag",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5481,7 +5481,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "-- Bestand nach der Buchung selbst aufsummiert: JTL trägt bei Buchungen in\n-- derselben Sekunde bei allen schon den Endstand ein. Bei Gleichstand zählen\n-- Zugänge zuerst, damit kein Zwischenstand negativ wird.\nWITH lauf AS (\n    SELECT H.*,\n        ROW_NUMBER() OVER (ORDER BY H.dGebucht, H.fAnzahl DESC) AS rn,\n        SUM(H.fAnzahl) OVER (ORDER BY H.dGebucht, H.fAnzahl DESC\n                             ROWS UNBOUNDED PRECEDING) AS BestandLauf\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.dGebucht < DATEADD(DAY, 1, :bis)\n)\nSELECT TOP 1000\n    CONVERT(varchar(16), H.dGebucht, 120) AS Gebucht,\n    H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,\n    CAST(H.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    CAST(H.BestandLauf AS DECIMAL(18,2)) AS BestandDanach,\n    CAST(H.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CASE WHEN H.cTyp = 'Ausgang' THEN ISNULL(AU.cAuftragsNr, '')\n         ELSE ISNULL(NULLIF(LB.cEigeneBestellnummer, ''), '') END AS Beleg,\n    CASE WHEN H.cTyp = 'Ausgang' THEN\n            ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(AD.cFirma, '') + CASE WHEN ISNULL(AD.cZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END)), ''),\n                LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))))\n         ELSE ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma, '') + CASE WHEN ISNULL(L.cFirmenZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END)), ''), '') END AS [Kunde / Lieferant],\n    ISNULL(WL.cName, '') AS Lager,\n    ISNULL(H.cChargenNr, '') AS Charge,\n    ISNULL(CONVERT(varchar(10), H.dMHD, 104), '') AS MHD,\n    ISNULL(NULLIF(B.cName, ''), '') AS Benutzer,\n    ISNULL(H.cKommentar, '') AS Kommentar\nFROM lauf H\nLEFT JOIN Verkauf.tAuftragPosition AP ON AP.kAuftragPosition = H.kAuftragPos AND H.cTyp = 'Ausgang'\nLEFT JOIN Verkauf.tAuftrag AU ON AU.kAuftrag = AP.kAuftrag\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = AU.kKunde AND AD.nTyp = 1 AND AD.nStandard = 1\nLEFT JOIN dbo.tLieferantenBestellungPos LP ON LP.kLieferantenBestellungPos = H.kLieferantenBestellungPos AND H.cTyp = 'Eingang'\nLEFT JOIN dbo.tLieferantenBestellung LB ON LB.kLieferantenBestellung = LP.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = LB.kLieferant\nLEFT JOIN dbo.tWarenLagerPlatz WP ON WP.kWarenLagerPlatz = H.kWarenLagerPlatz\nLEFT JOIN dbo.tWarenLager WL ON WL.kWarenLager = WP.kWarenLager\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer\nWHERE H.dGebucht >= :von\nORDER BY H.rn DESC",
+          "sql": "-- Bestand nach der Buchung selbst aufsummiert: JTL trägt bei Buchungen in\n-- derselben Sekunde bei allen schon den Endstand ein. Bei Gleichstand zählen\n-- Zugänge zuerst, damit kein Zwischenstand negativ wird.\nWITH lauf AS (\n    SELECT H.*,\n        ROW_NUMBER() OVER (ORDER BY H.dGebucht, H.fAnzahl DESC) AS rn,\n        SUM(H.fAnzahl) OVER (ORDER BY H.dGebucht, H.fAnzahl DESC\n                             ROWS UNBOUNDED PRECEDING) AS BestandLauf\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND (CAST(:ah_gesamt AS int) = 1 OR H.dGebucht < DATEADD(DAY, 1, :bis))\n)\nSELECT TOP 1000\n    CONVERT(varchar(16), H.dGebucht, 120) AS Gebucht,\n    H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,\n    CAST(H.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    CAST(H.BestandLauf AS DECIMAL(18,2)) AS BestandDanach,\n    CAST(H.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CASE WHEN H.cTyp = 'Ausgang' THEN ISNULL(AU.cAuftragsNr, '')\n         ELSE ISNULL(NULLIF(LB.cEigeneBestellnummer, ''), '') END AS Beleg,\n    CASE WHEN H.cTyp = 'Ausgang' THEN\n            ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(AD.cFirma, '') + CASE WHEN ISNULL(AD.cZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END)), ''),\n                LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))))\n         ELSE ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma, '') + CASE WHEN ISNULL(L.cFirmenZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END)), ''), '') END AS [Kunde / Lieferant],\n    ISNULL(WL.cName, '') AS Lager,\n    ISNULL(H.cChargenNr, '') AS Charge,\n    ISNULL(CONVERT(varchar(10), H.dMHD, 104), '') AS MHD,\n    ISNULL(NULLIF(B.cName, ''), '') AS Benutzer,\n    ISNULL(H.cKommentar, '') AS Kommentar,\n    -- vor dem Zeilenlimit gezählt: zeigt, ob die Liste gekürzt ist\n    COUNT(*) OVER () AS BuchungenGesamt\nFROM lauf H\nLEFT JOIN Verkauf.tAuftragPosition AP ON AP.kAuftragPosition = H.kAuftragPos AND H.cTyp = 'Ausgang'\nLEFT JOIN Verkauf.tAuftrag AU ON AU.kAuftrag = AP.kAuftrag\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = AU.kKunde AND AD.nTyp = 1 AND AD.nStandard = 1\nLEFT JOIN dbo.tLieferantenBestellungPos LP ON LP.kLieferantenBestellungPos = H.kLieferantenBestellungPos AND H.cTyp = 'Eingang'\nLEFT JOIN dbo.tLieferantenBestellung LB ON LB.kLieferantenBestellung = LP.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = LB.kLieferant\nLEFT JOIN dbo.tWarenLagerPlatz WP ON WP.kWarenLagerPlatz = H.kWarenLagerPlatz\nLEFT JOIN dbo.tWarenLager WL ON WL.kWarenLager = WP.kWarenLager\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer\nWHERE (CAST(:ah_gesamt AS int) = 1 OR H.dGebucht >= :von)\nORDER BY H.rn DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5497,7 +5497,8 @@
             "Charge",
             "MHD",
             "Benutzer",
-            "Kommentar"
+            "Kommentar",
+            "BuchungenGesamt"
           ]
         }
       ],
@@ -5648,6 +5649,16 @@
                 "type": "direct",
                 "source_field": "Kommentar"
               }
+            },
+            {
+              "source_field": "BuchungenGesamt",
+              "target_field": "BuchungenGesamt",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BuchungenGesamt"
+              }
             }
           ]
         }
@@ -5716,6 +5727,36 @@
               "multiple": false,
               "auto_run": true,
               "placeholder": "Artikel wählen …",
+              "visible_tabs": [
+                "tab_lg_artikel"
+              ]
+            }
+          },
+          {
+            "id": "f_ah_gesamt",
+            "name": "ah_gesamt",
+            "type": "dropdown",
+            "label": "Zeitraum",
+            "row": 1,
+            "colSpan": 4,
+            "default": "0",
+            "action_ids": [
+              "act_lg_ah_kpi",
+              "act_lg_ah_verlauf",
+              "act_lg_ah_buchungen"
+            ],
+            "options": [
+              {
+                "value": "0",
+                "label": "wie oben eingestellt"
+              },
+              {
+                "value": "1",
+                "label": "gesamte Historie"
+              }
+            ],
+            "config": {
+              "auto_run": true,
               "visible_tabs": [
                 "tab_lg_artikel"
               ]
@@ -6873,7 +6914,8 @@
                 "MHD",
                 "Benutzer"
               ],
-              "height": 640
+              "height": 640,
+              "total_column": "BuchungenGesamt"
             }
           },
           {
@@ -6883,7 +6925,10 @@
             "action_id": "act_lg_ah_buchungen",
             "config": {
               "width": 12,
-              "full_rows": true
+              "full_rows": true,
+              "hidden_columns": [
+                "BuchungenGesamt"
+              ]
             }
           },
           {

@@ -3,7 +3,7 @@
 // Lager-Cockpit, aber nicht daran gebunden – alles über Spaltennamen konfiguriert.
 //
 // config: { date_column, qty_column, stock_column, title_column,
-//           detail_columns: [], height }
+//           detail_columns: [], height, total_column }
 // Das Vorzeichen von qty_column entscheidet die Seite (> 0 links, < 0 rechts).
 
 const S = {
@@ -66,10 +66,18 @@ export default function TimelineWidget({ widget, result }) {
     </div>
   );
 
+  // total_column: Gesamtzahl vor dem Zeilenlimit – eine gekürzte Liste sagt es.
+  const gesamt = cfg.total_column ? Number(rows[0]?.[cfg.total_column] ?? 0) : 0;
   let letzterTag = null;
   return (
     <div style={{ maxHeight: cfg.height || 640, overflowY: "auto", padding: "12px 8px",
       position: "relative" }}>
+      {gesamt > rows.length && (
+        <div style={{ fontSize: 11, color: "var(--warn)", textAlign: "center", marginBottom: 6 }}>
+          Angezeigt werden die neuesten {zahl(rows.length)} von {zahl(gesamt)} Buchungen –
+          für ältere den Zeitraum eingrenzen.
+        </div>
+      )}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 96px 1fr", fontSize: 11,
         color: S.textDim, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8,
         position: "sticky", top: -12, background: S.bgCard, zIndex: 2, padding: "4px 0" }}>
