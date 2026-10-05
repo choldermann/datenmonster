@@ -9,6 +9,7 @@
  * (app/core/lizenz_gate.py); hier geht es nur darum, sie sichtbar zu machen.
  */
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
+import { useAuth } from "../context/AuthContext";
 
 export interface KontingentPosten {
   art: string;
@@ -75,7 +76,16 @@ export function LizenzProvider({ children }: { children: ReactNode }) {
       .catch(() => setKontingent([]));
   }, []);
 
-  useEffect(() => { neuLaden(); }, [neuLaden]);
+  // Nicht nur einmal beim Start: der erste Abruf kommt oft vor dem Login (401)
+  // oder fällt in einen Moment, in dem die Online-Prüfung gerade scheitert.
+  // Ohne Nachladen blieben die Knöpfe dann bis F5 ausgegraut.
+  const { user } = useAuth();
+  useEffect(() => { neuLaden(); }, [neuLaden, user?.username]);
+  useEffect(() => {
+    const sichtbar = () => { if (document.visibilityState === "visible") neuLaden(); };
+    document.addEventListener("visibilitychange", sichtbar);
+    return () => document.removeEventListener("visibilitychange", sichtbar);
+  }, [neuLaden]);
 
   const hat = useCallback(
     (recht: string) => (!geladen ? true : rechte.has(recht)),
