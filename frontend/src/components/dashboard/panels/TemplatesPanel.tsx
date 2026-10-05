@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Package, Play, Plus, Upload, Download, Trash2, ChevronDown, ChevronRight, Check, X, Loader2, AlertCircle, ShoppingBag } from "lucide-react";
 import TemplateCreatorModal from "../modals/TemplateCreatorModal";
+import { kategorieLabel } from "../../../utils/templateKategorie";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 import { useAuth } from "../../../context/AuthContext";
@@ -582,6 +583,7 @@ export default function TemplatesPanel({ projectId, canEdit }) {
       {creating && (
         <TemplateCreatorModal
           projectId={projectId}
+          kategorien={categories}
           onClose={() => setCreating(false)}
           onSaved={() => { setCreating(false); load(); }}
         />
@@ -600,7 +602,7 @@ export default function TemplatesPanel({ projectId, canEdit }) {
         return (
           <div key={cat}>
             <p style={{ fontSize: 10, fontWeight: 700, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10, marginTop: 16 }}>
-              {cat === "jtl" ? "JTL WaWi" : cat === "general" ? "Allgemein" : cat}
+              {kategorieLabel(cat)}
             </p>
             {catTemplates.map(t => (
               <TemplateCard key={t.template_id} template={t} projectId={projectId} onInstalled={load} />

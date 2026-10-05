@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { X, Check, ChevronDown, ChevronRight, Save, Loader2, Database, GitBranch, Workflow } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
+import { KATEGORIE_LABEL, kategorieLabel, kategorieWert } from "../../../utils/templateKategorie";
 
 const ACCENT = "var(--accent)";
 
@@ -41,10 +42,12 @@ function TreeItem({ icon, label, sublabel, checked, onChange, children, defaultO
   );
 }
 
-export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
+export default function TemplateCreatorModal({ projectId, onClose, onSaved, kategorien = [] }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("general");
+  // Freitext mit Vorschlägen: eingebaute Kategorien plus alle, die es schon gibt.
+  const [category, setCategory] = useState(kategorieLabel("general"));
+  const vorschlaege = [...new Set([...Object.keys(KATEGORIE_LABEL), ...kategorien].map(kategorieLabel))];
   const [version, setVersion] = useState("1.0");
 
   const [datasets, setDatasets] = useState([]);
@@ -103,7 +106,7 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
       const payload = {
         name,
         description,
-        category,
+        category: kategorieWert(category),
         version,
         project_id: projectId,
         dataset_ids: [...selectedDatasets],
@@ -167,13 +170,12 @@ export default function TemplateCreatorModal({ projectId, onClose, onSaved }) {
             </div>
             <div>
               <label style={lS}>Kategorie</label>
-              <select style={iS} value={category} onChange={e => setCategory(e.target.value)}>
-                <option value="general">Allgemein</option>
-                <option value="jtl">JTL WaWi</option>
-                <option value="logistics">Logistik</option>
-                <option value="finance">Finanzen / Buchhaltung</option>
-                <option value="reporting">Reporting</option>
-              </select>
+              <input style={iS} list="template-kategorien" value={category}
+                onChange={e => setCategory(e.target.value)}
+                placeholder="Kategorie wählen oder neue eintippen" />
+              <datalist id="template-kategorien">
+                {vorschlaege.map(k => <option key={k} value={k} />)}
+              </datalist>
             </div>
             <div>
               <label style={lS}>Version</label>
