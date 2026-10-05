@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Play, LogOut, LayoutGrid } from "lucide-react";
 import api from "../api/client";
 import { useAuth } from "../context/AuthContext";
-import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
 import MandantWaehler from "../components/MandantWaehler";
 import { formIcon } from "../utils/formIcon";
 
@@ -51,6 +51,7 @@ export default function PortalHome() {
             {einProjekt != null && <MandantWaehler projectId={einProjekt} />}
             <KiCredits />
             <ThemeUmschalter />
+            <PasswortKnopf />
             <span style={{ fontSize: 12, color: S.textDim }}>{user?.username}</span>
             {!user?.is_portal_only && (
               <button onClick={() => navigate("/dashboard")}

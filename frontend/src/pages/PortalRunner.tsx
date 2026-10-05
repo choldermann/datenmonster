@@ -12,7 +12,7 @@ import VorlageGesperrt from "../components/VorlageGesperrt";
 import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
-import { ThemeUmschalter, KiCredits } from "../components/portal/PortalKopfzeile";
+import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
 import MandantWaehler from "../components/MandantWaehler";
 import { formIcon } from "../utils/formIcon";
 
@@ -366,6 +366,7 @@ export default function PortalRunner() {
               onWechsel={() => { setResults({}); runAction(null); }} />
             <KiCredits />
             <ThemeUmschalter />
+            <PasswortKnopf />
             <button onClick={handleLogout}
               style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12,
                 color: S.textDim, background: "none", border: "none", cursor: "pointer" }}>

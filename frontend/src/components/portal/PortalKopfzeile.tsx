@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type React from "react";
-import { Sparkles, Cpu, Palette, Check } from "lucide-react";
+import { Sparkles, Cpu, Palette, Check, KeyRound } from "lucide-react";
+import ChangePasswordModal from "../dashboard/modals/ChangePasswordModal";
 import api from "../../api/client";
 import { useTheme } from "../../hooks/useTheme";
 import { THEMES, GRUPPEN, findeTheme } from "../../themes";
@@ -70,6 +71,24 @@ export function ThemeUmschalter() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Eigenes Passwort ändern – im Editor liegt das im Benutzermenü, das Portal
+ *  hat keins. Backend: /api/auth/change-password (für Portal-Benutzer freigegeben). */
+export function PasswortKnopf() {
+  const [offen, setOffen] = useState(false);
+  return (
+    <>
+      <button onClick={() => setOffen(true)} title="Passwort ändern" aria-label="Passwort ändern"
+        style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 9px",
+          borderRadius: 7, border: `1px solid ${S.border}`, backgroundColor: "transparent",
+          color: S.textDim, cursor: "pointer", fontSize: 11.5 }}>
+        <KeyRound size={13} />
+        Passwort
+      </button>
+      {offen && <ChangePasswordModal onClose={() => setOffen(false)} />}
+    </>
   );
 }
 
