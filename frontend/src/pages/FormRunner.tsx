@@ -2,10 +2,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
-import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, Check, Download, FileText, BookOpen } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, FileText, BookOpen } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
+import { ExportErgebnisse, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
 import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
@@ -44,35 +45,6 @@ function ResultTable({ columns, rows }) {
           ))}
         </tbody>
       </table>
-    </div>
-  );
-}
-
-function ExportResult({ result, onDownload }) {
-  const files = result.files || [];
-  return (
-    <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
-        fontSize: 12, fontWeight: 600 }}>
-        <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
-      </div>
-      {files.length > 0 ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {files.map(f => (
-            <button key={f.id} onClick={() => onDownload(f.id, f.file_name)}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px",
-                background: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 6,
-                color: S.textBright, cursor: "pointer", fontSize: 12, textAlign: "left" }}>
-              <Download size={13} /> {f.file_name}
-              {f.target_name && <span style={{ color: S.textDim, fontSize: 10 }}>· {f.target_name}</span>}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <span style={{ color: S.textDim, fontSize: 11 }}>
-          Dateien liegen im Bereich „Exporte" zum Download.
-        </span>
-      )}
     </div>
   );
 }
@@ -131,15 +103,7 @@ export default function FormRunner() {
 
   const downloadExport = async (fileId, fileName) => {
     try {
-      const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
-      const url = URL.createObjectURL(resp.data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName || `export_${fileId}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await ladeExportHerunter(fileId, fileName);
     } catch (e) {
       setError("Download fehlgeschlagen: " + (fehlerText(e)));
     }
@@ -230,7 +194,10 @@ export default function FormRunner() {
         params: effParams,
         ...aktionsAuswahl(actionIds),
       });
-      setResults(data.results || {});
+      const neu = data.results || {};
+      // Ein Export-Knopf soll die angezeigten Auswertungen nicht wegwischen.
+      setResults(prev => nurExporte(neu) ? { ...(prev || {}), ...neu } : neu);
+      for (const f of exportDateienAus(neu)) await downloadExport(f.id, f.file_name);
     } catch (e) {
       setError(fehlerText(e));
     } finally {
@@ -448,6 +415,10 @@ export default function FormRunner() {
           </div>
         )}
 
+        {results && (
+          <ExportErgebnisse actions={actions} results={results} onDownload={downloadExport} />
+        )}
+
         {/* Ergebnis-Tabs (optional, aus schema.result_tabs) – bei eigenständigen Widgets
             schon vor dem ersten Lauf, sonst käme man nie auf einen Reiter, dessen
             Filter den ersten Lauf erst auslöst */}
@@ -485,6 +456,7 @@ export default function FormRunner() {
         {results && (() => {
           const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
           const rawActions = actions.filter(a => !widgetActionIds.has(a.id)
+            && a.type !== "export_mapping"
             && (!tabActionIds || tabActionIds.has(a.id)));
           if (!rawActions.length) return null;
           return (
@@ -512,8 +484,6 @@ export default function FormRunner() {
                         color: "var(--err-soft)", fontSize: 11 }}>
                         <AlertCircle size={13} /> {result.error}
                       </div>
-                    ) : result.kind === "export" ? (
-                      <ExportResult result={result} onDownload={downloadExport} />
                     ) : (
                       <ResultTable columns={result.columns} rows={result.rows} />
                     )}

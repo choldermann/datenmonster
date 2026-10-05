@@ -813,7 +813,8 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                 _errs = [str(e) for e in (result.get("errors") or []) if str(e).strip()]
                 # Die soeben erzeugten Datei-Exporte holen (neueste zuerst → für Download-Links)
                 _recent = (db.query(ExportFile)
-                           .filter(ExportFile.mapping_id == m.id)
+                           .filter(ExportFile.mapping_id == m.id,
+                                   ExportFile.user_id == (user_id or 1))
                            .order_by(ExportFile.id.desc())
                            .limit(max(len(tr), 1)).all())
                 files = [{"id": ef.id, "file_name": ef.file_name, "target_name": ef.target_name}

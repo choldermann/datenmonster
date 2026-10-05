@@ -1,0 +1,173 @@
+import { useState, useEffect, useCallback } from "react";
+import { Download, AlertCircle, Check, History, ChevronDown, ChevronRight } from "lucide-react";
+import api, { fehlerText } from "../../api/client";
+
+// Export-Aktionen (export_mapping) schreiben Dateien. Gemeinsam für Editor- und
+// Portal-Runner: Datei direkt im Browser speichern, Ergebnis unabhängig vom
+// aktiven Reiter zeigen und – im Portal – die bisherigen Exporte auflisten.
+// Portal-Benutzer haben keinen Bereich „Exporte“; ohne das sähen sie die Datei nie.
+
+const S = {
+  bgMain: "var(--bg-main)", bgCard: "var(--bg-card)",
+  border: "var(--border)", textBright: "var(--text-bright)", textDim: "var(--text-dim)",
+};
+
+/** Lädt eine Exportdatei und stößt den Browser-Download an. */
+export async function ladeExportHerunter(fileId, fileName) {
+  const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
+  const url = URL.createObjectURL(resp.data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName || `export_${fileId}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+/** Alle Dateien aus den Export-Ergebnissen eines Laufs. */
+export function exportDateienAus(results) {
+  return Object.values(results || {})
+    .filter(r => r && r.kind === "export" && !r.error)
+    .flatMap(r => r.files || []);
+}
+
+/** True, wenn ein Lauf ausschließlich Export-Ergebnisse geliefert hat (Export-Knopf). */
+export function nurExporte(results) {
+  const r = Object.values(results || {});
+  return r.length > 0 && r.every(x => x && x.kind === "export");
+}
+
+/** Ergebnis der Export-Aktionen eines Laufs – steht über den Reitern, nicht in einem. */
+export function ExportErgebnisse({ actions, results, allowDownload = true, onDownload }) {
+  const exportActions = (actions || []).filter(a => a.type === "export_mapping" && results?.[a.id]);
+  if (!exportActions.length) return null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+      {exportActions.map(a => {
+        const r = results[a.id];
+        const files = r.files || [];
+        // Ein Ziel kann scheitern, ohne dass der Lauf als Fehler gilt (z.B. fehlende
+        // Beraternummer beim DATEV-Stapel) – dann muss der Grund sichtbar werden.
+        const zielFehler = r.error ? []
+          : (r.targets || []).filter(t => t.status === "error" && t.error).map(t => t.error);
+        return (
+          <div key={a.id} style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
+            borderRadius: 10, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {r.error ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8,
+                color: "var(--err-soft)", fontSize: 13 }}>
+                <AlertCircle size={14} /> {a.label || a.id}: {r.error}
+              </div>
+            ) : (files.length > 0 || zielFehler.length === 0) && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
+                fontSize: 13, fontWeight: 600 }}>
+                <Check size={14} /> {a.label || "Export"} erzeugt · {r.total ?? 0} Zeilen
+                {allowDownload && files.length > 0 && (
+                  <span style={{ color: S.textDim, fontWeight: 400, fontSize: 12 }}>
+                    · Download gestartet
+                  </span>
+                )}
+              </div>
+            )}
+            {zielFehler.map((t, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8,
+                color: "var(--err-soft)", fontSize: 13 }}>
+                <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 2 }} /> {t}
+              </div>
+            ))}
+            {!r.error && (files.length === 0 ? (
+              zielFehler.length ? null
+                : <span style={{ color: S.textDim, fontSize: 12 }}>Keine Dateien erzeugt.</span>
+            ) : allowDownload ? (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {files.map(f => (
+                  <DateiKnopf key={f.id} datei={f} onDownload={onDownload} />
+                ))}
+              </div>
+            ) : (
+              <span style={{ color: S.textDim, fontSize: 12 }}>
+                Download ist für dieses Formular deaktiviert.
+              </span>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DateiKnopf({ datei, onDownload, untertitel = null }) {
+  return (
+    <button onClick={() => onDownload(datei.id, datei.file_name)}
+      title="Erneut herunterladen"
+      style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "7px 12px",
+        background: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 6,
+        color: S.textBright, cursor: "pointer", fontSize: 12, textAlign: "left" }}>
+      <Download size={13} /> {datei.file_name}
+      {untertitel && <span style={{ color: S.textDim, fontSize: 11 }}>· {untertitel}</span>}
+    </button>
+  );
+}
+
+function zeitpunkt(iso) {
+  if (!iso) return "";
+  // Der Server liefert UTC ohne Zonenangabe – sonst stünde die Uhrzeit 1–2 h zu früh da.
+  const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+  return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit" });
+}
+
+/** Portal: die bisherigen Exporte dieses Formulars (nur eigene Dateien). */
+export function ExportVerlauf({ slug, aktualisiert, onDownload }) {
+  const [offen, setOffen] = useState(false);
+  const [dateien, setDateien] = useState(null);
+  const [fehler, setFehler] = useState(null);
+
+  const laden = useCallback(() => {
+    api.get(`/api/portal/forms/${slug}/exports`)
+      .then(({ data }) => { setDateien(Array.isArray(data) ? data : []); setFehler(null); })
+      .catch(e => setFehler(fehlerText(e)));
+  }, [slug]);
+
+  useEffect(() => { laden(); }, [laden, aktualisiert]);
+
+  if (dateien && dateien.length === 0 && !fehler) return null;
+  return (
+    <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
+      borderRadius: 14, marginTop: 24, overflow: "hidden" }}>
+      <button onClick={() => setOffen(o => !o)}
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: 8,
+          padding: "12px 18px", background: "none", border: "none", cursor: "pointer",
+          color: S.textBright, fontSize: 14, fontWeight: 700, textAlign: "left" }}>
+        {offen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        <History size={14} /> Bisherige Exporte
+        {dateien && <span style={{ color: S.textDim, fontWeight: 400, fontSize: 12 }}>({dateien.length})</span>}
+      </button>
+      {offen && (
+        <div style={{ borderTop: `1px solid ${S.border}`, padding: "10px 18px 14px" }}>
+          {fehler ? (
+            <span style={{ color: "var(--err-soft)", fontSize: 12 }}>{fehler}</span>
+          ) : !dateien ? (
+            <span style={{ color: S.textDim, fontSize: 12 }}>Lädt…</span>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <tbody>
+                {dateien.map(f => (
+                  <tr key={f.id} style={{ borderBottom: `1px solid ${S.border}` }}>
+                    <td style={{ padding: "6px 0", color: S.textDim, whiteSpace: "nowrap", width: 1 }}>
+                      {zeitpunkt(f.created_at)}
+                    </td>
+                    <td style={{ padding: "6px 12px" }}>
+                      <DateiKnopf datei={f} onDownload={onDownload} untertitel={f.mapping_name} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, Check, FileText } from "lucide-react";
+import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, FileText } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { useAuth } from "../context/AuthContext";
@@ -9,6 +9,7 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
+import { ExportErgebnisse, ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
 import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
@@ -96,43 +97,6 @@ function ResultTable({ result, formName, actionLabel, allowDownload }) {
   );
 }
 
-// ── Export result (Datei-Downloads) ─────────────────────────────────────────────
-
-function ExportResult({ result, onDownload, allowDownload }) {
-  const files = result.files || [];
-  if (result.error) return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
-      color: "var(--err-soft)", fontSize: 13 }}>
-      <AlertCircle size={14} /> {result.error}
-    </div>
-  );
-  return (
-    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
-        fontSize: 13, fontWeight: 600 }}>
-        <Check size={14} /> Export erzeugt · {result.total ?? 0} Zeilen
-      </div>
-      {files.length === 0 ? (
-        <span style={{ color: S.textDim, fontSize: 12 }}>Keine Dateien erzeugt.</span>
-      ) : allowDownload ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {files.map(f => (
-            <button key={f.id} onClick={() => onDownload(f.id, f.file_name)}
-              style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 14px",
-                background: S.bgMain, border: `1px solid ${S.border}`, borderRadius: 8,
-                color: S.textBright, cursor: "pointer", fontSize: 13, textAlign: "left" }}>
-              <Download size={13} /> {f.file_name}
-              {f.target_name && <span style={{ color: S.textDim, fontSize: 11 }}>· {f.target_name}</span>}
-            </button>
-          ))}
-        </div>
-      ) : (
-        <span style={{ color: S.textDim, fontSize: 12 }}>Download ist für dieses Formular deaktiviert.</span>
-      )}
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function PortalRunner() {
@@ -150,6 +114,7 @@ export default function PortalRunner() {
   const [activeTab, setActiveTab] = useState(null);
   const [inputTab, setInputTab]   = useState("main");
   const [reporting, setReporting] = useState(false);
+  const [exportStand, setExportStand] = useState(0);   // zählt Export-Läufe → Verlauf neu laden
   const [reportModal, setReportModal] = useState(false); // Abschnittsauswahl vor dem PDF
   // Vom ai_summary-Widget erzeugte Analyse einsammeln: sie wandert in den Report,
   // damit dieser den langsamen KI-Aufruf überspringt (sonst droht ein Timeout).
@@ -218,7 +183,17 @@ export default function PortalRunner() {
     try {
       const body = { params: effParams, ...aktionsAuswahl(actionIds) };
       const { data } = await api.post(`/api/portal/forms/${slug}/run`, body);
-      setResults(data.results || {});
+      const neu = data.results || {};
+      // Ein Export-Knopf soll die angezeigten Auswertungen nicht wegwischen.
+      setResults(prev => nurExporte(neu) ? { ...(prev || {}), ...neu } : neu);
+      // Exportdateien direkt im Browser speichern – das Portal hat keinen Bereich „Exporte“.
+      const dateien = exportDateienAus(neu);
+      if (dateien.length) {
+        setExportStand(n => n + 1);
+        if (form?.allow_download) {
+          for (const f of dateien) await downloadExport(f.id, f.file_name);
+        }
+      }
     } catch (e) {
       setRunErr(fehlerText(e));
     } finally { setRunning(false); }
@@ -257,21 +232,13 @@ export default function PortalRunner() {
     }
   };
 
-  const downloadExport = async (fileId, fileName) => {
+  async function downloadExport(fileId, fileName) {
     try {
-      const resp = await api.get(`/api/exports/${fileId}/download`, { responseType: "blob" });
-      const url = URL.createObjectURL(resp.data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName || `export_${fileId}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await ladeExportHerunter(fileId, fileName);
     } catch (e) {
       setRunErr("Download fehlgeschlagen: " + (fehlerText(e)));
     }
-  };
+  }
 
   const handleLogout = () => { logout(); navigate("/login"); };
 
@@ -322,8 +289,11 @@ export default function PortalRunner() {
   const hasButtonField = visibleFields.some(f => f.type === "button");
   // Actions ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Register gefiltert)
   const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
+  // Export-Aktionen stehen über den Reitern (ExportErgebnisse) – sie gehören meist zu keinem.
   const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id)
+    && a.type !== "export_mapping"
     && (!tabActionIds || tabActionIds.has(a.id)));
+  const hatExporte = actions.some(a => a.type === "export_mapping");
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
@@ -492,6 +462,11 @@ export default function PortalRunner() {
           </div>
         )}
 
+        {results && (
+          <ExportErgebnisse actions={actions} results={results}
+            allowDownload={allowDownload} onDownload={downloadExport} />
+        )}
+
         {/* Ergebnis-Register (optional, aus schema.result_tabs) */}
         {(results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && resultTabs.length > 0 && (
           <div style={{ display: "flex", gap: 4, marginBottom: 16,
@@ -544,8 +519,6 @@ export default function PortalRunner() {
               </div>
               {result.kind === "pipeline" ? (
                 <PipelineResult result={result} />
-              ) : result.kind === "export" ? (
-                <ExportResult result={result} onDownload={downloadExport} allowDownload={allowDownload} />
               ) : (
                 <ResultTable
                   result={result}
@@ -557,6 +530,9 @@ export default function PortalRunner() {
             </div>
           );
         })}
+        {hatExporte && allowDownload && (
+          <ExportVerlauf slug={slug} aktualisiert={exportStand} onDownload={downloadExport} />
+        )}
         </>)}
       </main>
 

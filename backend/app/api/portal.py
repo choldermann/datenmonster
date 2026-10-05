@@ -157,6 +157,41 @@ def run_portal_form(slug: str, data: FormRunRequest,
     return result
 
 
+@router.get("/forms/{slug}/exports")
+def list_portal_form_exports(slug: str, db: Session = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    """Die eigenen Exportdateien aus den Export-Aktionen dieses Formulars.
+
+    Portal-Benutzer haben keinen Bereich „Exporte“ – ohne diese Liste kämen sie an
+    eine einmal erzeugte Datei (z.B. den DATEV-Stapel) nicht wieder heran.
+    """
+    from app.models.export_file import ExportFile
+    from app.api.exports import _out
+
+    f = db.query(Form).filter(Form.slug == slug).first()
+    if not f:
+        raise HTTPException(404, "Formular nicht gefunden")
+    _check_portal_access(f, user)
+    if not (f.portal_config or {}).get("allow_download", False):
+        return []
+
+    mapping_ids = set()
+    for a in (f.schema or {}).get("actions") or []:
+        if a.get("type") == "export_mapping":
+            try:
+                mapping_ids.add(int(a.get("mapping_id")))
+            except (TypeError, ValueError):
+                pass
+    if not mapping_ids:
+        return []
+    files = (db.query(ExportFile)
+             .filter(ExportFile.user_id == user.id,
+                     ExportFile.mapping_id.in_(mapping_ids))
+             .order_by(ExportFile.created_at.desc())
+             .limit(50).all())
+    return [_out(x) for x in files]
+
+
 @router.post("/forms/{slug}/report")
 async def portal_form_report(slug: str, data: FormRunRequest,
                              db: Session = Depends(get_db),

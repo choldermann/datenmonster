@@ -31,7 +31,8 @@ function ExportsPanel({ projectId }) {
 
   const fmtDate = (iso) => {
     if (!iso) return "";
-    const d = new Date(iso);
+    // Der Server liefert UTC ohne Zonenangabe – sonst stünde die Uhrzeit 1–2 h zu früh da.
+    const d = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
     return d.toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
   };
 
