@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Tags, Plus, Trash2, Play, FileDown, CheckCircle2, XCircle,
          RotateCcw, Loader2, AlertCircle, ChevronDown, ChevronRight, Undo2, Moon, TrendingUp } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
+import { ladeExportHerunter } from "../ExportDateien";
 import { onMandantChange } from "../../../services/mandant";
 
 const S = {
@@ -186,8 +187,13 @@ export default function PreisautomatikWidget({ widget, projectId }) {
     const ids = [...auswahl];
     const { data } = await api.post(`/api/preisregeln/regelwerke/${rw.id}/ameise-csv`,
       { ids });
-    melden(`Datei „${data.file_name}“ mit ${data.zeilen} Zeilen liegt unter `
-         + `Exporte bereit. Nach dem Import in der Ameise bitte „Kontrolle“ drücken.`);
+    // Direkt speichern – im Portal gibt es keinen Bereich „Exporte“.
+    let geladen = true;
+    try { await ladeExportHerunter(data.export_file_id, data.file_name); }
+    catch { geladen = false; }
+    melden(`Datei „${data.file_name}“ mit ${data.zeilen} Zeilen `
+         + (geladen ? "wurde heruntergeladen" : "liegt unter Exporte bereit (Download fehlgeschlagen)")
+         + `. Nach dem Import in der Ameise bitte „Kontrolle“ drücken.`);
     await zeilenLaden(rw.id, filter);
   });
 

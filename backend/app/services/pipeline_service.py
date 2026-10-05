@@ -16,9 +16,13 @@ def _enrich_debug_step(result: dict, node: dict, ntype: str, node_start) -> None
     result["duration_ms"] = int((datetime.now(timezone.utc) - node_start).total_seconds() * 1000)
 
 
-def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> dict:
+def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False,
+                 user_id: int = 1) -> dict:
     """
     Führt alle Nodes der Pipeline in topologischer Reihenfolge aus.
+
+    user_id: wem erzeugte Exportdateien gehören (Formularlauf: der Auslöser,
+    damit er sie herunterladen darf; sonst wie bisher Benutzer 1).
 
     debug=True:   reiche Trace-Erfassung (Dauer, Sample, Mapping-Sub-Trace, order).
     dry_run=True: Nodes mit echten Seiteneffekten (Mapping-Write, E-Mail, FTP,
@@ -156,6 +160,7 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False) -> di
                                     mapping_id=mapping_id, mapping_name=mapping.name,
                                     project_id=mapping.project_id,
                                     triggered_by="pipeline-debug" if dry_run else "pipeline",
+                                    user_id=user_id,
                                     _debug_trace=_sub_trace,
                                 )
                                 if dry_run:

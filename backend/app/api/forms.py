@@ -767,17 +767,34 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
                 continue
             try:
                 from app.services.pipeline_service import run_pipeline as _run_pipeline
-                pres = _run_pipeline(p, db)
+                from app.models.export_file import ExportFile
+                from sqlalchemy import func as _func
+                _uid = user_id or 1
+                _vorher = db.query(_func.max(ExportFile.id)).scalar() or 0
+                pres = _run_pipeline(p, db, user_id=_uid)
+                # Dateien, die die Pipeline geschrieben hat – sonst lägen sie nur unter
+                # „Exporte“, den Portal-Benutzer nicht haben.
+                _neu = (db.query(ExportFile)
+                        .filter(ExportFile.id > _vorher, ExportFile.user_id == _uid)
+                        .order_by(ExportFile.id).all())
                 p.last_run_at = datetime.now(timezone.utc)
                 p.last_run_status = "success" if not pres.get("errors") else "warning"
                 db.commit()
-                perrors = pres.get("errors") or []
+                perrors = list(pres.get("errors") or [])
+                # Scheitert ein Schritt, meldet die Pipeline das nur am Knoten (Status
+                # „warning“) – ohne diese Fehler stünde im Formular ein grünes OK.
+                for _k in (pres.get("results") or {}).values():
+                    for _e in (_k or {}).get("errors") or []:
+                        if str(_e).strip():
+                            perrors.append(str(_e)[:300])
                 results[action_id] = {
                     "kind":           "pipeline",
                     "pipeline_name":  p.name,
                     "nodes_executed": pres.get("nodes_executed", 0),
                     "errors":         perrors,
                     "error":          perrors[0] if perrors else None,
+                    "files": [{"id": ef.id, "file_name": ef.file_name,
+                               "target_name": ef.target_name} for ef in _neu],
                     "columns": [], "rows": [], "total": 0,
                 }
             except Exception as e:

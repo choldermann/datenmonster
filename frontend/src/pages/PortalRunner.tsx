@@ -292,6 +292,7 @@ export default function PortalRunner() {
   // Export-Aktionen stehen über den Reitern (ExportErgebnisse) – sie gehören meist zu keinem.
   const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id)
     && a.type !== "export_mapping"
+    && !(a.type === "run_pipeline" && (results?.[a.id]?.files || []).length)
     && (!tabActionIds || tabActionIds.has(a.id)));
   const hatExporte = actions.some(a => a.type === "export_mapping");
 

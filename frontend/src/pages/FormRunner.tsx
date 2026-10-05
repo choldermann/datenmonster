@@ -457,6 +457,7 @@ export default function FormRunner() {
           const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
           const rawActions = actions.filter(a => !widgetActionIds.has(a.id)
             && a.type !== "export_mapping"
+            && !(a.type === "run_pipeline" && (results?.[a.id]?.files || []).length)
             && (!tabActionIds || tabActionIds.has(a.id)));
           if (!rawActions.length) return null;
           return (

@@ -25,22 +25,28 @@ export async function ladeExportHerunter(fileId, fileName) {
   URL.revokeObjectURL(url);
 }
 
-/** Alle Dateien aus den Export-Ergebnissen eines Laufs. */
+/** Alle Dateien eines Laufs – aus Export-Aktionen und aus Pipelines mit Dateizielen. */
 export function exportDateienAus(results) {
   return Object.values(results || {})
-    .filter(r => r && r.kind === "export" && !r.error)
+    .filter(r => r && (r.kind === "export" || r.kind === "pipeline"))
     .flatMap(r => r.files || []);
 }
 
-/** True, wenn ein Lauf ausschließlich Export-Ergebnisse geliefert hat (Export-Knopf). */
+/** Aktionen, deren Ergebnis Dateien liefert: Exporte immer, Pipelines nur mit Dateien. */
+function dateiAktionen(actions, results) {
+  return (actions || []).filter(a => results?.[a.id] && (a.type === "export_mapping"
+    || (a.type === "run_pipeline" && (results[a.id].files || []).length > 0)));
+}
+
+/** True, wenn ein Lauf ausschließlich Export-/Pipeline-Ergebnisse geliefert hat (Knopf). */
 export function nurExporte(results) {
   const r = Object.values(results || {});
-  return r.length > 0 && r.every(x => x && x.kind === "export");
+  return r.length > 0 && r.every(x => x && (x.kind === "export" || x.kind === "pipeline"));
 }
 
 /** Ergebnis der Export-Aktionen eines Laufs – steht über den Reitern, nicht in einem. */
 export function ExportErgebnisse({ actions, results, allowDownload = true, onDownload }) {
-  const exportActions = (actions || []).filter(a => a.type === "export_mapping" && results?.[a.id]);
+  const exportActions = dateiAktionen(actions, results);
   if (!exportActions.length) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
@@ -62,7 +68,9 @@ export function ExportErgebnisse({ actions, results, allowDownload = true, onDow
             ) : (files.length > 0 || zielFehler.length === 0) && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--ok)",
                 fontSize: 13, fontWeight: 600 }}>
-                <Check size={14} /> {a.label || "Export"} erzeugt · {r.total ?? 0} Zeilen
+                <Check size={14} /> {a.label || "Export"} erzeugt · {r.kind === "pipeline"
+                  ? `${files.length} ${files.length === 1 ? "Datei" : "Dateien"}`
+                  : `${r.total ?? 0} Zeilen`}
                 {allowDownload && files.length > 0 && (
                   <span style={{ color: S.textDim, fontWeight: 400, fontSize: 12 }}>
                     · Download gestartet
