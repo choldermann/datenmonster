@@ -199,6 +199,11 @@ def _portal_darf_mapping(m: Mapping, user: User, db: Session) -> bool:
     return m.id in erlaubt
 
 
+DRILLDOWN_MAX_ZEILEN = 100_000
+# Selbstbegrenzung der Cockpit-Detailabfragen (siehe drilldown()).
+_ANZEIGE_KAPPE = re.compile(r"(\brn\s*(?:<=|>)\s*)499\b")
+
+
 @router.post("/drilldown")
 def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
               user: User = Depends(get_current_user)):
@@ -232,10 +237,22 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     if not ctx.targets:
         return {"rows": [], "columns": [], "total": 0, "error": "Mapping hat keine Ziele"}
 
-    # preview_rows <= 500 hält die Engine im Lese-/Vorschaumodus (kein Ziel-Write).
+    # execute_mapping schreibt nie ins Ziel (das tut nur run_mapping_object) –
+    # auch oberhalb von 500 Zeilen nicht; dort holt es nur vollständig statt per
+    # Vorschau. Das Fenster lädt 500 zur Anzeige, der CSV-Export alles bis
+    # DRILLDOWN_MAX_ZEILEN (vorher war bei 500 Schluss, der Export blieb unvollständig).
     # row_cap muss mit: ohne ihn deckelt die Engine jeden Vorschaulauf hart auf 50
     # Zeilen und max_rows bliebe wirkungslos.
-    rows_cap = min(max(body.max_rows or 200, 1), 500)
+    rows_cap = min(max(body.max_rows or 200, 1), DRILLDOWN_MAX_ZEILEN)
+    if rows_cap > 500:
+        # Die Detail-Abfragen der Cockpits kappen sich selbst: die 499 wichtigsten
+        # Zeilen plus eine Sammelzeile („… N weitere Artikel“, `rn <= 499` /
+        # `rn > 499`). Für die Anzeige ist das gewollt, für den Export nicht –
+        # dort wird die Grenze auf die Export-Obergrenze angehoben. Kopie, damit
+        # das gespeicherte Mapping unberührt bleibt.
+        ctx.sql_nodes = [dict(n, sql=_ANZEIGE_KAPPE.sub(lambda mt: mt.group(1) + str(rows_cap - 1),
+                                                        n.get("sql") or ""))
+                         if isinstance(n, dict) else n for n in ctx.sql_nodes]
     t_fields = ctx.targets[0].get("fields") or []
     try:
         result = execute_mapping(row_cap=rows_cap, **ctx.to_execute_kwargs(t_fields, rows_cap))
@@ -268,6 +285,8 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
         "rows":    rows,
         "total":   len(rows) if body.row_filter else result.get("total", 0),
         "error":   (str(fehler[0])[:300] if fehler and not result.get("rows") else None),
+        # Liste an der Obergrenze abgeschnitten? Dann zeigt das Fenster es an.
+        "begrenzt": len(result.get("rows") or []) >= rows_cap,
     }
 
 

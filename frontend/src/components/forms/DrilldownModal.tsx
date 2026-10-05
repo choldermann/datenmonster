@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
+import { fehlerText } from "../../api/client";
 
 const S = {
   bgMain: "var(--bg-main)",
@@ -119,7 +120,9 @@ function isNumericCol(col, rows) {
 
 export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose,
   trail = [], canDrillDeeper = false, onRowClick = null, onBack = null, hiddenColumns = [],
-  emailEnabled = false, dokument = null }) {
+  emailEnabled = false, dokument = null, begrenzt = false, ladeAlle = null }) {
+  const [exportiert, setExportiert] = useState(false);
+  const [exportFehler, setExportFehler] = useState("");
   const hidden = new Set(hiddenColumns || []);
   const columns = (rows.length ? Object.keys(rows[0]) : []).filter(c => !hidden.has(c));
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
@@ -127,8 +130,22 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   const longTextCols = new Set(columns.filter(c => !numericCols.has(c)
     && rows.some(r => typeof r[c] === "string" && r[c].length > 60)));
 
-  const handleExport = () => {
-    const csv = toCsv(columns, rows);
+  const handleExport = async () => {
+    // Ist die Anzeige abgeschnitten, alle Zeilen nachladen – sonst enthielte die
+    // Datei nur das, was gerade im Fenster steht.
+    let alle = rows;
+    if (begrenzt && ladeAlle) {
+      setExportiert(true); setExportFehler("");
+      try {
+        alle = (await ladeAlle()).rows;
+      } catch (e) {
+        setExportFehler(fehlerText(e, "Export fehlgeschlagen"));
+        return;
+      } finally {
+        setExportiert(false);
+      }
+    }
+    const csv = toCsv(columns, alle);
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -186,15 +203,17 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
               {field ? <><span style={{ color: S.textMain }}>{field}</span> = <span style={{ color: ACCENT }}>{String(value)}</span> · </> : null}
               {loading ? "lädt…" : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
+              {!loading && begrenzt ? (ladeAlle ? " angezeigt · CSV enthält alle" : " · Liste gekürzt") : ""}
+              {exportFehler ? <span style={{ color: "var(--err-soft)" }}> · {exportFehler}</span> : null}
               {canDrillDeeper && !loading && rows.length > 0 ? " · Zeile klicken für Details" : ""}
             </p>
           </div>
           {emailEnabled && (
             <EmailTableButton columns={columns} rows={rows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
-          <button onClick={handleExport} disabled={!rows.length}
+          <button onClick={handleExport} disabled={!rows.length || exportiert}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, backgroundColor: `color-mix(in srgb, ${ACCENT} 8.2%, transparent)`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
-            <Download size={12} /> CSV
+            {exportiert ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} CSV
           </button>
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4 }}>
             <X size={16} />

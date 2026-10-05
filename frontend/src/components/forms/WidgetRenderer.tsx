@@ -100,6 +100,11 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   }
 }
 
+// Das Fenster zeigt höchstens ANZEIGE_ZEILEN; der CSV-Export holt bis EXPORT_ZEILEN
+// nach (Obergrenze im Backend: DRILLDOWN_MAX_ZEILEN in api/forms.py).
+const ANZEIGE_ZEILEN = 500;
+const EXPORT_ZEILEN = 100000;
+
 // Drilldown-Ebene mit Dokument-Spalte (z.B. XML einer Nachricht) → Dokument- statt Tabellenansicht.
 const dokumentAus = (dd) => dd?.dokument_spalte
   ? { spalte: dd.dokument_spalte, datei_spalte: dd.datei_spalte || null } : null;
@@ -138,19 +143,20 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter, dokument = null }) => {
     const base = cfgRef.current.base || {};
     const id = ++seqRef.current;
-    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [], dokument }]);
+    // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
+    const params = param ? { ...base, [param]: value } : { ...base };
+    // Die Anfrage bleibt am Frame: der CSV-Export lädt damit alle Zeilen nach.
+    const anfrage = { mapping_id, params, row_filter: rowFilter || null };
+    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [], dokument, anfrage }]);
     try {
-      // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
-      const params = param ? { ...base, [param]: value } : { ...base };
       // Ohne max_rows deckelt der Endpunkt auf 200 Zeilen – bei einer Detailliste
       // mit mehreren hundert Artikeln (Lagerwert eines Monats) fehlte damit ein
-      // Gutteil, ohne dass man es sah. 500 ist das Maximum, das er zulässt.
-      const { data } = await api.post("/api/forms/drilldown",
-        { mapping_id, params, max_rows: 500, row_filter: rowFilter || null });
+      // Gutteil, ohne dass man es sah. Angezeigt werden 500; alles Weitere holt der CSV-Export.
+      const { data } = await api.post("/api/forms/drilldown", { ...anfrage, max_rows: ANZEIGE_ZEILEN });
       // data.error: die Abfrage lief auf einen Fehler, hat aber HTTP 200 geliefert
       // (die Engine sammelt Fehler, statt zu werfen). Sonst sähe das aus wie „leer".
       setStack(prev => prev.map(f => f.id === id
-        ? { ...f, rows: data.rows || [], loading: false, error: data.error || null } : f));
+        ? { ...f, rows: data.rows || [], loading: false, error: data.error || null, begrenzt: !!data.begrenzt } : f));
     } catch (e) {
       setStack(prev => prev.map(f => f.id === id
         ? { ...f, loading: false, error: fehlerText(e) } : f));
@@ -275,6 +281,12 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         onBack={stack.length > 1 ? backDrill : null}
         onClose={closeDrill}
         emailEnabled={allowDownload}
+        begrenzt={!!topFrame.begrenzt}
+        ladeAlle={topFrame.anfrage ? async () => {
+          const { data } = await api.post("/api/forms/drilldown", { ...topFrame.anfrage, max_rows: EXPORT_ZEILEN });
+          if (data.error) throw new Error(data.error);
+          return { rows: data.rows || [], begrenzt: !!data.begrenzt };
+        } : null}
       />
     )}
     {aiAction && (
