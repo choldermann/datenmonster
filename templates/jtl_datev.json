@@ -4,7 +4,7 @@
  "template_name": "JTL DATEV-Reporting (Eingangs- und Ausgangsrechnungen)",
  "description": "Erzeugt aus der JTL-Wawi einen DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700) – für Eingangsrechnungen, die JTL selbst nicht exportieren kann, und für Ausgangsrechnungen. Zusätzlich das schlanke Format des bisherigen Access-Werkzeugs, damit der Umstieg vergleichbar bleibt. Monatsweise, mit Kontrollliste vor dem Export.",
  "category": "jtl",
- "version": "1.3",
+ "version": "1.4",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -889,7 +889,7 @@
      "x": 110,
      "y": 30,
      "connection_id": "{{connection_jtl}}",
-     "sql": "-- Was den Export unbrauchbar machen würde - VOR dem Erzeugen ansehen.\n-- Jede Zeile hier ist etwas, das der Steuerberater sonst zurückmeldet.\nSELECT 'Lieferant ohne Kreditorenkonto' AS befund,\n       COUNT(DISTINCT e.kEingangsrechnung) AS belege,\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)) AS netto,\n       MAX(l.cFirma) AS beispiel\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nJOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(l.cLieferantID,''))),'') IS NULL\n\nUNION ALL\n-- Nur wo WEDER Beleg NOCH Kundenstamm eine Nummer führt; alles andere fängt der\n-- Rückfall auf den Stamm ab.\nSELECT 'Kunde ohne Debitorennummer (Beleg UND Stamm leer)', COUNT(DISTINCT r.kRechnung),\n       CAST(ROUND(SUM(rp.fAnzahl * rp.fVkNetto), 2) AS DECIMAL(18,2)), MAX(r.cRechnungsnr)\nFROM Rechnung.tRechnung r\nJOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\nLEFT JOIN dbo.tkunde k ON k.kKunde = r.kKunde\nWHERE ISNULL(r.nIstProforma,0)=0 AND ISNULL(r.nIstEntwurf,0)=0\n  AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND ISNULL(r.nDebitorennr,0) = 0 AND ISNULL(k.nDebitorennr,0) = 0\n\nUNION ALL\nSELECT 'Eingangsrechnung ohne Belegnummer', COUNT(*), NULL, NULL\nFROM dbo.tEingangsrechnung e\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(e.cFremdbelegnummer,''))),'') IS NULL\n\nUNION ALL\nSELECT 'Steuersatz weder 19 % noch 7 % (geht auf das Konto für 0 %)',\n       COUNT(DISTINCT e.kEingangsrechnung),\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)), NULL\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND p.fMwSt NOT IN (19, 7)\n\nUNION ALL\nSELECT 'Gutschriften/Stornos im Zeitraum (mindern den Umsatz)',\n       COUNT(DISTINCT g.kGutschrift),\n       -CAST(ROUND(SUM(ROUND(gp.nAnzahl*gp.fVKNetto*(1-ISNULL(gp.fRabatt,0)/100.0)\n             *(1+gp.fMwSt/100.0),2)),2) AS DECIMAL(18,2)), MAX(g.cGutschriftNr)\nFROM dbo.tgutschrift g\nJOIN dbo.tGutschriftPos gp ON gp.tGutschrift_kGutschrift = g.kGutschrift\nWHERE ISNULL(g.nStorno,0)=0 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n\nUNION ALL\n-- Die Rechnung bleibt in ihrem Monat, der Storno bucht im Monat der Gutschrift\n-- dagegen. Hier steht, wie viel davon einen FRUEHEREN Monat betrifft - diese\n-- Korrekturen kann der Steuerberater sonst nicht zuordnen.\nSELECT 'davon Gutschriften zu Rechnungen aus einem früheren Monat',\n       COUNT(DISTINCT g.kGutschrift),\n       -CAST(ROUND(SUM(ROUND(gp.nAnzahl*gp.fVKNetto*(1-ISNULL(gp.fRabatt,0)/100.0)\n             *(1+gp.fMwSt/100.0),2)),2) AS DECIMAL(18,2)), MAX(r.cRechnungsnr)\nFROM dbo.tgutschrift g\nJOIN dbo.tGutschriftPos gp ON gp.tGutschrift_kGutschrift = g.kGutschrift\nJOIN Rechnung.tRechnung r ON r.kRechnung = g.kRechnung\nWHERE ISNULL(g.nStorno,0)=0 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n  AND (YEAR(r.dErstellt) * 100 + MONTH(r.dErstellt)) < (:year * 100 + :month)\n\nUNION ALL\n-- Muss 0 sein: JTL legt zu jedem Storno eine Gutschrift an. Taucht hier etwas\n-- auf, stuende die Rechnung ohne Gegenbuchung im Stapel.\nSELECT 'Stornierte Rechnung OHNE Storno-Gutschrift (prüfen!)',\n       COUNT(*), NULL, MAX(r.cRechnungsnr)\nFROM Rechnung.tRechnung r\nWHERE ISNULL(r.nStorno,0)=1 AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND NOT EXISTS (SELECT 1 FROM dbo.tgutschrift g WHERE g.kRechnung = r.kRechnung)\n\nUNION ALL\n-- Zwei Kunden auf einem Debitorenkonto: ihre Umsätze verschmelzen beim\n-- Steuerberater zu einem Saldo. Faellt sonst niemandem auf.\nSELECT 'Debitorennummer mehrfach vergeben (Umsätze verschmelzen!)',\n       COUNT(DISTINCT r.kRechnung), NULL, MAX(CAST(r.nDebitorennr AS VARCHAR(20)))\nFROM Rechnung.tRechnung r\nWHERE ISNULL(r.nIstProforma,0)=0 AND ISNULL(r.nIstEntwurf,0)=0\n  AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND ISNULL(r.nDebitorennr,0) > 0\n  AND EXISTS (SELECT 1 FROM dbo.tkunde k WHERE k.nDebitorennr = r.nDebitorennr\n              GROUP BY k.nDebitorennr HAVING COUNT(*) > 1)\n\nUNION ALL\nSELECT 'Stornierte Gutschriften (bewusst ausgeschlossen)', COUNT(*), NULL, NULL\nFROM dbo.tgutschrift g\nWHERE ISNULL(g.nStorno,0)=1 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month",
+     "sql": "-- Was den Export unbrauchbar machen würde - VOR dem Erzeugen ansehen.\n-- detail: Schlüssel für den Drilldown (Reiter Kontrolle → Klick auf die Zeile).\nSELECT x.befund, x.belege, x.netto, x.beispiel,\n       CASE WHEN x.befund LIKE 'Steuersatz weder%' THEN 'mwst' END AS detail\nFROM (\n-- Was den Export unbrauchbar machen würde - VOR dem Erzeugen ansehen.\n-- Jede Zeile hier ist etwas, das der Steuerberater sonst zurückmeldet.\nSELECT 'Lieferant ohne Kreditorenkonto' AS befund,\n       COUNT(DISTINCT e.kEingangsrechnung) AS belege,\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)) AS netto,\n       MAX(l.cFirma) AS beispiel\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nJOIN dbo.tlieferant l           ON l.kLieferant = e.kLieferant\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(l.cLieferantID,''))),'') IS NULL\n\nUNION ALL\n-- Nur wo WEDER Beleg NOCH Kundenstamm eine Nummer führt; alles andere fängt der\n-- Rückfall auf den Stamm ab.\nSELECT 'Kunde ohne Debitorennummer (Beleg UND Stamm leer)', COUNT(DISTINCT r.kRechnung),\n       CAST(ROUND(SUM(rp.fAnzahl * rp.fVkNetto), 2) AS DECIMAL(18,2)), MAX(r.cRechnungsnr)\nFROM Rechnung.tRechnung r\nJOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung\nLEFT JOIN dbo.tkunde k ON k.kKunde = r.kKunde\nWHERE ISNULL(r.nIstProforma,0)=0 AND ISNULL(r.nIstEntwurf,0)=0\n  AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND ISNULL(r.nDebitorennr,0) = 0 AND ISNULL(k.nDebitorennr,0) = 0\n\nUNION ALL\nSELECT 'Eingangsrechnung ohne Belegnummer', COUNT(*), NULL, NULL\nFROM dbo.tEingangsrechnung e\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND NULLIF(LTRIM(RTRIM(ISNULL(e.cFremdbelegnummer,''))),'') IS NULL\n\nUNION ALL\nSELECT 'Steuersatz weder 19 % noch 7 % (geht auf das Konto für 0 %)',\n       COUNT(DISTINCT e.kEingangsrechnung),\n       CAST(ROUND(SUM(p.fMenge * p.fEKNetto), 2) AS DECIMAL(18,2)), NULL\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nWHERE ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND p.fMwSt NOT IN (19, 7)\n\nUNION ALL\nSELECT 'Gutschriften/Stornos im Zeitraum (mindern den Umsatz)',\n       COUNT(DISTINCT g.kGutschrift),\n       -CAST(ROUND(SUM(ROUND(gp.nAnzahl*gp.fVKNetto*(1-ISNULL(gp.fRabatt,0)/100.0)\n             *(1+gp.fMwSt/100.0),2)),2) AS DECIMAL(18,2)), MAX(g.cGutschriftNr)\nFROM dbo.tgutschrift g\nJOIN dbo.tGutschriftPos gp ON gp.tGutschrift_kGutschrift = g.kGutschrift\nWHERE ISNULL(g.nStorno,0)=0 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n\nUNION ALL\n-- Die Rechnung bleibt in ihrem Monat, der Storno bucht im Monat der Gutschrift\n-- dagegen. Hier steht, wie viel davon einen FRUEHEREN Monat betrifft - diese\n-- Korrekturen kann der Steuerberater sonst nicht zuordnen.\nSELECT 'davon Gutschriften zu Rechnungen aus einem früheren Monat',\n       COUNT(DISTINCT g.kGutschrift),\n       -CAST(ROUND(SUM(ROUND(gp.nAnzahl*gp.fVKNetto*(1-ISNULL(gp.fRabatt,0)/100.0)\n             *(1+gp.fMwSt/100.0),2)),2) AS DECIMAL(18,2)), MAX(r.cRechnungsnr)\nFROM dbo.tgutschrift g\nJOIN dbo.tGutschriftPos gp ON gp.tGutschrift_kGutschrift = g.kGutschrift\nJOIN Rechnung.tRechnung r ON r.kRechnung = g.kRechnung\nWHERE ISNULL(g.nStorno,0)=0 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n  AND (YEAR(r.dErstellt) * 100 + MONTH(r.dErstellt)) < (:year * 100 + :month)\n\nUNION ALL\n-- Muss 0 sein: JTL legt zu jedem Storno eine Gutschrift an. Taucht hier etwas\n-- auf, stuende die Rechnung ohne Gegenbuchung im Stapel.\nSELECT 'Stornierte Rechnung OHNE Storno-Gutschrift (prüfen!)',\n       COUNT(*), NULL, MAX(r.cRechnungsnr)\nFROM Rechnung.tRechnung r\nWHERE ISNULL(r.nStorno,0)=1 AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND NOT EXISTS (SELECT 1 FROM dbo.tgutschrift g WHERE g.kRechnung = r.kRechnung)\n\nUNION ALL\n-- Zwei Kunden auf einem Debitorenkonto: ihre Umsätze verschmelzen beim\n-- Steuerberater zu einem Saldo. Faellt sonst niemandem auf.\nSELECT 'Debitorennummer mehrfach vergeben (Umsätze verschmelzen!)',\n       COUNT(DISTINCT r.kRechnung), NULL, MAX(CAST(r.nDebitorennr AS VARCHAR(20)))\nFROM Rechnung.tRechnung r\nWHERE ISNULL(r.nIstProforma,0)=0 AND ISNULL(r.nIstEntwurf,0)=0\n  AND YEAR(r.dErstellt)=:year AND MONTH(r.dErstellt)=:month\n  AND ISNULL(r.nDebitorennr,0) > 0\n  AND EXISTS (SELECT 1 FROM dbo.tkunde k WHERE k.nDebitorennr = r.nDebitorennr\n              GROUP BY k.nDebitorennr HAVING COUNT(*) > 1)\n\nUNION ALL\nSELECT 'Stornierte Gutschriften (bewusst ausgeschlossen)', COUNT(*), NULL, NULL\nFROM dbo.tgutschrift g\nWHERE ISNULL(g.nStorno,0)=1 AND YEAR(g.dErstellt)=:year AND MONTH(g.dErstellt)=:month\n) x",
      "mode": "transform"
     }
    ],
@@ -951,6 +951,193 @@
        "transformer": {
         "type": "direct",
         "source_field": "beispiel"
+       }
+      },
+      {
+       "source_field": "detail",
+       "target_field": "detail",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_pruef",
+       "transformer": {
+        "type": "direct",
+        "source_field": "detail"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mapping_pruef_detail",
+   "name": "DATEV Kontrolle Detail",
+   "sql_nodes": [
+    {
+     "id": "sql_detail",
+     "x": 110,
+     "y": 30,
+     "connection_id": "{{connection_jtl}}",
+     "sql": "-- Drilldown aus dem Reiter Kontrolle: welche Positionen den Befund ausloesen.\n-- Parameter detail kommt aus der versteckten Spalte der Kontrollzeile\n-- (im Kommentar ohne Doppelpunkt, sonst zaehlt er als Platzhalter).\nSELECT e.cEigeneRechnungsnummer AS eigene_nr,\n       e.cFremdbelegnummer      AS lieferanten_nr,\n       CONVERT(VARCHAR(10), e.dBelegdatum, 104) AS belegdatum,\n       COALESCE(NULLIF(e.cLieferant,''), l.cFirma) AS lieferant,\n       e.cLandISO               AS land,\n       CASE p.nPosTyp WHEN 1 THEN 'Artikel' WHEN 2 THEN 'Skonto/Rabatt' ELSE 'Typ ' + CAST(p.nPosTyp AS VARCHAR(5)) END AS positionsart,\n       p.cArtNr                 AS artnr,\n       p.cName                  AS bezeichnung,\n       CAST(p.fMenge AS DECIMAL(18,2))   AS menge,\n       CAST(ROUND(p.fMenge * p.fEKNetto, 2) AS DECIMAL(18,2)) AS netto,\n       CAST(p.fMwSt AS DECIMAL(5,2))     AS steuersatz_beleg,\n       sk.cName                 AS steuerklasse_artikel,\n       CASE WHEN p.nPosTyp <> 1 THEN 'Keine Artikelposition (z. B. Skonto) - Steuersatz prüfen'\n            WHEN ISNULL(e.cLandISO,'') IN ('','DE') THEN 'Inland: Steuersatz fehlt vermutlich - in JTL korrigieren'\n            WHEN e.cLandISO IN ('AT','BE','BG','CY','CZ','DK','EE','ES','FI','FR','GR','EL','HR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK') THEN 'EU-Lieferant: 0 % meist richtig (innergem. Erwerb)'\n            ELSE 'Drittland: 0 % meist richtig (Einfuhr)' END AS hinweis,\n       e.kEingangsrechnung\nFROM dbo.tEingangsrechnung e\nJOIN dbo.tEingangsrechnungPos p ON p.kEingangsrechnung = e.kEingangsrechnung\nLEFT JOIN dbo.tlieferant l      ON l.kLieferant = e.kLieferant\nLEFT JOIN dbo.tArtikel a        ON a.kArtikel = p.kArtikel\nLEFT JOIN dbo.tSteuerklasse sk  ON sk.kSteuerklasse = a.kSteuerklasse\nWHERE :detail = 'mwst'\n  AND ISNULL(e.nDeleted,0)=0 AND YEAR(e.dBelegdatum)=:year AND MONTH(e.dBelegdatum)=:month\n  AND p.fMwSt NOT IN (19, 7)\nORDER BY e.dBelegdatum, e.cEigeneRechnungsnummer, p.kEingangsrechnungPos\n",
+     "mode": "transform"
+    }
+   ],
+   "joins": [],
+   "calc_nodes": [],
+   "agg_nodes": [],
+   "sort_nodes": [],
+   "lookup_nodes": [],
+   "constant_nodes": [],
+   "switch_nodes": [],
+   "transform_nodes": [],
+   "rest_nodes": [],
+   "canvas_nodes": [],
+   "targets": [
+    {
+     "id": "t_detail",
+     "name": "Detail",
+     "target_type": "csv",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "eigene_nr",
+       "target_field": "eigene_nr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigene_nr"
+       }
+      },
+      {
+       "source_field": "lieferanten_nr",
+       "target_field": "lieferanten_nr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "lieferanten_nr"
+       }
+      },
+      {
+       "source_field": "belegdatum",
+       "target_field": "belegdatum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "belegdatum"
+       }
+      },
+      {
+       "source_field": "lieferant",
+       "target_field": "lieferant",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "lieferant"
+       }
+      },
+      {
+       "source_field": "land",
+       "target_field": "land",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "land"
+       }
+      },
+      {
+       "source_field": "positionsart",
+       "target_field": "positionsart",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "positionsart"
+       }
+      },
+      {
+       "source_field": "artnr",
+       "target_field": "artnr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "artnr"
+       }
+      },
+      {
+       "source_field": "bezeichnung",
+       "target_field": "bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "bezeichnung"
+       }
+      },
+      {
+       "source_field": "menge",
+       "target_field": "menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "menge"
+       }
+      },
+      {
+       "source_field": "netto",
+       "target_field": "netto",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "netto"
+       }
+      },
+      {
+       "source_field": "steuersatz_beleg",
+       "target_field": "steuersatz_beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "steuersatz_beleg"
+       }
+      },
+      {
+       "source_field": "steuerklasse_artikel",
+       "target_field": "steuerklasse_artikel",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "steuerklasse_artikel"
+       }
+      },
+      {
+       "source_field": "hinweis",
+       "target_field": "hinweis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "hinweis"
+       }
+      },
+      {
+       "source_field": "kEingangsrechnung",
+       "target_field": "kEingangsrechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql_detail",
+       "transformer": {
+        "type": "direct",
+        "source_field": "kEingangsrechnung"
        }
       }
      ]
@@ -1235,6 +1422,27 @@
      }
     ],
     "widgets": [
+     {
+      "id": "w_pruef",
+      "type": "table",
+      "action_id": "a_pruef",
+      "title": "Kontrolle vor dem Export",
+      "colSpan": 12,
+      "config": {
+       "hidden_columns": [
+        "detail"
+       ],
+       "drilldown": {
+        "mapping_id": "mapping_pruef_detail",
+        "key_column": "detail",
+        "param": "detail",
+        "title": "Positionen ohne 19 % / 7 %",
+        "hidden_columns": [
+         "kEingangsrechnung"
+        ]
+       }
+      }
+     },
      {
       "id": "w_debitoren",
       "type": "debitoren",

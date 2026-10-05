@@ -33,6 +33,9 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   // konfiguriert ist. KI-Aktion hat Vorrang, falls beides gesetzt wäre.
   const aiClickable = !!(onAiAction && ai?.mapping_id && ai?.key_column);
   const rowClickable = aiClickable || !!(onDrilldown && dd?.mapping_id && dd?.key_column);
+  // Zeile ohne Schlüsselwert öffnet nichts (z.B. Kontrollzeilen ohne Detail) – dann kein Hand-Cursor.
+  const leer = (v) => v === null || v === undefined || v === "";
+  const zeileKlickbar = (row) => rowClickable && !leer(row[aiClickable ? ai.key_column : dd.key_column]);
   const clickRow = (row) => {
     if (aiClickable) {
       const v = row[ai.key_column];
@@ -119,7 +122,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
           <tbody>
             {sortedRows.map((row, i) => (
               <tr key={i} onClick={() => clickRow(row)}
-                style={{ borderBottom: `1px solid ${S.border}`, cursor: rowClickable ? "pointer" : "default" }}
+                style={{ borderBottom: `1px solid ${S.border}`, cursor: zeileKlickbar(row) ? "pointer" : "default" }}
                 onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.025)"}
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
                 {columns.map(c => (
