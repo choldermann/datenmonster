@@ -83,12 +83,48 @@ FREE_FEATURES = {f["id"] for f in ALL_FEATURES if f["free"]}
 CATEGORY_ORDER = ["Vorlagen", "Portal", "ETL", "Automatisierung", "Konnektoren", "KI", "Verwaltung", "Plugins"]
 
 # ─── Machine-ID ───────────────────────────────────────────────────────────────
-def _machine_id() -> str:
+# Die ID haengt am Hostnamen des Containers. Installationen von vor dem
+# 05.07.2026 haben keinen festen hostname in der docker-compose.yml, und der
+# Updater tauscht nur Images, nie die Compose-Datei: jedes Update ergab einen
+# neuen Container-Hostnamen, also eine neue machine_id und eine weitere
+# Aktivierung auf monstersuite.de. Deshalb wird die ID beim ersten Abruf im
+# Daten-Volume festgeschrieben – mit dem Wert von jetzt, damit die bestehende
+# Aktivierung gueltig bleibt.
+MACHINE_ID_FILE = os.getenv("MACHINE_ID_FILE", "/app/uploads/.machine_id")
+_machine_id_cache: Optional[str] = None
+
+
+def _machine_id_aus_hostname() -> str:
     try:
         raw = f"{socket.gethostname()}-{PRODUCT_SLUG}"
         return hashlib.sha256(raw.encode()).hexdigest()[:32]
     except Exception:
         return hashlib.sha256(PRODUCT_SLUG.encode()).hexdigest()[:32]
+
+
+def _machine_id() -> str:
+    global _machine_id_cache
+    if _machine_id_cache:
+        return _machine_id_cache
+    try:
+        with open(MACHINE_ID_FILE, encoding="utf-8") as f:
+            gespeichert = f.read().strip()
+        if gespeichert:
+            _machine_id_cache = gespeichert
+            return gespeichert
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        logger.warning(f"machine_id nicht lesbar ({MACHINE_ID_FILE}): {e}")
+    neu = _machine_id_aus_hostname()
+    try:
+        with open(MACHINE_ID_FILE, "w", encoding="utf-8") as f:
+            f.write(neu)
+        _machine_id_cache = neu
+    except Exception as e:
+        # Nicht schreibbar (z. B. ohne Volume): weiter wie bisher, naechster Versuch beim naechsten Abruf
+        logger.warning(f"machine_id nicht gespeichert ({MACHINE_ID_FILE}): {e}")
+    return neu
 
 # ─── Offline-Validierung (HMAC, nur wenn LICENSE_SECRET gesetzt) ──────────────
 def _validate_offline(key: str) -> Optional[dict]:
