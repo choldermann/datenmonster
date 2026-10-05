@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.10",
+  "version": "1.11",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -5663,6 +5663,255 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_lg_ll_kpi",
+      "name": "Lager – Lagerliste Summen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT COUNT(*) AS Positionen,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(b.Menge * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(SUM(b.Menge * ISNULL(A.fVKNetto, 0)) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Positionen",
+            "Menge",
+            "EKGesamt",
+            "VKGesamt"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Lagerliste Summen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "int",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "EKGesamt",
+              "target_field": "EKGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKGesamt"
+              }
+            },
+            {
+              "source_field": "VKGesamt",
+              "target_field": "VKGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKGesamt"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ll_liste",
+      "name": "Lager – Lagerliste",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT TOP 2000\n    A.cArtNr AS Artikelnummer, ISNULL(AB.cName, '') AS Name,\n    ISNULL(W.cName, '') AS Warengruppe, b.Lager,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Menge,\n    ISNULL(b.Charge, '') AS ChargenNr,\n    ISNULL(CONVERT(varchar(10), b.MHD, 104), '') AS MHD,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKNetto,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n    CAST(b.Menge * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(b.Menge * ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001\nORDER BY A.cArtNr, b.Lager, b.MHD",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Artikelnummer",
+            "Name",
+            "Warengruppe",
+            "Lager",
+            "Menge",
+            "ChargenNr",
+            "MHD",
+            "EKNetto",
+            "VKNetto",
+            "EKGesamt",
+            "VKGesamt"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Lagerliste",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Artikelnummer",
+              "target_field": "Artikelnummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikelnummer"
+              }
+            },
+            {
+              "source_field": "Name",
+              "target_field": "Name",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Name"
+              }
+            },
+            {
+              "source_field": "Warengruppe",
+              "target_field": "Warengruppe",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warengruppe"
+              }
+            },
+            {
+              "source_field": "Lager",
+              "target_field": "Lager",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lager"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "ChargenNr",
+              "target_field": "ChargenNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ChargenNr"
+              }
+            },
+            {
+              "source_field": "MHD",
+              "target_field": "MHD",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MHD"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "VKNetto",
+              "target_field": "VKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKNetto"
+              }
+            },
+            {
+              "source_field": "EKGesamt",
+              "target_field": "EKGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKGesamt"
+              }
+            },
+            {
+              "source_field": "VKGesamt",
+              "target_field": "VKGesamt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "VKGesamt"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "forms": [
@@ -5834,6 +6083,35 @@
             "config": {
               "visible_tabs": [
                 "tab_abfluesse"
+              ]
+            }
+          },
+          {
+            "id": "f_ll_null",
+            "name": "ll_null",
+            "type": "dropdown",
+            "label": "Zeilen mit Bestand 0",
+            "row": 1,
+            "colSpan": 4,
+            "default": "0",
+            "action_ids": [
+              "act_lg_ll_kpi",
+              "act_lg_ll_liste"
+            ],
+            "options": [
+              {
+                "value": "0",
+                "label": "ausblenden"
+              },
+              {
+                "value": "1",
+                "label": "anzeigen"
+              }
+            ],
+            "config": {
+              "auto_run": true,
+              "visible_tabs": [
+                "tab_lg_lagerliste"
               ]
             }
           }
@@ -6082,6 +6360,20 @@
             "requires_params": [
               "artikel_hist"
             ]
+          },
+          {
+            "id": "act_lg_ll_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ll_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Lagerliste Summen"
+          },
+          {
+            "id": "act_lg_ll_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ll_liste",
+            "pipeline_id": null,
+            "label": "Lager – Lagerliste"
           }
         ],
         "widgets": [
@@ -6932,6 +7224,73 @@
             }
           },
           {
+            "id": "w_lg_ll_pos",
+            "type": "kpi",
+            "label": "Positionen",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "Positionen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ll_menge",
+            "type": "kpi",
+            "label": "Menge gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "Menge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ll_ek",
+            "type": "kpi",
+            "label": "EK gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "EKGesamt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_ll_vk",
+            "type": "kpi",
+            "label": "VK gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "VKGesamt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_ll_tabelle",
+            "type": "table",
+            "label": "Lagerliste je Artikel, Lager, Charge und MHD",
+            "action_id": "act_lg_ll_liste",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Bestand zum Ende des Zeitraums, aus den Warenein- und -ausgängen der Wawi. EK und VK aus den Artikelstammdaten wie im Access-Lagertool. Die Tabelle zeigt höchstens 2.000 Zeilen, die Summen oben gelten immer für alle."
+            }
+          },
+          {
             "id": "w_lg_tbl_lager",
             "type": "table",
             "label": "Bestand und Wert je Warenlager",
@@ -7311,6 +7670,14 @@
             ]
           },
           {
+            "id": "tab_lg_lagerliste",
+            "label": "Lagerliste",
+            "action_ids": [
+              "act_lg_ll_kpi",
+              "act_lg_ll_liste"
+            ]
+          },
+          {
             "id": "tab_lg_lager",
             "label": "Lager & Buchungen",
             "action_ids": [
@@ -7324,7 +7691,8 @@
           "hinweise": [
             "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Auf dem Reiter Disposition wirkt der Zeitraumfilter deshalb nicht.",
             "Vaterartikel von Variationen werden nicht doppelt gezählt.",
-            "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant."
+            "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant.",
+            "Lagerliste: Bestand je Artikel, Lager, Charge und MHD zum Ende des Zeitraums – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt."
           ]
         }
       }
