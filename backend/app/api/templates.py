@@ -298,6 +298,105 @@ def _resolve_conn_ids_install(obj, config: dict):
     return obj
 
 
+def _form_schema_aufloesen(schema_def: dict, mapping_id_map: dict, ds_id_map: dict,
+                           config: dict) -> dict:
+    """Formular-Schema aus der Vorlage mit echten IDs (Mappings, Datasets, Verbindungen)."""
+    import copy
+    schema = copy.deepcopy(schema_def)
+    for a in schema.get("actions", []) or []:
+        mid = a.get("mapping_id")
+        if isinstance(mid, str) and mid in mapping_id_map:
+            a["mapping_id"] = mapping_id_map[mid]
+    for w in schema.get("widgets", []) or []:
+        did = w.get("dataset_id")
+        if isinstance(did, str) and did in ds_id_map:
+            w["dataset_id"] = ds_id_map[did]
+        # Mapping-Referenzen in der Widget-Konfiguration (Template-String-IDs
+        # → echte DB-IDs). Rekursiv, weil `mapping_id` an beliebiger Tiefe
+        # stehen kann: config.drilldown.levels[].levels[], row_detail.map[<key>]
+        # samt eigener levels[], ai_action, ean_research. Eine feste Liste von
+        # Pfaden hat genau das verfehlt (eine verschachtelte Ebene blieb als
+        # Template-String stehen und der Klick lief ins Leere).
+        _resolve_mapping_ids_install(w.get("config"), mapping_id_map)
+        # Hersteller-Navigator: eigene Schlüsselnamen, deshalb separat.
+        hn = (w.get("config") or {}).get("hersteller_navigator")
+        if isinstance(hn, dict):
+            for schluessel in ("artikel_mapping_id", "fakten_mapping_id"):
+                hmid = hn.get(schluessel)
+                if isinstance(hmid, str) and hmid in mapping_id_map:
+                    hn[schluessel] = mapping_id_map[hmid]
+    # Verbindungs-Platzhalter in Widget-Configs → gewählte Verbindung. Muss
+    # VOR _apply_config_deep laufen, damit die ID als Zahl ankommt und nicht
+    # als Text; danach fasst der Textersatz sie nicht mehr an.
+    schema = _resolve_conn_ids_install(schema, config)
+    schema = _apply_config_deep(schema, config)
+    return schema
+
+
+_BAUSTEIN_LISTEN = ("fields", "actions", "widgets", "result_tabs")
+
+
+def _bausteine(schema: dict) -> dict:
+    """IDs der Bausteine eines Formular-Schemas, je Liste."""
+    return {k: [e.get("id") for e in (schema.get(k) or [])
+                if isinstance(e, dict) and e.get("id") is not None]
+            for k in _BAUSTEIN_LISTEN}
+
+
+def _formular_ergaenzen(vorhanden: dict, vorlage: dict, bisher: Optional[dict]) -> dict:
+    """Ergänzt ein installiertes Formular um Bausteine, die eine neue Vorlagen-
+    Version mitbringt (Widgets, Aktionen, Felder, Reiter).
+
+    Überschrieben wird nichts: im Betrieb geänderte Bausteine bleiben, wie sie
+    sind. Ergänzt wird nur, was die Vorlage BISHER noch nie angeboten hat
+    (`bisher` = Bausteine aus früheren Installationen dieses Formulars) – ein
+    Widget, das der Kunde bewusst gelöscht hat, kommt so nicht zurück. Fehlt das
+    Protokoll (Installationen von vor dieser Funktion), gilt alles Fehlende als neu.
+
+    `vorlage` muss bereits aufgelöst sein (_form_schema_aufloesen). Gibt die
+    Liste der ergänzten IDs je Bausteinart zurück; `vorhanden` wird verändert.
+    """
+    bisher = bisher or {}
+    neu = {}
+    for liste in _BAUSTEIN_LISTEN:
+        v_liste = vorhanden.setdefault(liste, [])
+        da = {e.get("id") for e in v_liste if isinstance(e, dict)}
+        schon_angeboten = set(bisher.get(liste) or [])
+        vorgaenger = None  # zuletzt gesehene Vorlagen-ID, die es im Formular gibt
+        for el in (vorlage.get(liste) or []):
+            eid = el.get("id") if isinstance(el, dict) else None
+            if eid is None:
+                continue
+            if eid in da:
+                vorgaenger = eid
+                continue
+            if eid in schon_angeboten:
+                continue
+            # Hinter dem Vorgänger aus der Vorlage einsortieren, sonst ganz vorn –
+            # so steht der neue Baustein dort, wo die Vorlage ihn vorsieht.
+            pos = 0
+            if vorgaenger is not None:
+                pos = next(i for i, e in enumerate(v_liste)
+                           if isinstance(e, dict) and e.get("id") == vorgaenger) + 1
+            v_liste.insert(pos, el)
+            da.add(eid)
+            vorgaenger = eid
+            neu.setdefault(liste, []).append(eid)
+    # Neue Aktionen auch in die vorhandenen Reiter hängen, in denen die Vorlage sie führt.
+    neue_aktionen = set(neu.get("actions") or [])
+    if neue_aktionen:
+        reiter = {r.get("id"): r for r in vorhanden.get("result_tabs") or [] if isinstance(r, dict)}
+        for t_reiter in vorlage.get("result_tabs") or []:
+            r = reiter.get(t_reiter.get("id"))
+            if r is None or t_reiter.get("id") in (neu.get("result_tabs") or []):
+                continue
+            ids = r.setdefault("action_ids", [])
+            for aid in t_reiter.get("action_ids") or []:
+                if aid in neue_aktionen and aid not in ids:
+                    ids.append(aid)
+    return neu
+
+
 def _conn_ids_nachziehen(vorhanden, vorlage, config: dict) -> int:
     """Zieht die Verbindungs-IDs eines installierten Formular-Schemas nach.
 
@@ -1044,6 +1143,9 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     import copy as _copy
     form_by_name = {f.name: f for f in db.query(Form)
                     .filter(Form.project_id == body.project_id).all() if f.name}
+    # Welche Bausteine die Vorlage je Formular angeboten hat – Grundlage dafür,
+    # beim nächsten Update nur wirklich Neues zu ergänzen (_formular_ergaenzen).
+    form_bausteine = {}
     for f_def in content.get("forms", []):
         # Gleichnamiges Formular vorhanden? → unangetastet lassen. Installierte
         # Dashboards werden im Betrieb gepatcht (zusätzliche Reiter/Widgets); ein
@@ -1059,39 +1161,31 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             n = _conn_ids_nachziehen(existing_f.schema or {},
                                      f_def.get("schema", {}) or {}, config)
             if n:
+                eintrag["verbindung_aktualisiert"] = n
+            # Neue Bausteine einer neueren Vorlagen-Version ergänzen (z.B. ein
+            # Drilldown-Widget) – vorhandene bleiben, wie sie im Betrieb sind.
+            vorlage_schema = _form_schema_aufloesen(f_def.get("schema", {}) or {},
+                                                    mapping_id_map, ds_id_map, config)
+            bisher = {}
+            for _inst in (t.installations or []):
+                if _inst.get("project_id") != body.project_id:
+                    continue
+                for _liste, _ids in ((_inst.get("form_bausteine") or {})
+                                     .get(str(existing_f.id)) or {}).items():
+                    bisher.setdefault(_liste, set()).update(_ids or [])
+            sc = _copy.deepcopy(existing_f.schema or {})
+            ergaenzt = _formular_ergaenzen(sc, vorlage_schema, bisher)
+            if ergaenzt:
+                existing_f.schema = sc
+                eintrag["ergaenzt"] = ergaenzt
+            if n or ergaenzt:
                 flag_modified(existing_f, "schema")
                 db.commit()
-                eintrag["verbindung_aktualisiert"] = n
+            form_bausteine[str(existing_f.id)] = _bausteine(vorlage_schema)
             created.setdefault("forms", []).append(eintrag)
             continue
-        schema = _copy.deepcopy(f_def.get("schema", {}) or {})
-        for a in schema.get("actions", []) or []:
-            mid = a.get("mapping_id")
-            if isinstance(mid, str) and mid in mapping_id_map:
-                a["mapping_id"] = mapping_id_map[mid]
-        for w in schema.get("widgets", []) or []:
-            did = w.get("dataset_id")
-            if isinstance(did, str) and did in ds_id_map:
-                w["dataset_id"] = ds_id_map[did]
-            # Mapping-Referenzen in der Widget-Konfiguration (Template-String-IDs
-            # → echte DB-IDs). Rekursiv, weil `mapping_id` an beliebiger Tiefe
-            # stehen kann: config.drilldown.levels[].levels[], row_detail.map[<key>]
-            # samt eigener levels[], ai_action, ean_research. Eine feste Liste von
-            # Pfaden hat genau das verfehlt (eine verschachtelte Ebene blieb als
-            # Template-String stehen und der Klick lief ins Leere).
-            _resolve_mapping_ids_install(w.get("config"), mapping_id_map)
-            # Hersteller-Navigator: eigene Schlüsselnamen, deshalb separat.
-            hn = (w.get("config") or {}).get("hersteller_navigator")
-            if isinstance(hn, dict):
-                for schluessel in ("artikel_mapping_id", "fakten_mapping_id"):
-                    hmid = hn.get(schluessel)
-                    if isinstance(hmid, str) and hmid in mapping_id_map:
-                        hn[schluessel] = mapping_id_map[hmid]
-        # Verbindungs-Platzhalter in Widget-Configs → gewählte Verbindung. Muss
-        # VOR _apply_config_deep laufen, damit die ID als Zahl ankommt und nicht
-        # als Text; danach fasst der Textersatz sie nicht mehr an.
-        schema = _resolve_conn_ids_install(schema, config)
-        schema = _apply_config_deep(schema, config)
+        schema = _form_schema_aufloesen(f_def.get("schema", {}) or {},
+                                        mapping_id_map, ds_id_map, config)
         # Sofort veroeffentlichen, aber NUR fuer den Installierenden freigeben.
         # Vorher stand hier published=False: das Formular war im Editor zwar sofort
         # da, im Portal aber erst nach einem manuellen Schritt, den niemand erwartet.
@@ -1114,6 +1208,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         )
         db.add(fo); db.commit(); db.refresh(fo)
         created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
+        form_bausteine[str(fo.id)] = _bausteine(schema)
 
     # ── Unternehmenswarnungen (alert_rules) anlegen ───────────────────────────
     # Regeln sind Daten: sie verweisen per mapping_name auf Auswertungen, die aus
@@ -1226,6 +1321,7 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             "datasets": {str(k): v for k, v in ds_id_map.items()},
             "mappings": {str(k): v for k, v in mapping_id_map.items()},
         },
+        "form_bausteine": form_bausteine,
     }
     t.installations = (t.installations or []) + [inst_record]
     flag_modified(t, "installations")

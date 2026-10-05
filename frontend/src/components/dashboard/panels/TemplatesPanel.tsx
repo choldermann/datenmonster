@@ -86,8 +86,12 @@ function TemplateCard({ template, projectId, onInstalled }) {
       // Doppel anzulegen – das Ergebnis kurz zurückmelden.
       const objs = Object.values(data?.created || {}).flat();
       const reused = objs.filter(o => o && o.reused).length;
+      // Vorhandene Formulare werden nicht überschrieben, aber um neue Bausteine der Vorlage ergänzt.
+      const ergaenzt = (data?.created?.forms || []).reduce((n, f) =>
+        n + Object.values(f?.ergaenzt || {}).reduce((m, ids) => m + ids.length, 0), 0);
       setSummary(`${objs.length - reused} neu angelegt`
-        + (reused ? `, ${reused} vorhandene wiederverwendet` : ""));
+        + (reused ? `, ${reused} vorhandene wiederverwendet` : "")
+        + (ergaenzt ? `, ${ergaenzt} neue Formular-Bausteine ergänzt` : ""));
       setInstalled(true);
       setTimeout(() => onInstalled(), 1000);
     } catch (e) {
@@ -228,7 +232,7 @@ function TemplateCard({ template, projectId, onInstalled }) {
                 {Object.entries(template.contents).map(([typ, n]) => (
                   <span key={typ}>✓ {n} {(INHALT_LABEL[typ] || [typ, typ])[n === 1 ? 0 : 1]}<br /></span>
                 ))}
-                Gleichnamige Objekte im Projekt werden wiederverwendet.
+                Gleichnamige Objekte im Projekt werden wiederverwendet; vorhandene Formulare erhalten nur neue Bausteine der Vorlage.
               </p>
             </div>
           )}
