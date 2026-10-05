@@ -26,7 +26,7 @@ _REGELN = [
     ({"POST"},           r"/api/templates/berechtigung/pruefen"),
     ({"GET"},            r"/api/ai/(status|credits)"),
     ({"POST"},           r"/api/ai/(summarize-data|recommend-action|chat)"),
-    ({"POST"},           r"/api/forms/(drilldown|email-table)"),
+    ({"POST"},           r"/api/forms/(drilldown|email-table|table-xlsx)"),
     ({"GET"},            r"/api/exports/\d+/download"),
     # „Bisherige Exporte“ im Portal: eigene Datei löschen (exports.py filtert auf user_id)
     ({"DELETE"},         r"/api/exports/\d+"),

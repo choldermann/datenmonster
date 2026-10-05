@@ -290,6 +290,70 @@ def drilldown(body: DrilldownRequest, db: Session = Depends(get_db),
     }
 
 
+class TabelleXlsxRequest(BaseModel):
+    title:   Optional[str] = None
+    columns: Optional[List[str]] = None
+    rows:    List[dict]
+
+
+# Gleiche Obergrenze wie der CSV-Export einer Detailliste.
+XLSX_MAX_ZEILEN = 100000
+
+
+@router.post("/table-xlsx")
+def tabelle_als_xlsx(body: TabelleXlsxRequest, user: User = Depends(get_current_user)):
+    """Gibt eine angezeigte Tabelle als Excel-Datei zurück – Zahlen als Zahlen,
+    Kopfzeile fixiert, Autofilter. Die Daten kommen aus dem Browser (dieselben
+    Zeilen wie beim CSV-Knopf), es wird nichts nachgeladen."""
+    import io
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    rows = body.rows or []
+    if len(rows) > XLSX_MAX_ZEILEN:
+        raise HTTPException(400, f"Höchstens {XLSX_MAX_ZEILEN} Zeilen")
+    cols = body.columns or (list(rows[0].keys()) if rows else [])
+    titel = (body.title or "Tabelle").strip() or "Tabelle"
+
+    wb = Workbook()
+    ws = wb.active
+    # Blattname: max. 31 Zeichen, ohne []:*?/\
+    ws.title = re.sub(r"[\[\]:*?/\\]", " ", titel)[:31] or "Tabelle"
+    ws.append(cols)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+        c.fill = PatternFill("solid", fgColor="E8EEF4")
+    breite = [len(str(c)) for c in cols]
+    for r in rows:
+        werte = []
+        for i, c in enumerate(cols):
+            v = r.get(c)
+            if isinstance(v, (dict, list)):
+                v = str(v)
+            werte.append(v)
+            breite[i] = max(breite[i], min(len("" if v is None else str(v)), 60))
+        ws.append(werte)
+        # Text, der mit = beginnt, bliebe sonst eine Formel (Formel-Injektion)
+        for cell in ws[ws.max_row]:
+            if isinstance(cell.value, str) and cell.value[:1] in ("=", "+", "-", "@"):
+                cell.data_type = "s"
+    for i, w in enumerate(breite, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = max(8, w + 2)
+    ws.freeze_panes = "A2"
+    if cols:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{max(ws.max_row, 1)}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    datei = re.sub(r"[^\w\-. ]", "_", titel)[:80] + ".xlsx"
+    return StreamingResponse(
+        buf, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{datei}"'})
+
+
 @router.post("/email-table")
 def email_table(body: EmailTableRequest, db: Session = Depends(get_db),
                 user: User = Depends(get_current_user)):

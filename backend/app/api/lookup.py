@@ -97,6 +97,9 @@ LOOKUP_QUERIES = {
                         "WHERE EXISTS (SELECT 1 FROM dbo.vArtikelHistorie H "
                         "              WHERE H.kArtikel = A.kArtikel) "
                         "ORDER BY A.cArtNr",
+    # Warenlager (Lagerliste im Lager-Cockpit). Mehrfachauswahl, leer = alle.
+    "warenlager":  "SELECT kWarenLager AS value, cName AS label "
+                   "FROM dbo.tWarenLager WHERE ISNULL(cName, '') <> '' ORDER BY cName",
     # Papinet-Partner (PapinetV2, eigene EGP-Datenbank, nicht JTL). Gesperrte
     # stehen mit drin – ihre alten Nachrichten sollen auffindbar bleiben.
     "papinet_partner": "SELECT PartnerID AS value, PartnerName + ' (' + PartnerCode + ')' "

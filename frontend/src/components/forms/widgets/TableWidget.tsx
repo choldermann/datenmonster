@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
 import EmailTableButton from "../EmailTableButton";
+import api, { fehlerText } from "../../../api/client";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -29,6 +30,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   const allColumns = result.columns || [];
   const columns = allColumns.filter(c => !hidden.has(c));
   const { rows = [], total } = result;
+  const [xlsxLaeuft, setXlsxLaeuft] = useState(false);
   // Zeilen sind klickbar, wenn eine KI-Aktion oder ein Detail-Mapping (+ Schlüsselspalte)
   // konfiguriert ist. KI-Aktion hat Vorrang, falls beides gesetzt wäre.
   const aiClickable = !!(onAiAction && ai?.mapping_id && ai?.key_column);
@@ -81,6 +83,22 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
     a.click();
   };
 
+  // Excel baut das Backend (openpyxl) – aus denselben Zeilen und derselben Sortierung wie CSV.
+  const downloadXlsx = async () => {
+    setXlsxLaeuft(true);
+    try {
+      const resp = await api.post("/api/forms/table-xlsx",
+        { title: widget.label || "Tabelle", columns, rows: sortedRows }, { responseType: "blob" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(resp.data);
+      a.download = `${widget.label || "export"}.xlsx`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    } catch (e) {
+      alert(`Excel-Export fehlgeschlagen: ${fehlerText(e)}`);
+    } finally { setXlsxLaeuft(false); }
+  };
+
   const canDownload = allowDownload && !result.download_disabled;
 
   return (
@@ -97,6 +115,12 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                   color: S.accent, background: "none", border: `1px solid ${S.border}`,
                   borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
                 <Download size={11} /> CSV
+              </button>
+              <button onClick={downloadXlsx} disabled={xlsxLaeuft || !rows.length}
+                style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+                  color: S.accent, background: "none", border: `1px solid ${S.border}`,
+                  borderRadius: 5, padding: "4px 10px", cursor: xlsxLaeuft ? "wait" : "pointer" }}>
+                <Download size={11} /> {xlsxLaeuft ? "Excel …" : "Excel"}
               </button>
             </div>
           )}

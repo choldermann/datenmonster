@@ -143,6 +143,16 @@ export default function DbDropdownField({ field, value, onChange, inp, onRunActi
           )}
 
           <div style={{ maxHeight: 260, overflowY: "auto" }}>
+            {/* Alle anhaken, um danach einzelne abzuwählen (leer heißt zwar auch „alle“,
+                lässt sich aber nicht gezielt einschränken). */}
+            {multiple && !query && count < options.length && options.length > 1 && (
+              <button type="button" onClick={() => apply(options.map(o => o.value))}
+                style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px",
+                  background: "none", border: "none", color: S.accent, fontSize: 12,
+                  cursor: "pointer", borderBottom: `1px solid ${S.border}` }}>
+                Alle auswählen
+              </button>
+            )}
             {count > 0 && (
               <button type="button" onClick={() => { apply(multiple ? [] : ""); if (!multiple) setOpen(false); }}
                 style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 10px",

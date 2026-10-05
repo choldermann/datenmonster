@@ -5677,7 +5677,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT COUNT(*) AS Positionen,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(b.Menge * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(SUM(b.Menge * ISNULL(A.fVKNetto, 0)) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT COUNT(*) AS Positionen,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(b.Menge * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(SUM(b.Menge * ISNULL(A.fVKNetto, 0)) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5763,7 +5763,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT TOP 2000\n    A.cArtNr AS Artikelnummer, ISNULL(AB.cName, '') AS Name,\n    ISNULL(W.cName, '') AS Warengruppe, b.Lager,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Menge,\n    ISNULL(b.Charge, '') AS ChargenNr,\n    ISNULL(CONVERT(varchar(10), b.MHD, 104), '') AS MHD,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKNetto,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n    CAST(b.Menge * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(b.Menge * ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001\nORDER BY A.cArtNr, b.Lager, b.MHD",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Ende des Zeitraums je Artikel, Lager, Charge und MHD.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, :bis)\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT TOP 2000\n    A.cArtNr AS Artikelnummer, ISNULL(AB.cName, '') AS Name,\n    ISNULL(W.cName, '') AS Warengruppe, b.Lager,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Menge,\n    ISNULL(b.Charge, '') AS ChargenNr,\n    ISNULL(CONVERT(varchar(10), b.MHD, 104), '') AS MHD,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKNetto,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n    CAST(b.Menge * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(b.Menge * ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001\nORDER BY A.cArtNr, b.Lager, b.MHD",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -6083,6 +6083,28 @@
             "config": {
               "visible_tabs": [
                 "tab_abfluesse"
+              ]
+            }
+          },
+          {
+            "id": "f_ll_lager",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Lager",
+            "name": "ll_lager",
+            "action_ids": [
+              "act_lg_ll_kpi",
+              "act_lg_ll_liste"
+            ],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "warenlager",
+              "multiple": true,
+              "auto_run": true,
+              "placeholder": "Alle Lager",
+              "visible_tabs": [
+                "tab_lg_lagerliste"
               ]
             }
           },
