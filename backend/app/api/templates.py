@@ -497,6 +497,30 @@ def _rewrite_ids_export(obj, int_to_str: dict):
     return obj
 
 
+_MAPPING_REF_KEYS = {"mapping_id", "artikel_mapping_id", "fakten_mapping_id"}
+
+
+def _mapping_refs_export(node, real_to_tpl: Optional[dict] = None, gefunden: Optional[set] = None):
+    """Gegenstück zu _resolve_mapping_ids_install für den Export: findet jede
+    Mapping-Referenz in einem Formular-Schema (drilldown.mapping_id samt levels[],
+    row_detail, ai_action, Hersteller-Navigator …) und schreibt sie auf die
+    Template-String-ID um. Vorher kannte der Export nur ai_action und row_detail –
+    ein Drilldown reiste mit der rohen ID des Absenders und zeigte beim Empfänger
+    auf ein fremdes oder kein Mapping. `gefunden` sammelt die echten IDs."""
+    if isinstance(node, dict):
+        for k, v in list(node.items()):
+            if k in _MAPPING_REF_KEYS and isinstance(v, int):
+                if gefunden is not None:
+                    gefunden.add(v)
+                if real_to_tpl and v in real_to_tpl:
+                    node[k] = real_to_tpl[v]
+            else:
+                _mapping_refs_export(v, real_to_tpl, gefunden)
+    elif isinstance(node, list):
+        for v in node:
+            _mapping_refs_export(v, real_to_tpl, gefunden)
+
+
 def _resolve_mapping_ids_install(node, mapping_id_map: dict) -> None:
     """Ersetzt IN-PLACE jedes `mapping_id`, das eine Template-String-ID ist, durch
     die echte DB-ID – an beliebiger Stelle der Widget-Konfiguration."""
@@ -1743,6 +1767,25 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
         "hinweise": [],
     }
 
+    # Mappings, auf die die gewählten Formulare verweisen (Aktionen, Drilldowns …),
+    # gehören zwingend dazu – fehlt eines, zeigt der Verweis beim Empfänger ins Leere.
+    # Deshalb automatisch mitnehmen, wenn es im selben Projekt liegt.
+    _verweise = set()
+    for _fid in (body.form_ids or []):
+        _fo = db.query(Form).filter(Form.id == _fid).first()
+        if not _fo:
+            continue
+        _sc = copy.deepcopy(_fo.schema if isinstance(_fo.schema, dict) else json.loads(_fo.schema or "{}"))
+        _nur = (body.form_widgets or {}).get(str(_fid))
+        if _nur is not None:
+            _sc = _form_auf_bausteine_kuerzen(_sc, _nur)
+        _mapping_refs_export(_sc, None, _verweise)
+        for _m in db.query(Mapping).filter(Mapping.id.in_(_verweise - set(body.mapping_ids or [])),
+                                           Mapping.project_id == _fo.project_id).all():
+            body.mapping_ids = list(body.mapping_ids or []) + [_m.id]
+            content["hinweise"].append(f"Mapping „{_m.name}“ automatisch mitgenommen "
+                                       f"(Formular „{_fo.name}“ verweist darauf).")
+
     # Mapping von echten IDs auf Template-String-IDs für ID-Umschreibung
     ds_real_to_tpl = {ds_id: f"ds_{ds_id}" for ds_id in (body.dataset_ids or [])}
     mapping_real_to_tpl = {m_id: f"mapping_{m_id}" for m_id in (body.mapping_ids or [])}
@@ -1869,6 +1912,9 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                     rmid = ent.get("mapping_id") if isinstance(ent, dict) else None
                     if isinstance(rmid, int) and rmid in mapping_real_to_tpl:
                         ent["mapping_id"] = mapping_real_to_tpl[rmid]
+        # Alle übrigen Mapping-Verweise (Drilldown samt Ebenen, Hersteller-Navigator …).
+        for w in schema.get("widgets", []) or []:
+            _mapping_refs_export(w.get("config"), mapping_real_to_tpl)
         # Eigenständige Widgets (Eingangsrechnung, EAN-Recherche …) tragen ihre
         # Ziel-Verbindung selbst in der Config. Ohne diesen Schritt reiste die
         # rohe Verbindungs-ID des Absenders mit und zeigte beim Empfänger auf
