@@ -129,11 +129,22 @@ function DateRangeField({ field, params, setParam, onRunAction, running, inp }) 
  * Angabe bleibt ein Feld wie bisher auf allen Reitern sichtbar.
  */
 export function fieldsForTab(fields, currentTab) {
-  return (fields || []).filter(f => {
+  const sichtbar = (fields || []).filter(f => {
     const vt = f.config?.visible_tabs;
     if (!Array.isArray(vt) || vt.length === 0) return true;
     return currentTab ? vt.includes(currentTab) : false;
   });
+  // `config.ersetzt_felder` (Feld-IDs): ein sichtbares Feld blendet andere aus –
+  // z.B. der Stichtag der Lagerliste den Zeitraum, der dort nichts bedeutet.
+  const ersetzt = new Set(sichtbar.flatMap(f => f.config?.ersetzt_felder || []));
+  return ersetzt.size ? sichtbar.filter(f => !ersetzt.has(f.id)) : sichtbar;
+}
+
+/** Startwert eines Feldes. Ein Datumsfeld mit default "today" startet mit dem
+ *  heutigen Tag (lokal, nicht UTC – sonst kippt es nachts auf gestern). */
+export function feldVorgabe(f, isMulti) {
+  if (f.type === "date" && f.default === "today") return _fmt(new Date());
+  return f.default ?? (isMulti ? [] : "");
 }
 
 /** Widgets eines Reiters: `config.visible_tabs` legt ein Widget fest auf Reiter
@@ -219,8 +230,15 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
         onRunAction={onRunAction} running={running} />;
     case "number":
       return <input type="number" value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} style={s} />;
-    case "date":
-      return <input type="date" value={value ?? ""} onChange={e => onChange(e.target.value)} style={s} />;
+    case "date": {
+      // Mit config.auto_run lädt ein vollständiges Datum die verknüpften Actions direkt neu.
+      const onDatum = (v) => {
+        onChange(v);
+        if (field.config?.auto_run && v && onRunAction)
+          onRunAction(field.action_ids?.length ? field.action_ids : null, { [field.name]: v });
+      };
+      return <input type="date" value={value ?? ""} onChange={e => onDatum(e.target.value)} style={s} />;
+    }
     case "time":
       return <input type="time" value={value ?? ""} onChange={e => onChange(e.target.value)} style={s} />;
     case "textarea":

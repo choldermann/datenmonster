@@ -7,7 +7,7 @@ import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import { ExportErgebnisse, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
@@ -91,7 +91,7 @@ export default function FormRunner() {
       const isMulti = f => f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
       const defaults = {};
       for (const f of (data.schema?.fields || [])) {
-        defaults[f.name] = f.default ?? (isMulti(f) ? [] : "");
+        defaults[f.name] = feldVorgabe(f, isMulti(f));
       }
       setParams(defaults);
     }).catch(() => setError("Formular nicht gefunden"));

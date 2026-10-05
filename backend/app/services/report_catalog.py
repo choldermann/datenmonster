@@ -168,7 +168,11 @@ def standardparameter(schema: dict) -> dict:
         if not pname:
             continue
         cfg = f.get("config") or {}
-        if f.get("default") not in (None, ""):
+        if f.get("type") == "date" and f.get("default") == "today":
+            # wie im Browser (feldVorgabe): der Tag des Laufs
+            import datetime
+            params[pname] = datetime.date.today().isoformat()
+        elif f.get("default") not in (None, ""):
             params[pname] = f.get("default")
         elif cfg.get("multiple"):
             params[pname] = []

@@ -10,7 +10,7 @@ import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/Wid
 import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
 import { ExportErgebnisse, ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
@@ -143,7 +143,7 @@ export default function PortalRunner() {
         const isMulti = f => f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
         const defaults = {};
         for (const f of (data.fields || [])) {
-          if (f.name) defaults[f.name] = f.default ?? (isMulti(f) ? [] : "");
+          if (f.name) defaults[f.name] = feldVorgabe(f, isMulti(f));
         }
         setParams(defaults);
       })
