@@ -280,7 +280,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
         onRowClick={handleRowDrill}
         onBack={stack.length > 1 ? backDrill : null}
         onClose={closeDrill}
-        emailEnabled={allowDownload}
+        downloadErlaubt={allowDownload}
         begrenzt={!!topFrame.begrenzt}
         ladeAlle={topFrame.anfrage ? async () => {
           const { data } = await api.post("/api/forms/drilldown", { ...topFrame.anfrage, max_rows: EXPORT_ZEILEN });

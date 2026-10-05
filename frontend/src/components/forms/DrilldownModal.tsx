@@ -120,7 +120,7 @@ function isNumericCol(col, rows) {
 
 export default function DrilldownModal({ title, field, value, rows = [], loading, error, onClose,
   trail = [], canDrillDeeper = false, onRowClick = null, onBack = null, hiddenColumns = [],
-  emailEnabled = false, dokument = null, begrenzt = false, ladeAlle = null }) {
+  downloadErlaubt = false, dokument = null, begrenzt = false, ladeAlle = null }) {
   const [exportiert, setExportiert] = useState(false);
   const [exportFehler, setExportFehler] = useState("");
   const hidden = new Set(hiddenColumns || []);
@@ -203,18 +203,21 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
               {field ? <><span style={{ color: S.textMain }}>{field}</span> = <span style={{ color: ACCENT }}>{String(value)}</span> · </> : null}
               {loading ? "lädt…" : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
-              {!loading && begrenzt ? (ladeAlle ? " angezeigt · CSV enthält alle" : " · Liste gekürzt") : ""}
+              {!loading && begrenzt ? (ladeAlle && downloadErlaubt ? " angezeigt · CSV enthält alle" : " angezeigt · Liste gekürzt") : ""}
               {exportFehler ? <span style={{ color: "var(--err-soft)" }}> · {exportFehler}</span> : null}
               {canDrillDeeper && !loading && rows.length > 0 ? " · Zeile klicken für Details" : ""}
             </p>
           </div>
-          {emailEnabled && (
+          {downloadErlaubt && (
             <EmailTableButton columns={columns} rows={rows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
+          {/* CSV und E-Mail folgen beide „Download erlauben“ des Formulars (im Editor immer an). */}
+          {downloadErlaubt && (
           <button onClick={handleExport} disabled={!rows.length || exportiert}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, backgroundColor: `color-mix(in srgb, ${ACCENT} 8.2%, transparent)`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
             {exportiert ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} CSV
           </button>
+          )}
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4 }}>
             <X size={16} />
           </button>
