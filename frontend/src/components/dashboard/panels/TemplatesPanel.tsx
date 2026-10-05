@@ -330,6 +330,8 @@ function StoreSection({ onInstalled }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState("");
+  // Ergebnis des automatischen Ausrollens nach „Aktualisieren“ (je Projekt).
+  const [ausgerollt, setAusgerollt] = useState<{ name: string; liste: any[] } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -346,7 +348,9 @@ function StoreSection({ onInstalled }) {
     setBusy(t.template_id);
     setError("");
     try {
-      await api.post(`/api/templates/store/${t.template_id}/install`);
+      setAusgerollt(null);
+      const { data } = await api.post(`/api/templates/store/${t.template_id}/install`);
+      if (data?.ausgerollt) setAusgerollt({ name: t.name || t.template_id, liste: data.ausgerollt });
       await load();
       onInstalled();
     } catch (e) {
@@ -398,6 +402,23 @@ function StoreSection({ onInstalled }) {
       {error && (
         <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--err-soft) 10%, transparent)", border: "1px solid color-mix(in srgb, var(--err-soft) 30%, transparent)" }}>
           <p style={{ fontSize: 11, color: "var(--err-soft)", margin: 0 }}>✗ {error}</p>
+        </div>
+      )}
+
+      {ausgerollt && (
+        <div style={{ marginBottom: 10, padding: "8px 10px", borderRadius: 5, backgroundColor: "color-mix(in srgb, var(--ok) 8%, transparent)", border: "1px solid color-mix(in srgb, var(--ok) 25%, transparent)" }}>
+          <p style={{ fontSize: 11, color: S.textBright, margin: "0 0 4px", fontWeight: 600 }}>
+            {ausgerollt.name} aktualisiert
+            {!ausgerollt.liste.length && " – noch in keinem Projekt installiert"}
+          </p>
+          {ausgerollt.liste.map(p => (
+            <p key={p.project_id} style={{ fontSize: 11, margin: 0, color: p.ok ? "var(--ok)" : "var(--err-soft)" }}>
+              {p.ok
+                ? `✓ Projekt „${p.name}“ auf den neuen Stand gebracht`
+                  + (p.ergaenzt ? ` (${p.ergaenzt} neue Formular-Bausteine)` : "")
+                : `✗ Projekt „${p.name}“: ${p.fehler}`}
+            </p>
+          ))}
         </div>
       )}
 

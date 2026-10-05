@@ -6,6 +6,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from app.core.database import get_db
@@ -13,6 +14,7 @@ from app.api.auth import get_current_user
 from app.models.user import User
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
+logger = logging.getLogger(__name__)
 
 
 def _installiert_in(t, projekt_namen: dict) -> list:
@@ -1322,6 +1324,9 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             "mappings": {str(k): v for k, v in mapping_id_map.items()},
         },
         "form_bausteine": form_bausteine,
+        # Gewählte Einstellungen (v.a. Verbindungen): damit kann ein Update aus dem
+        # Store die neue Version ohne Rückfrage ins Projekt ausrollen.
+        "config": _config_merkbar(content, config),
     }
     t.installations = (t.installations or []) + [inst_record]
     flag_modified(t, "installations")
@@ -1499,6 +1504,106 @@ def template_store(db: Session = Depends(get_db), user: User = Depends(get_curre
     return _store_catalog(db)
 
 
+_GEHEIME_TYPEN = {"password", "secret", "token"}
+
+
+def _config_merkbar(content: dict, config: dict) -> dict:
+    """Die Einstellungen eines Installs ohne Geheimnisse (fürs Protokoll)."""
+    geheim = {r.get("key") for r in content.get("config_required", []) or []
+              if r.get("type") in _GEHEIME_TYPEN}
+    return {k: v for k, v in (config or {}).items() if k not in geheim}
+
+
+def _verbindungen_ableiten(vorlage, installiert, gefunden: dict) -> None:
+    """Liest aus einem installierten Objekt ab, welche Verbindung für einen
+    {{connection_X}}-Platzhalter der Vorlage gewählt wurde. Läuft Vorlage und
+    Objekt parallel ab; Listen werden über `id` zugeordnet, sonst der Reihe nach."""
+    if isinstance(vorlage, dict) and isinstance(installiert, dict):
+        for k, v in vorlage.items():
+            if k in _CONN_ID_KEYS and isinstance(v, str):
+                m = _CONN_PLACEHOLDER_RE.match(v)
+                wert = installiert.get(k)
+                if m and isinstance(wert, int) and m.group(1) not in gefunden:
+                    gefunden[m.group(1)] = wert
+            elif k in installiert:
+                _verbindungen_ableiten(v, installiert[k], gefunden)
+    elif isinstance(vorlage, list) and isinstance(installiert, list):
+        nach_id = {e.get("id"): e for e in installiert if isinstance(e, dict) and e.get("id") is not None}
+        for i, v in enumerate(vorlage):
+            gegen = nach_id.get(v.get("id")) if isinstance(v, dict) and v.get("id") is not None else None
+            if gegen is None and i < len(installiert):
+                gegen = installiert[i]
+            _verbindungen_ableiten(v, gegen, gefunden)
+
+
+def _config_der_installation(t, content: dict, project_id: int, db: Session):
+    """Einstellungen, mit denen das Template zuletzt in dieses Projekt installiert
+    wurde. Ältere Installationen haben sie nicht protokolliert – dann werden die
+    Verbindungen aus den installierten Mappings/Datasets abgelesen.
+    Gibt (config, fehlende_pflicht_verbindungen) zurück."""
+    from app.models.mapping import Mapping
+    from app.models.dataset import Dataset
+    recs = sorted([r for r in (t.installations or []) if r.get("project_id") == project_id],
+                  key=lambda r: str(r.get("at") or ""))
+    config, refs = {}, {"mappings": {}, "datasets": {}}
+    for r in recs:
+        config.update(r.get("config") or {})
+        for typ in refs:
+            refs[typ].update((r.get("refs") or {}).get(typ) or {})
+    verbindungen = [r.get("key") for r in content.get("config_required", []) or []
+                    if r.get("type") == "connection" and r.get("key")]
+    if any(k not in config for k in verbindungen):
+        gefunden = {}
+        for typ, model, defs in (("mappings", Mapping, content.get("mappings") or []),
+                                 ("datasets", Dataset, content.get("datasets") or [])):
+            for d in defs:
+                oid = refs[typ].get(str(d.get("id")))
+                obj = db.query(model).filter(model.id == oid, model.project_id == project_id).first() \
+                    if oid is not None else None
+                if obj is None:
+                    continue
+                spalten = {c.name: getattr(obj, c.name) for c in model.__table__.columns}
+                _verbindungen_ableiten(d, spalten, gefunden)
+        for k, v in gefunden.items():
+            config.setdefault(k, v)
+    return config, [k for k in verbindungen if k not in config]
+
+
+def _in_projekte_ausrollen(t, db: Session, user: User) -> list:
+    """Nach einem Store-Update die neue Version in jedes Projekt installieren, in dem
+    das Template schon steckt. Ohne das stand die neue Version nur im Katalog, und
+    die Formulare beim Kunden blieben auf dem alten Stand – „Aktualisieren“ klang
+    aber, als wäre alles erledigt."""
+    from app.models.project import Project
+    content = t.content if isinstance(t.content, dict) else json.loads(t.content or "{}")
+    projekt_namen = {p.id: p.name for p in db.query(Project).all()}
+    ergebnis = []
+    for stelle in _installiert_in(t, projekt_namen):
+        pid, name = stelle["project_id"], stelle["name"]
+        eintrag = {"project_id": pid, "name": name}
+        config, fehlt = _config_der_installation(t, content, pid, db)
+        if fehlt:
+            eintrag.update(ok=False, fehler="Verbindung nicht ermittelbar ("
+                           + ", ".join(fehlt) + ") – bitte von Hand installieren")
+            ergebnis.append(eintrag)
+            continue
+        try:
+            r = install_template(InstallBody(template_id=t.template_id, project_id=pid,
+                                             config=config), db, user)
+            ergaenzt = sum(len(ids) for f in (r.get("created") or {}).get("forms", []) or []
+                           for ids in (f.get("ergaenzt") or {}).values())
+            eintrag.update(ok=True, ergaenzt=ergaenzt)
+        except HTTPException as e:
+            db.rollback()
+            eintrag.update(ok=False, fehler=str(e.detail))
+        except Exception as e:
+            db.rollback()
+            logger.exception("Ausrollen von %s in Projekt %s fehlgeschlagen", t.template_id, pid)
+            eintrag.update(ok=False, fehler=str(e)[:300])
+        ergebnis.append(eintrag)
+    return ergebnis
+
+
 @router.post("/store/{template_id}/install")
 def install_from_store(template_id: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """
@@ -1547,7 +1652,9 @@ def install_from_store(template_id: str, db: Session = Depends(get_db), user: Us
         flag_modified(existing, "content")
         _stempel(existing, "store", user)
         db.commit()
-        return {"ok": True, "action": "updated", "id": existing.id, "template_id": tid}
+        ausgerollt = _in_projekte_ausrollen(existing, db, user)
+        return {"ok": True, "action": "updated", "id": existing.id, "template_id": tid,
+                "ausgerollt": ausgerollt}
 
     t = Template(
         template_id=tid,
