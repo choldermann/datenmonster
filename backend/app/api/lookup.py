@@ -85,6 +85,18 @@ LOOKUP_QUERIES = {
                    "              WHERE H.kArtikel = A.kArtikel AND H.cTyp = 'Eingang' "
                    "                AND ISNULL(H.fEKNetto, 0) > 0) "
                    "ORDER BY A.cArtNr",
+    # Artikel mit Lagerbuchungen (Artikelhistorie im Lager-Cockpit). Anders als
+    # „artikel“ auch ohne gebuchten EK und auch inaktive – deren Bewegungen will
+    # man gerade nachschlagen.
+    "artikel_historie": "SELECT A.kArtikel AS value, "
+                        "  A.cArtNr + ISNULL(' – ' + NULLIF(AB.cName, ''), '') "
+                        "  + CASE WHEN A.cAktiv = 'Y' THEN '' ELSE ' (inaktiv)' END AS label "
+                        "FROM dbo.tArtikel A "
+                        "LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel "
+                        "     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0 "
+                        "WHERE EXISTS (SELECT 1 FROM dbo.vArtikelHistorie H "
+                        "              WHERE H.kArtikel = A.kArtikel) "
+                        "ORDER BY A.cArtNr",
     # Papinet-Partner (PapinetV2, eigene EGP-Datenbank, nicht JTL). Gesperrte
     # stehen mit drin – ihre alten Nachrichten sollen auffindbar bleiben.
     "papinet_partner": "SELECT PartnerID AS value, PartnerName + ' (' + PartnerCode + ')' "

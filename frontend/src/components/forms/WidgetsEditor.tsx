@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, Wallet, Tags, ClipboardList, Building2, Database } from "lucide-react";
+import { BarChart2, ChevronDown, ChevronRight, Hash, PieChart, Plus, Receipt, ShieldAlert, Sparkles, Table2, Trash2, TrendingUp, GitCommitVertical, Wallet, Tags, ClipboardList, Building2, Database } from "lucide-react";
 import DrilldownConfig from "./DrilldownConfig";
 import api from "../../api/client";
 
@@ -26,6 +26,8 @@ const WIDGET_TYPES = [
     desc: "Zeitreihen und Trends als Linie" },
   { type: "pie",   label: "Kreisdiagramm",  Icon: PieChart,  color: "var(--err)",
     desc: "Anteile als Kuchen- oder Donut-Diagramm" },
+  { type: "timeline", label: "Zeitleiste", Icon: GitCommitVertical, color: "#fbbf24",
+    desc: "Buchungen senkrecht: Zugänge links, Abgänge rechts, Bestand in der Mitte" },
   { type: "eingangsrechnung", label: "Eingangsrechnungs-Freigabe", Icon: Receipt, color: "#f0abfc",
     desc: "E-Rechnung (ZUGFeRD/XRechnung) hochladen, prüfen und nach JTL verbuchen" },
   { type: "debitoren", label: "Debitorennummern nachpflegen", Icon: Receipt, color: "#a3e635",
@@ -343,6 +345,26 @@ function WidgetConfig({ widget, actions, resultTabs = [], onUpdate }) {
               </label>
             </LabelRow>
           )}
+        </>
+      )}
+
+      {widget.type === "timeline" && (
+        <>
+          <LabelRow label="Zeitpunkt-Spalte">
+            <Inp value={cfg.date_column} onChange={v => set({ date_column: v })} placeholder="z.B. Gebucht" />
+          </LabelRow>
+          <LabelRow label="Mengen-Spalte (+ links, − rechts)">
+            <Inp value={cfg.qty_column} onChange={v => set({ qty_column: v })} placeholder="z.B. Menge" />
+          </LabelRow>
+          <LabelRow label="Bestand-Spalte (Mitte)">
+            <Inp value={cfg.stock_column} onChange={v => set({ stock_column: v })} placeholder="z.B. BestandDanach" />
+          </LabelRow>
+          <LabelRow label="Titel-Spalte">
+            <Inp value={cfg.title_column} onChange={v => set({ title_column: v })} placeholder="z.B. Buchungsart" />
+          </LabelRow>
+          <TagsInput label="Weitere Angaben auf der Karte"
+            value={cfg.detail_columns || []} onChange={v => set({ detail_columns: v })}
+            placeholder="Spaltenname + Enter" />
         </>
       )}
 

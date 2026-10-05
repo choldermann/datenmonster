@@ -600,12 +600,13 @@ FULL_ROWS_CAP = 2000
 
 
 def _expandable_action_ids(schema: dict) -> set:
-    """Action-IDs, deren Tabellen-Widget vollständig (bis FULL_ROWS_CAP) laden soll
-    – markiert per config.full_rows am table-Widget. Rankings/Charts/KPIs bleiben
-    dadurch unberührt."""
+    """Action-IDs, deren Widget vollständig (bis FULL_ROWS_CAP) laden soll –
+    markiert per config.full_rows. Meist Tabellen; auch ein Verlauf über viele Tage
+    braucht es, sonst endet die Kurve nach 50 Punkten. Unmarkierte Rankings/Charts/
+    KPIs bleiben unberührt."""
     out = set()
     for w in (schema.get("widgets") or []):
-        if w.get("type") == "table" and (w.get("config") or {}).get("full_rows"):
+        if (w.get("config") or {}).get("full_rows"):
             aid = w.get("action_id")
             if aid:
                 out.add(aid)

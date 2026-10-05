@@ -35,6 +35,7 @@ _WIDGET_LABELS = {
     "bar": ("Balkendiagramm", "Balkendiagramme"),
     "line": ("Liniendiagramm", "Liniendiagramme"),
     "pie": ("Kreisdiagramm", "Kreisdiagramme"),
+    "timeline": ("Zeitleiste", "Zeitleisten"),
     "ai_summary": ("KI-Analyse", "KI-Analysen"),
     "inventur": ("Inventur-Werkzeug", "Inventur-Werkzeuge"),
     "kunden_ausschluss": ("Ausschlussliste", "Ausschlusslisten"),

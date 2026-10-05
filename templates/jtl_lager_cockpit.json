@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.9",
+  "version": "1.10",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -5295,6 +5295,363 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_lg_ah_kpi",
+      "name": "Lager – Artikelhistorie Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht < :von THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandAnfang,\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis) AND H.fAnzahl > 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Zugang,\n    CAST(ISNULL(-SUM(CASE WHEN H.dGebucht >= :von AND H.dGebucht < DATEADD(DAY, 1, :bis) AND H.fAnzahl < 0 THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS Abgang,\n    CAST(ISNULL(SUM(CASE WHEN H.dGebucht < DATEADD(DAY, 1, :bis) THEN H.fAnzahl END), 0) AS DECIMAL(18,2)) AS BestandEnde\nFROM dbo.vArtikelHistorie H\nWHERE H.kArtikel = :artikel_hist",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "BestandAnfang",
+            "Zugang",
+            "Abgang",
+            "BestandEnde"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Artikelhistorie Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "BestandAnfang",
+              "target_field": "BestandAnfang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandAnfang"
+              }
+            },
+            {
+              "source_field": "Zugang",
+              "target_field": "Zugang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zugang"
+              }
+            },
+            {
+              "source_field": "Abgang",
+              "target_field": "Abgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Abgang"
+              }
+            },
+            {
+              "source_field": "BestandEnde",
+              "target_field": "BestandEnde",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandEnde"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ah_verlauf",
+      "name": "Lager – Artikelhistorie Bestandsverlauf",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH tag AS (\n    SELECT CAST(H.dGebucht AS date) AS Tag, SUM(H.fAnzahl) AS Netto,\n        SUM(CASE WHEN H.fAnzahl > 0 THEN H.fAnzahl ELSE 0 END) AS Zugang,\n        -SUM(CASE WHEN H.fAnzahl < 0 THEN H.fAnzahl ELSE 0 END) AS Abgang\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.dGebucht < DATEADD(DAY, 1, :bis)\n    GROUP BY CAST(H.dGebucht AS date)\n), lauf AS (\n    SELECT Tag, Zugang, Abgang, SUM(Netto) OVER (ORDER BY Tag ROWS UNBOUNDED PRECEDING) AS Bestand\n    FROM tag\n)\nSELECT CONVERT(varchar(10), Tag, 23) AS Tag,\n    CAST(Bestand AS DECIMAL(18,2)) AS Bestand,\n    CAST(Zugang AS DECIMAL(18,2)) AS Zugang,\n    CAST(Abgang AS DECIMAL(18,2)) AS Abgang\nFROM lauf\nWHERE Tag >= :von\nORDER BY Tag",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Tag",
+            "Bestand",
+            "Zugang",
+            "Abgang"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Artikelhistorie Bestandsverlauf",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Tag",
+              "target_field": "Tag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tag"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Zugang",
+              "target_field": "Zugang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zugang"
+              }
+            },
+            {
+              "source_field": "Abgang",
+              "target_field": "Abgang",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Abgang"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_ah_buchungen",
+      "name": "Lager – Artikelhistorie Buchungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Bestand nach der Buchung selbst aufsummiert: JTL trägt bei Buchungen in\n-- derselben Sekunde bei allen schon den Endstand ein. Bei Gleichstand zählen\n-- Zugänge zuerst, damit kein Zwischenstand negativ wird.\nWITH lauf AS (\n    SELECT H.*,\n        ROW_NUMBER() OVER (ORDER BY H.dGebucht, H.fAnzahl DESC) AS rn,\n        SUM(H.fAnzahl) OVER (ORDER BY H.dGebucht, H.fAnzahl DESC\n                             ROWS UNBOUNDED PRECEDING) AS BestandLauf\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.dGebucht < DATEADD(DAY, 1, :bis)\n)\nSELECT TOP 1000\n    CONVERT(varchar(16), H.dGebucht, 120) AS Gebucht,\n    H.cTyp AS Typ, H.cBuchungsart AS Buchungsart,\n    CAST(H.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    CAST(H.BestandLauf AS DECIMAL(18,2)) AS BestandDanach,\n    CAST(H.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CASE WHEN H.cTyp = 'Ausgang' THEN ISNULL(AU.cAuftragsNr, '')\n         ELSE ISNULL(NULLIF(LB.cEigeneBestellnummer, ''), '') END AS Beleg,\n    CASE WHEN H.cTyp = 'Ausgang' THEN\n            ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(AD.cFirma, '') + CASE WHEN ISNULL(AD.cZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END)), ''),\n                LTRIM(RTRIM(ISNULL(AD.cVorname, '') + ' ' + ISNULL(AD.cName, ''))))\n         ELSE ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma, '') + CASE WHEN ISNULL(L.cFirmenZusatz, '') = ''\n                OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma, '')) > 0 THEN ''\n                ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END)), ''), '') END AS [Kunde / Lieferant],\n    ISNULL(WL.cName, '') AS Lager,\n    ISNULL(H.cChargenNr, '') AS Charge,\n    ISNULL(CONVERT(varchar(10), H.dMHD, 104), '') AS MHD,\n    ISNULL(NULLIF(B.cName, ''), '') AS Benutzer,\n    ISNULL(H.cKommentar, '') AS Kommentar\nFROM lauf H\nLEFT JOIN Verkauf.tAuftragPosition AP ON AP.kAuftragPosition = H.kAuftragPos AND H.cTyp = 'Ausgang'\nLEFT JOIN Verkauf.tAuftrag AU ON AU.kAuftrag = AP.kAuftrag\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = AU.kKunde AND AD.nTyp = 1 AND AD.nStandard = 1\nLEFT JOIN dbo.tLieferantenBestellungPos LP ON LP.kLieferantenBestellungPos = H.kLieferantenBestellungPos AND H.cTyp = 'Eingang'\nLEFT JOIN dbo.tLieferantenBestellung LB ON LB.kLieferantenBestellung = LP.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = LB.kLieferant\nLEFT JOIN dbo.tWarenLagerPlatz WP ON WP.kWarenLagerPlatz = H.kWarenLagerPlatz\nLEFT JOIN dbo.tWarenLager WL ON WL.kWarenLager = WP.kWarenLager\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = H.kBenutzer\nWHERE H.dGebucht >= :von\nORDER BY H.rn DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Gebucht",
+            "Typ",
+            "Buchungsart",
+            "Menge",
+            "BestandDanach",
+            "EKNetto",
+            "Beleg",
+            "Kunde / Lieferant",
+            "Lager",
+            "Charge",
+            "MHD",
+            "Benutzer",
+            "Kommentar"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Artikelhistorie Buchungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Gebucht",
+              "target_field": "Gebucht",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Gebucht"
+              }
+            },
+            {
+              "source_field": "Typ",
+              "target_field": "Typ",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Typ"
+              }
+            },
+            {
+              "source_field": "Buchungsart",
+              "target_field": "Buchungsart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Buchungsart"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "BestandDanach",
+              "target_field": "BestandDanach",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestandDanach"
+              }
+            },
+            {
+              "source_field": "EKNetto",
+              "target_field": "EKNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "Beleg",
+              "target_field": "Beleg",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Beleg"
+              }
+            },
+            {
+              "source_field": "Kunde / Lieferant",
+              "target_field": "Kunde / Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde / Lieferant"
+              }
+            },
+            {
+              "source_field": "Lager",
+              "target_field": "Lager",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lager"
+              }
+            },
+            {
+              "source_field": "Charge",
+              "target_field": "Charge",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Charge"
+              }
+            },
+            {
+              "source_field": "MHD",
+              "target_field": "MHD",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "MHD"
+              }
+            },
+            {
+              "source_field": "Benutzer",
+              "target_field": "Benutzer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Benutzer"
+              }
+            },
+            {
+              "source_field": "Kommentar",
+              "target_field": "Kommentar",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kommentar"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "forms": [
@@ -5338,6 +5695,29 @@
               "placeholder": "Artikel wählen …",
               "visible_tabs": [
                 "tab_lg_preise"
+              ]
+            }
+          },
+          {
+            "id": "f_artikel_hist",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Artikel",
+            "name": "artikel_hist",
+            "action_ids": [
+              "act_lg_ah_kpi",
+              "act_lg_ah_verlauf",
+              "act_lg_ah_buchungen"
+            ],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "artikel_historie",
+              "multiple": false,
+              "auto_run": true,
+              "placeholder": "Artikel wählen …",
+              "visible_tabs": [
+                "tab_lg_artikel"
               ]
             }
           },
@@ -5631,6 +6011,36 @@
             "label": "Abflüsse – nach Buchungsart",
             "type": "run_mapping",
             "mapping_id": "m_ab_arten"
+          },
+          {
+            "id": "act_lg_ah_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ah_kpi",
+            "pipeline_id": null,
+            "label": "Lager – Artikelhistorie Kennzahlen",
+            "requires_params": [
+              "artikel_hist"
+            ]
+          },
+          {
+            "id": "act_lg_ah_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ah_verlauf",
+            "pipeline_id": null,
+            "label": "Lager – Artikelhistorie Bestandsverlauf",
+            "requires_params": [
+              "artikel_hist"
+            ]
+          },
+          {
+            "id": "act_lg_ah_buchungen",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_ah_buchungen",
+            "pipeline_id": null,
+            "label": "Lager – Artikelhistorie Buchungen",
+            "requires_params": [
+              "artikel_hist"
+            ]
           }
         ],
         "widgets": [
@@ -6371,6 +6781,112 @@
             }
           },
           {
+            "id": "w_lg_ah_anfang",
+            "type": "kpi",
+            "label": "Bestand zu Beginn",
+            "action_id": "act_lg_ah_kpi",
+            "config": {
+              "width": 3,
+              "column": "BestandAnfang",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ah_zugang",
+            "type": "kpi",
+            "label": "Zugänge im Zeitraum",
+            "action_id": "act_lg_ah_kpi",
+            "config": {
+              "width": 3,
+              "column": "Zugang",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ah_abgang",
+            "type": "kpi",
+            "label": "Abgänge im Zeitraum",
+            "action_id": "act_lg_ah_kpi",
+            "config": {
+              "width": 3,
+              "column": "Abgang",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ah_ende",
+            "type": "kpi",
+            "label": "Bestand am Ende",
+            "action_id": "act_lg_ah_kpi",
+            "config": {
+              "width": 3,
+              "column": "BestandEnde",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "compare_column": "BestandAnfang",
+              "compare_label": "zu Beginn"
+            }
+          },
+          {
+            "id": "w_lg_ah_verlauf",
+            "type": "line",
+            "label": "Bestandsverlauf",
+            "action_id": "act_lg_ah_verlauf",
+            "config": {
+              "width": 12,
+              "x_column": "Tag",
+              "y_columns": [
+                "Bestand"
+              ],
+              "curved": false,
+              "info": "Bestand am Ende jedes Tages mit Buchungen, aus der Lagerhistorie aufsummiert.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_ah_timeline",
+            "type": "timeline",
+            "label": "Zeitleiste: Zugänge und Abgänge",
+            "action_id": "act_lg_ah_buchungen",
+            "config": {
+              "width": 12,
+              "date_column": "Gebucht",
+              "qty_column": "Menge",
+              "stock_column": "BestandDanach",
+              "title_column": "Buchungsart",
+              "detail_columns": [
+                "Kunde / Lieferant",
+                "Beleg",
+                "Kommentar",
+                "Charge",
+                "MHD",
+                "Benutzer"
+              ],
+              "height": 640
+            }
+          },
+          {
+            "id": "w_lg_ah_tabelle",
+            "type": "table",
+            "label": "Alle Buchungen des Artikels",
+            "action_id": "act_lg_ah_buchungen",
+            "config": {
+              "width": 12,
+              "full_rows": true
+            }
+          },
+          {
             "id": "w_lg_tbl_lager",
             "type": "table",
             "label": "Bestand und Wert je Warenlager",
@@ -6732,6 +7248,15 @@
             ]
           },
           {
+            "id": "tab_lg_artikel",
+            "label": "Artikelhistorie",
+            "action_ids": [
+              "act_lg_ah_kpi",
+              "act_lg_ah_verlauf",
+              "act_lg_ah_buchungen"
+            ]
+          },
+          {
             "id": "tab_lg_preise",
             "label": "Preishistorie",
             "action_ids": [
@@ -6753,7 +7278,8 @@
           "intro": "Der Lagerwert zum Stichtag und im Verlauf, bewertet zum damals gültigen Einkaufspreis, dazu Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite sowie die Ladenhüter mit dem darin gebundenen Kapital. Der Verlauf wird aus der Buchungshistorie rekonstruiert — das Cockpit kann also auch rückwirkend sagen, was im Lager lag, was JTL selbst nicht beantwortet.",
           "hinweise": [
             "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Auf dem Reiter Disposition wirkt der Zeitraumfilter deshalb nicht.",
-            "Vaterartikel von Variationen werden nicht doppelt gezählt."
+            "Vaterartikel von Variationen werden nicht doppelt gezählt.",
+            "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant."
           ]
         }
       }

@@ -36,6 +36,7 @@ TYP_GRUPPE = {
     "bar":        "grafik",
     "line":       "grafik",
     "pie":        "grafik",
+    "timeline":   "grafik",
     "ai_summary": "analyse",
     "alerts":     "analyse",
     "tasklist":   "analyse",
@@ -43,7 +44,7 @@ TYP_GRUPPE = {
 
 TYP_LABEL = {
     "kpi": "Kachel", "table": "Tabelle", "bar": "Balken", "line": "Verlauf",
-    "pie": "Kreis", "ai_summary": "KI-Analyse", "alerts": "Warnungen",
+    "pie": "Kreis", "timeline": "Zeitleiste", "ai_summary": "KI-Analyse", "alerts": "Warnungen",
     "tasklist": "Aufgabenliste",
 }
 

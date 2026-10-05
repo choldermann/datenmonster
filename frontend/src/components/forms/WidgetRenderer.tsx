@@ -8,6 +8,7 @@ import KpiWidget   from "./widgets/KpiWidget";
 import BarWidget   from "./widgets/BarWidget";
 import LineWidget  from "./widgets/LineWidget";
 import PieWidget   from "./widgets/PieWidget";
+import TimelineWidget from "./widgets/TimelineWidget";
 import EingangsrechnungWidget from "./widgets/EingangsrechnungWidget";
 import DebitorenWidget from "./widgets/DebitorenWidget";
 import EanResearchWidget from "./widgets/EanResearchWidget";
@@ -29,7 +30,7 @@ const S = {
 
 const WIDGET_LABELS = {
   table: "Tabelle", kpi: "KPI", bar: "Balkendiagramm",
-  line: "Liniendiagramm", pie: "Kreisdiagramm",
+  line: "Liniendiagramm", pie: "Kreisdiagramm", timeline: "Zeitleiste",
   eingangsrechnung: "Eingangsrechnungs-Freigabe", ai_summary: "KI-Analyse",
   debitoren: "Debitorennummern nachpflegen",
   kostenstruktur: "Kostenstruktur", preisautomatik: "Preisautomatik",
@@ -92,6 +93,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
+    case "timeline": return <TimelineWidget widget={widget} result={result} />;
     case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} onAiText={onAiText} />;
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "alerts": return <AlertsWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
