@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.12",
+  "version": "1.13",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -5677,7 +5677,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Stichtag (Tagesende) je Artikel, Lager, Charge und MHD; leer = heute.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT COUNT(*) AS Positionen,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(b.Menge * ISNULL(A.fEKNetto, 0)) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(SUM(b.Menge * ISNULL(A.fVKNetto, 0)) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Stichtag (Tagesende) je Artikel, Lager, Charge und MHD; leer = heute.\n-- EK zum Stichtag wie auf dem Reiter Lagerwert: EK der letzten Eingangsbuchung bis\n-- zum Stichtag, sonst tArtikel.fEKNetto. Eine spaetere EK-Pflege aendert den Wert\n-- eines vergangenen Stichtags damit nicht mehr. VK aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT COUNT(*) AS Positionen,\n    CAST(SUM(b.Menge) AS DECIMAL(18,2)) AS Menge,\n    CAST(SUM(b.Menge * COALESCE(e.fEKNetto, A.fEKNetto, 0)) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(SUM(b.Menge * ISNULL(A.fVKNetto, 0)) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nOUTER APPLY (\n    SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = b.kArtikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n      AND H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n    ORDER BY H.dGebucht DESC\n) e\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5763,7 +5763,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Stichtag (Tagesende) je Artikel, Lager, Charge und MHD; leer = heute.\n-- EK/VK wie im Access-Tool aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT TOP 2000\n    A.cArtNr AS Artikelnummer, ISNULL(AB.cName, '') AS Name,\n    ISNULL(W.cName, '') AS Warengruppe, b.Lager,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Menge,\n    ISNULL(b.Charge, '') AS ChargenNr,\n    ISNULL(CONVERT(varchar(10), b.MHD, 104), '') AS MHD,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKNetto,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n    CAST(b.Menge * ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(b.Menge * ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001\nORDER BY A.cArtNr, b.Lager, b.MHD",
+          "sql": "-- Lagerliste wie das Access-Lagertool, aber aus dbo.vArtikelHistorie (live aus\n-- Warenein- und -ausgang) statt aus der Zwischentabelle dbo.tArtikelHistory –\n-- die enthaelt doppelte Buchungen (HaKo 05.10.2026: 16 Artikel falsch).\n-- Bestand zum Stichtag (Tagesende) je Artikel, Lager, Charge und MHD; leer = heute.\n-- EK zum Stichtag wie auf dem Reiter Lagerwert: EK der letzten Eingangsbuchung bis\n-- zum Stichtag, sonst tArtikel.fEKNetto. Eine spaetere EK-Pflege aendert den Wert\n-- eines vergangenen Stichtags damit nicht mehr. VK aus den Artikelstammdaten.\nWITH bestand AS (\n    SELECT H.kArtikel, WL.cName AS Lager,\n        NULLIF(LTRIM(RTRIM(H.cChargenNr)), '') AS Charge,\n        CAST(H.dMHD AS DATE) AS MHD, SUM(H.fAnzahl) AS Menge\n    FROM dbo.vArtikelHistorie H\n    JOIN dbo.tWarenLagerPlatz WLP ON WLP.kWarenLagerPlatz = H.kWarenLagerPlatz\n    JOIN dbo.tWarenLager WL ON WL.kWarenLager = WLP.kWarenLager\n    WHERE H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n      AND (:ll_lager_empty = 1 OR WL.kWarenLager IN (:ll_lager))\n    GROUP BY H.kArtikel, WL.cName, NULLIF(LTRIM(RTRIM(H.cChargenNr)), ''), CAST(H.dMHD AS DATE)\n)\nSELECT TOP 2000\n    A.cArtNr AS Artikelnummer, ISNULL(AB.cName, '') AS Name,\n    ISNULL(W.cName, '') AS Warengruppe, b.Lager,\n    CAST(b.Menge AS DECIMAL(18,2)) AS Menge,\n    ISNULL(b.Charge, '') AS ChargenNr,\n    ISNULL(CONVERT(varchar(10), b.MHD, 104), '') AS MHD,\n    CAST(COALESCE(e.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKNetto,\n    CAST(ISNULL(A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKStamm,\n    CAST(ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKNetto,\n    CAST(b.Menge * COALESCE(e.fEKNetto, A.fEKNetto, 0) AS DECIMAL(18,2)) AS EKGesamt,\n    CAST(b.Menge * ISNULL(A.fVKNetto, 0) AS DECIMAL(18,2)) AS VKGesamt\nFROM bestand b\nJOIN dbo.tArtikel A ON A.kArtikel = b.kArtikel\nOUTER APPLY (\n    SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = b.kArtikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n      AND H.dGebucht < DATEADD(DAY, 1, CAST(COALESCE(NULLIF(:ll_stichtag, ''), GETDATE()) AS date))\n    ORDER BY H.dGebucht DESC\n) e\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel\n     AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = A.kWarengruppe\nWHERE CAST(:ll_null AS int) = 1 OR ABS(b.Menge) > 0.0001\nORDER BY A.cArtNr, b.Lager, b.MHD",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -5775,6 +5775,7 @@
             "ChargenNr",
             "MHD",
             "EKNetto",
+            "EKStamm",
             "VKNetto",
             "EKGesamt",
             "VKGesamt"
@@ -5877,6 +5878,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "EKNetto"
+              }
+            },
+            {
+              "source_field": "EKStamm",
+              "target_field": "EKStamm",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKStamm"
               }
             },
             {
@@ -7331,7 +7342,7 @@
             "config": {
               "width": 12,
               "full_rows": true,
-              "info": "Bestand am Ende des Stichtags, aus den Warenein- und -ausgängen der Wawi. EK und VK aus den Artikelstammdaten wie im Access-Lagertool. Die Tabelle zeigt höchstens 2.000 Zeilen, die Summen oben gelten immer für alle."
+              "info": "Bestand am Ende des Stichtags, aus den Warenein- und -ausgängen der Wawi. EK zum Stichtag wie auf dem Reiter Lagerwert: der Einkaufspreis der letzten Eingangsbuchung bis zum Stichtag, sonst der EK aus den Artikelstammdaten. Daneben steht der heutige Stamm-EK – große Unterschiede deuten auf einen Pflegefehler hin. VK aus den Artikelstammdaten. Die Tabelle zeigt höchstens 2.000 Zeilen, die Summen oben gelten immer für alle."
             }
           },
           {
@@ -7736,7 +7747,7 @@
             "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Auf dem Reiter Disposition wirkt der Zeitraumfilter deshalb nicht.",
             "Vaterartikel von Variationen werden nicht doppelt gezählt.",
             "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant.",
-            "Lagerliste: Bestand je Artikel, Lager, Charge und MHD zum Stichtag (Vorgabe: heute) – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt."
+            "Lagerliste: Bestand je Artikel, Lager, Charge und MHD zum Stichtag (Vorgabe: heute) – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt. Bewertet wird mit dem EK der letzten Eingangsbuchung bis zum Stichtag (wie auf dem Reiter Lagerwert), nicht mit dem heutigen Stamm-EK – eine spätere EK-Pflege ändert einen vergangenen Stichtag also nicht mehr."
           ]
         }
       }
