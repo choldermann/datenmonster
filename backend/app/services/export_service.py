@@ -385,9 +385,9 @@ def export_datev_extf(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
       umsatz            Bruttobetrag. **Brutto ist richtig:** bei Automatikkonten
                         (SKR03 3400/8400 …) rechnet DATEV die Steuer selbst heraus.
       soll_haben        "S" oder "H"
-      konto             Konto, auf das sich soll_haben bezieht (Ausgang: Debitor,
-                        Eingang: Wareneingangskonto – Kreditor dann als Gegenkonto)
-      gegenkonto        Gegenkonto (Ausgang: Erlöskonto, Eingang: Kreditor)
+      konto             Konto, auf das sich soll_haben bezieht – im jtl_datev das
+                        Sachkonto (Erlöse/Wareneingang), wie im JTL-eigenen Export
+      gegenkonto        Gegenkonto – dort das Personenkonto (Debitor/Kreditor)
       belegdatum        TTMM, 4-stellig – das Jahr steht in der Kopfzeile
       belegfeld1        Rechnungsnummer
       belegfeld2        frei (im Altsystem: Fälligkeit)
