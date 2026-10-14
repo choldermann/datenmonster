@@ -282,10 +282,14 @@ def invalidate_sql_engine(connection_id: int) -> bool:
 # TCP-Timeout, 08001 = Verbindungsaufbau fehlgeschlagen, HYT00/HYT01 = Timeout
 # expired. Bei diesen ist ein kurzer Retry sinnvoll – beim nächsten Versuch ist
 # der Server über DSL/NAT/VPN oft wieder erreichbar.
+# "invalid transaction is rolled back": pandas.read_sql prüft einen SQL-String
+# erst per has_table() und verschluckt dabei einen Leitungsabbruch. Die
+# Verbindung ist danach ungültig, die eigentliche Abfrage meldet nur noch das.
 _TRANSIENT_DB_MARKERS = (
     "08S01", "08001", "10060", "0x274C", "0x274c",
     "HYT00", "HYT01", "Communication link failure",
     "TCP Provider", "Login timeout", "server was not found",
+    "invalid transaction is rolled back",
 )
 
 
