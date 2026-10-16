@@ -72,6 +72,15 @@ wenn der Kunde in Frankreich sitzt.
 Palette …) oder die üblichen Kürzel `Stk`, `Std`, `kg`, `psch`, `Pal`, `Karton`.
 Unbekannte Einheiten werden nicht geraten.
 
+**Papier nach Gewicht (EGP)**: Access zeigt „€/To.“ mit dem Gewicht in kg. Am
+einfachsten übergibt die Abfrage `Quantity` = kg, `Unit` = `kg`, `UnitPrice` =
+Preis je Tonne und `PriceBaseQuantity` = `1000`. Alternativ geht `Quantity` in
+Tonnen mit `Unit` = `€/To.`. Beides ergibt denselben Zeilenbetrag.
+
+**Länder**: `BuyerCountry` und `ShipToCountry` als ISO-Code (SI für Slowenien,
+nicht das SL aus der Anschrift). Passt das Kürzel der Kunden-USt-IdNr. nicht zum
+Land, erscheint ein Hinweis im Protokoll.
+
 **Rabatte**: `LineNet` ist der gedruckte Zeilenbetrag. Liegt er unter
 Menge × Preis, wird die Differenz als Positionsrabatt ausgewiesen. Eine
 Rabattzeile mit negativem Preis ist erlaubt.
@@ -80,9 +89,12 @@ Rabattzeile mit negativem Preis ist erlaubt.
 Ist eine (freiwillige) FTP-Ablage eingetragen und nicht erreichbar, geht die
 Rechnung zurück auf `NEU`. Das ist kein Fehler der Rechnung.
 
-**PDF/A**: Damit die Datei ein sauberes PDF/A ist, müssen die Schriften in der
-Access-PDF eingebettet sein. Fehlen sie, meldet das Protokoll einen Hinweis. Das
-XML bleibt trotzdem gültig.
+**PDF/A**: Zwei Schwächen des Access-PDF-Exports (gerundete Zeichenbreiten,
+Bild-Glättung) repariert Datenmonster beim Einbetten, das Druckbild bleibt
+pixelgenau gleich. Geprüft an acht echten EGP-Rechnungen: sieben ergeben
+einwandfreies PDF/A-3b. Die achte (Juni 2025) hat Arial nicht eingebettet. Das
+lässt sich nachträglich nicht heilen, das Protokoll meldet es als Hinweis, und
+das XML bleibt gültig. Die Rechnungen von 2026 betten alle Schriften ein.
 
 ## Access: zwei Abfragen + ein Modul
 

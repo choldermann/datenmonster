@@ -125,6 +125,13 @@ pruefe("ohne SellerVatId gilt die Standardnummer",
 f = fehler_von(dict(KOPF, SellerVatId="NL999999999B01"), POS, V2)
 pruefe("fremde SellerVatId wird abgewiesen", any("SellerVatId" in x for x in f), f)
 
+pruefe("Access-Einheiten €/To. und Std.", [zx.einheit_code(e) for e in ("€/To.", "Std.", "Stück", "kg")]
+       == ["TNE", "HUR", "H87", "KGM"])
+b = zx.pruefen(dict(KOPF, BuyerCountry="SL", BuyerVatId="SI94561087", BuyerCity="Hoče"), POS, V)
+pruefe("SL statt SI wird gemeldet", any("SI statt SL" in x for x in b.warnungen), b.warnungen)
+b = zx.pruefen(dict(KOPF, BuyerCountry="GR", BuyerVatId="EL123456789"), POS, V)
+pruefe("EL/GR gilt als passend", not any("passt nicht" in x for x in b.warnungen), b.warnungen)
+
 print("── XML und PDF")
 b = zx.pruefen(KOPF, POS, V)
 xml = zx.baue_xml(b)
@@ -141,6 +148,35 @@ try:
     pruefe("Nicht-PDF wird abgewiesen", False)
 except zp.PdfFehler:
     pruefe("Nicht-PDF wird abgewiesen", True)
+# Access rundet /Widths (Verdana „i“ 272 statt 274,41) und trägt 0 für ungenutzte
+# Codes ein, die teils auf benutzte Glyphen zeigen. Repariert wird das Schrift-
+# programm, nicht /Widths - das Druckbild bleibt gleich.
+import os as _os, reportlab as _rl
+from pypdf import PdfReader as _R, PdfWriter as _W
+from pypdf.generic import NumberObject as _N
+from fontTools.ttLib import TTFont as _TT
+from reportlab.pdfbase import pdfmetrics as _pm
+from reportlab.pdfbase.ttfonts import TTFont as _RLTT
+_pm.registerFont(_RLTT("Vera", _os.path.join(_os.path.dirname(_rl.__file__), "fonts", "Vera.ttf")))
+_b = io.BytesIO(); _c = canvas.Canvas(_b); _c.setFont("Vera", 12); _c.drawString(72, 700, "i i"); _c.save()
+_w = _W(clone_from=_R(io.BytesIO(_b.getvalue())))
+_f = [f.get_object() for f in _w.pages[0]["/Resources"]["/Font"].values()
+      if "Vera" in str(f.get_object().get("/BaseFont"))][0]
+_erst = int(_f["/FirstChar"]); _wid = _f["/Widths"]
+_codes = {i + _erst: round(float(v)) for i, v in enumerate(_wid)}
+_i_code = 33                                                  # reportlab: 0–31 Platzhalter, 32 Leerzeichen
+_wid[_i_code - _erst] = _N(_codes[_i_code] - 3)               # gerundete Breite wie bei Access
+_o = io.BytesIO(); _w.write(_o)
+_fertig, _ = zp.einbetten(_o.getvalue(), xml, titel="t", autor="a")
+_f2 = [f.get_object() for f in _R(io.BytesIO(_fertig)).pages[0]["/Resources"]["/Font"].values()
+       if "Vera" in str(f.get_object().get("/BaseFont"))][0]
+_tt = _TT(io.BytesIO(_f2["/FontDescriptor"].get_object()["/FontFile2"].get_object().get_data()))
+_upem = _tt["head"].unitsPerEm
+_breiten = {int(v) for v in _f2["/Widths"]}
+pruefe("Schriftbreite an /Widths angeglichen",
+       any(abs(m[0] * 1000 / _upem - (_codes[_i_code] - 3)) <= 0.5 for m in _tt["hmtx"].metrics.values()),
+       sorted(_breiten))
+
 pruefe("Dateiname bereinigt", dienst.dateiname("{nummer}_{kunde}.pdf",
                                                zx.pruefen(dict(KOPF, InvoiceNumber="RE/1",
                                                                CustomerNumber="K 7"), POS, V))

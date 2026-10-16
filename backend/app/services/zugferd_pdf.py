@@ -206,6 +206,151 @@ def _nicht_eingebettete_schriften(reader: PdfReader) -> list[str]:
     return sorted(fehlend)
 
 
+# ── Was Microsoft Access beim PDF-Export falsch macht (gemessen an EGP-Rechnungen,
+#    16.10.2026) und hier repariert wird, ohne das Druckbild anzufassen.
+
+def _bilder_ohne_interpolate(writer: PdfWriter) -> int:
+    """PDF/A 6.2.8: Bilder dürfen kein /Interpolate true tragen. Access setzt es."""
+    n = 0
+    for obj in writer._objects:
+        try:
+            o = obj.get_object() if obj is not None else None
+        except Exception:                                     # noqa: BLE001
+            continue
+        if isinstance(o, DictionaryObject) and o.get("/Subtype") == "/Image" \
+                and "/Interpolate" in o:
+            del o["/Interpolate"]
+            n += 1
+    return n
+
+
+def _glyph_fuer_code(tt, code: int, symbolisch: bool = False) -> Optional[str]:
+    """Code einer einfachen TrueType-Schrift → Glyphenname, wie ihn ein Viewer sucht.
+
+    Reihenfolge nach ISO 32000-1, 9.6.6.4: nicht-symbolische Schriften (Access,
+    WinAnsi) über Unicode in der (3,1)-Tabelle, symbolische (z. B. reportlab-
+    Subsets) über (3,0) bzw. (1,0) mit dem Code selbst.
+    """
+    cmap = tt["cmap"] if "cmap" in tt else None
+    if cmap is None:
+        return None
+    try:
+        uni = ord(bytes([code]).decode("cp1252"))
+    except (UnicodeDecodeError, ValueError):
+        uni = None
+    wege = ([((3, 0), 0xF000 + code), ((3, 0), code), ((1, 0), code), ((3, 1), uni)] if symbolisch
+            else [((3, 1), uni), ((1, 0), code), ((3, 0), 0xF000 + code)])
+    for (pid, eid), schl in wege:
+        if schl is None:
+            continue
+        t = cmap.getcmap(pid, eid)
+        if t is not None and schl in t.cmap:
+            return t.cmap[schl]
+    return None
+
+
+def _breiten_angleichen(writer: PdfWriter) -> int:
+    """PDF/A 6.2.11.5: Breiten in /Widths bzw. /W und im Schriftprogramm müssen passen.
+
+    Access rundet die Breiten im PDF (Verdana „i“: 272 statt 274,41). Wir ändern
+    das SCHRIFTPROGRAMM auf die Werte der PDF, nicht umgekehrt: dann bleibt jede
+    Zeile exakt dort stehen, wo Access sie gesetzt hat.
+    """
+    from fontTools.ttLib import TTFont
+
+    def anpassen(desc, soll: dict) -> bool:
+        """soll: Glyphenname/GID → Breite in 1/1000 em."""
+        ff = desc.get("/FontFile2") if desc is not None else None
+        if ff is None or not soll:
+            return False
+        strom = ff.get_object()
+        tt = TTFont(io.BytesIO(strom.get_data()))
+        upem = tt["head"].unitsPerEm
+        hmtx = tt["hmtx"]
+        reihenfolge = tt.getGlyphOrder()
+        geaendert = False
+        for g, breite in soll.items():
+            name = reihenfolge[g] if isinstance(g, int) and g < len(reihenfolge) else g
+            if name not in hmtx.metrics:
+                continue
+            ist, lsb = hmtx.metrics[name]
+            if abs(ist * 1000 / upem - float(breite)) > 0.5:
+                hmtx.metrics[name] = (int(round(float(breite) * upem / 1000)), lsb)
+                geaendert = True
+        if geaendert:
+            aus = io.BytesIO()
+            tt.save(aus)
+            daten = aus.getvalue()
+            neu = DecodedStreamObject()
+            neu.set_data(daten)
+            for k, v in strom.items():
+                if k not in ("/Length", "/Filter", "/DecodeParms", "/Length1"):
+                    neu[NameObject(k)] = v
+            neu[NameObject("/Length1")] = NumberObject(len(daten))
+            desc[NameObject("/FontFile2")] = writer._add_object(neu)
+        return geaendert
+
+    n = 0
+    for obj in list(writer._objects):
+        try:
+            f = obj.get_object() if obj is not None else None
+            if not isinstance(f, DictionaryObject) or f.get("/Type") != "/Font":
+                continue
+            if f.get("/Subtype") == "/TrueType" and "/Widths" in f:
+                desc = f.get("/FontDescriptor")
+                desc = desc.get_object() if desc is not None else None
+                if desc is None or "/FontFile2" not in desc:
+                    continue
+                tt = TTFont(io.BytesIO(desc["/FontFile2"].get_object().get_data()))
+                erst = int(f.get("/FirstChar", 0))
+                symbolisch = bool(int(desc.get("/Flags", 0)) & 4)
+                soll, strittig = {}, set()
+                for i, w in enumerate(f["/Widths"]):
+                    # Access schreibt 0 für ungenutzte Codes - und manche davon
+                    # (z. B. das geschützte Leerzeichen) zeigen auf dieselbe Glyphe
+                    # wie ein benutztes Zeichen. Die 0 darf die echte Breite nicht
+                    # überschreiben; widersprüchliche Werte lassen die Glyphe in Ruhe.
+                    if float(w) == 0:
+                        continue
+                    g = _glyph_fuer_code(tt, erst + i, symbolisch)
+                    if not g:
+                        continue
+                    if g in soll and abs(soll[g] - float(w)) > 0.5:
+                        strittig.add(g)
+                    soll[g] = float(w)
+                n += anpassen(desc, {g: w for g, w in soll.items() if g not in strittig})
+            elif f.get("/Subtype") == "/Type0":
+                for d in f.get("/DescendantFonts", []):
+                    d = d.get_object()
+                    if d.get("/Subtype") != "/CIDFontType2":
+                        continue
+                    karte = d.get("/CIDToGIDMap")
+                    if karte is not None and karte != "/Identity":
+                        continue                              # eigene Zuordnung: nicht anfassen
+                    soll, w = {}, list(d.get("/W", []))
+                    i = 0
+                    while i < len(w):
+                        start = int(w[i])
+                        nxt = w[i + 1].get_object() if hasattr(w[i + 1], "get_object") else w[i + 1]
+                        if isinstance(nxt, (list, ArrayObject)):
+                            for j, breite in enumerate(nxt):
+                                if float(breite) != 0:
+                                    soll[start + j] = float(breite)
+                            i += 2
+                        else:
+                            for cid in range(start, int(nxt) + 1):
+                                if float(w[i + 2]) != 0:
+                                    soll[cid] = float(w[i + 2])
+                            i += 3
+                    desc = d.get("/FontDescriptor")
+                    n += anpassen(desc.get_object() if desc is not None else None, soll)
+        except Exception:                                     # noqa: BLE001
+            # Eine Schrift, die fontTools nicht lesen kann, bleibt wie sie ist -
+            # das XML ist davon nicht berührt, nur die PDF/A-Prüfung meckert.
+            continue
+    return n
+
+
 def einbetten(pdf: bytes, xml: bytes, *, titel: str, autor: str, betreff: str = "",
               stufe: str = "EN 16931", jetzt: Optional[_dt.datetime] = None) -> tuple[bytes, list[str]]:
     """Gibt (ZUGFeRD-PDF, Warnungen) zurück."""
@@ -276,6 +421,9 @@ def einbetten(pdf: bytes, xml: bytes, *, titel: str, autor: str, betreff: str = 
             NameObject("/DestOutputProfile"): writer._add_object(icc),
         })
         kat[NameObject("/OutputIntents")] = ArrayObject([writer._add_object(oi)])
+
+    _bilder_ohne_interpolate(writer)
+    _breiten_angleichen(writer)
 
     # ── Anmerkungen müssen druckbar sein (PDF/A: Print-Flag, nicht versteckt)
     for seite in writer.pages:

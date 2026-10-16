@@ -66,7 +66,7 @@ EINHEITEN = {
     "tag": "DAY", "tage": "DAY", "d": "DAY",
     "woche": "WEE", "wochen": "WEE", "monat": "MON", "monate": "MON",
     "jahr": "ANN", "jahre": "ANN",
-    "kg": "KGM", "g": "GRM", "t": "TNE", "to": "TNE",
+    "kg": "KGM", "g": "GRM", "t": "TNE", "to": "TNE", "tonne": "TNE", "tonnen": "TNE",
     "m": "MTR", "lfm": "MTR", "km": "KMT", "cm": "CMT", "mm": "MMT",
     "m2": "MTK", "m²": "MTK", "qm": "MTK", "m3": "MTQ", "m³": "MTQ", "cbm": "MTQ",
     "l": "LTR", "ltr": "LTR", "liter": "LTR",
@@ -189,6 +189,11 @@ def einheit_code(roh: str) -> Optional[str]:
         return "H87"
     if t.lower() in EINHEITEN:
         return EINHEITEN[t.lower()]
+    # Access-Schreibweisen bei EGP: „€/To.“ (Preis je Tonne), „Std.“ – Preisbezug
+    # und Abkürzungspunkt weg, dann noch einmal nachsehen.
+    kurz = t.lower().replace("€/", "").replace("eur/", "").rstrip(".").strip()
+    if kurz in EINHEITEN:
+        return EINHEITEN[kurz]
     # Steht schon ein Code da (C62, HUR, XPX …), nehmen wir ihn, wie er ist.
     if 2 <= len(t) <= 3 and t.isalnum() and t.upper() == t:
         return t
@@ -268,6 +273,14 @@ def pruefen(kopf: dict, positionen: list[dict], verkaeufer: dict) -> Beleg:
     k_ustid = _s(k.get("BuyerVatId")).replace(" ", "")
     if k_ustid and not _ustid_ok(k_ustid):
         f.append(f"BuyerVatId '{k_ustid}' sieht nicht wie eine USt-IdNr. aus (Länderkürzel + Nummer)")
+    elif k_ustid and len(k_land) == 2:
+        # Auf EGP-Rechnungen steht „SL-2311 Hoče“ - SL ist Sierra Leone, Slowenien
+        # ist SI. Passt das Kürzel der USt-IdNr. nicht zum Land, ist meist das Land
+        # falsch (Kfz- statt ISO-Kürzel). Griechenland führt EL, Nordirland XI.
+        erwartet = {"EL": "GR", "XI": "GB"}.get(k_ustid[:2].upper(), k_ustid[:2].upper())
+        if erwartet != k_land:
+            w.append(f"BuyerCountry {k_land} passt nicht zur USt-IdNr. {k_ustid} – "
+                     f"ISO-Ländercode prüfen (z. B. SI statt SL für Slowenien)")
 
     if art in ("STORNO", "KORREKTUR") and not _s(k.get("PrecedingInvoiceNumber")):
         f.append(f"{art.title()} ohne PrecedingInvoiceNumber – auf welche Rechnung bezieht sie sich?")
