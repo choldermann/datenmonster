@@ -85,7 +85,7 @@ Option Explicit
 
 ' Verbindung zum SQL-Server mit tInvoice / tInvoicePositions
 Private Const CONN_STR As String = _
-    "Provider=MSOLEDBSQL;Server=SERVER\INSTANZ;Database=papinet;Integrated Security=SSPI;"
+    "Provider=MSOLEDBSQL;Server=SERVER\INSTANZ;Database=auftragsbuch;Integrated Security=SSPI;"
 ' Freigabe, auf die der FTP-Server schreibt (für den Mail-Anhang)
 Private Const ABLAGE As String = "\\fileserver\zugferd\"
 
