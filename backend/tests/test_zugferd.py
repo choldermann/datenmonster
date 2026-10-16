@@ -150,9 +150,9 @@ print("── Lauf über tInvoice")
 quelle = sa.create_engine("sqlite://")
 with quelle.begin() as c:
     spalten = ", ".join(f"{s} TEXT" for s in dienst.KOPF_SPALTEN
-                        if s not in ("InvoiceId", "PdfFile", "Status", "ZugferdFile"))
+                        if s not in ("InvoiceId", "OrgFile", "Status", "ZugferdFile"))
     c.execute(sa.text(f"CREATE TABLE tInvoice (InvoiceId INTEGER PRIMARY KEY, {spalten}, "
-                      f"PdfFile BLOB, Status TEXT DEFAULT 'ENTWURF')"))
+                      f"OrgFile BLOB, ZugferdFile BLOB, Status TEXT DEFAULT 'ENTWURF')"))
     pspalten = ", ".join(f"{s} TEXT" for s in dienst.POS_SPALTEN if s != "PositionId")
     c.execute(sa.text(f"CREATE TABLE tInvoicePositions (PositionId INTEGER PRIMARY KEY, {pspalten})"))
 
@@ -160,7 +160,7 @@ with quelle.begin() as c:
 def rechnung(inv_id, nummer, status, steuer="12.00", brutto="97.90"):
     with quelle.begin() as c:
         k = dict(KOPF, InvoiceId=inv_id, InvoiceNumber=nummer, Status=status,
-                 TotalTax=steuer, TotalGross=brutto, PdfFile=pdf_bytes())
+                 TotalTax=steuer, TotalGross=brutto, OrgFile=pdf_bytes())
         k = {s: (str(v) if isinstance(v, (D, dt.date)) else v) for s, v in k.items()}
         c.execute(sa.text(f"INSERT INTO tInvoice ({', '.join(k)}) VALUES "
                           f"({', '.join(':' + s for s in k)})"), k)
@@ -229,7 +229,17 @@ pruefe("… und die Rechnung geht zurück auf NEU", status(2)[0] == "NEU", statu
 e = dienst.verarbeiten(db, a, ausloeser="test", engine=quelle, ziel=Ziel())
 pruefe("nach der Korrektur geht sie durch", status(2)[0] == "OK", status(2))
 
+# ohne FTP: die fertige PDF geht nur über ZugferdFile zurück
+rechnung(4, "RE-4", "NEU")
+e = dienst.verarbeiten(db, a, ausloeser="test", engine=quelle)        # a.host leer, kein ziel
+with quelle.connect() as c:
+    zf = c.execute(sa.text("SELECT ZugferdFile FROM tInvoice WHERE InvoiceId = 4")).scalar()
+pruefe("ohne FTP-Server läuft es trotzdem", e["ok"] and status(4)[0] == "OK", e)
+pruefe("… und ZugferdFile enthält die ZUGFeRD-PDF", zf is not None and zp.xml_aus_pdf(bytes(zf)) is not None)
+
 print("── Sicherheit")
+pruefe("Schlüssel nur als Hash", dienst.schluessel_hash("zf_abc") != "zf_abc"
+       and len(dienst.schluessel_hash("zf_abc")) == 64)
 try:
     dienst.tabelle_pruefen("tInvoice; DROP TABLE x")
     pruefe("Tabellenname mit SQL abgewiesen", False)

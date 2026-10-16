@@ -364,6 +364,7 @@ async def lifespan(app: FastAPI):
                 last_hit_at DATETIME
             )""",
             "ALTER TABLE mandant_freigaben ADD COLUMN project_id INTEGER",
+            "ALTER TABLE zugferd_ausgang ADD COLUMN ausloese_hash VARCHAR",
         ]:
             try:
                 conn.execute(text(stmt))

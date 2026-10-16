@@ -5,10 +5,10 @@ SKRIPT = r"""-- ================================================================
 --
 -- Ablauf in Access:
 --   1. PDF erzeugen wie bisher
---   2. Kopf in tInvoice schreiben (Status bleibt 'ENTWURF'), PDF nach PdfFile
+--   2. Kopf in tInvoice schreiben (Status bleibt 'ENTWURF'), PDF nach OrgFile
 --   3. Positionen in tInvoicePositions schreiben
 --   4. UPDATE tInvoice SET Status = 'NEU'      <- erst jetzt greift Datenmonster zu
---   5. warten, bis Status = 'OK' (Datei liegt auf dem FTP: OutputFileName)
+--   5. warten, bis Status = 'OK' (fertige ZUGFeRD-PDF steht in ZugferdFile)
 --      oder 'FEHLER' (Grund in StatusMessage; korrigieren, wieder 'NEU' setzen)
 --
 -- Beträge immer so, wie sie auf der PDF stehen. Datenmonster rechnet nach und
@@ -59,14 +59,13 @@ CREATE TABLE dbo.tInvoice (
     TotalTax               DECIMAL(18,2) NOT NULL,
     TotalGross             DECIMAL(18,2) NOT NULL,
     Prepaid                DECIMAL(18,2) NULL,      -- bereits gezahlt / Anzahlung
-    PdfFile                VARBINARY(MAX) NULL,     -- die PDF aus Access
+    OrgFile                VARBINARY(MAX) NULL,     -- die PDF aus Access (Original)
     -- ab hier schreibt Datenmonster
     Status                 NVARCHAR(20)  NOT NULL CONSTRAINT DF_tInvoice_Status DEFAULT (N'ENTWURF'),
     StatusMessage          NVARCHAR(MAX) NULL,
-    OutputFileName         NVARCHAR(260) NULL,
+    OutputFileName         NVARCHAR(260) NULL,      -- Dateiname für den Mail-Anhang
     ProcessedAt            DATETIME2(0)  NULL,
-    -- ZugferdFile          VARBINARY(MAX) NULL,   -- optional: einkommentieren, dann legt
-    --                                             -- Datenmonster die fertige PDF auch hier ab
+    ZugferdFile            VARBINARY(MAX) NULL,     -- die fertige ZUGFeRD-PDF für den Versand
     CreatedAt              DATETIME2(0)  NOT NULL CONSTRAINT DF_tInvoice_Created DEFAULT (SYSDATETIME()),
     CONSTRAINT CK_tInvoice_Type   CHECK (InvoiceType IN (N'RECHNUNG', N'STORNO', N'KORREKTUR')),
     CONSTRAINT CK_tInvoice_Status CHECK (Status IN (N'ENTWURF', N'NEU', N'IN_ARBEIT', N'OK', N'FEHLER'))

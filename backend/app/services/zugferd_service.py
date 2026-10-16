@@ -46,7 +46,7 @@ KOPF_SPALTEN = [
     "BuyerCountry", "BuyerVatId", "BuyerEmail", "BuyerIban", "DirectDebitMandate",
     "ShipToName", "ShipToStreet", "ShipToZip", "ShipToCity", "ShipToCountry",
     "PaymentMeans", "PaymentTerms", "SkontoDays", "SkontoPercent", "Note",
-    "TotalNet", "TotalTax", "TotalGross", "Prepaid", "PdfFile", "Status",
+    "TotalNet", "TotalTax", "TotalGross", "Prepaid", "OrgFile", "Status",
     "StatusMessage", "OutputFileName", "ProcessedAt", "ZugferdFile", "SellerVatId",
 ]
 POS_SPALTEN = [
@@ -55,7 +55,7 @@ POS_SPALTEN = [
     "VatCategory", "VatRate", "ExemptionReason",
 ]
 
-OPTIONAL = {"ZugferdFile", "SellerVatId"}
+OPTIONAL = {"SellerVatId"}
 
 _TABELLE = re.compile(r"^(\[?[A-Za-z_][A-Za-z0-9_]*\]?\.)?\[?[A-Za-z_][A-Za-z0-9_]*\]?$")
 _sperren: dict[int, threading.Lock] = {}
@@ -191,8 +191,7 @@ def tabellen_pruefen(engine, kopf: str, pos: str) -> list[str]:
                 da = {k.lower() for k in r.keys()}
             except Exception as e:                            # noqa: BLE001
                 return [f"Tabelle {tab} nicht lesbar: {str(e).splitlines()[0][:200]}"]
-            # Freiwillig: ZugferdFile (fertige PDF zurück) und SellerVatId (nur bei
-            # mehreren eigenen USt-IdNrn.) - ältere Tabellen ohne sie laufen weiter.
+            # Freiwillig: SellerVatId (nur bei mehreren eigenen USt-IdNrn.).
             fehlend += [f"{tab}.{s}" for s in spalten
                         if s.lower() not in da and s not in OPTIONAL]
     return fehlend
@@ -259,9 +258,9 @@ def eine_rechnung(engine, ausgang: ZugferdAusgang, kopf: dict, positionen: list[
     """Prüfen, XML bauen, einbetten. Wirft ZugferdFehler/PdfFehler bei Datenfehlern."""
     beleg = zugferd_xml.pruefen(kopf, positionen, verkaeufer)
     xml = zugferd_xml.baue_xml(beleg)
-    pdf = kopf.get("PdfFile")
+    pdf = kopf.get("OrgFile")
     if not pdf:
-        raise zugferd_xml.ZugferdFehler(["PdfFile ist leer – Access hat keine PDF mitgeliefert"])
+        raise zugferd_xml.ZugferdFehler(["OrgFile ist leer – Access hat keine PDF mitgeliefert"])
     titel = {"STORNO": "Stornorechnung", "KORREKTUR": "Rechnungskorrektur"}.get(
         beleg.art, "Rechnung") + f" {beleg.nummer}"
     fertig, warn = zugferd_pdf.einbetten(bytes(pdf), xml, titel=titel,
@@ -269,12 +268,46 @@ def eine_rechnung(engine, ausgang: ZugferdAusgang, kopf: dict, positionen: list[
     return fertig, dateiname(ausgang.dateiname_muster, beleg), beleg, beleg.warnungen + warn
 
 
+def schluessel_hash(schluessel: str) -> str:
+    import hashlib
+    return hashlib.sha256((schluessel or "").encode("utf-8")).hexdigest()
+
+
+def anstossen(ausgang_id: int) -> None:
+    """Lauf im Hintergrund – Access soll auf die Antwort nicht warten müssen.
+
+    Läuft gerade schon ein Durchgang (Zeitplan oder zweiter Anstoß), versuchen wir
+    es kurz danach noch einmal: die neue Rechnung kam womöglich erst nach dessen
+    Abfrage herein und bliebe sonst bis zum nächsten Intervall liegen.
+    """
+    def lauf():
+        import time
+        from app.core.database import SessionLocal
+        for _ in range(40):
+            db = SessionLocal()
+            try:
+                a = db.query(ZugferdAusgang).filter(ZugferdAusgang.id == ausgang_id).first()
+                if not a:
+                    return
+                e = verarbeiten(db, a, ausloeser="Access")
+            finally:
+                db.close()
+            if e.get("meldung") != LAEUFT_SCHON:
+                return
+            time.sleep(3)
+
+    threading.Thread(target=lauf, name=f"zugferd-anstoss-{ausgang_id}", daemon=True).start()
+
+
+LAEUFT_SCHON = "Es läuft bereits ein Durchgang"
+
+
 def verarbeiten(db: Session, ausgang: ZugferdAusgang, ausloeser: str = "Zeitplan",
                 engine=None, ziel=None) -> dict:
     """Ein Lauf über alle Rechnungen mit Status NEU. engine/ziel nur für Tests."""
     sperre = _sperren.setdefault(ausgang.id, threading.Lock())
     if not sperre.acquire(blocking=False):
-        return {"ok": False, "meldung": "Es läuft bereits ein Durchgang", "erzeugt": 0,
+        return {"ok": False, "meldung": LAEUFT_SCHON, "erzeugt": 0,
                 "fehler": 0}
     eigene_engine = engine is None
     ergebnis = {"ok": True, "erzeugt": 0, "fehler": 0, "meldung": ""}
@@ -301,7 +334,10 @@ def verarbeiten(db: Session, ausgang: ZugferdAusgang, ausloeser: str = "Zeitplan
             ergebnis["meldung"] = "Keine neuen Rechnungen"
             return ergebnis
 
-        z = ziel or _Ziel(ausgang)
+        # Der FTP ist nur noch eine zusätzliche Ablage: der Weg zurück zu Access
+        # ist ZugferdFile in derselben Tabelle (Access und SQL-Server stehen im
+        # selben Rechenzentrum, das Firmennetz hängt nur über VPN dran).
+        z = ziel or (_Ziel(ausgang) if (ausgang.host or "").strip() else None)
         try:
             for inv_id in ids:
                 with engine.begin() as c:
@@ -335,19 +371,20 @@ def verarbeiten(db: Session, ausgang: ZugferdAusgang, ausloeser: str = "Zeitplan
                     ergebnis["fehler"] += 1
                     continue
 
-                try:
-                    z.ablegen(name, fertig)
-                except _ZielFehler as e:
-                    _status(engine, kopf_t, inv_id, "NEU", None)
-                    raise LaufFehler(str(e))
+                if z is not None:
+                    try:
+                        z.ablegen(name, fertig)
+                    except _ZielFehler as e:
+                        _status(engine, kopf_t, inv_id, "NEU", None)
+                        raise LaufFehler(str(e))
 
                 _status(engine, kopf_t, inv_id, "OK", "\n".join(warn)[:4000] or None, name,
-                        fertig if "ZugferdFile" in kopf else None)
+                        fertig)
                 _protokoll(db, ausgang, kopf, "ok", "\n".join(warn), ausloeser, beleg,
                            name, fertig)
                 ergebnis["erzeugt"] += 1
         finally:
-            if ziel is None:
+            if ziel is None and z is not None:
                 z.schliessen()
         ergebnis["meldung"] = f"{ergebnis['erzeugt']} erzeugt, {ergebnis['fehler']} abgewiesen"
         return ergebnis

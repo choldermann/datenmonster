@@ -1,30 +1,35 @@
 # ZUGFeRD-Ausgang: E-Rechnungen aus Access
 
-Access erstellt die Rechnung wie bisher als PDF. Zusätzlich schreibt es die
-Rechnungsdaten in zwei Tabellen auf dem SQL-Server. Datenmonster baut daraus das
-ZUGFeRD-XML (Profil **EN 16931**), bettet es in die PDF ein (PDF/A-3,
-`factur-x.xml`) und legt die fertige Datei auf einen FTP-Server im Firmennetz.
-Den Stand schreibt es in die Tabelle zurück. Access versendet danach wie gewohnt
-über Outlook.
+Access erstellt die Rechnung wie bisher als PDF. Die PDF und die Rechnungsdaten
+schreibt es in zwei Tabellen auf dem SQL-Server (Datenbank `auftragsbuch`).
+Datenmonster baut daraus das ZUGFeRD-XML (Profil **EN 16931**), bettet es in die
+PDF ein (PDF/A-3, `factur-x.xml`) und schreibt die fertige Datei in dieselbe
+Zeile zurück. Access holt sie dort ab und versendet sie wie gewohnt über Outlook.
 
 ```
-Access ──PDF + Daten──▶ tInvoice / tInvoicePositions ──▶ Datenmonster ──▶ FTP
-   ▲                         Status OK / FEHLER  ◀──────────────┘
-   └── wartet auf OK, hängt die Datei an die Outlook-Mail
+Access ──OrgFile + Daten──▶ tInvoice / tInvoicePositions ◀──liest── Datenmonster
+   │                                  ▲                                   │
+   └─ Anstoß (HTTP, über VPN) ────────┼──────────────────────────────────▶│
+   ◀── ZugferdFile, Status OK/FEHLER ─┘◀──────────── schreibt zurück ──────┘
 ```
+
+Access (Terminalserver) und SQL-Server stehen im selben Rechenzentrum. Die Datei
+geht deshalb nie durch den VPN. Durch den Tunnel läuft nur der kurze Anstoß, und
+auch der darf ausfallen: Das Intervall in Datenmonster holt die Rechnung dann
+beim nächsten Takt.
 
 ## Einrichtung
 
-1. **Tabellen anlegen**: Formular „ZUGFeRD-Rechnungen“ → Reiter *Einrichtung* →
-   „SQL-Skript zum Anlegen“ herunterladen und auf dem SQL-Server ausführen
-   (Quelle: `backend/app/services/zugferd_sql.py`).
-   Wer die fertige PDF auch in der Datenbank haben will, kommentiert vorher die
-   Zeile `ZugferdFile` ein.
+1. **Tabellen**: Formular „ZUGFeRD-Rechnungen“ → Reiter *Einrichtung* →
+   „SQL-Skript zum Anlegen“ (Quelle: `backend/app/services/zugferd_sql.py`).
+   In `auftragsbuch` sind sie seit 16.10.2026 angelegt.
 2. **Firmendaten** im gleichen Formular pflegen (Name, Anschrift, USt-IdNr. bzw.
-   Steuernummer, IBAN, Standard-Zahlungsbedingung).
-3. **Einrichtung** (nur Admin): FTP-Server, Verzeichnis, Dateiname, Zeitplan →
-   „Verbindung und Tabellen prüfen“. Der Test schreibt eine Probedatei und
-   löscht sie wieder.
+   Steuernummer, weitere USt-IdNrn., IBAN, Standard-Zahlungsbedingung).
+3. **Einrichtung** (nur Admin): Zeitplan einschalten (Sicherheitsnetz, z. B.
+   alle 5 Minuten) und „Schlüssel erzeugen“. Den Schlüssel und die angezeigte
+   Adresse ins Access-Modul übernehmen. Der Schlüssel wird nur einmal angezeigt,
+   ein neuer macht den alten ungültig. Ein FTP-Server ist nicht nötig, er ist
+   nur eine zusätzliche Ablage.
 4. In Access das Modul unten einfügen und die zwei Abfragen anlegen.
 
 ## Belegarten und Steuerfälle
@@ -72,8 +77,8 @@ Menge × Preis, wird die Differenz als Positionsrabatt ausgewiesen. Eine
 Rabattzeile mit negativem Preis ist erlaubt.
 
 **Status**: `ENTWURF` (Access schreibt noch) → `NEU` → `IN_ARBEIT` → `OK` / `FEHLER`.
-Ist der FTP nicht erreichbar, geht die Rechnung zurück auf `NEU`. Das ist kein
-Fehler der Rechnung.
+Ist eine (freiwillige) FTP-Ablage eingetragen und nicht erreichbar, geht die
+Rechnung zurück auf `NEU`. Das ist kein Fehler der Rechnung.
 
 **PDF/A**: Damit die Datei ein sauberes PDF/A ist, müssen die Schriften in der
 Access-PDF eingebettet sein. Fehlen sie, meldet das Protokoll einen Hinweis. Das
@@ -83,21 +88,27 @@ XML bleibt trotzdem gültig.
 
 Die Abfragen **`qZugferdKopf`** und **`qZugferdPositionen`** liefern die Spalten
 unter den Namen der Zieltabellen (Alias im Abfrageentwurf, z. B.
-`InvoiceNumber: [RechnungsNr]`). Die Positionsabfrage braucht zusätzlich
-`InvoiceNumber`, damit sie sich filtern lässt. Das Modul kopiert alle Spalten,
-deren Namen in der Zieltabelle vorkommen. Andere Spalten werden übersprungen.
+`InvoiceNumber: [RechnungsNr]`, `SellerVatId: [EigeneUStId]`). Die
+Positionsabfrage braucht zusätzlich `InvoiceNumber`, damit sie sich filtern lässt.
+Das Modul kopiert alle Spalten, deren Namen in der Zieltabelle vorkommen. Andere
+Spalten werden übersprungen. `OrgFile` (die PDF) setzt das Modul selbst.
+
+> Das Modul ist noch nicht in Access ausgeführt worden. Beim ersten Durchlauf
+> mit Kleinigkeiten rechnen.
 
 ```vba
 Option Compare Database
 Option Explicit
 
-' Verbindung zum SQL-Server mit tInvoice / tInvoicePositions
+' SQL-Server mit tInvoice / tInvoicePositions (Datenbank auftragsbuch)
 Private Const CONN_STR As String = _
-    "Provider=MSOLEDBSQL;Server=SERVER\INSTANZ;Database=auftragsbuch;Integrated Security=SSPI;"
-' Freigabe, auf die der FTP-Server schreibt (für den Mail-Anhang)
-Private Const ABLAGE As String = "\\fileserver\zugferd\"
+    "Provider=MSOLEDBSQL;Server=SERVER\INSTANZ;Database=auftragsbuch;UID=...;PWD=...;"
+' Aus Datenmonster, Formular „ZUGFeRD-Rechnungen“ → Einrichtung → Anstoß aus Access
+Private Const DM_URL As String = "http://DATENMONSTER:5174/api/zugferd/anstoss"
+Private Const SCHLUESSEL As String = "zf_..."
 
 Private Const adOpenKeyset = 1, adLockOptimistic = 3, adTypeBinary = 1
+Private Const adSaveCreateOverWrite = 2
 Private Const adCmdText = 1, adVarWChar = 202, adParamInput = 1
 
 ' Übergibt eine Rechnung an Datenmonster. Gibt die InvoiceId zurück.
@@ -115,7 +126,7 @@ Public Function ZugferdUebergeben(ByVal rechnungsNr As String, ByVal pdfPfad As 
     On Error GoTo Fehler
 
     ' Ein abgewiesener oder halber Vorversuch derselben Nummer wird ersetzt.
-    ' Eine bereits erzeugte Rechnung (OK) bleibt stehen. Für die Korrektur gibt es eine neue Nummer.
+    ' Eine bereits erzeugte Rechnung (OK) bleibt stehen - die Korrektur bekommt eine neue Nummer.
     Befehl(cn, "DELETE FROM dbo.tInvoice WHERE InvoiceNumber = ? AND Status IN ('ENTWURF','FEHLER')", rechnungsNr).Execute
 
     Set rs = CreateObject("ADODB.Recordset")
@@ -124,7 +135,7 @@ Public Function ZugferdUebergeben(ByVal rechnungsNr As String, ByVal pdfPfad As 
     For Each f In qk.Fields
         If FeldDa(rs, f.Name) Then rs.Fields(f.Name).Value = f.Value
     Next
-    rs.Fields("PdfFile").Value = DateiLesen(pdfPfad)
+    rs.Fields("OrgFile").Value = DateiLesen(pdfPfad)
     rs.Fields("Status").Value = "ENTWURF"
     rs.Update
     rs.Close
@@ -148,6 +159,9 @@ Public Function ZugferdUebergeben(ByVal rechnungsNr As String, ByVal pdfPfad As 
     cn.Execute "UPDATE dbo.tInvoice SET Status = 'NEU' WHERE InvoiceId = " & id
     cn.CommitTrans
     cn.Close
+    On Error GoTo 0
+
+    Anstossen
     ZugferdUebergeben = id
     Exit Function
 Fehler:
@@ -155,24 +169,46 @@ Fehler:
     Err.Raise Err.Number, , "ZUGFeRD-Übergabe " & rechnungsNr & ": " & Err.Description
 End Function
 
-' Wartet, bis Datenmonster fertig ist. Gibt den Pfad der ZUGFeRD-PDF zurück.
+' „Bitte jetzt verarbeiten“ an Datenmonster. Darf scheitern (VPN weg o. Ä.):
+' dann holt das Intervall die Rechnung - Access wartet hier höchstens 5 Sekunden.
+Public Sub Anstossen()
+    Dim http As Object
+    On Error Resume Next
+    Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
+    http.SetTimeouts 3000, 3000, 5000, 5000      ' Auflösen, Verbinden, Senden, Antwort (ms)
+    http.Open "POST", DM_URL, False
+    http.SetRequestHeader "X-Ausloese-Schluessel", SCHLUESSEL
+    http.Send
+    If Err.Number <> 0 Then
+        Debug.Print "ZUGFeRD-Anstoß nicht angekommen: " & Err.Description
+    ElseIf http.Status <> 202 Then
+        Debug.Print "ZUGFeRD-Anstoß abgelehnt: " & http.Status & " " & http.ResponseText
+    End If
+End Sub
+
+' Wartet, bis Datenmonster fertig ist, speichert die ZUGFeRD-PDF als temporäre
+' Datei und gibt deren Pfad zurück (für den Outlook-Anhang).
 ' Bei FEHLER wird der Grund als Fehler gemeldet.
 Public Function ZugferdWarten(ByVal id As Long, Optional ByVal maxSekunden As Long = 600) As String
-    Dim cn As Object, rs As Object, ende As Single
+    Dim cn As Object, rs As Object, ende As Single, pfad As String
     Set cn = CreateObject("ADODB.Connection")
     cn.Open CONN_STR
     ende = Timer + maxSekunden
     Do
-        Set rs = cn.Execute("SELECT Status, StatusMessage, OutputFileName FROM dbo.tInvoice WHERE InvoiceId = " & id)
+        Set rs = cn.Execute("SELECT Status, StatusMessage, OutputFileName, ZugferdFile " & _
+                            "FROM dbo.tInvoice WHERE InvoiceId = " & id)
         Select Case rs!Status
             Case "OK"
-                ZugferdWarten = ABLAGE & rs!OutputFileName
+                pfad = Environ("TEMP") & "\" & rs!OutputFileName
+                DateiSchreiben pfad, rs!ZugferdFile
+                ZugferdWarten = pfad
                 Exit Do
             Case "FEHLER"
                 Err.Raise vbObjectError + 2, , "E-Rechnung abgewiesen:" & vbCrLf & rs!StatusMessage
         End Select
-        If Timer > ende Then Err.Raise vbObjectError + 3, , "Datenmonster hat nach " & maxSekunden & " s noch nicht geantwortet"
-        Pause 5
+        If Timer > ende Then Err.Raise vbObjectError + 3, , _
+            "Datenmonster hat nach " & maxSekunden & " s noch nicht geantwortet"
+        Pause 2
     Loop
     cn.Close
 End Function
@@ -202,6 +238,16 @@ Private Function DateiLesen(ByVal pfad As String) As Variant
     s.Close
 End Function
 
+Private Sub DateiSchreiben(ByVal pfad As String, ByVal daten As Variant)
+    Dim s As Object
+    Set s = CreateObject("ADODB.Stream")
+    s.Type = adTypeBinary
+    s.Open
+    s.Write daten
+    s.SaveToFile pfad, adSaveCreateOverWrite
+    s.Close
+End Sub
+
 Private Sub Pause(ByVal sekunden As Single)
     Dim bis As Single: bis = Timer + sekunden
     Do While Timer < bis: DoEvents: Loop
@@ -216,6 +262,8 @@ id = ZugferdUebergeben(rechnungsNr, pdfPfad)
 anhang = ZugferdWarten(id)          ' statt pdfPfad an die Outlook-Mail hängen
 ```
 
-Ist die Spalte `ZugferdFile` angelegt, kann Access die fertige PDF auch direkt aus
-der Datenbank holen. Dann braucht es keinen Zugriff auf die FTP-Ablage
-(`ADODB.Stream` → `Write rs!ZugferdFile` → `SaveToFile`).
+**Kommt der Anstoß nicht an**, obwohl Datenmonster im Browser der Terminalsitzung
+erreichbar ist: `WinHttpRequest` nutzt die Windows-Proxy-Einstellung (WinHTTP),
+nicht die des Browsers. Nachsehen mit `netsh winhttp show proxy` in der
+Terminalsitzung. Steht dort ein Proxy, braucht die Datenmonster-Adresse eine
+Ausnahme. Die Meldung erscheint im Direktfenster (Strg + G).

@@ -3,8 +3,9 @@
 Der Weg (bei EGP): Access druckt die Rechnung wie immer als PDF und legt sie
 zusammen mit den Rechnungsdaten in tInvoice/tInvoicePositions auf dem SQL-Server
 ab. Datenmonster holt neue Zeilen ab, baut das ZUGFeRD-XML, bettet es in die PDF
-ein und legt das Ergebnis auf einen FTP-Server im Firmennetz. Den Stand schreibt
-es in tInvoice zurück, damit Access weiß, wann es die Mail schicken kann.
+ein und schreibt die fertige Datei samt Status in tInvoice zurück (ZugferdFile),
+damit Access sie per Outlook verschicken kann. Ein FTP-Server ist nur noch eine
+zusätzliche, freiwillige Ablage.
 
 Bewusst eine eigene FTP-Anbindung statt einer FTP-Quelle: die FTP-Quellen sind
 Importe (Dateien holen, in ein Dataset schreiben) und würden mit ihrem Zeitplan
@@ -40,6 +41,10 @@ class ZugferdAusgang(Base):
 
     aktiv = Column(Boolean, default=False)
     cron_expr = Column(String, default="*/5 * * * *")
+
+    # Anstoß aus Access: nur der SHA-256 des Schlüssels liegt hier. Der Schlüssel
+    # selbst wird einmal angezeigt und steht danach nur noch im Access-Modul.
+    ausloese_hash = Column(String, nullable=True, index=True)
 
     letzter_lauf = Column(DateTime(timezone=True), nullable=True)
     letzter_status = Column(String, nullable=True)            # ok | fehler

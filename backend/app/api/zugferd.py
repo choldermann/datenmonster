@@ -10,7 +10,7 @@ Rechte, wie beim Posteingang der Eingangsrechnungen:
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -56,6 +56,7 @@ def _raus(a: Optional[ZugferdAusgang]) -> Optional[dict]:
         "protokoll": a.protokoll, "host": a.host, "port": a.port, "username": a.username,
         "password": GEHEIM if a.password else "", "verzeichnis": a.verzeichnis,
         "dateiname_muster": a.dateiname_muster, "aktiv": bool(a.aktiv),
+        "hat_schluessel": bool(a.ausloese_hash),
         "cron_expr": a.cron_expr,
         "letzter_lauf": a.letzter_lauf.isoformat() if a.letzter_lauf else None,
         "letzter_status": a.letzter_status, "letzter_fehler": a.letzter_fehler,
@@ -75,7 +76,7 @@ def einstellungen(connection_id: int, user: User = Depends(get_current_user),
         # Zugangsdaten nur für Admins - alle anderen sehen nur, ob und wann es lief.
         "ausgang": _raus(a) if getattr(user, "is_admin", False) else (
             {k: v for k, v in (_raus(a) or {}).items()
-             if k in ("aktiv", "cron_expr", "letzter_lauf", "letzter_status",
+             if k in ("aktiv", "cron_expr", "letzter_lauf", "letzter_status", "hat_schluessel",
                       "letzter_fehler", "verzeichnis", "host")} if a else None),
         "darf_einrichten": bool(getattr(user, "is_admin", False)),
     }
@@ -185,10 +186,11 @@ def ausgang_testen(connection_id: int, user: User = Depends(get_current_user),
     if not a:
         raise HTTPException(404, "Noch nichts eingerichtet – erst speichern")
     ergebnis = {"ftp": None, "tabellen": None}
-    try:
-        ergebnis["ftp"] = dienst.ziel_testen(a)
-    except dienst.LaufFehler as e:
-        ergebnis["ftp"] = {"ok": False, "meldung": str(e)}
+    if (a.host or "").strip():
+        try:
+            ergebnis["ftp"] = dienst.ziel_testen(a)
+        except dienst.LaufFehler as e:
+            ergebnis["ftp"] = {"ok": False, "meldung": str(e)}
     try:
         engine = dienst._engine(conn.id, db)
         try:
@@ -206,6 +208,42 @@ def ausgang_testen(connection_id: int, user: User = Depends(get_current_user),
     except dienst.LaufFehler as e:
         ergebnis["tabellen"] = {"ok": False, "meldung": str(e)}
     return ergebnis
+
+
+@router.post("/ausgang/schluessel")
+def schluessel_erzeugen(connection_id: int, user: User = Depends(get_current_user),
+                        db: Session = Depends(get_db)):
+    """Neuen Auslöse-Schlüssel für Access erzeugen. Ein alter verliert seine Gültigkeit."""
+    import secrets
+    nur_admin(user, "Nur Administratoren")
+    conn = lade_verbindung(connection_id, user, db)
+    a = _ausgang(conn.id, db)
+    if not a:
+        raise HTTPException(404, "Noch nichts eingerichtet – erst speichern")
+    schluessel = "zf_" + secrets.token_urlsafe(24)
+    a.ausloese_hash = dienst.schluessel_hash(schluessel)
+    db.commit()
+    # Nur dieses eine Mal im Klartext - gespeichert wird der Hash.
+    return {"schluessel": schluessel}
+
+
+@router.post("/anstoss", status_code=202)
+def anstoss(x_ausloese_schluessel: str = Header(default=""), db: Session = Depends(get_db)):
+    """Access meldet „neue Rechnung da“. Ohne Benutzeranmeldung, nur mit dem Schlüssel.
+
+    Der Schlüssel kann ausschließlich einen Lauf anstoßen: die Antwort verrät
+    nichts über Rechnungen oder Einstellungen. Verarbeitet wird im Hintergrund,
+    damit Access nicht auf den Lauf (oder einen langsamen VPN) warten muss.
+    """
+    if len(x_ausloese_schluessel) < 20:
+        raise HTTPException(401, "Schlüssel fehlt")
+    a = (db.query(ZugferdAusgang)
+           .filter(ZugferdAusgang.ausloese_hash == dienst.schluessel_hash(x_ausloese_schluessel))
+           .first())
+    if not a:
+        raise HTTPException(401, "Schlüssel ungültig")
+    dienst.anstossen(a.id)
+    return {"angenommen": True}
 
 
 @router.post("/lauf")

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { FileText, AlertCircle, Loader2, Check, Play, RefreshCw, Download, Code2,
-         RotateCcw, Building2, Settings2, ListChecks, PlugZap, Save } from "lucide-react";
+         RotateCcw, Building2, Settings2, ListChecks, PlugZap, Save, KeyRound, Copy } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 
 const S = {
@@ -358,7 +358,20 @@ function Einrichtung({ connId, daten, onNeu }) {
   const [arbeitet, setArbeitet] = useState(null);
   const [meldung, setMeldung] = useState(null);
   const [test, setTest] = useState(null);
+  const [schluessel, setSchluessel] = useState(null);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const adresse = `${window.location.origin}/api/zugferd/anstoss`;
+
+  const schluesselErzeugen = async () => {
+    setArbeitet("schluessel"); setMeldung(null);
+    try {
+      const { data } = await api.post("/api/zugferd/ausgang/schluessel", null,
+        { params: { connection_id: connId } });
+      setSchluessel(data.schluessel);
+      await onNeu();
+    } catch (e) { setMeldung({ ok: false, text: fehlerText(e) }); }
+    finally { setArbeitet(null); }
+  };
 
   const speichern = async () => {
     setArbeitet("speichern"); setMeldung(null);
@@ -412,7 +425,40 @@ function Einrichtung({ connId, daten, onNeu }) {
           <button onClick={skript} style={btn()}><Download size={13} /> SQL-Skript zum Anlegen</button>
         </div>
       </>)}
-      {box("Ziel (FTP im Firmennetz)", <>
+      {box("Anstoß aus Access", <>
+        <div style={{ gridColumn: "1 / -1", fontSize: 11.5, color: S.textDim, lineHeight: 1.55 }}>
+          Access meldet nach dem Speichern einer Rechnung „bitte jetzt verarbeiten“ – dann ist sie in
+          Sekunden fertig statt erst beim nächsten Intervall. Der Schlüssel kann nur einen Lauf
+          anstoßen, sonst nichts. Er wird <b>einmal</b> angezeigt; ein neuer macht den alten ungültig.
+        </div>
+        <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 11.5, color: S.textMain }}>
+            Adresse für das Access-Modul (<code>DM_URL</code>): <code>{adresse}</code></div>
+          {schluessel ? (
+            <div style={{ ...hinweis("warn"), alignItems: "center" }}>
+              <KeyRound size={14} />
+              <code style={{ fontSize: 12.5, userSelect: "all" }}>{schluessel}</code>
+              <button onClick={() => navigator.clipboard?.writeText(schluessel)}
+                style={{ ...btn(), padding: "3px 8px" }}><Copy size={12} /> kopieren</button>
+              <span style={{ fontSize: 11 }}>Jetzt ins Access-Modul (<code>SCHLUESSEL</code>) übernehmen.</span>
+            </div>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button onClick={schluesselErzeugen} disabled={!!arbeitet || !daten.ausgang}
+                style={btn(!arbeitet && !!daten.ausgang)} title={daten.ausgang ? "" : "Erst speichern"}>
+                {arbeitet === "schluessel" ? <Loader2 size={13} className="animate-spin" /> : <KeyRound size={13} />}
+                {daten.ausgang?.hat_schluessel ? "Neuen Schlüssel erzeugen" : "Schlüssel erzeugen"}</button>
+              <span style={{ fontSize: 11, color: daten.ausgang?.hat_schluessel ? "var(--ok)" : S.textDim }}>
+                {daten.ausgang?.hat_schluessel ? "✓ Schlüssel ist eingerichtet" : "Noch kein Schlüssel"}</span>
+            </div>
+          )}
+        </div>
+      </>)}
+      {box("Zusätzliche Ablage auf FTP (optional)", <>
+        <div style={{ gridColumn: "1 / -1", fontSize: 11.5, color: S.textDim }}>
+          Nicht nötig: Die fertige PDF geht über <code>tInvoice.ZugferdFile</code> an Access zurück.
+          Nur ausfüllen, wenn die Dateien zusätzlich auf einem FTP liegen sollen – Server leer = keine Ablage.
+        </div>
         <div>
           <label style={{ display: "block", fontSize: 11, color: S.textBright, marginBottom: 4 }}>Protokoll</label>
           <select value={f.protokoll} onChange={e => set("protokoll", e.target.value)}
@@ -420,18 +466,20 @@ function Einrichtung({ connId, daten, onNeu }) {
             <option value="ftp">FTP</option><option value="sftp">SFTP</option>
           </select>
         </div>
-        {feld("Server", "host", { placeholder: "192.168.1.20" })}
+        {feld("Server", "host", { placeholder: "leer = keine FTP-Ablage" })}
         {feld("Port", "port", { placeholder: f.protokoll === "sftp" ? "22" : "21" })}
         {feld("Benutzer", "username")}
         {feld("Kennwort", "password", { type: "password", autoComplete: "new-password" })}
-        {feld("Verzeichnis", "verzeichnis", {}, "Hierhin werden die fertigen PDFs gelegt.")}
-        {feld("Dateiname", "dateiname_muster", {},
-          "Platzhalter: {nummer} {typ} {datum} {kunde}")}
+        {feld("Verzeichnis", "verzeichnis")}
+      </>)}
+      {box("Dateiname", <>
+        {feld("Muster", "dateiname_muster", {},
+          "Für den Mail-Anhang (tInvoice.OutputFileName) und die FTP-Ablage. Platzhalter: {nummer} {typ} {datum} {kunde}")}
       </>)}
       {box("Zeitplan", <>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: S.textMain }}>
           <input type="checkbox" checked={!!f.aktiv} onChange={e => set("aktiv", e.target.checked)} />
-          Automatisch verarbeiten
+          Automatisch verarbeiten (Sicherheitsnetz zum Anstoß)
         </label>
         {feld("Takt (Cron)", "cron_expr", {}, "*/5 * * * * = alle 5 Minuten")}
       </>)}
