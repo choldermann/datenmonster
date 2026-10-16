@@ -29,6 +29,8 @@ CREATE TABLE dbo.tInvoice (
     Currency               CHAR(3)       NOT NULL CONSTRAINT DF_tInvoice_Currency DEFAULT ('EUR'),
     PrecedingInvoiceNumber NVARCHAR(50)  NULL,      -- Pflicht bei STORNO/KORREKTUR
     PrecedingInvoiceDate   DATE          NULL,
+    SellerVatId            NVARCHAR(30)  NULL,      -- eigene USt-IdNr. dieser Rechnung (leer = Standard
+                                                    -- aus Datenmonster; muss dort hinterlegt sein)
     BuyerReference         NVARCHAR(100) NULL,      -- Leitweg-ID (Behörden) bzw. "Ihr Zeichen"
     OrderReference         NVARCHAR(100) NULL,      -- Bestellnummer des Kunden
     CustomerNumber         NVARCHAR(50)  NULL,

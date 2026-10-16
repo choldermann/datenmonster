@@ -55,6 +55,14 @@ Der Grund steht in `tInvoice.StatusMessage` und im Protokoll. In Access
 korrigieren, `Status = 'NEU'` setzen (oder im Protokoll auf „erneut“ klicken),
 dann geht die Rechnung beim nächsten Lauf durch.
 
+**Mehrere eigene USt-IdNrn.** (z. B. je Land): In den Firmendaten steht die
+Standardnummer, alle weiteren kommen ins Feld „Weitere USt-IdNrn.“. Access trägt
+je Rechnung die Nummer, die es auch druckt, in `tInvoice.SellerVatId` ein. Ist
+das Feld leer, gilt die Standardnummer. Eine Nummer, die nicht in den Firmendaten
+steht, führt zur Abweisung. Die Nummer wird bewusst nicht nach Kundenland
+gewählt: Bei einer EU-Lieferung aus Deutschland gilt die deutsche Nummer, auch
+wenn der Kunde in Frankreich sitzt.
+
 **Einheiten**: UN/ECE-Code (`H87` Stück, `HUR` Stunde, `KGM`, `LS` pauschal, `XPX`
 Palette …) oder die üblichen Kürzel `Stk`, `Std`, `kg`, `psch`, `Pal`, `Karton`.
 Unbekannte Einheiten werden nicht geraten.

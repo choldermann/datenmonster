@@ -16,6 +16,7 @@ soll alle Ursachen auf einmal sehen.
 from __future__ import annotations
 
 import datetime as _dt
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from typing import Optional
@@ -194,6 +195,11 @@ def einheit_code(roh: str) -> Optional[str]:
     return None
 
 
+def ustid_liste(roh) -> list[str]:
+    """„ATU123, FR456; NL789“ → ['ATU123', 'FR456', 'NL789']"""
+    return [t.replace(" ", "").upper() for t in re.split(r"[,;\n]+", _s(roh)) if t.strip()]
+
+
 def euro(b: Decimal) -> str:
     return f"{b:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") + " €"
 
@@ -234,8 +240,22 @@ def pruefen(kopf: dict, positionen: list[dict], verkaeufer: dict) -> Beleg:
                         ("plz", "PLZ"), ("ort", "Ort"), ("land", "Land")):
         if not _s(verkaeufer.get(schl)):
             f.append(f"Firmendaten: {label} fehlt (im Formular „Firmendaten“ pflegen)")
-    v_ustid = _s(verkaeufer.get("ustid")).replace(" ", "")
+    v_ustid = _s(verkaeufer.get("ustid")).replace(" ", "").upper()
     v_stnr = _s(verkaeufer.get("steuernummer"))
+
+    # Mehrere Registrierungen (EGP hat je Land eine eigene USt-IdNr.): welche gilt,
+    # weiß nur Access - das Land des Kunden allein entscheidet es nicht. Access
+    # gibt sie je Rechnung in SellerVatId mit; wir nehmen nur Nummern, die in den
+    # Firmendaten stehen, damit kein Tippfehler auf die Rechnung kommt.
+    eigene = sorted({v_ustid} | set(ustid_liste(verkaeufer.get("weitere_ustids"))) - {""})
+    gewaehlt = _s(k.get("SellerVatId")).replace(" ", "").upper()
+    if gewaehlt:
+        if gewaehlt not in eigene:
+            f.append(f"SellerVatId {gewaehlt} ist keine der eigenen USt-IdNrn. in den Firmendaten"
+                     + (f" ({', '.join(eigene)})" if eigene else ""))
+        else:
+            v_ustid = gewaehlt
+    verkaeufer = dict(verkaeufer, ustid=v_ustid)
 
     # Käufer
     if not _s(k.get("BuyerName")):

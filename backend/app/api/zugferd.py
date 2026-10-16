@@ -108,6 +108,15 @@ def firmendaten(body: FeldIn, user: User = Depends(get_current_user),
         if len(roh) < 15 or not num or int(num) % 97 != 1:
             raise HTTPException(400, "IBAN ist ungültig (Prüfziffer stimmt nicht)")
         wert = roh
+    if body.key in ("ustid", "weitere_ustids") and wert:
+        from app.services.zugferd_xml import ustid_liste, _ustid_ok
+        nummern = ustid_liste(wert)
+        falsch = [n for n in nummern if not _ustid_ok(n)]
+        if falsch:
+            raise HTTPException(400, f"Keine USt-IdNr.: {', '.join(falsch)} (Länderkürzel + Nummer)")
+        if body.key == "ustid" and len(nummern) != 1:
+            raise HTTPException(400, "Hier nur die Standard-USt-IdNr. – weitere ins Feld darunter")
+        wert = ", ".join(nummern)
     if body.key == "zahlungsart" and wert and wert not in {o["value"] for o in cfg.ZAHLUNGSARTEN}:
         raise HTTPException(400, "Unbekannte Zahlungsart")
     if wert == "":

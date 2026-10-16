@@ -47,13 +47,15 @@ KOPF_SPALTEN = [
     "ShipToName", "ShipToStreet", "ShipToZip", "ShipToCity", "ShipToCountry",
     "PaymentMeans", "PaymentTerms", "SkontoDays", "SkontoPercent", "Note",
     "TotalNet", "TotalTax", "TotalGross", "Prepaid", "PdfFile", "Status",
-    "StatusMessage", "OutputFileName", "ProcessedAt", "ZugferdFile",
+    "StatusMessage", "OutputFileName", "ProcessedAt", "ZugferdFile", "SellerVatId",
 ]
 POS_SPALTEN = [
     "PositionId", "InvoiceId", "LineNumber", "ArticleNumber", "BuyerArticleNumber", "Name",
     "Description", "Quantity", "Unit", "UnitPrice", "PriceBaseQuantity", "LineNet",
     "VatCategory", "VatRate", "ExemptionReason",
 ]
+
+OPTIONAL = {"ZugferdFile", "SellerVatId"}
 
 _TABELLE = re.compile(r"^(\[?[A-Za-z_][A-Za-z0-9_]*\]?\.)?\[?[A-Za-z_][A-Za-z0-9_]*\]?$")
 _sperren: dict[int, threading.Lock] = {}
@@ -189,9 +191,10 @@ def tabellen_pruefen(engine, kopf: str, pos: str) -> list[str]:
                 da = {k.lower() for k in r.keys()}
             except Exception as e:                            # noqa: BLE001
                 return [f"Tabelle {tab} nicht lesbar: {str(e).splitlines()[0][:200]}"]
-            # ZugferdFile ist freiwillig: gibt es sie, schreiben wir die fertige PDF hinein.
+            # Freiwillig: ZugferdFile (fertige PDF zurück) und SellerVatId (nur bei
+            # mehreren eigenen USt-IdNrn.) - ältere Tabellen ohne sie laufen weiter.
             fehlend += [f"{tab}.{s}" for s in spalten
-                        if s.lower() not in da and s != "ZugferdFile"]
+                        if s.lower() not in da and s not in OPTIONAL]
     return fehlend
 
 

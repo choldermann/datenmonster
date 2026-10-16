@@ -116,6 +116,15 @@ pruefe("negativer Preis → negative Menge (BR-27)",
 f = fehler_von(KOPF, POS, dict(V, iban=""))
 pruefe("Überweisung ohne IBAN abgewiesen", any("IBAN" in x for x in f), f)
 
+V2 = dict(V, weitere_ustids="ATU12345678, FR12345678901")
+b = zx.pruefen(dict(KOPF, SellerVatId="fr 12345678901"), POS, V2)
+pruefe("SellerVatId aus der Liste wird genommen", b.verkaeufer["ustid"] == "FR12345678901")
+pruefe("… und steht im XML", b"FR12345678901" in zx.baue_xml(b) and b"DE123456789" not in zx.baue_xml(b))
+pruefe("ohne SellerVatId gilt die Standardnummer",
+       zx.pruefen(KOPF, POS, V2).verkaeufer["ustid"] == "DE123456789")
+f = fehler_von(dict(KOPF, SellerVatId="NL999999999B01"), POS, V2)
+pruefe("fremde SellerVatId wird abgewiesen", any("SellerVatId" in x for x in f), f)
+
 print("── XML und PDF")
 b = zx.pruefen(KOPF, POS, V)
 xml = zx.baue_xml(b)

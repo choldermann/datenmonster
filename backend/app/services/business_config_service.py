@@ -310,7 +310,11 @@ ZUGFERD_DEFAULTS: list[dict] = [
      "hinweis": "ISO-Code, z. B. DE."},
 
     {"key": "ustid", "label": "USt-IdNr.", "default": "", "gruppe": "Steuer & Register",
-     "hinweis": "Pflicht bei Reverse Charge, EU-Lieferung und Ausfuhr."},
+     "hinweis": "Standard. Pflicht bei Reverse Charge, EU-Lieferung und Ausfuhr."},
+    {"key": "weitere_ustids", "label": "Weitere USt-IdNrn.", "default": "",
+     "gruppe": "Steuer & Register",
+     "hinweis": "Registrierungen in anderen Ländern, durch Komma getrennt. Welche gilt, "
+                "gibt Access je Rechnung in tInvoice.SellerVatId an."},
     {"key": "steuernummer", "label": "Steuernummer", "default": "", "gruppe": "Steuer & Register",
      "hinweis": "Reicht für Inlandsrechnungen, wenn keine USt-IdNr. vorhanden ist."},
     {"key": "register", "label": "Handelsregister", "default": "", "gruppe": "Steuer & Register",
