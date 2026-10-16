@@ -39,6 +39,7 @@ from app.models.ai_memory import AiMemoryKnowledge, AiMemorySolution, AiMemoryCo
 # Muss VOR create_all importiert sein, sonst fehlt die Tabelle beim ersten Start.
 from app.models.report import Report, ReportSchedule, AdHocQuery
 from app.models.er_posteingang import ErPosteingangQuelle, ErPosteingangBeleg
+from app.models.zugferd import ZugferdAusgang, ZugferdBeleg
 from app.models.vorhaben import Vorhaben, VorhabenArtefakt
 from app.models.inventur import InventurLauf, InventurPosition
 from app.models.customer_exclusion import CustomerExclusion
@@ -51,6 +52,7 @@ from app.api import events as events_api
 from app.api import db_write as db_write_api
 from app.api import eingangsrechnung as eingangsrechnung_api
 from app.api import er_posteingang as er_posteingang_api
+from app.api import zugferd as zugferd_api
 from app.api import datev as datev_api
 from app.api import intrastat as intrastat_api
 from app.api import inventur as inventur_api
@@ -564,6 +566,8 @@ async def lifespan(app: FastAPI):
     reload_all_rest_jobs()
     from app.services.scheduler_service import reload_all_er_posteingang_jobs
     reload_all_er_posteingang_jobs()
+    from app.services.scheduler_service import reload_all_zugferd_jobs
+    reload_all_zugferd_jobs()
     from app.services.scheduler_service import reload_vorlagen_pruefung_job
     reload_vorlagen_pruefung_job()
     # FTP-Jobs laden
@@ -701,6 +705,7 @@ app.include_router(events_api.router)
 app.include_router(db_write_api.router)
 app.include_router(eingangsrechnung_api.router)
 app.include_router(er_posteingang_api.router)
+app.include_router(zugferd_api.router)
 app.include_router(datev_api.router)
 app.include_router(intrastat_api.router)
 app.include_router(inventur_api.router)

@@ -48,6 +48,8 @@ const WIDGET_TYPES = [
     desc: "Kunden pflegen, die aus den Abfluss-Auswertungen herausfallen (eigene Firma, Schwestergesellschaften)" },
   { type: "datenpflege", label: "Datenpflege", Icon: Database, color: "#34d399",
     desc: "Eine Tabelle einer Verbindung anzeigen: Zeilen anlegen, bearbeiten und sperren" },
+  { type: "zugferd", label: "ZUGFeRD-Ausgang", Icon: Receipt, color: "#f472b6",
+    desc: "Rechnungen aus tInvoice (z. B. von Access) als ZUGFeRD-PDF erzeugen und auf einen FTP legen" },
 ];
 
 // „Spalte=Text"-Zeilen ⇄ Objekt (Beschriftungen, Auswahllisten)
@@ -127,10 +129,10 @@ function WidgetConfig({ widget, actions, resultTabs = [], onUpdate }) {
 
   const [connections, setConnections] = useState([]);
   useEffect(() => {
-    if (!["eingangsrechnung", "debitoren", "datenpflege"].includes(widget.type)) return;
+    if (!["eingangsrechnung", "debitoren", "datenpflege", "zugferd"].includes(widget.type)) return;
     api.get("/api/connections/")
       .then(r => setConnections((r.data || []).filter(c =>
-        widget.type === "datenpflege" || c.db_type === "mssql")))
+        widget.type === "datenpflege" || widget.type === "zugferd" || c.db_type === "mssql")))
       .catch(() => {});
   }, [widget.type]);
 
@@ -180,6 +182,16 @@ function WidgetConfig({ widget, actions, resultTabs = [], onUpdate }) {
       </LabelRow>
 
       {/* Typ-spezifische Config */}
+      {widget.type === "zugferd" && (
+        <LabelRow label="Verbindung mit tInvoice / tInvoicePositions">
+          <select value={cfg.connection_id || ""} onChange={e => set({ connection_id: e.target.value })}
+            style={{ ...inp, cursor: "pointer" }}>
+            <option value="">— Verbindung wählen —</option>
+            {connections.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </LabelRow>
+      )}
+
       {widget.type === "eingangsrechnung" && (
         <LabelRow label="JTL-Verbindung (Ziel-WaWi)">
           <select value={cfg.connection_id || ""} onChange={e => set({ connection_id: e.target.value })}

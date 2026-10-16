@@ -284,6 +284,81 @@ def datev_unvollstaendig(werte: dict) -> list[str]:
 
 
 
+# ── ZUGFeRD-Ausgang: Firmendaten des Rechnungsstellers ───────────────────────
+# Gehören an die Verbindung, deren Rechnungen ausgestellt werden (mandant_id =
+# connection_id, strikt): stünden sie projektweit, stellte eine zweite Firma ihre
+# Rechnungen unter fremdem Namen und fremder Bankverbindung aus.
+# "pflicht" = ohne das Feld startet kein Lauf (EN 16931 BR-06/08/09).
+ZAHLUNGSARTEN = [
+    {"value": "58", "label": "SEPA-Überweisung"},
+    {"value": "59", "label": "SEPA-Lastschrift"},
+    {"value": "30", "label": "Überweisung (nicht SEPA)"},
+    {"value": "10", "label": "Bar"},
+    {"value": "48", "label": "Karte"},
+    {"value": "57", "label": "Dauerauftrag"},
+]
+
+ZUGFERD_DEFAULTS: list[dict] = [
+    {"key": "name", "label": "Firmenname", "default": "", "gruppe": "Firma", "pflicht": True,
+     "hinweis": "Vollständig mit Rechtsform, wie im Handelsregister."},
+    {"key": "strasse", "label": "Straße und Hausnummer", "default": "", "gruppe": "Firma",
+     "pflicht": True},
+    {"key": "adresszusatz", "label": "Adresszusatz", "default": "", "gruppe": "Firma"},
+    {"key": "plz", "label": "PLZ", "default": "", "gruppe": "Firma", "pflicht": True},
+    {"key": "ort", "label": "Ort", "default": "", "gruppe": "Firma", "pflicht": True},
+    {"key": "land", "label": "Land", "default": "DE", "gruppe": "Firma", "pflicht": True,
+     "hinweis": "ISO-Code, z. B. DE."},
+
+    {"key": "ustid", "label": "USt-IdNr.", "default": "", "gruppe": "Steuer & Register",
+     "hinweis": "Pflicht bei Reverse Charge, EU-Lieferung und Ausfuhr."},
+    {"key": "steuernummer", "label": "Steuernummer", "default": "", "gruppe": "Steuer & Register",
+     "hinweis": "Reicht für Inlandsrechnungen, wenn keine USt-IdNr. vorhanden ist."},
+    {"key": "register", "label": "Handelsregister", "default": "", "gruppe": "Steuer & Register",
+     "hinweis": "Z. B. „HRB 12345, Amtsgericht Musterstadt“."},
+    {"key": "rechtliches", "label": "Weitere Pflichtangaben", "default": "",
+     "gruppe": "Steuer & Register",
+     "hinweis": "Geschäftsführer, Sitz der Gesellschaft – geht als Hinweis ins XML."},
+
+    {"key": "kontakt", "label": "Ansprechpartner", "default": "", "gruppe": "Kontakt"},
+    {"key": "telefon", "label": "Telefon", "default": "", "gruppe": "Kontakt"},
+    {"key": "email", "label": "E-Mail für Rechnungsfragen", "default": "", "gruppe": "Kontakt"},
+
+    {"key": "iban", "label": "IBAN", "default": "", "gruppe": "Bank & Zahlung",
+     "hinweis": "Pflicht bei Überweisung."},
+    {"key": "bic", "label": "BIC", "default": "", "gruppe": "Bank & Zahlung"},
+    {"key": "kontoinhaber", "label": "Kontoinhaber", "default": "", "gruppe": "Bank & Zahlung"},
+    {"key": "zahlungsart", "label": "Standard-Zahlungsart", "default": "58",
+     "gruppe": "Bank & Zahlung", "typ": "auswahl",
+     "hinweis": "Gilt, wenn tInvoice.PaymentMeans leer ist."},
+    {"key": "zahlungsbedingungen", "label": "Standard-Zahlungsbedingungen", "default": "",
+     "gruppe": "Bank & Zahlung",
+     "hinweis": "Gilt, wenn tInvoice.PaymentTerms leer ist, z. B. „Zahlbar innerhalb 14 Tagen ohne Abzug.“"},
+    {"key": "glaeubiger_id", "label": "Gläubiger-ID (Lastschrift)", "default": "",
+     "gruppe": "Bank & Zahlung"},
+]
+
+_ZUGFERD_KEYS = {d["key"] for d in ZUGFERD_DEFAULTS}
+
+
+def zugferd_meta() -> list[dict]:
+    return [dict(d, optionen=ZAHLUNGSARTEN) if d.get("typ") == "auswahl" else dict(d)
+            for d in ZUGFERD_DEFAULTS]
+
+
+def get_zugferd(project_id, db, connection_id) -> dict:
+    """Firmendaten zu dieser Verbindung – strikt, kein Rückfall auf andere."""
+    werte = {d["key"]: d["default"] for d in ZUGFERD_DEFAULTS}
+    werte.update({r.key: ("" if r.value is None else str(r.value))
+                  for r in _rows(project_id, db, "zugferd", connection_id, strikt=True)
+                  if r.key in _ZUGFERD_KEYS})
+    return werte
+
+
+def zugferd_unvollstaendig(werte: dict) -> list[str]:
+    return [d["label"] for d in ZUGFERD_DEFAULTS
+            if d.get("pflicht") and not str(werte.get(d["key"], "")).strip()]
+
+
 def default_thresholds() -> dict:
     return {d["key"]: d["default"] for d in THRESHOLD_DEFAULTS}
 

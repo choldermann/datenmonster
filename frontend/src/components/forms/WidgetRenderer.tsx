@@ -22,6 +22,7 @@ import AlertsWidget from "./widgets/AlertsWidget";
 import InventurWidget from "./widgets/InventurWidget";
 import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
 import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
+import ZugferdWidget from "./widgets/ZugferdWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -37,7 +38,7 @@ const WIDGET_LABELS = {
   datev_stammdaten: "DATEV-Stammdaten",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
   inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
-  datenpflege: "Datenpflege",
+  datenpflege: "Datenpflege", zugferd: "ZUGFeRD-Ausgang",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -46,7 +47,7 @@ export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_researc
                                                 "kostenstruktur", "preisautomatik",
                                                 "debitoren", "datev_stammdaten",
                                                 "inventur", "kunden_ausschluss",
-                                                "datenpflege"]);
+                                                "datenpflege", "zugferd"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -70,6 +71,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   // Die Tabelle steht im gespeicherten Formular – der Server braucht nur Formular + Widget.
   if (widget.type === "datenpflege")
     return <DatenpflegeWidget widget={widget} formId={formId} />;
+  if (widget.type === "zugferd") return <ZugferdWidget widget={widget} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",

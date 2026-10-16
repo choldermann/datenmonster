@@ -34,7 +34,7 @@ _REGELN = [
     ({"GET"},            r"/api/connections"),
     # Fach-Widgets mit eigenen Portal-Pruefungen im jeweiligen Router
     (ALLE, r"/api/(business-config|datenpflege|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
-           r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten)(/.*)?"),
+           r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten|zugferd)(/.*)?"),
 ]
 _KOMPILIERT = [(m, re.compile(muster)) for m, muster in _REGELN]
 
