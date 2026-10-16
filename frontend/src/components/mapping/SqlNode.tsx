@@ -58,6 +58,9 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
   };
 
   const set = (k, v) => onUpdate({ ...node, [k]: v });
+  // Knoten zeigt auf eine Verbindung, die das Projekt nicht (mehr) zugeordnet hat
+  const fremdeVerbindung = !!node.connection_id
+    && !dbConnections.some((c) => String(c.id) === String(node.connection_id));
 
   const loadSchema = useCallback(async () => {
     if (!node.sql?.trim()) return;
@@ -144,8 +147,19 @@ function SqlNode({ node, onRemove, onPositionChange, onUpdate, onResize, outputR
               onChange={(e) => set("connection_id", parseInt(e.target.value) || null)}
               style={{ width: "100%", backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: node.connection_id ? SQL_NODE_COLOR : S.textDim, fontSize: 11, padding: "4px 8px", outline: "none", cursor: "pointer" }}>
               <option value="">– Verbindung wählen –</option>
+              {fremdeVerbindung && (
+                <option value={node.connection_id}>Verbindung #{node.connection_id} – nicht zugeordnet</option>
+              )}
               {dbConnections.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.db_type})</option>)}
             </select>
+            {/* Sonst stünde hier still „Verbindung wählen“, obwohl der Knoten weiter
+                gegen die alte Verbindung läuft (Vorschau, Spalten erkennen). */}
+            {fremdeVerbindung && (
+              <div style={{ fontSize: 10, color: "var(--warn)", marginTop: 3, lineHeight: 1.4 }}>
+                Diese Verbindung ist dem Projekt nicht zugeordnet. Im Formular tauscht der
+                Mandant sie aus, Vorschau und Spaltenerkennung laufen aber gegen sie.
+              </div>
+            )}
           </div>
 
           {/* Modus */}

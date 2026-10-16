@@ -435,6 +435,9 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                   <label style={lS}>Verbindung</label>
                   <select style={iS} value={connId} onChange={(e) => handleConnChange(e.target.value)}>
                     <option value="">– wählen –</option>
+                    {connId && !dbConnections.some((c) => String(c.id) === connId) && (
+                      <option value={connId}>Verbindung #{connId} – nicht zugeordnet</option>
+                    )}
                     {dbConnections.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.db_type})</option>)}
                   </select>
                 </div>
