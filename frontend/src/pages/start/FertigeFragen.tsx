@@ -279,7 +279,8 @@ export default function FertigeFragen({ startFrage = "" }) {
                       <Chip key={b.key} an={auswahl.bedingung === b.key}
                         onClick={() => setze({ bedingung: b.key, n: b.n,
                           zeitraum: b.zeitraum ? (auswahl.zeitraum || "12_monate") : null })}>
-                        {b.text.replace("{n}", b.n != null ? String(b.n) : "…")}
+                        {/* Der aktive Knopf zeigt die im Satz getippte Zahl, nicht die Vorgabe */}
+                        {b.text.replace("{n}", String(auswahl.bedingung === b.key && auswahl.n ? auswahl.n : b.n ?? "…"))}
                       </Chip>
                     ))}
                   </div>
