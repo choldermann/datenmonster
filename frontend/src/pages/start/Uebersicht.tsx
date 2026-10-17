@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
-import { useLizenz } from "../../contexts/LizenzContext";
 import FormRunner from "../FormRunner";
 import PortalRunner from "../PortalRunner";
 import { S, knopf, karte } from "./StartLayout";
@@ -24,7 +23,6 @@ const AMPEL = { rot: "var(--err)", gelb: "var(--warn)", gruen: "var(--ok)" };
 
 export default function Uebersicht() {
   const { user } = useAuth();
-  const lizenz = useLizenz();
   const navigate = useNavigate();
   const portal = !!user?.is_portal_only;
 
@@ -42,11 +40,12 @@ export default function Uebersicht() {
   };
   useEffect(laden, []);
 
-  // Das Fragefeld führt (bis Phase 4) in die KI-Werkbank der Werkstatt.
-  const fragenMoeglich = !portal && lizenz.hat("ai_build");
+  // Das Fragefeld übersetzt die Frage auf „Eigene Auswertung“ in einen Satz
+  // (KI, kostet Credits) und zeigt dort gleich das Ergebnis.
+  const fragenMoeglich = !portal;
   const fragen = (text = frage) => {
     if (!text.trim()) return;
-    navigate("/dashboard", { state: { tab: "werkbank", frage: text.trim() } });
+    navigate("/start/auswertung", { state: { frage: text.trim() } });
   };
 
   const kennzahlenEinrichten = async () => {

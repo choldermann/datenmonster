@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Filter, LayoutGrid, Lock } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 import { useLizenz } from "../../contexts/LizenzContext";
@@ -13,6 +13,7 @@ import FertigeFragen from "./FertigeFragen";
  *  Fertige Fragen und der Satzbaukasten folgen in Phase 3/4. */
 export default function Auswertung() {
   const navigate = useNavigate();
+  const location = useLocation();
   const lizenz = useLizenz();
   const [cockpits, setCockpits] = useState([]);
   const [fehler, setFehler] = useState(null);
@@ -50,13 +51,13 @@ export default function Auswertung() {
         text="Fertige Fragen an Ihre Wawi mit einem Klick – oder eine Liste nach eigenen Bedingungen und Berichte aus mehreren Cockpits." />
       {fehler && <p style={{ color: "var(--err)", margin: 0 }}>{fehler}</p>}
 
-      <FertigeFragen />
+      <FertigeFragen startFrage={location.state?.frage || ""} />
 
       <h2 style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 700, color: S.textBright }}>Selbst zusammenstellen</h2>
       {gesperrt && <p style={{ margin: 0, fontSize: 13, color: S.textDim }}>{gesperrt}</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
-        <Kachel icon={Filter} titel="Eigene Liste"
-          text="Kunden, Aufträge oder Rechnungen nach Ihren Bedingungen, z. B. „Kunden ohne Rechnung seit 90 Tagen“."
+        <Kachel icon={Filter} titel="Erweiterte Liste"
+          text="Der volle Abfrage-Generator: beliebig viele Bedingungen, Gruppierungen und Kennzahlen."
           onClick={() => setOffen("abfrage")} />
         <Kachel icon={LayoutGrid} titel="Bericht zusammenstellen"
           text="Kacheln und Tabellen aus Ihren Cockpits auf einer Seite – auf Wunsch jede Woche per Mail."

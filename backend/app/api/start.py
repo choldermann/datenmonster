@@ -513,14 +513,17 @@ async def satz_verstehen(data: VerstehenIn, db: Session = Depends(get_db),
     objekte = [o["key"] for o in w["objekte"]]
     bedingungen = sorted({b["key"] for o in w["objekte"] for b in o["bedingungen"]})
     sortierungen = sorted({s["key"] for o in w["objekte"] for s in o["sortierungen"]})
+    # „passt“ steht bewusst zuletzt: erst die Bausteine wählen, dann urteilen –
+    # andersherum lehnte das Modell Fragen wie „Was muss ich nachbestellen?“ ab,
+    # bevor es den Wortschatz überhaupt durchgesehen hatte.
     schema = {"type": "object", "properties": {
-        "passt": {"type": "boolean"},
         "koernung": {"type": "string", "enum": objekte},
         "bedingung": {"type": "string", "enum": bedingungen},
         "n": {"type": "number"},
         "sortierung": {"type": "string", "enum": sortierungen},
         "zeitraum": {"type": "string", "enum": [z["key"] for z in w["zeitraeume"]]},
         "hinweis": {"type": "string"},
+        "passt": {"type": "boolean"},
     }}
     system = (
         "Du übersetzt Fragen eines Onlinehändlers an seine JTL-Warenwirtschaft in einen festen "
@@ -528,8 +531,17 @@ async def satz_verstehen(data: VerstehenIn, db: Session = Depends(get_db),
         "Sortierung müssen zum gewählten Objekt gehören. n ist die Zahl in der Bedingung "
         "(Tage, Euro oder Prozent); braucht die Bedingung keine Zahl, setze n auf 0. "
         "Drei Monate sind 90 Tage, ein halbes Jahr 180 Tage. "
+        "Die Stichworte je Bedingung zeigen, welche Formulierungen gemeint sind. "
+        "Sortierung: die erste des Objekts, außer die Frage nennt eine andere (\"nach Umsatz\", \"die ältesten\" …). "
+        "Zeitraum: 12_monate, außer die Frage nennt einen (\"diesen Monat\" → letzte_30, \"dieses Jahr\" → dieses_jahr). "
         "Passt die Frage zu keiner Bedingung, setze passt=false und erkläre in hinweis in einem "
         "kurzen deutschen Satz, was der Baukasten nicht abdeckt. Antworte nur mit dem JSON.\n\n"
+        "Beispiele:\n"
+        "„Was muss ich nachbestellen?“ → artikel, fehlmenge, sortierung auftraege, passt=true\n"
+        "„Welche Artikel liegen seit einem Jahr rum?“ → artikel, ladenhueter, n=365, sortierung tage, passt=true\n"
+        "„Wer hat lange nichts mehr gekauft?“ → kunde, inaktiv, n=90, sortierung umsatz, passt=true\n"
+        "„Welche Lieferungen sind verspätet?“ → lieferantenbestellung, ueberfaellig, sortierung wert, passt=true\n"
+        "„Welcher Mitarbeiter verkauft am meisten?“ → passt=false (Mitarbeiter gibt es im Baukasten nicht)\n\n"
         "Wortschatz:\n" + json.dumps(w, ensure_ascii=False))
     try:
         antwort = await _json(svc, system, text, schema)

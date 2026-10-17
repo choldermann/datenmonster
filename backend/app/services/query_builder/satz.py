@@ -24,16 +24,16 @@ OBJEKTE = {
     "kunde": {
         "plural": "Kunden", "zeitraum": True,
         "bedingungen": {
-            "gekauft": {"text": "im Zeitraum gekauft haben",
+            "gekauft": {"text": "im Zeitraum gekauft haben", "stichworte": "Kunden mit Umsatz, beste Kunden, Top-Kunden",
                         "teil": lambda n: {"kennzahlen": ["umsatz", "rechnungen"],
                                            "kennzahlfilter": _und(_b("umsatz", ">", 0))}},
-            "inaktiv": {"text": "seit mehr als {n} Tagen nicht bestellt haben", "n": 90, "einheit": "Tage",
+            "inaktiv": {"text": "seit mehr als {n} Tagen nicht bestellt haben", "stichworte": "eingeschlafen, inaktiv, lange nicht gekauft, verloren", "n": 90, "einheit": "Tage",
                         "teil": lambda n: {"kennzahlen": ["umsatz", "letzte_rechnung", "tage_seit_rechnung"],
                                            "kennzahlfilter": _und(_b("tage_seit_rechnung", ">", n))}},
-            "umsatz_ueber": {"text": "im Zeitraum mehr als {n} € Umsatz hatten", "n": 10000, "einheit": "€",
+            "umsatz_ueber": {"text": "im Zeitraum mehr als {n} € Umsatz hatten", "stichworte": "große Kunden, Umsatz über", "n": 10000, "einheit": "€",
                              "teil": lambda n: {"kennzahlen": ["umsatz", "rechnungen"],
                                                 "kennzahlfilter": _und(_b("umsatz", ">", n))}},
-            "ware_ohne_rechnung": {"text": "Ware bekommen, aber keine Rechnung erhalten haben",
+            "ware_ohne_rechnung": {"text": "Ware bekommen, aber keine Rechnung erhalten haben", "stichworte": "geliefert aber nicht berechnet, fehlende Rechnung",
                                    "teil": lambda n: {"kennzahlen": ["lieferscheine", "rechnungen", "letzte_lieferung", "umsatz"],
                                                       "kennzahlfilter": _und(_b("lieferscheine", ">", 0),
                                                                              _b("rechnungen", "=", 0))}},
@@ -48,18 +48,18 @@ OBJEKTE = {
     "artikel": {
         "plural": "Artikel", "zeitraum": True,
         "bedingungen": {
-            "verkauft": {"text": "im Zeitraum verkauft wurden",
+            "verkauft": {"text": "im Zeitraum verkauft wurden", "stichworte": "Renner, Bestseller, meistverkauft, Absatz",
                          "teil": lambda n: {"kennzahlen": ["menge", "umsatz"],
                                             "kennzahlfilter": _und(_b("menge", ">", 0))}},
-            "fehlmenge": {"text": "nicht genug Bestand für offene Aufträge haben",
+            "fehlmenge": {"text": "nicht genug Bestand für offene Aufträge haben", "stichworte": "nachbestellen, Fehlmenge, Bestand reicht nicht, ausverkauft, Engpass",
                           "teil": lambda n: {"kennzahlen": ["menge"],
                                              "zeilenfilter": _und(_b("artikel.lagerartikel", "=", 1),
                                                                   _b("artikel.fehlmenge", ">", 0))}},
-            "ladenhueter": {"text": "seit mehr als {n} Tagen nicht verkauft wurden", "n": 180, "einheit": "Tage",
+            "ladenhueter": {"text": "seit mehr als {n} Tagen nicht verkauft wurden", "stichworte": "Ladenhüter, Penner, liegt rum, totes Kapital", "n": 180, "einheit": "Tage",
                             "teil": lambda n: {"kennzahlen": ["tage_ohne_verkauf", "letzter_verkauf"],
                                                "zeilenfilter": _und(_b("artikel.bestand", ">", 0)),
                                                "kennzahlfilter": _und(_b("tage_ohne_verkauf", ">", n))}},
-            "marge_unter": {"text": "mit weniger als {n} % Marge verkauft wurden", "n": 20, "einheit": "%",
+            "marge_unter": {"text": "mit weniger als {n} % Marge verkauft wurden", "stichworte": "schlechte Marge, wenig Gewinn, Rohertrag niedrig", "n": 20, "einheit": "%",
                             "teil": lambda n: {"kennzahlen": ["umsatz", "rohertrag", "marge"],
                                                "kennzahlfilter": _und(_b("marge", "<", n))}},
         },
@@ -75,8 +75,8 @@ OBJEKTE = {
     "auftrag": {
         "plural": "Aufträge", "zeitraum": True,
         "bedingungen": {
-            "eingegangen": {"text": "im Zeitraum eingegangen sind", "teil": lambda n: {}},
-            "wert_ueber": {"text": "mehr als {n} € netto wert sind", "n": 1000, "einheit": "€",
+            "eingegangen": {"text": "im Zeitraum eingegangen sind", "stichworte": "Auftragseingang, neue Aufträge", "teil": lambda n: {}},
+            "wert_ueber": {"text": "mehr als {n} € netto wert sind", "stichworte": "große Aufträge, Aufträge über", "n": 1000, "einheit": "€",
                            "teil": lambda n: {"zeilenfilter": _und(_b("auftrag.wert", ">", n))}},
         },
         "sortierungen": {
@@ -87,15 +87,15 @@ OBJEKTE = {
     "lieferantenbestellung": {
         "plural": "Lieferanten-Bestellungen", "zeitraum": False,
         "bedingungen": {
-            "offen": {"text": "noch offen sind",
+            "offen": {"text": "noch offen sind", "stichworte": "offene Bestellungen, ausstehende Lieferungen",
                       "teil": lambda n: {"zeilenfilter": _und(_b("bestellung.offen", "=", 1))}},
-            "ueberfaellig": {"text": "überfällig sind",
+            "ueberfaellig": {"text": "überfällig sind", "stichworte": "Verzug, verspätet, Lieferant liefert nicht",
                              "teil": lambda n: {"zeilenfilter": _und(_b("bestellung.offen", "=", 1),
                                                                      _b("bestellung.verzug", ">", 0))}},
-            "ohne_termin": {"text": "keinen Liefertermin haben",
+            "ohne_termin": {"text": "keinen Liefertermin haben", "stichworte": "ohne Termin, kein Lieferdatum",
                             "teil": lambda n: {"zeilenfilter": _und(_b("bestellung.offen", "=", 1),
                                                                     _b("bestellung.liefertermin", "leer"))}},
-            "teilgeliefert": {"text": "nur teilweise geliefert sind",
+            "teilgeliefert": {"text": "nur teilweise geliefert sind", "stichworte": "Teillieferung, Rest offen",
                               "teil": lambda n: {"zeilenfilter": _und(_b("bestellung.offen", "=", 1),
                                                                       _b("bestellung.teilgeliefert", "=", 1))}},
         },
@@ -120,7 +120,8 @@ def wortschatz() -> dict:
     return {
         "objekte": [{
             "key": k, "plural": o["plural"], "zeitraum": o["zeitraum"],
-            "bedingungen": [{"key": bk, "text": b["text"], "n": b.get("n"), "einheit": b.get("einheit")}
+            "bedingungen": [{"key": bk, "text": b["text"], "n": b.get("n"), "einheit": b.get("einheit"),
+                             "stichworte": b.get("stichworte")}
                             for bk, b in o["bedingungen"].items()],
             "sortierungen": [{"key": sk, "text": s["text"]} for sk, s in o["sortierungen"].items()],
         } for k, o in OBJEKTE.items()],
