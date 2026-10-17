@@ -5,11 +5,11 @@ import { buildDashboardContext } from "../components/forms/dashboardContext";
 import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, FileText, BookOpen } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
-import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
-import { ExportErgebnisse, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
+import { ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
+import FormFields, { validateRequired, fieldsForTab, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
+import RunnerErgebnis from "../components/forms/RunnerErgebnis";
 import MandantWaehler from "../components/MandantWaehler";
 import CockpitDokuModal from "../components/forms/CockpitDokuModal";
 import VorlageGesperrt from "../components/VorlageGesperrt";
@@ -20,37 +20,6 @@ const S = {
   textDim: "var(--text-dim)", accent: "var(--accent)",
 };
 
-function ResultTable({ columns, rows }) {
-  if (!columns?.length) return <p style={{ fontSize: 11, color: S.textDim, padding: 8 }}>Keine Daten</p>;
-  return (
-    <div style={{ overflowX: "auto", maxHeight: 400 }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
-        <thead>
-          <tr style={{ backgroundColor: "var(--bg-elevated)", position: "sticky", top: 0 }}>
-            {columns.map(c => (
-              <th key={c} style={{ padding: "6px 10px", textAlign: "left", borderBottom: "1px solid var(--border)",
-                color: S.textDim, fontWeight: 600, whiteSpace: "nowrap" }}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid var(--border)" }}
-              onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)"}
-              onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
-              {columns.map(c => (
-                <td key={c} style={{ padding: "5px 10px", color: S.textMain }}>{row[c] ?? ""}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// eingebettet: „seite“ = in der Händler-Ansicht mit schlanker Leiste (ohne Bearbeiten,
-// Zurück führt zu den Cockpits), „inhalt“ = ganz ohne Leiste (Kennzahlen der Übersicht).
 export default function FormRunner({ formId = null, eingebettet = null }: { formId?: any; eingebettet?: null | "seite" | "inhalt" } = {}) {
   const routeParams = useParams();
   const id = formId ?? routeParams.id;
@@ -429,85 +398,13 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
           </div>
         )}
 
-        {results && (
-          <ExportErgebnisse actions={actions} results={results} onDownload={downloadExport} />
-        )}
-
-        {/* Ergebnis-Tabs (optional, aus schema.result_tabs) – bei eigenständigen Widgets
-            schon vor dem ersten Lauf, sonst käme man nie auf einen Reiter, dessen
-            Filter den ersten Lauf erst auslöst */}
-        {(results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && resultTabs.length > 0 && (
-          <div style={{ display: "flex", gap: 4, marginBottom: 16,
-            borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
-            {resultTabs.map(tab => {
-              const active = tab.id === currentTab;
-              return (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? "var(--ok)" : "transparent"}`,
-                    color: active ? S.textBright : S.textDim, cursor: "pointer",
-                    fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Widgets: eigenständige (z.B. Eingangsrechnung) sofort, ergebnis-basierte nach Lauf */}
-        {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
-          <WidgetRenderer
-            widgets={widgetsForTab(widgets, currentTab, tabActionIds)}
-            results={results || {}} allowDownload={true} baseParams={params}
-            projectId={form.project_id} formId={form.id}
-            onAiText={(aid, text, loading) => {
-              setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
-              setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
-            }} />
-        )}
-
-        {/* Rohtabellen für Aktionen ohne Widget */}
-        {results && (() => {
-          const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
-          const rawActions = actions.filter(a => !widgetActionIds.has(a.id)
-            && a.type !== "export_mapping"
-            && !(a.type === "run_pipeline" && (results?.[a.id]?.files || []).length)
-            && (!tabActionIds || tabActionIds.has(a.id)));
-          if (!rawActions.length) return null;
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16,
-              marginTop: widgets.length > 0 ? 16 : 0 }}>
-              {rawActions.map(action => {
-                const result = results[action.id];
-                if (!result) return null;
-                return (
-                  <div key={action.id} style={{ backgroundColor: S.bgCard,
-                    border: `1px solid ${S.border}`, borderRadius: 10, overflow: "hidden" }}>
-                    <div style={{ padding: "10px 16px", borderBottom: `1px solid ${S.border}`,
-                      display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: S.textBright }}>
-                        {action.label || action.id}
-                      </span>
-                      {result.kind !== "pipeline" && result.total !== undefined && (
-                        <span style={{ fontSize: 10, color: S.textDim }}>{result.total} Zeilen</span>
-                      )}
-                    </div>
-                    {result.kind === "pipeline" ? (
-                      <PipelineResult result={result} />
-                    ) : result.error ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 14,
-                        color: "var(--err-soft)", fontSize: 11 }}>
-                        <AlertCircle size={13} /> {result.error}
-                      </div>
-                    ) : (
-                      <ResultTable columns={result.columns} rows={result.rows} />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })()}
+        <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
+          resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          params={params} allowDownload={true} onDownload={downloadExport}
+          onAiText={(aid, text, loading) => {
+            setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
+            setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
+          }} />
         </>)}
       </div>
 

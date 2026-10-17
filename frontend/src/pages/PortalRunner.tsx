@@ -1,17 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, Download, AlertCircle, LogOut, FileText } from "lucide-react";
+import { ArrowLeft, Play, Loader2, AlertCircle, LogOut, FileText } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { useAuth } from "../context/AuthContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
-import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
-import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
-import { ExportErgebnisse, ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
+import { ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
+import FormFields, { validateRequired, fieldsForTab, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
+import RunnerErgebnis from "../components/forms/RunnerErgebnis";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
 import MandantWaehler from "../components/MandantWaehler";
@@ -22,80 +21,6 @@ const S = {
   border: "var(--border)", textMain: "var(--text-main)", textBright: "var(--text-bright)",
   textDim: "var(--text-dim)", accent: "var(--accent)",
 };
-
-// ── Result table ──────────────────────────────────────────────────────────────
-
-function ResultTable({ result, formName, actionLabel, allowDownload }) {
-  const { columns = [], rows = [], total, error, download_disabled } = result;
-  const canDownload = allowDownload && !download_disabled;
-
-  const downloadCsv = () => {
-    const header = columns.join(";");
-    const body = rows.map(r =>
-      columns.map(c => `"${(r[c] ?? "").toString().replace(/"/g, '""')}"`).join(";")
-    ).join("\n");
-    const blob = new Blob(["﻿" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${formName}-${actionLabel}.csv`;
-    a.click();
-  };
-
-  if (error) return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 18px",
-      color: "var(--err-soft)", fontSize: 13 }}>
-      <AlertCircle size={14} /> {error}
-    </div>
-  );
-
-  if (!columns.length) return (
-    <p style={{ padding: "16px 18px", color: S.textDim, fontSize: 13 }}>Keine Daten zurückgegeben.</p>
-  );
-
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "10px 18px", borderBottom: `1px solid ${S.border}` }}>
-        {total !== undefined && <span style={{ fontSize: 12, color: S.textDim }}>{total} Zeilen</span>}
-        {canDownload && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <EmailTableButton columns={columns} rows={rows} title={`${formName} – ${actionLabel}`} disabled={!rows.length} />
-            <button onClick={downloadCsv}
-              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
-                color: S.accent, background: "none", border: `1px solid ${S.border}`,
-                borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
-              <Download size={11} /> CSV
-            </button>
-          </div>
-        )}
-      </div>
-      <div style={{ overflowX: "auto", maxHeight: 520 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ position: "sticky", top: 0, backgroundColor: S.bgEl }}>
-              {columns.map(c => (
-                <th key={c} style={{ padding: "9px 14px", textAlign: "left",
-                  borderBottom: `1px solid ${S.border}`, color: S.textDim,
-                  fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i} style={{ borderBottom: `1px solid ${S.border}` }}
-                onMouseEnter={e => e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.02)"}
-                onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
-                {columns.map(c => (
-                  <td key={c} style={{ padding: "8px 14px", color: S.textMain }}>{row[c] ?? ""}</td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ── Main component ────────────────────────────────────────────────────────────
 
@@ -269,7 +194,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
           <button onClick={() => navigate(zurueck)}
             style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
               border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
-            <ArrowLeft size={14} /> Übersicht
+            <ArrowLeft size={14} /> {eingebettet ? "Cockpits" : "Übersicht"}
           </button>
           <span style={{ color: S.border }}>|</span>
           <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>{form?.name || slug}</span>
@@ -295,13 +220,6 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
   // Felder, die nur zu einem Reiter gehören (config.visible_tabs), außerhalb ausblenden.
   const visibleFields  = fieldsForTab(fields, currentTab);
   const hasButtonField = visibleFields.some(f => f.type === "button");
-  // Actions ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Register gefiltert)
-  const widgetActionIds = new Set(widgets.map(w => w.action_id).filter(Boolean));
-  // Export-Aktionen stehen über den Reitern (ExportErgebnisse) – sie gehören meist zu keinem.
-  const rawResultActions = actions.filter(a => !widgetActionIds.has(a.id)
-    && a.type !== "export_mapping"
-    && !(a.type === "run_pipeline" && (results?.[a.id]?.files || []).length)
-    && (!tabActionIds || tabActionIds.has(a.id)));
   const hatExporte = actions.some(a => a.type === "export_mapping");
 
   return (
@@ -316,7 +234,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
             <button onClick={() => navigate(zurueck)}
               style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
                 border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
-              <ArrowLeft size={14} /> Übersicht
+              <ArrowLeft size={14} /> {eingebettet ? "Cockpits" : "Übersicht"}
             </button>
             <span style={{ color: S.border }}>|</span>
             <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>
@@ -474,74 +392,13 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
           </div>
         )}
 
-        {results && (
-          <ExportErgebnisse actions={actions} results={results}
-            allowDownload={allowDownload} onDownload={downloadExport} />
-        )}
-
-        {/* Ergebnis-Register (optional, aus schema.result_tabs) */}
-        {(results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && resultTabs.length > 0 && (
-          <div style={{ display: "flex", gap: 4, marginBottom: 16,
-            borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
-            {resultTabs.map(tab => {
-              const active = tab.id === currentTab;
-              return (
-                <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                  style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? "var(--ok)" : "transparent"}`,
-                    color: active ? S.textBright : S.textDim, cursor: "pointer",
-                    fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── Widget-Ergebnisse ──
-            Standalone-Widgets (z.B. Eingangsrechnungs-Freigabe) rendern ohne Action-Result;
-            reguläre Widgets erst nach dem Ausführen. Parität zum Editor-FormRunner. */}
-        {widgets.length > 0 && (results || widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type))) && (
-          <WidgetRenderer
-            widgets={widgetsForTab(widgets, currentTab, tabActionIds)}
-            results={results || {}}
-            allowDownload={allowDownload}
-            baseParams={params}
-            projectId={form.project_id} formId={form.id}
-            onAiText={(aid, text, loading) => {
-              setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
-              setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
-            }}
-          />
-        )}
-
-        {/* ── Rohtabellen für Aktionen ohne Widget ── */}
-        {results && rawResultActions.map(action => {
-          const result = results[action.id];
-          if (!result) return null;
-          return (
-            <div key={action.id} style={{ backgroundColor: S.bgCard,
-              border: `1px solid ${S.border}`, borderRadius: 14,
-              overflow: "hidden", marginBottom: 20, marginTop: widgets.length > 0 ? 20 : 0 }}>
-              <div style={{ padding: "14px 20px", borderBottom: `1px solid ${S.border}`,
-                display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <span style={{ fontSize: 14, fontWeight: 700, color: S.textBright }}>
-                  {action.label || "Ergebnis"}
-                </span>
-              </div>
-              {result.kind === "pipeline" ? (
-                <PipelineResult result={result} />
-              ) : (
-                <ResultTable
-                  result={result}
-                  formName={form?.name || "export"}
-                  actionLabel={action.label || action.id}
-                  allowDownload={allowDownload}
-                />
-              )}
-            </div>
-          );
-        })}
+        <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
+          resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          params={params} allowDownload={allowDownload} onDownload={downloadExport}
+          onAiText={(aid, text, loading) => {
+            setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });
+            setAiLoading(prev => prev[aid] === loading ? prev : { ...prev, [aid]: loading });
+          }} />
         {hatExporte && allowDownload && (
           <ExportVerlauf slug={slug} aktualisiert={exportStand} onDownload={downloadExport} />
         )}
