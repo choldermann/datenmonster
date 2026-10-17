@@ -126,8 +126,14 @@ def speichern(db, name: str, definition: dict, project_id, connection_id: int,
         raise sql_bauer.AbfrageFehler("Bitte einen Namen für die Auswertung angeben.")
 
     # Im Report zählt nicht die Vorschau-Obergrenze, sondern die volle Liste.
+    # Eine bewusst kleinere Grenze („Die 50 umsatzstärksten Kunden“) ist dagegen
+    # Teil der Frage und bleibt stehen.
     definition = dict(definition or {})
-    definition.pop("limit", None)
+    try:
+        if int(definition.get("limit") or 0) >= 500:
+            definition.pop("limit", None)
+    except (TypeError, ValueError):
+        definition.pop("limit", None)
     # literal=True: der Report gibt später nur :von/:bis mit. Ein verbliebenes
     # :p0 bliebe ungebunden und die Auswertung wäre stumm leer.
     koernung = definition.get("koernung") or "kunde"

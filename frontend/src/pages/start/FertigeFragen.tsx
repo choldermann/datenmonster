@@ -119,7 +119,7 @@ export default function FertigeFragen({ startFrage = "" }) {
   const satzNeu = (koernung) => {
     const o = wortschatz.objekte.find((x) => x.key === koernung);
     waehle({ koernung, bedingung: o.bedingungen[0].key, n: o.bedingungen[0].n,
-      sortierung: o.sortierungen[0].key, zeitraum: o.zeitraum ? (auswahl?.zeitraum || "12_monate") : null });
+      sortierung: o.sortierungen[0].key, zeitraum: o.bedingungen[0].zeitraum ? (auswahl?.zeitraum || "12_monate") : null });
   };
   const setze = (teil) => setAuswahl((a) => ({ ...a, ...teil }));
 
@@ -252,7 +252,7 @@ export default function FertigeFragen({ startFrage = "" }) {
                   {nachN}
                 </span>, sortiert nach{" "}
                 <span style={marke}>{objekt.sortierungen.find((s) => s.key === auswahl.sortierung)?.text}</span>
-                {objekt.zeitraum && auswahl.zeitraum && (
+                {bedingung?.zeitraum && auswahl.zeitraum && (
                   <> ({wortschatz.zeitraeume.find((z) => z.key === auswahl.zeitraum)?.text})</>
                 )}.
               </p>
@@ -277,7 +277,8 @@ export default function FertigeFragen({ startFrage = "" }) {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                     {objekt.bedingungen.map((b) => (
                       <Chip key={b.key} an={auswahl.bedingung === b.key}
-                        onClick={() => setze({ bedingung: b.key, n: b.n })}>
+                        onClick={() => setze({ bedingung: b.key, n: b.n,
+                          zeitraum: b.zeitraum ? (auswahl.zeitraum || "12_monate") : null })}>
                         {b.text.replace("{n}", b.n != null ? String(b.n) : "…")}
                       </Chip>
                     ))}
@@ -292,7 +293,7 @@ export default function FertigeFragen({ startFrage = "" }) {
                       ))}
                     </div>
                   </div>
-                  {objekt.zeitraum && (
+                  {bedingung?.zeitraum && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <span style={{ fontSize: 13, color: S.textDim }}>Zeitraum</span>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>

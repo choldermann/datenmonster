@@ -51,11 +51,11 @@ OBJEKTE = {
             "verkauft": {"text": "im Zeitraum verkauft wurden", "stichworte": "Renner, Bestseller, meistverkauft, Absatz",
                          "teil": lambda n: {"kennzahlen": ["menge", "umsatz"],
                                             "kennzahlfilter": _und(_b("menge", ">", 0))}},
-            "fehlmenge": {"text": "nicht genug Bestand für offene Aufträge haben", "stichworte": "nachbestellen, Fehlmenge, Bestand reicht nicht, ausverkauft, Engpass",
+            "fehlmenge": {"text": "nicht genug Bestand für offene Aufträge haben", "ohne_zeitraum": True, "stichworte": "nachbestellen, Fehlmenge, Bestand reicht nicht, ausverkauft, Engpass",
                           "teil": lambda n: {"kennzahlen": ["menge"],
                                              "zeilenfilter": _und(_b("artikel.lagerartikel", "=", 1),
                                                                   _b("artikel.fehlmenge", ">", 0))}},
-            "ladenhueter": {"text": "seit mehr als {n} Tagen nicht verkauft wurden", "stichworte": "Ladenhüter, Penner, liegt rum, totes Kapital", "n": 180, "einheit": "Tage",
+            "ladenhueter": {"text": "seit mehr als {n} Tagen nicht verkauft wurden", "ohne_zeitraum": True, "stichworte": "Ladenhüter, Penner, liegt rum, totes Kapital", "n": 180, "einheit": "Tage",
                             "teil": lambda n: {"kennzahlen": ["tage_ohne_verkauf", "letzter_verkauf"],
                                                "zeilenfilter": _und(_b("artikel.bestand", ">", 0)),
                                                "kennzahlfilter": _und(_b("tage_ohne_verkauf", ">", n))}},
@@ -121,7 +121,9 @@ def wortschatz() -> dict:
         "objekte": [{
             "key": k, "plural": o["plural"], "zeitraum": o["zeitraum"],
             "bedingungen": [{"key": bk, "text": b["text"], "n": b.get("n"), "einheit": b.get("einheit"),
-                             "stichworte": b.get("stichworte")}
+                             "stichworte": b.get("stichworte"),
+                             # Bestand und „Tage ohne Verkauf“ hängen nicht am Zeitraum
+                             "zeitraum": o["zeitraum"] and not b.get("ohne_zeitraum")}
                             for bk, b in o["bedingungen"].items()],
             "sortierungen": [{"key": sk, "text": s["text"]} for sk, s in o["sortierungen"].items()],
         } for k, o in OBJEKTE.items()],
@@ -153,8 +155,9 @@ def pruefen(auswahl: dict) -> dict:
     sort = auswahl.get("sortierung") or next(iter(o["sortierungen"]))
     if sort not in o["sortierungen"]:
         raise sql_bauer.AbfrageFehler("Nach diesem Merkmal kann hier nicht sortiert werden.")
-    zeitraum = auswahl.get("zeitraum") if o["zeitraum"] else None
-    if o["zeitraum"] and zeitraum not in ZEITRAEUME:
+    mit_zeitraum = o["zeitraum"] and not b.get("ohne_zeitraum")
+    zeitraum = auswahl.get("zeitraum") if mit_zeitraum else None
+    if mit_zeitraum and zeitraum not in ZEITRAEUME:
         zeitraum = "12_monate"
     return {"koernung": koernung, "bedingung": bed, "n": n, "sortierung": sort, "zeitraum": zeitraum}
 
