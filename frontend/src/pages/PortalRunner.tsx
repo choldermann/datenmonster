@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Play, Loader2, AlertCircle, LogOut, FileText } from "lucide-react";
+import { ArrowLeft, Loader2, AlertCircle, LogOut, FileText } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { useAuth } from "../context/AuthContext";
@@ -8,10 +8,10 @@ import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import VorlageGesperrt from "../components/VorlageGesperrt";
 import { ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
+import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import RunnerErgebnis from "../components/forms/RunnerErgebnis";
-import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
+import RunnerEingabe, { EingabeReiter } from "../components/forms/RunnerEingabe";
 import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
 import MandantWaehler from "../components/MandantWaehler";
 import { formIcon } from "../utils/formIcon";
@@ -295,91 +295,14 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
           </p>
         )}
 
-        {/* Eingabe-Reiter (nur wenn ein Ausschlussartikel-Feld im Schema ist) */}
-        {exclusionField && (
-          <div style={{ display: "flex", gap: 4, marginBottom: 24, borderBottom: `1px solid ${S.border}` }}>
-            {[{ id: "main", label: "Auswertung" },
-              { id: "exclusions", label: exclusionField.label || "Ausschlussartikel" }].map(t => {
-              const active = inputTab === t.id;
-              return (
-                <button key={t.id} onClick={() => setInputTab(t.id)}
-                  style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? S.accent : "transparent"}`,
-                    color: active ? S.textBright : S.textDim, cursor: "pointer",
-                    fontSize: 13, fontWeight: active ? 600 : 400 }}>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Ausschlussartikel-Verwaltung */}
-        {exclusionField && inputTab === "exclusions" && (() => {
-          const cId = Number(exclusionField.config?.connection_id);
-          return (
-            <IntrastatExclusionPanel projectId={form.project_id}
-              connectionId={Number.isFinite(cId) && cId > 0 ? cId : null} />
-          );
-        })()}
+        <EingabeReiter exclusionField={exclusionField} inputTab={inputTab} setInputTab={setInputTab}
+          projectId={form.project_id} abstand={24} />
 
         {(!exclusionField || inputTab === "main") && (<>
-        {/* ── Form card ── */}
-        {/* Dashboard ohne Eingabefelder: es gäbe sonst nichts zum Starten – der Lauf
-            beginnt automatisch (siehe unten), der Knopf bleibt zum Aktualisieren. */}
-        {visibleFields.length === 0 && actions.length > 0 && (
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
-              style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 24px",
-                borderRadius: 8, fontSize: 14, fontWeight: 600,
-                backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
-                color: "var(--ok)", cursor: running ? "wait" : "pointer" }}>
-              {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-              {running ? "Wird ausgeführt …" : results ? "Aktualisieren" : "Ausführen"}
-            </button>
-          </div>
-        )}
-
-        {visibleFields.length > 0 && eingebettet !== "inhalt" && (
-          <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
-            borderRadius: 14, padding: "28px 32px", marginBottom: 32 }}>
-
-            <FormFields
-              fields={visibleFields}
-              params={params}
-              setParam={setParam}
-              onRunAction={runAction}
-              running={running}
-              errors={missing}
-            />
-
-            {/* Fallback-Button wenn kein Button-Feld im Schema. Wie im Editor-FormRunner
-                genau EIN Sammel-Lauf über alle Actions – bei Dashboards mit vielen
-                Actions wäre ein Button je Action eine Buttonwand statt eines Formulars. */}
-            {!hasButtonField && actions.length > 0 && (
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
-                <button onClick={() => runAction(ALLE_AKTIONEN)} disabled={running}
-                  style={{ display: "inline-flex", alignItems: "center", gap: 8,
-                    padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600,
-                    backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)",
-                    color: "var(--ok)", cursor: running ? "wait" : "pointer" }}>
-                  {running ? <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} /> : <Play size={14} />}
-                  {actions.length === 1 ? (actions[0].label || "Ausführen") : "Ausführen"}
-                </button>
-              </div>
-            )}
-
-            {/* Lauft... Indikator */}
-            {running && (
-              <div style={{ marginTop: 16, display: "flex", alignItems: "center", gap: 8,
-                fontSize: 12, color: S.textDim }}>
-                <Loader2 size={12} style={{ animation: "spin 1s linear infinite" }} />
-                Wird ausgeführt…
-              </div>
-            )}
-          </div>
+        {eingebettet !== "inhalt" && (
+          <RunnerEingabe fields={visibleFields} params={params} setParam={setParam} onRun={runAction}
+            running={running} missing={missing} actions={actions} results={results}
+            hasButtonField={hasButtonField} />
         )}
 
         {/* Run error */}

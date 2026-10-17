@@ -2,14 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
-import { ArrowLeft, Play, Loader2, Pencil, AlertCircle, FileText, BookOpen } from "lucide-react";
+import { ArrowLeft, Loader2, Pencil, AlertCircle, FileText, BookOpen } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
-import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
+import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import RunnerErgebnis from "../components/forms/RunnerErgebnis";
+import RunnerEingabe, { EingabeReiter } from "../components/forms/RunnerEingabe";
 import MandantWaehler from "../components/MandantWaehler";
 import CockpitDokuModal from "../components/forms/CockpitDokuModal";
 import VorlageGesperrt from "../components/VorlageGesperrt";
@@ -321,81 +321,16 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
           </div>
         )}
 
-        {/* Eingabe-Reiter (nur wenn ein Ausschlussartikel-Feld im Schema ist) */}
-        {exclusionField && (
-          <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${S.border}` }}>
-            {[{ id: "main", label: "Auswertung" },
-              { id: "exclusions", label: exclusionField.label || "Ausschlussartikel" }].map(t => {
-              const active = inputTab === t.id;
-              return (
-                <button key={t.id} onClick={() => setInputTab(t.id)}
-                  style={{ padding: "8px 16px", background: "none", border: "none",
-                    borderBottom: `2px solid ${active ? S.accent : "transparent"}`,
-                    color: active ? S.textBright : S.textDim, cursor: "pointer",
-                    fontSize: 13, fontWeight: active ? 600 : 400 }}>
-                  {t.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {exclusionField && inputTab === "exclusions" && (() => {
-          // Verbindung aus dem Template (config.connection_id, beim Install aufgelöst).
-          // Nur übernehmen, wenn es eine gültige Zahl ist – sonst Auto-Erkennung im Panel.
-          const cId = Number(exclusionField.config?.connection_id);
-          return (
-            <IntrastatExclusionPanel projectId={form.project_id}
-              connectionId={Number.isFinite(cId) && cId > 0 ? cId : null} />
-          );
-        })()}
+        <EingabeReiter exclusionField={exclusionField} inputTab={inputTab} setInputTab={setInputTab}
+          projectId={form.project_id} />
 
         {(!exclusionField || inputTab === "main") && (<>
-        {/* Form Fields */}
-        {eingebettet === "inhalt" ? null : visibleFields.length > 0 ? (
-          <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
-            padding: "20px 24px", marginBottom: 24 }}>
-            <FormFields
-              fields={visibleFields}
-              params={params}
-              setParam={setParam}
-              onRunAction={runForm}
-              running={running}
-              compact
-              errors={missing}
-            />
-
-            {/* Fallback-Button wenn kein Button-Feld im Schema */}
-            {!hasButtonField && (
-              <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
-                  style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px",
-                    borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
-                    border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)",
-                    cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
-                  {running ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
-                  Ausführen
-                </button>
-              </div>
-            )}
-          </div>
-        ) : actions.length > 0 && (
-          // Kein Schema → trotzdem Run-Button für verknüpfte Mappings. Ein Formular
-          // ohne Felder UND ohne Actions ist eine reine Pflegemaske (eigenständiges
-          // Widget) – dort wäre der Button funktionslos.
-          <div style={{ textAlign: "center", padding: "40px 0", marginBottom: 24 }}>
-            <p style={{ color: S.textDim, fontSize: 12, marginBottom: 16 }}>
-              Dieses Formular hat noch keine Eingabefelder.
-            </p>
-            <button onClick={() => runForm(ALLE_AKTIONEN)} disabled={running}
-              style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "8px 20px",
-                borderRadius: 6, backgroundColor: "color-mix(in srgb, var(--ok) 12%, transparent)",
-                border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", color: "var(--ok)",
-                cursor: running ? "wait" : "pointer", fontSize: 13, fontWeight: 600 }}>
-              {running ? <Loader2 size={13} /> : <Play size={13} />}
-              Mappings ausführen
-            </button>
-          </div>
+        {eingebettet !== "inhalt" && (
+          // Werkstatt: kompakt, ohne Felder ein Hinweis für Bauende; Händler-Ansicht
+          // ohne Felder wie das Portal mit „Aktualisieren“.
+          <RunnerEingabe fields={visibleFields} params={params} setParam={setParam} onRun={runForm}
+            running={running} missing={missing} actions={actions} results={results}
+            hasButtonField={hasButtonField} kompakt ohneFelderHinweis={!eingebettet} />
         )}
 
         <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
