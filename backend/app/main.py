@@ -101,6 +101,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
             "ALTER TABLE users ADD COLUMN is_portal_only BOOLEAN DEFAULT 0",
             "ALTER TABLE users ADD COLUMN theme TEXT",
+            "ALTER TABLE users ADD COLUMN einstellungen JSON",
             "ALTER TABLE forms ADD COLUMN slug TEXT",
             "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",
@@ -754,6 +755,8 @@ from app.api import query_builder as query_builder_api
 app.include_router(query_builder_api.router)
 from app.api import werkbank as werkbank_api
 app.include_router(werkbank_api.router)
+from app.api import start as start_api
+app.include_router(start_api.router)
 
 
 @app.get("/api/health")

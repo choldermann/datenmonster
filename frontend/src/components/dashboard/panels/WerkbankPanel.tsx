@@ -46,7 +46,7 @@ const knopfLeer = {
  * oder Report?" ist die Frage der Plattform, nicht die des Anwenders. Er sagt,
  * was er sehen will; korrigieren kann er trotzdem alles.
  */
-export default function WerkbankPanel({ projectId, canEdit }) {
+export default function WerkbankPanel({ projectId, canEdit, startFrage = "" }) {
   const [vorhaben, setVorhaben] = useState([]);
   const [aktiv, setAktiv] = useState(null);
   const [werkzeuge, setWerkzeuge] = useState(null);
@@ -59,7 +59,8 @@ export default function WerkbankPanel({ projectId, canEdit }) {
   const [laden, setLaden] = useState(true);
   const [fehler, setFehler] = useState(null);
 
-  const [beschreibung, setBeschreibung] = useState("");
+  // Aus der Händler-Ansicht mitgebrachte Frage („Was möchten Sie wissen?“)
+  const [beschreibung, setBeschreibung] = useState(startFrage);
   const [planLaeuft, setPlanLaeuft] = useState(false);
   const [fortschritt, setFortschritt] = useState("");
   const [rueckfragen, setRueckfragen] = useState([]);

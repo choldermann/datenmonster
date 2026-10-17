@@ -142,6 +142,16 @@ export function fieldsForTab(fields, currentTab) {
 
 /** Startwert eines Feldes. Ein Datumsfeld mit default "today" startet mit dem
  *  heutigen Tag (lokal, nicht UTC – sonst kippt es nachts auf gestern). */
+/** Vorgabe-Zeitraum eines daterange-Feldes als {von, bis}. Normalerweise setzt ihn das
+ *  Feld selbst beim ersten Anzeigen; ohne sichtbare Felder (Kennzahlen der
+ *  Händler-Übersicht) muss der Runner ihn vorher kennen. */
+export function zeitraumVorgabe(f) {
+  if (f.type !== "daterange" || !f.config?.default) return {};
+  const [von, bis] = computeDatePreset(f.config.default);
+  if (!von || !bis) return {};
+  return { [f.config.param_from || "von"]: von, [f.config.param_to || "bis"]: bis };
+}
+
 export function feldVorgabe(f, isMulti) {
   if (f.type === "date" && f.default === "today") return _fmt(new Date());
   return f.default ?? (isMulti ? [] : "");

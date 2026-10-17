@@ -14,7 +14,14 @@ import MappingEditor from "./pages/MappingEditor";
 import PipelineEditor from "./pages/PipelineEditor";
 import FormEditor from "./pages/FormEditor";
 import FormRunner from "./pages/FormRunner";
-import PortalHome from "./pages/PortalHome";
+import StartLayout from "./pages/start/StartLayout";
+import Uebersicht from "./pages/start/Uebersicht";
+import Cockpits from "./pages/start/Cockpits";
+import CockpitAnsicht from "./pages/start/CockpitAnsicht";
+import Auswertung from "./pages/start/Auswertung";
+import PerMail from "./pages/start/PerMail";
+import Einstellungen from "./pages/start/Einstellungen";
+import api from "./api/client";
 import PortalRunner from "./pages/PortalRunner";
 
 /** Blendet den schwebenden KI-Assistenten in Formular-Runnern aus (Editor-Run
@@ -55,7 +62,7 @@ function AiAssistantGate() {
 
   // Formularlauf und Portal: nur, wenn das Formular ihn ausdrücklich einblendet
   // (schema.show_ai_assistant). Dort sitzen auch Anwender ohne Editor-Rechte.
-  if (/^\/forms\/[^/]+\/run$/.test(pfad) || pfad.startsWith("/app/")) {
+  if (/^\/forms\/[^/]+\/run$/.test(pfad) || pfad.startsWith("/app/") || pfad.startsWith("/start/cockpit/")) {
     return formAiAllowed ? <FloatingAIAssistant /> : null;
   }
 
@@ -68,7 +75,7 @@ function EditorRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.is_portal_only) return <Navigate to="/portal" replace />;
+  if (user.is_portal_only) return <Navigate to="/start" replace />;
   return children;
 }
 
@@ -79,12 +86,21 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />;
 }
 
-/** Startseite: je nach Rolle → Dashboard oder Portal. */
+/** Startseite: die Händler-Ansicht – außer ein Editor hat „direkt in der
+ *  Werkstatt starten“ gewählt. Portal-Benutzer landen immer in der Händler-Ansicht. */
 function DefaultRedirect() {
   const { user, loading } = useAuth();
+  const [ziel, setZiel] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    if (user.is_portal_only) { setZiel("/start"); return; }
+    api.get("/api/start/einstellungen")
+      .then(({ data }) => setZiel(data?.werkstatt_start ? "/dashboard" : "/start"))
+      .catch(() => setZiel("/start"));
+  }, [user]);
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  return <Navigate to={user.is_portal_only ? "/portal" : "/dashboard"} replace />;
+  return ziel ? <Navigate to={ziel} replace /> : null;
 }
 
 function AiDownloadBanner() {
@@ -142,8 +158,19 @@ export default function App() {
               <Route path="/forms/:id"     element={<EditorRoute><FormEditor /></EditorRoute>} />
               <Route path="/forms/:id/run" element={<EditorRoute><FormRunner /></EditorRoute>} />
 
-              {/* Portal-Oberfläche (alle authentifizierten Benutzer) */}
-              <Route path="/portal"    element={<PrivateRoute><PortalHome /></PrivateRoute>} />
+              {/* Händler-Ansicht (alle angemeldeten Benutzer) */}
+              <Route path="/start" element={<PrivateRoute><StartLayout /></PrivateRoute>}>
+                <Route index                element={<Uebersicht />} />
+                <Route path="cockpits"      element={<Cockpits />} />
+                <Route path="cockpit/:id"   element={<CockpitAnsicht />} />
+                <Route path="auswertung"    element={<EditorRoute><Auswertung /></EditorRoute>} />
+                <Route path="mail"          element={<EditorRoute><PerMail /></EditorRoute>} />
+                <Route path="einstellungen" element={<Einstellungen />} />
+              </Route>
+
+              {/* Alte Portal-Adressen: die Startseite ist jetzt die Händler-Ansicht,
+                  einzelne freigegebene Formulare bleiben unter /app/<slug> erreichbar. */}
+              <Route path="/portal"    element={<Navigate to="/start" replace />} />
               <Route path="/app/:slug" element={<PrivateRoute><PortalRunner /></PrivateRoute>} />
 
               {/* Fallback */}

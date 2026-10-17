@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, JSON
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -13,4 +13,6 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_portal_only = Column(Boolean, default=False)  # sieht nur /portal, kein Editor
     theme = Column(String, nullable=True)  # Farbschema-ID aus frontend/src/themes.ts, None = Standard
+    # Persönliches der Händler-Ansicht: angeheftete Cockpits, „in der Werkstatt starten“ (api/start.py)
+    einstellungen = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

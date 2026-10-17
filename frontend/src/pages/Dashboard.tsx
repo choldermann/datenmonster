@@ -249,12 +249,12 @@ export default function Dashboard() {
   const NAV = [
     { id: "projects",    label: "Projekte",      icon: FolderKanban, badge: projects.length, dividerAfter: true },
     { id: "werkbank",    label: "KI-Werkbank",    icon: Wand2,       badge: 0, dividerAfter: true },
-    { id: "connections", label: "DB-Connectors", icon: Database,     badge: connectionsCount },
+    { id: "connections", label: "Verbindungen",  icon: Database,     badge: connectionsCount },
     { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasetsCount },
     { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: ftpCount },
     { id: "rest",        label: "REST API",        icon: Wifi,        badge: restCount },
     { id: "api_studio",  label: "API Studio",      icon: Globe,       badge: 0 },
-    { id: "templates",   label: "Templates",       icon: Package,     badge: templatesCount, dividerAfter: true },
+    { id: "templates",   label: "Cockpits & Erweiterungen", icon: Package,     badge: templatesCount, dividerAfter: true },
     { id: "mappings",    label: "Mappings",        icon: GitBranch,   badge: mappingsCount },
     { id: "pipelines",   label: "Pipelines",       icon: GitBranch,   badge: pipelinesCount },
     { id: "forms",       label: "Formulare",       icon: FileText,    badge: formsCount },
@@ -270,7 +270,7 @@ export default function Dashboard() {
     ...(alertsCount > 0 || tab === "alerts"
         ? [{ id: "alerts", label: "Warnungen", icon: ShieldAlert, badge: alertsCount }]
         : []),
-    { id: "ai_memory",   label: "AI Memory",       icon: Brain,       badge: 0 },
+    { id: "ai_memory",   label: "KI-Wissen",        icon: Brain,       badge: 0 },
     { id: "license",     label: "Lizenz",           icon: KeyRound,    badge: 0 },
   ];
 
@@ -324,6 +324,14 @@ export default function Dashboard() {
         </nav>
 
         <div className="shrink-0 px-3 py-4" style={{ borderTop: `1px solid ${S.border}` }}>
+          {/* Rückweg aus der Werkstatt in die einfache Händler-Ansicht */}
+          <button onClick={() => navigate("/start")}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-all mb-3"
+            style={{ color: S.accent, border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)` }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
+            <LayoutGrid size={14} /> Zur Händler-Ansicht
+          </button>
           <div style={{ display: "flex", alignItems: "center", padding: "0 12px", marginBottom: 10 }}>
             <p className="text-xs" style={{ color: S.textDim, flex: 1, margin: 0 }}>
               Angemeldet als <span style={{ color: S.textMain }}>{user?.username}</span>
@@ -749,7 +757,8 @@ export default function Dashboard() {
         )}
 
         {tab === "werkbank" && (
-          <WerkbankPanel projectId={activeProject?.id ?? null} canEdit={canEdit} />
+          <WerkbankPanel projectId={activeProject?.id ?? null} canEdit={canEdit}
+            startFrage={location.state?.frage || ""} />
         )}
 
         {tab === "alerts" && (

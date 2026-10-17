@@ -7,7 +7,7 @@ import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/WidgetRenderer";
 import { ExportErgebnisse, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import MandantWaehler from "../components/MandantWaehler";
@@ -49,8 +49,13 @@ function ResultTable({ columns, rows }) {
   );
 }
 
-export default function FormRunner() {
-  const { id } = useParams();
+// eingebettet: „seite“ = in der Händler-Ansicht mit schlanker Leiste (ohne Bearbeiten,
+// Zurück führt zu den Cockpits), „inhalt“ = ganz ohne Leiste (Kennzahlen der Übersicht).
+export default function FormRunner({ formId = null, eingebettet = null }: { formId?: any; eingebettet?: null | "seite" | "inhalt" } = {}) {
+  const routeParams = useParams();
+  const id = formId ?? routeParams.id;
+  const zurueck = eingebettet ? "/start/cockpits" : "/dashboard";
+  const zurueckText = eingebettet ? "Cockpits" : "Dashboard";
   const navigate = useNavigate();
   const [form, setForm] = useState(null);
   const [params, setParams] = useState({});
@@ -93,6 +98,9 @@ export default function FormRunner() {
       for (const f of (data.schema?.fields || [])) {
         defaults[f.name] = feldVorgabe(f, isMulti(f));
       }
+      if (eingebettet === "inhalt") {
+        for (const f of (data.schema?.fields || [])) Object.assign(defaults, zeitraumVorgabe(f));
+      }
       setParams(defaults);
     }).catch(() => setError("Formular nicht gefunden"));
   }, [id]);
@@ -115,7 +123,8 @@ export default function FormRunner() {
   useEffect(() => {
     if (!form || autostart.current === form.id) return;
     const sch = form.schema || {};
-    if ((sch.fields || []).length > 0 || !(sch.actions || []).length) return;
+    // In der Übersicht (eingebettet="inhalt") gibt es keine Eingabe: dort immer mit den Vorgaben starten.
+    if (((sch.fields || []).length > 0 && eingebettet !== "inhalt") || !(sch.actions || []).length) return;
     autostart.current = form.id;
     runForm(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -206,7 +215,7 @@ export default function FormRunner() {
   };
 
   if (!form && !error) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center",
+    <div style={{ height: eingebettet ? 160 : "100vh", display: "flex", alignItems: "center", justifyContent: "center",
       backgroundColor: S.bgMain, color: S.textDim, fontSize: 12 }}>
       Lädt…
     </div>
@@ -216,13 +225,13 @@ export default function FormRunner() {
   // Auswertung waere ohnehin gesperrt (das Backend laesst den Lauf nicht durch) —
   // hier steht, warum, und wie es weitergeht.
   if (form?.gesperrt) return (
-    <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
+    <div style={{ minHeight: eingebettet ? undefined : "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
-        <button onClick={() => navigate("/dashboard")}
+        <button onClick={() => navigate(zurueck)}
           style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", fontSize: 12 }}>
-          <ArrowLeft size={14} /> Dashboard
+          <ArrowLeft size={14} /> {zurueckText}
         </button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
@@ -251,15 +260,16 @@ export default function FormRunner() {
   const hasButtonField = visibleFields.some(f => f.type === "button");
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
+    <div style={{ minHeight: eingebettet ? undefined : "100vh", backgroundColor: eingebettet === "inhalt" ? "transparent" : S.bgMain, color: S.textMain }}>
 
       {/* Toolbar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px",
+      {eingebettet !== "inhalt" && (
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "10px 16px",
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
-        <button onClick={() => navigate("/dashboard")}
+        <button onClick={() => navigate(zurueck)}
           style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", fontSize: 12 }}>
-          <ArrowLeft size={14} /> Dashboard
+          <ArrowLeft size={14} /> {zurueckText}
         </button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
         <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
@@ -286,15 +296,19 @@ export default function FormRunner() {
             {reporting ? "Erstelle PDF…" : aiBusy ? "KI-Analyse läuft…" : "PDF-Report"}
           </button>
         )}
+        {!eingebettet && (
         <button onClick={() => navigate(`/forms/${id}`)}
           style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", fontSize: 12 }}>
           <Pencil size={12} /> Bearbeiten
         </button>
+        )}
       </div>
+      )}
 
       {/* Dashboards (mit Widgets) breiter rendern als reine Eingabeformulare. */}
-      <div style={{ maxWidth: widgets.length ? 1760 : 900, margin: "0 auto", padding: "32px 20px" }}>
+      <div style={{ maxWidth: widgets.length ? 1760 : 900, margin: "0 auto",
+        padding: eingebettet === "inhalt" ? 0 : eingebettet ? "24px 0" : "32px 20px" }}>
 
         {kompat && (
           <div style={{ display: "flex", gap: 10, padding: "12px 14px", borderRadius: 6,
@@ -369,7 +383,7 @@ export default function FormRunner() {
 
         {(!exclusionField || inputTab === "main") && (<>
         {/* Form Fields */}
-        {visibleFields.length > 0 ? (
+        {eingebettet === "inhalt" ? null : visibleFields.length > 0 ? (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`, borderRadius: 10,
             padding: "20px 24px", marginBottom: 24 }}>
             <FormFields

@@ -10,7 +10,7 @@ import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "../components/forms/Wid
 import EmailTableButton from "../components/forms/EmailTableButton";
 import VorlageGesperrt from "../components/VorlageGesperrt";
 import { ExportErgebnisse, ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe } from "../components/forms/FormFields";
+import FormFields, { validateRequired, fieldsForTab, widgetsForTab, PipelineResult, ALLE_AKTIONEN, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import IntrastatExclusionPanel from "../components/forms/IntrastatExclusionPanel";
 import { ThemeUmschalter, KiCredits, PasswortKnopf } from "../components/portal/PortalKopfzeile";
@@ -99,8 +99,12 @@ function ResultTable({ result, formName, actionLabel, allowDownload }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export default function PortalRunner() {
-  const { slug } = useParams();
+// eingebettet: wie im FormRunner – „seite“ = in der Händler-Ansicht (ohne Konto-Knöpfe,
+// die stehen dort im Kopf), „inhalt“ = ganz ohne Kopf (Kennzahlen der Übersicht).
+export default function PortalRunner({ slug: slugProp = null, eingebettet = null }: { slug?: string | null; eingebettet?: null | "seite" | "inhalt" } = {}) {
+  const routeParams = useParams();
+  const slug = slugProp ?? routeParams.slug;
+  const zurueck = eingebettet ? "/start/cockpits" : "/portal";
   const navigate = useNavigate();
   const { logout } = useAuth();
 
@@ -145,6 +149,9 @@ export default function PortalRunner() {
         for (const f of (data.fields || [])) {
           if (f.name) defaults[f.name] = feldVorgabe(f, isMulti(f));
         }
+        if (eingebettet === "inhalt") {
+          for (const f of (data.fields || [])) Object.assign(defaults, zeitraumVorgabe(f));
+        }
         setParams(defaults);
       })
       .catch(() => setLoadErr("Formular nicht gefunden oder kein Zugriff."));
@@ -156,7 +163,8 @@ export default function PortalRunner() {
   const autostart = useRef(null);
   useEffect(() => {
     if (!form || autostart.current === form.slug) return;
-    if ((form.fields || []).length > 0 || !(form.actions || []).length) return;
+    // In der Übersicht (eingebettet="inhalt") gibt es keine Eingabe: dort immer mit den Vorgaben starten.
+    if (((form.fields || []).length > 0 && eingebettet !== "inhalt") || !(form.actions || []).length) return;
     autostart.current = form.slug;
     runAction(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -244,7 +252,7 @@ export default function PortalRunner() {
 
   // Loading
   if (!form && !loadErr) return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center",
+    <div style={{ height: eingebettet ? 160 : "100vh", display: "flex", alignItems: "center",
       justifyContent: "center", backgroundColor: S.bgMain, color: S.textDim, fontSize: 14 }}>
       Lädt…
     </div>
@@ -258,7 +266,7 @@ export default function PortalRunner() {
       <header style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", padding: "12px 24px",
           display: "flex", alignItems: "center", gap: 10 }}>
-          <button onClick={() => navigate("/portal")}
+          <button onClick={() => navigate(zurueck)}
             style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
               border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
             <ArrowLeft size={14} /> Übersicht
@@ -297,15 +305,15 @@ export default function PortalRunner() {
   const hatExporte = actions.some(a => a.type === "export_mapping");
 
   return (
-    <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain }}>
+    <div style={{ minHeight: eingebettet ? undefined : "100vh", backgroundColor: eingebettet === "inhalt" ? "transparent" : S.bgMain, color: S.textMain }}>
 
       {/* ── Header ── */}
-      <header style={{ position: "sticky", top: 0, zIndex: 10,
+      {eingebettet !== "inhalt" && <header style={{ position: eingebettet ? "static" : "sticky", top: 0, zIndex: 10,
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
         <div style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto", padding: "12px 24px",
           display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button onClick={() => navigate("/portal")}
+            <button onClick={() => navigate(zurueck)}
               style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
                 border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
               <ArrowLeft size={14} /> Übersicht
@@ -335,6 +343,7 @@ export default function PortalRunner() {
                 ohne sichtbaren Betrieb dahinter ist im Zweifel wertlos. */}
             <MandantWaehler projectId={form?.project_id ?? null}
               onWechsel={() => { setResults({}); runAction(null); }} />
+            {!eingebettet && (<>
             <KiCredits />
             <ThemeUmschalter />
             <PasswortKnopf />
@@ -343,12 +352,14 @@ export default function PortalRunner() {
                 color: S.textDim, background: "none", border: "none", cursor: "pointer" }}>
               <LogOut size={13} /> Abmelden
             </button>
+            </>)}
           </div>
         </div>
-      </header>
+      </header>}
 
       {/* ── Main ── (Dashboards mit Widgets breiter) */}
-      <main style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto", padding: "36px 24px" }}>
+      <main style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto",
+        padding: eingebettet === "inhalt" ? 0 : eingebettet ? "24px 0" : "36px 24px" }}>
 
         {/* Load error */}
         {loadErr && (
@@ -412,7 +423,7 @@ export default function PortalRunner() {
           </div>
         )}
 
-        {visibleFields.length > 0 && (
+        {visibleFields.length > 0 && eingebettet !== "inhalt" && (
           <div style={{ backgroundColor: S.bgCard, border: `1px solid ${S.border}`,
             borderRadius: 14, padding: "28px 32px", marginBottom: 32 }}>
 

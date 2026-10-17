@@ -22,7 +22,8 @@ export default function Login() {
     setError(""); setLoading(true);
     try {
       const data = await login(username, password);
-      navigate(data.is_portal_only ? "/portal" : "/dashboard");
+      // Wohin es geht, entscheidet die Startseiten-Weiche (Händler-Ansicht oder Werkstatt)
+      navigate("/");
     }
     catch { setError("Falscher Benutzername oder Passwort"); }
     finally { setLoading(false); }
