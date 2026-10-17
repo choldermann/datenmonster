@@ -192,7 +192,13 @@ def kennzahlen_einrichten(db: Session = Depends(get_db), user: User = Depends(ge
     """
     if _portal(user):
         raise HTTPException(403, "Nur Admins und Editoren können die Übersicht einrichten")
-    formulare = _sichtbare_formulare(user, db)
+    return kennzahlen_anlegen(db, user)
+
+
+def kennzahlen_anlegen(db, user, project_id: Optional[int] = None) -> dict:
+    """Wie oben; mit project_id nur innerhalb dieses Projekts (Einrichtungsassistent)."""
+    formulare = [f for f in _sichtbare_formulare(user, db)
+                 if project_id is None or f.project_id == project_id]
     vorhanden = next((f for f in formulare if _ist_startseite(f)), None)
     if vorhanden:
         return {"id": vorhanden.id, "slug": vorhanden.slug}

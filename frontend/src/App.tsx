@@ -21,6 +21,7 @@ import CockpitAnsicht from "./pages/start/CockpitAnsicht";
 import Auswertung from "./pages/start/Auswertung";
 import PerMail from "./pages/start/PerMail";
 import Einstellungen from "./pages/start/Einstellungen";
+import Einrichtung from "./pages/start/Einrichtung";
 import api from "./api/client";
 import PortalRunner from "./pages/PortalRunner";
 
@@ -76,6 +77,15 @@ function EditorRoute({ children }) {
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.is_portal_only) return <Navigate to="/start" replace />;
+  return children;
+}
+
+/** Nur Administratoren (Einrichtungsassistent: legt Verbindungen an). */
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/start" replace />;
   return children;
 }
 
@@ -167,6 +177,8 @@ export default function App() {
                 <Route path="mail"          element={<EditorRoute><PerMail /></EditorRoute>} />
                 <Route path="einstellungen" element={<Einstellungen />} />
               </Route>
+
+              <Route path="/einrichtung" element={<AdminRoute><Einrichtung /></AdminRoute>} />
 
               {/* Alte Portal-Adressen: die Startseite ist jetzt die Händler-Ansicht,
                   einzelne freigegebene Formulare bleiben unter /app/<slug> erreichbar. */}

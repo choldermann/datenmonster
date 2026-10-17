@@ -757,6 +757,8 @@ from app.api import werkbank as werkbank_api
 app.include_router(werkbank_api.router)
 from app.api import start as start_api
 app.include_router(start_api.router)
+from app.api import einrichtung as einrichtung_api
+app.include_router(einrichtung_api.router)
 
 
 @app.get("/api/health")

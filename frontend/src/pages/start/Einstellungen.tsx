@@ -64,6 +64,11 @@ export default function Einstellungen() {
                 </span>
               </div>
             ))}
+            {user?.is_admin && (
+              <button onClick={() => navigate("/einrichtung")} style={{ ...knopf.neben, alignSelf: "flex-start" }}>
+                Einrichtung starten
+              </button>
+            )}
             {andere.length > 0 && (
               <span title={andere.map((v) => v.name).join(", ")} style={{ color: S.textDim, fontSize: 12.5 }}>
                 {andere.length} weitere {andere.length === 1 ? "Verbindung ist" : "Verbindungen sind"} nicht

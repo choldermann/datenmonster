@@ -29,7 +29,7 @@ export default function Uebersicht() {
   const portal = !!user?.is_portal_only;
 
   const [daten, setDaten] = useState(null);
-  const [cockpits, setCockpits] = useState([]);
+  const [cockpits, setCockpits] = useState(null);   // null = noch nicht geladen
   const [fehler, setFehler] = useState(null);
   const [frage, setFrage] = useState("");
   const [alleWarnungen, setAlleWarnungen] = useState(false);
@@ -78,6 +78,19 @@ export default function Uebersicht() {
       </div>
 
       {fehler && <p style={{ color: "var(--err)", margin: 0 }}>{fehler}</p>}
+
+      {user?.is_admin && cockpits?.length === 0 && (
+        <section style={{ ...karte, padding: 22, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 16,
+          borderColor: "color-mix(in srgb, var(--accent) 45%, transparent)" }}>
+          <div style={{ flex: "1 1 320px", minWidth: 0 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, color: S.textBright }}>Datenmonster einrichten</div>
+            <div style={{ fontSize: 14, color: S.textDim, lineHeight: 1.5 }}>
+              In drei Schritten: Wawi verbinden, Cockpits wählen, ein paar Angaben zum Betrieb.
+            </div>
+          </div>
+          <button onClick={() => navigate("/einrichtung")} style={knopf.haupt}>Einrichtung starten</button>
+        </section>
+      )}
 
       {fragenMoeglich && (
         <section aria-label="Frage stellen" style={{ ...karte, padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -133,7 +146,7 @@ export default function Uebersicht() {
             <span style={{ color: S.textDim, fontSize: 13 }}>Der letzte Prüflauf hat nichts gefunden.</span>
           )}
           {sichtbar.map((w, i) => {
-            const ziel = passendesCockpit(w, cockpits);
+            const ziel = passendesCockpit(w, cockpits || []);
             return (
               <div key={`${w.project_id}-${w.rule_key}-${i}`} style={{ ...karte, borderRadius: 10, padding: "12px 14px",
                 display: "flex", gap: 12, alignItems: "flex-start" }}>
