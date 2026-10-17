@@ -33,7 +33,7 @@ export function computeDatePreset(id) {
   }
 }
 
-const DEFAULT_PRESETS = [
+export const DEFAULT_PRESETS = [
   { id: "this_month", label: "Dieser Monat" },
   { id: "last_month", label: "Letzter Monat" },
   { id: "this_year",  label: "Dieses Jahr" },

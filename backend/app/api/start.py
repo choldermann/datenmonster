@@ -82,6 +82,7 @@ def _cockpit_out(f: Form, projektnamen: dict, db) -> dict:
         # Aus dem Report-Baukasten = selbst zusammengestellt, sonst aus einer Vorlage.
         "art": "bericht" if schema.get("report_builder") else "cockpit",
         "gesperrt": gesperrt,
+        "kopie_von": (schema.get("kopie_von") or {}).get("name"),
     }
 
 
@@ -272,3 +273,169 @@ def status(db: Session = Depends(get_db), user: User = Depends(get_current_user)
                              "server": c.host, "datenbank": c.database,
                              "jtl_version": jtl_version(c.id, db)})
     return {"verbindungen": verbindungen}
+
+
+# ── Phase 3: Fertige Fragen ───────────────────────────────────────────────────
+# Die Fragen sind fertige Bauzettel des Abfrage-Generators (services/query_builder/
+# rezepte.py). Ausführen ist Bedienen und darum frei; Speichern legt eigene
+# Objekte an und zählt aufs Kontingent der kostenlosen Version.
+
+def _haendler_projekt(user, db) -> Optional[int]:
+    """Das Projekt, in dem die meisten Cockpits des Benutzers liegen – dort wird
+    gerechnet und gespeichert. Nach dem Einrichtungsassistenten das einzige."""
+    zaehler: dict = {}
+    for f in _sichtbare_formulare(user, db):
+        if f.project_id is not None and (f.schema or {}).get("widgets"):
+            zaehler[f.project_id] = zaehler.get(f.project_id, 0) + 1
+    return max(zaehler, key=zaehler.get) if zaehler else None
+
+
+def _wawi(projekt: Optional[int], user, db) -> int:
+    """Gegen welche Wawi gerechnet wird: der aktive Mandant, sonst die erste
+    JTL-Datenbank, die dem Projekt zugeordnet ist."""
+    from app.services import mandant_service
+    from app.services.db_service import verbundene_ids
+    from app.services.jtl_kompatibilitaet import jtl_version
+    if projekt is None:
+        raise HTTPException(400, "Es ist noch kein Cockpit eingerichtet.")
+    aktiv = mandant_service.aktiver(projekt, user, db)
+    if aktiv:
+        return aktiv
+    for cid in sorted(verbundene_ids(projekt, db)):
+        if jtl_version(cid, db):
+            return cid
+    raise HTTPException(400, "Für dieses Projekt ist keine erreichbare JTL-Wawi hinterlegt.")
+
+
+def _zeitraum(art: Optional[str]):
+    from datetime import date, timedelta
+    heute = date.today()
+    if art == "letzte_30":
+        return (heute - timedelta(days=30)).isoformat(), heute.isoformat()
+    if art == "dieses_jahr":
+        return date(heute.year, 1, 1).isoformat(), heute.isoformat()
+    return (heute - timedelta(days=365)).isoformat(), heute.isoformat()
+
+
+@router.get("/fragen")
+def fragen(user: User = Depends(get_current_user)):
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    from app.services.query_builder import rezepte
+    return [{"key": f["key"], "gruppe": f["gruppe"], "titel": f["titel"], "text": f["text"],
+             "zeitraum": rezepte.ZEITRAEUME.get(f["zeitraum"]) if f.get("zeitraum") else None}
+            for f in rezepte.FRAGEN]
+
+
+def _frage_holen(key: str) -> dict:
+    from app.services.query_builder import rezepte
+    f = rezepte.frage(key)
+    if not f:
+        raise HTTPException(404, "Diese Frage gibt es nicht")
+    return f
+
+
+@router.post("/fragen/{key}/vorschau")
+def frage_vorschau(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Rechnet eine fertige Frage gegen die Wawi des Händlers."""
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    from app.services.query_builder import ausfuehren, sql_bauer
+    f = _frage_holen(key)
+    projekt = _haendler_projekt(user, db)
+    from app.api.projects import can_read_project
+    if not can_read_project(projekt, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    von, bis = _zeitraum(f.get("zeitraum"))
+    try:
+        erg = ausfuehren.rechnen(db, f["definition"], _wawi(projekt, user, db), von=von, bis=bis)
+    except sql_bauer.AbfrageFehler as e:
+        raise HTTPException(400, str(e))
+    except ausfuehren.LaufFehler as e:
+        raise HTTPException(500, str(e))
+    erg.pop("sql", None)      # für Händler ohne Wert; im Abfrage-Generator sichtbar
+    return {**erg, "titel": f["titel"], "project_id": projekt}
+
+
+@router.post("/fragen/{key}/speichern")
+def frage_speichern(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Legt die Frage als eigene Auswertung an (Mapping + Baustein in „Eigene
+    Auswertungen“) – danach steht sie im Report-Baukasten und lässt sich mailen."""
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    from app.core import kontingent
+    from app.models.report import AdHocQuery
+    from app.services.query_builder import erzeugen, sql_bauer
+    f = _frage_holen(key)
+    projekt = _haendler_projekt(user, db)
+    schreiben_pruefen(projekt, user, db)
+    kontingent.pruefe(db, "mappings")
+    wawi = _wawi(projekt, user, db)
+    try:
+        gebaut = erzeugen.speichern(db, f["titel"], f["definition"], projekt, wawi)
+    except sql_bauer.AbfrageFehler as e:
+        raise HTTPException(400, str(e))
+    q = AdHocQuery(name=f["titel"], beschreibung=f["text"], project_id=projekt,
+                   koernung=f["definition"].get("koernung"), definition=f["definition"],
+                   mapping_id=gebaut["mapping"].id,
+                   verlauf_mapping_id=gebaut.get("verlauf_mapping_id"),
+                   form_id=gebaut["form"].id, widget_ids=gebaut["widget_ids"], created_by=user.id)
+    db.add(q)
+    safe_commit(db)
+    return {"form_id": gebaut["form"].id, "form_name": gebaut["form"].name, "abfrage_id": q.id}
+
+
+# ── Phase 3: Kopie eines Cockpits mit eigenen Vorgaben ────────────────────────
+
+class KopieIn(BaseModel):
+    name: str
+    vorgaben: dict = {}       # Feldname → Vorgabewert; daterange: config.default (Preset-ID)
+
+
+@router.post("/cockpits/{form_id}/kopie")
+def cockpit_kopieren(form_id: int, data: KopieIn, db: Session = Depends(get_db),
+                     user: User = Depends(get_current_user)):
+    """Eigene Fassung eines Cockpits: dasselbe Schema, andere Vorgaben.
+
+    Die Kopie nutzt dieselben Abfragen wie das Original, sie ändert nur, womit
+    das Cockpit startet (Zeitraum, Plattform …). Ein späteres Update der Vorlage
+    erreicht die Kopie nicht – so wie installierte Formulare generell.
+    """
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    import copy
+    from app.api.forms import unique_slug
+    quelle = db.query(Form).filter(Form.id == form_id).first()
+    if not quelle:
+        raise HTTPException(404, "Cockpit nicht gefunden")
+    schreiben_pruefen(quelle.project_id, user, db)
+    name = (data.name or "").strip()
+    if not name:
+        raise HTTPException(400, "Bitte einen Namen angeben")
+
+    schema = copy.deepcopy(quelle.schema or {})
+    schema.pop("rolle", None)
+    felder = {f.get("name"): f for f in schema.get("fields") or [] if f.get("name")}
+    for feld, wert in (data.vorgaben or {}).items():
+        f = felder.get(feld)
+        if f is None:
+            continue                      # unbekannte Felder still übergehen
+        if f.get("type") == "daterange":
+            f.setdefault("config", {})["default"] = str(wert)
+        else:
+            f["default"] = wert
+    schema["kopie_von"] = {"form_id": quelle.id, "name": quelle.name}
+
+    neu = Form(name=name, project_id=quelle.project_id, schema=schema, created_by=user.id,
+               slug=unique_slug(db, name), published=bool(quelle.published),
+               portal_config=copy.deepcopy(quelle.portal_config or {}))
+    db.add(neu)
+    safe_commit(db)
+    db.refresh(neu)
+    # Das Laufzeit-Tor ordnet Formulare Vorlagen zu; eine Kopie gehört zu keiner.
+    try:
+        from app.core.vorlagen_gate import cache_leeren
+        cache_leeren()
+    except Exception:
+        pass
+    return {"id": neu.id, "name": neu.name, "slug": neu.slug}

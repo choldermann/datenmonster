@@ -4,14 +4,20 @@ import { Star, Search } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 import { GesperrtMarke } from "../../components/VorlageGesperrt";
 import { S, knopf, karte, Seitenkopf } from "./StartLayout";
+import { useAuth } from "../../context/AuthContext";
+import KopieDialog from "./KopieDialog";
 
-function Karte({ c, angeheftet, onPin, onOeffnen }) {
+function Karte({ c, angeheftet, onPin, onOeffnen, onKopie }) {
   return (
     <article style={{ ...karte, padding: 18, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
         <div style={{ minWidth: 0 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: S.textBright }}>{c.name}</h3>
-          {c.zusatz && <span style={{ fontSize: 12, color: S.textDim }}>{c.zusatz}</span>}
+          {(c.zusatz || c.kopie_von) && (
+            <span style={{ fontSize: 12, color: S.textDim }}>
+              {[c.kopie_von && `Kopie von ${c.kopie_von}`, c.zusatz].filter(Boolean).join(" · ")}
+            </span>
+          )}
         </div>
         <button onClick={onPin} aria-pressed={angeheftet}
           aria-label={angeheftet ? `${c.name} von der Übersicht lösen` : `${c.name} auf der Übersicht anheften`}
@@ -29,7 +35,10 @@ function Karte({ c, angeheftet, onPin, onOeffnen }) {
         </p>
       </div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <button onClick={onOeffnen} style={knopf.haupt}>Öffnen</button>
+        <span style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={onOeffnen} style={knopf.haupt}>Öffnen</button>
+          {onKopie && <button onClick={onKopie} style={knopf.neben}>Kopie anpassen</button>}
+        </span>
         {c.reiter > 1 && (
           <span style={{ fontSize: 12, color: S.textDim, fontFamily: "var(--font-mono)" }}>{c.reiter} Reiter</span>
         )}
@@ -44,6 +53,9 @@ export default function Cockpits() {
   const [pins, setPins] = useState([]);
   const [suche, setSuche] = useState("");
   const [fehler, setFehler] = useState(null);
+  const [kopieVon, setKopieVon] = useState(null);
+  const { user } = useAuth();
+  const portal = !!user?.is_portal_only;
 
   useEffect(() => {
     api.get("/api/start/cockpits").then(({ data }) => setListe(data || []))
@@ -72,7 +84,8 @@ export default function Cockpits() {
   const raster = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 };
   const karteFuer = (c) => (
     <Karte key={c.id} c={c} angeheftet={pins.includes(c.id)}
-      onPin={() => umschalten(c.id)} onOeffnen={() => navigate(`/start/cockpit/${c.id}`)} />
+      onPin={() => umschalten(c.id)} onOeffnen={() => navigate(`/start/cockpit/${c.id}`)}
+      onKopie={portal ? null : () => setKopieVon(c)} />
   );
 
   return (
@@ -101,6 +114,10 @@ export default function Cockpits() {
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: S.textBright }}>Eigene Berichte</h2>
           <div style={raster}>{berichte.map(karteFuer)}</div>
         </section>
+      )}
+      {kopieVon && (
+        <KopieDialog cockpit={kopieVon} onClose={() => setKopieVon(null)}
+          onFertig={(neu) => { setKopieVon(null); navigate(`/start/cockpit/${neu.id}`); }} />
       )}
     </div>
   );

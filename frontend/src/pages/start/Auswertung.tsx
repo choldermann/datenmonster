@@ -6,6 +6,7 @@ import { useLizenz } from "../../contexts/LizenzContext";
 import ReportBuilder from "../../components/forms/ReportBuilder";
 import QueryBuilder from "../../components/query/QueryBuilder";
 import { S, knopf, karte, Seitenkopf } from "./StartLayout";
+import FertigeFragen from "./FertigeFragen";
 
 /** Eigene Auswertung (Phase 1): Einstieg in Report-Baukasten und Abfrage-Generator
  *  ohne Umweg über die Werkstatt, dazu die selbst gebauten Berichte.
@@ -44,12 +45,15 @@ export default function Auswertung() {
   );
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1100 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 22, maxWidth: 1400 }}>
       <Seitenkopf titel="Eigene Auswertung"
-        text="Stellen Sie eine Liste nach eigenen Bedingungen zusammen oder kombinieren Sie Kacheln aus mehreren Cockpits zu einem Bericht." />
+        text="Fertige Fragen an Ihre Wawi mit einem Klick – oder eine Liste nach eigenen Bedingungen und Berichte aus mehreren Cockpits." />
       {fehler && <p style={{ color: "var(--err)", margin: 0 }}>{fehler}</p>}
-      {gesperrt && <p style={{ margin: 0, fontSize: 13, color: S.textDim }}>{gesperrt}</p>}
 
+      <FertigeFragen />
+
+      <h2 style={{ margin: "8px 0 0", fontSize: 18, fontWeight: 700, color: S.textBright }}>Selbst zusammenstellen</h2>
+      {gesperrt && <p style={{ margin: 0, fontSize: 13, color: S.textDim }}>{gesperrt}</p>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14 }}>
         <Kachel icon={Filter} titel="Eigene Liste"
           text="Kunden, Aufträge oder Rechnungen nach Ihren Bedingungen, z. B. „Kunden ohne Rechnung seit 90 Tagen“."

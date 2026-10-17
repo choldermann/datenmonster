@@ -178,8 +178,9 @@ def bauen(definition: dict, literal: bool = False) -> dict:
     gruppe = [g for g in ((definition.get("vergleichsgruppe") or {}).get("kunden") or [])
               if str(g).strip() != ""]
 
-    # Alles ausser „Kunde" folgt der Zeilen-Bauart (Liste bzw. GROUP BY).
-    if kname != "kunde":
+    # Stamm-Körnungen (Kunde, Artikel) rechnen Kennzahlen als Unterabfragen je
+    # Stammsatz; alle anderen folgen der Zeilen-Bauart (Liste bzw. GROUP BY).
+    if k.get("bauart") != "stamm":
         return _zeilenkoernung(definition, k, kname, binde)
 
     # ── Spalten: Standardausgabe des Feldkatalogs plus gewählte Kennzahlen ──
@@ -235,6 +236,10 @@ def bauen(definition: dict, literal: bool = False) -> dict:
         return f["sql"], f["typ"]
 
     wo = _baum(definition.get("zeilenfilter") or {}, _feld_aufloesen, binde)
+
+    # Fester Ausschluss der Körnung (z. B. Vaterartikel) – steht immer mit drin.
+    if k.get("basis_filter"):
+        wo = f"{k['basis_filter']} AND {wo}" if wo else k["basis_filter"]
 
     # Die Vergleichsgruppe gehört nicht in ihre eigene Ergebnisliste.
     if gruppe and k.get("gruppe_ausschluss"):

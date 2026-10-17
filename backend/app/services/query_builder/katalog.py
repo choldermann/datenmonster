@@ -117,6 +117,16 @@ _KUNDE_KENNZAHLEN = [
                 JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung
                 WHERE ra.kKunde = k.kKunde AND ISNULL(r.nStorno,0) = 0)"""},
 
+    # Für „seit 90 Tagen nicht bestellt": ein Datum lässt sich nicht relativ
+    # filtern, eine Tageszahl schon. Nie berechnete Kunden bleiben NULL und fallen
+    # damit heraus – „seit X Tagen nicht" setzt voraus, dass es ein Vorher gab.
+    {"key": "tage_seit_rechnung", "label": "Tage seit letzter Rechnung", "typ": "zahl",
+     "decimals": 0,
+     "sql": """DATEDIFF(DAY, (SELECT MAX(r.dErstellt)
+                FROM Rechnung.vRechnung r
+                JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung
+                WHERE ra.kKunde = k.kKunde AND ISNULL(r.nStorno,0) = 0), GETDATE())"""},
+
     {"key": "letzte_lieferung", "label": "Letzte Lieferung", "typ": "datum",
      "sql": """(SELECT MAX(l.dErstellt)
                 FROM dbo.tLieferschein l
@@ -141,6 +151,9 @@ KOERNUNGEN = {
         "verlauf": None,
         "verlauf_grund": ("Ein Kunde hat kein Datum. Für eine Entwicklung über die "
                           "Zeit die Körnung „Rechnung“ oder „Auftrag“ wählen."),
+        # „stamm“: eine Zeile je Stammsatz, Kennzahlen als Unterabfragen (findet
+        # Nullfälle). Alle anderen Körnungen folgen der Zeilen-Bauart.
+        "bauart": "stamm",
     },
 }
 
@@ -355,6 +368,167 @@ JOIN Rechnung.vRechnungRechnungsadresse ra ON ra.kRechnung = r.kRechnung""",
          "sql": "COUNT(DISTINCT x.kunde_id)"},
         {"key": "rechnungen", "label": "Anzahl Rechnungen", "typ": "zahl", "decimals": 0,
          "sql": "COUNT(DISTINCT x.rechnung_id)"},
+    ],
+}
+
+
+# ── Körnung „Artikel" ────────────────────────────────────────────────────────
+# Stamm-Bauart wie „Kunde": eine Zeile je Artikel, auch für Artikel ohne jeden
+# Verkauf – „Ladenhüter" und „nie verkauft" sind genau diese Nullfälle.
+# Bestand, Menge in Aufträgen und Zulauf stehen in dbo.tlagerbestand (eine Zeile
+# je Artikel, dieselbe Quelle wie die Fehlmengen im Lager-Cockpit; geprüft in
+# JTL 1.8 und 2.0.5). Vaterartikel sind ausgeschlossen: ihr Bestand ist die Summe
+# der Kinder und würde jede Summe verdoppeln.
+_ART_VERKAUF = """FROM Rechnung.vRechnung r
+                JOIN Rechnung.tRechnungPosition rp ON rp.kRechnung = r.kRechnung
+                WHERE rp.kArtikel = art.kArtikel AND ISNULL(r.nStorno,0) = 0"""
+
+KOERNUNGEN["artikel"] = {
+    "label": "Artikel", "plural": "Artikel",
+    "beschreibung": ("Eine Zeile je Artikel mit Bestand und Verkäufen im Zeitraum. "
+                     "Findet auch Artikel, die gar nicht verkauft wurden."),
+    "bauart": "stamm",
+    "basis": """FROM dbo.tArtikel art
+LEFT JOIN dbo.tArtikelBeschreibung ab ON ab.kArtikel = art.kArtikel
+     AND ab.kSprache = 1 AND ab.kPlattform = 1 AND ab.kShop = 0
+LEFT JOIN dbo.tlagerbestand lb ON lb.kArtikel = art.kArtikel""",
+    "basis_filter": "ISNULL(art.nIstVater, 0) = 0",
+    "schluessel": {"sql": "art.kArtikel", "name": "kArtikel"},
+    "felder": [
+        {"key": "artikel.nr", "label": "Artikelnummer", "typ": "text",
+         "sql": "art.cArtNr", "ausgabe": True},
+        {"key": "artikel.name", "label": "Artikelbezeichnung", "typ": "text",
+         "sql": "ab.cName", "ausgabe": True},
+        {"key": "artikel.bestand", "label": "Bestand", "typ": "zahl",
+         "sql": "CAST(ISNULL(lb.fLagerbestand, 0) AS DECIMAL(18,2))", "ausgabe": True},
+        {"key": "artikel.in_auftraegen", "label": "In offenen Aufträgen", "typ": "zahl",
+         "sql": "CAST(ISNULL(lb.fInAuftraegen, 0) AS DECIMAL(18,2))", "ausgabe": True},
+        {"key": "artikel.fehlmenge", "label": "Fehlmenge", "typ": "zahl",
+         "sql": "CAST(ISNULL(lb.fInAuftraegen, 0) - ISNULL(lb.fLagerbestand, 0) AS DECIMAL(18,2))",
+         "ausgabe": False,
+         "hinweis": "In Aufträgen minus Bestand; über 0 heißt: reicht nicht."},
+        {"key": "artikel.zulauf", "label": "Zulauf (bestellt)", "typ": "zahl",
+         "sql": "CAST(ISNULL(lb.fZulauf, 0) AS DECIMAL(18,2))", "ausgabe": True},
+        {"key": "artikel.lieferdatum", "label": "Nächste Lieferung", "typ": "datum",
+         "sql": "lb.dLieferdatum", "ausgabe": False},
+        {"key": "artikel.mindestbestand", "label": "Mindestbestand", "typ": "zahl",
+         "sql": "ISNULL(art.nMidestbestand, 0)", "ausgabe": False},
+        {"key": "artikel.ek", "label": "EK netto", "typ": "geld",
+         "sql": "CAST(art.fEKNetto AS DECIMAL(18,2))", "ausgabe": False},
+        {"key": "artikel.vk", "label": "VK netto", "typ": "geld",
+         "sql": "CAST(art.fVKNetto AS DECIMAL(18,2))", "ausgabe": False},
+        {"key": "artikel.lagerwert", "label": "Lagerwert (EK)", "typ": "geld",
+         "sql": "CAST(ISNULL(lb.fLagerbestand, 0) * ISNULL(art.fEKNetto, 0) AS DECIMAL(18,2))",
+         "ausgabe": False},
+        # Versand-, Zuschlags- und Dienstleistungsartikel führen keinen Bestand
+        # und stünden sonst in jeder Fehlmengenliste ganz oben. Maßgeblich ist
+        # cLagerAktiv (Lagerführung an); cLagerArtikel ist bei HaKo durchweg 'N'.
+        # Wer in JTL gar keinen Bestand führt (HyDa), bekommt hier zu Recht nichts.
+        {"key": "artikel.lagerartikel", "label": "Mit Lagerführung", "typ": "ja_nein",
+         "sql": "CASE WHEN art.cLagerAktiv = 'Y' THEN 1 ELSE 0 END", "ausgabe": False},
+        {"key": "artikel.aktiv", "label": "Aktiv", "typ": "ja_nein",
+         "sql": "CASE WHEN art.cAktiv = 'Y' THEN 1 ELSE 0 END", "ausgabe": False},
+        {"key": "artikel.angelegt", "label": "Angelegt am", "typ": "datum",
+         "sql": "art.dErstelldatum", "ausgabe": False},
+    ],
+    "kennzahlen": [
+        {"key": "menge", "label": "Verkaufte Menge", "typ": "zahl", "decimals": 0,
+         "sql": "(SELECT CAST(ISNULL(SUM(rp.fAnzahl), 0) AS DECIMAL(18,2)) "
+                + _ART_VERKAUF + " AND " + _fenster("r.dErstellt") + ")"},
+        {"key": "umsatz", "label": "Umsatz netto", "typ": "geld", "decimals": 2,
+         "sql": "(SELECT CAST(ISNULL(SUM(rp.fAnzahl * rp.fVkNetto), 0) AS DECIMAL(18,2)) "
+                + _ART_VERKAUF + " AND " + _fenster("r.dErstellt") + ")"},
+        {"key": "rohertrag", "label": "Rohertrag Ware", "typ": "geld", "decimals": 2,
+         "sql": "(SELECT CAST(ISNULL(SUM(rp.fAnzahl * (rp.fVkNetto - rp.fEkNetto)), 0) AS DECIMAL(18,2)) "
+                + _ART_VERKAUF + " AND " + _fenster("r.dErstellt") + ")"},
+        # Ohne Umsatz gibt es keine Marge (NULL), nicht 0 % – sonst stünden alle
+        # unverkauften Artikel bei „Marge unter 20 %".
+        {"key": "marge", "label": "Marge in %", "typ": "zahl", "decimals": 1,
+         "sql": "(SELECT CAST(100.0 * SUM(rp.fAnzahl * (rp.fVkNetto - rp.fEkNetto)) "
+                "/ NULLIF(SUM(rp.fAnzahl * rp.fVkNetto), 0) AS DECIMAL(18,1)) "
+                + _ART_VERKAUF + " AND " + _fenster("r.dErstellt") + ")"},
+        {"key": "letzter_verkauf", "label": "Letzter Verkauf", "typ": "datum",
+         "sql": "(SELECT MAX(r.dErstellt) " + _ART_VERKAUF + ")"},
+        # Nie verkauft zählt ab Anlage – sonst fiele genau der schlimmste
+        # Ladenhüter (gekauft, nie verkauft) aus „mehr als 180 Tage" heraus.
+        {"key": "tage_ohne_verkauf", "label": "Tage ohne Verkauf", "typ": "zahl", "decimals": 0,
+         "sql": "DATEDIFF(DAY, ISNULL((SELECT MAX(r.dErstellt) " + _ART_VERKAUF
+                + "), art.dErstelldatum), GETDATE())"},
+    ],
+    "verlauf": None,
+    "verlauf_grund": ("Ein Artikel hat kein Datum. Für eine Entwicklung über die Zeit "
+                      "die Körnung „Rechnungsposition“ wählen."),
+}
+
+
+# ── Körnung „Lieferantenbestellung" ──────────────────────────────────────────
+# Zeilen-Bauart, aber OHNE Zeitfenster im Grundfilter: offene Bestellungen sind
+# oft alt (bei HaKo 60 Stück über ein Jahr) – ein Fenster würde genau die
+# Problemfälle ausblenden. Abfrage wie im Einkaufs-Cockpit; tLieferantenBestellung
+# hat keine cBestellNr, die Wawi führt die eigene Nummer in cEigeneBestellnummer.
+_LB_OFFENE_POS = """EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos p
+                     WHERE p.kLieferantenBestellung = lbe.kLieferantenBestellung
+                       AND p.fAnzahlOffen > 0)"""
+
+KOERNUNGEN["lieferantenbestellung"] = {
+    "label": "Lieferantenbestellung", "plural": "Lieferanten-Bestellungen",
+    "beschreibung": ("Eine Zeile je Bestellung beim Lieferanten, mit Liefertermin, "
+                     "Verzug und offenem Wert."),
+    "basis": """FROM dbo.tLieferantenBestellung lbe
+LEFT JOIN dbo.tlieferant lf ON lf.kLieferant = lbe.kLieferant""",
+    "grundfilter": "ISNULL(lbe.nDeleted, 0) = 0",
+    "schluessel": {"sql": "lbe.kLieferantenBestellung", "name": "kLieferantenBestellung"},
+    "felder": [
+        {"key": "bestellung.nr", "label": "Bestellnummer", "typ": "text",
+         "sql": "ISNULL(lbe.cEigeneBestellnummer, CAST(lbe.kLieferantenBestellung AS VARCHAR(20)))",
+         "ausgabe": True},
+        {"key": "lieferant.name", "label": "Lieferant", "typ": "text",
+         "sql": ("LTRIM(RTRIM(ISNULL(lf.cFirma,'')) + CASE WHEN ISNULL(lf.cFirmenZusatz,'') = '' "
+                 "OR CHARINDEX(LTRIM(RTRIM(lf.cFirmenZusatz)), ISNULL(lf.cFirma,'')) > 0 THEN '' "
+                 "ELSE ' ' + LTRIM(RTRIM(lf.cFirmenZusatz)) END)"),
+         "ausgabe": True},
+        {"key": "bestellung.datum", "label": "Bestelldatum", "typ": "datum",
+         "sql": "lbe.dErstellt", "ausgabe": True},
+        {"key": "bestellung.liefertermin", "label": "Liefertermin", "typ": "datum",
+         "sql": "lbe.dLieferdatum", "ausgabe": True},
+        {"key": "bestellung.verzug", "label": "Tage überfällig", "typ": "zahl",
+         "sql": ("CASE WHEN lbe.dLieferdatum IS NOT NULL AND lbe.dLieferdatum < GETDATE() "
+                 "THEN DATEDIFF(DAY, lbe.dLieferdatum, GETDATE()) ELSE 0 END"),
+         "ausgabe": True},
+        {"key": "bestellung.offener_wert", "label": "Offener Wert", "typ": "geld",
+         "sql": """(SELECT CAST(ISNULL(SUM(p.fAnzahlOffen * p.fEKNetto), 0) AS DECIMAL(18,2))
+                   FROM dbo.tLieferantenBestellungPos p
+                   WHERE p.kLieferantenBestellung = lbe.kLieferantenBestellung AND p.fAnzahlOffen > 0)""",
+         "ausgabe": True},
+        {"key": "bestellung.wert", "label": "Bestellwert", "typ": "geld",
+         "sql": """(SELECT CAST(ISNULL(SUM(p.fMenge * p.fEKNetto), 0) AS DECIMAL(18,2))
+                   FROM dbo.tLieferantenBestellungPos p
+                   WHERE p.kLieferantenBestellung = lbe.kLieferantenBestellung)""",
+         "ausgabe": False},
+        {"key": "bestellung.offen", "label": "Offen", "typ": "ja_nein",
+         "sql": f"CASE WHEN ISNULL(lbe.nManuellAbgeschlossen, 0) = 0 AND {_LB_OFFENE_POS} THEN 1 ELSE 0 END",
+         "ausgabe": False, "hinweis": "Noch nicht abgeschlossen und mindestens eine Position offen."},
+        {"key": "bestellung.teilgeliefert", "label": "Teilweise geliefert", "typ": "ja_nein",
+         "sql": f"""CASE WHEN {_LB_OFFENE_POS} AND EXISTS (SELECT 1 FROM dbo.tLieferantenBestellungPos p
+                     WHERE p.kLieferantenBestellung = lbe.kLieferantenBestellung
+                       AND p.fAnzahlOffen < p.fMenge) THEN 1 ELSE 0 END""",
+         "ausgabe": False},
+        {"key": "lieferant.id", "label": "Lieferant (intern)", "typ": "zahl",
+         "sql": "lbe.kLieferant", "ausgabe": False},
+    ],
+    "gruppierungen": [
+        {"key": "lieferant", "label": "je Lieferant",
+         "sql": [("x.lieferant_id", "kLieferant"), ("MAX(x.lieferant_name)", "Lieferant")]},
+        {"key": "monat", "label": "je Monat", "verlauf": True,
+         "sql": [("FORMAT(x.bestellung_datum, 'yyyy-MM')", "Monat")]},
+    ],
+    "kennzahlen": [
+        {"key": "anzahl", "label": "Anzahl Bestellungen", "typ": "zahl", "decimals": 0,
+         "sql": "COUNT(DISTINCT x.kLieferantenBestellung)"},
+        {"key": "offener_wert", "label": "Summe offener Wert", "typ": "geld", "decimals": 2,
+         "sql": "CAST(SUM(x.bestellung_offener_wert) AS DECIMAL(18,2))"},
+        {"key": "max_verzug", "label": "Größter Verzug (Tage)", "typ": "zahl", "decimals": 0,
+         "sql": "MAX(x.bestellung_verzug)"},
     ],
 }
 
