@@ -323,66 +323,227 @@ def fragen(user: User = Depends(get_current_user)):
         raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
     from app.services.query_builder import rezepte
     return [{"key": f["key"], "gruppe": f["gruppe"], "titel": f["titel"], "text": f["text"],
-             "zeitraum": rezepte.ZEITRAEUME.get(f["zeitraum"]) if f.get("zeitraum") else None}
+             "zeitraum": rezepte.ZEITRAEUME.get(f["zeitraum"]) if f.get("zeitraum") else None,
+             "satz": f.get("satz")}
             for f in rezepte.FRAGEN]
 
 
-def _frage_holen(key: str) -> dict:
-    from app.services.query_builder import rezepte
-    f = rezepte.frage(key)
-    if not f:
-        raise HTTPException(404, "Diese Frage gibt es nicht")
-    return f
-
-
-@router.post("/fragen/{key}/vorschau")
-def frage_vorschau(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Rechnet eine fertige Frage gegen die Wawi des Händlers."""
+@router.get("/satz")
+def satz_wortschatz(user: User = Depends(get_current_user)):
+    """Bausteine des Satzbaukastens (Phase 4)."""
     if _portal(user):
         raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
-    from app.services.query_builder import ausfuehren, sql_bauer
-    f = _frage_holen(key)
-    projekt = _haendler_projekt(user, db)
+    from app.services.query_builder import satz
+    return satz.wortschatz()
+
+
+class QuelleIn(BaseModel):
+    """Eine Auswertung der Händler-Ansicht: eine fertige Frage ODER ein Satz."""
+    frage: Optional[str] = None
+    satz: Optional[dict] = None
+    name: Optional[str] = None
+
+
+def _quelle(data: QuelleIn) -> dict:
+    """→ {definition, zeitraum, titel, beschreibung, auswahl?}"""
+    from app.services.query_builder import rezepte, satz, sql_bauer
+    if data.frage:
+        f = rezepte.frage(data.frage)
+        if not f:
+            raise HTTPException(404, "Diese Frage gibt es nicht")
+        return {"definition": f["definition"], "zeitraum": f.get("zeitraum"),
+                "titel": f["titel"], "beschreibung": f["text"]}
+    if data.satz:
+        try:
+            gebaut = satz.bauen(data.satz)
+        except sql_bauer.AbfrageFehler as e:
+            raise HTTPException(400, str(e))
+        return {"definition": gebaut["definition"], "zeitraum": gebaut["zeitraum"],
+                "titel": gebaut["titel"], "beschreibung": gebaut["satz"], "auswahl": gebaut["auswahl"]}
+    raise HTTPException(400, "Bitte eine Frage oder einen Satz angeben")
+
+
+@router.post("/auswertung/vorschau")
+def auswertung_vorschau(data: QuelleIn, db: Session = Depends(get_db),
+                        user: User = Depends(get_current_user)):
+    """Rechnet eine Frage bzw. einen Satz gegen die Wawi des Händlers."""
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
     from app.api.projects import can_read_project
+    from app.services.query_builder import ausfuehren, sql_bauer
+    q = _quelle(data)
+    projekt = _haendler_projekt(user, db)
     if not can_read_project(projekt, user, db):
         raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
-    von, bis = _zeitraum(f.get("zeitraum"))
+    von, bis = _zeitraum(q["zeitraum"])
     try:
-        erg = ausfuehren.rechnen(db, f["definition"], _wawi(projekt, user, db), von=von, bis=bis)
+        erg = ausfuehren.rechnen(db, q["definition"], _wawi(projekt, user, db), von=von, bis=bis)
     except sql_bauer.AbfrageFehler as e:
         raise HTTPException(400, str(e))
     except ausfuehren.LaufFehler as e:
         raise HTTPException(500, str(e))
     erg.pop("sql", None)      # für Händler ohne Wert; im Abfrage-Generator sichtbar
-    return {**erg, "titel": f["titel"], "project_id": projekt}
+    return {**erg, "titel": q["titel"], "beschreibung": q["beschreibung"],
+            "auswahl": q.get("auswahl"), "project_id": projekt}
 
 
-@router.post("/fragen/{key}/speichern")
-def frage_speichern(key: str, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    """Legt die Frage als eigene Auswertung an (Mapping + Baustein in „Eigene
-    Auswertungen“) – danach steht sie im Report-Baukasten und lässt sich mailen."""
-    if _portal(user):
-        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+def _speichern(q: dict, name: Optional[str], user, db) -> dict:
+    """Legt die Auswertung als eigene Abfrage an (Mapping + Bausteine in „Eigene
+    Auswertungen“). Zählt aufs Kontingent der kostenlosen Version."""
     from app.core import kontingent
     from app.models.report import AdHocQuery
     from app.services.query_builder import erzeugen, sql_bauer
-    f = _frage_holen(key)
     projekt = _haendler_projekt(user, db)
     schreiben_pruefen(projekt, user, db)
     kontingent.pruefe(db, "mappings")
     wawi = _wawi(projekt, user, db)
+    titel = (name or q["titel"]).strip()[:120]
     try:
-        gebaut = erzeugen.speichern(db, f["titel"], f["definition"], projekt, wawi)
+        gebaut = erzeugen.speichern(db, titel, q["definition"], projekt, wawi)
     except sql_bauer.AbfrageFehler as e:
         raise HTTPException(400, str(e))
-    q = AdHocQuery(name=f["titel"], beschreibung=f["text"], project_id=projekt,
-                   koernung=f["definition"].get("koernung"), definition=f["definition"],
-                   mapping_id=gebaut["mapping"].id,
-                   verlauf_mapping_id=gebaut.get("verlauf_mapping_id"),
-                   form_id=gebaut["form"].id, widget_ids=gebaut["widget_ids"], created_by=user.id)
-    db.add(q)
+    abfrage = AdHocQuery(name=titel, beschreibung=q["beschreibung"], project_id=projekt,
+                         koernung=q["definition"].get("koernung"), definition=q["definition"],
+                         mapping_id=gebaut["mapping"].id,
+                         verlauf_mapping_id=gebaut.get("verlauf_mapping_id"),
+                         form_id=gebaut["form"].id, widget_ids=gebaut["widget_ids"],
+                         created_by=user.id)
+    db.add(abfrage)
     safe_commit(db)
-    return {"form_id": gebaut["form"].id, "form_name": gebaut["form"].name, "abfrage_id": q.id}
+    return {"projekt": projekt, "wawi": wawi, "titel": titel, "form": gebaut["form"],
+            "widget_ids": gebaut["widget_ids"], "abfrage_id": abfrage.id}
+
+
+@router.post("/auswertung/speichern")
+def auswertung_speichern(data: QuelleIn, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    erg = _speichern(_quelle(data), data.name, user, db)
+    return {"form_id": erg["form"].id, "form_name": erg["form"].name, "abfrage_id": erg["abfrage_id"]}
+
+
+TAKTE = {"montag": ("0 6 * * 1", "jeden Montag um 6:00"),
+         "werktags": ("0 6 * * 1-5", "werktags um 6:00"),
+         "monat": ("0 6 1 * *", "am Monatsersten um 6:00")}
+
+
+class MailenIn(QuelleIn):
+    email: str
+    takt: str = "montag"
+
+
+@router.post("/auswertung/mailen")
+def auswertung_mailen(data: MailenIn, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    """„Jeden Montag mailen“ in einem Schritt: speichern, als eigenen Bericht
+    zusammenstellen (nur diese Auswertung) und den Zustellplan anlegen."""
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    import re
+    from app.models.report import ReportSchedule
+    from app.services import report_catalog
+    from app.services.query_builder import satz
+    from app.services.scheduler_service import register_report_job
+
+    email = (data.email or "").strip()
+    if not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", email):
+        raise HTTPException(400, "Bitte eine gültige E-Mail-Adresse angeben")
+    if data.takt not in TAKTE:
+        raise HTTPException(400, "Unbekannter Takt")
+    cron, takt_text = TAKTE[data.takt]
+
+    q = _quelle(data)
+    gespeichert = _speichern(q, data.name, user, db)
+    preset = satz.ZEITRAUM_PRESET.get(q.get("zeitraum") or "", "months_12")
+    try:
+        bericht = report_catalog.assemble(
+            db, gespeichert["titel"],
+            [{"form_id": gespeichert["form"].id, "widget_id": w} for w in gespeichert["widget_ids"]],
+            zeitraum_preset=preset, project_id=gespeichert["projekt"])
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    f = Form(name=gespeichert["titel"], project_id=bericht["project_id"],
+             schema=bericht["schema"], created_by=user.id)
+    db.add(f)
+    safe_commit(db)
+    db.refresh(f)
+
+    from app.services import mandant_service
+    plan = ReportSchedule(name=gespeichert["titel"], form_id=f.id, project_id=f.project_id,
+                          mandant_id=mandant_service.aktiver(f.project_id, user, db),
+                          cron_expr=cron, active=True, zeitraum_preset=preset,
+                          params={}, sections=[], email_to=email, created_by=user.id)
+    db.add(plan)
+    safe_commit(db)
+    db.refresh(plan)
+    register_report_job(plan.id, plan.cron_expr)
+    return {"form_id": f.id, "schedule_id": plan.id, "takt": takt_text, "email": email,
+            "titel": gespeichert["titel"]}
+
+
+class VerstehenIn(BaseModel):
+    text: str
+
+
+@router.post("/satz/verstehen")
+async def satz_verstehen(data: VerstehenIn, db: Session = Depends(get_db),
+                         user: User = Depends(get_current_user)):
+    """Frage in eigenen Worten → Satz aus dem festen Wortschatz.
+
+    Die KI wählt nur Schlüssel aus, die der Satzbaukasten kennt; sie schreibt
+    kein SQL und erfindet keine Bedingungen. Passt nichts, sagt sie das – dann
+    bleibt der Weg über die KI-Werkbank. Kostet wie jeder KI-Aufruf Credits.
+    """
+    if _portal(user):
+        raise HTTPException(403, "Portal-Zugänge haben auf diesen Bereich keinen Zugriff.")
+    import json
+    from app.api.ai import _require_ai
+    from app.services.query_builder import satz, sql_bauer
+    from app.services.werkbank.plan_ki import _json
+
+    text = (data.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Bitte eine Frage eingeben")
+    if len(text) > 500:
+        raise HTTPException(400, "Die Frage ist zu lang (höchstens 500 Zeichen)")
+    svc = _require_ai(db)
+
+    w = satz.wortschatz()
+    objekte = [o["key"] for o in w["objekte"]]
+    bedingungen = sorted({b["key"] for o in w["objekte"] for b in o["bedingungen"]})
+    sortierungen = sorted({s["key"] for o in w["objekte"] for s in o["sortierungen"]})
+    schema = {"type": "object", "properties": {
+        "passt": {"type": "boolean"},
+        "koernung": {"type": "string", "enum": objekte},
+        "bedingung": {"type": "string", "enum": bedingungen},
+        "n": {"type": "number"},
+        "sortierung": {"type": "string", "enum": sortierungen},
+        "zeitraum": {"type": "string", "enum": [z["key"] for z in w["zeitraeume"]]},
+        "hinweis": {"type": "string"},
+    }}
+    system = (
+        "Du übersetzt Fragen eines Onlinehändlers an seine JTL-Warenwirtschaft in einen festen "
+        "Satzbaukasten. Wähle ausschließlich Schlüssel aus dem Wortschatz. Die Bedingung und die "
+        "Sortierung müssen zum gewählten Objekt gehören. n ist die Zahl in der Bedingung "
+        "(Tage, Euro oder Prozent); braucht die Bedingung keine Zahl, setze n auf 0. "
+        "Drei Monate sind 90 Tage, ein halbes Jahr 180 Tage. "
+        "Passt die Frage zu keiner Bedingung, setze passt=false und erkläre in hinweis in einem "
+        "kurzen deutschen Satz, was der Baukasten nicht abdeckt. Antworte nur mit dem JSON.\n\n"
+        "Wortschatz:\n" + json.dumps(w, ensure_ascii=False))
+    try:
+        antwort = await _json(svc, system, text, schema)
+    except Exception as e:
+        raise HTTPException(502, f"Die KI hat nicht geantwortet: {str(e)[:200]}")
+
+    if not antwort.get("passt"):
+        return {"passt": False, "hinweis": antwort.get("hinweis")
+                or "Diese Frage lässt sich mit dem Satzbaukasten nicht beantworten."}
+    try:
+        gebaut = satz.bauen({k: antwort.get(k) for k in ("koernung", "bedingung", "n", "sortierung", "zeitraum")})
+    except sql_bauer.AbfrageFehler:
+        return {"passt": False, "hinweis": "Die KI hat die Frage nicht eindeutig zuordnen können."}
+    return {"passt": True, "auswahl": gebaut["auswahl"], "satz": gebaut["satz"]}
 
 
 # ── Phase 3: Kopie eines Cockpits mit eigenen Vorgaben ────────────────────────

@@ -40,7 +40,7 @@ export default function FertigeFragen() {
   const oeffnen = async (f) => {
     setAktiv(f); setErgebnis(null); setFehler(null); setMeldung(null); setLaeuft(true);
     try {
-      const { data } = await api.post(`/api/start/fragen/${f.key}/vorschau`, null, { timeout: 120000 });
+      const { data } = await api.post("/api/start/auswertung/vorschau", { frage: f.key }, { timeout: 120000 });
       setErgebnis(data);
     } catch (e) {
       setFehler(fehlerText(e));
@@ -73,7 +73,7 @@ export default function FertigeFragen() {
   const speichern = async () => {
     setSpeichert(true); setFehler(null); setMeldung(null);
     try {
-      const { data } = await api.post(`/api/start/fragen/${aktiv.key}/speichern`, null, { timeout: 120000 });
+      const { data } = await api.post("/api/start/auswertung/speichern", { frage: aktiv.key }, { timeout: 120000 });
       setMeldung({ text: `Gespeichert unter „${data.form_name}“. Dort lässt sie sich jederzeit öffnen und per Mail verschicken.`,
         formId: data.form_id });
     } catch (e) {
