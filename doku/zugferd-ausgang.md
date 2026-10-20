@@ -14,9 +14,13 @@ Access ──OrgFile + Daten──▶ tInvoice / tInvoicePositions ◀──lies
 ```
 
 Access (Terminalserver) und SQL-Server stehen im selben Rechenzentrum. Die Datei
-geht deshalb nie durch den VPN. Durch den Tunnel läuft nur der kurze Anstoß, und
-auch der darf ausfallen: Das Intervall in Datenmonster holt die Rechnung dann
-beim nächsten Takt.
+geht deshalb nie durch den VPN. Durch den Tunnel läuft nur der kurze Anstoß.
+
+**Der Anstoß ist Pflicht, einen Zeitplan gibt es bewusst nicht.** Access schickt
+nach jeder Rechnung einen POST mit dem Auslöse-Schlüssel. Bestätigt Datenmonster
+ihn nicht innerhalb weniger Sekunden, oder liegt die fertige E-Rechnung nach
+30 Sekunden nicht vor, warnt Access den Anwender. Die Rechnung wird dann nicht
+versendet. Ein Fehler fällt so sofort auf und nicht erst, wenn der Kunde nachfragt.
 
 ## Einrichtung
 
@@ -25,8 +29,8 @@ beim nächsten Takt.
    In `auftragsbuch` sind sie seit 16.10.2026 angelegt.
 2. **Firmendaten** im gleichen Formular pflegen (Name, Anschrift, USt-IdNr. bzw.
    Steuernummer, weitere USt-IdNrn., IBAN, Standard-Zahlungsbedingung).
-3. **Einrichtung** (nur Admin): Zeitplan einschalten (Sicherheitsnetz, z. B.
-   alle 5 Minuten) und „Schlüssel erzeugen“. Den Schlüssel und die angezeigte
+3. **Einrichtung** (nur Admin): „Schlüssel erzeugen“. Der Zeitplan bleibt aus.
+   Den Schlüssel und die angezeigte
    Adresse ins Access-Modul übernehmen. Der Schlüssel wird nur einmal angezeigt,
    ein neuer macht den alten ungültig. Ein FTP-Server ist nicht nötig, er ist
    nur eine zusätzliche Ablage.
@@ -57,8 +61,8 @@ beim nächsten Takt.
 - Unbekannte Einheit, fehlende Pflichtangaben oder eine verschlüsselte PDF.
 
 Der Grund steht in `tInvoice.StatusMessage` und im Protokoll. In Access
-korrigieren, `Status = 'NEU'` setzen (oder im Protokoll auf „erneut“ klicken),
-dann geht die Rechnung beim nächsten Lauf durch.
+korrigieren und erneut übergeben (ersetzt die abgewiesene Zeile), oder im
+Protokoll auf „erneut“ klicken. Das stößt sofort einen Lauf an.
 
 **Mehrere eigene USt-IdNrn.** (z. B. je Land): In den Firmendaten steht die
 Standardnummer, alle weiteren kommen ins Feld „Weitere USt-IdNrn.“. Access trägt
@@ -137,9 +141,9 @@ Public Function ZugferdUebergeben(ByVal rechnungsNr As String, ByVal pdfPfad As 
     cn.BeginTrans
     On Error GoTo Fehler
 
-    ' Ein abgewiesener oder halber Vorversuch derselben Nummer wird ersetzt.
+    ' Ein abgewiesener, halber oder nie angestoßener Vorversuch derselben Nummer wird ersetzt.
     ' Eine bereits erzeugte Rechnung (OK) bleibt stehen - die Korrektur bekommt eine neue Nummer.
-    Befehl(cn, "DELETE FROM dbo.tInvoice WHERE InvoiceNumber = ? AND Status IN ('ENTWURF','FEHLER')", rechnungsNr).Execute
+    Befehl(cn, "DELETE FROM dbo.tInvoice WHERE InvoiceNumber = ? AND Status IN ('ENTWURF','NEU','FEHLER')", rechnungsNr).Execute
 
     Set rs = CreateObject("ADODB.Recordset")
     rs.Open "SELECT * FROM dbo.tInvoice WHERE 1 = 0", cn, adOpenKeyset, adLockOptimistic
@@ -173,7 +177,10 @@ Public Function ZugferdUebergeben(ByVal rechnungsNr As String, ByVal pdfPfad As 
     cn.Close
     On Error GoTo 0
 
-    Anstossen
+    ' Ohne bestätigten Anstoß wird die Rechnung nie verarbeitet - es gibt keinen Zeitplan.
+    Dim grund As String
+    If Not Anstossen(grund) Then Err.Raise vbObjectError + 4, , _
+        "Datenmonster hat die Rechnung " & rechnungsNr & " nicht angenommen:" & vbCrLf & grund
     ZugferdUebergeben = id
     Exit Function
 Fehler:
@@ -181,9 +188,9 @@ Fehler:
     Err.Raise Err.Number, , "ZUGFeRD-Übergabe " & rechnungsNr & ": " & Err.Description
 End Function
 
-' „Bitte jetzt verarbeiten“ an Datenmonster. Darf scheitern (VPN weg o. Ä.):
-' dann holt das Intervall die Rechnung - Access wartet hier höchstens 5 Sekunden.
-Public Sub Anstossen()
+' „Bitte jetzt verarbeiten“ an Datenmonster. True, wenn Datenmonster den Anstoß
+' bestätigt (HTTP 202). Access wartet hier höchstens wenige Sekunden.
+Public Function Anstossen(Optional ByRef grund As String) As Boolean
     Dim http As Object
     On Error Resume Next
     Set http = CreateObject("WinHttp.WinHttpRequest.5.1")
@@ -192,16 +199,20 @@ Public Sub Anstossen()
     http.SetRequestHeader "X-Ausloese-Schluessel", SCHLUESSEL
     http.Send
     If Err.Number <> 0 Then
-        Debug.Print "ZUGFeRD-Anstoß nicht angekommen: " & Err.Description
+        grund = "Datenmonster nicht erreichbar (VPN?): " & Err.Description
+    ElseIf http.Status = 401 Then
+        grund = "Auslöse-Schlüssel fehlt oder ist ungültig"
     ElseIf http.Status <> 202 Then
-        Debug.Print "ZUGFeRD-Anstoß abgelehnt: " & http.Status & " " & http.ResponseText
+        grund = "Antwort " & http.Status & ": " & http.ResponseText
+    Else
+        Anstossen = True
     End If
-End Sub
+End Function
 
 ' Wartet, bis Datenmonster fertig ist, speichert die ZUGFeRD-PDF als temporäre
 ' Datei und gibt deren Pfad zurück (für den Outlook-Anhang).
-' Bei FEHLER wird der Grund als Fehler gemeldet.
-Public Function ZugferdWarten(ByVal id As Long, Optional ByVal maxSekunden As Long = 600) As String
+' Bei FEHLER oder Zeitüberschreitung wird der Grund als Fehler gemeldet.
+Public Function ZugferdWarten(ByVal id As Long, Optional ByVal maxSekunden As Long = 30) As String
     Dim cn As Object, rs As Object, ende As Single, pfad As String
     Set cn = CreateObject("ADODB.Connection")
     cn.Open CONN_STR
@@ -219,7 +230,7 @@ Public Function ZugferdWarten(ByVal id As Long, Optional ByVal maxSekunden As Lo
                 Err.Raise vbObjectError + 2, , "E-Rechnung abgewiesen:" & vbCrLf & rs!StatusMessage
         End Select
         If Timer > ende Then Err.Raise vbObjectError + 3, , _
-            "Datenmonster hat nach " & maxSekunden & " s noch nicht geantwortet"
+            "Datenmonster hat nach " & maxSekunden & " s keine E-Rechnung geliefert"
         Pause 2
     Loop
     cn.Close
@@ -269,13 +280,25 @@ End Sub
 Einbau in den bestehenden Versand (Beispiel):
 
 ```vba
-DoCmd.OutputTo acOutputReport, "rptRechnung", acFormatPDF, pdfPfad
-id = ZugferdUebergeben(rechnungsNr, pdfPfad)
-anhang = ZugferdWarten(id)          ' statt pdfPfad an die Outlook-Mail hängen
+    On Error GoTo KeineERechnung
+    DoCmd.OutputTo acOutputReport, "rptRechnung", acFormatPDF, pdfPfad
+    id = ZugferdUebergeben(rechnungsNr, pdfPfad)
+    anhang = ZugferdWarten(id)          ' statt pdfPfad an die Outlook-Mail hängen
+    On Error GoTo 0
+    ' ... Outlook-Mail mit anhang ...
+    Exit Sub
+KeineERechnung:
+    MsgBox "Die E-Rechnung zu " & rechnungsNr & " wurde NICHT erzeugt." & vbCrLf & vbCrLf & _
+           Err.Description & vbCrLf & vbCrLf & _
+           "Rechnung bitte nicht versenden. Später erneut versuchen oder den Administrator informieren.", _
+           vbExclamation, "E-Rechnung"
 ```
+
+Erneut versuchen heißt: denselben Versand noch einmal auslösen. Eine nicht
+angenommene oder abgewiesene Zeile wird dabei ersetzt.
 
 **Kommt der Anstoß nicht an**, obwohl Datenmonster im Browser der Terminalsitzung
 erreichbar ist: `WinHttpRequest` nutzt die Windows-Proxy-Einstellung (WinHTTP),
 nicht die des Browsers. Nachsehen mit `netsh winhttp show proxy` in der
 Terminalsitzung. Steht dort ein Proxy, braucht die Datenmonster-Adresse eine
-Ausnahme. Die Meldung erscheint im Direktfenster (Strg + G).
+Ausnahme.

@@ -341,6 +341,8 @@ def beleg_erneut(beleg_id: int, user: User = Depends(get_current_user),
         engine.dispose()
     if not ok:
         raise HTTPException(409, "Die Rechnung steht nicht auf FEHLER oder OK (oder wurde gelöscht)")
+    # Ohne Zeitplan käme sie sonst erst mit dem nächsten Anstoß aus Access dran.
+    dienst.anstossen(a.id)
     return {"ok": True}
 
 
