@@ -39,7 +39,8 @@ const ART = { RECHNUNG: "Rechnung", STORNO: "Storno", KORREKTUR: "Korrektur" };
  * Widget "ZUGFeRD-Ausgang": Rechnungen, die eine Fremdanwendung (Access) in
  * tInvoice/tInvoicePositions ablegt, werden zu ZUGFeRD-PDFs und landen auf einem
  * FTP im Firmennetz. Drei Reiter: Protokoll (was ist passiert), Firmendaten
- * (Rechnungssteller), Einrichtung (Tabellen, FTP, Zeitplan – nur Admin).
+ * (Rechnungssteller), Einrichtung (Tabellen, FTP, Schlüssel – nur Admin).
+ * Einen Zeitplan gibt es bewusst nicht: Access stößt jede Rechnung an.
  */
 export default function ZugferdWidget({ widget }) {
   const connId = widget?.config?.connection_id ? Number(widget.config.connection_id) : null;
@@ -171,7 +172,7 @@ function Protokoll({ connId, daten, onNeu }) {
             {laeuft ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
             Jetzt verarbeiten</button>
           {a ? <span>
-            {a.aktiv ? `Automatisch (${a.cron_expr})` : "Zeitplan aus"} · letzter Lauf {zeit(a.letzter_lauf)}
+            Letzter Lauf {zeit(a.letzter_lauf)}
             {a.letzter_status === "fehler" &&
               <span style={{ color: "var(--err)" }}> · {a.letzter_fehler}</span>}
           </span> : <span>Noch nicht eingerichtet</span>}
@@ -350,7 +351,7 @@ function Firmendaten({ connId, daten, onNeu }) {
 const LEER = {
   tabelle_kopf: "dbo.tInvoice", tabelle_positionen: "dbo.tInvoicePositions",
   protokoll: "ftp", host: "", port: "", username: "", password: "", verzeichnis: "/",
-  dateiname_muster: "{nummer}.pdf", aktiv: false, cron_expr: "*/5 * * * *",
+  dateiname_muster: "{nummer}.pdf",
 };
 
 function Einrichtung({ connId, daten, onNeu }) {
@@ -427,8 +428,8 @@ function Einrichtung({ connId, daten, onNeu }) {
       </>)}
       {box("Anstoß aus Access", <>
         <div style={{ gridColumn: "1 / -1", fontSize: 11.5, color: S.textDim, lineHeight: 1.55 }}>
-          Access meldet nach dem Speichern einer Rechnung „bitte jetzt verarbeiten“ – dann ist sie in
-          Sekunden fertig statt erst beim nächsten Intervall. Der Schlüssel kann nur einen Lauf
+          Access meldet nach dem Speichern jeder Rechnung „bitte jetzt verarbeiten“. Ohne diesen
+          Anstoß wird nichts verarbeitet – einen Zeitplan gibt es nicht. Der Schlüssel kann nur einen Lauf
           anstoßen, sonst nichts. Er wird <b>einmal</b> angezeigt; ein neuer macht den alten ungültig.
         </div>
         <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -475,13 +476,6 @@ function Einrichtung({ connId, daten, onNeu }) {
       {box("Dateiname", <>
         {feld("Muster", "dateiname_muster", {},
           "Für den Mail-Anhang (tInvoice.OutputFileName) und die FTP-Ablage. Platzhalter: {nummer} {typ} {datum} {kunde}")}
-      </>)}
-      {box("Zeitplan", <>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: S.textMain }}>
-          <input type="checkbox" checked={!!f.aktiv} onChange={e => set("aktiv", e.target.checked)} />
-          Automatisch verarbeiten (Sicherheitsnetz zum Anstoß)
-        </label>
-        {feld("Takt (Cron)", "cron_expr", {}, "*/5 * * * * = alle 5 Minuten")}
       </>)}
 
       <div style={{ display: "flex", gap: 8 }}>

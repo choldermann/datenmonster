@@ -39,8 +39,9 @@ class ZugferdAusgang(Base):
     verzeichnis = Column(String, default="/")
     dateiname_muster = Column(String, default="{nummer}.pdf")
 
+    # Unbenutzt seit 20.10.2026: es gibt keinen Zeitplan, nur den Anstoß aus Access.
     aktiv = Column(Boolean, default=False)
-    cron_expr = Column(String, default="*/5 * * * *")
+    cron_expr = Column(String, nullable=True)
 
     # Anstoß aus Access: nur der SHA-256 des Schlüssels liegt hier. Der Schlüssel
     # selbst wird einmal angezeigt und steht danach nur noch im Access-Modul.

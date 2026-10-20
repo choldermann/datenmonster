@@ -5,7 +5,7 @@ Ablauf je Rechnung:
      Schluss Status = NEU. Erst dann fassen wir sie an - sonst läsen wir eine
      Rechnung, deren Positionen noch gar nicht geschrieben sind.
   2. Wir beanspruchen sie (NEU → IN_ARBEIT, nur wenn sie noch NEU ist). Laufen
-     Zeitplan und Knopf gleichzeitig, bekommt so nur einer die Rechnung.
+     Anstoß und Knopf gleichzeitig, bekommt so nur einer die Rechnung.
   3. Prüfen, XML bauen, in die PDF einbetten, auf den FTP legen.
   4. Status OK (mit Dateiname) bzw. FEHLER (mit Grund) zurückschreiben.
 
@@ -276,9 +276,9 @@ def schluessel_hash(schluessel: str) -> str:
 def anstossen(ausgang_id: int) -> None:
     """Lauf im Hintergrund – Access soll auf die Antwort nicht warten müssen.
 
-    Läuft gerade schon ein Durchgang (Zeitplan oder zweiter Anstoß), versuchen wir
+    Läuft gerade schon ein Durchgang (Knopf oder zweiter Anstoß), versuchen wir
     es kurz danach noch einmal: die neue Rechnung kam womöglich erst nach dessen
-    Abfrage herein und bliebe sonst bis zum nächsten Intervall liegen.
+    Abfrage herein und bliebe sonst liegen - einen Zeitplan gibt es nicht.
     """
     def lauf():
         import time
@@ -302,7 +302,7 @@ def anstossen(ausgang_id: int) -> None:
 LAEUFT_SCHON = "Es läuft bereits ein Durchgang"
 
 
-def verarbeiten(db: Session, ausgang: ZugferdAusgang, ausloeser: str = "Zeitplan",
+def verarbeiten(db: Session, ausgang: ZugferdAusgang, ausloeser: str = "Anstoß",
                 engine=None, ziel=None) -> dict:
     """Ein Lauf über alle Rechnungen mit Status NEU. engine/ziel nur für Tests."""
     sperre = _sperren.setdefault(ausgang.id, threading.Lock())

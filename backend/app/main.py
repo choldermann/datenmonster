@@ -568,8 +568,6 @@ async def lifespan(app: FastAPI):
     reload_all_rest_jobs()
     from app.services.scheduler_service import reload_all_er_posteingang_jobs
     reload_all_er_posteingang_jobs()
-    from app.services.scheduler_service import reload_all_zugferd_jobs
-    reload_all_zugferd_jobs()
     from app.services.scheduler_service import reload_vorlagen_pruefung_job
     reload_vorlagen_pruefung_job()
     # FTP-Jobs laden

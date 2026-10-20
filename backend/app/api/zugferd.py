@@ -26,7 +26,6 @@ from app.models.user import User
 from app.models.zugferd import ZugferdAusgang, ZugferdBeleg
 from app.services import business_config_service as cfg
 from app.services import zugferd_service as dienst
-from app.services.scheduler_service import register_zugferd_job, unregister_zugferd_job
 
 router = APIRouter(prefix="/api/zugferd", tags=["zugferd"])
 
@@ -55,9 +54,8 @@ def _raus(a: Optional[ZugferdAusgang]) -> Optional[dict]:
         "tabelle_kopf": a.tabelle_kopf, "tabelle_positionen": a.tabelle_positionen,
         "protokoll": a.protokoll, "host": a.host, "port": a.port, "username": a.username,
         "password": GEHEIM if a.password else "", "verzeichnis": a.verzeichnis,
-        "dateiname_muster": a.dateiname_muster, "aktiv": bool(a.aktiv),
+        "dateiname_muster": a.dateiname_muster,
         "hat_schluessel": bool(a.ausloese_hash),
-        "cron_expr": a.cron_expr,
         "letzter_lauf": a.letzter_lauf.isoformat() if a.letzter_lauf else None,
         "letzter_status": a.letzter_status, "letzter_fehler": a.letzter_fehler,
     }
@@ -76,7 +74,7 @@ def einstellungen(connection_id: int, user: User = Depends(get_current_user),
         # Zugangsdaten nur für Admins - alle anderen sehen nur, ob und wann es lief.
         "ausgang": _raus(a) if getattr(user, "is_admin", False) else (
             {k: v for k, v in (_raus(a) or {}).items()
-             if k in ("aktiv", "cron_expr", "letzter_lauf", "letzter_status", "hat_schluessel",
+             if k in ("letzter_lauf", "letzter_status", "hat_schluessel",
                       "letzter_fehler", "verzeichnis", "host")} if a else None),
         "darf_einrichten": bool(getattr(user, "is_admin", False)),
     }
@@ -138,8 +136,6 @@ class AusgangIn(BaseModel):
     password: Optional[str] = None           # GEHEIM = unverändert
     verzeichnis: str = "/"
     dateiname_muster: str = "{nummer}.pdf"
-    aktiv: bool = False
-    cron_expr: Optional[str] = "*/5 * * * *"
 
 
 @router.put("/ausgang")
@@ -154,25 +150,20 @@ def ausgang_speichern(body: AusgangIn, user: User = Depends(get_current_user),
         raise HTTPException(400, str(e))
     if body.protokoll not in ("ftp", "sftp"):
         raise HTTPException(400, "Protokoll ftp oder sftp")
-    cron = (body.cron_expr or "").strip()
-    if cron and len(cron.split()) != 5:
-        raise HTTPException(400, "Zeitplan als Cron-Ausdruck mit 5 Feldern, z. B. */5 * * * *")
 
     a = _ausgang(conn.id, db) or ZugferdAusgang(connection_id=conn.id)
     daten = body.model_dump(exclude={"connection_id", "password"})
     for k, v in daten.items():
         setattr(a, k, v)
-    a.cron_expr = cron or None
+    # Kein Zeitplan: verarbeitet wird nur auf Anstoß aus Access oder per Knopf.
+    a.aktiv = False
+    a.cron_expr = None
     a.project_id = conn.project_id
     if body.password and body.password != GEHEIM:
         a.password = encrypt_credential(body.password)
     db.add(a)
     db.commit()
     db.refresh(a)
-    if a.aktiv and a.cron_expr:
-        register_zugferd_job(a.id, a.cron_expr)
-    else:
-        unregister_zugferd_job(a.id)
     return _raus(a)
 
 
