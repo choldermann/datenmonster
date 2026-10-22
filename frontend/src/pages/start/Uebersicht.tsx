@@ -5,6 +5,7 @@ import api, { fehlerText } from "../../api/client";
 import { useAuth } from "../../context/AuthContext";
 import FormRunner from "../FormRunner";
 import PortalRunner from "../PortalRunner";
+import MandantWaehler from "../../components/MandantWaehler";
 import { S, knopf, karte } from "./StartLayout";
 import { passendesCockpit } from "./cockpitSuche";
 
@@ -32,6 +33,7 @@ export default function Uebersicht() {
   const [frage, setFrage] = useState("");
   const [alleWarnungen, setAlleWarnungen] = useState(false);
   const [richtetEin, setRichtetEin] = useState(false);
+  const [mandantStand, setMandantStand] = useState(0);   // zählt Wechsel → Kennzahlen neu einhängen
 
   const laden = () => {
     api.get("/api/start/uebersicht").then(({ data }) => setDaten(data))
@@ -63,11 +65,20 @@ export default function Uebersicht() {
   const heute = new Date().toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long" });
   const warnungen = daten?.warnungen || [];
   const sichtbar = alleWarnungen ? warnungen : warnungen.slice(0, 5);
+  // Kennzahlen und Warnungen rechnen gegen den aktiven Mandanten des Projekts –
+  // welcher das ist, muss oben stehen. Projekt: das der Kennzahlen, sonst das
+  // einzige, aus dem Warnungen kommen.
+  const warnProjekte = [...new Set(warnungen.map((w) => w.project_id))];
+  const mandantProjekt = daten?.kennzahlen?.project_id ?? (warnProjekte.length === 1 ? warnProjekte[0] : null);
+  const mandantGewechselt = () => { setMandantStand((n) => n + 1); laden(); };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 28, maxWidth: 1400 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: S.textBright }}>{gruss()}</h1>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 800, color: S.textBright }}>{gruss()}</h1>
+          {mandantProjekt != null && <MandantWaehler projectId={mandantProjekt} onWechsel={mandantGewechselt} />}
+        </div>
         <p style={{ margin: 0, color: S.textDim }}>
           {heute}
           {daten && (warnungen.length
@@ -118,8 +129,8 @@ export default function Uebersicht() {
       {daten?.kennzahlen && (
         <section aria-label="Kennzahlen">
           {portal
-            ? <PortalRunner slug={daten.kennzahlen.slug} eingebettet="inhalt" />
-            : <FormRunner formId={daten.kennzahlen.id} eingebettet="inhalt" />}
+            ? <PortalRunner key={mandantStand} slug={daten.kennzahlen.slug} eingebettet="inhalt" />
+            : <FormRunner key={mandantStand} formId={daten.kennzahlen.id} eingebettet="inhalt" />}
         </section>
       )}
       {daten?.kennzahlen_moeglich && (
