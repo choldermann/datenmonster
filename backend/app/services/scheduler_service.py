@@ -672,6 +672,21 @@ def _run_alert_check(schedule_id: int, triggered_by: str = "scheduler"):
         # ohne Mandanten) läuft unverändert gegen die eingetragene Verbindung.
         from app.services import mandant_service
         mandant_id = getattr(plan, "mandant_id", None)
+        # Wird eine Verbindung als Mandant abgemeldet, bleibt ihr Zeitplan stehen –
+        # unsichtbar in der Oberfläche (die zeigt nur Mandanten), liefe aber jede
+        # Nacht gegen eine Wawi, die niemand mehr pflegt. Dann auslassen.
+        if mandant_id is not None:
+            from app.models.dataset import DbConnection
+            conn = db.query(DbConnection).filter(DbConnection.id == mandant_id).first()
+            if not conn or not conn.is_mandant:
+                meldung = (f"übersprungen: Verbindung {mandant_id} "
+                           + ("gibt es nicht mehr" if not conn else "ist kein Mandant mehr"))
+                plan.last_run_at = datetime.now(timezone.utc)
+                plan.last_status = "skipped"
+                plan.last_message = meldung
+                safe_commit(db)
+                logger.warning(f"Warnungslauf (Zeitplan {schedule_id}) {meldung}")
+                return None
         lauf = alert_service.evaluate(
             db, plan.project_id, params=params,
             rule_keys=plan.rule_keys or None, cockpits=plan.cockpits or None,
