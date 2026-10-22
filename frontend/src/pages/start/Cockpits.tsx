@@ -6,12 +6,14 @@ import { GesperrtMarke } from "../../components/VorlageGesperrt";
 import { S, knopf, karte, Seitenkopf } from "./StartLayout";
 import { useAuth } from "../../context/AuthContext";
 import KopieDialog from "./KopieDialog";
+import { formIcon } from "../../utils/formIcon";
 
 function Karte({ c, angeheftet, onPin, onOeffnen, onKopie }) {
   return (
     <article style={{ ...karte, padding: 18, display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-        <div style={{ minWidth: 0 }}>
+        <span aria-hidden="true" style={{ fontSize: 24, lineHeight: 1 }}>{formIcon(c.icon)}</span>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <h3 style={{ margin: 0, fontSize: 16, color: S.textBright }}>{c.name}</h3>
           {(c.zusatz || c.kopie_von) && (
             <span style={{ fontSize: 12, color: S.textDim }}>

@@ -8,6 +8,7 @@ import PortalRunner from "../PortalRunner";
 import MandantWaehler from "../../components/MandantWaehler";
 import { S, knopf, karte } from "./StartLayout";
 import { passendesCockpit } from "./cockpitSuche";
+import { formIcon } from "../../utils/formIcon";
 
 const BEISPIELFRAGEN = [
   "Welche Kunden haben seit drei Monaten nichts bestellt?",
@@ -202,7 +203,9 @@ export default function Uebersicht() {
               <button key={c.id} onClick={() => navigate(`/start/cockpit/${c.id}`)}
                 style={{ ...karte, borderRadius: 10, padding: 12, minHeight: 60, textAlign: "left", cursor: "pointer",
                   color: S.textMain, display: "flex", flexDirection: "column", gap: 2 }}>
-                <span style={{ fontWeight: 600, color: S.textBright }}>{c.name}</span>
+                <span style={{ fontWeight: 600, color: S.textBright }}>
+                  <span aria-hidden="true" style={{ marginRight: 6 }}>{formIcon(c.icon)}</span>{c.name}
+                </span>
                 {c.zusatz && <span style={{ fontSize: 12, color: S.textDim }}>{c.zusatz}</span>}
               </button>
             ))}

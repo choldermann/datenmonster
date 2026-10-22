@@ -77,6 +77,7 @@ def _cockpit_out(f: Form, projektnamen: dict, db) -> dict:
         "slug": f.slug,
         "project_id": f.project_id,
         "projekt": projektnamen.get(f.project_id),
+        "icon": ((f.portal_config or {}).get("icon") or "").strip(),
         "intro": ((schema.get("doku") or {}).get("intro") or "").strip(),
         "reiter": len(schema.get("result_tabs") or []),
         # Aus dem Report-Baukasten = selbst zusammengestellt, sonst aus einer Vorlage.
