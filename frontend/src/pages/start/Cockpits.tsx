@@ -80,10 +80,21 @@ export default function Cockpits() {
   }, [liste, suche]);
   const cockpits = gefiltert.filter((c) => c.art === "cockpit");
   const berichte = gefiltert.filter((c) => c.art === "bericht");
+  // Nach Projekt gliedern; Cockpits ohne Projekt zuletzt.
+  const gruppen = useMemo(() => {
+    const m = new Map();
+    for (const c of cockpits) {
+      const k = c.projekt || "";
+      if (!m.has(k)) m.set(k, []);
+      m.get(k).push(c);
+    }
+    return [...m.entries()].sort(([a], [b]) =>
+      (a === "") - (b === "") || a.localeCompare(b, "de", { sensitivity: "base" }));
+  }, [cockpits]);
 
   const raster = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 };
-  const karteFuer = (c) => (
-    <Karte key={c.id} c={c} angeheftet={pins.includes(c.id)}
+  const karteFuer = (c, inGruppe = false) => (
+    <Karte key={c.id} c={inGruppe && c.zusatz === c.projekt ? { ...c, zusatz: null } : c} angeheftet={pins.includes(c.id)}
       onPin={() => umschalten(c.id)} onOeffnen={() => navigate(`/start/cockpit/${c.id}`)}
       onKopie={portal ? null : () => setKopieVon(c)} />
   );
@@ -108,11 +119,20 @@ export default function Cockpits() {
           „Cockpits &amp; Erweiterungen“ installieren.
         </div>
       )}
-      {cockpits.length > 0 && <div style={raster}>{cockpits.map(karteFuer)}</div>}
+      {gruppen.length === 1 && <div style={raster}>{gruppen[0][1].map((c) => karteFuer(c))}</div>}
+      {gruppen.length > 1 && gruppen.map(([projekt, eintraege]) => (
+        <section key={projekt || "-"} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: S.textBright }}>
+            {projekt || "Ohne Projekt"}
+            <span style={{ marginLeft: 8, fontSize: 13, fontWeight: 400, color: S.textDim }}>{eintraege.length}</span>
+          </h2>
+          <div style={raster}>{eintraege.map((c) => karteFuer(c, true))}</div>
+        </section>
+      ))}
       {berichte.length > 0 && (
         <section style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: S.textBright }}>Eigene Berichte</h2>
-          <div style={raster}>{berichte.map(karteFuer)}</div>
+          <div style={raster}>{berichte.map((c) => karteFuer(c))}</div>
         </section>
       )}
       {kopieVon && (

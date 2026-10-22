@@ -6,8 +6,8 @@ Cockpits, Warnungen, Kennzahl-Kacheln, persönliche Einstellungen. Ausgeführt
 wird weiterhin über die bekannten Wege (FormRunner/PortalRunner, Alerts,
 Zustellpläne). Plan: ~/.claude/plans/haendler-ansicht.md, Phase 1.
 
-Projekte kommen hier bewusst nicht vor: der Händler sieht alle Cockpits, die er
-lesen darf, nebeneinander.
+Der Händler sieht alle Cockpits, die er lesen darf; die Seite gliedert sie nach
+Projekt (Feld „projekt“).
 """
 from typing import List, Optional
 
