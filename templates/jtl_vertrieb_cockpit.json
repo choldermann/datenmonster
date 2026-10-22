@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.12",
+  "version": "1.13",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -4125,6 +4125,363 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ve_shop_zahlart",
+      "name": "Vertrieb – Onlineshop-Aufträge nach Zahlungsart",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Zahlungsart",
+            "Auftraege",
+            "Kunden",
+            "Auftragseingang",
+            "Anteil",
+            "AvgAuftrag"
+          ],
+          "sql": "SELECT ISNULL(Z.cName, '(ohne Zahlungsart)') AS Zahlungsart,\n    COUNT(*) AS Auftraege,\n    COUNT(DISTINCT A.kKunde) AS Kunden,\n    CAST(ISNULL(SUM(E.fWertNetto), 0) AS DECIMAL(18,2)) AS Auftragseingang,\n    CAST(100.0 * COUNT(*) / NULLIF(SUM(COUNT(*)) OVER (), 0) AS DECIMAL(5,1)) AS Anteil,\n    CAST(ISNULL(AVG(E.fWertNetto), 0) AS DECIMAL(18,2)) AS AvgAuftrag\nFROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tZahlungsart Z ON Z.kZahlungsart = A.kZahlungsart\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp = 2)\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\nGROUP BY ISNULL(Z.cName, '(ohne Zahlungsart)')\nORDER BY COUNT(*) DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Onlineshop-Aufträge nach Zahlungsart",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Zahlungsart",
+              "target_field": "Zahlungsart",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zahlungsart"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "Auftragseingang",
+              "target_field": "Auftragseingang",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragseingang"
+              }
+            },
+            {
+              "source_field": "Anteil",
+              "target_field": "Anteil",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil"
+              }
+            },
+            {
+              "source_field": "AvgAuftrag",
+              "target_field": "AvgAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AvgAuftrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_shop_zahlart_kunden",
+      "name": "Vertrieb – Shop-Kunden der Zahlungsart (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "KundenNr",
+            "Kunde",
+            "Auftraege",
+            "Wert",
+            "LetzterAuftrag",
+            "Schluessel"
+          ],
+          "sql": "WITH kunde AS (\n    SELECT ISNULL(A.kKunde, 0) AS kKunde, ISNULL(A.kZahlungsart, 0) AS kZahlungsart,\n        MAX(K.cKundenNr) AS KundenNr,\n        MAX(LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),\n            ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, ''))))) AS Kunde,\n        COUNT(*) AS Auftraege, SUM(E.fWertNetto) AS Wert, MAX(A.dErstellt) AS Letzter,\n        ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC, SUM(E.fWertNetto) DESC) AS rn\n    FROM Verkauf.tAuftrag A\nJOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tZahlungsart Z ON Z.kZahlungsart = A.kZahlungsart\nLEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\nLEFT JOIN dbo.tKunde K ON K.kKunde = A.kKunde\nWHERE A.nType = 1 AND A.nStorno = 0 AND A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp = 2)\n  AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n  AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n      AND ISNULL(Z.cName, '(ohne Zahlungsart)') = :zahlungsart\n    GROUP BY ISNULL(A.kKunde, 0), ISNULL(A.kZahlungsart, 0)\n)\nSELECT 0 AS Sortierung, KundenNr, Kunde, Auftraege, CAST(Wert AS DECIMAL(18,2)) AS Wert,\n    CONVERT(char(10), Letzter, 104) AS LetzterAuftrag,\n    CAST(kKunde AS VARCHAR(20)) + '|' + CAST(kZahlungsart AS VARCHAR(20)) AS Schluessel\nFROM kunde WHERE rn <= 499\nUNION ALL\nSELECT 1, '', CONCAT('… ', COUNT(*), ' weitere Kunden'), SUM(Auftraege),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), '', ''\nFROM kunde WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Auftraege DESC, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Shop-Kunden der Zahlungsart (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "KundenNr",
+              "target_field": "KundenNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenNr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Auftraege",
+              "target_field": "Auftraege",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftraege"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "LetzterAuftrag",
+              "target_field": "LetzterAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzterAuftrag"
+              }
+            },
+            {
+              "source_field": "Schluessel",
+              "target_field": "Schluessel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Schluessel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_shop_zahlart_auftraege",
+      "name": "Vertrieb – Shop-Aufträge des Kunden je Zahlungsart (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Sortierung",
+            "Auftragsnr",
+            "Datum",
+            "Kunde",
+            "Wert",
+            "Positionen",
+            "Status",
+            "kAuftrag"
+          ],
+          "sql": "WITH vorgang AS (\n    SELECT A.cAuftragsNr AS Auftragsnr, A.dErstellt,\n        LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END), ''),\n            ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, '')))) AS Kunde,\n        E.fWertNetto AS Wert,\n        (SELECT COUNT(*) FROM Verkauf.tAuftragPosition P\n          WHERE P.kAuftrag = A.kAuftrag) AS Positionen,\n        CASE WHEN A.nKomplettAusgeliefert = 1 THEN 'ausgeliefert'\n             WHEN A.nStorno = 1 THEN 'storniert' ELSE 'offen' END AS Status,\n        CAST(A.kAuftrag AS VARCHAR(20)) AS kAuftrag,\n        ROW_NUMBER() OVER (ORDER BY E.fWertNetto DESC) AS rn\n    FROM Verkauf.tAuftrag A\n    JOIN Verkauf.tAuftragEckdaten E ON E.kAuftrag = A.kAuftrag\n    LEFT JOIN Verkauf.vAuftragRechnungsadresse RA ON RA.kAuftrag = A.kAuftrag\n    WHERE A.nType = 1 AND A.nStorno = 0 AND A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp = 2)\n      AND (:plattform_empty = 1 OR A.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n      AND A.dErstellt >= :von AND A.dErstellt < DATEADD(DAY, 1, :bis)\n      AND ISNULL(A.kKunde, 0) = TRY_CONVERT(INT, LEFT(:schluessel, CHARINDEX('|', :schluessel) - 1))\n      AND ISNULL(A.kZahlungsart, 0) = TRY_CONVERT(INT, SUBSTRING(:schluessel, CHARINDEX('|', :schluessel) + 1, 20))\n)\nSELECT 0 AS Sortierung, Auftragsnr, CONVERT(char(10), dErstellt, 104) AS Datum, Kunde,\n    CAST(Wert AS DECIMAL(18,2)) AS Wert, Positionen, Status, kAuftrag\nFROM vorgang WHERE rn <= 499\nUNION ALL\nSELECT 1, '', '', CONCAT('… ', COUNT(*), ' weitere Vorgänge'),\n    CAST(SUM(Wert) AS DECIMAL(18,2)), NULL, '', ''\nFROM vorgang WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Wert DESC"
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Shop-Aufträge des Kunden je Zahlungsart (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Auftragsnr",
+              "target_field": "Auftragsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Auftragsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "Status",
+              "target_field": "Status",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Status"
+              }
+            },
+            {
+              "source_field": "kAuftrag",
+              "target_field": "kAuftrag",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kAuftrag"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4187,6 +4544,13 @@
             "mapping_id": "m_ve_plattform",
             "pipeline_id": null,
             "label": "Auftragseingang je Plattform"
+          },
+          {
+            "id": "act_ve_shop_zahlart",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_shop_zahlart",
+            "pipeline_id": null,
+            "label": "Onlineshop-Aufträge nach Zahlungsart"
           },
           {
             "id": "act_ve_storno",
@@ -4446,7 +4810,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_auftrag_pos",
+                    "mapping_id": "m_ve_pos_detail",
                     "param": "kAuftrag",
                     "key_column": "kAuftrag",
                     "title": "Positionen des Vorgangs"
@@ -4485,6 +4849,71 @@
                     "key_column": "kArtikel",
                     "param": "kArtikel",
                     "title": "Artikel-Detail"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_ve_tbl_shop_zahlart",
+            "type": "table",
+            "label": "Onlineshop-Aufträge nach Zahlungsart",
+            "action_id": "act_ve_shop_zahlart",
+            "config": {
+              "width": 6,
+              "drilldown": {
+                "mapping_id": "m_ve_shop_zahlart_kunden",
+                "key_column": "Zahlungsart",
+                "param": "zahlungsart",
+                "title": "Shop-Kunden mit dieser Zahlungsart",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ve_shop_zahlart_auftraege",
+                    "param": "schluessel",
+                    "key_column": "Schluessel",
+                    "title": "Shop-Aufträge des Kunden",
+                    "hidden_columns": [
+                      "Sortierung",
+                      "kArtikel",
+                      "kAuftrag",
+                      "kKunde",
+                      "kLieferant",
+                      "kLieferantenBestellung",
+                      "kEingangsrechnung",
+                      "kRechnung",
+                      "Schluessel",
+                      "sort"
+                    ]
+                  },
+                  {
+                    "mapping_id": "m_ve_pos_detail",
+                    "param": "kAuftrag",
+                    "key_column": "kAuftrag",
+                    "title": "Positionen des Auftrags",
+                    "hidden_columns": [
+                      "Sortierung",
+                      "kArtikel",
+                      "kAuftrag",
+                      "kKunde",
+                      "kLieferant",
+                      "kLieferantenBestellung",
+                      "kEingangsrechnung",
+                      "kRechnung",
+                      "Schluessel",
+                      "sort"
+                    ]
                   }
                 ]
               }
@@ -4665,7 +5094,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_auftrag_pos",
+                    "mapping_id": "m_ve_pos_detail",
                     "param": "kAuftrag",
                     "key_column": "kAuftrag",
                     "title": "Positionen des Vorgangs"
@@ -4793,7 +5222,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_auftrag_pos",
+                    "mapping_id": "m_ve_pos_detail",
                     "param": "kAuftrag",
                     "key_column": "kAuftrag",
                     "title": "Positionen des Vorgangs"
@@ -5244,7 +5673,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_auftrag_pos",
+                    "mapping_id": "m_ve_pos_detail",
                     "param": "kAuftrag",
                     "key_column": "kAuftrag",
                     "title": "Positionen des Vorgangs"
@@ -5284,7 +5713,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_auftrag_pos",
+                    "mapping_id": "m_ve_pos_detail",
                     "param": "kAuftrag",
                     "key_column": "kAuftrag",
                     "title": "Positionen des Vorgangs"
@@ -5342,6 +5771,7 @@
               "act_ve_kpi",
               "act_ve_monat",
               "act_ve_plattform",
+              "act_ve_shop_zahlart",
               "act_ve_storno"
             ]
           },

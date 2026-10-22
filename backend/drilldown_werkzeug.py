@@ -64,7 +64,12 @@ def widgets_verdrahten(widgets: list, drilldowns: dict, ebene2, aufloesen) -> in
         mapping, schluessel, param, titel, tiefer = eintrag
         neu = {"mapping_id": aufloesen(mapping), "key_column": schluessel,
                "param": param, "title": titel, "hidden_columns": list(VERBORGEN)}
-        if tiefer and ebene2:
+        if isinstance(tiefer, list):
+            # Mehrere Ebenen: Liste von {mapping, param, key_column, title}.
+            neu["levels"] = [{"mapping_id": aufloesen(e["mapping"]), "param": e["param"],
+                              "key_column": e["key_column"], "title": e["title"],
+                              "hidden_columns": list(VERBORGEN)} for e in tiefer]
+        elif tiefer and ebene2:
             neu["levels"] = [{"mapping_id": aufloesen(ebene2["mapping"]),
                               "param": ebene2["param"],
                               "key_column": ebene2["key_column"],
