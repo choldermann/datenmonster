@@ -4534,7 +4534,7 @@
           ]
         }
       },
-      "portal_config": {}
+      "portal_config": {"icon": "🩺"}
     }
   ],
   "knowledge": [

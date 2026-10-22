@@ -56,7 +56,7 @@
           ]
         }
       },
-      "portal_config": {}
+      "portal_config": {"icon": "📥"}
     }
   ],
   "alert_rules": [],

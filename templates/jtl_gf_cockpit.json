@@ -12120,7 +12120,7 @@
           ]
         }
       },
-      "portal_config": {}
+      "portal_config": {"icon": "🧭"}
     },
     {
       "name": "Kostenstruktur",
@@ -12146,7 +12146,7 @@
           "hinweise": []
         }
       },
-      "portal_config": {}
+      "portal_config": {"icon": "💶"}
     }
   ],
   "alert_rules": [

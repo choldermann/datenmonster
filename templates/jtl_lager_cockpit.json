@@ -5928,7 +5928,7 @@
   "forms": [
     {
       "name": "Lager-Cockpit",
-      "portal_config": {},
+      "portal_config": {"icon": "🏭"},
       "schema": {
         "fields": [
           {
