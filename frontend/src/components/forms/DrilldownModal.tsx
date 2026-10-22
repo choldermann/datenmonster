@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
 import { fehlerText } from "../../api/client";
@@ -113,6 +113,26 @@ function fmtCell(v) {
   return String(v);
 }
 
+// Klick auf den Spaltenkopf: aufsteigend → absteigend → aus (wie TableWidget).
+// Zahlen numerisch, sonst locale-Vergleich; Leerwerte ans Ende. Die Sammelzeile
+// der Cockpit-Abfragen („… N weitere“, Sortierung = 1) bleibt immer unten.
+function sortiere(rows, sort, numericCols) {
+  if (!sort) return rows;
+  const num = numericCols.has(sort.col);
+  const dir = sort.dir === "asc" ? 1 : -1;
+  const leer = (v) => v === null || v === undefined || v === "";
+  return [...rows].sort((a, b) => {
+    const sa = Number(a.Sortierung) || 0, sb = Number(b.Sortierung) || 0;
+    if (sa !== sb) return sa - sb;
+    const va = a[sort.col], vb = b[sort.col];
+    if (leer(va) && leer(vb)) return 0;
+    if (leer(va)) return 1;
+    if (leer(vb)) return -1;
+    if (num) return (Number(va) - Number(vb)) * dir;
+    return String(va).localeCompare(String(vb), "de", { numeric: true }) * dir;
+  });
+}
+
 function isNumericCol(col, rows) {
   // Rechtsbündig nur echte Zahlenspalten – numerische String-IDs bleiben linksbündig.
   return rows.some(r => typeof r[col] === "number");
@@ -129,6 +149,16 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   // Lange Textspalten (z.B. Artikelbeschreibung) umbrechen statt horizontal scrollen.
   const longTextCols = new Set(columns.filter(c => !numericCols.has(c)
     && rows.some(r => typeof r[c] === "string" && r[c].length > 60)));
+  // Sortierung gilt nur für die Ebene, auf der sie gesetzt wurde – eine Ebene
+  // tiefer oder zurück startet wieder in der Reihenfolge der Abfrage.
+  const ebene = `${trail.length}|${title}|${String(value)}`;
+  const [sortRoh, setSort] = useState(null);
+  const sort = sortRoh?.ebene === ebene ? sortRoh : null;
+  const toggleSort = (col) => setSort(
+    sort?.col === col ? (sort.dir === "asc" ? { col, dir: "desc", ebene } : null) : { col, dir: "asc", ebene });
+  const sortedRows = useMemo(() => sortiere(rows, sort, numericCols),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, sort?.col, sort?.dir]);
 
   const handleExport = async () => {
     // Ist die Anzeige abgeschnitten, alle Zeilen nachladen – sonst enthielte die
@@ -145,7 +175,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
         setExportiert(false);
       }
     }
-    const csv = toCsv(columns, alle);
+    const csv = toCsv(columns, sortiere(alle, sort, numericCols));
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -209,7 +239,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             </p>
           </div>
           {downloadErlaubt && (
-            <EmailTableButton columns={columns} rows={rows} title={title || "Drilldown"} disabled={!rows.length} />
+            <EmailTableButton columns={columns} rows={sortedRows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
           {/* CSV und E-Mail folgen beide „Download erlauben“ des Formulars (im Editor immer an). */}
           {downloadErlaubt && (
@@ -256,14 +286,16 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
               <thead style={{ position: "sticky", top: 0, zIndex: 1 }}>
                 <tr style={{ backgroundColor: S.bgEl }}>
                   {columns.map(c => (
-                    <th key={c} style={{ padding: "7px 12px", textAlign: numericCols.has(c) ? "right" : "left", color: S.textDim, fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap" }}>
-                      {c}
+                    <th key={c} onClick={() => toggleSort(c)} title="Klicken zum Sortieren"
+                      style={{ padding: "7px 12px", textAlign: numericCols.has(c) ? "right" : "left", color: sort?.col === c ? ACCENT : S.textDim, fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
+                      {c}<span style={{ marginLeft: 4, opacity: sort?.col === c ? 1 : 0.25 }}>
+                        {sort?.col === c ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
+                {sortedRows.map((row, i) => (
                   <tr key={i}
                     onClick={canDrillDeeper && onRowClick ? () => onRowClick(row) : undefined}
                     style={{ borderBottom: `1px solid ${S.border}`, backgroundColor: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
