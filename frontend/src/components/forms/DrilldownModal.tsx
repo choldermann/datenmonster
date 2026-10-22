@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
+import { sortiereZeilen } from "./tabellenSortierung";
 import { fehlerText } from "../../api/client";
 
 const S = {
@@ -113,25 +114,9 @@ function fmtCell(v) {
   return String(v);
 }
 
-// Klick auf den Spaltenkopf: aufsteigend → absteigend → aus (wie TableWidget).
-// Zahlen numerisch, sonst locale-Vergleich; Leerwerte ans Ende. Die Sammelzeile
-// der Cockpit-Abfragen („… N weitere“, Sortierung = 1) bleibt immer unten.
-function sortiere(rows, sort, numericCols) {
-  if (!sort) return rows;
-  const num = numericCols.has(sort.col);
-  const dir = sort.dir === "asc" ? 1 : -1;
-  const leer = (v) => v === null || v === undefined || v === "";
-  return [...rows].sort((a, b) => {
-    const sa = Number(a.Sortierung) || 0, sb = Number(b.Sortierung) || 0;
-    if (sa !== sb) return sa - sb;
-    const va = a[sort.col], vb = b[sort.col];
-    if (leer(va) && leer(vb)) return 0;
-    if (leer(va)) return 1;
-    if (leer(vb)) return -1;
-    if (num) return (Number(va) - Number(vb)) * dir;
-    return String(va).localeCompare(String(vb), "de", { numeric: true }) * dir;
-  });
-}
+// Sammelzeile der Cockpit-Abfragen („… N weitere“, Sortierung = 1) bleibt immer unten.
+const sammelzeileUnten = (row) => Number(row.Sortierung) || 0;
+const sortiere = (rows, sort, numericCols) => sortiereZeilen(rows, sort, numericCols, sammelzeileUnten);
 
 function isNumericCol(col, rows) {
   // Rechtsbündig nur echte Zahlenspalten – numerische String-IDs bleiben linksbündig.

@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
 import EmailTableButton from "../EmailTableButton";
+import { sortiereZeilen } from "../tabellenSortierung";
 import api, { fehlerText } from "../../../api/client";
 
 const S = {
@@ -53,21 +54,8 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   // Zahlenspalten rechtsbündig (bessere Lesbarkeit der Beträge).
   const numericCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number")));
 
-  // Sortierte Zeilen: Zahlen numerisch, sonst locale-Vergleich; Nullwerte ans Ende.
-  const sortedRows = useMemo(() => {
-    if (!sort) return rows;
-    const num = numericCols.has(sort.col);
-    const dir = sort.dir === "asc" ? 1 : -1;
-    const nullRank = (v) => (v === null || v === undefined || v === "");
-    return [...rows].sort((a, b) => {
-      const va = a[sort.col], vb = b[sort.col];
-      if (nullRank(va) && nullRank(vb)) return 0;
-      if (nullRank(va)) return 1;   // Leerwerte immer ans Ende
-      if (nullRank(vb)) return -1;
-      if (num) return (Number(va) - Number(vb)) * dir;
-      return String(va).localeCompare(String(vb), "de", { numeric: true }) * dir;
-    });
-  }, [rows, sort, numericCols]);
+  // Sortierte Zeilen: Zahlen numerisch, Datum chronologisch, sonst locale-Vergleich; Nullwerte ans Ende.
+  const sortedRows = useMemo(() => sortiereZeilen(rows, sort, numericCols), [rows, sort, numericCols]);
 
   if (!allColumns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
