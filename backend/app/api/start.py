@@ -115,17 +115,33 @@ def _einstellungen(user) -> dict:
     return dict(e) if isinstance(e, dict) else {}
 
 
-def _warnungen(user, formulare: List[Form], db) -> list:
-    """Neueste Warnungen aller Projekte, die der Benutzer sieht – schlimmste zuerst."""
-    from app.services import alert_service, mandant_service
+def _geprueft(user, formulare: List[Form], db) -> list:
+    """(Projekt, aktiver Mandant) aller sichtbaren Projekte mit aktivem Prüf-Zeitplan.
+    Ohne Zeitplan ist der letzte Lauf ein Zufallsstand (Demo-Projekt, einmal von
+    Hand geklickt) und gehört nicht auf die Startseite."""
+    from app.models.alert import AlertSchedule
+    from app.services import mandant_service
     projekte = {f.project_id for f in formulare if f.project_id is not None}
     if not _portal(user):
         projekte |= ({p for p in _projektnamen(db)} if ist_admin(user)
                      else projekte_mit_rolle(user, db))
+    geplant = {(z.project_id, z.mandant_id)
+               for z in db.query(AlertSchedule).filter(AlertSchedule.active.is_(True)).all()}
     aus = []
     for pid in sorted(projekte):
+        mandant = mandant_service.aktiver(pid, user, db)
+        if (pid, mandant) in geplant:
+            aus.append((pid, mandant))
+    return aus
+
+
+def _warnungen(geprueft: list, db) -> list:
+    """Neueste Warnungen der geprüften Projekte – schlimmste zuerst."""
+    from app.services import alert_service
+    aus = []
+    for pid, mandant in geprueft:
         try:
-            lauf = alert_service.latest_run(db, pid, mandant_service.aktiver(pid, user, db))
+            lauf = alert_service.latest_run(db, pid, mandant)
         except Exception:
             continue
         for a in (lauf or {}).get("alerts") or []:
@@ -157,6 +173,7 @@ def uebersicht(db: Session = Depends(get_db), user: User = Depends(get_current_u
     """Alles für die Startseite in einem Aufruf."""
     formulare = _sichtbare_formulare(user, db)
     start = next((f for f in formulare if _ist_startseite(f)), None)
+    geprueft = _geprueft(user, formulare, db)
     namen = _projektnamen(db)
     nach_id = {f.id: f for f in formulare}
 
@@ -169,7 +186,8 @@ def uebersicht(db: Session = Depends(get_db), user: User = Depends(get_current_u
         # Kacheln einrichten kann nur, wer bauen darf, und nur wenn es ein GF-Cockpit gibt.
         "kennzahlen_moeglich": (start is None and not _portal(user)
                                 and _gf_cockpit(formulare) is not None),
-        "warnungen": _warnungen(user, formulare, db),
+        "warnungen": _warnungen(geprueft, db),
+        "pruefung_geplant": bool(geprueft),
         "angeheftet": angeheftet,
     }
 

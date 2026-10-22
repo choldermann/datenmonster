@@ -83,7 +83,7 @@ export default function Uebersicht() {
           {heute}
           {daten && (warnungen.length
             ? ` · ${warnungen.length} ${warnungen.length === 1 ? "Punkt braucht" : "Punkte brauchen"} Ihre Aufmerksamkeit.`
-            : " · Keine offenen Warnungen.")}
+            : daten.pruefung_geplant ? " · Keine offenen Warnungen." : "")}
         </p>
       </div>
 
@@ -153,7 +153,11 @@ export default function Uebersicht() {
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: S.textBright }}>Heute zu erledigen</h2>
           {!daten && <span style={{ color: S.textDim, fontSize: 13 }}>Lädt…</span>}
           {daten && warnungen.length === 0 && (
-            <span style={{ color: S.textDim, fontSize: 13 }}>Der letzte Prüflauf hat nichts gefunden.</span>
+            <span style={{ color: S.textDim, fontSize: 13 }}>
+              {daten.pruefung_geplant
+                ? "Der letzte Prüflauf hat nichts gefunden."
+                : "Für diesen Mandanten ist keine regelmäßige Prüfung eingerichtet."}
+            </span>
           )}
           {sichtbar.map((w, i) => {
             const ziel = passendesCockpit(w, cockpits || []);
