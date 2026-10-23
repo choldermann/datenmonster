@@ -1,5 +1,5 @@
 /**
- * Eigene Auswertung (Händler-Ansicht, Phase 3+4): links die fertigen Fragen,
+ * Eigene Auswertung (Büro, Phase 3+4): links die fertigen Fragen,
  * rechts der Satzbaukasten „Zeige mir … die … sortiert nach …“ mit Ergebnis,
  * Excel, „Speichern“ und „Per Mail“.
  * Eine Frage mit hinterlegtem Satz lädt diesen in den Baukasten; eine frei

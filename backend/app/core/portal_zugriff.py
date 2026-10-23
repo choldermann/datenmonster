@@ -19,7 +19,7 @@ ALLE = None  # jede Methode
 _REGELN = [
     (ALLE,               r"/api/auth/(me|change-password|theme)"),
     (ALLE,               r"/api/portal(/.*)?"),
-    # Händler-Ansicht: Startseite, Cockpit-Liste, eigene Einstellungen (api/start.py prüft selbst)
+    # Büro: Startseite, Cockpit-Liste, eigene Einstellungen (api/start.py prüft selbst)
     ({"GET"},            r"/api/start/(uebersicht|cockpits|einstellungen)"),
     ({"PUT"},            r"/api/start/einstellungen"),
     ({"GET"},            r"/api/license(/kontingent)?"),

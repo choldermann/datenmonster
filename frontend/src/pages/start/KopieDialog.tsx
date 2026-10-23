@@ -1,5 +1,5 @@
 /**
- * „Kopie anpassen“ (Händler-Ansicht, Phase 3): eine eigene Fassung eines Cockpits
+ * „Kopie anpassen“ (Büro, Phase 3): eine eigene Fassung eines Cockpits
  * mit anderen Vorgaben – Zeitraum und die übrigen Filter des Cockpits.
  * Die Kopie nutzt dieselben Abfragen; sie startet nur mit anderen Werten.
  */

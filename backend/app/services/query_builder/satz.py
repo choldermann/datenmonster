@@ -1,4 +1,4 @@
-"""Satzbaukasten der Händler-Ansicht (Phase 4).
+"""Satzbaukasten des Büros (Phase 4).
 
 „Zeige mir [Objekt], die [Bedingung], sortiert nach [Sortierung].“
 

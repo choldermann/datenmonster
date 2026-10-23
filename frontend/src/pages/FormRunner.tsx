@@ -326,7 +326,7 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
 
         {(!exclusionField || inputTab === "main") && (<>
         {eingebettet !== "inhalt" && (
-          // Werkstatt: kompakt, ohne Felder ein Hinweis für Bauende; Händler-Ansicht
+          // Werkstatt: kompakt, ohne Felder ein Hinweis für Bauende; Büro
           // ohne Felder wie das Portal mit „Aktualisieren“.
           <RunnerEingabe fields={visibleFields} params={params} setParam={setParam} onRun={runForm}
             running={running} missing={missing} actions={actions} results={results}

@@ -96,8 +96,8 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />;
 }
 
-/** Startseite: die Händler-Ansicht – außer ein Editor hat „direkt in der
- *  Werkstatt starten“ gewählt. Portal-Benutzer landen immer in der Händler-Ansicht. */
+/** Startseite: das Büro – außer ein Editor hat „direkt in der
+ *  Werkstatt starten“ gewählt. Portal-Benutzer landen immer im Büro. */
 function DefaultRedirect() {
   const { user, loading } = useAuth();
   const [ziel, setZiel] = useState(null);
@@ -168,7 +168,7 @@ export default function App() {
               <Route path="/forms/:id"     element={<EditorRoute><FormEditor /></EditorRoute>} />
               <Route path="/forms/:id/run" element={<EditorRoute><FormRunner /></EditorRoute>} />
 
-              {/* Händler-Ansicht (alle angemeldeten Benutzer) */}
+              {/* Büro (alle angemeldeten Benutzer) */}
               <Route path="/start" element={<PrivateRoute><StartLayout /></PrivateRoute>}>
                 <Route index                element={<Uebersicht />} />
                 <Route path="cockpits"      element={<Cockpits />} />
@@ -180,7 +180,7 @@ export default function App() {
 
               <Route path="/einrichtung" element={<AdminRoute><Einrichtung /></AdminRoute>} />
 
-              {/* Alte Portal-Adressen: die Startseite ist jetzt die Händler-Ansicht,
+              {/* Alte Portal-Adressen: die Startseite ist jetzt das Büro,
                   einzelne freigegebene Formulare bleiben unter /app/<slug> erreichbar. */}
               <Route path="/portal"    element={<Navigate to="/start" replace />} />
               <Route path="/app/:slug" element={<PrivateRoute><PortalRunner /></PrivateRoute>} />

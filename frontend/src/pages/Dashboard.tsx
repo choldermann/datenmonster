@@ -8,7 +8,7 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api, { fehlerText } from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Brain, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, Lock, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Briefcase, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, Lock, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -324,13 +324,13 @@ export default function Dashboard() {
         </nav>
 
         <div className="shrink-0 px-3 py-4" style={{ borderTop: `1px solid ${S.border}` }}>
-          {/* Rückweg aus der Werkstatt in die einfache Händler-Ansicht */}
+          {/* Rückweg aus der Werkstatt ins Büro */}
           <button onClick={() => navigate("/start")}
             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full transition-all mb-3"
             style={{ color: S.accent, border: `1px solid color-mix(in srgb, var(--accent) 30%, transparent)` }}
             onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--accent) 8%, transparent)"; }}
             onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "transparent"; }}>
-            <LayoutGrid size={14} /> Zur Händler-Ansicht
+            <Briefcase size={14} /> Zum Büro
           </button>
           <div style={{ display: "flex", alignItems: "center", padding: "0 12px", marginBottom: 10 }}>
             <p className="text-xs" style={{ color: S.textDim, flex: 1, margin: 0 }}>

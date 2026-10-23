@@ -23,7 +23,7 @@ export default function Auswertung() {
     .catch((e) => setFehler(fehlerText(e)));
   useEffect(() => { laden(); }, []);
 
-  // Die Händler-Ansicht kennt keine Projekte. Gebaut wird dort, wo die meisten
+  // Das Büro kennt keine Projekte. Gebaut wird dort, wo die meisten
   // Cockpits liegen – bei einer Einrichtung aus dem Assistenten das einzige Projekt.
   const zaehlung = {};
   for (const c of cockpits) if (c.project_id != null) zaehlung[c.project_id] = (zaehlung[c.project_id] || 0) + 1;

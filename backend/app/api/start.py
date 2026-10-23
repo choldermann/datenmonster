@@ -1,6 +1,6 @@
-"""Händler-Ansicht: die einfache Startseite für JTL-Kunden.
+"""Büro: die einfache Startseite für JTL-Kunden.
 
-Die Händler-Ansicht ist eine neue Schale über der vorhandenen Maschine. Die
+Das Büro ist eine neue Schale über der vorhandenen Maschine. Die
 Endpunkte hier bündeln nur, was die Startseite in einem Aufruf braucht –
 Cockpits, Warnungen, Kennzahl-Kacheln, persönliche Einstellungen. Ausgeführt
 wird weiterhin über die bekannten Wege (FormRunner/PortalRunner, Alerts,
@@ -357,7 +357,7 @@ def satz_wortschatz(user: User = Depends(get_current_user)):
 
 
 class QuelleIn(BaseModel):
-    """Eine Auswertung der Händler-Ansicht: eine fertige Frage ODER ein Satz."""
+    """Eine Auswertung des Büros: eine fertige Frage ODER ein Satz."""
     frage: Optional[str] = None
     satz: Optional[dict] = None
     name: Optional[str] = None

@@ -22,7 +22,7 @@ export default function Login() {
     setError(""); setLoading(true);
     try {
       const data = await login(username, password);
-      // Wohin es geht, entscheidet die Startseiten-Weiche (Händler-Ansicht oder Werkstatt)
+      // Wohin es geht, entscheidet die Startseiten-Weiche (Büro oder Werkstatt)
       navigate("/");
     }
     catch { setError("Falscher Benutzername oder Passwort"); }

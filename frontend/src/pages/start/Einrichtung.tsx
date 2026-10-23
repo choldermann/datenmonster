@@ -1,5 +1,5 @@
 /**
- * Einrichtungsassistent für JTL-Kunden (Händler-Ansicht, Phase 2).
+ * Einrichtungsassistent für JTL-Kunden (Büro, Phase 2).
  * Drei Schritte: Wawi verbinden → Cockpits wählen → Angaben zum Betrieb.
  * Backend: app/api/einrichtung.py; Versionsprüfung je Vorlage über /api/templates/pruefe.
  */

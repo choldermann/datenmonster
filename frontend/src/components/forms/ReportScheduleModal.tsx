@@ -20,7 +20,7 @@ const ZEITRAEUME = [
   { id: "months_12",  label: "Letzte 12 Monate" },
 ];
 
-// Fertige Cron-Ausdrücke; „eigener" gibt das Feld frei. Auch die Händler-Ansicht
+// Fertige Cron-Ausdrücke; „eigener" gibt das Feld frei. Auch das Büro
 // („Per Mail“) liest daraus die Klartexte.
 export const TAKTE = [
   { id: "0 6 * * 1",  label: "Jeden Montag, 6:00" },

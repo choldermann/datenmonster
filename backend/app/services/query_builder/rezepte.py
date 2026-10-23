@@ -1,4 +1,4 @@
-"""Fertige Fragen für die Händler-Ansicht (Phase 3).
+"""Fertige Fragen für das Büro (Phase 3).
 
 Jede Frage ist ein fertiger Bauzettel für den Abfrage-Generator – dieselbe
 Definition, die man dort von Hand zusammenklicken würde. Damit gelten dieselben

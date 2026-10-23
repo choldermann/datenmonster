@@ -144,7 +144,7 @@ export function fieldsForTab(fields, currentTab) {
  *  heutigen Tag (lokal, nicht UTC – sonst kippt es nachts auf gestern). */
 /** Vorgabe-Zeitraum eines daterange-Feldes als {von, bis}. Normalerweise setzt ihn das
  *  Feld selbst beim ersten Anzeigen; ohne sichtbare Felder (Kennzahlen der
- *  Händler-Übersicht) muss der Runner ihn vorher kennen. */
+ *  Büro-Übersicht) muss der Runner ihn vorher kennen. */
 export function zeitraumVorgabe(f) {
   if (f.type !== "daterange" || !f.config?.default) return {};
   const [von, bis] = computeDatePreset(f.config.default);

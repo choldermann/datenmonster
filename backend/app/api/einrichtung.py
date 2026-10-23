@@ -1,4 +1,4 @@
-"""Einrichtungsassistent für JTL-Kunden (Händler-Ansicht, Phase 2).
+"""Einrichtungsassistent für JTL-Kunden (Büro, Phase 2).
 
 Drei Schritte statt Templates → Verbindung → Install-Parameter:
   1. Mit der JTL-Wawi verbinden (Port der Instanz wird ermittelt, Fehler werden

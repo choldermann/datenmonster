@@ -6,7 +6,7 @@ import FormRunner from "../FormRunner";
 import PortalRunner from "../PortalRunner";
 import { S } from "./StartLayout";
 
-/** Ein Cockpit innerhalb der Händler-Ansicht. Editoren laufen über den FormRunner,
+/** Ein Cockpit innerhalb des Büros. Editoren laufen über den FormRunner,
  *  Portal-Benutzer über den PortalRunner (der braucht den Slug statt der ID). */
 export default function CockpitAnsicht() {
   const { id } = useParams();

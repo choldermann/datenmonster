@@ -1,5 +1,5 @@
 /**
- * Händler-Ansicht: die einfache Oberfläche für JTL-Kunden.
+ * Büro: die einfache Oberfläche für JTL-Kunden.
  *
  * Fünf Bereiche statt der Werkstatt mit ihren ETL-Begriffen. Alles hier ruft
  * vorhandene Endpunkte; die Werkstatt (/dashboard) bleibt unverändert und ist
@@ -17,7 +17,7 @@ export const S = {
   textDim: "var(--text-dim)", accent: "var(--accent)", accentFg: "var(--accent-fg)",
 };
 
-/** Knopf-Stile der Händler-Ansicht: einer betont, einer zurückhaltend. */
+/** Knopf-Stile des Büros: einer betont, einer zurückhaltend. */
 export const knopf = {
   haupt: {
     display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", minHeight: 38,

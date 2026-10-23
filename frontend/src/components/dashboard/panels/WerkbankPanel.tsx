@@ -59,7 +59,7 @@ export default function WerkbankPanel({ projectId, canEdit, startFrage = "" }) {
   const [laden, setLaden] = useState(true);
   const [fehler, setFehler] = useState(null);
 
-  // Aus der Händler-Ansicht mitgebrachte Frage („Was möchten Sie wissen?“)
+  // Aus dem Büro mitgebrachte Frage („Was möchten Sie wissen?“)
   const [beschreibung, setBeschreibung] = useState(startFrage);
   const [planLaeuft, setPlanLaeuft] = useState(false);
   const [fortschritt, setFortschritt] = useState("");

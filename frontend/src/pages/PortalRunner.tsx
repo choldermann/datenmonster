@@ -24,7 +24,7 @@ const S = {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-// eingebettet: wie im FormRunner – „seite“ = in der Händler-Ansicht (ohne Konto-Knöpfe,
+// eingebettet: wie im FormRunner – „seite“ = im Büro (ohne Konto-Knöpfe,
 // die stehen dort im Kopf), „inhalt“ = ganz ohne Kopf (Kennzahlen der Übersicht).
 export default function PortalRunner({ slug: slugProp = null, eingebettet = null }: { slug?: string | null; eingebettet?: null | "seite" | "inhalt" } = {}) {
   const routeParams = useParams();

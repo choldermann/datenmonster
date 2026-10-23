@@ -1,9 +1,9 @@
 /**
  * Ergebnisbereich eines Formularlaufs – gemeinsam für FormRunner (Editor,
- * Händler-Ansicht) und PortalRunner.
+ * Büro) und PortalRunner.
  *
  * Bis hierher waren beide Runner Kopien, die bei jeder Änderung auseinanderliefen
- * (Paritätsregel). Erster Schritt der Zusammenführung (Händler-Ansicht, Phase 5):
+ * (Paritätsregel). Erster Schritt der Zusammenführung (Büro, Phase 5):
  * alles nach den Eingabefeldern – Export-Ergebnisse, Reiterleiste, Widgets und
  * Rohtabellen für Aktionen ohne Widget – lebt jetzt nur noch hier.
  */
