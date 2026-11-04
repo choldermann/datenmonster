@@ -53,6 +53,7 @@ export default function Cockpits() {
   const navigate = useNavigate();
   const [liste, setListe] = useState(null);
   const [pins, setPins] = useState([]);
+  const [projekteAus, setProjekteAus] = useState([]);
   const [suche, setSuche] = useState("");
   const [fehler, setFehler] = useState(null);
   const [kopieVon, setKopieVon] = useState(null);
@@ -62,7 +63,10 @@ export default function Cockpits() {
   useEffect(() => {
     api.get("/api/start/cockpits").then(({ data }) => setListe(data || []))
       .catch((e) => setFehler(fehlerText(e)));
-    api.get("/api/start/einstellungen").then(({ data }) => setPins(data?.pins || [])).catch(() => {});
+    api.get("/api/start/einstellungen").then(({ data }) => {
+      setPins(data?.pins || []);
+      setProjekteAus(data?.projekte_aus || []);
+    }).catch(() => {});
   }, []);
 
   const umschalten = async (id) => {
@@ -76,21 +80,45 @@ export default function Cockpits() {
     }
   };
 
+  const projektUmschalten = async (pid) => {
+    const neu = projekteAus.includes(pid) ? projekteAus.filter((p) => p !== pid) : [...projekteAus, pid];
+    setProjekteAus(neu);
+    try {
+      const { data } = await api.put("/api/start/einstellungen", { projekte_aus: neu });
+      setProjekteAus(data?.projekte_aus || []);
+    } catch (e) {
+      setFehler(fehlerText(e));
+    }
+  };
+
+  // Alle Projekte mit Cockpits, unabhängig von Suche und Auswahl (0 = ohne Projekt).
+  const projekte = useMemo(() => {
+    const m = new Map();
+    for (const c of liste || []) {
+      if (c.art !== "cockpit") continue;
+      const k = c.project_id || 0;
+      if (!m.has(k)) m.set(k, { id: k, name: c.projekt || "Ohne Projekt", anzahl: 0 });
+      m.get(k).anzahl += 1;
+    }
+    return [...m.values()].sort((a, b) =>
+      (a.id === 0) - (b.id === 0) || a.name.localeCompare(b.name, "de", { sensitivity: "base" }));
+  }, [liste]);
+
   const gefiltert = useMemo(() => {
     const q = suche.trim().toLowerCase();
     return (liste || []).filter((c) => !q || `${c.name} ${c.intro} ${c.zusatz || ""}`.toLowerCase().includes(q));
   }, [liste, suche]);
-  const cockpits = gefiltert.filter((c) => c.art === "cockpit");
+  const cockpits = gefiltert.filter((c) => c.art === "cockpit" && !projekteAus.includes(c.project_id || 0));
   const berichte = gefiltert.filter((c) => c.art === "bericht");
   // Nach Projekt gliedern; Cockpits ohne Projekt zuletzt.
   const gruppen = useMemo(() => {
     const m = new Map();
     for (const c of cockpits) {
-      const k = c.projekt || "";
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(c);
+      const k = c.project_id || 0;
+      if (!m.has(k)) m.set(k, [c.projekt || "", []]);
+      m.get(k)[1].push(c);
     }
-    return [...m.entries()].sort(([a], [b]) =>
+    return [...m.values()].sort(([a], [b]) =>
       (a === "") - (b === "") || a.localeCompare(b, "de", { sensitivity: "base" }));
   }, [cockpits]);
 
@@ -112,6 +140,30 @@ export default function Cockpits() {
             aria-label="Cockpit suchen"
             style={{ width: "100%", minHeight: 42, padding: "8px 12px 8px 34px", borderRadius: 8,
               border: `1px solid ${S.border}`, backgroundColor: S.bgCard, color: S.textMain, fontSize: 14 }} />
+        </div>
+      )}
+      {projekte.length > 1 && (
+        <div role="group" aria-label="Projekte anzeigen" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {projekte.map((p) => {
+            const an = !projekteAus.includes(p.id);
+            return (
+              <button key={p.id} onClick={() => projektUmschalten(p.id)} aria-pressed={an}
+                title={an ? `${p.name} ausblenden` : `${p.name} einblenden`}
+                style={{ minHeight: 38, padding: "6px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13.5,
+                  display: "flex", alignItems: "center", gap: 8,
+                  border: `1px solid ${an ? S.accent : S.border}`,
+                  backgroundColor: an ? `color-mix(in srgb, ${S.accent} 14%, transparent)` : "transparent",
+                  color: an ? S.textBright : S.textDim, textDecoration: an ? "none" : "line-through" }}>
+                {p.name}
+                <span style={{ fontSize: 12, color: S.textDim, fontFamily: "var(--font-mono)" }}>{p.anzahl}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {projekte.length > 1 && projekte.every((p) => projekteAus.includes(p.id)) && (
+        <div style={{ ...karte, padding: 20, color: S.textDim }}>
+          Alle Projekte sind ausgeblendet. Klicken Sie oben auf ein Projekt, um seine Cockpits wieder zu sehen.
         </div>
       )}
       {liste === null && !fehler && <span style={{ color: S.textDim }}>Lädt…</span>}

@@ -246,12 +246,19 @@ def kennzahlen_anlegen(db, user, project_id: Optional[int] = None) -> dict:
 class EinstellungenIn(BaseModel):
     pins: Optional[List[int]] = None
     werkstatt_start: Optional[bool] = None
+    # Projekte, deren Cockpits auf der Cockpit-Seite ausgeblendet sind (0 = ohne
+    # Projekt). Gespeichert wird das Abgewählte, damit neue Projekte sichtbar starten.
+    projekte_aus: Optional[List[int]] = None
+
+
+def _einstellungen_out(e: dict) -> dict:
+    return {"pins": e.get("pins") or [], "werkstatt_start": bool(e.get("werkstatt_start")),
+            "projekte_aus": e.get("projekte_aus") or []}
 
 
 @router.get("/einstellungen")
 def einstellungen_lesen(user: User = Depends(get_current_user)):
-    e = _einstellungen(user)
-    return {"pins": e.get("pins") or [], "werkstatt_start": bool(e.get("werkstatt_start"))}
+    return _einstellungen_out(_einstellungen(user))
 
 
 @router.put("/einstellungen")
@@ -263,11 +270,15 @@ def einstellungen_speichern(data: EinstellungenIn, db: Session = Depends(get_db)
         # die Pins herausfinden, welche Formular-IDs es gibt.
         sichtbar = {f.id for f in _sichtbare_formulare(user, db)}
         e["pins"] = [i for i in dict.fromkeys(data.pins) if i in sichtbar][:12]
+    if data.projekte_aus is not None:
+        # Wie bei den Pins: nur Projekte, aus denen der Benutzer Formulare sieht.
+        projekte = {f.project_id or 0 for f in _sichtbare_formulare(user, db)}
+        e["projekte_aus"] = [i for i in dict.fromkeys(data.projekte_aus) if i in projekte]
     if data.werkstatt_start is not None:
         e["werkstatt_start"] = bool(data.werkstatt_start) and not _portal(user)
     user.einstellungen = e
     safe_commit(db)
-    return {"pins": e.get("pins") or [], "werkstatt_start": bool(e.get("werkstatt_start"))}
+    return _einstellungen_out(e)
 
 
 @router.get("/status")
