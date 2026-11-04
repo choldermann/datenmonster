@@ -91,11 +91,10 @@ export default function Cockpits() {
     }
   };
 
-  // Alle Projekte mit Cockpits, unabhängig von Suche und Auswahl (0 = ohne Projekt).
+  // Alle Projekte mit Cockpits oder Berichten, unabhängig von Suche und Auswahl (0 = ohne Projekt).
   const projekte = useMemo(() => {
     const m = new Map();
     for (const c of liste || []) {
-      if (c.art !== "cockpit") continue;
       const k = c.project_id || 0;
       if (!m.has(k)) m.set(k, { id: k, name: c.projekt || "Ohne Projekt", anzahl: 0 });
       m.get(k).anzahl += 1;
@@ -108,8 +107,9 @@ export default function Cockpits() {
     const q = suche.trim().toLowerCase();
     return (liste || []).filter((c) => !q || `${c.name} ${c.intro} ${c.zusatz || ""}`.toLowerCase().includes(q));
   }, [liste, suche]);
-  const cockpits = gefiltert.filter((c) => c.art === "cockpit" && !projekteAus.includes(c.project_id || 0));
-  const berichte = gefiltert.filter((c) => c.art === "bericht");
+  const sichtbar = gefiltert.filter((c) => !projekteAus.includes(c.project_id || 0));
+  const cockpits = sichtbar.filter((c) => c.art === "cockpit");
+  const berichte = sichtbar.filter((c) => c.art === "bericht");
   // Nach Projekt gliedern; Cockpits ohne Projekt zuletzt.
   const gruppen = useMemo(() => {
     const m = new Map();
