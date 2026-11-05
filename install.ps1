@@ -207,6 +207,7 @@ BACKEND_PORT=$BackendPort
 
 # Sicherheit
 SECRET_KEY=$secretKey
+DIENST_TOKEN=$(-join ((1..40) | ForEach-Object { "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"[(Get-Random -Maximum 62)] }))
 JWT_ALGORITHM=HS256
 JWT_EXPIRE_MINUTES=1440
 

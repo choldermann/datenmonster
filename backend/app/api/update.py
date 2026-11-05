@@ -3,6 +3,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from app.api.auth import get_current_user
 from app.models.user import User
+from app.core.dienst_token import dienst_header
 
 router = APIRouter(prefix="/api/update", tags=["update"])
 
@@ -23,7 +24,7 @@ def check_update(user: User = Depends(get_current_user)):
         return {"current": "—", "latest": "—", "up_to_date": True, "behind": 0,
                 "disabled": True, "detail": AUS_TEXT}
     try:
-        r = httpx.get(f"{UPDATER_URL}/version", timeout=10)
+        r = httpx.get(f"{UPDATER_URL}/version", headers=dienst_header(), timeout=10)
         return r.json()
     except Exception as e:
         return {
@@ -41,7 +42,7 @@ def get_changelog(user: User = Depends(get_current_user)):
     if UPDATER_AUS:
         return []
     try:
-        r = httpx.get(f"{UPDATER_URL}/changelog", timeout=10)
+        r = httpx.get(f"{UPDATER_URL}/changelog", headers=dienst_header(), timeout=10)
         return r.json()
     except Exception:
         return []
@@ -55,7 +56,7 @@ def install_update(user: User = Depends(get_current_user)):
     if UPDATER_AUS:
         raise HTTPException(409, AUS_TEXT)
     try:
-        r = httpx.post(f"{UPDATER_URL}/update/start", timeout=10)
+        r = httpx.post(f"{UPDATER_URL}/update/start", headers=dienst_header(), timeout=10)
         return r.json()
     except Exception as e:
         return {"ok": False, "error": str(e)[:300]}
@@ -68,7 +69,7 @@ def update_status(user: User = Depends(get_current_user)):
         return {"step": None, "msg": AUS_TEXT, "done": True, "error": False,
                 "disabled": True, "detail": ""}
     try:
-        r = httpx.get(f"{UPDATER_URL}/update/status", timeout=5)
+        r = httpx.get(f"{UPDATER_URL}/update/status", headers=dienst_header(), timeout=5)
         return r.json()
     except Exception as e:
         return {"step": None, "msg": "", "done": False, "error": True, "detail": str(e)[:200]}
@@ -82,6 +83,6 @@ def compose_status(user: User = Depends(get_current_user)):
     if UPDATER_AUS:
         return {"ergebnis": "aus", "hinweis": AUS_TEXT}
     try:
-        return httpx.get(f"{UPDATER_URL}/compose/status", timeout=5).json()
+        return httpx.get(f"{UPDATER_URL}/compose/status", headers=dienst_header(), timeout=5).json()
     except Exception as e:
         return {"ergebnis": "unbekannt", "hinweis": str(e)[:200]}

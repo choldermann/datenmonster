@@ -191,6 +191,8 @@ BACKEND_PORT=${BACKEND_PORT}
 
 # ─── Sicherheit ───────────────────────────────────────────────────────────────
 SECRET_KEY=${SECRET_KEY}
+# Schlüssel zwischen Backend, Updater und Plugin-Manager
+DIENST_TOKEN=$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 40 || true)
 
 # ─── Lizenz ───────────────────────────────────────────────────────────────────
 # Stabile, pro Host eindeutige machine_id für die Lizenzbindung. Aus dem echten

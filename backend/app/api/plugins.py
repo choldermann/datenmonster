@@ -5,6 +5,7 @@ from typing import List, Optional
 import requests
 from app.core.database import get_db
 from app.core.config import PLUGIN_MANAGER_URL
+from app.core.dienst_token import dienst_header
 from app.api.auth import get_current_user
 from app.api.license import require_feature
 from app.models.user import User
@@ -21,7 +22,7 @@ def _pm(path: str) -> str:
 
 def _pm_get(path: str) -> dict:
     try:
-        resp = requests.get(_pm(path), timeout=10.0)
+        resp = requests.get(_pm(path), headers=dienst_header(), timeout=10.0)
         resp.raise_for_status()
         return resp.json()
     except requests.HTTPError as e:
@@ -32,7 +33,7 @@ def _pm_get(path: str) -> dict:
 
 def _pm_post(path: str, body: dict = None) -> dict:
     try:
-        resp = requests.post(_pm(path), json=body or {}, timeout=60.0)
+        resp = requests.post(_pm(path), json=body or {}, headers=dienst_header(), timeout=60.0)
         resp.raise_for_status()
         return resp.json()
     except requests.HTTPError as e:
@@ -43,7 +44,7 @@ def _pm_post(path: str, body: dict = None) -> dict:
 
 def _pm_delete(path: str) -> dict:
     try:
-        resp = requests.delete(_pm(path), timeout=10.0)
+        resp = requests.delete(_pm(path), headers=dienst_header(), timeout=10.0)
         resp.raise_for_status()
         return resp.json()
     except requests.HTTPError as e:
@@ -403,7 +404,7 @@ def install_dienst_plugin(plugin_id: str, db: Session = Depends(get_db),
         try:
             with open(tmp.name, "rb") as fh:
                 r = requests.post(_pm(f"/plugins/{plugin_id}/load-image"), data=fh,
-                                  headers={"Content-Type": "application/octet-stream"}, timeout=600)
+                                  headers={"Content-Type": "application/octet-stream", **dienst_header()}, timeout=600)
             r.raise_for_status()
             load_result = r.json()
         except requests.HTTPError as e:

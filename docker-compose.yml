@@ -8,15 +8,18 @@ services:
     # Fester Hostname → stabile machine_id für die Lizenzbindung (sonst Container-ID-Hash,
     # der sich bei jedem Update/Recreate ändert und die Aktivierung bricht).
     hostname: ${LICENSE_HOSTNAME:-datenmonster}
+    # Nur auf dem Server selbst erreichbar. Von außen geht alles über das
+    # Frontend (nginx leitet /api/ weiter). Wer das Backend doch direkt aus dem
+    # Netz braucht: BACKEND_BIND=0.0.0.0 in der .env.
     ports:
-      - "${BACKEND_PORT:-8000}:8000"
+      - "${BACKEND_BIND:-127.0.0.1}:${BACKEND_PORT:-8000}:8000"
     volumes:
       - datenmonster-data:/app/uploads
       # Sicherungen liegen bewusst NICHT im Daten-Volume, sondern daneben auf dem
       # Host: ein verlorenes Volume nimmt sonst die Sicherungen gleich mit. So
       # sehen die Oberfläche und ./backup.sh dasselbe Verzeichnis.
       - ./backups:/app/backups
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Kein Docker-Socket mehr: die Container-Übersicht läuft über den Updater.
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
@@ -27,6 +30,7 @@ services:
       - REDIS_URL=redis://redis:6379
       - OLLAMA_BASE_URL=http://ollama:11434
       - UPDATER_URL=http://updater:9000
+      - DIENST_TOKEN=${DIENST_TOKEN:-}
     depends_on:
       - redis
     networks:
@@ -55,6 +59,7 @@ services:
     environment:
       - PLUGIN_NETWORK=datenmonster
       - REDIS_URL=redis://redis:6379
+      - DIENST_TOKEN=${DIENST_TOKEN:-}
     networks:
       - datenmonster
     restart: unless-stopped
@@ -109,6 +114,7 @@ services:
       - COMPOSE_PROJECT_NAME=datenmonster
       - GITHUB_REPO=choldermann/datenmonster
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
+      - DIENST_TOKEN=${DIENST_TOKEN:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./:/project

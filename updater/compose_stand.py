@@ -32,7 +32,8 @@ PORT_VARIABLEN = {
 # Variablen, die jede Installation braucht. Fehlt eine, wird sie mit dem
 # erzeugten Wert ergänzt. Vorhandene Werte werden nie verändert.
 ENV_PFLICHT: dict = {
-    # "UPDATER_TOKEN": lambda: secrets.token_urlsafe(32),
+    # Schlüssel zwischen Backend, Updater und Plugin-Manager
+    "DIENST_TOKEN": lambda: secrets.token_urlsafe(32),
 }
 
 

@@ -2,11 +2,28 @@ import subprocess, os, logging, json, threading, re, time, shlex, shutil
 import requests
 import docker as docker_sdk
 
-from flask import Flask, jsonify
+import hmac
+
+from flask import Flask, jsonify, request
 
 import compose_stand as stand
 
 app = Flask(__name__)
+
+# Gemeinsamer Schlüssel mit dem Backend (siehe backend/app/core/dienst_token.py).
+# Im Docker-Netz hängen auch Ollama, Redis und Dienst-Plugins mit fremden Images –
+# ohne Schlüssel hätte jedes davon ein Update oder einen Container-Neustart
+# auslösen können. Leer = Prüfung aus (Übergang, bis die .env ergänzt ist).
+DIENST_TOKEN = os.getenv("DIENST_TOKEN", "").strip()
+
+
+@app.before_request
+def _schluessel_pruefen():
+    if not DIENST_TOKEN or request.path == "/health":
+        return None
+    if not hmac.compare_digest(request.headers.get("X-Dienst-Token", ""), DIENST_TOKEN):
+        return jsonify({"error": "nicht berechtigt"}), 401
+    return None
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -293,8 +310,11 @@ def _run_update():
 
     try:
         # Disk-Check und Prune
-        _log("Starte docker system prune -af …")
-        rc_prune, out_prune = _safe_run(["docker", "system", "prune", "-af"])
+        # Nur namenlose Altstände (dangling) – früher `system prune -af`, das auf
+        # einem geteilten Server auch Images, Netze und Container fremder
+        # Programme löschte.
+        _log("Räume alte Datenmonster-Images auf …")
+        rc_prune, out_prune = _safe_run(["docker", "image", "prune", "-f"])
         _log(f"Prune RC={rc_prune}: {out_prune[:400]}")
 
         rc0, df0 = _safe_run(["df", "-BM", "--output=avail", "/"])
@@ -544,6 +564,83 @@ def _beim_start():
             json.dump(erg, f, ensure_ascii=False, indent=1)
     except Exception as exc:
         logger.warning("Abgleich-Status nicht schreibbar: %s", exc)
+
+
+# ── Container-Übersicht fürs Monitoring ─────────────────────────────────────
+# Lag früher im Backend, das dafür den Docker-Socket brauchte. Wer das Backend
+# übernimmt, hätte damit root auf dem Server gehabt. Der Updater hat den Socket
+# ohnehin; das Backend fragt hier nach (mit Schlüssel, Admin-Prüfung dort).
+
+def _docker():
+    return docker_sdk.DockerClient(base_url="unix:///var/run/docker.sock")
+
+
+def _eigener_container(client, cid: str):
+    c = client.containers.get(cid)
+    netze = (c.attrs.get("NetworkSettings") or {}).get("Networks") or {}
+    if "datenmonster" not in netze:
+        raise PermissionError("Dieser Container gehört nicht zu Datenmonster")
+    return c
+
+
+@app.get("/docker/containers")
+def docker_liste():
+    try:
+        client = _docker()
+        result = []
+        for c in client.containers.list(all=True, filters={"network": "datenmonster"}):
+            ports = []
+            for cport, bindungen in (c.ports or {}).items():
+                if bindungen:
+                    ports += [f"{b['HostPort']}→{cport}" for b in bindungen]
+                else:
+                    ports.append(cport)
+            result.append({
+                "id": c.short_id,
+                "name": c.name,
+                "image": c.attrs.get("Config", {}).get("Image") or c.attrs.get("Image", "")[:12],
+                "status": c.status,
+                "ports": ports,
+                "created": c.attrs.get("Created", "")[:19].replace("T", " "),
+            })
+        result.sort(key=lambda x: x["name"])
+        return jsonify({"containers": result})
+    except Exception as e:
+        return jsonify({"containers": [], "error": str(e)})
+
+
+@app.post("/docker/<cid>/<aktion>")
+def docker_aktion(cid, aktion):
+    if aktion not in ("start", "stop", "restart"):
+        return jsonify({"ok": False, "error": "unbekannte Aktion"}), 400
+    try:
+        client = _docker()
+        c = _eigener_container(client, cid)
+        if c.name == SELF_CONTAINER and aktion != "start":
+            return jsonify({"ok": False, "error": "Der Updater kann sich hier nicht selbst anhalten"}), 400
+        if aktion == "start":
+            c.start()
+        elif aktion == "stop":
+            c.stop(timeout=10)
+        else:
+            c.restart(timeout=10)
+        return jsonify({"ok": True, "status": client.containers.get(cid).status})
+    except PermissionError as e:
+        return jsonify({"ok": False, "error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.get("/docker/<cid>/logs")
+def docker_logs(cid):
+    try:
+        zeilen = max(1, min(int(request.args.get("lines", 100)), 5000))
+        c = _eigener_container(_docker(), cid)
+        return jsonify({"logs": c.logs(tail=zeilen, timestamps=True).decode("utf-8", errors="replace")})
+    except PermissionError as e:
+        return jsonify({"logs": "", "error": str(e)}), 403
+    except Exception as e:
+        return jsonify({"logs": "", "error": str(e)})
 
 
 @app.get("/compose/status")

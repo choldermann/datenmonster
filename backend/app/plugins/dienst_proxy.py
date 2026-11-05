@@ -3,6 +3,8 @@ from typing import List
 
 import requests
 
+from app.core.dienst_token import dienst_header
+
 from app.plugins.base import SourcePlugin, TargetPlugin
 
 logger = logging.getLogger(__name__)
@@ -50,7 +52,7 @@ class DienstPlugin(SourcePlugin, TargetPlugin):
     def _proxy(self, endpoint: str, body: dict) -> dict:
         url = f"{self._pm_url}/plugins/{self.id}/proxy/{endpoint}"
         try:
-            resp = requests.post(url, json=body, timeout=120.0)
+            resp = requests.post(url, json=body, headers=dienst_header(), timeout=120.0)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:

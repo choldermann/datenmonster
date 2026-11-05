@@ -14,7 +14,28 @@ from pydantic import BaseModel
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Datenmonster Plugin Manager", version="1.0.0")
+app = FastAPI(title="Datenmonster Plugin Manager", version="1.0.0",
+              docs_url=None, redoc_url=None, openapi_url=None)
+
+# Gemeinsamer Schlüssel mit dem Backend (backend/app/core/dienst_token.py).
+# Im selben Docker-Netz laufen die Dienst-Plugins (fremde Images) – ohne
+# Schlüssel hätten sie hier Container starten oder Images laden können.
+# Frei bleiben nur /health und der Event-Rückkanal der Plugins.
+# Leer = Prüfung aus (Übergang, bis die .env ergänzt ist).
+import hmac
+import re as _re
+from fastapi.responses import JSONResponse
+
+DIENST_TOKEN = os.getenv("DIENST_TOKEN", "").strip()
+_FREI = _re.compile(r"^/(health|plugins/[^/]+/event)$")
+
+
+@app.middleware("http")
+async def _schluessel_pruefen(request: Request, call_next):
+    if DIENST_TOKEN and not _FREI.match(request.url.path):
+        if not hmac.compare_digest(request.headers.get("X-Dienst-Token", ""), DIENST_TOKEN):
+            return JSONResponse({"detail": "nicht berechtigt"}, status_code=401)
+    return await call_next(request)
 
 REGISTRY_FILE = Path(os.getenv("REGISTRY_FILE", "/data/plugins.json"))
 PLUGIN_NETWORK = os.getenv("PLUGIN_NETWORK", "datenmonster")

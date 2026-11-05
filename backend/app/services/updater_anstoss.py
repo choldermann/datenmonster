@@ -17,6 +17,8 @@ import time
 
 import httpx
 
+from app.core.dienst_token import dienst_header
+
 logger = logging.getLogger(__name__)
 
 UPDATER = "datenmonster-updater"
@@ -25,7 +27,7 @@ PROJECT_DIR = "/project"
 
 def _update_laeuft(url: str) -> bool:
     try:
-        st = httpx.get(f"{url}/update/status", timeout=5).json()
+        st = httpx.get(f"{url}/update/status", headers=dienst_header(), timeout=5).json()
         return bool(st.get("step")) and not st.get("done") and not st.get("error")
     except Exception:
         return False

@@ -54,6 +54,7 @@ def load_all_plugins(db=None):
 def load_dienst_plugins(db=None):
     """Lädt eigener Dienst Plugin-Metadaten vom Plugin Manager und registriert sie."""
     from app.core.config import PLUGIN_MANAGER_URL
+    from app.core.dienst_token import dienst_header
     from app.plugins.registry import registry
     from app.plugins.dienst_proxy import DienstPlugin
 
@@ -62,7 +63,7 @@ def load_dienst_plugins(db=None):
         return
 
     try:
-        resp = requests.get(f"{PLUGIN_MANAGER_URL}/plugins", timeout=5.0)
+        resp = requests.get(f"{PLUGIN_MANAGER_URL}/plugins", headers=dienst_header(), timeout=5.0)
         resp.raise_for_status()
         plugins_data = resp.json()
     except Exception as e:

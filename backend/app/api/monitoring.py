@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -225,106 +226,66 @@ def _nur_admin(user: User) -> None:
         raise HTTPException(403, "Nur Administratoren")
 
 
-def _eigener_container(client, container_id: str):
-    """Nur Container im Datenmonster-Netz – fremde Stacks auf demselben Server
-    gehen diese Oberfläche nichts an (und ihre Logs können Geheimnisse enthalten)."""
-    c = client.containers.get(container_id)
-    netze = (c.attrs.get("NetworkSettings") or {}).get("Networks") or {}
-    if "datenmonster" not in netze:
-        raise HTTPException(403, "Dieser Container gehört nicht zu Datenmonster")
-    return c
+# Container-Übersicht: fragt den Updater, der den Docker-Socket ohnehin hat.
+# Das Backend selbst hat seit Sicherheitsstufe 3 keinen Socket mehr – wer es
+# übernimmt, soll damit nicht root auf dem Server werden.
+def _updater(methode: str, pfad: str, **kw):
+    import httpx
+    from app.core.dienst_token import dienst_header
+    url = os.getenv("UPDATER_URL", "").strip()
+    if not url:
+        return None, "Container-Übersicht nicht verfügbar: der Updater ist in dieser Installation abgeschaltet."
+    try:
+        r = httpx.request(methode, f"{url}{pfad}", headers=dienst_header(), timeout=30, **kw)
+        return r.json(), None
+    except Exception as e:
+        return None, f"Updater nicht erreichbar: {str(e)[:200]}"
 
 
 @router.get("/docker")
 def get_docker_containers(user: User = Depends(get_current_user)):
-    """Listet alle Docker-Container mit Status, Image und Ports."""
+    """Listet die Datenmonster-Container mit Status, Image und Ports."""
     _nur_admin(user)
-    try:
-        import docker as docker_sdk
-        client = docker_sdk.from_env()
-        containers = client.containers.list(all=True, filters={"network": "datenmonster"})
-        result = []
-        for c in containers:
-            ports = []
-            for container_port, host_bindings in (c.ports or {}).items():
-                if host_bindings:
-                    for b in host_bindings:
-                        ports.append(f"{b['HostPort']}→{container_port}")
-                else:
-                    ports.append(container_port)
-            image_name = c.attrs.get("Config", {}).get("Image") or c.attrs.get("Image", "")[:12]
-            result.append({
-                "id": c.short_id,
-                "name": c.name,
-                "image": image_name,
-                "status": c.status,
-                "ports": ports,
-                "created": c.attrs.get("Created", "")[:19].replace("T", " "),
-            })
-        result.sort(key=lambda x: x["name"])
-        return {"containers": result}
-    except Exception as e:
-        return {"containers": [], "error": str(e)}
+    daten, fehler = _updater("GET", "/docker/containers")
+    return daten if daten is not None else {"containers": [], "error": fehler}
+
+
+def _aktion(container_id: str, aktion: str):
+    daten, fehler = _updater("POST", f"/docker/{container_id}/{aktion}")
+    if daten is None:
+        return {"ok": False, "error": fehler}
+    if daten.get("error") == "Dieser Container gehört nicht zu Datenmonster":
+        raise HTTPException(403, daten["error"])
+    return daten
 
 
 @router.post("/docker/{container_id}/start")
 def docker_start(container_id: str, user: User = Depends(get_current_user)):
     _nur_admin(user)
-    try:
-        import docker as docker_sdk
-        client = docker_sdk.from_env()
-        c = _eigener_container(client, container_id)
-        c.start()
-        return {"ok": True, "status": client.containers.get(container_id).status}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return _aktion(container_id, "start")
 
 
 @router.post("/docker/{container_id}/stop")
 def docker_stop(container_id: str, user: User = Depends(get_current_user)):
     _nur_admin(user)
-    try:
-        import docker as docker_sdk
-        client = docker_sdk.from_env()
-        c = _eigener_container(client, container_id)
-        c.stop(timeout=10)
-        return {"ok": True, "status": client.containers.get(container_id).status}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return _aktion(container_id, "stop")
 
 
 @router.post("/docker/{container_id}/restart")
 def docker_restart(container_id: str, user: User = Depends(get_current_user)):
     _nur_admin(user)
-    try:
-        import docker as docker_sdk
-        client = docker_sdk.from_env()
-        c = _eigener_container(client, container_id)
-        c.restart(timeout=10)
-        return {"ok": True, "status": client.containers.get(container_id).status}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    return _aktion(container_id, "restart")
 
 
 @router.get("/docker/{container_id}/logs")
 def docker_logs(container_id: str, lines: int = 100, user: User = Depends(get_current_user)):
     _nur_admin(user)
-    try:
-        import docker as docker_sdk
-        client = docker_sdk.from_env()
-        c = _eigener_container(client, container_id)
-        log_bytes = c.logs(tail=max(1, min(int(lines), 5000)), timestamps=True)
-        return {"logs": log_bytes.decode("utf-8", errors="replace")}
-    except HTTPException:
-        raise
-    except Exception as e:
-        return {"logs": "", "error": str(e)}
+    daten, fehler = _updater("GET", f"/docker/{container_id}/logs", params={"lines": lines})
+    if daten is None:
+        return {"logs": "", "error": fehler}
+    if daten.get("error") == "Dieser Container gehört nicht zu Datenmonster":
+        raise HTTPException(403, daten["error"])
+    return daten
 
 
 @router.delete("/logs/{log_id}")
