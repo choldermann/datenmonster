@@ -155,7 +155,9 @@ def _meta(engine, cfg: dict) -> dict:
             "pflicht": (nullable == "NO" and default is None and not auto) or name in pflicht_extra,
             "auto": auto,
             "schluessel": name == key,
-            "bearbeitbar": not auto and name not in readonly and name != key,
+            # Ausgeblendet = weder lesbar noch schreibbar (siehe _lesbare_spalten)
+            "bearbeitbar": (not auto and name not in readonly and name != key
+                            and name not in ausgeblendet),
             "ausgeblendet": name in ausgeblendet,
             "auswahl": auswahl.get(name) or None,
         })
@@ -248,9 +250,18 @@ def _protokoll(db, f: Form, user: User, aktion: str, text_: str, details: dict) 
         pass
 
 
+def _lesbare_spalten(meta) -> list:
+    """Ausgeblendete Spalten verlassen den Server nicht. Früher kamen sie mit
+    und die Oberfläche hat sie nur nicht gezeigt – in den Entwicklertools (oder
+    für Portal-Benutzer per direktem Aufruf) standen sie trotzdem. Schlüssel und
+    Aktiv-Spalte braucht die Maske immer."""
+    return [s["name"] for s in meta["spalten"]
+            if not s["ausgeblendet"] or s["schluessel"] or s["name"] == meta.get("aktiv_spalte")]
+
+
 def _zeile_lesen(c, engine, meta, key_wert) -> Optional[dict]:
     q = _q(engine)
-    cols = ", ".join(q(s["name"]) for s in meta["spalten"])
+    cols = ", ".join(q(n) for n in _lesbare_spalten(meta))
     r = c.execute(text(f"SELECT {cols} FROM {_voll(engine, meta)} WHERE {q(meta['key'])} = :k"),
                   {"k": key_wert}).mappings().first()
     return {k: _json(v) for k, v in r.items()} if r else None
@@ -265,7 +276,7 @@ def zeilen(form_id: int, widget_id: str, db: Session = Depends(get_db),
     engine = _engine(conn_id)
     meta = _meta(engine, cfg)
     q = _q(engine)
-    cols = ", ".join(q(s["name"]) for s in meta["spalten"])
+    cols = ", ".join(q(n) for n in _lesbare_spalten(meta))
     sort = cfg.get("sort_column") or meta["key"]
     if sort not in {s["name"] for s in meta["spalten"]}:
         sort = meta["key"]

@@ -282,6 +282,8 @@ def put_schedule(body: ScheduleIn, db: Session = Depends(get_db),
 
     s.cron_expr = body.cron_expr.strip()
     s.active = bool(body.active)
+    from app.core.mail_empfaenger import pruefe_neue
+    pruefe_neue(db, user, body.email_to, s.email_to)
     s.email_to = (body.email_to or "").strip() or None
     s.min_severity = body.min_severity or "warnung"
     s.only_new = bool(body.only_new)

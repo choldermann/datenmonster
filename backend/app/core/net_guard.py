@@ -14,6 +14,7 @@ Wird VOR jedem ausgehenden Request aufgerufen (inkl. jedem Redirect-Hop), damit 
 DNS-Rebinding/Redirect-Umleitungen auf interne Ziele erkannt werden."""
 import ipaddress
 import socket
+import threading
 import time
 import logging
 from urllib.parse import urlparse, urljoin
@@ -81,6 +82,85 @@ def _entry_matches(entry: str, host: str, ips: set) -> bool:
     return h == entry or h.endswith("." + entry)
 
 
+def _echte_adresse(ip: str):
+    """IPv4 in IPv6 verpackt (::ffff:127.0.0.1) wie IPv4 behandeln – sonst
+    rutschen Loopback und Metadata als vermeintlich öffentliche IPv6 durch."""
+    addr = ipaddress.ip_address(ip.split("%", 1)[0])
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        return addr.ipv4_mapped
+    return addr
+
+
+def _ziel_pruefen(host: str, ips: set) -> None:
+    """Politik auf Host + IPs anwenden. Wirft EgressBlocked."""
+    policy = _load_policy()
+    allow, block, allow_loopback = policy["allow"], policy["block"], policy["allow_loopback"]
+
+    # Explizite Allowlist übersteuert alle folgenden Blocks (z. B. eine interne API).
+    if any(_entry_matches(e, host, ips) for e in allow):
+        return
+
+    for ip in ips:
+        addr = _echte_adresse(ip)
+        if str(addr) in _METADATA_IPS or addr.is_link_local:
+            raise EgressBlocked(f"Cloud-Metadata/Link-Local-Ziel blockiert: {host} → {ip}")
+        # 0.0.0.0 / :: erreicht unter Linux den eigenen Rechner – wie Loopback
+        if (addr.is_loopback or addr.is_unspecified) and not allow_loopback:
+            raise EgressBlocked(f"Loopback-Ziel blockiert: {host} → {ip}")
+
+    if any(_entry_matches(e, host, ips) for e in block):
+        raise EgressBlocked(f"Ziel steht auf der Blockliste: {host}")
+
+    # Private/interne Ziele sind erlaubt (On-Prem), werden aber protokolliert.
+    for ip in ips:
+        addr = _echte_adresse(ip)
+        if addr.is_private and not addr.is_loopback:
+            log.info("Egress zu internem/privatem Ziel erlaubt: %s → %s", host, ip)
+            break
+
+
+# ── Schutz gegen DNS-Rebinding ───────────────────────────────────────────────
+# assert_url_allowed löst den Namen auf und prüft – verbunden wird danach aber
+# über eine ZWEITE Auflösung in urllib3. Ein DNS-Server mit TTL 0 kann dazwischen
+# auf 127.0.0.1 umschwenken. Deshalb prüft guarded_request zusätzlich genau die
+# IP, mit der tatsächlich verbunden wird (Hook in urllib3, nur solange ein
+# geschützter Request in diesem Thread läuft – sonst unverändert).
+_lokal = threading.local()
+_original_create_connection = None
+
+
+def _geschuetzte_verbindung(address, *args, **kwargs):
+    if not getattr(_lokal, "aktiv", False):
+        return _original_create_connection(address, *args, **kwargs)
+    host, port = address
+    try:
+        infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    except socket.gaierror as e:
+        raise EgressBlocked(f"Host nicht auflösbar: {host} ({e})")
+    letzter = None
+    for _fam, _typ, _proto, _name, sockaddr in infos:
+        ip = sockaddr[0]
+        _ziel_pruefen(host, {ip})
+        try:
+            # TLS/SNI und Zertifikatsprüfung nutzen weiter den Hostnamen
+            return _original_create_connection((ip, port), *args, **kwargs)
+        except OSError as e:
+            letzter = e
+    raise letzter or OSError(f"Keine Verbindung zu {host}")
+
+
+def _hook_installieren():
+    global _original_create_connection
+    if _original_create_connection is not None:
+        return
+    import urllib3.util.connection as u3
+    _original_create_connection = u3.create_connection
+    u3.create_connection = _geschuetzte_verbindung
+
+
+_hook_installieren()
+
+
 def assert_url_allowed(url: str) -> set:
     """Prüft, ob `url` als ausgehendes Ziel erlaubt ist. Wirft EgressBlocked, wenn nicht.
     Gibt die aufgelösten IPs zurück (Debug/Logging)."""
@@ -101,29 +181,7 @@ def assert_url_allowed(url: str) -> set:
     if not ips:
         raise EgressBlocked(f"Keine IP für Host: {host}")
 
-    policy = _load_policy()
-    allow, block, allow_loopback = policy["allow"], policy["block"], policy["allow_loopback"]
-
-    # Explizite Allowlist übersteuert alle folgenden Blocks (z. B. eine interne API).
-    if any(_entry_matches(e, host, ips) for e in allow):
-        return ips
-
-    for ip in ips:
-        addr = ipaddress.ip_address(ip)
-        if str(addr) in _METADATA_IPS or addr.is_link_local:
-            raise EgressBlocked(f"Cloud-Metadata/Link-Local-Ziel blockiert: {host} → {ip}")
-        if addr.is_loopback and not allow_loopback:
-            raise EgressBlocked(f"Loopback-Ziel blockiert: {host} → {ip}")
-
-    if any(_entry_matches(e, host, ips) for e in block):
-        raise EgressBlocked(f"Ziel steht auf der Blockliste: {host}")
-
-    # Private/interne Ziele sind erlaubt (On-Prem), werden aber protokolliert.
-    for ip in ips:
-        addr = ipaddress.ip_address(ip)
-        if addr.is_private and not addr.is_loopback:
-            log.info("Egress zu internem/privatem Ziel erlaubt: %s → %s", host, ip)
-            break
+    _ziel_pruefen(host, ips)
     return ips
 
 
@@ -132,6 +190,14 @@ def guarded_request(session, method: str, url: str, allow_redirects: bool = True
     """Wie session.request(), aber SSRF-geprüft – auch für jeden Redirect-Hop. Folgt
     Redirects manuell (max. 5), damit ein 30x nicht unbemerkt auf ein internes Ziel führt."""
     assert_url_allowed(url)
+    _lokal.aktiv = True
+    try:
+        return _redirects_folgen(session, method, url, allow_redirects, **kwargs)
+    finally:
+        _lokal.aktiv = False
+
+
+def _redirects_folgen(session, method: str, url: str, allow_redirects: bool, **kwargs):
     resp = session.request(method.upper(), url, allow_redirects=False, **kwargs)
     if not allow_redirects:
         return resp

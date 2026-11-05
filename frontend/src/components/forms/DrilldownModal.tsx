@@ -1,3 +1,4 @@
+import { csvZelle } from "../../utils/csvSicher";
 import { useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
@@ -98,7 +99,7 @@ function DokumentAnsicht({ row, spalte, dateiSpalte, hidden }) {
 // CSV aus Zeilen bauen (RFC-4180-konform: Felder mit " , \n werden gequotet)
 function toCsv(columns, rows) {
   const esc = (v) => {
-    const s = v == null ? "" : String(v);
+    const s = csvZelle(v);
     return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const head = columns.map(esc).join(";");

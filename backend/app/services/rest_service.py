@@ -172,6 +172,37 @@ def _resolve_dict(d: dict, variables: Optional[dict] = None) -> dict:
     return {k: _resolve_templates(str(v), variables) for k, v in d.items()}
 
 
+# Query-Parameter, deren Wert nie angezeigt oder im Verlauf gespeichert wird.
+_SENSITIVE_PARAMS = {
+    "api_key", "apikey", "api-key", "key", "token", "access_token", "auth", "auth_token",
+    "secret", "client_secret", "password", "passwd", "pw", "signature", "sig", "code",
+    "refresh_token", "session", "sessionid",
+}
+
+
+def mask_params(params: dict, extra=()) -> dict:
+    extra = {e.lower() for e in extra}
+    return {k: ("***" if k.lower() in _SENSITIVE_PARAMS or k.lower() in extra else v)
+            for k, v in (params or {}).items()}
+
+
+def mask_url(url: str, extra=()) -> str:
+    """URL mit geschwärzten Geheimnissen in der Query (?api_key=… → ***) und
+    ohne Benutzer:Passwort@ – für Anzeige und Verlauf."""
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    try:
+        teile = urlsplit(url or "")
+    except ValueError:
+        return url
+    netloc = teile.netloc
+    if "@" in netloc:
+        netloc = "***@" + netloc.rsplit("@", 1)[1]
+    extra = {e.lower() for e in extra}
+    query = urlencode([(k, "***" if k.lower() in _SENSITIVE_PARAMS or k.lower() in extra else v)
+                       for k, v in parse_qsl(teile.query, keep_blank_values=True)], safe="*{}")
+    return urlunsplit((teile.scheme, netloc, teile.path, query, teile.fragment))
+
+
 def _mask_headers(headers: dict) -> dict:
     """Header-Kopie, in der sensible Werte durch *** ersetzt sind."""
     return {
@@ -256,8 +287,8 @@ def _get_oauth2_token(
     if cfg.get("scope"):
         data["scope"] = cfg["scope"]
 
-    assert_url_allowed(cfg["token_url"])  # SSRF-Schutz auch für den Token-Endpoint
-    resp = requests.post(cfg["token_url"], data=data, timeout=15)
+    # SSRF-Schutz auch für den Token-Endpoint – inkl. Redirects und Rebinding
+    resp = guarded_request(requests.Session(), "POST", cfg["token_url"], data=data, timeout=15)
     resp.raise_for_status()
     token_data = resp.json()
     token = token_data["access_token"]
@@ -928,9 +959,9 @@ def execute_request(
     })
     ergebnis["request"] = {
         "method": method,
-        "url": resp.url,
+        "url": mask_url(resp.url, auth_param_keys),
         "headers": sichtbare_headers,
-        "params": {k: ("***" if k in auth_param_keys else v) for k, v in params.items()},
+        "params": mask_params(params, auth_param_keys),
         "body_type": cfg.get("body_type") or "none",
     }
     ergebnis["success"]          = True

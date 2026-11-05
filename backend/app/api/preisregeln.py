@@ -164,6 +164,8 @@ def anlegen(body: RegelwerkIn, db: Session = Depends(get_db),
     # Regelwerke lesen und schreiben Preise in dieser Wawi – fremde Mandanten
     # dürfen hier nicht landen.
     verbindung_pruefen(conn, user, db)
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    pruefe_empfaenger(db, user, body.email_to)
     daten = body.model_dump(exclude_none=True)
     daten.pop("connection_id", None)
     rs = PriceRuleset(connection_id=conn, **daten)
@@ -184,6 +186,9 @@ def aendern(rid: int, body: RegelwerkIn, db: Session = Depends(get_db),
             continue
         if feld == "connection_id" and wert != rs.connection_id:
             verbindung_pruefen(wert, user, db)
+        if feld == "email_to":
+            from app.core.mail_empfaenger import pruefe_neue
+            pruefe_neue(db, user, wert, rs.email_to)
         setattr(rs, feld, wert)
     db.commit()
     _zeitplan_uebernehmen(rs)

@@ -638,11 +638,17 @@ def _install_pipeline(pipeline_def, config, mapping_id_map, ds_id_map,
         p._dm_reused = True
         return p
 
+    # Nicht aus dem Store (hochgeladen/selbst gebaut, ohne unsere Signatur):
+    # inaktiv anlegen. Sonst liefe ein Zeitplan aus einer fremden Datei nach dem
+    # nächsten Neustart von selbst los – mit Mail-/FTP-Schritten an Ziele, die
+    # in der Datei stehen. Aktivieren ist ein bewusster Klick.
+    aus_store = (content or {}).get("_dm_herkunft") == "store"
     p = Pipeline(
         name=p_name,
         project_id=project_id,
         nodes=nodes,
         connections=connections,
+        active=bool(aus_store),
     )
     db.add(p)
     db.commit()
@@ -1142,6 +1148,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
     # Das ältere Singular-Feld `pipeline` wird weiterhin akzeptiert (Fallback), wird
     # aber nur genutzt, wenn kein Array vorhanden ist – so werden Templates, die (wie
     # der Export) beides schreiben, nicht doppelt installiert.
+    # Herkunft an _install_pipeline durchreichen (Store → aktiv, sonst inaktiv)
+    content = {**content, "_dm_herkunft": t.herkunft or "unbekannt"}
     pipeline_defs = content.get("pipelines") or []
     if not pipeline_defs and content.get("pipeline"):
         pipeline_defs = [content["pipeline"]]

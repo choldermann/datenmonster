@@ -617,7 +617,8 @@ def _csv_wert(v):
         if "e" in s.lower():
             s = f"{v:.10f}".rstrip("0").rstrip(".")
         return s.replace(".", ",")
-    return v
+    from app.core.csv_sicher import zelle
+    return zelle(v)
 
 
 @router.get("/laeufe/{lauf_id}/export.xlsx")

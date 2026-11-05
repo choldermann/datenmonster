@@ -191,14 +191,19 @@ def _pruefe_archiv(pfad: str) -> dict:
     arbeit = tempfile.mkdtemp()
     try:
         with tarfile.open(pfad, "r:gz") as tar:
+            basis = os.path.realpath(arbeit)
             for mitglied in tar.getmembers():
-                # Kein Ausbrechen über ../ oder absolute Pfade
+                # Kein Ausbrechen über ../ oder absolute Pfade. commonpath statt
+                # startswith: "/tmp/abc" ist sonst auch Präfix von "/tmp/abcde".
                 ziel = os.path.realpath(os.path.join(arbeit, mitglied.name))
-                if not ziel.startswith(os.path.realpath(arbeit)):
+                if os.path.commonpath([basis, ziel]) != basis:
                     raise HTTPException(400, "Archiv enthält unerlaubte Pfade")
                 if mitglied.issym() or mitglied.islnk():
                     raise HTTPException(400, "Archiv enthält Verweise")
-            tar.extractall(arbeit)
+                if not (mitglied.isfile() or mitglied.isdir()):
+                    raise HTTPException(400, "Archiv enthält Gerätedateien o. Ä.")
+            # Zweite Sicherung von Python selbst (Rechte, Besitzer, Pfade)
+            tar.extractall(arbeit, filter="data")
 
         db_datei = os.path.join(arbeit, "datenmonster.db")
         if not os.path.exists(db_datei):

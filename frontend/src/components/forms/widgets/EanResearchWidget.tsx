@@ -1,3 +1,4 @@
+import { csvZelle } from "../../../utils/csvSicher";
 import { useState } from "react";
 import { Barcode, Loader2, Download, ExternalLink, AlertCircle, Check } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
@@ -46,7 +47,7 @@ export default function EanResearchWidget({ widget }) {
       Object.entries(v.eans).map(([typ, ean]) =>
         [v.ArtNr, v.Artikel, v.Hersteller, v.HAN, ean, typ, v.quelle]));
     const text = [kopf, ...rows]
-      .map(r => r.map(f => `"${String(f ?? "").replace(/"/g, '""')}"`).join(";")).join("\r\n");
+      .map(r => r.map(f => `"${csvZelle(f).replace(/"/g, '""')}"`).join(";")).join("\r\n");
     const url = URL.createObjectURL(new Blob(["﻿" + text], { type: "text/csv;charset=utf-8" }));
     const a = document.createElement("a");
     a.href = url; a.download = "ean-vorschlaege.csv"; a.click();

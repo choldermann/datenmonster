@@ -27,6 +27,7 @@ from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHisto
 from app.api.projects import require_editor, can_read_project, get_accessible_project_ids
 from app.services.rest_service import (
     execute_request, join_url, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
+    mask_url, mask_params,
     fetch_rest_source, umgebungs_variablen, _builtin_vars,
 )
 from app.core.net_guard import guarded_request
@@ -521,9 +522,9 @@ def _verlauf_schreiben(db, user, payload, cfg, source, project_id, ergebnis):
 
     schnappschuss = {
         "method": cfg.get("method"),
-        "url": cfg.get("url"),
+        "url": mask_url(cfg.get("url")),
         "headers": _mask_headers(cfg.get("headers") or {}),
-        "query_params": cfg.get("query_params") or {},
+        "query_params": mask_params(cfg.get("query_params") or {}),
         "body_type": cfg.get("body_type"),
         "body_content": (cfg.get("body_content") or "")[:10_000] or None,
         "auth_type": cfg.get("auth_type"),
@@ -536,7 +537,7 @@ def _verlauf_schreiben(db, user, payload, cfg, source, project_id, ergebnis):
         user_id=user.id,
         name=payload.name or (source.name if source else None),
         method=cfg.get("method"),
-        url=(ergebnis.get("request") or {}).get("url") or cfg.get("url"),
+        url=(ergebnis.get("request") or {}).get("url") or mask_url(cfg.get("url")),
         status_code=ergebnis.get("status_code"),
         ok=1 if ergebnis.get("ok") else 0,
         duration_ms=ergebnis.get("duration_ms"),

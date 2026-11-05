@@ -10,6 +10,9 @@ class User(Base):
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
+    # Steht im Anmelde-Token. Hochzählen macht alle bisherigen Tokens dieses
+    # Benutzers ungültig (Passwortwechsel, Deaktivieren, "überall abmelden").
+    token_version = Column(Integer, default=0)
     is_admin = Column(Boolean, default=False)
     is_portal_only = Column(Boolean, default=False)  # sieht nur /portal, kein Editor
     theme = Column(String, nullable=True)  # Farbschema-ID aus frontend/src/themes.ts, None = Standard

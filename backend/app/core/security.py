@@ -27,6 +27,19 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 
+def token_fuer(user: User) -> str:
+    """Anmelde-Token mit Benutzer-ID und Token-Stand – beides wird bei jeder
+    Anfrage geprüft (siehe get_current_user)."""
+    return create_access_token({"sub": user.username, "uid": user.id,
+                                "tv": user.token_version or 0})
+
+
+def tokens_widerrufen(user: User) -> None:
+    """Alle bisherigen Anmeldungen dieses Benutzers ungültig machen.
+    Aufrufer committet."""
+    user.token_version = (user.token_version or 0) + 1
+
+
 def ist_deaktiviert(user: User) -> bool:
     """NULL zaehlt als aktiv (Altbestand vor der Spalte)."""
     return getattr(user, "is_active", True) is False
@@ -51,6 +64,13 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme),
     if user is None or ist_deaktiviert(user):
         # Ein deaktivierter Benutzer verliert auch ein noch gueltiges Token.
         raise credentials_exception
+    # Widerrufene Tokens (Passwort geändert, "überall abmelden") und Tokens eines
+    # gelöschten Benutzers, dessen Name neu vergeben wurde. Ältere Tokens ohne
+    # diese Angaben gelten bis zu ihrem Ablauf weiter (Stand 0).
+    if (payload.get("tv") or 0) != (user.token_version or 0):
+        raise credentials_exception
+    if payload.get("uid") is not None and payload.get("uid") != user.id:
+        raise credentials_exception
 
     # Portal-Zugaenge erreichen nur die Endpunkte des Portals (siehe portal_zugriff).
     if getattr(user, "is_portal_only", False) and not getattr(user, "is_admin", False):
@@ -62,26 +82,22 @@ def get_current_user(request: Request, token: str = Depends(oauth2_scheme),
 
 # ─── Credential-Verschlüsselung ───────────────────────────────────────────────
 def encrypt_credential(plaintext: str) -> str:
-    """Verschlüsselt ein Passwort/Credential für DB-Speicherung."""
+    """Verschlüsselt ein Passwort/Credential für DB-Speicherung.
+
+    Schlägt fehl statt still Klartext zu speichern: früher landete bei jedem
+    Fehler (fehlendes Paket, kaputter Schlüssel) das Passwort unverschlüsselt in
+    der Datenbank – und damit auch in jeder Sicherung. Lieber eine klare
+    Fehlermeldung beim Speichern."""
     if not plaintext:
         return plaintext
+    from cryptography.fernet import Fernet
+    from app.core.config import get_fernet_key
     try:
-        from cryptography.fernet import Fernet
-        from app.core.config import get_fernet_key
-        f = Fernet(get_fernet_key())
-        return f.encrypt(plaintext.encode()).decode()
-    except ImportError:
-        # cryptography nicht installiert - Warnung loggen, Plaintext speichern
-        import logging
-        logging.getLogger("datenmonster").warning(
-            "cryptography-Paket nicht installiert - Credentials werden unverschlüsselt gespeichert. "
-            "Installiere: pip install cryptography"
-        )
-        return plaintext
+        return Fernet(get_fernet_key()).encrypt(plaintext.encode()).decode()
     except Exception as e:
         import logging
         logging.getLogger("datenmonster").error(f"Verschlüsselung fehlgeschlagen: {e}")
-        return plaintext
+        raise RuntimeError("Zugangsdaten konnten nicht verschlüsselt werden – nicht gespeichert") from e
 
 
 def decrypt_credential(ciphertext: str) -> str:

@@ -102,6 +102,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE users ADD COLUMN is_portal_only BOOLEAN DEFAULT 0",
             "ALTER TABLE users ADD COLUMN theme TEXT",
             "ALTER TABLE users ADD COLUMN einstellungen JSON",
+            "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN slug TEXT",
             "ALTER TABLE forms ADD COLUMN published BOOLEAN DEFAULT 0",
             "ALTER TABLE forms ADD COLUMN portal_config JSON DEFAULT '{}'",

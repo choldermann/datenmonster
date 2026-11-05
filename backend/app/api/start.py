@@ -479,6 +479,8 @@ def auswertung_mailen(data: MailenIn, db: Session = Depends(get_db),
     email = (data.email or "").strip()
     if not re.fullmatch(r"[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+", email):
         raise HTTPException(400, "Bitte eine gültige E-Mail-Adresse angeben")
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    pruefe_empfaenger(db, user, email)
     if data.takt not in TAKTE:
         raise HTTPException(400, "Unbekannter Takt")
     cron, takt_text = TAKTE[data.takt]

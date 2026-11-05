@@ -364,21 +364,24 @@ def email_table(body: EmailTableRequest, db: Session = Depends(get_db),
     """
     from app.services.email_service import send_email, get_email_config
 
-    recipients = [r.strip() for r in re.split(r"[,;]", body.recipients or "") if r.strip()]
-    if not recipients:
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    if not (body.recipients or "").strip():
         raise HTTPException(400, "Keine Empfänger angegeben")
-    if not all(re.match(r"[^@\s]+@[^@\s]+\.[^@\s]+", r) for r in recipients):
-        raise HTTPException(400, "Mindestens eine E-Mail-Adresse ist ungültig")
     if not get_email_config(db).get("host"):
         raise HTTPException(400, "SMTP ist nicht konfiguriert (Systemeinstellungen → E-Mail)")
+    # Nur an die eigene Firmen-Domain (Admins frei), mit Mengen-/Stundengrenze –
+    # sonst offenes Relay mit dem Absender der Firma.
+    recipients = pruefe_empfaenger(db, user, body.recipients, sofort=True)
 
     rows = body.rows or []
     cols = body.columns or (list(rows[0].keys()) if rows else [])
     title = body.title or "Tabelle"
 
     # CSV (RFC-4180, ';' als Trenner, BOM für Excel)
+    from app.core.csv_sicher import zelle
+
     def _csv(v):
-        s = "" if v is None else str(v)
+        s = "" if v is None else str(zelle(v))
         return '"' + s.replace('"', '""') + '"' if re.search(r'[";\n]', s) else s
     csv_lines = [";".join(_csv(c) for c in cols)]
     csv_lines += [";".join(_csv(r.get(c)) for c in cols) for r in rows]

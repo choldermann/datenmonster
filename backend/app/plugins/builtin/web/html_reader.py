@@ -108,8 +108,11 @@ class HtmlDocumentSource(DocumentSourcePlugin):
     # ── Download ──────────────────────────────────────────────────────────────
 
     def _download(self, url: str, config: dict) -> str:
-        resp = requests.get(
-            url,
+        # SSRF-Schutz: die URL steht frei in der Quelle – ohne Prüfung wäre das
+        # ein Weg ins interne Netz (Metadata, Loopback, Updater …), inkl. Redirects.
+        from app.core.net_guard import guarded_request
+        resp = guarded_request(
+            requests.Session(), "GET", url,
             headers=self._build_headers(config),
             timeout=self._timeout(config),
             allow_redirects=True,

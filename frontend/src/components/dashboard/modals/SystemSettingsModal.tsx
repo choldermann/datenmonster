@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from "react";
-import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, KeyRound, Wifi, Download, Zap } from "lucide-react";
+import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, KeyRound, Wifi, Download, Zap , LogOut } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import { THEMES, GRUPPEN } from "../../../themes";
 import ThemeVorschau from "../../ThemeVorschau";
@@ -29,6 +29,7 @@ function EmailSettings() {
   const [form, setForm] = useState({
     smtp_host: "", smtp_port: "587", smtp_user: "", smtp_password: "",
     smtp_from: "", smtp_from_name: "Datenmonster", smtp_tls: true,
+    smtp_empfaenger_domains: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -115,6 +116,17 @@ function EmailSettings() {
         <div>
           <label style={lS}>Absender-Name</label>
           <input style={iS} value={form.smtp_from_name} onChange={e => set("smtp_from_name", e.target.value)} placeholder="Datenmonster" />
+        </div>
+      </div>
+
+      <div>
+        <label style={lS}>Weitere erlaubte Empfänger-Domains</label>
+        <input style={iS} value={form.smtp_empfaenger_domains || ""}
+          onChange={e => set("smtp_empfaenger_domains", e.target.value)} placeholder="partnerfirma.de, steuerbuero.de" />
+        <div style={{ fontSize: 10, color: S.textDim, marginTop: 4, lineHeight: 1.4 }}>
+          Benutzer ohne Admin-Rechte dürfen Mails nur an die Domain der Absender-Adresse
+          {form.smtp_from && form.smtp_from.includes("@") ? ` (@${form.smtp_from.split("@")[1]})` : ""} schicken
+          und an die hier eingetragenen. Administratoren sind nicht beschränkt.
         </div>
       </div>
 
@@ -1594,6 +1606,16 @@ function UserManagement() {
     } finally { setBusyId(null); }
   };
 
+  const handleLogoutAll = async (u) => {
+    setBusyId(u.id);
+    try {
+      await api.post(`/api/auth/users/${u.id}/logout-all`);
+      alert(`Alle Anmeldungen von "${u.username}" beendet.`);
+    } catch (e) {
+      alert(fehlerText(e, "Abmelden fehlgeschlagen"));
+    } finally { setBusyId(null); }
+  };
+
   const handleDelete = async (id, name) => {
     if (!confirm(`Benutzer "${name}" wirklich löschen?`)) return;
     try {
@@ -1665,6 +1687,13 @@ function UserManagement() {
                     style={{ background: "none", border: "none", color: pwFor === u.id ? ACCENT : S.textDim, cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
                     title="Passwort neu setzen">
                     <KeyRound size={12} />
+                  </button>
+                )}
+                {!isSelf && (
+                  <button onClick={() => handleLogoutAll(u)} disabled={busyId === u.id}
+                    style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 2, display: "flex", alignItems: "center" }}
+                    title="Überall abmelden (alle Sitzungen dieses Benutzers beenden)">
+                    <LogOut size={12} />
                   </button>
                 )}
                 <button onClick={() => handleDelete(u.id, u.username)} disabled={isSelf}

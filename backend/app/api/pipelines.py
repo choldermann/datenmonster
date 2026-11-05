@@ -153,11 +153,23 @@ def list_pipelines(project_id: Optional[int] = None, db: Session = Depends(get_d
     return [pipeline_out(p) for p in q.order_by(Pipeline.id).all()]
 
 
+def _mail_ziele(nodes) -> list:
+    ziele = []
+    for n in nodes or []:
+        if isinstance(n, dict) and n.get("type") == "email":
+            cfg = n.get("config") or {}
+            for k in ("to", "cc", "bcc"):
+                ziele.append(cfg.get(k) or "")
+    return [z for z in ziele if z]
+
+
 @router.post("/")
 def create_pipeline(body: PipelineBody, db: Session = Depends(get_db),
                     user: User = Depends(get_current_user)):
     from app.api.projects import require_editor
     require_editor(body.project_id, user, db)
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    pruefe_empfaenger(db, user, ",".join(_mail_ziele(body.nodes)))
     p = Pipeline(**body.dict())
     db.add(p); db.commit(); db.refresh(p)
     _sync_pipeline_scheduler(p)
@@ -178,6 +190,8 @@ def update_pipeline(pipeline_id: int, body: PipelineBody, db: Session = Depends(
     # Auch das Ziel muss erlaubt sein, sonst liesse sich eine Pipeline in ein
     # fremdes Projekt verschieben.
     require_editor(body.project_id, user, db)
+    from app.core.mail_empfaenger import pruefe_neue
+    pruefe_neue(db, user, ",".join(_mail_ziele(body.nodes)), ",".join(_mail_ziele(p.nodes)))
     for k, v in body.dict().items():
         setattr(p, k, v)
     p.updated_at = datetime.now(timezone.utc)

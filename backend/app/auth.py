@@ -3,7 +3,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from app.core.database import get_db
-from app.core.security import verify_password, hash_password, create_access_token, get_current_user, ist_deaktiviert
+from app.core.security import (verify_password, hash_password, create_access_token, get_current_user,
+                               ist_deaktiviert, token_fuer, tokens_widerrufen)
 from app.core import kontingent
 from app.models.user import User
 import re
@@ -126,7 +127,7 @@ def login(
     # Erfolgreicher Login: Versuche zurücksetzen
     _clear_attempts(f"ip:{client_ip}")
     _clear_attempts(f"user:{form.username}")
-    token = create_access_token({"sub": user.username})
+    token = token_fuer(user)
     return {
         "access_token":   token,
         "token_type":     "bearer",
@@ -209,6 +210,8 @@ def update_user(user_id: int, data: dict, db: Session = Depends(get_db),
         if admin.id == user_id and not data["is_active"]:
             raise HTTPException(400, "Den eigenen Account kann man nicht deaktivieren")
         target.is_active = bool(data["is_active"])
+        if not target.is_active:
+            tokens_widerrufen(target)
     db.commit()
     return {"id": target.id, "username": target.username,
             "is_admin": bool(target.is_admin),
@@ -242,6 +245,30 @@ def change_password(data: ChangePassword, db: Session = Depends(get_db), user: U
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Neues Passwort mindestens 6 Zeichen")
     user.hashed_password = hash_password(data.new_password)
+    # Andere Geräte/Sitzungen abmelden; diese Sitzung bekommt ein neues Token
+    tokens_widerrufen(user)
+    db.commit()
+    return {"ok": True, "access_token": token_fuer(user)}
+
+
+@router.post("/logout-all")
+def ueberall_abmelden(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Alle Anmeldungen dieses Benutzers beenden – auch auf anderen Geräten."""
+    tokens_widerrufen(user)
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/logout-all")
+def benutzer_abmelden(user_id: int, db: Session = Depends(get_db),
+                      admin: User = Depends(get_current_user)):
+    """Admin beendet alle Anmeldungen eines Benutzers (z. B. Gerät verloren)."""
+    if not getattr(admin, "is_admin", False):
+        raise HTTPException(403, "Nur Administratoren")
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(404, "Benutzer nicht gefunden")
+    tokens_widerrufen(target)
     db.commit()
     return {"ok": True}
 
@@ -265,6 +292,7 @@ def set_user_password(user_id: int, data: PasswortSetzen, db: Session = Depends(
     if len(data.new_password) < 6:
         raise HTTPException(400, "Neues Passwort mindestens 6 Zeichen")
     target.hashed_password = hash_password(data.new_password)
+    tokens_widerrufen(target)
     db.commit()
     # Eine Sperre nach Fehlversuchen soll den neuen Start nicht blockieren.
     _clear_attempts(f"user:{target.username}")

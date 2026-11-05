@@ -18,7 +18,9 @@ function ChangePasswordModal({ onClose }) {
     if (next !== confirm) { setError("Passwörter stimmen nicht überein"); return; }
     setSaving(true);
     try {
-      await api.post("/api/auth/change-password", { current_password: current, new_password: next });
+      const { data } = await api.post("/api/auth/change-password", { current_password: current, new_password: next });
+      // Der Passwortwechsel meldet alle Sitzungen ab – diese hier bekommt ein neues Token
+      if (data?.access_token) localStorage.setItem("dm_token", data.access_token);
       setDone(true);
       setTimeout(onClose, 1500);
     } catch (e) {

@@ -1,3 +1,4 @@
+import { csvZelle } from "../../../utils/csvSicher";
 import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
 import EmailTableButton from "../EmailTableButton";
@@ -62,7 +63,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   const downloadCsv = () => {
     const header = columns.join(";");
     const body = sortedRows.map(r =>
-      columns.map(c => `"${(r[c] ?? "").toString().replace(/"/g, '""')}"`).join(";")
+      columns.map(c => `"${csvZelle(r[c]).replace(/"/g, '""')}"`).join(";")
     ).join("\n");
     const blob = new Blob(["﻿" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");

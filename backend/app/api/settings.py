@@ -14,7 +14,8 @@ def _require_admin(user: User):
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
-EMAIL_KEYS = ["smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from", "smtp_from_name", "smtp_tls"]
+EMAIL_KEYS = ["smtp_host", "smtp_port", "smtp_user", "smtp_password", "smtp_from", "smtp_from_name", "smtp_tls",
+              "smtp_empfaenger_domains"]
 
 
 def get_setting(db, key: str, default=None):
@@ -54,6 +55,9 @@ class EmailConfig(BaseModel):
     smtp_from: str = ""
     smtp_from_name: str = "Datenmonster"
     smtp_tls: bool = True
+    # Weitere Domains, an die auch Nicht-Admins Mails schicken dürfen
+    # (die Domain der Absender-Adresse ist immer erlaubt) – app/core/mail_empfaenger.py
+    smtp_empfaenger_domains: str = ""
 
 
 @router.post("/email")

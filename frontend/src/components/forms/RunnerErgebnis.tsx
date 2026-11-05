@@ -7,6 +7,7 @@
  * alles nach den Eingabefeldern – Export-Ergebnisse, Reiterleiste, Widgets und
  * Rohtabellen für Aktionen ohne Widget – lebt jetzt nur noch hier.
  */
+import { csvZelle } from "../../utils/csvSicher";
 import { AlertCircle, Download } from "lucide-react";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "./WidgetRenderer";
 import EmailTableButton from "./EmailTableButton";
@@ -27,7 +28,7 @@ export function ErgebnisTabelle({ result, formName, actionLabel, allowDownload }
   const downloadCsv = () => {
     const header = columns.join(";");
     const body = rows.map(r =>
-      columns.map(c => `"${(r[c] ?? "").toString().replace(/"/g, '""')}"`).join(";")
+      columns.map(c => `"${csvZelle(r[c]).replace(/"/g, '""')}"`).join(";")
     ).join("\n");
     const blob = new Blob(["﻿" + header + "\n" + body], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");

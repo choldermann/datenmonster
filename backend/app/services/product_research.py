@@ -24,6 +24,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from app.core.net_guard import guarded_request
+
 logger = logging.getLogger(__name__)
 
 USER_AGENT = "DatenmonsterBot/1.0 (+https://datenmonster.monstersuite.de)"
@@ -115,8 +117,8 @@ def _robots_erlaubt(url: str) -> bool:
         rp = urllib.robotparser.RobotFileParser()
         rp.set_url(f"{basis}/robots.txt")
         try:
-            r = requests.get(f"{basis}/robots.txt", timeout=TIMEOUT,
-                             headers={"User-Agent": USER_AGENT})
+            r = guarded_request(requests.Session(), "GET", f"{basis}/robots.txt",
+                                timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
             rp.parse(r.text.splitlines() if r.status_code == 200 else [])
         except Exception as e:
             logger.warning("robots.txt von %s nicht abrufbar: %s", basis, e)
@@ -134,7 +136,8 @@ def _hole(url: str) -> str | None:
         logger.info("robots.txt verbietet %s", url)
         return None
     try:
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
+        r = guarded_request(requests.Session(), "GET", url,
+                            timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
         if r.status_code != 200:
             return None
         return r.text

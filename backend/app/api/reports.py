@@ -262,6 +262,8 @@ def create_schedule(data: ScheduleIn, db: Session = Depends(get_db),
     else:
         verbindung_pruefen(mandant_id, user, db)
 
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    pruefe_empfaenger(db, user, data.email_to)
     s = ReportSchedule(
         name=(data.name or f.name), form_id=data.form_id,
         project_id=pid,
@@ -299,6 +301,9 @@ def update_schedule(schedule_id: int, data: ScheduleIn, db: Session = Depends(ge
     if data.mandant_id is not None:
         verbindung_pruefen(data.mandant_id, user, db)
 
+    if data.email_to is not None:
+        from app.core.mail_empfaenger import pruefe_neue
+        pruefe_neue(db, user, data.email_to, s.email_to)
     for feld in ("name", "cron_expr", "active", "zeitraum_preset", "params",
                  "sections", "email_to", "email_subject", "mandant_id", "project_id"):
         wert = getattr(data, feld)
