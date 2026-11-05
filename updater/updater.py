@@ -462,9 +462,49 @@ def _compose_abgleichen() -> dict:
     return ergebnis
 
 
+def _ausgabe(cmd) -> tuple[int, str, str]:
+    """Wie _safe_run, aber stdout und stderr getrennt – Warnungen von compose
+    ("variable is not set" …) dürfen nicht in Listen landen, die wir auswerten."""
+    try:
+        r = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return (r.returncode, r.stdout.decode("utf-8", errors="replace"),
+                r.stderr.decode("utf-8", errors="replace"))
+    except Exception as exc:
+        return -1, "", str(exc)
+
+
+def _veraltete_dienste() -> tuple[list, str]:
+    """Dienste, deren laufender Container nicht zur Compose-Datei passt.
+
+    Vergleicht den config-hash, den compose an jeden Container schreibt, mit
+    dem, was die aktuelle Datei ergibt. Fehlender Container zählt auch."""
+    rc, out, err = _ausgabe(_dc("config", "--hash", "*"))
+    if rc != 0:
+        return [], f"config --hash: {err[-300:]}"
+    soll = {}
+    for zeile in out.splitlines():
+        teile = zeile.split()
+        if len(teile) == 2:
+            soll[teile[0]] = teile[1]
+    rc, out, err = _ausgabe([
+        "docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={COMPOSE_PROJECT}",
+        "--format", '{{.Label "com.docker.compose.service"}} {{.Label "com.docker.compose.config-hash"}}',
+    ])
+    ist = {}
+    for zeile in out.splitlines():
+        teile = zeile.split()
+        if len(teile) == 2:
+            ist[teile[0]] = teile[1]
+    return [d for d, h in soll.items() if d != "updater" and ist.get(d) != h], ""
+
+
 def _beim_start():
-    """Nach einem Update läuft hier das neue Image: Compose-Stand nachziehen und
-    die geänderten Dienste neu erstellen. Kein Kreislauf: danach ist alles gleich."""
+    """Compose-Stand nachziehen und Container angleichen.
+
+    Läuft bei jedem Start: ersetzt ggf. die Datei und erneuert danach jeden
+    Dienst, dessen Container nicht zur Datei passt. Hängt also nicht an einem
+    einzigen Versuch – fällt einer aus, holt der nächste Start ihn nach. Kein
+    Kreislauf: passt alles, passiert nichts."""
     time.sleep(5)
     try:
         erg = _compose_abgleichen()
@@ -472,17 +512,32 @@ def _beim_start():
         erg = {"ergebnis": "fehler", "geaendert": False, "hinweis": str(exc)[:400]}
     erg["zeit"] = time.strftime("%Y-%m-%d %H:%M:%S")
     erg["host_dir"] = _host_dir()
-    logger.info("Compose-Abgleich: %s", erg)
-    if erg.get("geaendert"):
-        rc, out = _safe_run(_dc("config", "--services"))
-        dienste = [d for d in out.split() if d != "updater"] if rc == 0 else []
+
+    if erg.get("ergebnis") not in ("aus", "fehler"):
+        dienste, fehler = _veraltete_dienste()
+        if fehler:
+            erg["hinweis"] = fehler
         if dienste:
-            rc, out = _safe_run(_dc("up", "-d", "--pull", "missing", *dienste))
-            erg["neu_gestartet"] = dienste if rc == 0 else []
+            rc, out, err = _ausgabe(_dc("up", "-d", "--pull", "missing", *dienste))
+            erg["neu_erstellt"] = dienste if rc == 0 else []
             if rc != 0:
-                erg["hinweis"] = f"docker compose up: {out[-400:]}"
-        rc, out = _updater_neu_starten()
-        erg["updater_neustart"] = rc == 0
+                erg["hinweis"] = f"docker compose up: {err[-400:]}"
+        if erg.get("geaendert"):
+            # eigene Definition kann sich geändert haben (Token, Mounts …)
+            rc, _ = _updater_neu_starten()
+            erg["updater_neustart"] = rc == 0
+    logger.info("Compose-Abgleich: %s", erg)
+
+    # Verlauf statt Überschreiben: der Lauf nach dem Selbst-Neustart soll den
+    # davor nicht verdecken.
+    verlauf = []
+    try:
+        with open(ABGLEICH_FILE, encoding="utf-8") as f:
+            alt = json.load(f)
+        verlauf = (alt.get("verlauf") or [])[-9:] + [{k: v for k, v in alt.items() if k != "verlauf"}]
+    except Exception:
+        pass
+    erg["verlauf"] = verlauf
     try:
         os.makedirs(os.path.dirname(ABGLEICH_FILE), exist_ok=True)
         with open(ABGLEICH_FILE, "w", encoding="utf-8") as f:
