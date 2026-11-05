@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, type ReactNode, type CSSProperties } from "react";
 import { X, Save, Loader2, Check, Eye, EyeOff, TestTube, UserPlus, Trash2, KeyRound, Wifi, Download, Zap , LogOut } from "lucide-react";
 import { useTheme, type ThemeMode } from "../../../hooks/useTheme";
 import { THEMES, GRUPPEN } from "../../../themes";
@@ -522,7 +522,11 @@ function AiSettings() {
   // als `provider` mitgeschickt und schlägt damit die Einstellung hier – deshalb
   // muss sie sichtbar sein und beim Speichern einer abweichenden Wahl weichen.
   const [sitzungsWahl, setSitzungsWahl] = useState(getAiProvider());
-  useEffect(() => onAiProviderChange(setSitzungsWahl), []);
+  // Abmelden als Aufräumfunktion – ohne Rückgabewert (Set.delete liefert true/false)
+  useEffect(() => {
+    const abmelden = onAiProviderChange(setSitzungsWahl);
+    return () => { abmelden(); };
+  }, []);
 
   useEffect(() => {
     api.get("/api/settings/ai").then(({ data }) => {
@@ -2189,7 +2193,7 @@ function NetworkSettings() {
   };
 
   const lS = { fontSize: 10, color: S.textDim, textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: 4 };
-  const taS = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%", minHeight: 70, fontFamily: "monospace", resize: "vertical" };
+  const taS: CSSProperties = { backgroundColor: S.bgEl, border: `1px solid ${S.border}`, borderRadius: 4, color: S.textBright, fontSize: 11, padding: "6px 10px", outline: "none", width: "100%", minHeight: 70, fontFamily: "monospace", resize: "vertical" };
 
   if (loading) return <p style={{ color: S.textDim, fontSize: 12 }}>Lade...</p>;
 

@@ -1,5 +1,5 @@
 import { csvZelle } from "../../../utils/csvSicher";
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { Barcode, Loader2, Download, ExternalLink, AlertCircle, Check } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../../dashboard/constants";
@@ -54,7 +54,7 @@ export default function EanResearchWidget({ widget }) {
     URL.revokeObjectURL(url);
   };
 
-  const th = { textAlign: "left", padding: "7px 10px", fontSize: 10, fontWeight: 700,
+  const th: CSSProperties = { textAlign: "left", padding: "7px 10px", fontSize: 10, fontWeight: 700,
     color: S.textDim, textTransform: "uppercase", letterSpacing: "0.05em",
     borderBottom: `1px solid ${S.border}` };
   const td = { padding: "7px 10px", fontSize: 12, color: S.textMain,
@@ -177,7 +177,7 @@ export default function EanResearchWidget({ widget }) {
                   <td style={td}>
                     {Object.entries(v.eans).map(([typ, ean]) => (
                       <div key={typ} style={{ whiteSpace: "nowrap" }}>
-                        <code style={{ color: ACCENT, fontSize: 12 }}>{ean}</code>
+                        <code style={{ color: ACCENT, fontSize: 12 }}>{String(ean)}</code>
                         <span style={{ color: S.textDim, fontSize: 10.5, marginLeft: 6 }}>{typ}</span>
                       </div>
                     ))}
