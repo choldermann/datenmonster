@@ -17,7 +17,7 @@ from app.models.dataset import DbConnection, ProjektVerbindung
 from app.models.form import Form
 from app.models.project import Project
 from app.models.template import Template
-from tools.demo_daten.verbindung import QUELL_VERBINDUNG, ZIEL
+from tools.demo_daten.verbindung import ZIEL
 
 NAME = "Demo (synthetisch)"
 ADMIN = SimpleNamespace(id=1, is_admin=True, is_portal_only=False, username="admin")
@@ -27,7 +27,8 @@ def verbindung(db) -> DbConnection:
     c = db.query(DbConnection).filter(DbConnection.name == NAME).first()
     if c:
         return c
-    q = db.query(DbConnection).get(QUELL_VERBINDUNG)
+    raise RuntimeError(f"Verbindung „{NAME}“ fehlt – einmalig von Hand anlegen (Server wie JTLTEST, DB {ZIEL})")
+    q = None
     c = DbConnection(name=NAME, db_type=q.db_type, host=q.host, port=q.port, database=ZIEL,
                      username=q.username, password=q.password, is_mandant=True, mandant_label=NAME)
     for feld in ("driver", "options", "trust_server_certificate", "encrypt"):

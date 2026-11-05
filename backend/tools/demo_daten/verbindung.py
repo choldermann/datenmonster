@@ -8,9 +8,10 @@ from urllib.parse import unquote_plus
 
 import pyodbc
 
-QUELL_VERBINDUNG = 8            # "Demo (anonymisiert)" auf 192.168.20.185\JTLTEST
-QUELLE = "eazybusiness_demo"    # bisherige (anonymisierte) Demo
-ZIEL = "eazybusiness_synth"     # neue, synthetische Demo
+VERBINDUNG = "Demo (synthetisch)"  # Datenmonster-Verbindung zu 192.168.20.185\JTLTEST
+QUELLE = "eazybusiness_demo"    # alte anonymisierte Demo – am 05.11.2026 gelöscht,
+                                # Sicherung: DATA\eazybusiness_synth_quelle.bak
+ZIEL = "eazybusiness_synth"     # synthetische Demo
 
 
 def odbc(datenbank: str) -> str:
@@ -19,7 +20,9 @@ def odbc(datenbank: str) -> str:
     from app.services import db_service
     db = SessionLocal()
     try:
-        c = db.query(DbConnection).get(QUELL_VERBINDUNG)
+        c = db.query(DbConnection).filter(DbConnection.name == VERBINDUNG).first()
+        if c is None:
+            raise RuntimeError(f"Datenmonster-Verbindung „{VERBINDUNG}“ fehlt")
         roh = unquote_plus(db_service.get_engine_str(c).split("odbc_connect=", 1)[1])
     finally:
         db.close()

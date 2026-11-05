@@ -1,4 +1,5 @@
-"""Schritt 1: eazybusiness_demo → eazybusiness_synth kopieren (COPY_ONLY).
+"""(Erledigt 05.11.2026 – die Quelle gibt es nicht mehr; nur zur Nachvollziehbarkeit.)
+Schritt 1: eazybusiness_demo → eazybusiness_synth kopieren (COPY_ONLY).
 Die Quelle bleibt unverändert. Bricht ab, wenn das Ziel schon existiert."""
 import sys
 
