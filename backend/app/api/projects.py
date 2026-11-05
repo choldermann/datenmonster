@@ -184,9 +184,28 @@ def delete_project(project_id: int, db: Session = Depends(get_db), user: User = 
     # 4. Mappings
     db.query(Mapping).filter(Mapping.project_id == project_id).delete()
 
-    # 5. Pipelines + Reports
+    # 5. Pipelines + Reports – die Zeitplan-Einträge zuerst abmelden, sonst
+    # feuert der Scheduler bis zum nächsten Neustart ins Leere
+    from app.services.scheduler_service import (get_scheduler, unregister_report_job,
+                                                unregister_alert_job)
+    for (_pid,) in db.query(Pipeline.id).filter(Pipeline.project_id == project_id).all():
+        try: get_scheduler().remove_job(f"pipeline_{_pid}")
+        except Exception: pass
     db.query(Pipeline).filter(Pipeline.project_id == project_id).delete()
     db.query(Report).filter(Report.project_id == project_id).delete()
+
+    # 5b. Report- und Warnungs-Zeitpläne: verschicken Mails – ein gelöschtes
+    # Projekt darf nicht weiter Cockpits an seine Empfänger senden
+    from app.models.report import ReportSchedule
+    from app.models.alert import AlertSchedule
+    for s_ in db.query(ReportSchedule).filter(ReportSchedule.project_id == project_id).all():
+        unregister_report_job(s_.id); db.delete(s_)
+    for s_ in db.query(AlertSchedule).filter(AlertSchedule.project_id == project_id).all():
+        unregister_alert_job(s_.id); db.delete(s_)
+
+    # 5c. Formulare (blieben früher verwaist zurück)
+    from app.models.form import Form
+    n_forms = db.query(Form).filter(Form.project_id == project_id).delete()
 
     # 6. Datasets (inkl. Dateien)
     UPLOAD_DIR = os.environ.get("UPLOAD_DIR", "/app/uploads")
@@ -216,7 +235,7 @@ def delete_project(project_id: int, db: Session = Depends(get_db), user: User = 
     db.delete(p)
     db.commit()
     return {"ok": True, "deleted": {
-        "jobs": len(jobs),
+        "jobs": len(jobs), "forms": n_forms,
     }}
 
 
