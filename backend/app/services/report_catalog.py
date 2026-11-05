@@ -176,6 +176,11 @@ def standardparameter(schema: dict) -> dict:
             params[pname] = f.get("default")
         elif cfg.get("multiple"):
             params[pname] = []
+        elif f.get("type") in ("text", "textarea"):
+            # Wie der Browser (feldVorgabe): leeres Textfeld = "". Fehlte es, blieb
+            # z. B. :artikel_suche im Lager-Cockpit ungebunden und der Abflüsse-
+            # Reiter brach im Zeitplan mit "A value is required" ab.
+            params[pname] = ""
     return params
 
 
