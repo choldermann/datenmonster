@@ -108,6 +108,16 @@ def main():
         print("\n".join(w.fehler) or "Spalten: keine Fehler"); return
     if sim.inaktiv:
         w.sql("UPDATE dbo.tArtikel SET cAktiv = 'N' WHERE kArtikel IN (" + ",".join(map(str, sim.inaktiv)) + ")")
+    # EK am Artikel wie in JTL fortschreiben: Durchschnitt des Restbestands,
+    # letzter EK aus dem jüngsten Wareneingang (sonst sähe man die Sprünge nie)
+    w.sql("""UPDATE A SET A.fLetzterEK = ISNULL(x.ek, A.fLetzterEK), A.fEKNetto = ISNULL(y.ek, A.fEKNetto)
+             FROM dbo.tArtikel A
+             OUTER APPLY (SELECT TOP 1 W.fEKEinzel AS ek FROM dbo.tWarenLagerEingang W
+                          WHERE W.kArtikel = A.kArtikel AND W.kBuchungsart = 10 ORDER BY W.dErstellt DESC) x
+             OUTER APPLY (SELECT SUM(W.fAnzahlAktuell * W.fEKEinzel) / NULLIF(SUM(W.fAnzahlAktuell), 0) AS ek
+                          FROM dbo.tWarenLagerEingang W WHERE W.kArtikel = A.kArtikel AND W.fAnzahlAktuell > 0) y""")
+    # Pflegefehler "VK unter EK" erst nach dem Fortschreiben setzen
+    w.sql("UPDATE dbo.tArtikel SET fVKNetto = ROUND(fEKNetto * 0.85, 2) WHERE kArtikel = ?", s["unter_ek"])
     print("5) Fremdverweise"); fremdverweise_umbiegen(w)
     print("6) JTL rechnen"); jtl_rechnen(w)
     print(f"fertig nach {time.time() - t0:.0f}s")

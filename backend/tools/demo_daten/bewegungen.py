@@ -54,9 +54,11 @@ class Sim:
         self.kunden_liste = list(self.kunden.values())
         beliebte = sorted((k for k, a in self.art.items() if not a.get("set")), key=lambda k: -self.art[k]["beliebt"])
         # Lieferengpass ab Mitte Oktober 2026: diese drei werden nicht mehr nachgeliefert
-        self.engpass = set(beliebte[3:6])
+        self.engpass = {beliebte[60]}
         # 2026 ausgelaufene Artikel mit Restbestand (gesperrt)
         self.auslauf = set(sorted(self.lagerhueter)[:4])
+        # zwei Ladenhüter werden ab Juni unter EK abverkauft, der Rest liegt weiter
+        self.abverkauf = set(sorted(self.lagerhueter)[4:6])
         self.lsp_von_apos = {}
 
     # ── Hilfen ───────────────────────────────────────────────────────────────
@@ -139,7 +141,7 @@ class Sim:
         for k, a in self.art.items():
             if a.get("set") or k in self.lagerhueter:
                 continue
-            if k in self.engpass and tag >= dt.date(2026, 9, 1):
+            if k in self.engpass and tag >= dt.date(2026, 9, 15):
                 continue
             lief = self.s["lieferanten"][a["lief"]]
             bedarf = self.nachfrage[k]
@@ -181,7 +183,7 @@ class Sim:
             return
         je_bestellung = defaultdict(list)
         for eintrag in self.lieferungen.pop(tag):
-            if eintrag[1] in self.engpass and tag >= dt.date(2026, 9, 20):
+            if eintrag[1] in self.engpass and tag >= dt.date(2026, 10, 5):
                 continue     # Lieferant kann nicht liefern – bleibt als Zulauf offen
             je_bestellung[eintrag[3]].append(eintrag)
         for klb, posten in je_bestellung.items():
@@ -233,7 +235,12 @@ class Sim:
             if a["kWarengruppe"] == 7 and g != 3:
                 gw *= 0.05
             if a["kArtikel"] in self.lagerhueter:
-                gw *= 0.02
+                # nicht nachbestellt: ausverkauft = im Shop nicht mehr bestellbar
+                if self.bestand[a["kArtikel"]] <= 0:
+                    gw = 0
+                else:
+                    abv = a["kArtikel"] in self.abverkauf and tag >= dt.date(2026, 6, 1)
+                    gw *= 0.6 if abv else 0.02
             if a["kArtikel"] in self.auslauf and tag >= dt.date(2026, 4, 1):
                 gw = 0
             if a["vk"] > 150 and g == 1:
@@ -311,7 +318,7 @@ class Sim:
                 rabatt = r.choice([3, 5])
             if r.random() < 0.004:       # Muster/Gratisware
                 preis, rabatt = 0.0, 0
-            if k in self.lagerhueter and tag >= dt.date(2026, 6, 1):
+            if k in self.abverkauf and tag >= dt.date(2026, 6, 1):
                 preis, rabatt = round(self.ek(k, tag) * 0.7, 2), 0   # Abverkauf unter EK
             kap = self.neu("apos")
             positionen.append(dict(kAuftragPosition=kap, kArtikel=k, kAuftrag=kab, cArtNr=a["cArtNr"], cName=a["name"],
@@ -359,11 +366,18 @@ class Sim:
                     return all(self.bestand[t["kArtikel"]] >= m * t["fAnzahl"] for t in self.s_stueck)
                 return self.bestand[k] >= m
             if not all(verfuegbar(p["kArtikel"], p["fAnzahl"]) for p in artikel_pos):
+                # Teillieferung: nach 3 Tagen geht raus, was da ist; der Rest bleibt offen
+                da = [p for p in artikel_pos if verfuegbar(p["kArtikel"], p["fAnzahl"])]
+                fehlt = [p for p in artikel_pos if p not in da]
+                if da and (tag - au["zeit"].date()).days >= 3 and not au.get("teil"):
+                    sonst = [p for p in au["positionen"] if p["nType"] != 1]
+                    self._liefern_und_berechnen(dict(au, positionen=da + sonst), tag, komplett=False)
+                    au["positionen"], au["teil"] = fehlt, True
                 bleibt.append(au); continue
             self._liefern_und_berechnen(au, tag)
         self.rueckstand = bleibt
 
-    def _liefern_und_berechnen(self, au, tag):
+    def _liefern_und_berechnen(self, au, tag, komplett=True):
         r = self.r
         zeit = _zeit(r, tag, 10, 16)
         kls = self.neu("ls")
@@ -409,7 +423,8 @@ class Sim:
                                                       cHinweis="", fGewicht=round(gewicht / pakete + 0.4, 2),
                                                       kVersandArt=au["va"], cLogistiker=welt.VERSANDARTEN[au["va"] - 1][2],
                                                       dVersendet=versendet, nStatus=1))
-        self.rows["_ausgeliefert"].append(au["kAuftrag"])
+        if komplett:
+            self.rows["_ausgeliefert"].append(au["kAuftrag"])
         self.rechnung(au, versendet, ek_pos)
 
     def rechnung(self, au, zeit, ek_pos, korrektur_von=None):
@@ -564,12 +579,19 @@ class Sim:
                 self.inventur(tag)
             if tag.weekday() == 2 and r.random() < 0.5:
                 self.korrektur(tag)
+            if tag == dt.date(2026, 10, 28):
+                for k in self.engpass:      # Restbestand beim Engpass-Artikel beschädigt
+                    if self.bestand[k] > 0:
+                        self.ausbuchen(k, self.bestand[k], dt.datetime.combine(tag, dt.time(15)), 30,
+                                       kommentar="Restbestand beschädigt")
             # Tagesbedarf je Artikel (gleitend, ~4 Wochen) für die Nachbestellung
             for k in self.art:
                 self.nachfrage[k] = self.nachfrage[k] * 0.965 + self.heute[k] * 0.035
             self.heute.clear()
         self.retouren_und_korrekturen()
         for k, menge, ek, zeit in self.retour_zugaenge:
+            if k in self.engpass:
+                continue     # beschädigt zurück – nicht wieder verkaufbar
             self.einbuchen(k, menge, ek or self.ek(k, zeit.date()), zeit, 170, kommentar="Retoure")
         for kg, rg, betrag, zeit in self.gutschrift_zahlungen:
             if zeit.date() <= ENDE:

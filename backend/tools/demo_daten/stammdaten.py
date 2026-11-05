@@ -115,9 +115,26 @@ def anlegen(w, r: random.Random) -> dict:
                                     cName=vollname, fMwSt=19 if stkl == 1 else 7))
                 artikel[-1]["_meta"] = dict(name=vollname, einheit="Karton" if menge > 1 else einheit, wg=wg_id, mhd=mhd, lief=lief_id,
                                             beliebt=beliebt * (0.5 if menge > 1 else 1), marge=marge, gew=gew * menge, stkl=stkl, vk=vk, ek=ek)
+    # Typische Pflegefehler, damit der Stammdaten-Check etwas findet
+    normal = [a for a in artikel if not a["_meta"].get("set")]
+    pf = r.sample(normal, 16)
+    for a in pf[0:3]:
+        a["fGewicht"] = 0; a["fArtGewicht"] = 0
+    for a in pf[3:6]:
+        a["cTaric"] = ""
+    for a in pf[6:8]:
+        a["cHerkunftsland"] = ""
+    pf[8]["cBarcode"] = pf[9]["cBarcode"]                       # doppelte EAN
+    pf[10]["cBarcode"] = "+H123" + pf[10]["cArtNr"].replace("-", "") + "1"   # HIBC
+    pf[11]["fVKNetto"] = round(pf[11]["fEKNetto"] * 0.85, 2)    # VK unter EK (mit Abstand: der EK wird später fortgeschrieben)
+    pf[11]["_meta"]["vk"] = pf[11]["fVKNetto"]
+    pf[11]["_meta"]["beliebt"] = max(pf[11]["_meta"]["beliebt"], 0.6)
+    unter_ek = pf[11]["kArtikel"]
     # Kunden-/Gruppenpreise für Praxen, Kliniken mit Staffel
     kp = 0
     for a in artikel:
+        if a["kArtikel"] == unter_ek:
+            continue   # sonst überdeckt ein Gruppenpreis den Pflegefehler
         for gruppe, faktor in ((2, 0.97), (3, 0.96), (5, 0.90)):
             if r.random() < 0.35:
                 kp += 1
@@ -167,19 +184,6 @@ def anlegen(w, r: random.Random) -> dict:
         for g in (1, 2, 3, 4, 5, 6):
             spp.append(dict(kArtikelSonderpreis=i, kKundenGruppe=g, kShop=0, fNettoPreis=round(a["fVKNetto"] * 0.88, 2)))
 
-    # Typische Pflegefehler, damit der Stammdaten-Check etwas findet
-    normal = [a for a in artikel if not a["_meta"].get("set")]
-    pf = r.sample(normal, 16)
-    for a in pf[0:3]:
-        a["fGewicht"] = 0; a["fArtGewicht"] = 0
-    for a in pf[3:6]:
-        a["cTaric"] = ""
-    for a in pf[6:8]:
-        a["cHerkunftsland"] = ""
-    pf[8]["cBarcode"] = pf[9]["cBarcode"]                       # doppelte EAN
-    pf[10]["cBarcode"] = "+H123" + pf[10]["cArtNr"].replace("-", "") + "1"   # HIBC
-    pf[11]["fVKNetto"] = round(pf[11]["fEKNetto"] * 0.93, 2)    # VK unter EK
-    pf[11]["_meta"]["vk"] = pf[11]["fVKNetto"]
     pf[12]["kWarengruppe"] = 0                                    # ohne Warengruppe
     meta = {a["kArtikel"]: a.pop("_meta") for a in artikel}
     w.schreiben("dbo.tArtikel", artikel)
@@ -192,6 +196,7 @@ def anlegen(w, r: random.Random) -> dict:
     w.schreiben("dbo.tArtikelSonderpreis", sp)
     w.schreiben("dbo.tSonderpreise", spp)
     d["artikel"] = {a["kArtikel"]: {**a, **meta[a["kArtikel"]]} for a in artikel}
+    d["unter_ek"] = unter_ek
     d["gruppenpreis"] = {}
     for p in preise:
         det = [x for x in preisdet if x["kPreis"] == p["kPreis"] and x["nAnzahlAb"] == 0]
