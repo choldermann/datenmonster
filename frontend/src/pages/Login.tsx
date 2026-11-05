@@ -25,7 +25,15 @@ export default function Login() {
       // Wohin es geht, entscheidet die Startseiten-Weiche (Büro oder Werkstatt)
       navigate("/");
     }
-    catch { setError("Falscher Benutzername oder Passwort"); }
+    catch (e: any) {
+      // Nur 401 heißt wirklich "falsches Passwort". Früher stand das bei jedem
+      // Fehler da – auch wenn der Server gar nicht antwortete (502 nach Update).
+      const st = e?.response?.status;
+      const detail = e?.response?.data?.detail;
+      if (st === 401) setError("Falscher Benutzername oder Passwort");
+      else if (st === 429 || st === 403) setError(typeof detail === "string" ? detail : "Anmeldung derzeit gesperrt");
+      else setError(`Server nicht erreichbar${st ? ` (HTTP ${st})` : ""} – bitte Administrator informieren`);
+    }
     finally { setLoading(false); }
   };
 
