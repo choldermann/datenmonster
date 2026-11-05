@@ -72,3 +72,16 @@ def update_status(user: User = Depends(get_current_user)):
         return r.json()
     except Exception as e:
         return {"step": None, "msg": "", "done": False, "error": True, "detail": str(e)[:200]}
+
+
+@router.get("/compose")
+def compose_status(user: User = Depends(get_current_user)):
+    """Ergebnis des letzten Compose-Abgleichs (docker-compose.yml/.env beim Kunden)."""
+    if not getattr(user, "is_admin", False):
+        raise HTTPException(403, "Nur für Administratoren")
+    if UPDATER_AUS:
+        return {"ergebnis": "aus", "hinweis": AUS_TEXT}
+    try:
+        return httpx.get(f"{UPDATER_URL}/compose/status", timeout=5).json()
+    except Exception as e:
+        return {"ergebnis": "unbekannt", "hinweis": str(e)[:200]}

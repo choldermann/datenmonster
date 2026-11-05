@@ -12,6 +12,8 @@ RUN apt-get update && \
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY updater.py .
+COPY updater.py compose_stand.py ./
+# In der CI befüllt; lokal nur die README → Compose-Abgleich aus
+COPY compose/ /app/compose/
 
 CMD ["python", "updater.py"]

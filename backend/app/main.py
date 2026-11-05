@@ -613,6 +613,10 @@ async def lifespan(app: FastAPI):
     from app.services.eventbus import start_listener
     start_listener()
 
+    # Alten Updater beim Kunden einmalig auf das neue Image umstellen
+    from app.services.updater_anstoss import updater_nachziehen
+    updater_nachziehen()
+
     yield
     from app.services.scheduler_service import stop_scheduler
     stop_scheduler()

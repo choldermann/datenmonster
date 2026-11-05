@@ -26,6 +26,20 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # volle Historie: der Updater bekommt die Fingerabdrücke aller je
+          # veröffentlichten docker-compose.yml mit
+          fetch-depth: 0
+
+      - name: Compose-Stand für den Updater beilegen
+        if: matrix.name == 'updater'
+        run: |
+          cp docker-compose.yml updater/compose/docker-compose.yml
+          for c in $(git log --format=%H -- docker-compose.yml); do
+            git show "$c:docker-compose.yml" | python3 updater/compose_stand.py
+          done | sort -u > updater/compose/bekannte_staende.txt
+          python3 updater/compose_stand.py < docker-compose.yml >> updater/compose/bekannte_staende.txt
+          wc -l updater/compose/bekannte_staende.txt
 
       - name: Extract metadata
         id: meta

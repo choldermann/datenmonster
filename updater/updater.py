@@ -1,8 +1,10 @@
-import subprocess, os, logging, json, threading, re, time
+import subprocess, os, logging, json, threading, re, time, shlex, shutil
 import requests
 import docker as docker_sdk
 
 from flask import Flask, jsonify
+
+import compose_stand as stand
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -16,6 +18,12 @@ REGISTRY        = "ghcr.io"
 OWNER           = GITHUB_REPO.split("/")[0]
 REF_IMAGE       = f"{REGISTRY}/{OWNER}/datenmonster-backend"
 REF_CONTAINER   = "datenmonster-backend"
+
+PROJECT_DIR     = os.path.dirname(COMPOSE_FILE)
+ENV_FILE        = os.path.join(PROJECT_DIR, ".env")
+STAND_DIR       = os.getenv("COMPOSE_STAND_DIR", "/app/compose")
+SELF_CONTAINER  = "datenmonster-updater"
+ABGLEICH_FILE   = os.path.join(PROJECT_DIR, "data", "compose-abgleich.json")
 
 STATUS_FILE = os.getenv("UPDATE_STATUS_FILE", "/project/data/update-status.json")
 _update_status = {"step": None, "msg": "", "detail": "", "done": False, "error": False, "log": []}
@@ -46,8 +54,42 @@ def _read_status() -> dict:
         return _update_status
 
 
-def _dc(*args):
-    return ["docker", "compose", "-p", COMPOSE_PROJECT, "-f", COMPOSE_FILE] + list(args)
+_host_dir_cache = None
+
+
+def _host_dir() -> str:
+    """Installationsordner auf dem Host = Quelle unseres /project-Mounts.
+
+    docker compose läuft hier im Container. Relative Pfade wie ./backups löst es
+    gegen den Ordner der Compose-Datei auf – also /project – und reicht das als
+    Host-Pfad an Docker weiter. Auf dem Host gibt es /project aber nicht: die
+    Sicherungen landeten nach jedem Update im falschen Ordner, und der Updater
+    konnte sich nie selbst erneuern."""
+    global _host_dir_cache
+    if _host_dir_cache:
+        return _host_dir_cache
+    try:
+        raw = subprocess.check_output(
+            ["docker", "inspect", "--format", "{{json .Mounts}}", SELF_CONTAINER],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+        for m in json.loads(raw) or []:
+            if m.get("Destination") == PROJECT_DIR and m.get("Source"):
+                _host_dir_cache = m["Source"]
+                return _host_dir_cache
+    except Exception as exc:
+        logger.warning("Host-Pfad nicht ermittelbar: %s", exc)
+    return PROJECT_DIR
+
+
+def _dc(*args, datei: str = COMPOSE_FILE):
+    cmd = ["docker", "compose", "-p", COMPOSE_PROJECT, "-f", datei]
+    host = _host_dir()
+    if host != PROJECT_DIR:
+        cmd += ["--project-directory", host]
+        if os.path.exists(ENV_FILE):
+            cmd += ["--env-file", ENV_FILE]
+    return cmd + list(args)
 
 
 def _safe_run(cmd):
@@ -294,18 +336,7 @@ def _run_update():
         s("up_ok", "Backend · Frontend · Plugin-Manager gestartet")
 
         s("self", "Starte Updater-Neustart…")
-        restarter_cmd = (
-            f"sleep 6 && docker compose"
-            f" -p {COMPOSE_PROJECT}"
-            f" -f {COMPOSE_FILE}"
-            f" up -d --no-deps --force-recreate updater"
-        )
-        rc_r, out_r = _safe_run(["docker", "run", "--rm", "-d",
-            "-v", "/var/run/docker.sock:/var/run/docker.sock",
-            "-v", f"{os.path.dirname(COMPOSE_FILE)}:{os.path.dirname(COMPOSE_FILE)}",
-            "--entrypoint", "sh",
-            f"ghcr.io/{OWNER}/datenmonster-updater:latest",
-            "-c", restarter_cmd])
+        rc_r, out_r = _updater_neu_starten()
         _log(f"Restarter gestartet — RC={rc_r} {out_r[:120]}")
 
         _update_status.update(step="done", msg="Update abgeschlossen", done=True, error=False)
@@ -315,6 +346,158 @@ def _run_update():
     except Exception as exc:
         _update_status.update(step="error", msg=str(exc), error=True)
         _write_status()
+
+
+def _updater_neu_starten():
+    """Erneuert den Updater-Container über einen kurzlebigen Helfer – aus dem
+    eigenen Container heraus geht das nicht, er würde sich mittendrin beenden."""
+    befehl = " ".join(shlex.quote(x) for x in
+                      _dc("up", "-d", "--no-deps", "--force-recreate", "updater"))
+    return _safe_run(["docker", "run", "--rm", "-d",
+        "-v", "/var/run/docker.sock:/var/run/docker.sock",
+        "-v", f"{_host_dir()}:{PROJECT_DIR}",
+        "--entrypoint", "sh",
+        f"ghcr.io/{OWNER}/datenmonster-updater:latest",
+        "-c", f"sleep 6 && {befehl}"])
+
+
+def _config(datei: str):
+    r = subprocess.run(_dc("config", "--format", "json", datei=datei),
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if r.returncode != 0:
+        raise RuntimeError(f"docker compose config: {r.stderr.decode(errors='replace')[-400:]}")
+    return json.loads(r.stdout.decode("utf-8"))
+
+
+def _lesen(pfad: str) -> str:
+    with open(pfad, encoding="utf-8") as f:
+        return f.read()
+
+
+def _schreiben(pfad: str, text: str):
+    """Schreibt atomar und behält Rechte und Besitzer – der Updater läuft als root,
+    die Installation gehört oft einem normalen Benutzer."""
+    vorlage = pfad if os.path.exists(pfad) else COMPOSE_FILE
+    st = os.stat(vorlage) if os.path.exists(vorlage) else None
+    tmp = pfad + ".tmp"
+    with open(tmp, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    if st is not None:
+        os.chmod(tmp, st.st_mode & 0o777)
+        try:
+            os.chown(tmp, st.st_uid, st.st_gid)
+        except OSError:
+            pass
+    os.replace(tmp, pfad)
+
+
+def _besitzer_wie(vorlage: str, pfad: str):
+    try:
+        st = os.stat(vorlage)
+        os.chown(pfad, st.st_uid, st.st_gid)
+    except OSError:
+        pass
+
+
+def _compose_abgleichen() -> dict:
+    """Bringt docker-compose.yml und .env auf den Stand dieses Images.
+
+    Ersetzt wird nur eine Datei, die einem veröffentlichten Stand entspricht.
+    Eine von Hand angepasste bleibt stehen; der neue Stand kommt als .neu daneben.
+    Ports bleiben erhalten (install.sh hat sie früher direkt in die Datei
+    geschrieben) – sie wandern dafür in die .env."""
+    neu_pfad = os.path.join(STAND_DIR, "docker-compose.yml")
+    liste_pfad = os.path.join(STAND_DIR, "bekannte_staende.txt")
+    if not (os.path.exists(neu_pfad) and os.path.exists(liste_pfad) and os.path.exists(COMPOSE_FILE)):
+        return {"ergebnis": "aus", "geaendert": False}
+
+    neu = _lesen(neu_pfad)
+    alt = _lesen(COMPOSE_FILE)
+    env_alt = _lesen(ENV_FILE) if os.path.exists(ENV_FILE) else ""
+    env_neu, ergaenzt = stand.env_ergaenzen(env_alt, stand.pflicht_variablen())
+    ergebnis = {"ergebnis": "aktuell", "geaendert": False, "env_ergaenzt": ergaenzt}
+
+    if alt.replace("\r\n", "\n") != neu:
+        if stand.fingerabdruck(alt) not in stand.bekannte_staende(_lesen(liste_pfad)):
+            _schreiben(COMPOSE_FILE + ".neu", neu)
+            ergebnis.update(ergebnis="angepasst",
+                            hinweis="docker-compose.yml wurde von Hand geändert und bleibt stehen. "
+                                    "Der neue Stand liegt als docker-compose.yml.neu daneben.")
+        else:
+            tmp = os.path.join(PROJECT_DIR, ".docker-compose.pruefen.yml")
+            _schreiben(tmp, neu)
+            try:
+                ports = stand.port_variablen(
+                    stand.veroeffentlichte_ports(_config(COMPOSE_FILE)),
+                    stand.veroeffentlichte_ports(_config(tmp)),
+                )
+            finally:
+                os.remove(tmp)
+            env_neu = stand.env_setzen(env_neu, ports)
+
+            sicherung = f"{COMPOSE_FILE}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+            shutil.copy2(COMPOSE_FILE, sicherung)
+            _besitzer_wie(COMPOSE_FILE, sicherung)
+            _schreiben(COMPOSE_FILE, neu)
+            ergebnis.update(ergebnis="ersetzt", geaendert=True,
+                            sicherung=os.path.basename(sicherung), ports=ports)
+
+    if env_neu != env_alt:
+        if env_alt:
+            env_sicherung = f"{ENV_FILE}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+            shutil.copy2(ENV_FILE, env_sicherung)
+            _besitzer_wie(ENV_FILE, env_sicherung)
+        _schreiben(ENV_FILE, env_neu)
+        os.chmod(ENV_FILE, 0o600)
+        ergebnis["geaendert"] = True
+
+    if ergebnis["geaendert"]:
+        try:
+            _config(COMPOSE_FILE)
+        except Exception as exc:
+            # Neuer Stand lässt sich nicht lesen → alten zurück, nichts neu starten
+            if ergebnis.get("sicherung"):
+                shutil.copy2(os.path.join(PROJECT_DIR, ergebnis["sicherung"]), COMPOSE_FILE)
+            ergebnis.update(ergebnis="fehler", geaendert=False, hinweis=str(exc)[:400])
+    return ergebnis
+
+
+def _beim_start():
+    """Nach einem Update läuft hier das neue Image: Compose-Stand nachziehen und
+    die geänderten Dienste neu erstellen. Kein Kreislauf: danach ist alles gleich."""
+    time.sleep(5)
+    try:
+        erg = _compose_abgleichen()
+    except Exception as exc:
+        erg = {"ergebnis": "fehler", "geaendert": False, "hinweis": str(exc)[:400]}
+    erg["zeit"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    erg["host_dir"] = _host_dir()
+    logger.info("Compose-Abgleich: %s", erg)
+    if erg.get("geaendert"):
+        rc, out = _safe_run(_dc("config", "--services"))
+        dienste = [d for d in out.split() if d != "updater"] if rc == 0 else []
+        if dienste:
+            rc, out = _safe_run(_dc("up", "-d", "--pull", "missing", *dienste))
+            erg["neu_gestartet"] = dienste if rc == 0 else []
+            if rc != 0:
+                erg["hinweis"] = f"docker compose up: {out[-400:]}"
+        rc, out = _updater_neu_starten()
+        erg["updater_neustart"] = rc == 0
+    try:
+        os.makedirs(os.path.dirname(ABGLEICH_FILE), exist_ok=True)
+        with open(ABGLEICH_FILE, "w", encoding="utf-8") as f:
+            json.dump(erg, f, ensure_ascii=False, indent=1)
+    except Exception as exc:
+        logger.warning("Abgleich-Status nicht schreibbar: %s", exc)
+
+
+@app.get("/compose/status")
+def compose_status():
+    try:
+        with open(ABGLEICH_FILE, encoding="utf-8") as f:
+            return jsonify(json.load(f))
+    except Exception:
+        return jsonify({"ergebnis": "unbekannt"})
 
 
 @app.post("/update/start")
@@ -353,4 +536,5 @@ def _env_absichern():
 
 if __name__ == "__main__":
     _env_absichern()
+    threading.Thread(target=_beim_start, daemon=True).start()
     app.run(host="0.0.0.0", port=9000, threaded=True)
