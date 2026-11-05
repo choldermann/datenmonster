@@ -167,6 +167,20 @@ def anlegen(w, r: random.Random) -> dict:
         for g in (1, 2, 3, 4, 5, 6):
             spp.append(dict(kArtikelSonderpreis=i, kKundenGruppe=g, kShop=0, fNettoPreis=round(a["fVKNetto"] * 0.88, 2)))
 
+    # Typische Pflegefehler, damit der Stammdaten-Check etwas findet
+    normal = [a for a in artikel if not a["_meta"].get("set")]
+    pf = r.sample(normal, 16)
+    for a in pf[0:3]:
+        a["fGewicht"] = 0; a["fArtGewicht"] = 0
+    for a in pf[3:6]:
+        a["cTaric"] = ""
+    for a in pf[6:8]:
+        a["cHerkunftsland"] = ""
+    pf[8]["cBarcode"] = pf[9]["cBarcode"]                       # doppelte EAN
+    pf[10]["cBarcode"] = "+H123" + pf[10]["cArtNr"].replace("-", "") + "1"   # HIBC
+    pf[11]["fVKNetto"] = round(pf[11]["fEKNetto"] * 0.93, 2)    # VK unter EK
+    pf[11]["_meta"]["vk"] = pf[11]["fVKNetto"]
+    pf[12]["kWarengruppe"] = 0                                    # ohne Warengruppe
     meta = {a["kArtikel"]: a.pop("_meta") for a in artikel}
     w.schreiben("dbo.tArtikel", artikel)
     w.schreiben("dbo.tArtikelBeschreibung", beschr)
@@ -207,6 +221,8 @@ def anlegen(w, r: random.Random) -> dict:
                            kSprache=1, kZahlungsart=za, nDebitorennr=10000 + kk, kFirma=1,
                            cSteuerNr="", fSkonto=2 if gruppe == 5 else 0))
         mail = f"{(firma or f'{v}.{n}').lower().replace(' ', '.').replace('&', 'und')[:28]}@example.org"
+        if r.random() < 0.03:
+            mail = ""                                                  # Kunde ohne E-Mail
         for typ in (1, 0):
             ka += 1
             adressen.append(dict(kAdresse=ka, kKunde=kk, cFirma=firma, cVorname=v, cName=n,

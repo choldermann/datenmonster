@@ -46,11 +46,18 @@ class Sim:
         self.platz = {k: r.choice(s["lagerplaetze"]) for k in self.art}
         self.nachfrage = defaultdict(lambda: 0.2)  # gleitender Tagesbedarf je Artikel
         # Einkaufspreis-Entwicklung: allgemein +2,5 %/Jahr, einige Artikel springen
-        self.ek_sprung = {k: (dt.date(2025, r.randint(2, 11), 1), r.uniform(0.10, 0.22))
+        # Sprünge im Spätsommer 2026: der letzte Wareneingang liegt dann über dem vorletzten
+        self.ek_sprung = {k: (dt.date(2026, r.randint(7, 10), r.randint(1, 28)), r.uniform(0.10, 0.22))
                           for k in r.sample([k for k, a in self.art.items() if not a.get("set")], 16)}
         # Verkaufspreis: jeweils im Januar +3 % – außer bei den Sprung-Artikeln
         self.lagerhueter = set(r.sample([k for k, a in self.art.items() if a["beliebt"] < 0.25 and not a.get("set")], 9))
         self.kunden_liste = list(self.kunden.values())
+        beliebte = sorted((k for k, a in self.art.items() if not a.get("set")), key=lambda k: -self.art[k]["beliebt"])
+        # Lieferengpass ab Mitte Oktober 2026: diese drei werden nicht mehr nachgeliefert
+        self.engpass = set(beliebte[3:6])
+        # 2026 ausgelaufene Artikel mit Restbestand (gesperrt)
+        self.auslauf = set(sorted(self.lagerhueter)[:4])
+        self.lsp_von_apos = {}
 
     # ── Hilfen ───────────────────────────────────────────────────────────────
     def neu(self, was):
@@ -132,6 +139,8 @@ class Sim:
         for k, a in self.art.items():
             if a.get("set") or k in self.lagerhueter:
                 continue
+            if k in self.engpass and tag >= dt.date(2026, 9, 1):
+                continue
             lief = self.s["lieferanten"][a["lief"]]
             bedarf = self.nachfrage[k]
             melde = bedarf * (lief["nLieferzeit"] + 7) + (a["nMidestbestand"] if "nMidestbestand" in a else 0)
@@ -172,6 +181,8 @@ class Sim:
             return
         je_bestellung = defaultdict(list)
         for eintrag in self.lieferungen.pop(tag):
+            if eintrag[1] in self.engpass and tag >= dt.date(2026, 9, 20):
+                continue     # Lieferant kann nicht liefern – bleibt als Zulauf offen
             je_bestellung[eintrag[3]].append(eintrag)
         for klb, posten in je_bestellung.items():
             if tag > ENDE:
@@ -223,6 +234,8 @@ class Sim:
                 gw *= 0.05
             if a["kArtikel"] in self.lagerhueter:
                 gw *= 0.02
+            if a["kArtikel"] in self.auslauf and tag >= dt.date(2026, 4, 1):
+                gw = 0
             if a["vk"] > 150 and g == 1:
                 gw *= 0.2
             gewichte.append(gw)
@@ -298,11 +311,15 @@ class Sim:
                 rabatt = r.choice([3, 5])
             if r.random() < 0.004:       # Muster/Gratisware
                 preis, rabatt = 0.0, 0
+            if k in self.lagerhueter and tag >= dt.date(2026, 6, 1):
+                preis, rabatt = round(self.ek(k, tag) * 0.7, 2), 0   # Abverkauf unter EK
             kap = self.neu("apos")
             positionen.append(dict(kAuftragPosition=kap, kArtikel=k, kAuftrag=kab, cArtNr=a["cArtNr"], cName=a["name"],
                                    cHinweis="", fAnzahl=menge, fEkNetto=self.ek(k, tag), fVkNetto=preis, fRabatt=rabatt,
                                    fMwSt=19 if a["stkl"] == 1 else 7, nSort=i, kSteuerklasse=a["stkl"], nType=1,
-                                   cEinheit=a["einheit"]))
+                                   cEinheit=a["einheit"],
+                                   # JTL zählt "in Aufträgen" nur reservierte Positionen (keine Angebote)
+                                   nReserviert=0 if (angebot or storno) else 1))
         netto = sum(p["fAnzahl"] * p["fVkNetto"] * (1 - p["fRabatt"] / 100) for p in positionen)
         versand_netto = 0 if va == 5 or netto >= 150 else [None, 5.90, 6.40, 6.20, 39.0][va]
         if versand_netto:
@@ -359,6 +376,7 @@ class Sim:
             if p["nType"] != 1:
                 continue
             klsp = self.neu("lsp")
+            self.lsp_von_apos[p["kAuftragPosition"]] = klsp
             self.rows["dbo.tLieferscheinPos"].append(dict(kLieferscheinPos=klsp, kLieferschein=kls,
                                                           kBestellPos=p["kAuftragPosition"], fAnzahl=p["fAnzahl"], cHinweis=""))
             a = self.art[p["kArtikel"]]
@@ -370,14 +388,24 @@ class Sim:
             gewicht += a["gew"] * p["fAnzahl"]
         pakete = 1 if gewicht <= 31.5 else min(8, math.ceil(gewicht / 31.5))
         versendet = zeit + dt.timedelta(hours=r.randint(1, 5)) if au["va"] != 5 else zeit
+        if tag >= ENDE - dt.timedelta(days=1) and au["va"] != 5 and r.random() < 0.35:
+            # gepackt, aber noch nicht raus – Rechnung kommt erst mit dem Versand
+            self.rows["dbo.tLieferscheinEckdaten"].append(dict(
+                kLieferschein=kls, dErstellt=zeit, dVersendet=None, nAnzahlPakete=pakete, nAnzahlVersendetePakete=0,
+                kVersandArt=au["va"], fVersandGewicht=round(gewicht + 0.4 * pakete, 2), fArtikelGewicht=round(gewicht, 2),
+                nRechnungStatus=0))
+            self.rows["_ausgeliefert"].append(au["kAuftrag"])
+            return
         self.rows["dbo.tLieferscheinEckdaten"].append(dict(kLieferschein=kls, dErstellt=zeit, dVersendet=versendet,
                                                            nAnzahlPakete=pakete, nAnzahlVersendetePakete=pakete,
                                                            kVersandArt=au["va"], fVersandGewicht=round(gewicht + 0.4 * pakete, 2),
                                                            fArtikelGewicht=round(gewicht, 2), nRechnungStatus=2))
         if au["va"] != 5:
             for _ in range(pakete):
+                ohne = au["va"] == 4 or r.random() < 0.015            # Spedition/vergessen: kein Tracking
                 self.rows["dbo.tVersand"].append(dict(kVersand=self.neu("versand"), kLieferschein=kls, kBenutzer=4,
-                                                      cIdentCode=f"00340{r.randint(10**12, 10**13 - 1)}", dErstellt=zeit,
+                                                      cIdentCode="" if ohne else f"00340{r.randint(10**12, 10**13 - 1)}",
+                                                      dErstellt=zeit,
                                                       cHinweis="", fGewicht=round(gewicht / pakete + 0.4, 2),
                                                       kVersandArt=au["va"], cLogistiker=welt.VERSANDARTEN[au["va"] - 1][2],
                                                       dVersendet=versendet, nStatus=1))
@@ -456,6 +484,8 @@ class Sim:
             self.rows["dbo.tGutschriftPos"].append(dict(
                 kGutschriftPos=self.neu("gpos"), tGutschrift_kGutschrift=kg, tArtikel_kArtikel=p["kArtikel"],
                 cArtNr=p["cArtNr"], cString=p["cName"], nAnzahl=menge, fVKNetto=p["fVkNetto"], fRabatt=p["fRabatt"],
+                # JTL rechnet Gutschriften über den BRUTTO-Einzelpreis an (spRechnungEckdatenBerechnen)
+                fVKPreis=round(p["fVkNetto"] * (1 + p["fMwSt"] / 100), 4),
                 fMwSt=p["fMwSt"], kBestellPos=p["kAuftragPosition"], nSort=i))
             betrag += menge * p["fVkNetto"] * (1 - p["fRabatt"] / 100) * (1 + p["fMwSt"] / 100)
         return kg, round(betrag, 2)
@@ -473,15 +503,24 @@ class Sim:
             return
         kg, betrag = self._gutschrift(rg, zeit, [(p, menge)], 0)
         krm = self.neu("retoure")
-        self.rows["dbo.tRMRetoure"].append(dict(kRMRetoure=krm, kKunde=au["kunde"]["kKunde"], kBenutzer=4,
+        krp = self.neu("rmpos")
+        ksv = self.neu("rmsv")
+        self.rows["dbo.tRMStatusVerlauf"].append(dict(kRMStatusVerlauf=ksv, kRMRetourePos=krp, kRMStatus=3,
+                                                      cKommentar="", kBenutzer=4, dErstellt=zeit))
+        ku = au["kunde"]
+        self.rows["dbo.tRMRetoureAbholAdresse"].append(dict(
+            kRMRetoureAbholAdresse=krm, kKunde=ku["kKunde"], cFirma=ku["firma"], cVorname=ku["v"], cName=ku["n"],
+            cStrasse=ku["strasse"], cPLZ=ku["plz"], cOrt=ku["ort"], cLand=ku["land"], cISO=ku["iso"], cMail=ku["mail"]))
+        self.rows["dbo.tRMRetoure"].append(dict(kRMRetoure=krm, kKunde=au["kunde"]["kKunde"], kBenutzer=4, kWarenlager=1,
                                                 cRetoureNr=self.nummer("RT", zeit.date()), dErstellt=zeit, kFirma=1,
                                                 kGutschrift=kg, kBestellung=au["kAuftrag"], kRMStatus=3,
-                                                kRMRetoureAbholAdresse=0, nHerkunft=0, fKorrekturBetrag=0,
+                                                kRMRetoureAbholAdresse=krm, nHerkunft=0, fKorrekturBetrag=0,
                                                 nVersandkostenErstatten=0))
-        self.rows["dbo.tRMRetourePos"].append(dict(kRMRetourePos=self.neu("rmpos"), kRMRetoure=krm, kZustand=1,
-                                                   kLieferscheinPos=0, kBenutzer=4, fAnzahl=menge, kArtikel=p["kArtikel"],
+        self.rows["dbo.tRMRetourePos"].append(dict(kRMRetourePos=krp, kRMRetoure=krm, kZustand=1,
+                                                   kLieferscheinPos=self.lsp_von_apos.get(p["kAuftragPosition"], 0),
+                                                   kBenutzer=4, fAnzahl=menge, kArtikel=p["kArtikel"],
                                                    cArtNr=p["cArtNr"], cName=p["cName"],
-                                                   kRMGrund=r.choice([1, 2, 3, 4, 5, 6]), kRMStatusVerlauf=0,
+                                                   kRMGrund=r.choice([1, 1, 2, 3, 3, 4, 5, 6, 7]), kRMStatusVerlauf=ksv,
                                                    nGutschreiben=1))
         self.retour_zugaenge.append((p["kArtikel"], menge, p["fEkNetto"], zeit))
         self.gutschrift_zahlungen.append((kg, rg, -betrag, zeit + dt.timedelta(days=2)))
@@ -523,6 +562,8 @@ class Sim:
                 self.nachbestellen(tag)
             if tag.month == 12 and tag.day == 31:
                 self.inventur(tag)
+            if tag.weekday() == 2 and r.random() < 0.5:
+                self.korrektur(tag)
             # Tagesbedarf je Artikel (gleitend, ~4 Wochen) für die Nachbestellung
             for k in self.art:
                 self.nachfrage[k] = self.nachfrage[k] * 0.965 + self.heute[k] * 0.035
@@ -534,7 +575,9 @@ class Sim:
             if zeit.date() <= ENDE:
                 self.rows["dbo.tZahlung"].append(dict(
                     kZahlung=self.neu("zahlung"), cName="Erstattung Retoure", dDatum=zeit, fBetrag=betrag,
-                    kBestellung=rg["au"]["kAuftrag"], kRechnung=rg["kRechnung"], kBenutzer=1, cHinweis="",
+                    # Erstattung gehört zur Gutschrift, nicht zur Rechnung – sonst mindert
+                    # sie die Rechnung ein zweites Mal (JTL meldete dann "teilbezahlt")
+                    kBestellung=rg["au"]["kAuftrag"], kRechnung=0, kBenutzer=1, cHinweis="",
                     kZahlungsart=rg["au"]["za"], nZahlungstyp=0, kGutschrift=kg, kEingangsrechnung=0))
         # Bestellstatus nach Lieferung, Bestände der Lose
         offen_je_lb = defaultdict(float)
@@ -554,6 +597,7 @@ class Sim:
                 aktuell[los[0]] = los[1]
         for e in self.rows["dbo.tWarenLagerEingang"]:
             e["fAnzahlAktuell"] = round(aktuell.get(e["kWarenLagerEingang"], 0.0), 4)
+        self.inaktiv = set(self.auslauf)
         ausgeliefert = set(self.rows.pop("_ausgeliefert"))
         for a in self.rows["Verkauf.tAuftrag"]:
             if a["kAuftrag"] in ausgeliefert:
@@ -565,6 +609,16 @@ class Sim:
             if rg["kRechnung"] in stornos:
                 rg["nStorno"] = 1
         return self.rows
+
+    def korrektur(self, tag):
+        """Bruch, Schwund, Fehlpick – hin und wieder eine Korrekturbuchung."""
+        r = self.r
+        k = r.choice([k for k in self.art if not self.art[k].get("set") and self.bestand[k] > 3])
+        zeit = dt.datetime.combine(tag, dt.time(16, r.randint(0, 59)))
+        if r.random() < 0.75:
+            self.ausbuchen(k, r.choice([1, 1, 2, 3]), zeit, 30, kommentar=r.choice(["Bruch", "Schwund", "beschädigt"]))
+        else:
+            self.einbuchen(k, r.choice([1, 2]), self.ek(k, tag), zeit, 30, kommentar="Fund bei Umlagerung")
 
     def inventur(self, tag):
         r = self.r

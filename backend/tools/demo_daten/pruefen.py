@@ -12,6 +12,7 @@ import time
 from types import SimpleNamespace
 
 from app.core.database import SessionLocal
+import app.models.user  # noqa: F401 – Fremdschlüssel projects.owner_id → users
 from app.models.dataset import DbConnection, ProjektVerbindung
 from app.models.form import Form
 from app.models.project import Project
@@ -52,8 +53,12 @@ def installieren(db, p, conn):
         if t.template_id in ("jtl_wissen_paket", "jtl_eingangsrechnung"):
             continue
         try:
+            # Jede Verbindungs-Angabe der Vorlage auf die Demo zeigen lassen (Intrastat
+            # heißt z. B. connection_10)
+            cfg = {c["key"]: conn.id for c in ((t.content or {}).get("config_required") or [])
+                   if c.get("type") == "connection"}
             install_template(InstallBody(template_id=t.template_id, project_id=p.id,
-                                         config={"connection_jtl": conn.id}), db=db, user=ADMIN)
+                                         config=cfg or {"connection_jtl": conn.id}), db=db, user=ADMIN)
         except Exception as e:
             print(f"  ⚠ Installation {t.template_id}: {str(getattr(e, 'detail', e))[:200]}")
 
@@ -64,7 +69,11 @@ def ausfuehren(db, p):
     for f in db.query(Form).filter(Form.project_id == p.id).order_by(Form.id):
         t0 = time.time()
         try:
-            erg = _execute_form(f, FormRunRequest(params={}, preview_rows=50), db, user_id=1, user=ADMIN)
+            # Wie ein Zeitplan: Vorgaben der Filterfelder, Zeitraum "dieses Jahr"
+            from app.services import report_catalog, zeitraum
+            params = report_catalog.standardparameter(f.schema or {})
+            params.update(zeitraum.berechne("this_year"))
+            erg = _execute_form(f, FormRunRequest(params=params, preview_rows=50), db, user_id=1, user=ADMIN)
         except Exception as e:
             fehler.append((f.name, "Formular", str(getattr(e, "detail", e))[:200])); continue
         ergebnisse = erg.get("results") or {}
@@ -87,7 +96,41 @@ def ausfuehren(db, p):
         print("  leer  ", " | ".join(x))
 
 
+def herkunft_pruefen():
+    """Gegenprobe: Daten dürfen nur in Tabellen stehen, die der Generator
+    schreibt, oder in der von Hand geprüften Erlaubt-Liste."""
+    from tools.demo_daten.erlaubt import ERLAUBT
+    from tools.demo_daten.erzeugen import REIHENFOLGE
+    from tools.demo_daten.verbindung import verbinden
+    erzeugt = {t.lower() for t in REIHENFOLGE} | {t.lower() for t in STAMMDATEN_TABELLEN}
+    erlaubt = {t.lower() for t in ERLAUBT}
+    cur = verbinden(ZIEL).cursor()
+    fremd = [(f"{s}.{t}", n) for s, t, n in cur.execute("""
+        SELECT s.name, t.name, SUM(p.rows) FROM sys.tables t JOIN sys.schemas s ON s.schema_id = t.schema_id
+        JOIN sys.partitions p ON p.object_id = t.object_id AND p.index_id IN (0, 1)
+        WHERE t.is_ms_shipped = 0 GROUP BY s.name, t.name HAVING SUM(p.rows) > 0""")
+             if f"{s}.{t}".lower() not in erzeugt | erlaubt]
+    fremdbezug = cur.execute("SELECT COUNT(*) FROM sys.sql_expression_dependencies "
+                             "WHERE referenced_database_name = 'eazybusiness'").fetchone()[0]
+    print("Herkunft: " + ("nur erzeugte und erlaubte Tabellen haben Daten" if not fremd
+                          else f"⚠ Daten in unerwarteten Tabellen: {fremd}"))
+    print("Verweise auf andere Datenbank (eazybusiness): " + ("keine" if not fremdbezug else f"⚠ {fremdbezug}"))
+
+
+STAMMDATEN_TABELLEN = [
+    "dbo.tfirma", "dbo.tFirmaHistory", "dbo.tBenutzer", "dbo.tShop", "dbo.tKundenGruppe", "dbo.tZahlungsart",
+    "dbo.tVersandArt", "dbo.tEinheit", "dbo.tEinheitSprache", "dbo.tWarenLager", "dbo.tWarenLagerPlatz",
+    "dbo.tHersteller", "dbo.tWarengruppe", "dbo.tlieferant", "dbo.tArtikel", "dbo.tArtikelBeschreibung",
+    "dbo.tLiefArtikel", "dbo.tPreis", "dbo.tPreisDetail", "dbo.tStueckliste", "dbo.tArtikelSonderpreis",
+    "dbo.tSonderpreise", "dbo.tkunde", "dbo.tAdresse",
+    # von JTL-Prozeduren aus den erzeugten Daten berechnet
+    "dbo.tlagerbestand", "dbo.tArtikelHistory", "Verkauf.tAuftragEckdaten", "Verkauf.tAuftragPositionEckdaten",
+    "Rechnung.tRechnungEckdaten", "Rechnung.tRechnungPositionEckdaten",
+]
+
+
 def main():
+    herkunft_pruefen()
     db = SessionLocal()
     conn = verbindung(db)
     p = projekt(db, conn)
