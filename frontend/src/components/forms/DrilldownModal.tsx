@@ -2,6 +2,7 @@ import { csvZelle } from "../../utils/csvSicher";
 import { useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
+import { tabelleAlsExcel } from "./excelExport";
 import { sortiereZeilen } from "./tabellenSortierung";
 import { fehlerText } from "../../api/client";
 
@@ -146,26 +147,37 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, sort?.col, sort?.dir]);
 
-  const handleExport = async () => {
+  const handleExport = async (format = "csv") => {
     // Ist die Anzeige abgeschnitten, alle Zeilen nachladen – sonst enthielte die
     // Datei nur das, was gerade im Fenster steht.
     let alle = rows;
+    setExportFehler("");
     if (begrenzt && ladeAlle) {
-      setExportiert(true); setExportFehler("");
+      setExportiert(format);
       try {
         alle = (await ladeAlle()).rows;
       } catch (e) {
         setExportFehler(fehlerText(e, "Export fehlgeschlagen"));
-        return;
-      } finally {
         setExportiert(false);
+        return;
       }
     }
+    const safeVal = String(value ?? "detail").replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
+    if (format === "xlsx") {
+      setExportiert("xlsx");
+      try {
+        await tabelleAlsExcel({ titel: title || "Drilldown", columns, rows: sortiere(alle, sort, numericCols),
+          datei: `drilldown_${field || "wert"}_${safeVal}` });
+      } catch (e) {
+        setExportFehler(fehlerText(e, "Excel-Export fehlgeschlagen"));
+      } finally { setExportiert(false); }
+      return;
+    }
+    setExportiert(false);
     const csv = toCsv(columns, sortiere(alle, sort, numericCols));
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    const safeVal = String(value ?? "detail").replace(/[^a-z0-9]+/gi, "_").slice(0, 40);
     a.href = url;
     a.download = `drilldown_${field || "wert"}_${safeVal}.csv`;
     a.click();
@@ -219,7 +231,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
               {field ? <><span style={{ color: S.textMain }}>{field}</span> = <span style={{ color: ACCENT }}>{String(value)}</span> · </> : null}
               {loading ? "lädt…" : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
-              {!loading && begrenzt ? (ladeAlle && downloadErlaubt ? " angezeigt · CSV enthält alle" : " angezeigt · Liste gekürzt") : ""}
+              {!loading && begrenzt ? (ladeAlle && downloadErlaubt ? " angezeigt · CSV/Excel enthalten alle" : " angezeigt · Liste gekürzt") : ""}
               {exportFehler ? <span style={{ color: "var(--err-soft)" }}> · {exportFehler}</span> : null}
               {canDrillDeeper && !loading && rows.length > 0 ? " · Zeile klicken für Details" : ""}
             </p>
@@ -227,13 +239,13 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
           {downloadErlaubt && (
             <EmailTableButton columns={columns} rows={sortedRows} title={title || "Drilldown"} disabled={!rows.length} />
           )}
-          {/* CSV und E-Mail folgen beide „Download erlauben“ des Formulars (im Editor immer an). */}
-          {downloadErlaubt && (
-          <button onClick={handleExport} disabled={!rows.length || exportiert}
+          {/* CSV, Excel und E-Mail folgen alle „Download erlauben“ des Formulars (im Editor immer an). */}
+          {downloadErlaubt && ([["csv", "CSV"], ["xlsx", "Excel"]] as const).map(([fmt, text]) => (
+          <button key={fmt} onClick={() => handleExport(fmt)} disabled={!rows.length || !!exportiert}
             style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: rows.length ? "pointer" : "not-allowed", border: `1px solid color-mix(in srgb, ${ACCENT} 26.7%, transparent)`, backgroundColor: `color-mix(in srgb, ${ACCENT} 8.2%, transparent)`, color: ACCENT, opacity: rows.length ? 1 : 0.5 }}>
-            {exportiert ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} CSV
+            {exportiert === fmt ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} {text}
           </button>
-          )}
+          ))}
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer", padding: 4 }}>
             <X size={16} />
           </button>

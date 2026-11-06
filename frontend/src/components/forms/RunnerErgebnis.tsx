@@ -7,7 +7,9 @@
  * alles nach den Eingabefeldern – Export-Ergebnisse, Reiterleiste, Widgets und
  * Rohtabellen für Aktionen ohne Widget – lebt jetzt nur noch hier.
  */
-import { useRef } from "react";
+import { useRef, useState } from "react";
+import { fehlerText } from "../../api/client";
+import { tabelleAlsExcel } from "./excelExport";
 import { csvZelle } from "../../utils/csvSicher";
 import { AlertCircle, Download } from "lucide-react";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "./WidgetRenderer";
@@ -25,6 +27,15 @@ const S = {
 export function ErgebnisTabelle({ result, formName, actionLabel, allowDownload }) {
   const { columns = [], rows = [], total, error, download_disabled } = result;
   const canDownload = allowDownload && !download_disabled;
+  const [xlsxLaeuft, setXlsxLaeuft] = useState(false);
+  const downloadXlsx = async () => {
+    setXlsxLaeuft(true);
+    try {
+      await tabelleAlsExcel({ titel: actionLabel, columns, rows, datei: `${formName}-${actionLabel}` });
+    } catch (e) {
+      alert(`Excel-Export fehlgeschlagen: ${fehlerText(e)}`);
+    } finally { setXlsxLaeuft(false); }
+  };
 
   const downloadCsv = () => {
     const header = columns.join(";");
@@ -62,6 +73,12 @@ export function ErgebnisTabelle({ result, formName, actionLabel, allowDownload }
                 color: S.accent, background: "none", border: `1px solid ${S.border}`,
                 borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
               <Download size={11} /> CSV
+            </button>
+            <button onClick={downloadXlsx} disabled={xlsxLaeuft || !rows.length}
+              style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
+                color: S.accent, background: "none", border: `1px solid ${S.border}`,
+                borderRadius: 5, padding: "4px 10px", cursor: xlsxLaeuft ? "wait" : "pointer" }}>
+              <Download size={11} /> {xlsxLaeuft ? "Excel …" : "Excel"}
             </button>
           </div>
         )}

@@ -1,9 +1,10 @@
 import { csvZelle } from "../../../utils/csvSicher";
 import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
+import { tabelleAlsExcel } from "../excelExport";
 import EmailTableButton from "../EmailTableButton";
 import { sortiereZeilen } from "../tabellenSortierung";
-import api, { fehlerText } from "../../../api/client";
+import { fehlerText } from "../../../api/client";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -76,13 +77,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   const downloadXlsx = async () => {
     setXlsxLaeuft(true);
     try {
-      const resp = await api.post("/api/forms/table-xlsx",
-        { title: widget.label || "Tabelle", columns, rows: sortedRows }, { responseType: "blob" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(resp.data);
-      a.download = `${widget.label || "export"}.xlsx`;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      await tabelleAlsExcel({ titel: widget.label || "Tabelle", columns, rows: sortedRows });
     } catch (e) {
       alert(`Excel-Export fehlgeschlagen: ${fehlerText(e)}`);
     } finally { setXlsxLaeuft(false); }
