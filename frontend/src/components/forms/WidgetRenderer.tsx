@@ -25,6 +25,7 @@ import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
 import ZugferdWidget from "./widgets/ZugferdWidget";
 import BaumWidget from "./widgets/BaumWidget";
 import KarteWidget from "./widgets/KarteWidget";
+import EreignisseWidget from "./widgets/EreignisseWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -49,7 +50,7 @@ export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_researc
                                                 "kostenstruktur", "preisautomatik",
                                                 "debitoren", "datev_stammdaten",
                                                 "inventur", "kunden_ausschluss",
-                                                "datenpflege", "zugferd"]);
+                                                "datenpflege", "zugferd", "ereignisse"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams, onTab }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -74,6 +75,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   if (widget.type === "datenpflege")
     return <DatenpflegeWidget widget={widget} formId={formId} />;
   if (widget.type === "zugferd") return <ZugferdWidget widget={widget} />;
+  if (widget.type === "ereignisse") return <EreignisseWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",
@@ -95,7 +97,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} onAiAction={aiAct} />;
     case "kpi":   return <KpiWidget   widget={widget} result={result} />;
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
-    case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} />;
+    case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} projectId={projectId} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "timeline": return <TimelineWidget widget={widget} result={result} />;
     case "ai_summary": return <AiSummaryWidget widget={widget} result={result} results={results} onAiText={onAiText} />;

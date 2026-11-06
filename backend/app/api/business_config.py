@@ -302,3 +302,92 @@ def delete_goal(key: str, project_id: Optional[int] = None,
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_editor(project_id, user, db)
     return {"deleted": cfg_service.reset_value(project_id, db, "goal", key)}
+
+
+# ── Eigene Ereignisse: Aktionen, Messen, Preisänderungen … als Marker in Verläufen ──
+# Gespeichert wie die Fixkosten: Bereich "ereignis", je Projekt und streng je Mandant –
+# die Rabattaktion des einen Betriebs gehört nicht in die Kurve des anderen.
+
+EREIGNIS_KATEGORIEN = ["Aktion", "Messe", "Werbung", "Preisänderung", "Lieferengpass", "Sonstiges"]
+
+
+def _ereignis_out(row) -> dict:
+    v = dict(row.value or {})
+    return {"id": row.key, "datum": v.get("datum"), "bis": v.get("bis"), "titel": v.get("titel", ""),
+            "kategorie": v.get("kategorie") or "Sonstiges", "notiz": v.get("notiz") or ""}
+
+
+class EreignisIn(BaseModel):
+    project_id: Optional[int] = None
+    datum: str
+    bis: Optional[str] = None
+    titel: str
+    kategorie: Optional[str] = "Sonstiges"
+    notiz: Optional[str] = ""
+
+
+def _ereignis_wert(body: EreignisIn, user: User) -> dict:
+    von = cfg_service._parse_datum(body.datum)
+    if von is None:
+        raise HTTPException(400, f"Ungültiges Datum: {body.datum}")
+    bis = cfg_service._parse_datum(body.bis) if body.bis else None
+    if body.bis and bis is None:
+        raise HTTPException(400, f"Ungültiges Enddatum: {body.bis}")
+    if bis is not None and bis < von:
+        raise HTTPException(400, "Das Enddatum liegt vor dem Beginn")
+    titel = (body.titel or "").strip()
+    if not titel:
+        raise HTTPException(400, "Bezeichnung fehlt")
+    if len(titel) > 120:
+        raise HTTPException(400, "Bezeichnung höchstens 120 Zeichen")
+    notiz = (body.notiz or "").strip()
+    if len(notiz) > 1000:
+        raise HTTPException(400, "Notiz höchstens 1000 Zeichen")
+    kat = body.kategorie if body.kategorie in EREIGNIS_KATEGORIEN else "Sonstiges"
+    return {"datum": von.isoformat(), "bis": bis.isoformat() if bis and bis != von else None,
+            "titel": titel, "kategorie": kat, "notiz": notiz, "von": user.username}
+
+
+@router.get("/ereignisse")
+def list_ereignisse(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "ereignis", mandant_id, strikt=True)
+    liste = sorted((_ereignis_out(r) for r in zeilen), key=lambda e: (e["datum"] or "", e["titel"]))
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db),
+            "kategorien": EREIGNIS_KATEGORIEN, "ereignisse": liste}
+
+
+@router.post("/ereignisse")
+def add_ereignis(body: EreignisIn, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    import uuid
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    row = cfg_service.set_value(body.project_id, db, "ereignis", uuid.uuid4().hex[:12],
+                                _ereignis_wert(body, user), mandant_id)
+    return _ereignis_out(row)
+
+
+@router.put("/ereignisse/{eid}")
+def update_ereignis(eid: str, body: EreignisIn, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    if cfg_service._eine_zeile(db, body.project_id, "ereignis", eid, mandant_id) is None:
+        raise HTTPException(404, "Ereignis nicht gefunden")
+    row = cfg_service.set_value(body.project_id, db, "ereignis", eid, _ereignis_wert(body, user), mandant_id)
+    return _ereignis_out(row)
+
+
+@router.delete("/ereignisse/{eid}")
+def delete_ereignis(eid: str, project_id: Optional[int] = None, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    require_editor(project_id, user, db)
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    if not cfg_service.reset_value(project_id, db, "ereignis", eid, mandant_id):
+        raise HTTPException(404, "Ereignis nicht gefunden")
+    return {"ok": True}

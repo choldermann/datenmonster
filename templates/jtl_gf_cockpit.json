@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.23",
+  "version": "2.24",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12971,6 +12971,18 @@
                 "IsoNum"
               ]
             }
+          },
+          {
+            "id": "w_ereignisse",
+            "type": "ereignisse",
+            "label": "Eigene Ereignisse",
+            "action_id": null,
+            "config": {
+              "width": 12,
+              "visible_tabs": [
+                "tab_ereignisse"
+              ]
+            }
           }
         ],
         "result_tabs": [
@@ -12989,6 +13001,11 @@
               "act_overview_kpi",
               "act_umsatz_verlauf"
             ]
+          },
+          {
+            "id": "tab_ereignisse",
+            "label": "Ereignisse",
+            "action_ids": []
           },
           {
             "id": "tab_umsatz",
@@ -13150,7 +13167,8 @@
             "label": "Unternehmensübersicht",
             "reiter": [
               "tab_baum",
-              "tab_uebersicht"
+              "tab_uebersicht",
+              "tab_ereignisse"
             ]
           },
           {
