@@ -420,6 +420,19 @@ def _widgets_for_tab(schema: dict, action_ids: set) -> list:
             if not action_ids or w.get("action_id") in action_ids]
 
 
+# Was der PDF-Report darstellen kann. Baum, Pflegemasken (Kostenstruktur) u. ä. nicht.
+PDF_WIDGET_TYPEN = {"kpi", "tasklist", "alerts", "table", "bar", "line", "pie"}
+
+
+def _tab_druckbar(schema: dict, tab: dict) -> bool:
+    """Hat der Reiter etwas fürs PDF? Ein Reiter ohne Aktionen (z. B. „Kostenstruktur“
+    mit einer Pflegemaske) bekäme über _widgets_for_tab sonst ALLE Widgets des Cockpits."""
+    aids = set(tab.get("action_ids") or [])
+    if not aids and any(t.get("action_ids") for t in (schema.get("result_tabs") or [])):
+        return False
+    return any(w.get("type") in PDF_WIDGET_TYPEN for w in _widgets_for_tab(schema, aids))
+
+
 def _render_tab(schema: dict, tab: dict, results: dict) -> str:
     aids = set(tab.get("action_ids") or [])
     widgets = _widgets_for_tab(schema, aids)
@@ -1362,6 +1375,8 @@ async def generate_report(form, params: dict, db, precomputed_summary: str | Non
         if want_assessment:
             body.append(_assessment_html(_assessment_rows(results)))
     for tab in tabs:
+        if not _tab_druckbar(schema, tab):
+            continue
         body.append(f'<div style="page-break-before:always"></div>')
         body.append(_render_tab(schema, tab, results))
 

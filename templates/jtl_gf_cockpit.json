@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.16",
+  "version": "2.17",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -14,7 +14,10 @@
     "Rohertrag/Marge werden mit dem aktuellen Artikel-EK (dbo.tArtikel.fEKNetto) gerechnet – ein Näherungswert, kein historischer EK.",
     "SCHEMA-PRÜFUNG: Die Abfragen nutzen Standard-JTL-Tabellen (Rechnung.vRechnung, Rechnung.tRechnungPosition, Rechnung.vRechnungRechnungsadresse, dbo.tArtikel, dbo.tArtikelBeschreibung, dbo.tlagerbestand, dbo.tWarengruppe). Bei abweichender JTL-Version ggf. Tabellen-/Spaltennamen prüfen.",
     "Die Aufgabenliste oben im Reiter „Unternehmensübersicht“ kommt aus der Warnungs-Engine: Die Regeln sind Daten, die Schwellwerte stehen zentral unter Warnungen und gelten auch für den Unternehmensmonitor. Ist das Lager-Cockpit installiert, erscheint zusätzlich dessen Ladenhüter-Warnung.",
-    "Das mitinstallierte Formular 'Kostenstruktur' pflegt die monatlichen Fixkosten (Personal, Miete, Strom, Fahrzeuge …). Erst damit füllt sich der Reiter 'Ergebnis' mit Betriebsergebnis, Umsatzrendite und Break-even – ohne gepflegte Kosten sind die Fixkosten 0 und das Betriebsergebnis entspricht dem Rohertrag gesamt. Wichtig: den ersten Eintrag je Kostenart weit genug zurückdatieren, sonst rechnet der Vorjahresvergleich dort mit 0 €."
+    "Das mitinstallierte Formular 'Kostenstruktur' pflegt die monatlichen Fixkosten (Personal, Miete, Strom, Fahrzeuge …). Erst damit füllt sich der Reiter 'Ergebnis' mit Betriebsergebnis, Umsatzrendite und Break-even – ohne gepflegte Kosten sind die Fixkosten 0 und das Betriebsergebnis entspricht dem Rohertrag gesamt. Wichtig: den ersten Eintrag je Kostenart weit genug zurückdatieren, sonst rechnet der Vorjahresvergleich dort mit 0 €.",
+    "Der erste Reiter „Baum“ zeigt das Ergebnis als aufklappbaren Baum: Umsatz, Wareneinsatz und Kosten bis zum DB III, jede Ebene ergibt in Summe ihren Oberpunkt. Kanäle, Warengruppen, Lieferanten, Versandarten und Kostenblöcke kommen aus den Daten.",
+    "Versandkosten im Baum sind der EK der Versandpositionen, also der Wert, der in JTL an der Versandart hinterlegt ist. Fehlt er, zeigt der Baum, wie viele Versandpositionen ohne Kosten sind.",
+    "Die Fixkosten werden im letzten Reiter „Kostenstruktur“ gepflegt (dieselbe Maske wie im Formular Kostenstruktur)."
   ],
   "config_required": [
     {
@@ -9114,6 +9117,136 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_baum",
+      "name": "Cockpit – Baum",
+      "canvas_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Baumansicht GF-Cockpit: alle Knoten im Langformat (Knoten, Eltern, Ansicht, Titel, Wert, WertVJ).\n-- Feste Knoten (verkauf, we, versand, var_sonst, fix …) tragen kein Eltern – ihr Platz steht im Widget.\n-- Knoten mit Eltern legt das Widget selbst an (Kanäle, Warengruppen, Lieferanten, Versandarten, Kostenblöcke).\n-- Gesamtstufen nie über eine Aufzählung der Positionsarten: Artikel (1) und Versand (2) benannt, Rest = Sonstiges.\nWITH p AS (\n    SELECT\n        POS.nType,\n        POS.fAnzahl * POS.fVkNetto AS Netto,\n        POS.fAnzahl * COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0) AS EK,\n        CASE WHEN POS.nType = 2 AND ISNULL(POS.fEkNetto, 0) = 0 THEN 1 ELSE 0 END AS VersandOhneEK,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        RE.kPlattform, RE.kKunde, RE.dErstellt,\n        A.kWarengruppe,\n        LA.tLieferant_kLieferant AS kLieferant,\n        LTRIM(RTRIM(POS.cName)) AS PosName\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno, 0) = 0\n          AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    OUTER APPLY (SELECT TOP 1 L.tLieferant_kLieferant FROM dbo.tliefartikel L\n                 WHERE L.tArtikel_kArtikel = A.kArtikel ORDER BY L.nStandard DESC, L.kLiefArtikel) LA\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n),\n-- Erste Rechnung je Kunde überhaupt (nicht nur im Fenster): Neukunde = erste Rechnung im jeweiligen Zeitraum.\nerst AS (\n    SELECT kKunde, MIN(dErstellt) AS dErste FROM Rechnung.vRechnung WHERE ISNULL(nStorno, 0) = 0 GROUP BY kKunde\n),\npk AS (\n    SELECT p.*,\n        CASE WHEN e.dErste >= :von THEN 1 ELSE 0 END AS neu_cur,\n        CASE WHEN e.dErste >= DATEADD(YEAR, -1, :von) THEN 1 ELSE 0 END AS neu_vj\n    FROM p LEFT JOIN erst e ON e.kKunde = p.kKunde\n),\n-- Teilmengen je Ansicht, nach Wert sortiert; die kleinen Posten fasst „Übrige“ zusammen.\n-- Kanal = Plattform-Familie, genau wie „Rohertrag je Plattform“ (m_db_plattform), damit die Tabelle passt.\nkanal AS (\n    SELECT CAST(ISNULL(P1.nTyp, -1) AS varchar(20)) AS k, MAX(ISNULL(FAM.FamName, 'Unbekannt')) AS t,\n        SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) AS w, SUM(CASE WHEN vj = 1 THEN Netto ELSE 0 END) AS wv\n    FROM p\n    LEFT JOIN dbo.tPlattform P1 ON P1.nPlattform = p.kPlattform\n    LEFT JOIN (SELECT nTyp, MIN(cName) AS FamName FROM dbo.tPlattform WHERE nInet = 0 GROUP BY nTyp) FAM ON FAM.nTyp = P1.nTyp\n    GROUP BY ISNULL(P1.nTyp, -1)\n),\nwg AS (\n    SELECT CAST(ISNULL(p.kWarengruppe, 0) AS varchar(20)) AS k, MAX(ISNULL(W.cName, '(ohne Warengruppe)')) AS t,\n        SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) AS w, SUM(CASE WHEN vj = 1 THEN Netto ELSE 0 END) AS wv,\n        SUM(CASE WHEN cur = 1 THEN EK ELSE 0 END) AS e, SUM(CASE WHEN vj = 1 THEN EK ELSE 0 END) AS ev\n    FROM p LEFT JOIN dbo.tWarengruppe W ON W.kWarengruppe = p.kWarengruppe WHERE p.nType = 1 GROUP BY ISNULL(p.kWarengruppe, 0)\n),\nlief AS (\n    SELECT CAST(ISNULL(p.kLieferant, 0) AS varchar(20)) AS k, MAX(ISNULL(L.cFirma, 'Ohne Lieferant')) AS t,\n        SUM(CASE WHEN cur = 1 THEN EK ELSE 0 END) AS e, SUM(CASE WHEN vj = 1 THEN EK ELSE 0 END) AS ev\n    FROM p LEFT JOIN dbo.tlieferant L ON L.kLieferant = p.kLieferant WHERE p.nType = 1 GROUP BY ISNULL(p.kLieferant, 0)\n),\nvsa AS (\n    SELECT ISNULL(NULLIF(PosName, ''), 'Versand') AS t,\n        SUM(CASE WHEN cur = 1 THEN EK ELSE 0 END) AS e, SUM(CASE WHEN vj = 1 THEN EK ELSE 0 END) AS ev\n    FROM p WHERE p.nType = 2 GROUP BY ISNULL(NULLIF(PosName, ''), 'Versand')\n),\nfix AS (\n    SELECT g.k, g.t, g.w, g.wv FROM OPENJSON(:cfg_kosten_gruppen)\n        WITH (k nvarchar(40) '$.key', t nvarchar(60) '$.gruppe', w decimal(18,2) '$.zeitraum', wv decimal(18,2) '$.zeitraum_vj') g\n    WHERE g.w > 0 OR g.wv > 0\n),\nek AS (\n    SELECT\n        SUM(CASE WHEN B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis) THEN W.Wert ELSE 0 END) AS w,\n        SUM(CASE WHEN B.dErstellt >= DATEADD(YEAR, -1, :von) AND B.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN W.Wert ELSE 0 END) AS wv\n    FROM dbo.tLieferantenBestellung B\n    CROSS APPLY (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) AS Wert FROM dbo.tLieferantenBestellungPos P\n                 WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) W\n    WHERE ISNULL(B.nDeleted, 0) = 0 AND B.dErstellt >= DATEADD(YEAR, -1, :von) AND B.dErstellt < DATEADD(DAY, 1, :bis)\n),\nchurn AS (\n    SELECT COUNT(*) AS n, SUM(Umsatz) AS w FROM (\n        SELECT RE.kKunde, COUNT(DISTINCT RE.kRechnung) AS Bestellungen, MIN(RE.dErstellt) AS ErsterKauf,\n               MAX(RE.dErstellt) AS LetzterKauf, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz\n        FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno, 0) = 0\n              AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n        JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n        WHERE RE.dErstellt >= DATEADD(MONTH, -24, :bis) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n          AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre = 'Y')\n        GROUP BY RE.kKunde\n        HAVING COUNT(DISTINCT RE.kRechnung) >= 2 AND SUM(POS.fAnzahl * POS.fVkNetto) > 0\n    ) a\n    WHERE DATEDIFF(DAY, LetzterKauf, :bis) > 90\n      AND DATEDIFF(DAY, LetzterKauf, :bis) > 2 * DATEDIFF(DAY, ErsterKauf, LetzterKauf) * 1.0 / NULLIF(Bestellungen - 1, 0)\n),\nrang AS (\n    SELECT 'kanal' AS art, k, t, w, wv, ROW_NUMBER() OVER (ORDER BY w DESC, wv DESC) AS r FROM kanal\n    UNION ALL SELECT 'wg', k, t, w, wv, ROW_NUMBER() OVER (ORDER BY w DESC, wv DESC) FROM wg\n    UNION ALL SELECT 'we_wg', k, t, e, ev, ROW_NUMBER() OVER (ORDER BY e DESC, ev DESC) FROM wg\n    UNION ALL SELECT 'lief', k, t, e, ev, ROW_NUMBER() OVER (ORDER BY e DESC, ev DESC) FROM lief\n    UNION ALL SELECT 'vsa', CAST(ROW_NUMBER() OVER (ORDER BY e DESC, ev DESC) AS varchar(20)), t, e, ev,\n                     ROW_NUMBER() OVER (ORDER BY e DESC, ev DESC) FROM vsa\n),\nzweige AS (\n    -- Top 5 je Ansicht einzeln, der Rest als „Übrige“\n    SELECT art, CASE WHEN r <= 5 THEN art + '_' + k ELSE art + '_rest' END AS Knoten,\n           CASE WHEN r <= 5 THEN t ELSE N'Übrige' END AS Titel, SUM(w) AS Wert, SUM(wv) AS WertVJ, MIN(r) AS r\n    FROM rang GROUP BY art, CASE WHEN r <= 5 THEN art + '_' + k ELSE art + '_rest' END,\n                       CASE WHEN r <= 5 THEN t ELSE N'Übrige' END\n)\nSELECT Knoten, Eltern, Ansicht, Titel, Untertitel, CAST(Wert AS DECIMAL(18,2)) AS Wert, CAST(WertVJ AS DECIMAL(18,2)) AS WertVJ, Reihe\nFROM (\n    -- feste Knoten\n    SELECT 'verkauf' AS Knoten, NULL AS Eltern, NULL AS Ansicht, NULL AS Titel, CAST(NULL AS nvarchar(80)) AS Untertitel,\n           SUM(CASE WHEN cur = 1 THEN Netto ELSE 0 END) AS Wert, SUM(CASE WHEN vj = 1 THEN Netto ELSE 0 END) AS WertVJ, 0 AS Reihe FROM p\n    UNION ALL SELECT 'we', NULL, NULL, NULL, NULL,\n           SUM(CASE WHEN cur = 1 AND nType = 1 THEN EK ELSE 0 END), SUM(CASE WHEN vj = 1 AND nType = 1 THEN EK ELSE 0 END), 0 FROM p\n    UNION ALL SELECT 'versand', NULL, NULL, NULL, NULL,\n           SUM(CASE WHEN cur = 1 AND nType = 2 THEN EK ELSE 0 END), SUM(CASE WHEN vj = 1 AND nType = 2 THEN EK ELSE 0 END), 0 FROM p\n    UNION ALL SELECT 'versand_ohne_ek', NULL, NULL, NULL, NULL,\n           SUM(CASE WHEN cur = 1 THEN VersandOhneEK ELSE 0 END), SUM(CASE WHEN vj = 1 THEN VersandOhneEK ELSE 0 END), 0 FROM p\n    UNION ALL SELECT 'var_sonst', NULL, NULL, NULL, NULL,\n           SUM(CASE WHEN cur = 1 AND nType NOT IN (1, 2) THEN EK ELSE 0 END), SUM(CASE WHEN vj = 1 AND nType NOT IN (1, 2) THEN EK ELSE 0 END), 0 FROM p\n    UNION ALL SELECT 'fix', NULL, NULL, NULL, NULL, ISNULL(SUM(w), 0), ISNULL(SUM(wv), 0), 0 FROM fix\n    UNION ALL SELECT 'einkauf', NULL, NULL, NULL, NULL, ISNULL(w, 0), ISNULL(wv, 0), 0 FROM ek\n    UNION ALL SELECT 'schlafend', NULL, NULL, NULL, CAST(n AS nvarchar(20)) + N' Kunden, Umsatz der letzten 24 Monate', ISNULL(w, 0), NULL, 0 FROM churn\n    -- Kundenart\n    UNION ALL SELECT 'ku_best', 'verkauf', 'Kundenart', N'Bestandskunden', NULL,\n           SUM(CASE WHEN cur = 1 AND neu_cur = 0 THEN Netto ELSE 0 END), SUM(CASE WHEN vj = 1 AND neu_vj = 0 THEN Netto ELSE 0 END), 1 FROM pk\n    UNION ALL SELECT 'ku_neu', 'verkauf', 'Kundenart', N'Neukunden', N'erste Rechnung im Zeitraum',\n           SUM(CASE WHEN cur = 1 AND neu_cur = 1 THEN Netto ELSE 0 END), SUM(CASE WHEN vj = 1 AND neu_vj = 1 THEN Netto ELSE 0 END), 2 FROM pk\n    -- Verkauf nach Warengruppe braucht Versand und Sonstiges, sonst geht die Summe nicht auf\n    UNION ALL SELECT 'wg_versand', 'verkauf', 'Warengruppe', N'Versanderlöse', NULL,\n           SUM(CASE WHEN cur = 1 AND nType = 2 THEN Netto ELSE 0 END), SUM(CASE WHEN vj = 1 AND nType = 2 THEN Netto ELSE 0 END), 90 FROM p\n    UNION ALL SELECT 'wg_sonst', 'verkauf', 'Warengruppe', N'Rabatte & Sonstiges', NULL,\n           SUM(CASE WHEN cur = 1 AND nType NOT IN (1, 2) THEN Netto ELSE 0 END), SUM(CASE WHEN vj = 1 AND nType NOT IN (1, 2) THEN Netto ELSE 0 END), 91 FROM p\n    -- dynamische Zweige\n    UNION ALL SELECT Knoten, CASE art WHEN 'kanal' THEN 'verkauf' WHEN 'wg' THEN 'verkauf' WHEN 'vsa' THEN 'versand' ELSE 'we' END,\n           CASE art WHEN 'kanal' THEN 'Kanal' WHEN 'wg' THEN 'Warengruppe' WHEN 'we_wg' THEN 'Warengruppe' WHEN 'lief' THEN 'Lieferant' ELSE NULL END,\n           Titel, NULL, Wert, WertVJ, r FROM zweige\n    UNION ALL SELECT 'fix_' + k, 'fix', NULL, t, NULL, w, wv, 0 FROM fix\n) x\nWHERE Eltern IS NULL OR ISNULL(Wert, 0) <> 0 OR ISNULL(WertVJ, 0) <> 0\nORDER BY CASE WHEN Eltern IS NULL THEN 0 ELSE 1 END, Eltern, Ansicht, Reihe, Wert DESC\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Knoten",
+            "Eltern",
+            "Ansicht",
+            "Titel",
+            "Untertitel",
+            "Wert",
+            "WertVJ",
+            "Reihe"
+          ]
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Baum",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Knoten",
+              "target_field": "Knoten",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Knoten"
+              }
+            },
+            {
+              "source_field": "Eltern",
+              "target_field": "Eltern",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Eltern"
+              }
+            },
+            {
+              "source_field": "Ansicht",
+              "target_field": "Ansicht",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ansicht"
+              }
+            },
+            {
+              "source_field": "Titel",
+              "target_field": "Titel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Titel"
+              }
+            },
+            {
+              "source_field": "Untertitel",
+              "target_field": "Untertitel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Untertitel"
+              }
+            },
+            {
+              "source_field": "Wert",
+              "target_field": "Wert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert"
+              }
+            },
+            {
+              "source_field": "WertVJ",
+              "target_field": "WertVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "WertVJ"
+              }
+            },
+            {
+              "source_field": "Reihe",
+              "target_field": "Reihe",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reihe"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -9589,6 +9722,13 @@
             "mapping_id": "m_ergebnis_bloecke",
             "pipeline_id": null,
             "label": "Cockpit – Kostenblöcke"
+          },
+          {
+            "id": "act_baum",
+            "type": "run_mapping",
+            "mapping_id": "m_baum",
+            "pipeline_id": null,
+            "label": "Cockpit – Baum"
           }
         ],
         "widgets": [
@@ -11976,9 +12116,373 @@
               "full_rows": true,
               "info": "Kostenblöcke des Zeitraums, taggenau anteilig aus den monatlichen Sätzen. Das ist eine Managementsicht, keine BWA: Abgrenzungen, Bestandsveränderungen und Steuern sind nicht enthalten."
             }
+          },
+          {
+            "id": "w_baum",
+            "type": "baum",
+            "label": "Ergebnis als Baum",
+            "action_id": "act_baum",
+            "config": {
+              "width": 12,
+              "hoehe": 660,
+              "offen": [
+                "ergebnis",
+                "kosten"
+              ],
+              "wurzel": {
+                "id": "ergebnis",
+                "titel": "Ergebnis",
+                "untertitel": "Vergleich Vorjahr",
+                "kinder": [
+                  "verkauf",
+                  "we",
+                  "kosten"
+                ],
+                "zeilen": [
+                  {
+                    "label": "Umsatz",
+                    "wert": "verkauf"
+                  },
+                  {
+                    "label": "DB I",
+                    "formel": "verkauf - we",
+                    "quote": true
+                  },
+                  {
+                    "label": "DB II",
+                    "formel": "verkauf - we - var",
+                    "quote": true
+                  },
+                  {
+                    "label": "DB III",
+                    "formel": "verkauf - we - var - fix",
+                    "quote": true,
+                    "hl": true
+                  }
+                ]
+              },
+              "knoten": {
+                "verkauf": {
+                  "titel": "Verkauf",
+                  "untertitel": "Umsatz netto",
+                  "ansichten": {
+                    "Kanal": [],
+                    "Kundenart": [],
+                    "Warengruppe": []
+                  },
+                  "ansicht": "Kanal",
+                  "beschreibung": "Alle Rechnungspositionen ohne Stornos: Artikel, Versanderlöse, Rabatte und Sonstiges.",
+                  "spruenge": [
+                    {
+                      "label": "Reiter Umsatzanalyse",
+                      "reiter": "tab_umsatz"
+                    },
+                    {
+                      "label": "Reiter Kundenentwicklung",
+                      "reiter": "tab_kunden"
+                    }
+                  ],
+                  "tabelle": {
+                    "action_id": "act_db_plattform"
+                  },
+                  "kind_vorlage_je_ansicht": {
+                    "Kanal": {
+                      "untertitel": "Kanal",
+                      "tabelle": {
+                        "action_id": "act_db_plattform",
+                        "filter": {
+                          "spalte": "Plattform",
+                          "wert": "{titel}"
+                        }
+                      },
+                      "spruenge": [
+                        {
+                          "label": "Reiter Umsatzanalyse",
+                          "reiter": "tab_umsatz"
+                        },
+                        {
+                          "label": "Vertrieb · Auftragseingang",
+                          "rubrik": "vertrieb",
+                          "reiter": "tab_ve_eingang"
+                        }
+                      ]
+                    },
+                    "Warengruppe": {
+                      "untertitel": "Warengruppe",
+                      "tabelle": {
+                        "action_id": "act_wg_entwicklung",
+                        "filter": {
+                          "spalte": "Warengruppe",
+                          "wert": "{titel}"
+                        }
+                      },
+                      "spruenge": [
+                        {
+                          "label": "Reiter Umsatzanalyse",
+                          "reiter": "tab_umsatz"
+                        },
+                        {
+                          "label": "Preis & Marge · Überblick",
+                          "rubrik": "preis",
+                          "reiter": "tab_pr_ueberblick"
+                        }
+                      ]
+                    },
+                    "Kundenart": {
+                      "spruenge": [
+                        {
+                          "label": "Reiter Kundenentwicklung",
+                          "reiter": "tab_kunden"
+                        },
+                        {
+                          "label": "Vertrieb · Kunden",
+                          "rubrik": "vertrieb",
+                          "reiter": "tab_ve_kunden"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "we": {
+                  "titel": "Wareneinsatz",
+                  "untertitel": "EK der verkauften Ware",
+                  "gut": "runter",
+                  "ansichten": {
+                    "Lieferant": [],
+                    "Warengruppe": []
+                  },
+                  "ansicht": "Lieferant",
+                  "beschreibung": "Einkaufspreis der verkauften Artikel (Artikelpositionen). Bevorzugt der EK der Rechnungsposition, sonst der aktuelle Artikel-EK. Versand-EK steht unter Variable Kosten.",
+                  "spruenge": [
+                    {
+                      "label": "Preis & Marge · Margenverfall",
+                      "rubrik": "preis",
+                      "reiter": "tab_pr_verfall"
+                    }
+                  ],
+                  "zusatz": [
+                    "einkauf"
+                  ],
+                  "kind_vorlage_je_ansicht": {
+                    "Lieferant": {
+                      "untertitel": "Lieferant",
+                      "spruenge": [
+                        {
+                          "label": "Einkauf · Lieferantenqualität",
+                          "rubrik": "einkauf",
+                          "reiter": "tab_ek_qualitaet"
+                        },
+                        {
+                          "label": "Preis & Marge · Einkaufspreise",
+                          "rubrik": "preis",
+                          "reiter": "tab_pr_ek"
+                        }
+                      ]
+                    },
+                    "Warengruppe": {
+                      "untertitel": "Warengruppe",
+                      "tabelle": {
+                        "action_id": "act_wg_entwicklung",
+                        "filter": {
+                          "spalte": "Warengruppe",
+                          "wert": "{titel}"
+                        }
+                      },
+                      "spruenge": [
+                        {
+                          "label": "Preis & Marge · Margenverfall",
+                          "rubrik": "preis",
+                          "reiter": "tab_pr_verfall"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "kosten": {
+                  "titel": "Kosten",
+                  "untertitel": "variabel + fix",
+                  "formel": "var + fix",
+                  "gut": "runter",
+                  "kinder": [
+                    "var",
+                    "fix"
+                  ]
+                },
+                "var": {
+                  "titel": "Variable Kosten",
+                  "untertitel": "DB I → DB II",
+                  "formel": "versand + var_sonst",
+                  "gut": "runter",
+                  "kinder": [
+                    "versand",
+                    "var_sonst"
+                  ]
+                },
+                "versand": {
+                  "titel": "Versand",
+                  "untertitel": "EK der Versandpositionen",
+                  "gut": "runter",
+                  "hinweis": {
+                    "wert": "versand_ohne_ek",
+                    "text": "{n} Versandpositionen ohne hinterlegte Kosten. Pflegen lässt sich das in JTL an der Versandart."
+                  },
+                  "beschreibung": "Kosten je Versandart, wie sie in JTL an der Versandart hinterlegt sind. Das ist ein Pauschalwert je Sendung, nicht die Rechnung des Dienstleisters.",
+                  "spruenge": [
+                    {
+                      "label": "Versand · Versandübersicht",
+                      "rubrik": "versand",
+                      "reiter": "tab_vs_uebersicht"
+                    }
+                  ],
+                  "kind_vorlage": {
+                    "untertitel": "Versandart",
+                    "spruenge": [
+                      {
+                        "label": "Versand · Versandübersicht",
+                        "rubrik": "versand",
+                        "reiter": "tab_vs_uebersicht"
+                      }
+                    ]
+                  }
+                },
+                "var_sonst": {
+                  "titel": "Sonstige Positionen",
+                  "untertitel": "EK von Rabatt- und Sonderpositionen",
+                  "gut": "runter",
+                  "leer_ausblenden": true
+                },
+                "fix": {
+                  "titel": "Fixkosten",
+                  "untertitel": "DB II → DB III",
+                  "gut": "runter",
+                  "hinweis": {
+                    "wenn": "null",
+                    "text": "Noch keine Fixkosten gepflegt. Das geht im Reiter Kostenstruktur."
+                  },
+                  "beschreibung": "Monatliche Fixkosten aus der Kostenstruktur, taggenau anteilig auf den Zeitraum gerechnet.",
+                  "spruenge": [
+                    {
+                      "label": "Reiter Kostenstruktur",
+                      "reiter": "tab_kosten"
+                    },
+                    {
+                      "label": "Reiter Ergebnis",
+                      "reiter": "tab_ergebnis"
+                    }
+                  ],
+                  "kind_vorlage": {
+                    "untertitel": "Kostenblock",
+                    "tabelle": {
+                      "action_id": "act_ergebnis_bloecke",
+                      "filter": {
+                        "spalte": "Kostenblock",
+                        "wert": "{titel}"
+                      }
+                    },
+                    "spruenge": [
+                      {
+                        "label": "Reiter Kostenstruktur",
+                        "reiter": "tab_kosten"
+                      },
+                      {
+                        "label": "Reiter Ergebnis",
+                        "reiter": "tab_ergebnis"
+                      }
+                    ]
+                  },
+                  "tabelle": {
+                    "action_id": "act_ergebnis_bloecke"
+                  }
+                },
+                "ku_best": {
+                  "titel": "Bestandskunden",
+                  "untertitel": "Kundenart",
+                  "zusatz": [
+                    "schlafend"
+                  ],
+                  "spruenge": [
+                    {
+                      "label": "Reiter Kundenentwicklung",
+                      "reiter": "tab_kunden"
+                    },
+                    {
+                      "label": "Vertrieb · Kunden",
+                      "rubrik": "vertrieb",
+                      "reiter": "tab_ve_kunden"
+                    }
+                  ]
+                },
+                "ku_neu": {
+                  "titel": "Neukunden",
+                  "tabelle": {
+                    "action_id": "act_neukunden"
+                  },
+                  "beschreibung": "Kunden, deren erste Rechnung überhaupt in den Zeitraum fällt. Im Vorjahr entsprechend die Kunden mit erster Rechnung im Vorjahreszeitraum.",
+                  "spruenge": [
+                    {
+                      "label": "Reiter Kundenentwicklung",
+                      "reiter": "tab_kunden"
+                    }
+                  ]
+                },
+                "schlafend": {
+                  "titel": "Schlafende Kunden",
+                  "info": true,
+                  "tabelle": {
+                    "action_id": "act_churn"
+                  },
+                  "beschreibung": "Kunden mit mindestens zwei Käufen in den letzten 24 Monaten, die seit über 90 Tagen und mehr als doppelt so lange wie üblich nichts gekauft haben. Der Wert ist ihr Umsatz der letzten 24 Monate. Er zählt nicht zur Summe.",
+                  "spruenge": [
+                    {
+                      "label": "Reiter Ausblick",
+                      "reiter": "tab_ausblick"
+                    }
+                  ]
+                },
+                "einkauf": {
+                  "titel": "Einkauf (Bestellungen)",
+                  "untertitel": "zählt nicht zur Summe",
+                  "info": true,
+                  "tabelle": {
+                    "action_id": "act_ek_offen_liste"
+                  },
+                  "beschreibung": "Bestellvolumen bei Lieferanten im Zeitraum. Das ist nicht der Wareneinsatz: Bestellt wird für das Lager, verkauft wird später. Die Tabelle zeigt die heute noch offenen Bestellungen.",
+                  "spruenge": [
+                    {
+                      "label": "Reiter Einkauf & Verbindlichkeiten",
+                      "reiter": "tab_einkauf"
+                    },
+                    {
+                      "label": "Einkauf · Einkaufsvolumen",
+                      "rubrik": "einkauf",
+                      "reiter": "tab_ek_volumen"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          {
+            "id": "w_kostenstruktur_tab",
+            "type": "kostenstruktur",
+            "label": "Fixkosten je Kostenart",
+            "action_id": null,
+            "config": {
+              "width": 12,
+              "visible_tabs": [
+                "tab_kosten"
+              ]
+            }
           }
         ],
         "result_tabs": [
+          {
+            "id": "tab_baum",
+            "label": "Baum",
+            "action_ids": [
+              "act_baum"
+            ]
+          },
           {
             "id": "tab_uebersicht",
             "label": "Unternehmensübersicht",
@@ -12109,6 +12613,11 @@
               "act_retouren_artikel",
               "act_retouren_kunden"
             ]
+          },
+          {
+            "id": "tab_kosten",
+            "label": "Kostenstruktur",
+            "action_ids": []
           }
         ],
         "show_ai_assistant": true,
@@ -12118,9 +12627,14 @@
             "Umsatz zählt hier ausgestellte Rechnungen, nicht Auftragseingänge — für die Vertriebssicht ist das Vertriebs-Cockpit zuständig.",
             "Stornorechnungen sind gegengerechnet. Das kann von der JTL-eigenen Statistik abweichen, die Stornos teilweise mitzählt."
           ]
+        },
+        "rubrik": {
+          "id": "gf"
         }
       },
-      "portal_config": {"icon": "🧭"}
+      "portal_config": {
+        "icon": "🧭"
+      }
     },
     {
       "name": "Kostenstruktur",
@@ -12144,9 +12658,15 @@
         "doku": {
           "intro": "Hier werden die Fixkosten gepflegt, mit denen das Geschäftsführer-Cockpit das Betriebsergebnis und den Break-even rechnet. Personal, Miete, Fahrzeuge, Versicherungen und Sonstiges lassen sich je Monat erfassen. Ohne gepflegte Werte zeigt das Geschäftsführer-Cockpit den Rohertrag, aber kein Ergebnis.",
           "hinweise": []
+        },
+        "rubrik": {
+          "id": "gf",
+          "rolle": "pflege"
         }
       },
-      "portal_config": {"icon": "💶"}
+      "portal_config": {
+        "icon": "💶"
+      }
     }
   ],
   "alert_rules": [

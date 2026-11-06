@@ -83,18 +83,28 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
       out[k] = dd;
     }
     out[wurzel.id] = { ...wurzel, kinder: [...(wurzel.kinder || [])], istWurzel: true };
+    const schonDrin = new Set();
     for (const r of result?.rows || []) {
       const k = r[sp.knoten], pa = r[sp2.eltern];
-      if (k == null || pa == null || pa === "" || !out[pa] || out[k]) continue;
-      const eltern = out[pa], vorlage = eltern.kind_vorlage || {};
+      if (k == null) continue;
+      // Untertitel aus den Daten (z. B. „233 Kunden …“) gilt auch für feste Knoten.
+      if (out[k] && r[sp2.untertitel]) out[k].untertitel = r[sp2.untertitel];
+      if (pa == null || pa === "" || !out[pa] || schonDrin.has(k) || k === pa) continue;
+      schonDrin.add(k);
+      const eltern = out[pa], ans = r[sp2.ansicht];
+      // Vorlage für Kinder: je Ansicht (Kanal ≠ Warengruppe) oder für alle.
+      const vorlage = (ans && eltern.kind_vorlage_je_ansicht?.[ans]) || eltern.kind_vorlage || {};
+      // Fest konfigurierte Knoten (z. B. Bestandskunden mit Zusatzknoten) behalten ihre Angaben.
       out[k] = { gut: eltern.gut, ...vorlage, titel: r[sp2.titel] || String(k),
-        untertitel: r[sp2.untertitel] || vorlage.untertitel || r[sp2.ansicht] || "", dynamisch: true };
-      const ans = r[sp2.ansicht];
+        untertitel: r[sp2.untertitel] || vorlage.untertitel || ans || "", dynamisch: !out[k], ...(out[k] || {}) };
+      if (!out[k].titel) out[k].titel = r[sp2.titel] || String(k);
       if (ans) {
         eltern.ansichten = eltern.ansichten || {};
-        (eltern.ansichten[ans] = eltern.ansichten[ans] || []).push(k);
+        const l = (eltern.ansichten[ans] = eltern.ansichten[ans] || []);
+        if (!l.includes(k)) l.push(k);
       } else {
-        (eltern.kinder = eltern.kinder || []).push(k);
+        const l = (eltern.kinder = eltern.kinder || []);
+        if (!l.includes(k)) l.push(k);
       }
     }
     // Ansichten ohne einen einzigen Knoten weglassen (z. B. Kanal bei nur einer Plattform: bleibt, ist aber 1)
@@ -510,7 +520,9 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     const t = pd?.tabelle; if (!t?.action_id) return null;
     const res = results[t.action_id]; if (!res) return null;
     let rows = res.rows || [];
-    if (t.filter?.spalte) rows = rows.filter((r) => String(r[t.filter.spalte]) === String(t.filter.wert));
+    // {titel} im Filterwert = Titel des Knotens (Kanal, Warengruppe, Kostenblock …)
+    const fw = t.filter ? String(t.filter.wert ?? "{titel}").replace("{titel}", pd.titel) : null;
+    if (t.filter?.spalte) rows = rows.filter((r) => String(r[t.filter.spalte]) === fw);
     return { ...res, rows, total: rows.length };
   }, [pd, results]);
 
