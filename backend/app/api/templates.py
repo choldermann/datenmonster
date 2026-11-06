@@ -5,6 +5,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 from typing import Optional, List, Any, Dict
 from pydantic import BaseModel
+import copy
+import hashlib
 import json
 import logging
 import re
@@ -441,6 +443,102 @@ def _formular_ergaenzen(vorhanden: dict, vorlage: dict, bisher: Optional[dict]) 
             v_map[schluessel] = eintrag
             neu.setdefault(_ROW_DETAIL, []).append(protokoll)
     return neu
+
+
+# Protokoll-Schlüssel für die Fingerabdrücke der Bausteine (form_bausteine[form]["stand"]).
+_STAND = "stand"
+# Einzelne Abschnitte des Schemas, die als Ganzes ein Baustein sind.
+_STAND_ABSCHNITTE = ("doku",)
+
+
+def _stand_hash(el) -> str:
+    """Fingerabdruck eines Bausteins. Verbindungs-IDs zählen nicht mit: die zieht
+    der Installer selbst nach (_conn_ids_nachziehen), sie sind keine Änderung des
+    Kunden."""
+    def _ohne_verbindung(o):
+        if isinstance(o, dict):
+            return {k: (None if k in _CONN_ID_KEYS else _ohne_verbindung(v))
+                    for k, v in o.items()}
+        if isinstance(o, list):
+            return [_ohne_verbindung(v) for v in o]
+        return o
+    roh = json.dumps(_ohne_verbindung(el), sort_keys=True, ensure_ascii=False, default=str)
+    return hashlib.sha1(roh.encode("utf-8")).hexdigest()
+
+
+def _bausteine_aktualisieren(vorhanden: dict, vorlage: dict, stand: Optional[dict]):
+    """Bringt geänderte Bausteine eines installierten Formulars auf den Stand der
+    neuen Vorlage – aber nur, wenn der Kunde sie seit der letzten Installation
+    nicht selbst angepasst hat.
+
+    `stand` = Fingerabdrücke aus der letzten Installation (je "<liste>::<id>" bzw.
+    Abschnittsname). Stimmt der Baustein im Formular noch damit überein, wird er
+    durch die neue Fassung ersetzt. Weicht er ab, hat ihn jemand im Betrieb
+    geändert: er bleibt und wird als „geschützt“ gemeldet. Ohne Fingerabdruck
+    (Installationen von vor dieser Funktion) gilt der heutige Stand als Ausgangs-
+    punkt – ersetzt wird dann erst beim nächsten Update, nichts geht verloren.
+
+    Gibt (aktualisiert, geschuetzt, neuer_stand) zurück; `vorhanden` wird verändert.
+    Bausteine, die es nur beim Kunden gibt, bleiben ohne Fingerabdruck und unberührt.
+    """
+    stand = stand or {}
+    aktualisiert, geschuetzt, neuer_stand = [], [], {}
+
+    def _abgleichen(schluessel, ist, soll, ersetzen):
+        h_ist, h_soll = _stand_hash(ist), _stand_hash(soll)
+        if h_ist == h_soll:
+            neuer_stand[schluessel] = h_ist
+            return
+        basis = stand.get(schluessel)
+        if basis is None:
+            neuer_stand[schluessel] = h_ist      # Ausgangspunkt für das nächste Update
+        elif basis == h_ist:
+            ersetzen(copy.deepcopy(soll))
+            neuer_stand[schluessel] = h_soll
+            aktualisiert.append(schluessel)
+        else:
+            neuer_stand[schluessel] = basis      # bleibt geschützt, auch beim nächsten Mal
+            geschuetzt.append(schluessel)
+
+    for liste in _BAUSTEIN_LISTEN:
+        t_nach_id = {e.get("id"): e for e in (vorlage.get(liste) or [])
+                     if isinstance(e, dict) and e.get("id") is not None}
+        v_liste = vorhanden.get(liste) or []
+        for i, el in enumerate(v_liste):
+            eid = el.get("id") if isinstance(el, dict) else None
+            if eid is None or eid not in t_nach_id:
+                continue
+
+            def _ersetzen(neu_el, _l=v_liste, _i=i):
+                _l[_i] = neu_el
+            _abgleichen(f"{liste}::{eid}", el, t_nach_id[eid], _ersetzen)
+
+    for abschnitt in _STAND_ABSCHNITTE:
+        if abschnitt not in vorlage or abschnitt not in vorhanden:
+            continue
+
+        def _ersetzen(neu_el, _a=abschnitt):
+            vorhanden[_a] = neu_el
+        _abgleichen(abschnitt, vorhanden[abschnitt], vorlage[abschnitt], _ersetzen)
+
+    return aktualisiert, geschuetzt, neuer_stand
+
+
+def _stand_ergaenzen(stand: dict, schema: dict, ids_je_liste: Optional[dict] = None) -> dict:
+    """Fingerabdrücke für Bausteine nachtragen, die gerade neu ins Formular kamen
+    (oder bei einer Neuinstallation: für alle). `ids_je_liste` None = alle."""
+    for liste in _BAUSTEIN_LISTEN:
+        nur = None if ids_je_liste is None else set(ids_je_liste.get(liste) or [])
+        for el in schema.get(liste) or []:
+            eid = el.get("id") if isinstance(el, dict) else None
+            if eid is None or (nur is not None and eid not in nur):
+                continue
+            stand[f"{liste}::{eid}"] = _stand_hash(el)
+    if ids_je_liste is None:
+        for abschnitt in _STAND_ABSCHNITTE:
+            if abschnitt in schema:
+                stand[abschnitt] = _stand_hash(schema[abschnitt])
+    return stand
 
 
 def _conn_ids_nachziehen(vorhanden, vorlage, config: dict) -> int:
@@ -1245,21 +1343,46 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             vorlage_schema = _form_schema_aufloesen(f_def.get("schema", {}) or {},
                                                     mapping_id_map, ds_id_map, config)
             bisher = {}
+            stand = None  # Fingerabdrücke der jüngsten Installation dieses Formulars
             for _inst in (t.installations or []):
                 if _inst.get("project_id") != body.project_id:
                     continue
-                for _liste, _ids in ((_inst.get("form_bausteine") or {})
-                                     .get(str(existing_f.id)) or {}).items():
+                _fb = (_inst.get("form_bausteine") or {}).get(str(existing_f.id)) or {}
+                for _liste, _ids in _fb.items():
+                    if _liste == _STAND:
+                        continue
                     bisher.setdefault(_liste, set()).update(_ids or [])
+                if isinstance(_fb.get(_STAND), dict):
+                    stand = _fb[_STAND]
             sc = _copy.deepcopy(existing_f.schema or {})
+            # Erst geänderte Bausteine nachziehen (nur unangepasste), dann Neues ergänzen.
+            aktualisiert, geschuetzt, neuer_stand = _bausteine_aktualisieren(
+                sc, vorlage_schema, stand)
             ergaenzt = _formular_ergaenzen(sc, vorlage_schema, bisher)
+            _stand_ergaenzen(neuer_stand, sc, ergaenzt)
+            if aktualisiert:
+                eintrag["aktualisiert"] = aktualisiert
+            if geschuetzt:
+                # Im Betrieb angepasst – bleibt, wie es ist. Steht in der Rückmeldung,
+                # damit niemand eine Neuerung der Vorlage dort vergeblich sucht.
+                eintrag["im_betrieb_geaendert"] = geschuetzt
             if ergaenzt:
-                existing_f.schema = sc
                 eintrag["ergaenzt"] = ergaenzt
-            if n or ergaenzt:
+            # Formular-Icon einer neueren Vorlage übernehmen, wenn noch keins gesetzt ist.
+            pc = dict(existing_f.portal_config or {})
+            t_icon = (f_def.get("portal_config") or {}).get("icon")
+            if t_icon and not pc.get("icon"):
+                pc["icon"] = t_icon
+                existing_f.portal_config = pc
+                flag_modified(existing_f, "portal_config")
+                eintrag["icon_gesetzt"] = True
+            if aktualisiert or ergaenzt:
+                existing_f.schema = sc
+            if n or aktualisiert or ergaenzt or eintrag.get("icon_gesetzt"):
                 flag_modified(existing_f, "schema")
                 db.commit()
-            form_bausteine[str(existing_f.id)] = _bausteine(vorlage_schema)
+            form_bausteine[str(existing_f.id)] = {**_bausteine(vorlage_schema),
+                                                  _STAND: neuer_stand}
             created.setdefault("forms", []).append(eintrag)
             continue
         schema = _form_schema_aufloesen(f_def.get("schema", {}) or {},
@@ -1286,7 +1409,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         )
         db.add(fo); db.commit(); db.refresh(fo)
         created.setdefault("forms", []).append({"id": fo.id, "name": fo.name})
-        form_bausteine[str(fo.id)] = _bausteine(schema)
+        form_bausteine[str(fo.id)] = {**_bausteine(schema),
+                                      _STAND: _stand_ergaenzen({}, schema)}
 
     # ── Unternehmenswarnungen (alert_rules) anlegen ───────────────────────────
     # Regeln sind Daten: sie verweisen per mapping_name auf Auswertungen, die aus
@@ -1666,9 +1790,13 @@ def _in_projekte_ausrollen(t, db: Session, user: User) -> list:
         try:
             r = install_template(InstallBody(template_id=t.template_id, project_id=pid,
                                              config=config), db, user)
-            ergaenzt = sum(len(ids) for f in (r.get("created") or {}).get("forms", []) or []
+            _formulare = (r.get("created") or {}).get("forms", []) or []
+            ergaenzt = sum(len(ids) for f in _formulare
                            for ids in (f.get("ergaenzt") or {}).values())
-            eintrag.update(ok=True, ergaenzt=ergaenzt)
+            aktualisiert = sum(len(f.get("aktualisiert") or []) for f in _formulare)
+            geschuetzt = sum(len(f.get("im_betrieb_geaendert") or []) for f in _formulare)
+            eintrag.update(ok=True, ergaenzt=ergaenzt, aktualisiert=aktualisiert,
+                           im_betrieb_geaendert=geschuetzt)
         except HTTPException as e:
             db.rollback()
             eintrag.update(ok=False, fehler=str(e.detail))

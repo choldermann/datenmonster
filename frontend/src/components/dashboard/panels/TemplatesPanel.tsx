@@ -88,11 +88,17 @@ function TemplateCard({ template, projectId, onInstalled }) {
       const objs = Object.values(data?.created || {}).flat();
       const reused = objs.filter(o => o && o.reused).length;
       // Vorhandene Formulare werden nicht überschrieben, aber um neue Bausteine der Vorlage ergänzt.
-      const ergaenzt = (data?.created?.forms || []).reduce((n, f) =>
+      const formulare = data?.created?.forms || [];
+      const ergaenzt = formulare.reduce((n, f) =>
         n + Object.values(f?.ergaenzt || {}).reduce((m, ids) => m + ids.length, 0), 0);
+      // Geänderte Bausteine kommen nur an, wo niemand sie im Betrieb angepasst hat.
+      const aktualisiert = formulare.reduce((n, f) => n + (f?.aktualisiert || []).length, 0);
+      const geschuetzt = formulare.reduce((n, f) => n + (f?.im_betrieb_geaendert || []).length, 0);
       setSummary(`${objs.length - reused} neu angelegt`
         + (reused ? `, ${reused} vorhandene wiederverwendet` : "")
-        + (ergaenzt ? `, ${ergaenzt} neue Formular-Bausteine ergänzt` : ""));
+        + (ergaenzt ? `, ${ergaenzt} neue Formular-Bausteine ergänzt` : "")
+        + (aktualisiert ? `, ${aktualisiert} Formular-Bausteine aktualisiert` : "")
+        + (geschuetzt ? `, ${geschuetzt} im Betrieb angepasste Bausteine unverändert gelassen` : ""));
       setInstalled(true);
       setTimeout(() => onInstalled(), 1000);
     } catch (e) {
@@ -417,6 +423,8 @@ function StoreSection({ onInstalled }) {
               {p.ok
                 ? `✓ Projekt „${p.name}“ auf den neuen Stand gebracht`
                   + (p.ergaenzt ? ` (${p.ergaenzt} neue Formular-Bausteine)` : "")
+                  + (p.aktualisiert ? `, ${p.aktualisiert} Bausteine aktualisiert` : "")
+                  + (p.im_betrieb_geaendert ? `, ${p.im_betrieb_geaendert} angepasste Bausteine unverändert gelassen` : "")
                 : `✗ Projekt „${p.name}“: ${p.fehler}`}
             </p>
           ))}
