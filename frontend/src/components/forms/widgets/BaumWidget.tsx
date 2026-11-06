@@ -150,7 +150,10 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     return (d.kinder || []).filter((k) => defs[k]);
   };
   const kinder = (id) => summenKinder(id).concat((defs[id]?.zusatz || []).filter((k) => defs[k]))
-    .filter((k) => !(defs[k]?.leer_ausblenden && !werte[k]?.v && !werte[k]?.p));
+    .filter((k) => !(defs[k]?.leer_ausblenden && !werte[k]?.v && !werte[k]?.p))
+    // Unterpunkte aus den Daten (Kanal, Lieferant …) mit 0 € im Zeitraum nicht als Kachel zeigen.
+    // Die Σ-Prüfung rechnet weiter mit allen (summenKinder), dort zählen sie ja 0.
+    .filter((k) => !(defs[k]?.dynamisch && Math.abs(werte[k]?.v || 0) < 0.5));
   const alleKinder = (id) => {
     const d = defs[id]; if (!d) return [];
     let k = [...(d.kinder || []), ...(d.zusatz || [])];
