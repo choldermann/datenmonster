@@ -365,6 +365,46 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     }
     if (svgRef.current) svgRef.current.innerHTML = pfade;
   };
+  // Kamerafahrt zur Ansicht {x, y, s}; ohne Bewegungswunsch sofort.
+  const fahrtRef = useRef(0);
+  const fahren = (ziel) => {
+    const id = ++fahrtRef.current;
+    if (reduziert()) { ansichtRef.current = ziel; ansichtSetzen(); return; }
+    const von = { ...ansichtRef.current }, t0 = performance.now(), dauer = 320;
+    const schritt = (jetzt) => {
+      if (id !== fahrtRef.current) return;              // eine neuere Fahrt hat übernommen
+      const k = Math.min(1, (jetzt - t0) / dauer), e = 1 - Math.pow(1 - k, 3);
+      ansichtRef.current = { x: von.x + (ziel.x - von.x) * e, y: von.y + (ziel.y - von.y) * e, s: von.s + (ziel.s - von.s) * e };
+      ansichtSetzen();
+      if (k < 1) requestAnimationFrame(schritt);
+    };
+    requestAnimationFrame(schritt);
+  };
+  // Rahmen um Knoten (Zielpositionen nach dem Aufklappen).
+  const rahmen = (ids) => {
+    let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+    for (const id of ids) {
+      const p = zielRef.current[id], el = elsRef.current[id]; if (!p || !el) continue;
+      x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x + el.offsetWidth); y1 = Math.max(y1, p.y + el.offsetHeight);
+    }
+    return x0 > x1 ? null : { x0, y0, x1, y1 };
+  };
+  // Aufgeklappt: Knoten + seine Unterpunkte so groß wie möglich einpassen (bis 160 %).
+  const gruppeZeigen = (id) => {
+    const vp = vpRef.current; if (!vp?.clientWidth) return;
+    // Sichtbare Unterpunkte aus den aktuellen Zielen (der Zustand in diesem Aufruf kann veraltet sein).
+    const r = rahmen([id, ...Object.keys(zielRef.current).filter((k) => eltern[k] === id)]); if (!r) return;
+    const pad = 40, W0 = vp.clientWidth, H0 = vp.clientHeight;
+    const s = Math.max(0.3, Math.min(1.6, (W0 - 2 * pad) / (r.x1 - r.x0), (H0 - 2 * pad) / (r.y1 - r.y0)));
+    fahren({ s, x: W0 / 2 - (r.x0 + r.x1) / 2 * s, y: H0 / 2 - (r.y0 + r.y1) / 2 * s });
+  };
+  // Eingeklappt: zurück zu diesem Knoten, mittig und 100 %.
+  const knotenZeigen = (id) => {
+    const vp = vpRef.current; if (!vp?.clientWidth) return;
+    const r = rahmen([id]); if (!r) return;
+    fahren({ s: 1, x: vp.clientWidth / 2 - (r.x0 + r.x1) / 2, y: vp.clientHeight / 2 - (r.y0 + r.y1) / 2 });
+  };
+
   const einpassen = () => {
     const vp = vpRef.current; if (!vp || !vp.clientWidth) return;
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
@@ -375,6 +415,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     if (x0 > x1) return;
     const W0 = vp.clientWidth, H0 = vp.clientHeight, pad = 32;
     const s = Math.max(0.3, Math.min(1.05, (W0 - 2 * pad) / (x1 - x0), (H0 - 2 * pad) / (y1 - y0)));
+    fahrtRef.current++;
     ansichtRef.current = { s, x: (W0 - (x1 - x0) * s) / 2 - x0 * s, y: Math.max(pad, (H0 - (y1 - y0) * s) / 2) - y0 * s };
     ansichtSetzen();
   };
@@ -415,6 +456,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hatDaten]);
   const zoomen = (f, cx, cy) => {
+    fahrtRef.current++;
     const v = ansichtRef.current, s = Math.min(1.6, Math.max(0.3, v.s * f));
     ansichtRef.current = { s, x: cx - (cx - v.x) * s / v.s, y: cy - (cy - v.y) * s / v.s };
     ansichtSetzen();
@@ -422,6 +464,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
 
   const verschiebenStart = (e) => {
     if (e.target.closest(".dmb-node,.dmb-legende,.dmb-panel,button")) return;
+    fahrtRef.current++;
     const vp = vpRef.current, sx = e.clientX, sy = e.clientY, v0 = { ...ansichtRef.current };
     vp.setPointerCapture?.(e.pointerId); vp.style.cursor = "grabbing";
     const mv = (ev) => { ansichtRef.current = { ...v0, x: v0.x + ev.clientX - sx, y: v0.y + ev.clientY - sy }; ansichtSetzen(); };
@@ -452,17 +495,23 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
 
   // ── Bedienung ──
   const zuklappen = (offen, id) => { offen.delete(id); for (const k of alleKinder(id)) zuklappen(offen, k); };
-  const umschalten = (id) => setZustand((z) => {
-    const offen = new Set(z.offen);
-    if (offen.has(id)) zuklappen(offen, id); else offen.add(id);
-    return { ...z, offen };
-  });
+  const umschalten = (id) => {
+    const aufklappen = !zustand.offen.has(id);
+    setZustand((z) => {
+      const offen = new Set(z.offen);
+      if (offen.has(id)) zuklappen(offen, id); else offen.add(id);
+      return { ...z, offen };
+    });
+    // Nach dem Gleiten der Kacheln (240 ms) stehen die Zielpositionen fest.
+    setTimeout(() => (aufklappen ? gruppeZeigen(id) : knotenZeigen(id)), 260);
+  };
   const ansichtWaehlen = (id, name) => setZustand((z) => {
     const offen = new Set(z.offen);
     for (const k of alleKinder(id)) zuklappen(offen, k);
     offen.add(id);
     return { ...z, offen, ansicht: { ...z.ansicht, [id]: name } };
   });
+  const ansichtWaehlenUndZeigen = (id, name) => { ansichtWaehlen(id, name); setTimeout(() => gruppeZeigen(id), 260); };
   const spaeterEinpassen = () => setTimeout(einpassen, 280);
   const richtungWaehlen = (r) => {
     if (r === ausrichtung) return;
@@ -545,7 +594,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
             {Object.keys(d.ansichten).map((a) => {
               const an2 = a === ansichtVon(id);
               return (
-                <button key={a} onClick={() => ansichtWaehlen(id, a)} aria-pressed={an2}
+                <button key={a} onClick={() => ansichtWaehlenUndZeigen(id, a)} aria-pressed={an2}
                   style={{ fontSize: 11, border: `1px solid ${an2 ? "var(--accent)" : "var(--border)"}`, background: "transparent",
                     borderRadius: 999, padding: "2px 8px", cursor: "pointer", color: an2 ? "var(--accent)" : "var(--text-dim)",
                     fontWeight: an2 ? 600 : 400 }}>{a}</button>
