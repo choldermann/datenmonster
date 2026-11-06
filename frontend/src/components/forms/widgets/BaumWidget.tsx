@@ -18,6 +18,8 @@
  *                       spruenge?: [{ label?, reiter, rubrik?, felder?, zeitraum? }],
  *                       hinweis?: { wert: <Schlüssel>, text: "{n} … ohne Kosten" } } }
  *   offen:    ["ergebnis", …]   – beim ersten Öffnen aufgeklappt
+ *   Ansicht waagerecht (Wurzel links) oder senkrecht (Wurzel oben): Knopf in der Leiste, je Benutzer
+ *   gemerkt. Verschobene Kacheln merkt sich jede Richtung für sich.
  *   hoehe:    640               – Höhe der Fläche in px
  *
  * Sprung mit Filter (nur in eine andere Rubrik): felder: { <Feldname im Ziel>: { praefix, ausser? } }
@@ -29,6 +31,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import TableWidget from "./TableWidget";
+import api from "../../../api/client";
 import { useRubriken, findeRubrik, rubrikPfad } from "../../../pages/start/rubriken";
 
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
@@ -38,6 +41,9 @@ const pct = (v) => nf1.format(v * 100) + " %";
 const zahl = (x) => { const n = typeof x === "number" ? x : Number(String(x ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
 
 const GX = 74, GY = 16, W = 236, RW = 318;
+const VX = 18, VY = 64;                                  // Abstände in der senkrechten Ansicht
+// Richtung je Benutzer (Server, /api/start/einstellungen); lokal nur als Zwischenstand gegen Flackern.
+const RICHTUNG_KEY = "dm-baum-richtung";
 const reduziert = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 function richtung(v, p, gut) {
@@ -132,13 +138,29 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
       offen: new Set(s?.offen || cfg.offen || [wurzel.id]),
       ansicht: s?.ansicht || {},
       versatz: s?.versatz || {},
+      versatzV: s?.versatzV || {},
     };
   });
+  const [ausrichtung, setAusrichtung] = useState(() => {
+    try { return localStorage.getItem(RICHTUNG_KEY) === "senkrecht" ? "senkrecht" : "waagerecht"; } catch { return "waagerecht"; }
+  });
+  useEffect(() => {
+    let lebt = true;
+    api.get("/api/start/einstellungen").then(({ data }) => {
+      if (lebt && (data?.baum_richtung === "senkrecht" || data?.baum_richtung === "waagerecht")) {
+        setAusrichtung(data.baum_richtung);
+        try { localStorage.setItem(RICHTUNG_KEY, data.baum_richtung); } catch { /* egal */ }
+      }
+    }).catch(() => { /* ohne Server bleibt die lokale Wahl */ });
+    return () => { lebt = false; };
+  }, []);
+  const senkrecht = ausrichtung === "senkrecht";
+  const vKey = senkrecht ? "versatzV" : "versatz";
   const [panel, setPanel] = useState(null);
   useEffect(() => {
     try {
       localStorage.setItem(speicherKey, JSON.stringify({
-        offen: [...zustand.offen], ansicht: zustand.ansicht, versatz: zustand.versatz }));
+        offen: [...zustand.offen], ansicht: zustand.ansicht, versatz: zustand.versatz, versatzV: zustand.versatzV }));
     } catch { /* egal */ }
   }, [zustand, speicherKey]);
 
@@ -274,6 +296,25 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
   };
   const berechneZiele = useCallback((versatz) => {
     const p = {}; let cursor = 0;
+    if (senkrecht) {
+      // Wurzel oben, jede Ebene eine Zeile; Zeilenhöhe = höchste Kachel der Ebene.
+      const hoeheJe = [];
+      const messen = (id, tiefe) => {
+        hoeheJe[tiefe] = Math.max(hoeheJe[tiefe] || 0, elsRef.current[id]?.offsetHeight || 120);
+        if (zustand.offen.has(id) && tiefe < 12) for (const k of kinder(id)) messen(k, tiefe + 1);
+      };
+      messen(wurzel.id, 0);
+      const yJe = [0];
+      for (let t = 0; t < hoeheJe.length; t++) yJe[t + 1] = yJe[t] + hoeheJe[t] + VY;
+      const setzeV = (id, tiefe) => {
+        const w = elsRef.current[id]?.offsetWidth || (tiefe === 0 ? RW : W);
+        const ks = zustand.offen.has(id) && tiefe < 12 ? kinder(id) : [];
+        if (!ks.length) { p[id] = { x: cursor, y: yJe[tiefe] }; cursor += w + VX; return cursor - VX - w / 2; }
+        const cs = ks.map((k) => setzeV(k, tiefe + 1)), c = (cs[0] + cs[cs.length - 1]) / 2;
+        p[id] = { x: c - w / 2, y: yJe[tiefe] }; if (p[id].x + w + VX > cursor) cursor = p[id].x + w + VX; return c;
+      };
+      setzeV(wurzel.id, 0);
+    } else {
     const setze = (id, tiefe) => {
       const el = elsRef.current[id]; const h = el?.offsetHeight || 120;
       const x = tiefe === 0 ? 0 : RW + GX + (tiefe - 1) * (W + GX);
@@ -283,11 +324,12 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
       p[id] = { x, y: c - h / 2 }; if (p[id].y + h + GY > cursor) cursor = p[id].y + h + GY; return c;
     };
     setze(wurzel.id, 0);
+    }
     const t = {};
     for (const id of sichtbar) { const o = gesamtVersatz(id, versatz); t[id] = { x: (p[id]?.x || 0) + o.x, y: (p[id]?.y || 0) + o.y }; }
     return t;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sichtbar, zustand.offen, eltern]);
+  }, [sichtbar, zustand.offen, eltern, senkrecht]);
 
   const ansichtSetzen = () => {
     const v = ansichtRef.current;
@@ -302,13 +344,22 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
       const pa = eltern[id]; if (!pa || !sichtbar.includes(pa)) continue;
       const a = pos[pa], b = pos[id], ea = elsRef.current[pa], eb = elsRef.current[id];
       if (!a || !b || !ea || !eb) continue;
-      const x1 = a.x + ea.offsetWidth, y1 = a.y + ea.offsetHeight / 2, x2 = b.x, y2 = b.y + eb.offsetHeight / 2;
-      const dx = Math.max(40, (x2 - x1) / 2), d = defs[id], an = anteil(id);
+      const d = defs[id], an = anteil(id);
       const breite = d.info ? 2 : Math.max(1.6, Math.min(16, (an ? an.s : 0.3) * 16));
       const st = status(id);
       const stil = d.info ? `stroke:var(--text-dim);opacity:.7;stroke-dasharray:5 6`
         : `stroke:${FARBE[st]};opacity:${st === "neutral" ? 0.45 : 0.55}`;
-      pfade += `<path style="fill:none;stroke-linecap:round;${stil}" stroke-width="${breite.toFixed(1)}" d="M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}"/>`;
+      let pfad;
+      if (senkrecht) {
+        const x1 = a.x + ea.offsetWidth / 2, y1 = a.y + ea.offsetHeight, x2 = b.x + eb.offsetWidth / 2, y2 = b.y;
+        const dy = Math.max(30, (y2 - y1) / 2);
+        pfad = `M${x1} ${y1} C${x1} ${y1 + dy}, ${x2} ${y2 - dy}, ${x2} ${y2}`;
+      } else {
+        const x1 = a.x + ea.offsetWidth, y1 = a.y + ea.offsetHeight / 2, x2 = b.x, y2 = b.y + eb.offsetHeight / 2;
+        const dx = Math.max(40, (x2 - x1) / 2);
+        pfad = `M${x1} ${y1} C${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`;
+      }
+      pfade += `<path style="fill:none;stroke-linecap:round;${stil}" stroke-width="${breite.toFixed(1)}" d="${pfad}"/>`;
     }
     if (svgRef.current) svgRef.current.innerHTML = pfade;
   };
@@ -328,7 +379,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
 
   // Nach jedem Rendern: Ziele aus den gemessenen Höhen, dann dorthin gleiten.
   useLayoutEffect(() => {
-    const ziel = berechneZiele(zustand.versatz);
+    const ziel = berechneZiele(zustand[vKey]);
     zielRef.current = ziel;
     const pos = posRef.current;
     for (const id of sichtbar) if (!pos[id]) { const pa = eltern[id]; pos[id] = pa && pos[pa] ? { ...pos[pa] } : { ...ziel[id] }; }
@@ -379,20 +430,20 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     if (e.target.closest("button")) return;
     e.stopPropagation();
     const el = elsRef.current[id], sx = e.clientX, sy = e.clientY;
-    const o0 = { ...(zustand.versatz[id] || { x: 0, y: 0 }) };
-    let bewegt = false, versatz = zustand.versatz;
+    const o0 = { ...(zustand[vKey][id] || { x: 0, y: 0 }) };
+    let bewegt = false, versatz = zustand[vKey];
     el.setPointerCapture?.(e.pointerId);
     const mv = (ev) => {
       const s = ansichtRef.current.s, dx = (ev.clientX - sx) / s, dy = (ev.clientY - sy) / s;
       if (!bewegt && Math.hypot(dx, dy) < 4) return;
       bewegt = true; el.style.zIndex = "3"; el.style.cursor = "grabbing";
-      versatz = { ...zustand.versatz, [id]: { x: o0.x + dx, y: o0.y + dy } };
+      versatz = { ...zustand[vKey], [id]: { x: o0.x + dx, y: o0.y + dy } };
       const z = berechneZiele(versatz); zielRef.current = z; posRef.current = { ...posRef.current, ...z }; malen();
     };
     const up = () => {
       el.style.zIndex = ""; el.style.cursor = "";
       el.removeEventListener("pointermove", mv); el.removeEventListener("pointerup", up);
-      if (bewegt) setZustand((z) => ({ ...z, versatz }));
+      if (bewegt) setZustand((z) => ({ ...z, [vKey]: versatz }));
     };
     el.addEventListener("pointermove", mv); el.addEventListener("pointerup", up);
   };
@@ -411,6 +462,13 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     return { ...z, offen, ansicht: { ...z.ansicht, [id]: name } };
   });
   const spaeterEinpassen = () => setTimeout(einpassen, 280);
+  const richtungWaehlen = (r) => {
+    if (r === ausrichtung) return;
+    setAusrichtung(r);
+    try { localStorage.setItem(RICHTUNG_KEY, r); } catch { /* egal */ }
+    api.put("/api/start/einstellungen", { baum_richtung: r }).catch(() => { /* bleibt lokal gemerkt */ });
+    spaeterEinpassen();
+  };
 
   // Feldwerte für das Ziel aus der Knoten-ID; {} = nur Zeitraum, gefiltert = welche Felder greifen.
   const sprungWerte = (s, knotenId) => {
@@ -457,7 +515,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     const expKnopf = ks.length > 0 && (
       <button onClick={() => umschalten(id)} aria-expanded={offen}
         style={{ ...knopf, ...(offen ? { borderColor: "var(--accent)", color: "var(--accent)" } : {}) }}>
-        {offen ? "◂ einklappen" : `▸ ${ks.length} Unterpunkte`}
+        {offen ? `${senkrecht ? "▴" : "◂"} einklappen` : `${senkrecht ? "▾" : "▸"} ${ks.length} Unterpunkte`}
       </button>
     );
     const detailKnopf = hatDetails && (
@@ -567,7 +625,18 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 8px", padding: "10px 14px",
         borderBottom: "1px solid var(--border)", background: "var(--bg-elevated)" }}>
         <button style={werkzeug} onClick={() => { setZustand((z) => ({ ...z, offen: new Set([wurzel.id]) })); spaeterEinpassen(); }}>Alles einklappen</button>
-        <button style={werkzeug} onClick={() => { setZustand((z) => ({ ...z, versatz: {} })); spaeterEinpassen(); }}>Neu ordnen</button>
+        <button style={werkzeug} onClick={() => { setZustand((z) => ({ ...z, [vKey]: {} })); spaeterEinpassen(); }}>Neu ordnen</button>
+        <div role="group" aria-label="Richtung" style={{ display: "inline-flex" }}>
+          {[["waagerecht", "↔ Waagerecht"], ["senkrecht", "↕ Senkrecht"]].map(([r, text], i) => {
+            const an = ausrichtung === r;
+            return (
+              <button key={r} aria-pressed={an} onClick={() => richtungWaehlen(r)}
+                style={{ ...werkzeug, borderRadius: i === 0 ? "6px 0 0 6px" : "0 6px 6px 0", marginLeft: i ? -1 : 0,
+                  ...(an ? { borderColor: "var(--accent)", color: "var(--accent)", position: "relative" as const, zIndex: 1,
+                    background: "color-mix(in srgb, var(--accent) 10%, transparent)" } : {}) }}>{text}</button>
+            );
+          })}
+        </div>
         <button style={werkzeug} onClick={einpassen}>Einpassen</button>
         <button style={{ ...werkzeug, width: 32, padding: "6px 0" }} aria-label="Verkleinern"
           onClick={() => zoomen(1 / 1.2, vpRef.current.clientWidth / 2, vpRef.current.clientHeight / 2)}>−</button>

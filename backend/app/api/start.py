@@ -9,7 +9,7 @@ Zustellpläne). Plan: ~/.claude/plans/haendler-ansicht.md, Phase 1.
 Der Händler sieht alle Cockpits, die er lesen darf; die Seite gliedert sie nach
 Projekt (Feld „projekt“).
 """
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -281,11 +281,14 @@ class EinstellungenIn(BaseModel):
     # Projekte, deren Cockpits auf der Cockpit-Seite ausgeblendet sind (0 = ohne
     # Projekt). Gespeichert wird das Abgewählte, damit neue Projekte sichtbar starten.
     projekte_aus: Optional[List[int]] = None
+    # Baum-Widget: waagerecht (Vorgabe) oder senkrecht, je Benutzer
+    baum_richtung: Optional[Literal["waagerecht", "senkrecht"]] = None
 
 
 def _einstellungen_out(e: dict) -> dict:
     return {"pins": e.get("pins") or [], "werkstatt_start": bool(e.get("werkstatt_start")),
-            "projekte_aus": e.get("projekte_aus") or []}
+            "projekte_aus": e.get("projekte_aus") or [],
+            "baum_richtung": e.get("baum_richtung") or "waagerecht"}
 
 
 @router.get("/einstellungen")
@@ -308,6 +311,8 @@ def einstellungen_speichern(data: EinstellungenIn, db: Session = Depends(get_db)
         e["projekte_aus"] = [i for i in dict.fromkeys(data.projekte_aus) if i in projekte]
     if data.werkstatt_start is not None:
         e["werkstatt_start"] = bool(data.werkstatt_start) and not _portal(user)
+    if data.baum_richtung is not None:
+        e["baum_richtung"] = data.baum_richtung
     user.einstellungen = e
     safe_commit(db)
     return _einstellungen_out(e)
