@@ -27,11 +27,13 @@
  * der Rest in `ausser` (Vorgabe ["rest"] = „Übrige“), springt er ohne diesen Filter. Der Zeitraum
  * (von/bis) geht mit, außer bei zeitraum: false. sprung_mitnehmen: ["plattform"] (am Widget) gibt die
  * eigenen Filter des Cockpits an jedes Ziel weiter, das ein gleichnamiges Feld hat; leere Filter nicht.
- * Ein Filter aus dem Knoten (felder) geht vor.
+ * Ein Filter aus dem Knoten (felder) geht vor. Das Ziel bekommt im Navigations-Zustand `zurueck` den Weg
+ * hierher (gleiche Filter, ?baum_fokus=<Knoten>) und zeigt dann „Zurück zum Baum“; der Baum fährt beim
+ * Öffnen mit baum_fokus zu diesem Knoten.
  * Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 2.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import TableWidget from "./TableWidget";
 import api from "../../../api/client";
 import { useRubriken, findeRubrik, rubrikPfad } from "../../../pages/start/rubriken";
@@ -129,6 +131,7 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [widget, result]);
   const navigate = useNavigate();
+  const ort = useLocation();
   const ktx = useRubriken();                       // nur im Büro vorhanden
   const speicherKey = `dm-baum-${formId ?? "x"}-${widget.id}`;
 
@@ -426,7 +429,13 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     zielRef.current = ziel;
     const pos = posRef.current;
     for (const id of sichtbar) if (!pos[id]) { const pa = eltern[id]; pos[id] = pa && pos[pa] ? { ...pos[pa] } : { ...ziel[id] }; }
-    if (!eingepasst.current && (result?.rows || []).length) { eingepasst.current = true; posRef.current = { ...ziel }; malen(); einpassen(); return; }
+    if (!eingepasst.current && (result?.rows || []).length) {
+      eingepasst.current = true; posRef.current = { ...ziel }; malen(); einpassen();
+      // Zurück aus einem Sprung: zum Knoten fahren, von dem aus gesprungen wurde.
+      const fokus = new URLSearchParams(ort.search).get("baum_fokus");
+      if (fokus && ziel[fokus]) setTimeout(() => knotenZeigen(fokus), 60);
+      return;
+    }
     if (reduziert()) { posRef.current = { ...pos, ...ziel }; malen(); return; }
     const von = JSON.parse(JSON.stringify(pos)), t0 = performance.now(), dauer = 240;
     let laeuft = true;
@@ -540,10 +549,22 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
     if (s.zeitraum !== false) for (const p of ["von", "bis"]) if (params?.[p]) werte[p] = params[p];
     return { werte, gefiltert };
   };
+  // Rückweg in diesen Baum: gleiche Adresse, eigene Filter als ?f.…, dazu der Knoten, von dem gesprungen wurde.
+  const rueckweg = (knotenId) => {
+    const q = new URLSearchParams(ort.search);
+    for (const k of [...q.keys()]) if (k.startsWith("f.") || k === "baum_fokus") q.delete(k);
+    for (const feld of ["von", "bis", ...(cfg.sprung_mitnehmen || [])]) {
+      const v = params?.[feld];
+      for (const x of Array.isArray(v) ? v : [v]) if (x != null && x !== "") q.append(`f.${feld}`, String(x));
+    }
+    q.set("baum_fokus", String(knotenId));
+    return `${ort.pathname}?${q}`;
+  };
   const sprungZiel = (s, knotenId) => {
     if (!s.rubrik) return onTab ? () => onTab(s.reiter) : null;
     const r = ktx?.gruppen ? findeRubrik(ktx.gruppen, s.rubrik) : null;
-    return r ? () => navigate(rubrikPfad(r, null, s.reiter, sprungWerte(s, knotenId).werte)) : null;
+    return r ? () => navigate(rubrikPfad(r, null, s.reiter, sprungWerte(s, knotenId).werte),
+      { state: { zurueck: rueckweg(knotenId) } }) : null;
   };
 
   // ── Darstellung ──

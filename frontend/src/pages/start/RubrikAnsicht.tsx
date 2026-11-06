@@ -6,7 +6,7 @@
  * Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 1.
  */
 import { useState } from "react";
-import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Star } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import FormRunner from "../FormRunner";
@@ -38,6 +38,7 @@ export default function RubrikAnsicht() {
   const { rubrik: rubrikId, formId } = useParams();
   const [such] = useSearchParams();
   const navigate = useNavigate();
+  const ort = useLocation();
   const { user } = useAuth();
   const portal = !!user?.is_portal_only;
   const ktx = useRubriken();
@@ -66,17 +67,27 @@ export default function RubrikAnsicht() {
   const runnerKey = `${eintrag.id}|${such.toString()}`;
   const kannKopie = !portal && eintrag.art !== "bericht" && eintrag.art !== "pflege";
 
+  // Nur gesetzt, wenn ein Sprung aus dem Baum hierher geführt hat (Navigations-Zustand, nicht in der Adresse).
+  const zurueck = typeof ort.state?.zurueck === "string" && ort.state.zurueck.startsWith("/start/") ? ort.state.zurueck : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 1760 }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-start", justifyContent: "space-between", gap: "10px 20px" }}>
         <div style={{ minWidth: 0, flex: "1 1 360px", display: "flex", flexDirection: "column", gap: 3 }}>
-          <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: S.textBright }}>
-            {titel}
-            {ART_TEXT[eintrag.art] && (
-              <span style={{ marginLeft: 10, verticalAlign: "middle", fontSize: 12, fontWeight: 600, border: `1px solid ${S.border}`,
-                borderRadius: 999, padding: "2px 8px", color: S.textDim }}>{ART_TEXT[eintrag.art]}</span>
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px 14px" }}>
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 800, color: S.textBright }}>
+              {titel}
+              {ART_TEXT[eintrag.art] && (
+                <span style={{ marginLeft: 10, verticalAlign: "middle", fontSize: 12, fontWeight: 600, border: `1px solid ${S.border}`,
+                  borderRadius: 999, padding: "2px 8px", color: S.textDim }}>{ART_TEXT[eintrag.art]}</span>
+              )}
+            </h1>
+            {zurueck && (
+              <button onClick={() => navigate(zurueck)} style={knopf.neben} title="Zurück in den Baum des GF-Cockpits, zum Knoten, von dem aus gesprungen wurde">
+                ← Zurück zum Baum
+              </button>
             )}
-          </h1>
+          </div>
           {(text || eintrag.zusatz) && (
             <p style={{ margin: 0, color: S.textDim, fontSize: 13.5, lineHeight: 1.5, maxWidth: "75ch",
               display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
