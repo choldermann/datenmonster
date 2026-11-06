@@ -337,17 +337,37 @@ def _form_schema_aufloesen(schema_def: dict, mapping_id_map: dict, ds_id_map: di
 
 _BAUSTEIN_LISTEN = ("fields", "actions", "widgets", "result_tabs")
 
+# Protokoll-Schlüssel für die Einträge der Zeilen-Detailkarten (config.row_detail.map)
+# in Widgets, z.B. die Ampelzeilen einer Tasklist. Je Eintrag "<widget-id>::<schlüssel>".
+_ROW_DETAIL = "row_detail"
+
+
+def _row_detail_map(widget) -> Optional[dict]:
+    """Die Detailkarte eines Widgets (config.row_detail.map) oder None."""
+    if not isinstance(widget, dict):
+        return None
+    rd = (widget.get("config") or {}).get("row_detail")
+    m = rd.get("map") if isinstance(rd, dict) else None
+    return m if isinstance(m, dict) else None
+
 
 def _bausteine(schema: dict) -> dict:
-    """IDs der Bausteine eines Formular-Schemas, je Liste."""
-    return {k: [e.get("id") for e in (schema.get(k) or [])
-                if isinstance(e, dict) and e.get("id") is not None]
-            for k in _BAUSTEIN_LISTEN}
+    """IDs der Bausteine eines Formular-Schemas, je Liste – dazu die Einträge der
+    Zeilen-Detailkarten, damit ein späteres Update auch dort nur Neues ergänzt."""
+    out = {k: [e.get("id") for e in (schema.get(k) or [])
+               if isinstance(e, dict) and e.get("id") is not None]
+           for k in _BAUSTEIN_LISTEN}
+    out[_ROW_DETAIL] = [f"{w.get('id')}::{schluessel}"
+                        for w in (schema.get("widgets") or [])
+                        if _row_detail_map(w) and w.get("id") is not None
+                        for schluessel in _row_detail_map(w)]
+    return out
 
 
 def _formular_ergaenzen(vorhanden: dict, vorlage: dict, bisher: Optional[dict]) -> dict:
     """Ergänzt ein installiertes Formular um Bausteine, die eine neue Vorlagen-
-    Version mitbringt (Widgets, Aktionen, Felder, Reiter).
+    Version mitbringt (Widgets, Aktionen, Felder, Reiter) – und um neue Einträge
+    in den Zeilen-Detailkarten vorhandener Widgets (z.B. eine neue Ampelzeile).
 
     Überschrieben wird nichts: im Betrieb geänderte Bausteine bleiben, wie sie
     sind. Ergänzt wird nur, was die Vorlage BISHER noch nie angeboten hat
@@ -396,6 +416,30 @@ def _formular_ergaenzen(vorhanden: dict, vorlage: dict, bisher: Optional[dict]) 
             for aid in t_reiter.get("action_ids") or []:
                 if aid in neue_aktionen and aid not in ids:
                     ids.append(aid)
+    # Zeilen-Detailkarten vorhandener Widgets ergänzen. Eine neue Prüfung bringt eine
+    # neue Ampelzeile (über das Mapping, das ohnehin aktualisiert wird) UND einen
+    # neuen Eintrag in der Karte, damit der Klick auf die Zeile die Liste öffnet.
+    # Das Widget selbst gibt es beim Kunden schon – ohne diesen Schritt bliebe die
+    # neue Zeile tot. Vorhandene Einträge bleiben, wie sie sind; einmal angebotene,
+    # vom Kunden entfernte Einträge kommen nicht zurück.
+    schon_angeboten = set(bisher.get(_ROW_DETAIL) or [])
+    v_widgets = {w.get("id"): w for w in vorhanden.get("widgets") or []
+                 if isinstance(w, dict) and w.get("id") is not None}
+    for t_w in vorlage.get("widgets") or []:
+        t_map = _row_detail_map(t_w)
+        wid = t_w.get("id") if isinstance(t_w, dict) else None
+        if not t_map or wid is None or wid in (neu.get("widgets") or []):
+            continue
+        v_w = v_widgets.get(wid)
+        v_map = _row_detail_map(v_w)
+        if v_map is None:
+            continue  # Kunde hat die Detailkarte entfernt oder das Widget umgebaut
+        for schluessel, eintrag in t_map.items():
+            protokoll = f"{wid}::{schluessel}"
+            if schluessel in v_map or protokoll in schon_angeboten:
+                continue
+            v_map[schluessel] = eintrag
+            neu.setdefault(_ROW_DETAIL, []).append(protokoll)
     return neu
 
 
