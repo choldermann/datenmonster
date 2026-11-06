@@ -186,6 +186,13 @@ def sperre_fuer_vorlage(db: Session, template_id: str) -> Optional[dict]:
     return z if z and z["status"] == "gesperrt" else None
 
 
+def vorlage_fuer_objekt(db: Session, art: str, obj_id) -> Optional[str]:
+    """template_id, aus der dieses Objekt installiert wurde, sonst None (Eigenbau/Altbestand)."""
+    if not isinstance(obj_id, int):
+        return None
+    return _index(db).get(art, {}).get(obj_id)
+
+
 def sperre_fuer_objekt(db: Session, art: str, obj_id) -> Optional[dict]:
     """Gehört dieses Objekt zu einer gesperrten Vorlage? Sonst None."""
     if not isinstance(obj_id, int):

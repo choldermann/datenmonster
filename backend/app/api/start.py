@@ -111,6 +111,38 @@ def cockpits(db: Session = Depends(get_db), user: User = Depends(get_current_use
     return aus
 
 
+@router.get("/rubriken")
+def rubriken(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Das Büro-Menü: Gruppen (Cockpit, Aufgaben, Weitere) → Rubriken → Einträge.
+
+    Gleiche Auswahl wie /cockpits, aber nach Rubrik gegliedert. Was zu einer nicht
+    freigeschalteten Vorlage gehört, fehlt hier ganz (statt gesperrt angezeigt).
+    Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 0.
+    """
+    from app.core import vorlagen_gate
+    from app.services import rubriken as rb
+    namen = _projektnamen(db)
+    liste = [f for f in _sichtbare_formulare(user, db)
+             if (f.schema or {}).get("widgets") and not _ist_startseite(f)]
+    liste.sort(key=lambda f: f.id)
+    eintraege = {f.id: _cockpit_out(f, namen, db) for f in liste}
+    # Dasselbe Cockpit in mehreren Projekten: Projektname als Zusatz (wie /cockpits).
+    zaehler: dict = {}
+    for c in eintraege.values():
+        zaehler[c["name"]] = zaehler.get(c["name"], 0) + 1
+    for c in eintraege.values():
+        c["zusatz"] = c["projekt"] if zaehler[c["name"]] > 1 else None
+
+    def vorlage_von(fid):
+        try:
+            return vorlagen_gate.vorlage_fuer_objekt(db, "forms", fid)
+        except Exception:
+            return None
+
+    return {"gruppen": rb.menue(liste, eintraege, vorlage_von,
+                                lambda fid: bool(eintraege.get(fid, {}).get("gesperrt")))}
+
+
 def _einstellungen(user) -> dict:
     e = getattr(user, "einstellungen", None)
     return dict(e) if isinstance(e, dict) else {}
