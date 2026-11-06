@@ -152,6 +152,37 @@ export function zeitraumVorgabe(f) {
   return { [f.config.param_from || "von"]: von, [f.config.param_to || "bis"]: bis };
 }
 
+/** Startwerte aus einem Sprung (?f.<name>=…, z. B. aus dem Baum des GF-Cockpits) auf die
+ *  Vorgaben legen. Gibt true zurück, wenn es welche gab – dann startet der Runner selbst.
+ *  - Zeitraum: erst die Vorgabe setzen, damit das Zeitraumfeld nicht einen zweiten Lauf
+ *    auslöst; mitgegebene von/bis überschreiben sie.
+ *  - Ganzzahlen werden Zahlen, weil die Auswahllisten ihre Werte streng vergleichen.
+ *  - Unbekannte Namen werden ignoriert: ein Sprung kann kein fremdes Feld setzen. */
+export function startWerteAnwenden(fields, werte, start) {
+  if (!start || !Object.keys(start).length) return false;
+  const zahl = v => (typeof v === "string" && /^-?\d+$/.test(v) ? Number(v) : v);
+  const liste = v => (Array.isArray(v) ? v : [v]);
+  // Erst sammeln: greift kein einziger Wert, bleibt alles bei den Vorgaben (sonst stünde der
+  // Zeitraum fest, ohne dass jemand einen Lauf startet).
+  const neu = {};
+  let gesetzt = false;
+  for (const f of fields || []) {
+    if (f.type === "daterange") {
+      Object.assign(neu, zeitraumVorgabe(f));
+      for (const p of [f.config?.param_from || "von", f.config?.param_to || "bis"]) {
+        if (start[p] != null && start[p] !== "") { neu[p] = liste(start[p])[0]; gesetzt = true; }
+      }
+      continue;
+    }
+    if (!f.name || start[f.name] == null) continue;
+    const multi = f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
+    neu[f.name] = multi ? liste(start[f.name]).map(zahl) : zahl(liste(start[f.name])[0]);
+    gesetzt = true;
+  }
+  if (gesetzt) Object.assign(werte, neu);
+  return gesetzt;
+}
+
 export function feldVorgabe(f, isMulti) {
   if (f.type === "date" && f.default === "today") return _fmt(new Date());
   return f.default ?? (isMulti ? [] : "");

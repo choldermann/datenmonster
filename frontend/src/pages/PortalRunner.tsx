@@ -8,7 +8,7 @@ import { useAIAssistant } from "../contexts/AIAssistantContext";
 import { buildDashboardContext } from "../components/forms/dashboardContext";
 import VorlageGesperrt from "../components/VorlageGesperrt";
 import { ExportVerlauf, ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
+import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe, startWerteAnwenden } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import RunnerErgebnis from "../components/forms/RunnerErgebnis";
 import RunnerEingabe, { EingabeReiter } from "../components/forms/RunnerEingabe";
@@ -26,8 +26,9 @@ const S = {
 
 // eingebettet: wie im FormRunner – „seite“ = im Büro (ohne Konto-Knöpfe,
 // die stehen dort im Kopf), „inhalt“ = ganz ohne Kopf (Kennzahlen der Übersicht).
-export default function PortalRunner({ slug: slugProp = null, eingebettet = null, startReiter = null, onReiter = null }:
-  { slug?: string | null; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void) } = {}) {
+export default function PortalRunner({ slug: slugProp = null, eingebettet = null, startReiter = null, onReiter = null, startWerte = null }:
+  { slug?: string | null; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void);
+    startWerte?: Record<string, any> | null } = {}) {
   const routeParams = useParams();
   const slug = slugProp ?? routeParams.slug;
   const zurueck = eingebettet ? "/start" : "/portal";
@@ -42,6 +43,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
   const [runErr, setRunErr]   = useState(null);
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTabState] = useState(startReiter);
+  const sprungParams = useRef(null);   // Startwerte aus einem Sprung, einmalig
   const setActiveTab = (t) => { setActiveTabState(t); if (t) onReiter?.(t); };
   const [inputTab, setInputTab]   = useState("main");
   const [reporting, setReporting] = useState(false);
@@ -79,6 +81,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
         if (eingebettet === "inhalt") {
           for (const f of (data.fields || [])) Object.assign(defaults, zeitraumVorgabe(f));
         }
+        sprungParams.current = startWerteAnwenden(data.fields, defaults, startWerte) ? defaults : null;
         setParams(defaults);
       })
       .catch(() => setLoadErr("Formular nicht gefunden oder kein Zugriff."));
@@ -90,6 +93,12 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
   const autostart = useRef(null);
   useEffect(() => {
     if (!form || autostart.current === form.slug) return;
+    // Aus einem Sprung mit Filter: einmal mit genau diesen Werten laufen.
+    if (sprungParams.current && (form.actions || []).length) {
+      autostart.current = form.slug;
+      runAction(null, sprungParams.current);
+      return;
+    }
     // In der Übersicht (eingebettet="inhalt") gibt es keine Eingabe: dort immer mit den Vorgaben starten.
     if (((form.fields || []).length > 0 && eingebettet !== "inhalt") || !(form.actions || []).length) return;
     autostart.current = form.slug;

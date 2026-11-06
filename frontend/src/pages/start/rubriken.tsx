@@ -22,11 +22,18 @@ export const rubrikIcon = (key) => RUBRIK_ICONS[key] || LayoutGrid;
 
 export const ART_TEXT = { kopie: "Kopie", bericht: "Bericht", pflege: "Pflege", cockpit: "" };
 
-/** Pfad zu einem Eintrag: Haupteintrag ohne Formular-ID, alle anderen mit. */
-export const rubrikPfad = (rubrik, eintrag = null, reiter = null) => {
+/** Pfad zu einem Eintrag: Haupteintrag ohne Formular-ID, alle anderen mit.
+ *  `werte` belegt Felder des Ziels vor (?f.<feld>=…), Listen als wiederholter Parameter. */
+export const rubrikPfad = (rubrik, eintrag = null, reiter = null, werte = null) => {
   const basis = !eintrag || eintrag.id === rubrik.haupt?.id
     ? `/start/r/${rubrik.id}` : `/start/r/${rubrik.id}/${eintrag.id}`;
-  return reiter ? `${basis}?reiter=${encodeURIComponent(reiter)}` : basis;
+  const q = new URLSearchParams();
+  if (reiter) q.set("reiter", reiter);
+  for (const [k, v] of Object.entries(werte || {})) {
+    for (const x of Array.isArray(v) ? v : [v]) if (x != null && x !== "") q.append(`f.${k}`, String(x));
+  }
+  const s = q.toString();
+  return s ? `${basis}?${s}` : basis;
 };
 
 /** Zustand für StartLayout. */

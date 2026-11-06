@@ -15,10 +15,15 @@
  *                       gut?: "runter", kinder?: [...], ansichten?: { Label: [...] }, ansicht?,
  *                       zusatz?: [...], info?: true, einheit?: "eur" | "anzahl", beschreibung?,
  *                       tabelle?: { action_id, filter?: { spalte, wert } },
- *                       spruenge?: [{ label?, reiter, rubrik? }],
+ *                       spruenge?: [{ label?, reiter, rubrik?, felder?, zeitraum? }],
  *                       hinweis?: { wert: <Schlüssel>, text: "{n} … ohne Kosten" } } }
  *   offen:    ["ergebnis", …]   – beim ersten Öffnen aufgeklappt
  *   hoehe:    640               – Höhe der Fläche in px
+ *
+ * Sprung mit Filter (nur in eine andere Rubrik): felder: { <Feldname im Ziel>: { praefix, ausser? } }
+ * nimmt den Schlüssel aus der Knoten-ID („lief_123“ → lieferant = 123). Passt die ID nicht oder steht
+ * der Rest in `ausser` (Vorgabe ["rest"] = „Übrige“), springt er ohne diesen Filter. Der Zeitraum
+ * (von/bis) geht mit, außer bei zeitraum: false.
  * Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 2.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -66,7 +71,7 @@ function Spark({ werte, st }) {
   );
 }
 
-export default function BaumWidget({ widget, result, results = {}, formId = null, onTab = null }) {
+export default function BaumWidget({ widget, result, results = {}, formId = null, onTab = null, params = {} }) {
   const cfg = widget.config || {};
   const sp = { knoten: "Knoten", wert: "Wert", vj: "WertVJ", ...(cfg.spalten || {}) };
   const wurzel = cfg.wurzel || { id: "wurzel", titel: widget.label || "Ergebnis", kinder: [], zeilen: [] };
@@ -407,10 +412,25 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
   });
   const spaeterEinpassen = () => setTimeout(einpassen, 280);
 
-  const sprungZiel = (s) => {
+  // Feldwerte für das Ziel aus der Knoten-ID; {} = nur Zeitraum, gefiltert = welche Felder greifen.
+  const sprungWerte = (s, knotenId) => {
+    const werte = {}, gefiltert = [];
+    for (const [feld, regel] of Object.entries(s.felder || {}) as [string, any][]) {
+      const praefix = regel?.praefix ?? "";
+      const id = String(knotenId ?? "");
+      if (!id.startsWith(praefix)) continue;
+      const wert = id.slice(praefix.length);
+      if (!wert || (regel?.ausser || ["rest"]).includes(wert)) continue;
+      werte[feld] = wert;
+      gefiltert.push(feld);
+    }
+    if (s.zeitraum !== false) for (const p of ["von", "bis"]) if (params?.[p]) werte[p] = params[p];
+    return { werte, gefiltert };
+  };
+  const sprungZiel = (s, knotenId) => {
     if (!s.rubrik) return onTab ? () => onTab(s.reiter) : null;
     const r = ktx?.gruppen ? findeRubrik(ktx.gruppen, s.rubrik) : null;
-    return r ? () => navigate(rubrikPfad(r, null, s.reiter)) : null;
+    return r ? () => navigate(rubrikPfad(r, null, s.reiter, sprungWerte(s, knotenId).werte)) : null;
   };
 
   // ── Darstellung ──
@@ -598,11 +618,15 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
             <div style={{ padding: "12px 16px 20px", overflow: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
               {pd.beschreibung && <p style={{ margin: 0, lineHeight: 1.5, fontSize: 13.5 }}>{pd.beschreibung}</p>}
               {(pd.spruenge || []).map((s, i) => {
-                const los = sprungZiel(s); if (!los) return null;
+                const los = sprungZiel(s, panel); if (!los) return null;
                 const r = s.rubrik && ktx?.gruppen ? findeRubrik(ktx.gruppen, s.rubrik) : null;
+                const gefiltert = s.rubrik && sprungWerte(s, panel).gefiltert.length > 0;
                 return (
-                  <button key={i} onClick={los} style={{ ...werkzeug, textAlign: "left" }}>
+                  <button key={i} onClick={los} style={{ ...werkzeug, textAlign: "left" }}
+                    title={gefiltert ? `Öffnet gleich gefiltert auf „${pd.titel}“` : undefined}>
                     → {s.label || (r ? `${r.name} · Reiter „${s.reiter}“` : `Reiter „${s.reiter}“`)}
+                    {gefiltert && <span style={{ display: "block", fontSize: 11.5, color: "var(--text-dim)" }}>
+                      nur „{pd.titel}“</span>}
                   </button>
                 );
               })}

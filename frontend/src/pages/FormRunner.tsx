@@ -6,7 +6,7 @@ import { ArrowLeft, Loader2, Pencil, AlertCircle, FileText, BookOpen } from "luc
 import api, { fehlerText } from "../api/client";
 import { getAiProvider } from "../services/aiProvider";
 import { ladeExportHerunter, exportDateienAus, nurExporte } from "../components/forms/ExportDateien";
-import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe } from "../components/forms/FormFields";
+import { validateRequired, fieldsForTab, aktionsAuswahl, feldVorgabe, zeitraumVorgabe, startWerteAnwenden } from "../components/forms/FormFields";
 import ReportOptionsModal, { SECTION_SUMMARY } from "../components/forms/ReportOptionsModal";
 import RunnerErgebnis from "../components/forms/RunnerErgebnis";
 import RunnerEingabe, { EingabeReiter } from "../components/forms/RunnerEingabe";
@@ -21,8 +21,10 @@ const S = {
 };
 
 // startReiter/onReiter: Büro-Rubrik merkt sich den Reiter und springt per ?reiter= hinein.
-export default function FormRunner({ formId = null, eingebettet = null, startReiter = null, onReiter = null }:
-  { formId?: any; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void) } = {}) {
+// startWerte: Feldwerte aus einem Sprung (?f.lieferant=…) – vorbelegen und sofort laufen.
+export default function FormRunner({ formId = null, eingebettet = null, startReiter = null, onReiter = null, startWerte = null }:
+  { formId?: any; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void);
+    startWerte?: Record<string, any> | null } = {}) {
   const routeParams = useParams();
   const id = formId ?? routeParams.id;
   const zurueck = eingebettet ? "/start" : "/dashboard";
@@ -39,6 +41,7 @@ export default function FormRunner({ formId = null, eingebettet = null, startRei
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
   const [activeTab, setActiveTabState] = useState(startReiter);
+  const sprungParams = useRef(null);   // Startwerte aus einem Sprung, einmalig
   const setActiveTab = (t) => { setActiveTabState(t); if (t) onReiter?.(t); };
   const [inputTab, setInputTab] = useState("main");
   const { setFormAiAllowed, setPageContext } = useAIAssistant();
@@ -73,6 +76,7 @@ export default function FormRunner({ formId = null, eingebettet = null, startRei
       if (eingebettet === "inhalt") {
         for (const f of (data.schema?.fields || [])) Object.assign(defaults, zeitraumVorgabe(f));
       }
+      sprungParams.current = startWerteAnwenden(data.schema?.fields, defaults, startWerte) ? defaults : null;
       setParams(defaults);
     }).catch(() => setError("Formular nicht gefunden"));
   }, [id]);
@@ -95,6 +99,12 @@ export default function FormRunner({ formId = null, eingebettet = null, startRei
   useEffect(() => {
     if (!form || autostart.current === form.id) return;
     const sch = form.schema || {};
+    // Aus einem Sprung mit Filter: einmal mit genau diesen Werten laufen.
+    if (sprungParams.current && (sch.actions || []).length) {
+      autostart.current = form.id;
+      runForm(null, sprungParams.current);
+      return;
+    }
     // In der Übersicht (eingebettet="inhalt") gibt es keine Eingabe: dort immer mit den Vorgaben starten.
     if (((sch.fields || []).length > 0 && eingebettet !== "inhalt") || !(sch.actions || []).length) return;
     autostart.current = form.id;

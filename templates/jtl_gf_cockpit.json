@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.17",
+  "version": "2.18",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12203,7 +12203,16 @@
                         {
                           "label": "Vertrieb · Auftragseingang",
                           "rubrik": "vertrieb",
-                          "reiter": "tab_ve_eingang"
+                          "reiter": "tab_ve_eingang",
+                          "felder": {
+                            "plattform": {
+                              "praefix": "kanal_",
+                              "ausser": [
+                                "rest",
+                                "-1"
+                              ]
+                            }
+                          }
                         }
                       ]
                     },
@@ -12270,7 +12279,16 @@
                         {
                           "label": "Einkauf · Lieferantenqualität",
                           "rubrik": "einkauf",
-                          "reiter": "tab_ek_qualitaet"
+                          "reiter": "tab_ek_qualitaet",
+                          "felder": {
+                            "lieferant": {
+                              "praefix": "lief_",
+                              "ausser": [
+                                "rest",
+                                "0"
+                              ]
+                            }
+                          }
                         },
                         {
                           "label": "Preis & Marge · Einkaufspreise",

@@ -1,7 +1,8 @@
 /**
  * Eine Rubrik im Büro: Kopf (Name, Anheften, Kopie anpassen) und darunter das
  * Cockpit mit seinen Reitern. /start/r/:rubrik = Haupteintrag,
- * /start/r/:rubrik/:formId = Kopie, Bericht oder Pflegemaske, ?reiter=<tab_id> springt in einen Reiter.
+ * /start/r/:rubrik/:formId = Kopie, Bericht oder Pflegemaske, ?reiter=<tab_id> springt in einen Reiter,
+ * ?f.<feld>=<wert> belegt Felder vor (Sprung mit Filter aus dem Baum, mehrfach = Liste).
  * Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 1.
  */
 import { useState } from "react";
@@ -18,6 +19,13 @@ import CockpitAnsicht from "./CockpitAnsicht";
 const merkKey = (formId) => `dm-reiter-${formId}`;
 const gemerkt = (formId) => { try { return sessionStorage.getItem(merkKey(formId)); } catch { return null; } };
 const merken = (formId, tab) => { try { sessionStorage.setItem(merkKey(formId), tab); } catch { /* egal */ } };
+
+/** ?f.lieferant=12&f.von=… → { lieferant: ["12"], von: ["…"] }; null ohne Angaben. */
+function sprungWerte(such) {
+  const aus = {};
+  for (const [k, v] of such.entries()) if (k.startsWith("f.") && k.length > 2) (aus[k.slice(2)] ||= []).push(v);
+  return Object.keys(aus).length ? aus : null;
+}
 
 function untertitel(rubrik, e) {
   if (e.art === "kopie") return `Kopie von ${e.kopie_von || rubrik.haupt.name} · eigene Anpassung`;
@@ -53,6 +61,9 @@ export default function RubrikAnsicht() {
   const text = untertitel(rubrik, eintrag);
   const angeheftet = ktx.pins.includes(eintrag.id);
   const startReiter = such.get("reiter") || gemerkt(eintrag.id);
+  const startWerte = sprungWerte(such);
+  // Neuer Filter = neu aufbauen; ohne Filter (Klick im Menü) wieder mit den Vorgaben.
+  const runnerKey = `${eintrag.id}|${such.toString()}`;
   const kannKopie = !portal && eintrag.art !== "bericht" && eintrag.art !== "pflege";
 
   return (
@@ -84,9 +95,9 @@ export default function RubrikAnsicht() {
       </div>
 
       {portal
-        ? <PortalRunner key={eintrag.id} slug={eintrag.slug} eingebettet="seite"
+        ? <PortalRunner key={runnerKey} slug={eintrag.slug} eingebettet="seite" startWerte={startWerte}
             startReiter={startReiter} onReiter={(t) => merken(eintrag.id, t)} />
-        : <FormRunner key={eintrag.id} formId={eintrag.id} eingebettet="seite"
+        : <FormRunner key={runnerKey} formId={eintrag.id} eingebettet="seite" startWerte={startWerte}
             startReiter={startReiter} onReiter={(t) => merken(eintrag.id, t)} />}
 
       {kopieVon && (
