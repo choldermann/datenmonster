@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.20",
+  "version": "2.22",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -11594,78 +11594,37 @@
               "decimals": 2,
               "compare_column": "BestellvolumenVJ",
               "compare_label": "Vorjahr",
-              "invert_delta": false
-            }
-          },
-          {
-            "id": "w_gf_ek_kpi_anz",
-            "type": "kpi",
-            "label": "Bestellungen",
-            "action_id": "act_ek_kpi",
-            "config": {
-              "width": 3,
-              "column": "Bestellungen",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0,
-              "compare_column": "BestellungenVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": false
-            }
-          },
-          {
-            "id": "w_gf_ek_kpi_avg",
-            "type": "kpi",
-            "label": "Ø Bestellwert",
-            "action_id": "act_ek_kpi",
-            "config": {
-              "width": 3,
-              "column": "AvgBestellung",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2,
-              "compare_column": "AvgBestellungVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": false
-            }
-          },
-          {
-            "id": "w_gf_ek_kpi_lief",
-            "type": "kpi",
-            "label": "Aktive Lieferanten",
-            "action_id": "act_ek_kpi",
-            "config": {
-              "width": 3,
-              "column": "Lieferanten",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0,
-              "compare_column": "LieferantenVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": false
-            }
-          },
-          {
-            "id": "w_gf_ek_o_anz",
-            "type": "kpi",
-            "label": "Offene Bestellungen (laufend)",
-            "action_id": "act_ek_offen_kpi",
-            "config": {
-              "width": 3,
-              "column": "OffeneBestellungen",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
+              "invert_delta": false,
+              "hint": "Wert der im Zeitraum bei Lieferanten aufgegebenen Bestellungen.",
+              "breakdown": [
+                {
+                  "label": "Bestellungen",
+                  "column": "Bestellungen",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "Ø Bestellwert",
+                  "column": "AvgBestellung",
+                  "prefix": "€ ",
+                  "suffix": "",
+                  "decimals": 2
+                },
+                {
+                  "label": "Aktive Lieferanten",
+                  "column": "Lieferanten",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                }
+              ]
             }
           },
           {
             "id": "w_gf_ek_o_wert",
             "type": "kpi",
-            "label": "Offener Wert (laufend)",
+            "label": "Offene Bestellungen",
             "action_id": "act_ek_offen_kpi",
             "config": {
               "width": 3,
@@ -11673,79 +11632,43 @@
               "aggregation": "first",
               "prefix": "€ ",
               "suffix": "",
-              "decimals": 2
-            }
-          },
-          {
-            "id": "w_gf_ek_o_ueberf",
-            "type": "kpi",
-            "label": "Liefertermin überschritten",
-            "action_id": "act_ek_offen_kpi",
-            "config": {
-              "width": 3,
-              "column": "Ueberfaellig",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_gf_ek_o_verzug",
-            "type": "kpi",
-            "label": "Ø Verzug (laufend)",
-            "action_id": "act_ek_offen_kpi",
-            "config": {
-              "width": 3,
-              "column": "AvgVerzugTage",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Tage",
-              "decimals": 1
-            }
-          },
-          {
-            "id": "w_gf_ek_o_altbestand",
-            "type": "kpi",
-            "label": "⚠ Altbestand über 1 Jahr",
-            "action_id": "act_ek_offen_kpi",
-            "config": {
-              "width": 6,
-              "column": "AltbestandAnzahl",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Bestellungen",
-              "decimals": 0,
-              "color": "#e0a070",
+              "decimals": 2,
+              "hint": "Heute noch nicht vollständig gelieferte Bestellungen, unabhängig vom Zeitraum.",
               "breakdown": [
                 {
-                  "label": "Offener Wert",
-                  "column": "AltbestandWert",
-                  "prefix": "€ ",
-                  "decimals": 2
-                }
-              ]
-            }
-          },
-          {
-            "id": "w_gf_ek_o_ohnetermin",
-            "type": "kpi",
-            "label": "⚠ Ohne Liefertermin",
-            "action_id": "act_ek_offen_kpi",
-            "config": {
-              "width": 6,
-              "column": "OhneTerminAnzahl",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Bestellungen",
-              "decimals": 0,
-              "color": "#e0a070",
-              "breakdown": [
+                  "label": "Anzahl",
+                  "column": "OffeneBestellungen",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
                 {
-                  "label": "Offener Wert",
-                  "column": "OhneTerminWert",
-                  "prefix": "€ ",
-                  "decimals": 2
+                  "label": "Liefertermin überschritten",
+                  "column": "Ueberfaellig",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "Ø Verzug",
+                  "column": "AvgVerzugTage",
+                  "prefix": "",
+                  "suffix": " Tage",
+                  "decimals": 1
+                },
+                {
+                  "label": "⚠ Älter als 1 Jahr",
+                  "column": "AltbestandAnzahl",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "⚠ Ohne Liefertermin",
+                  "column": "OhneTerminAnzahl",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
                 }
               ]
             }
@@ -11756,43 +11679,22 @@
             "label": "Termintreue",
             "action_id": "act_ek_termintreue_kpi",
             "config": {
-              "width": 6,
+              "width": 3,
               "column": "TermintreueQuote",
               "aggregation": "first",
               "prefix": "",
               "suffix": " %",
-              "decimals": 1
-            }
-          },
-          {
-            "id": "w_gf_ek_t_verzug",
-            "type": "kpi",
-            "label": "Ø Verzug verspäteter Lieferungen",
-            "action_id": "act_ek_termintreue_kpi",
-            "config": {
-              "width": 6,
-              "column": "AvgVerzugTage",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Tage",
-              "decimals": 1
-            }
-          },
-          {
-            "id": "w_gf_ek_er_vol",
-            "type": "kpi",
-            "label": "Rechnungsvolumen",
-            "action_id": "act_ek_er_kpi",
-            "config": {
-              "width": 3,
-              "column": "Rechnungsvolumen",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2,
-              "compare_column": "RechnungsvolumenVJ",
-              "compare_label": "Vorjahr",
-              "invert_delta": false
+              "decimals": 1,
+              "hint": "Anteil der Lieferungen im Zeitraum, die spätestens zum zugesagten Termin eingingen.",
+              "breakdown": [
+                {
+                  "label": "Ø Verzug, wenn zu spät",
+                  "column": "AvgVerzugTage",
+                  "prefix": "",
+                  "suffix": " Tage",
+                  "decimals": 1
+                }
+              ]
             }
           },
           {
@@ -11806,35 +11708,31 @@
               "aggregation": "first",
               "prefix": "€ ",
               "suffix": "",
-              "decimals": 2
-            }
-          },
-          {
-            "id": "w_gf_ek_er_offen_anz",
-            "type": "kpi",
-            "label": "Offene Rechnungen",
-            "action_id": "act_ek_er_kpi",
-            "config": {
-              "width": 3,
-              "column": "OffeneRechnungen",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_gf_ek_er_ueberf",
-            "type": "kpi",
-            "label": "Davon überfällig",
-            "action_id": "act_ek_er_kpi",
-            "config": {
-              "width": 3,
-              "column": "Ueberfaellig",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
+              "decimals": 2,
+              "hint": "Noch nicht bezahlte Eingangsrechnungen, unabhängig vom Zeitraum.",
+              "breakdown": [
+                {
+                  "label": "Offene Rechnungen",
+                  "column": "OffeneRechnungen",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "davon überfällig",
+                  "column": "Ueberfaellig",
+                  "prefix": "",
+                  "suffix": "",
+                  "decimals": 0
+                },
+                {
+                  "label": "Rechnungsvolumen im Zeitraum",
+                  "column": "Rechnungsvolumen",
+                  "prefix": "€ ",
+                  "suffix": "",
+                  "decimals": 2
+                }
+              ]
             }
           },
           {
@@ -12037,7 +11935,7 @@
                 "Fixkosten"
               ],
               "stacked": false,
-              "info": "Rohertrag gesamt gegen die Fixkosten des jeweiligen Monats. Die Fixkosten stammen aus dem Reiter „Kosten“ und folgen dort dem hinterlegten „gültig ab“. Ohne gepflegte Kostenstruktur sind sie 0 – dann entspricht das Betriebsergebnis dem Rohertrag gesamt.",
+              "info": "Rohertrag gesamt gegen die Fixkosten des jeweiligen Monats. Die Fixkosten stammen aus Kostenstruktur · Fixkosten pflegen und folgen dort dem hinterlegten „gültig ab“. Ohne gepflegte Kostenstruktur sind sie 0 – dann entspricht das Betriebsergebnis dem Rohertrag gesamt.",
               "drilldown": {
                 "mapping_id": "m_gf_rg_monat_ergebnis",
                 "key_column": "Monat",
@@ -12174,11 +12072,11 @@
                   "beschreibung": "Alle Rechnungspositionen ohne Stornos: Artikel, Versanderlöse, Rabatte und Sonstiges.",
                   "spruenge": [
                     {
-                      "label": "Reiter Umsatzanalyse",
+                      "label": "Vertrieb · Umsatz",
                       "reiter": "tab_umsatz"
                     },
                     {
-                      "label": "Reiter Kundenentwicklung",
+                      "label": "Vertrieb · Kunden & Zahlungsmoral",
                       "reiter": "tab_kunden"
                     }
                   ],
@@ -12197,7 +12095,7 @@
                       },
                       "spruenge": [
                         {
-                          "label": "Reiter Umsatzanalyse",
+                          "label": "Vertrieb · Umsatz",
                           "reiter": "tab_umsatz"
                         },
                         {
@@ -12227,7 +12125,7 @@
                       },
                       "spruenge": [
                         {
-                          "label": "Reiter Umsatzanalyse",
+                          "label": "Vertrieb · Umsatz",
                           "reiter": "tab_umsatz"
                         },
                         {
@@ -12249,7 +12147,7 @@
                     "Kundenart": {
                       "spruenge": [
                         {
-                          "label": "Reiter Kundenentwicklung",
+                          "label": "Vertrieb · Kunden & Zahlungsmoral",
                           "reiter": "tab_kunden"
                         },
                         {
@@ -12411,16 +12309,16 @@
                   "gut": "runter",
                   "hinweis": {
                     "wenn": "null",
-                    "text": "Noch keine Fixkosten gepflegt. Das geht im Reiter Kostenstruktur."
+                    "text": "Noch keine Fixkosten gepflegt. Das geht unter Kostenstruktur · Fixkosten pflegen."
                   },
                   "beschreibung": "Monatliche Fixkosten aus der Kostenstruktur, taggenau anteilig auf den Zeitraum gerechnet.",
                   "spruenge": [
                     {
-                      "label": "Reiter Kostenstruktur",
+                      "label": "Kostenstruktur · Fixkosten pflegen",
                       "reiter": "tab_kosten"
                     },
                     {
-                      "label": "Reiter Ergebnis",
+                      "label": "Kostenstruktur · Ergebnis & Break-even",
                       "reiter": "tab_ergebnis"
                     }
                   ],
@@ -12435,11 +12333,11 @@
                     },
                     "spruenge": [
                       {
-                        "label": "Reiter Kostenstruktur",
+                        "label": "Kostenstruktur · Fixkosten pflegen",
                         "reiter": "tab_kosten"
                       },
                       {
-                        "label": "Reiter Ergebnis",
+                        "label": "Kostenstruktur · Ergebnis & Break-even",
                         "reiter": "tab_ergebnis"
                       }
                     ]
@@ -12456,7 +12354,7 @@
                   ],
                   "spruenge": [
                     {
-                      "label": "Reiter Kundenentwicklung",
+                      "label": "Vertrieb · Kunden & Zahlungsmoral",
                       "reiter": "tab_kunden"
                     },
                     {
@@ -12474,7 +12372,7 @@
                   "beschreibung": "Kunden, deren erste Rechnung überhaupt in den Zeitraum fällt. Im Vorjahr entsprechend die Kunden mit erster Rechnung im Vorjahreszeitraum.",
                   "spruenge": [
                     {
-                      "label": "Reiter Kundenentwicklung",
+                      "label": "Vertrieb · Kunden & Zahlungsmoral",
                       "reiter": "tab_kunden"
                     }
                   ]
@@ -12488,7 +12386,7 @@
                   "beschreibung": "Kunden mit mindestens zwei Käufen in den letzten 24 Monaten, die seit über 90 Tagen und mehr als doppelt so lange wie üblich nichts gekauft haben. Der Wert ist ihr Umsatz der letzten 24 Monate. Er zählt nicht zur Summe.",
                   "spruenge": [
                     {
-                      "label": "Reiter Ausblick",
+                      "label": "Ausblick · Prognose & Churn",
                       "reiter": "tab_ausblick"
                     }
                   ]
@@ -12503,7 +12401,7 @@
                   "beschreibung": "Bestellvolumen bei Lieferanten im Zeitraum. Das ist nicht der Wareneinsatz: Bestellt wird für das Lager, verkauft wird später. Die Tabelle zeigt die heute noch offenen Bestellungen.",
                   "spruenge": [
                     {
-                      "label": "Reiter Einkauf & Verbindlichkeiten",
+                      "label": "Einkauf & Verbindlichkeiten",
                       "reiter": "tab_einkauf"
                     },
                     {
@@ -12535,14 +12433,14 @@
         "result_tabs": [
           {
             "id": "tab_baum",
-            "label": "Baum",
+            "label": "Ergebnisbaum",
             "action_ids": [
               "act_baum"
             ]
           },
           {
             "id": "tab_uebersicht",
-            "label": "Unternehmensübersicht",
+            "label": "Kennzahlen",
             "action_ids": [
               "act_gf_alerts",
               "act_overview_kpi",
@@ -12550,68 +12448,8 @@
             ]
           },
           {
-            "id": "tab_ergebnis",
-            "label": "Ergebnis",
-            "action_ids": [
-              "act_ergebnis_kpi",
-              "act_ergebnis_verlauf",
-              "act_ergebnis_bloecke"
-            ]
-          },
-          {
-            "id": "tab_kunden",
-            "label": "Kundenentwicklung",
-            "action_ids": [
-              "act_kunden_kpi",
-              "act_top_kunden",
-              "act_kunden_rueckgang",
-              "act_zm_kpi",
-              "act_zm_kunden",
-              "act_zm_verschlechterung",
-              "act_neukunden"
-            ]
-          },
-          {
-            "id": "tab_mitarbeiter",
-            "label": "Mitarbeiter",
-            "action_ids": [
-              "act_ma_kpi",
-              "act_ma_liste"
-            ]
-          },
-          {
-            "id": "tab_ausblick",
-            "label": "Ausblick",
-            "action_ids": [
-              "act_forecast",
-              "act_churn"
-            ]
-          },
-          {
-            "id": "tab_op",
-            "label": "Offene Posten",
-            "action_ids": [
-              "act_op_kpi",
-              "act_op_aging",
-              "act_op_debitoren",
-              "act_op_top"
-            ]
-          },
-          {
-            "id": "tab_einkauf",
-            "label": "Einkauf & Verbindlichkeiten",
-            "action_ids": [
-              "act_ek_kpi",
-              "act_ek_offen_kpi",
-              "act_ek_termintreue_kpi",
-              "act_ek_er_kpi",
-              "act_ek_offen_liste",
-              "act_ek_er_offen"
-            ]
-          },
-          {
             "id": "tab_umsatz",
-            "label": "Umsatzanalyse",
+            "label": "Umsatz",
             "action_ids": [
               "act_wg_entwicklung",
               "act_top_artikel",
@@ -12622,31 +12460,16 @@
             ]
           },
           {
-            "id": "tab_kapital",
-            "label": "Kapitalbindung",
+            "id": "tab_kunden",
+            "label": "Kunden & Zahlungsmoral",
             "action_ids": [
-              "act_kapital_kpi",
-              "act_kapital_wg",
-              "act_kapital_artikel",
-              "act_kapital_umschlag"
-            ]
-          },
-          {
-            "id": "tab_trends",
-            "label": "Trends",
-            "action_ids": [
-              "act_trend",
-              "act_trend_wg"
-            ]
-          },
-          {
-            "id": "tab_warnungen",
-            "label": "Warnungen",
-            "action_ids": [
-              "act_warn_ladenhueter",
-              "act_warn_bestand",
-              "act_warn_marge",
-              "act_gesperrt"
+              "act_kunden_kpi",
+              "act_top_kunden",
+              "act_kunden_rueckgang",
+              "act_zm_kpi",
+              "act_zm_kunden",
+              "act_zm_verschlechterung",
+              "act_neukunden"
             ]
           },
           {
@@ -12672,8 +12495,83 @@
             ]
           },
           {
+            "id": "tab_op",
+            "label": "Offene Posten",
+            "action_ids": [
+              "act_op_kpi",
+              "act_op_aging",
+              "act_op_debitoren",
+              "act_op_top"
+            ]
+          },
+          {
+            "id": "tab_mitarbeiter",
+            "label": "Mitarbeiter",
+            "action_ids": [
+              "act_ma_kpi",
+              "act_ma_liste"
+            ]
+          },
+          {
+            "id": "tab_einkauf",
+            "label": "Einkauf & Verbindlichkeiten",
+            "action_ids": [
+              "act_ek_kpi",
+              "act_ek_offen_kpi",
+              "act_ek_termintreue_kpi",
+              "act_ek_er_kpi",
+              "act_ek_offen_liste",
+              "act_ek_er_offen"
+            ]
+          },
+          {
+            "id": "tab_kapital",
+            "label": "Kapitalbindung",
+            "action_ids": [
+              "act_kapital_kpi",
+              "act_kapital_wg",
+              "act_kapital_artikel",
+              "act_kapital_umschlag"
+            ]
+          },
+          {
+            "id": "tab_warnungen",
+            "label": "Ladenhüter & Warnungen",
+            "action_ids": [
+              "act_warn_ladenhueter",
+              "act_warn_bestand",
+              "act_warn_marge",
+              "act_gesperrt"
+            ]
+          },
+          {
+            "id": "tab_ausblick",
+            "label": "Prognose & Churn",
+            "action_ids": [
+              "act_forecast",
+              "act_churn"
+            ]
+          },
+          {
+            "id": "tab_trends",
+            "label": "Trends",
+            "action_ids": [
+              "act_trend",
+              "act_trend_wg"
+            ]
+          },
+          {
+            "id": "tab_ergebnis",
+            "label": "Ergebnis & Break-even",
+            "action_ids": [
+              "act_ergebnis_kpi",
+              "act_ergebnis_verlauf",
+              "act_ergebnis_bloecke"
+            ]
+          },
+          {
             "id": "tab_kosten",
-            "label": "Kostenstruktur",
+            "label": "Fixkosten pflegen",
             "action_ids": []
           }
         ],
@@ -12687,7 +12585,60 @@
         },
         "rubrik": {
           "id": "gf"
-        }
+        },
+        "reiter_gruppen": [
+          {
+            "id": "g_uebersicht",
+            "label": "Unternehmensübersicht",
+            "reiter": [
+              "tab_baum",
+              "tab_uebersicht"
+            ]
+          },
+          {
+            "id": "g_vertrieb",
+            "label": "Vertrieb",
+            "reiter": [
+              "tab_umsatz",
+              "tab_kunden",
+              "tab_klumpen",
+              "tab_retouren",
+              "tab_op",
+              "tab_mitarbeiter"
+            ]
+          },
+          {
+            "id": "g_einkauf",
+            "label": "Einkauf",
+            "reiter": [
+              "tab_einkauf"
+            ]
+          },
+          {
+            "id": "g_lager",
+            "label": "Lager",
+            "reiter": [
+              "tab_kapital",
+              "tab_warnungen"
+            ]
+          },
+          {
+            "id": "g_ausblick",
+            "label": "Ausblick",
+            "reiter": [
+              "tab_ausblick",
+              "tab_trends"
+            ]
+          },
+          {
+            "id": "g_kosten",
+            "label": "Kostenstruktur",
+            "reiter": [
+              "tab_ergebnis",
+              "tab_kosten"
+            ]
+          }
+        ]
       },
       "portal_config": {
         "icon": "🧭"

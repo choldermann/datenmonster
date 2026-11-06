@@ -331,7 +331,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
         )}
 
         <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
-          resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          resultTabs={resultTabs} reiterGruppen={form?.reiter_gruppen} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
           reiterScroll={eingebettet === "seite"}
           params={params} allowDownload={allowDownload} onDownload={downloadExport}
           onAiText={(aid, text, loading) => {

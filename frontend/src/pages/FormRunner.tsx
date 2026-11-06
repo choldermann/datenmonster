@@ -352,7 +352,7 @@ export default function FormRunner({ formId = null, eingebettet = null, startRei
         )}
 
         <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
-          resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          resultTabs={resultTabs} reiterGruppen={schema.reiter_gruppen} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
           reiterScroll={eingebettet === "seite"}
           params={params} allowDownload={true} onDownload={downloadExport}
           onAiText={(aid, text, loading) => {

@@ -210,6 +210,44 @@ def test_rubrik_kommt_beim_update_an_eigene_bleibt():
     assert _rubrik_uebernehmen({}, {}) is False
 
 
+
+def test_reiter_gruppen_kommen_beim_update_an():
+    from app.api.templates import _bausteine_aktualisieren, _stand_hash
+    gruppen = [{"id": "g1", "label": "Vertrieb", "reiter": ["t1", "t2"]}]
+    # Formular ohne Gruppen, nie welche gehabt: werden ergänzt
+    vorhanden = {"result_tabs": []}
+    akt, _, stand = _bausteine_aktualisieren(vorhanden, {"reiter_gruppen": gruppen}, {})
+    assert vorhanden["reiter_gruppen"] == gruppen and "reiter_gruppen" in akt and stand["reiter_gruppen"]
+    # Kunde hat sie bewusst entfernt (Fingerabdruck da): bleiben weg
+    vorhanden = {"result_tabs": []}
+    _bausteine_aktualisieren(vorhanden, {"reiter_gruppen": gruppen}, {"reiter_gruppen": _stand_hash(gruppen)})
+    assert "reiter_gruppen" not in vorhanden
+    # Kunde hat sie angepasst: bleiben wie sie sind
+    eigen = [{"id": "g1", "label": "Mein Vertrieb", "reiter": ["t1"]}]
+    vorhanden = {"reiter_gruppen": eigen}
+    _, gesch, _ = _bausteine_aktualisieren(vorhanden, {"reiter_gruppen": gruppen + [{"id": "g2", "label": "X", "reiter": []}]},
+                                           {"reiter_gruppen": _stand_hash(gruppen)})
+    assert vorhanden["reiter_gruppen"] == eigen and "reiter_gruppen" in gesch
+
+
+def test_entfallene_kachel_wird_entfernt_angepasste_bleibt():
+    from app.api.templates import _bausteine_aktualisieren, _stand_hash
+    alt_a = {"id": "a", "type": "kpi", "config": {"column": "X"}}
+    alt_b = {"id": "b", "type": "kpi", "config": {"column": "Y"}}
+    eigen = {"id": "mein", "type": "kpi", "config": {"column": "Z"}}
+    stand = {"widgets::a": _stand_hash(alt_a), "widgets::b": _stand_hash(alt_b)}
+    geaendert_b = {**alt_b, "label": "von Hand"}
+    vorhanden = {"widgets": [dict(alt_a), geaendert_b, dict(eigen)]}
+    akt, gesch, neu = _bausteine_aktualisieren(vorhanden, {"widgets": []}, stand)
+    ids = [w["id"] for w in vorhanden["widgets"]]
+    assert ids == ["b", "mein"], ids                 # a weg, angepasstes b und eigenes bleiben
+    assert "widgets::a (entfernt)" in akt and "widgets::b" in gesch
+    assert neu.get("widgets::b") == stand["widgets::b"]   # bleibt auch beim nächsten Mal geschützt
+    # Ohne Fingerabdruck (Altinstallation) wird nichts entfernt
+    vorhanden = {"widgets": [dict(alt_a)]}
+    _bausteine_aktualisieren(vorhanden, {"widgets": []}, {})
+    assert [w["id"] for w in vorhanden["widgets"]] == ["a"]
+
 if __name__ == "__main__":
     fehler = 0
     for name, fn in list(globals().items()):

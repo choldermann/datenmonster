@@ -448,7 +448,9 @@ def _formular_ergaenzen(vorhanden: dict, vorlage: dict, bisher: Optional[dict]) 
 # Protokoll-Schlüssel für die Fingerabdrücke der Bausteine (form_bausteine[form]["stand"]).
 _STAND = "stand"
 # Einzelne Abschnitte des Schemas, die als Ganzes ein Baustein sind.
-_STAND_ABSCHNITTE = ("doku",)
+# reiter_gruppen = Hauptreiter mit Unterseiten (GF 2.21): kommt mit dem Update, wenn der
+# Kunde sie nicht selbst angepasst hat; fehlt der Abschnitt im Formular, wird er ergänzt.
+_STAND_ABSCHNITTE = ("doku", "reiter_gruppen")
 
 
 def _stand_hash(el) -> str:
@@ -513,8 +515,36 @@ def _bausteine_aktualisieren(vorhanden: dict, vorlage: dict, stand: Optional[dic
                 _l[_i] = neu_el
             _abgleichen(f"{liste}::{eid}", el, t_nach_id[eid], _ersetzen)
 
+    # Kacheln, die die Vorlage nicht mehr hat: entfernen, wenn sie aus der Vorlage stammen
+    # (Fingerabdruck vorhanden) und unverändert sind. Angepasste bleiben, eigene sowieso.
+    # Nur Widgets – eine Aktion oder ein Reiter kann noch von Eigenem gebraucht werden.
+    t_widget_ids = {e.get("id") for e in (vorlage.get("widgets") or []) if isinstance(e, dict)}
+    if vorlage.get("widgets") is not None and isinstance(vorhanden.get("widgets"), list):
+        bleiben = []
+        for el in vorhanden["widgets"]:
+            eid = el.get("id") if isinstance(el, dict) else None
+            schluessel = f"widgets::{eid}"
+            if eid is not None and eid not in t_widget_ids and stand.get(schluessel) is not None:
+                if stand[schluessel] == _stand_hash(el):
+                    aktualisiert.append(f"{schluessel} (entfernt)")
+                    continue
+                geschuetzt.append(schluessel)
+                neuer_stand[schluessel] = stand[schluessel]
+            bleiben.append(el)
+        vorhanden["widgets"] = bleiben
+
     for abschnitt in _STAND_ABSCHNITTE:
-        if abschnitt not in vorlage or abschnitt not in vorhanden:
+        if abschnitt not in vorlage:
+            continue
+        if abschnitt not in vorhanden:
+            # Neu in der Vorlage, im Formular noch nie da gewesen: ergänzen. Hat der Kunde
+            # ihn bewusst entfernt (Fingerabdruck vorhanden), bleibt er weg.
+            if stand.get(abschnitt) is None:
+                vorhanden[abschnitt] = copy.deepcopy(vorlage[abschnitt])
+                neuer_stand[abschnitt] = _stand_hash(vorlage[abschnitt])
+                aktualisiert.append(abschnitt)
+            else:
+                neuer_stand[abschnitt] = stand[abschnitt]
             continue
 
         def _ersetzen(neu_el, _a=abschnitt):

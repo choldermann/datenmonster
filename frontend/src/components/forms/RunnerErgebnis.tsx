@@ -7,6 +7,7 @@
  * alles nach den Eingabefeldern – Export-Ergebnisse, Reiterleiste, Widgets und
  * Rohtabellen für Aktionen ohne Widget – lebt jetzt nur noch hier.
  */
+import { useRef } from "react";
 import { csvZelle } from "../../utils/csvSicher";
 import { AlertCircle, Download } from "lucide-react";
 import WidgetRenderer, { STANDALONE_WIDGET_TYPES } from "./WidgetRenderer";
@@ -94,13 +95,47 @@ export function ErgebnisTabelle({ result, formName, actionLabel, allowDownload }
 }
 
 /**
+ * Hauptreiter aus schema.reiter_gruppen ([{id, label, reiter: [tab-id, …]}]). Reiter, die in
+ * keiner Gruppe stehen (z. B. eigene Reiter beim Kunden), bilden je einen eigenen Hauptreiter
+ * an ihrer Stelle. Gruppen ohne vorhandenen Reiter entfallen. Ohne Angabe: jeder Reiter allein.
+ */
+export function reiterGruppieren(resultTabs, reiterGruppen) {
+  const nachId = new Map(resultTabs.map(t => [t.id, t]));
+  const vergeben = new Set();
+  const gruppen = [];
+  for (const g of reiterGruppen || []) {
+    const tabs = (g.reiter || []).map(id => nachId.get(id)).filter(t => t && !vergeben.has(t.id));
+    if (!tabs.length) continue;
+    tabs.forEach(t => vergeben.add(t.id));
+    gruppen.push({ id: g.id, label: g.label, tabs });
+  }
+  // Übrige Reiter nach der Gruppe ihres Vorgängers einsortieren, sonst ans Ende.
+  let zuletzt = -1;
+  for (const t of resultTabs) {
+    if (vergeben.has(t.id)) { zuletzt = gruppen.findIndex(g => g.tabs.some(x => x.id === t.id)); continue; }
+    gruppen.splice(zuletzt + 1, 0, { id: `einzel_${t.id}`, label: t.label, tabs: [t] });
+    zuletzt += 1;
+  }
+  return gruppen;
+}
+
+/**
  * Alles nach den Eingabefeldern. `form` braucht id, name und project_id.
  * `onAiText(actionId, text, loading)` sammelt die KI-Analysen für den PDF-Report.
  */
 export default function RunnerErgebnis({
   form, actions, widgets, results, resultTabs, currentTab, onTab, tabActionIds,
-  params, allowDownload, onDownload, onAiText, reiterScroll = false,
+  params, allowDownload, onDownload, onAiText, reiterScroll = false, reiterGruppen = null,
 }) {
+  const gruppen = reiterGruppieren(resultTabs, reiterGruppen);
+  const aktiveGruppe = gruppen.find(g => g.tabs.some(t => t.id === currentTab)) || gruppen[0];
+  // Zuletzt gewählte Unterseite je Hauptreiter (Rückkehr landet dort, wo man war).
+  const zuletzt = useRef({});
+  if (aktiveGruppe && currentTab) zuletzt.current[aktiveGruppe.id] = currentTab;
+  const gruppeWaehlen = (g) => {
+    const z = zuletzt.current[g.id];
+    onTab(g.tabs.some(t => t.id === z) ? z : g.tabs[0].id);
+  };
   const mitStandalone = widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type));
   // Aktionen ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Reiter gefiltert).
   // Export-Aktionen stehen über den Reitern (ExportErgebnisse) – sie gehören meist zu keinem.
@@ -124,15 +159,35 @@ export default function RunnerErgebnis({
         <div role="tablist" style={{ display: "flex", gap: 4, marginBottom: 16,
           borderBottom: `1px solid ${S.border}`, flexWrap: reiterScroll ? "nowrap" : "wrap",
           overflowX: reiterScroll ? "auto" : undefined, scrollbarWidth: "thin" }}>
-          {resultTabs.map(tab => {
-            const active = tab.id === currentTab;
+          {gruppen.map(g => {
+            const active = g.id === aktiveGruppe?.id;
             return (
-              <button key={tab.id} onClick={() => onTab(tab.id)} role="tab" aria-selected={active}
+              <button key={g.id} onClick={() => gruppeWaehlen(g)} role="tab" aria-selected={active}
                 style={{ padding: "8px 16px", background: "none", border: "none",
                   borderBottom: `${reiterScroll ? 2.5 : 2}px solid ${active ? (reiterScroll ? "var(--accent)" : "var(--ok)") : "transparent"}`,
                   color: active ? S.textBright : S.textDim, cursor: "pointer",
                   fontSize: reiterScroll ? 13.5 : 12, fontWeight: 600, marginBottom: -1,
                   whiteSpace: "nowrap", flex: "none" }}>
+                {g.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Unterseiten des gewählten Hauptreiters */}
+      {(results || mitStandalone) && aktiveGruppe && aktiveGruppe.tabs.length > 1 && (
+        <div role="tablist" aria-label={aktiveGruppe.label}
+          style={{ display: "flex", flexWrap: "wrap", gap: 6, margin: "-6px 0 16px" }}>
+          {aktiveGruppe.tabs.map(tab => {
+            const active = tab.id === currentTab;
+            return (
+              <button key={tab.id} onClick={() => onTab(tab.id)} role="tab" aria-selected={active}
+                style={{ padding: "4px 12px", borderRadius: 999, cursor: "pointer", fontSize: 12.5,
+                  fontWeight: active ? 650 : 500, whiteSpace: "nowrap",
+                  border: `1px solid ${active ? "var(--accent)" : S.border}`,
+                  background: active ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
+                  color: active ? "var(--accent)" : S.textMain }}>
                 {tab.label}
               </button>
             );

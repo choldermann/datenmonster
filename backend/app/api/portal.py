@@ -50,6 +50,8 @@ def _portal_form_out(f: Form, db: Optional[Session] = None) -> dict:
         "fields":           schema.get("fields", []),
         "widgets":          schema.get("widgets", []),
         "result_tabs":      schema.get("result_tabs", []),
+        # Hauptreiter mit Unterseiten (nur Anzeige, optional)
+        "reiter_gruppen":   schema.get("reiter_gruppen") or [],
         # Actions: nur label und id, kein mapping_id
         "actions":          [
             {"id": a.get("id"), "label": a.get("label", "Ausführen"), "type": a.get("type")}
