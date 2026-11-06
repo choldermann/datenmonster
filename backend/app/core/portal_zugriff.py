@@ -36,6 +36,8 @@ _REGELN = [
     # Verbindungsauswahl im Intrastat-Ausschluss-Widget (nur die Liste)
     ({"GET"},            r"/api/connections"),
     # Fach-Widgets mit eigenen Portal-Pruefungen im jeweiligen Router
+    # Umfelddaten (Wetter, Atemwegsinfekte) für die Umfeld-Seite im GF-Cockpit
+    (ALLE, r"/api/umfeld/(katalog|reihen)"),
     (ALLE, r"/api/(business-config|datenpflege|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
            r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten|zugferd)(/.*)?"),
 ]
