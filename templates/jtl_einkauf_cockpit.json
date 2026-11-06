@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
   "category": "jtl-reporting",
-  "version": "1.5",
+  "version": "1.6",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -3394,6 +3394,9 @@
           "hinweise": [
             "Teillieferungen zählen erst als pünktlich, wenn die Bestellposition vollständig zugebucht ist."
           ]
+        },
+        "rubrik": {
+          "id": "einkauf"
         }
       },
       "portal_config": {"icon": "🛒"}

@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.13",
+  "version": "1.14",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -7749,6 +7749,9 @@
             "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant.",
             "Lagerliste: Bestand je Artikel, Lager, Charge und MHD zum Stichtag (Vorgabe: heute) – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt. Bewertet wird mit dem EK der letzten Eingangsbuchung bis zum Stichtag (wie auf dem Reiter Lagerwert), nicht mit dem heutigen Stamm-EK – eine spätere EK-Pflege ändert einen vergangenen Stichtag also nicht mehr."
           ]
+        },
+        "rubrik": {
+          "id": "lager"
         }
       }
     }

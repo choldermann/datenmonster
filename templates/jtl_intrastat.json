@@ -4,7 +4,7 @@
  "template_name": "JTL Intrastat (eSTATISTIK + Destatis)",
  "description": "Vollständiges Intrastat-Setup: Mappings Ausfuhr/Einfuhr (eSTATISTIK.core + Destatis-CSV), Formular Intrastat Zeitraum, monatliche Pipelines. DB-Verbindung beim Installieren wählen.",
  "category": "jtl",
- "version": "1.4",
+ "version": "1.5",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -1765,6 +1765,9 @@
       "Artikel ohne Warentarifnummer oder Herkunftsland fehlen in der Meldung — der Stammdaten-Health-Check findet sie vorab.",
       "Bestimmte Artikel lassen sich dauerhaft von der Meldung ausnehmen."
      ]
+    },
+    "rubrik": {
+      "id": "intrastat"
     }
    },
    "portal_config": {"icon": "🌍"}

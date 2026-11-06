@@ -4,7 +4,7 @@
  "template_name": "JTL DATEV-Reporting (Eingangs- und Ausgangsrechnungen)",
  "description": "Erzeugt aus der JTL-Wawi einen DATEV-Buchungsstapel im offiziellen EXTF-Format (Version 700) – für Eingangsrechnungen, die JTL selbst nicht exportieren kann, und für Ausgangsrechnungen. Zusätzlich das schlanke Format des bisherigen Access-Werkzeugs, damit der Umstieg vergleichbar bleibt. Monatsweise, mit Kontrollliste vor dem Export.",
  "category": "jtl",
- "version": "1.9",
+ "version": "1.10",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -1496,6 +1496,9 @@
      "hinweise": [
       "Eingangsrechnungen kann die JTL-Wawi selbst nicht exportieren — dieser Weg schließt die Lücke."
      ]
+    },
+    "rubrik": {
+      "id": "datev"
     }
    },
    "portal_config": {"icon": "🧾"}

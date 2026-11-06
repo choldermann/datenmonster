@@ -524,6 +524,15 @@ def _bausteine_aktualisieren(vorhanden: dict, vorlage: dict, stand: Optional[dic
     return aktualisiert, geschuetzt, neuer_stand
 
 
+def _rubrik_uebernehmen(vorhanden: dict, vorlage: dict) -> bool:
+    """Rubrik fürs Büro-Menü (schema.rubrik) aus der Vorlage übernehmen, wenn das
+    installierte Formular noch keine hat. Eine eigene Angabe bleibt. True = gesetzt."""
+    if not vorlage.get("rubrik") or vorhanden.get("rubrik"):
+        return False
+    vorhanden["rubrik"] = copy.deepcopy(vorlage["rubrik"])
+    return True
+
+
 def _stand_ergaenzen(stand: dict, schema: dict, ids_je_liste: Optional[dict] = None) -> dict:
     """Fingerabdrücke für Bausteine nachtragen, die gerade neu ins Formular kamen
     (oder bei einer Neuinstallation: für alle). `ids_je_liste` None = alle."""
@@ -1376,9 +1385,11 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 existing_f.portal_config = pc
                 flag_modified(existing_f, "portal_config")
                 eintrag["icon_gesetzt"] = True
-            if aktualisiert or ergaenzt:
+            if _rubrik_uebernehmen(sc, vorlage_schema):
+                eintrag["rubrik_gesetzt"] = True
+            if aktualisiert or ergaenzt or eintrag.get("rubrik_gesetzt"):
                 existing_f.schema = sc
-            if n or aktualisiert or ergaenzt or eintrag.get("icon_gesetzt"):
+            if n or aktualisiert or ergaenzt or eintrag.get("icon_gesetzt") or eintrag.get("rubrik_gesetzt"):
                 flag_modified(existing_f, "schema")
                 db.commit()
             form_bausteine[str(existing_f.id)] = {**_bausteine(vorlage_schema),

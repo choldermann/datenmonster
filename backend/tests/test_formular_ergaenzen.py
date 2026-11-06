@@ -198,6 +198,18 @@ def test_neue_ampelzeile_und_geaenderter_info_text_zusammen():
     assert installiert["result_tabs"][0]["action_ids"] == ["act_vk", "act_ek_lief"]
 
 
+
+def test_rubrik_kommt_beim_update_an_eigene_bleibt():
+    from app.api.templates import _rubrik_uebernehmen
+    ohne = {"widgets": []}
+    assert _rubrik_uebernehmen(ohne, {"rubrik": {"id": "lager"}}) is True
+    assert ohne["rubrik"] == {"id": "lager"}
+    eigen = {"rubrik": {"id": "vertrieb"}}
+    assert _rubrik_uebernehmen(eigen, {"rubrik": {"id": "lager"}}) is False
+    assert eigen["rubrik"] == {"id": "vertrieb"}
+    assert _rubrik_uebernehmen({}, {}) is False
+
+
 if __name__ == "__main__":
     fehler = 0
     for name, fn in list(globals().items()):

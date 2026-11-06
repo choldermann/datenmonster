@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.15",
+  "version": "1.16",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -4706,6 +4706,9 @@
             "Gesperrte und ausgelaufene Artikel sind ausgeblendet, sonst dominieren Altlasten die Listen.",
             "Die Prüfung „Lieferanten-EK unplausibel“ vergleicht den EK beim Standard-Lieferanten mit dem Artikel-EK. Häufige Ursachen: Preis je Karton statt je Stück, Tippfehler, oder eine Nebenkosten-Position (z. B. Frachtkosten) mit einer alten Einkaufsbestellung."
           ]
+        },
+        "rubrik": {
+          "id": "health"
         }
       },
       "portal_config": {

@@ -4,7 +4,7 @@
   "template_name": "JTL Eingangsrechnungs-Import (ZUGFeRD/XRechnung)",
   "description": "Eingangsrechnungen als E-Rechnung einlesen, gegen die Lieferantenbestellung matchen, im Vier-Augen-Prinzip freigeben und direkt in die JTL-Wawi schreiben. Liest ZUGFeRD/Factur-X (PDF/A-3 mit CII-XML) und XRechnung (UBL). DB-Verbindung beim Installieren wählen.",
   "category": "jtl",
-  "version": "1.2",
+  "version": "1.3",
   "author": "christof",
   "hinweise": [
     "Dieses Template nutzt Datenbank-Verbindungen. Wähle beim Installieren die passende Verbindung aus – Zugangsdaten werden aus Sicherheitsgründen nicht mitgeliefert.",
@@ -54,6 +54,9 @@
           "hinweise": [
             "Ab 2027 verlangen erste Großkunden den Empfang über Peppol — das betrifft den Transportweg, nicht dieses Format."
           ]
+        },
+        "rubrik": {
+          "id": "eingangsrechnungen"
         }
       },
       "portal_config": {"icon": "📥"}

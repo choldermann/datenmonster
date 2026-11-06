@@ -4,7 +4,7 @@
  "template_name": "JTL – Preis- & Marge-Cockpit",
  "description": "Wo der Ertrag verloren geht: Rohertragsmarge im Zeitverlauf, Artikel mit schleichendem Margenverfall samt Ursache, Verkäufe unter Einkaufspreis, Kalkulation gegen die Mindestmarge, gestiegene Einkaufspreise und die Marge je Kunde.",
  "category": "jtl-reporting",
- "version": "1.3",
+ "version": "1.4",
  "author": "Datenmonster",
  "hinweise": [
   "Marge = (Umsatz − Wareneinsatz) / Umsatz auf Artikelpositionen (Rechnung.tRechnungPosition, nType = 1), Stornos ausgenommen. Der Wareneinsatz nimmt bevorzugt den historischen EK der Position (fEkNetto) und friert die Marge damit zum Verkaufszeitpunkt ein.",
@@ -2659,6 +2659,9 @@
      "hinweise": [
       "Die Marge rechnet mit dem Einkaufspreis zum Zeitpunkt des Verkaufs, nicht mit dem heutigen."
      ]
+    },
+    "rubrik": {
+      "id": "preis"
     }
    },
    "portal_config": {"icon": "🏷️"}
