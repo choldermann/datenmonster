@@ -25,7 +25,9 @@
  * Sprung mit Filter (nur in eine andere Rubrik): felder: { <Feldname im Ziel>: { praefix, ausser? } }
  * nimmt den Schlüssel aus der Knoten-ID („lief_123“ → lieferant = 123). Passt die ID nicht oder steht
  * der Rest in `ausser` (Vorgabe ["rest"] = „Übrige“), springt er ohne diesen Filter. Der Zeitraum
- * (von/bis) geht mit, außer bei zeitraum: false.
+ * (von/bis) geht mit, außer bei zeitraum: false. sprung_mitnehmen: ["plattform"] (am Widget) gibt die
+ * eigenen Filter des Cockpits an jedes Ziel weiter, das ein gleichnamiges Feld hat; leere Filter nicht.
+ * Ein Filter aus dem Knoten (felder) geht vor.
  * Plan: ~/.claude/plans/ein-cockpit-rubriken.md, Phase 2.
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -473,6 +475,10 @@ export default function BaumWidget({ widget, result, results = {}, formId = null
   // Feldwerte für das Ziel aus der Knoten-ID; {} = nur Zeitraum, gefiltert = welche Felder greifen.
   const sprungWerte = (s, knotenId) => {
     const werte = {}, gefiltert = [];
+    for (const feld of cfg.sprung_mitnehmen || []) {
+      const v = params?.[feld];
+      if (Array.isArray(v) ? v.length : v != null && v !== "") werte[feld] = v;
+    }
     for (const [feld, regel] of Object.entries(s.felder || {}) as [string, any][]) {
       const praefix = regel?.praefix ?? "";
       const id = String(knotenId ?? "");

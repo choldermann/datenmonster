@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.19",
+  "version": "2.20",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12233,7 +12233,16 @@
                         {
                           "label": "Preis & Marge · Überblick",
                           "rubrik": "preis",
-                          "reiter": "tab_pr_ueberblick"
+                          "reiter": "tab_pr_ueberblick",
+                          "felder": {
+                            "warengruppe": {
+                              "praefix": "wg_",
+                              "ausser": [
+                                "rest",
+                                "0"
+                              ]
+                            }
+                          }
                         }
                       ]
                     },
@@ -12293,7 +12302,16 @@
                         {
                           "label": "Preis & Marge · Einkaufspreise",
                           "rubrik": "preis",
-                          "reiter": "tab_pr_ek"
+                          "reiter": "tab_pr_ek",
+                          "felder": {
+                            "lieferant": {
+                              "praefix": "lief_",
+                              "ausser": [
+                                "rest",
+                                "0"
+                              ]
+                            }
+                          }
                         }
                       ]
                     },
@@ -12310,7 +12328,16 @@
                         {
                           "label": "Preis & Marge · Margenverfall",
                           "rubrik": "preis",
-                          "reiter": "tab_pr_verfall"
+                          "reiter": "tab_pr_verfall",
+                          "felder": {
+                            "warengruppe": {
+                              "praefix": "we_wg_",
+                              "ausser": [
+                                "rest",
+                                "0"
+                              ]
+                            }
+                          }
                         }
                       ]
                     }
@@ -12486,7 +12513,10 @@
                     }
                   ]
                 }
-              }
+              },
+              "sprung_mitnehmen": [
+                "plattform"
+              ]
             }
           },
           {
