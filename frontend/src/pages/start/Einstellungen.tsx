@@ -125,6 +125,18 @@ export default function Einstellungen() {
             </button>
           </section>
         )}
+
+        <section style={block}>
+          <h2 style={h2}>Open-Source-Lizenzen</h2>
+          <span style={{ fontSize: 13, color: S.textDim, lineHeight: 1.5 }}>
+            Datenmonster verwendet freie Bibliotheken und Kartendaten (Natural Earth, gemeinfrei).
+            Ihre Lizenzen und Copyright-Vermerke stehen in einer eigenen Liste.
+          </span>
+          <a href="/lizenzen.txt" target="_blank" rel="noopener noreferrer"
+            style={{ ...knopf.neben, alignSelf: "flex-start", textDecoration: "none" }}>
+            Lizenzen anzeigen
+          </a>
+        </section>
       </div>
     </div>
   );

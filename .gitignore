@@ -121,3 +121,6 @@ vorlagen_signaturschluessel
 # ─── Updater: in der CI erzeugt ──────────────────────────────────────────────
 updater/compose/docker-compose.yml
 updater/compose/bekannte_staende.txt
+
+# beim Build erzeugt (scripts/lizenzen.mjs)
+frontend/public/lizenzen.txt

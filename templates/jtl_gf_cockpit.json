@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.22",
+  "version": "2.23",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -9247,6 +9247,385 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_geo_laender",
+      "name": "Cockpit – Umsatz je Lieferland",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Umsatz je Lieferland (ISO aus der Lieferadresse der Rechnung, sonst Rechnungsadresse).\n-- IsoNum = ISO-3166-Nummer aus dbo.tland: daran hängt die Weltkarte (Natural Earth).\n;WITH src AS (\n    SELECT RE.kRechnung, RE.kKunde,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        POS.fAnzahl * POS.fVkNetto AS Wert,\n        POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n        -- Lieferadresse (wohin geliefert wird); fehlt sie, die Rechnungsadresse\n        CASE WHEN ISNULL(LA.cISO, '') <> '' THEN UPPER(LTRIM(RTRIM(LA.cISO))) ELSE UPPER(LTRIM(RTRIM(ISNULL(RA.cISO, '')))) END AS ISO,\n        TRY_CONVERT(INT, LEFT(CASE WHEN ISNULL(LA.cISO, '') <> '' THEN LA.cPLZ ELSE RA.cPLZ END, 2)) AS p\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno, 0) = 0\n          AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungLieferadresse LA ON LA.kRechnung = RE.kRechnung\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n), g AS (\n    SELECT ISO, CAST(SUM(cur * Wert) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(vj * Wert) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(SUM(cur * DBpos) AS DECIMAL(18,2)) AS Rohertrag,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS Kunden,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen\n    FROM src GROUP BY ISO\n)\nSELECT g.ISO, CAST(L.nISONumeric AS VARCHAR(10)) AS IsoNum,\n    COALESCE(NULLIF(L.cName, ''), NULLIF(g.ISO, ''), '(ohne Land)') AS Land,\n    g.Umsatz, g.UmsatzVJ, g.Rohertrag,\n    CAST(CASE WHEN g.Umsatz > 0 THEN 100.0 * g.Rohertrag / g.Umsatz END AS DECIMAL(18,1)) AS [Marge %],\n    g.Kunden, g.Rechnungen\nFROM g LEFT JOIN dbo.tland L ON L.cISO = g.ISO\nWHERE g.Umsatz <> 0 OR g.UmsatzVJ <> 0\nORDER BY g.Umsatz DESC\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ISO",
+            "IsoNum",
+            "Land",
+            "Umsatz",
+            "UmsatzVJ",
+            "Rohertrag",
+            "Marge %",
+            "Kunden",
+            "Rechnungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz je Lieferland",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ISO",
+              "target_field": "ISO",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ISO"
+              }
+            },
+            {
+              "source_field": "IsoNum",
+              "target_field": "IsoNum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "IsoNum"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Marge %",
+              "target_field": "Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Marge %"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_geo_bundeslaender",
+      "name": "Cockpit – Umsatz je Bundesland (Lieferadresse)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Umsatz je Bundesland der Lieferadresse (nur Deutschland). Bundesland aus der PLZ\n-- (cBundesland ist in JTL fast nie gepflegt), Zuordnung wie in „Umsatz nach Region“.\n;WITH src AS (\n    SELECT RE.kRechnung, RE.kKunde,\n        CASE WHEN RE.dErstellt >= :von AND RE.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        POS.fAnzahl * POS.fVkNetto AS Wert,\n        POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DBpos,\n        -- Lieferadresse (wohin geliefert wird); fehlt sie, die Rechnungsadresse\n        CASE WHEN ISNULL(LA.cISO, '') <> '' THEN UPPER(LTRIM(RTRIM(LA.cISO))) ELSE UPPER(LTRIM(RTRIM(ISNULL(RA.cISO, '')))) END AS ISO,\n        TRY_CONVERT(INT, LEFT(CASE WHEN ISNULL(LA.cISO, '') <> '' THEN LA.cPLZ ELSE RA.cPLZ END, 2)) AS p\n    FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno, 0) = 0\n          AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n    JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n    LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n    LEFT JOIN Rechnung.vRechnungLieferadresse LA ON LA.kRechnung = RE.kRechnung\n    LEFT JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE RE.dErstellt >= DATEADD(YEAR, -1, :von) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n), k AS (\n    SELECT kRechnung, kKunde, cur, vj, Wert, DBpos,\n        CASE\n            WHEN ISO <> 'DE' THEN '(Ausland)'\n            WHEN p IS NULL THEN '(ohne PLZ)'\n            WHEN p IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN p IN (3,15,16) THEN 'Brandenburg'\n            WHEN p IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN p IN (7,98,99) THEN 'Thüringen'\n            WHEN p IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN p IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN p IN (20,21,22) THEN 'Hamburg'\n            WHEN p IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN p IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN p = 28 THEN 'Bremen'\n            WHEN p IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN p IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN p IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN p = 66 THEN 'Saarland'\n            WHEN p IN (68,69,88) OR p BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN p BETWEEN 80 AND 87 OR p BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM src WHERE ISO = 'DE'\n)\nSELECT Bundesland, CAST(SUM(cur * Wert) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(vj * Wert) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(SUM(cur * DBpos) AS DECIMAL(18,2)) AS Rohertrag,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kKunde END) AS Kunden,\n    COUNT(DISTINCT CASE WHEN cur = 1 THEN kRechnung END) AS Rechnungen,\n    CAST(CASE WHEN SUM(cur * Wert) > 0 THEN 100.0 * SUM(cur * DBpos) / SUM(cur * Wert) END AS DECIMAL(18,1)) AS [Marge %]\nFROM k GROUP BY Bundesland\nHAVING SUM(cur * Wert) <> 0 OR SUM(vj * Wert) <> 0\nORDER BY SUM(cur * Wert) DESC\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Bundesland",
+            "Umsatz",
+            "UmsatzVJ",
+            "Rohertrag",
+            "Kunden",
+            "Rechnungen",
+            "Marge %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz je Bundesland (Lieferadresse)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Bundesland",
+              "target_field": "Bundesland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bundesland"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "UmsatzVJ",
+              "target_field": "UmsatzVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UmsatzVJ"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Kunden",
+              "target_field": "Kunden",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunden"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "Marge %",
+              "target_field": "Marge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Marge %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_geo_lieferanten",
+      "name": "Cockpit – Bestellvolumen je Lieferantenland",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Bestellvolumen je Land des Lieferanten (dbo.tlieferant.cISO), wie „Bestellvolumen netto“.\n;WITH best AS (\n    SELECT B.kLieferantenBestellung, B.kLieferant,\n        CASE WHEN B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN B.dErstellt >= DATEADD(YEAR, -1, :von)\n              AND B.dErstellt < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        (SELECT ISNULL(SUM(P.fMenge * P.fEKNetto), 0) FROM dbo.tLieferantenBestellungPos P\n          WHERE P.kLieferantenBestellung = B.kLieferantenBestellung) AS Wert\n    FROM dbo.tLieferantenBestellung B\n    WHERE ISNULL(B.nDeleted, 0) = 0\n      AND B.dErstellt >= DATEADD(YEAR, -1, :von) AND B.dErstellt < DATEADD(DAY, 1, :bis)\n), b AS (\n    SELECT best.*, UPPER(LTRIM(RTRIM(ISNULL(LF.cISO, '')))) AS ISO\n    FROM best LEFT JOIN dbo.tlieferant LF ON LF.kLieferant = best.kLieferant\n), g AS (\n    SELECT ISO,\n        CAST(SUM(cur * Wert) AS DECIMAL(18,2)) AS Bestellvolumen,\n        CAST(SUM(vj * Wert) AS DECIMAL(18,2)) AS BestellvolumenVJ,\n        COUNT(DISTINCT CASE WHEN cur = 1 THEN kLieferant END) AS Lieferanten,\n        SUM(cur) AS Bestellungen\n    FROM b GROUP BY ISO\n)\nSELECT g.ISO, CAST(L.nISONumeric AS VARCHAR(10)) AS IsoNum,\n    COALESCE(NULLIF(L.cName, ''), NULLIF(g.ISO, ''), '(ohne Land)') AS Land,\n    g.Bestellvolumen, g.BestellvolumenVJ, g.Lieferanten, g.Bestellungen\nFROM g LEFT JOIN dbo.tland L ON L.cISO = g.ISO\nWHERE g.Bestellvolumen <> 0 OR g.BestellvolumenVJ <> 0\nORDER BY g.Bestellvolumen DESC\n",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "ISO",
+            "IsoNum",
+            "Land",
+            "Bestellvolumen",
+            "BestellvolumenVJ",
+            "Lieferanten",
+            "Bestellungen"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Bestellvolumen je Lieferantenland",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "ISO",
+              "target_field": "ISO",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ISO"
+              }
+            },
+            {
+              "source_field": "IsoNum",
+              "target_field": "IsoNum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "IsoNum"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "Bestellvolumen",
+              "target_field": "Bestellvolumen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellvolumen"
+              }
+            },
+            {
+              "source_field": "BestellvolumenVJ",
+              "target_field": "BestellvolumenVJ",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "BestellvolumenVJ"
+              }
+            },
+            {
+              "source_field": "Lieferanten",
+              "target_field": "Lieferanten",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferanten"
+              }
+            },
+            {
+              "source_field": "Bestellungen",
+              "target_field": "Bestellungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellungen"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -9729,6 +10108,27 @@
             "mapping_id": "m_baum",
             "pipeline_id": null,
             "label": "Cockpit – Baum"
+          },
+          {
+            "id": "act_geo_laender",
+            "type": "run_mapping",
+            "mapping_id": "m_geo_laender",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz je Lieferland"
+          },
+          {
+            "id": "act_geo_bundeslaender",
+            "type": "run_mapping",
+            "mapping_id": "m_geo_bundeslaender",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz je Bundesland"
+          },
+          {
+            "id": "act_geo_lieferanten",
+            "type": "run_mapping",
+            "mapping_id": "m_geo_lieferanten",
+            "pipeline_id": null,
+            "label": "Cockpit – Bestellvolumen je Lieferantenland"
           }
         ],
         "widgets": [
@@ -12428,6 +12828,149 @@
                 "tab_kosten"
               ]
             }
+          },
+          {
+            "id": "w_karte_bl",
+            "type": "karte",
+            "label": "Umsatz nach Bundesland",
+            "action_id": "act_geo_bundeslaender",
+            "config": {
+              "width": 12,
+              "karte": "deutschland",
+              "spalten": {
+                "schluessel": "Bundesland",
+                "name": "Bundesland",
+                "wert": "Umsatz",
+                "vj": "UmsatzVJ"
+              },
+              "einheit": "eur",
+              "zusatz": [
+                {
+                  "spalte": "Rohertrag",
+                  "label": "Rohertrag",
+                  "einheit": "eur"
+                },
+                {
+                  "spalte": "Marge %",
+                  "label": "Marge",
+                  "einheit": "prozent"
+                },
+                {
+                  "spalte": "Kunden",
+                  "label": "Kunden"
+                },
+                {
+                  "spalte": "Rechnungen",
+                  "label": "Rechnungen"
+                }
+              ],
+              "hoehe": 460,
+              "info": "Nach der Lieferadresse der Rechnung (wohin geliefert wird); fehlt sie, zählt die Rechnungsadresse. Bundesland aus der PLZ. Stornos gegengerechnet. Die Tabelle „Umsatz nach Land / Bundesland“ unter Umsatz zählt dagegen nach Rechnungsadresse."
+            }
+          },
+          {
+            "id": "w_karte_laender",
+            "type": "karte",
+            "label": "Umsatz nach Lieferland",
+            "action_id": "act_geo_laender",
+            "config": {
+              "width": 12,
+              "karte": "welt",
+              "spalten": {
+                "schluessel": "IsoNum",
+                "name": "Land",
+                "wert": "Umsatz",
+                "vj": "UmsatzVJ"
+              },
+              "einheit": "eur",
+              "zusatz": [
+                {
+                  "spalte": "Rohertrag",
+                  "label": "Rohertrag",
+                  "einheit": "eur"
+                },
+                {
+                  "spalte": "Marge %",
+                  "label": "Marge",
+                  "einheit": "prozent"
+                },
+                {
+                  "spalte": "Kunden",
+                  "label": "Kunden"
+                },
+                {
+                  "spalte": "Rechnungen",
+                  "label": "Rechnungen"
+                }
+              ],
+              "hoehe": 460,
+              "info": "Nach der Lieferadresse der Rechnung (wohin geliefert wird); fehlt sie, zählt die Rechnungsadresse. Bundesland aus der PLZ. Stornos gegengerechnet. Die Tabelle „Umsatz nach Land / Bundesland“ unter Umsatz zählt dagegen nach Rechnungsadresse.",
+              "ausschnitt": "europa"
+            }
+          },
+          {
+            "id": "w_tbl_geo_bl",
+            "type": "table",
+            "label": "Bundesländer im Detail",
+            "action_id": "act_geo_bundeslaender",
+            "config": {
+              "width": 12,
+              "hidden_columns": []
+            }
+          },
+          {
+            "id": "w_tbl_geo_laender",
+            "type": "table",
+            "label": "Lieferländer im Detail",
+            "action_id": "act_geo_laender",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "IsoNum"
+              ]
+            }
+          },
+          {
+            "id": "w_karte_lieferanten",
+            "type": "karte",
+            "label": "Bestellvolumen nach Land des Lieferanten",
+            "action_id": "act_geo_lieferanten",
+            "config": {
+              "width": 12,
+              "karte": "welt",
+              "spalten": {
+                "schluessel": "IsoNum",
+                "name": "Land",
+                "wert": "Bestellvolumen",
+                "vj": "BestellvolumenVJ"
+              },
+              "einheit": "eur",
+              "zusatz": [
+                {
+                  "spalte": "Lieferanten",
+                  "label": "Lieferanten"
+                },
+                {
+                  "spalte": "Bestellungen",
+                  "label": "Bestellungen"
+                }
+              ],
+              "hoehe": 460,
+              "info": "Wert der im Zeitraum aufgegebenen Lieferantenbestellungen, nach dem Land, das am Lieferanten in JTL hinterlegt ist. Summe = Bestellvolumen netto unter Einkauf.",
+              "ausschnitt": "europa"
+            }
+          },
+          {
+            "id": "w_tbl_geo_lieferanten",
+            "type": "table",
+            "label": "Lieferantenländer im Detail",
+            "action_id": "act_geo_lieferanten",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "IsoNum"
+              ]
+            }
           }
         ],
         "result_tabs": [
@@ -12457,6 +13000,14 @@
               "act_rechnungen",
               "act_jahr",
               "act_db_plattform"
+            ]
+          },
+          {
+            "id": "tab_regionen",
+            "label": "Regionen",
+            "action_ids": [
+              "act_geo_bundeslaender",
+              "act_geo_laender"
             ]
           },
           {
@@ -12522,6 +13073,13 @@
               "act_ek_er_kpi",
               "act_ek_offen_liste",
               "act_ek_er_offen"
+            ]
+          },
+          {
+            "id": "tab_ek_laender",
+            "label": "Lieferantenländer",
+            "action_ids": [
+              "act_geo_lieferanten"
             ]
           },
           {
@@ -12600,6 +13158,7 @@
             "label": "Vertrieb",
             "reiter": [
               "tab_umsatz",
+              "tab_regionen",
               "tab_kunden",
               "tab_klumpen",
               "tab_retouren",
@@ -12611,7 +13170,8 @@
             "id": "g_einkauf",
             "label": "Einkauf",
             "reiter": [
-              "tab_einkauf"
+              "tab_einkauf",
+              "tab_ek_laender"
             ]
           },
           {

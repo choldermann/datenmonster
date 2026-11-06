@@ -611,6 +611,11 @@ export default function LicensePanel() {
             : <>Vorlagen kaufen und Pro freischalten auf <strong style={{ color: "var(--text-3)" }}>monstersuite.de</strong>. Gekaufte Vorlagen laufen in der kostenlosen Version ohne Einschränkung.</>}
         </div>
       )}
+
+      <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-5)" }}>
+        Datenmonster verwendet freie Bibliotheken und Kartendaten (Natural Earth, gemeinfrei):{" "}
+        <a href="/lizenzen.txt" target="_blank" rel="noopener noreferrer" style={{ color: "var(--accent)" }}>Open-Source-Lizenzen anzeigen</a>
+      </div>
     </div>
   );
 }

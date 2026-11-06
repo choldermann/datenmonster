@@ -24,6 +24,7 @@ import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
 import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
 import ZugferdWidget from "./widgets/ZugferdWidget";
 import BaumWidget from "./widgets/BaumWidget";
+import KarteWidget from "./widgets/KarteWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -101,6 +102,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "alerts": return <AlertsWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
+    case "karte": return <KarteWidget widget={widget} result={result} />;
     case "baum": return <BaumWidget widget={widget} result={result} results={results} formId={formId} onTab={onTab} params={baseParams} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
