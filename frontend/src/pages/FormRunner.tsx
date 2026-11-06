@@ -20,10 +20,12 @@ const S = {
   textDim: "var(--text-dim)", accent: "var(--accent)",
 };
 
-export default function FormRunner({ formId = null, eingebettet = null }: { formId?: any; eingebettet?: null | "seite" | "inhalt" } = {}) {
+// startReiter/onReiter: Büro-Rubrik merkt sich den Reiter und springt per ?reiter= hinein.
+export default function FormRunner({ formId = null, eingebettet = null, startReiter = null, onReiter = null }:
+  { formId?: any; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void) } = {}) {
   const routeParams = useParams();
   const id = formId ?? routeParams.id;
-  const zurueck = eingebettet ? "/start/cockpits" : "/dashboard";
+  const zurueck = eingebettet ? "/start" : "/dashboard";
   const zurueckText = eingebettet ? "Cockpits" : "Dashboard";
   const navigate = useNavigate();
   const [form, setForm] = useState(null);
@@ -36,7 +38,8 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
   const [aiLoading, setAiLoading] = useState({});     // {action_id: bool} – KI-Analyse streamt noch
   const [error, setError] = useState(null);
   const [missing, setMissing] = useState([]);
-  const [activeTab, setActiveTab] = useState(null);
+  const [activeTab, setActiveTabState] = useState(startReiter);
+  const setActiveTab = (t) => { setActiveTabState(t); if (t) onReiter?.(t); };
   const [inputTab, setInputTab] = useState("main");
   const { setFormAiAllowed, setPageContext } = useAIAssistant();
 
@@ -157,7 +160,8 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
     if (paramsOverride) setParams(effParams);
     // Nur sichtbare Felder prüfen – ein auf einem anderen Reiter ausgeblendetes
     // Pflichtfeld darf den Lauf nicht blockieren.
-    const tabNow = activeTab || (form?.schema?.result_tabs || [])[0]?.id || null;
+    const rt = form?.schema?.result_tabs || [];
+    const tabNow = (activeTab && rt.some(t => t.id === activeTab) ? activeTab : rt[0]?.id) || null;
     const miss = validateRequired(fieldsForTab(form?.schema?.fields || [], tabNow), effParams);
     if (miss.length) {
       setMissing(miss);
@@ -220,7 +224,8 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
   // Optionale Tab-Ansicht der Ergebnisse (aus schema.result_tabs). Jeder Tab
   // bündelt eine Auswahl an Action-IDs; ohne Konfiguration bleibt alles gestapelt.
   const resultTabs = schema.result_tabs || [];
-  const currentTab = activeTab || resultTabs[0]?.id || null;
+  // Ein gemerkter oder verlinkter Reiter, den es (nicht mehr) gibt, fällt auf den ersten zurück.
+  const currentTab = (activeTab && resultTabs.some(t => t.id === activeTab) ? activeTab : resultTabs[0]?.id) || null;
   const tabActionIds = resultTabs.length
     ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
     : null;
@@ -235,13 +240,16 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
       {eingebettet !== "inhalt" && (
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, padding: "10px 16px",
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
+        {/* Im Büro stehen Name und Rückweg im Rubrik-Kopf. */}
+        {eingebettet !== "seite" && (<>
         <button onClick={() => navigate(zurueck)}
           style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none",
             color: S.textDim, cursor: "pointer", fontSize: 12 }}>
           <ArrowLeft size={14} /> {zurueckText}
         </button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
-        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{form?.name}</span>
+        </>)}
+        <span style={{ flex: 1, fontSize: 14, fontWeight: 600, color: S.textBright }}>{eingebettet === "seite" ? "" : form?.name}</span>
         <MandantWaehler projectId={form?.project_id ?? null}
           onWechsel={() => { setResults({}); ladeKompat(); runForm(null); }} kompakt />
         {widgets.length > 0 && (
@@ -335,6 +343,7 @@ export default function FormRunner({ formId = null, eingebettet = null }: { form
 
         <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
           resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          reiterScroll={eingebettet === "seite"}
           params={params} allowDownload={true} onDownload={downloadExport}
           onAiText={(aid, text, loading) => {
             setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });

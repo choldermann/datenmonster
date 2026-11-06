@@ -5,9 +5,13 @@
  * vorhandene Endpunkte; die Werkstatt (/dashboard) bleibt unverändert und ist
  * für Editoren und Admins über den Knopf oben rechts erreichbar.
  * Plan: ~/.claude/plans/haendler-ansicht.md (Phase 1).
+ *
+ * Seit 06.11.2026 stehen die Cockpits als Rubriken direkt im Menü (ein Cockpit,
+ * links die Bereiche). Plan: ~/.claude/plans/ein-cockpit-rubriken.md.
  */
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Home, LayoutGrid, ListFilter, Mail, Settings, Wrench, LogOut } from "lucide-react";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Home, ListFilter, Mail, Settings, Wrench, LogOut, Star } from "lucide-react";
+import { useRubrikenLaden, rubrikIcon, rubrikPfad, ART_TEXT } from "./rubriken";
 import { useAuth } from "../../context/AuthContext";
 import { ThemeUmschalter, KiCredits } from "../../components/portal/PortalKopfzeile";
 
@@ -49,16 +53,28 @@ export default function StartLayout() {
   const navigate = useNavigate();
   const portal = !!user?.is_portal_only;
 
-  const menue = [
-    { to: "/start", label: "Übersicht", icon: Home, end: true },
-    { to: "/start/cockpits", label: "Cockpits", icon: LayoutGrid },
-    // Eigene Auswertungen und Zustellpläne bauen nur Editoren und Admins.
+  const rubriken = useRubrikenLaden();
+  const ort = useLocation();
+
+  // Eigene Auswertungen und Zustellpläne bauen nur Editoren und Admins.
+  const menueUnten = [
     ...(portal ? [] : [
       { to: "/start/auswertung", label: "Eigene Auswertung", icon: ListFilter },
       { to: "/start/mail", label: "Per Mail", icon: Mail },
     ]),
     { to: "/start/einstellungen", label: "Einstellungen", icon: Settings },
   ];
+
+  const punkt = (aktiv, eingerueckt = false) => ({
+    display: "flex", alignItems: "center", gap: 10, textDecoration: "none", borderRadius: 8,
+    padding: eingerueckt ? "5px 12px 5px 38px" : "8px 12px", minHeight: eingerueckt ? 30 : 38,
+    fontSize: eingerueckt ? 13 : 14, lineHeight: 1.3,
+    backgroundColor: aktiv ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
+    color: aktiv ? S.accent : eingerueckt ? S.textDim : S.textMain, fontWeight: aktiv ? 700 : 500,
+  });
+  const gruppenKopf = { fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const,
+    color: S.textDim, padding: "14px 12px 4px" };
+  const pfad = ort.pathname;
 
   return (
     <div style={{ minHeight: "100vh", backgroundColor: S.bgMain, color: S.textMain, display: "flex", flexDirection: "column" }}>
@@ -90,20 +106,58 @@ export default function StartLayout() {
       <div style={{ display: "flex", flexWrap: "wrap", flex: 1 }}>
         <nav aria-label="Hauptmenü" style={{ flex: "1 1 200px", maxWidth: 240, padding: "20px 12px",
           borderRight: `1px solid ${S.border}`, display: "flex", flexDirection: "column", gap: 4 }}>
-          {menue.map(({ to, label, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end}
-              style={({ isActive }) => ({
-                display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", minHeight: 42,
-                borderRadius: 8, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap",
-                backgroundColor: isActive ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
-                color: isActive ? S.accent : S.textMain, fontWeight: isActive ? 700 : 500,
-              })}>
+          <NavLink to="/start" end style={({ isActive }) => punkt(isActive)}>
+            <Home size={16} /> Übersicht
+          </NavLink>
+          {rubriken.gruppen === null && <span style={{ ...gruppenKopf, textTransform: "none" }}>Lädt…</span>}
+          {(rubriken.gruppen || []).map((g) => (
+            <div key={g.id} role="group" aria-label={g.name} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <span style={gruppenKopf}>{g.name}</span>
+              {g.rubriken.map((r) => {
+                const Icon = rubrikIcon(r.icon);
+                const basis = `/start/r/${r.id}`;
+                const hauptAktiv = pfad === basis || pfad === `${basis}/${r.haupt.id}`;
+                return (
+                  <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <Link to={rubrikPfad(r)} aria-current={hauptAktiv ? "page" : undefined}
+                      style={punkt(hauptAktiv)}>
+                      <Icon size={16} style={{ flex: "none" }} />
+                      <span style={{ flex: 1, minWidth: 0 }}>{r.name}</span>
+                      {rubriken.pins.includes(r.haupt.id) && (
+                        <Star size={12} fill="currentColor" aria-label="angeheftet" style={{ color: S.accent, flex: "none" }} />
+                      )}
+                    </Link>
+                    {r.eintraege.map((e) => {
+                      const aktiv = pfad === `${basis}/${e.id}`;
+                      return (
+                        <Link key={e.id} to={rubrikPfad(r, e)} aria-current={aktiv ? "page" : undefined}
+                          style={punkt(aktiv, true)} title={e.zusatz ? `${e.name} · ${e.zusatz}` : e.name}>
+                          <span style={{ flex: 1, minWidth: 0 }}>
+                            {e.name}
+                            {e.zusatz && <span style={{ display: "block", fontSize: 11.5, color: S.textDim }}>{e.zusatz}</span>}
+                          </span>
+                          {ART_TEXT[e.art] && (
+                            <span style={{ flex: "none", fontSize: 10.5, border: `1px solid ${S.border}`, borderRadius: 999,
+                              padding: "0 6px", color: S.textDim }}>{ART_TEXT[e.art]}</span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {rubriken.fehler && <span style={{ fontSize: 12, color: "var(--err)", padding: "6px 12px" }}>{rubriken.fehler}</span>}
+          <div style={{ height: 1, backgroundColor: S.border, margin: "12px 6px" }} />
+          {menueUnten.map(({ to, label, icon: Icon }) => (
+            <NavLink key={to} to={to} style={({ isActive }) => punkt(isActive)}>
               <Icon size={16} /> {label}
             </NavLink>
           ))}
         </nav>
         <main style={{ flex: "999 1 560px", minWidth: 0, padding: "28px 32px 48px" }}>
-          <Outlet />
+          <Outlet context={rubriken} />
         </main>
       </div>
     </div>

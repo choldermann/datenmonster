@@ -99,7 +99,7 @@ export function ErgebnisTabelle({ result, formName, actionLabel, allowDownload }
  */
 export default function RunnerErgebnis({
   form, actions, widgets, results, resultTabs, currentTab, onTab, tabActionIds,
-  params, allowDownload, onDownload, onAiText,
+  params, allowDownload, onDownload, onAiText, reiterScroll = false,
 }) {
   const mitStandalone = widgets.some(w => STANDALONE_WIDGET_TYPES.has(w.type));
   // Aktionen ohne Widget → als Rohtabelle zeigen (ggf. nach aktivem Reiter gefiltert).
@@ -121,16 +121,18 @@ export default function RunnerErgebnis({
           schon vor dem ersten Lauf, sonst käme man nie auf einen Reiter, dessen
           Filter den ersten Lauf erst auslöst */}
       {(results || mitStandalone) && resultTabs.length > 0 && (
-        <div style={{ display: "flex", gap: 4, marginBottom: 16,
-          borderBottom: `1px solid ${S.border}`, flexWrap: "wrap" }}>
+        <div role="tablist" style={{ display: "flex", gap: 4, marginBottom: 16,
+          borderBottom: `1px solid ${S.border}`, flexWrap: reiterScroll ? "nowrap" : "wrap",
+          overflowX: reiterScroll ? "auto" : undefined, scrollbarWidth: "thin" }}>
           {resultTabs.map(tab => {
             const active = tab.id === currentTab;
             return (
-              <button key={tab.id} onClick={() => onTab(tab.id)}
+              <button key={tab.id} onClick={() => onTab(tab.id)} role="tab" aria-selected={active}
                 style={{ padding: "8px 16px", background: "none", border: "none",
-                  borderBottom: `2px solid ${active ? "var(--ok)" : "transparent"}`,
+                  borderBottom: `${reiterScroll ? 2.5 : 2}px solid ${active ? (reiterScroll ? "var(--accent)" : "var(--ok)") : "transparent"}`,
                   color: active ? S.textBright : S.textDim, cursor: "pointer",
-                  fontSize: 12, fontWeight: 600, marginBottom: -1 }}>
+                  fontSize: reiterScroll ? 13.5 : 12, fontWeight: 600, marginBottom: -1,
+                  whiteSpace: "nowrap", flex: "none" }}>
                 {tab.label}
               </button>
             );

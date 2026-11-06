@@ -26,10 +26,11 @@ const S = {
 
 // eingebettet: wie im FormRunner – „seite“ = im Büro (ohne Konto-Knöpfe,
 // die stehen dort im Kopf), „inhalt“ = ganz ohne Kopf (Kennzahlen der Übersicht).
-export default function PortalRunner({ slug: slugProp = null, eingebettet = null }: { slug?: string | null; eingebettet?: null | "seite" | "inhalt" } = {}) {
+export default function PortalRunner({ slug: slugProp = null, eingebettet = null, startReiter = null, onReiter = null }:
+  { slug?: string | null; eingebettet?: null | "seite" | "inhalt"; startReiter?: string | null; onReiter?: null | ((id: string) => void) } = {}) {
   const routeParams = useParams();
   const slug = slugProp ?? routeParams.slug;
-  const zurueck = eingebettet ? "/start/cockpits" : "/portal";
+  const zurueck = eingebettet ? "/start" : "/portal";
   const navigate = useNavigate();
   const { logout } = useAuth();
 
@@ -40,7 +41,8 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
   const [loadErr, setLoadErr] = useState(null);
   const [runErr, setRunErr]   = useState(null);
   const [missing, setMissing] = useState([]);
-  const [activeTab, setActiveTab] = useState(null);
+  const [activeTab, setActiveTabState] = useState(startReiter);
+  const setActiveTab = (t) => { setActiveTabState(t); if (t) onReiter?.(t); };
   const [inputTab, setInputTab]   = useState("main");
   const [reporting, setReporting] = useState(false);
   const [exportStand, setExportStand] = useState(0);   // zählt Export-Läufe → Verlauf neu laden
@@ -104,7 +106,8 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
     if (paramsOverride) setParams(effParams);
     // Nur sichtbare Felder prüfen – ein auf einem anderen Reiter ausgeblendetes
     // Pflichtfeld darf den Lauf nicht blockieren.
-    const tabNow = activeTab || (form?.result_tabs || [])[0]?.id || null;
+    const rt = form?.result_tabs || [];
+    const tabNow = (activeTab && rt.some(t => t.id === activeTab) ? activeTab : rt[0]?.id) || null;
     const miss = validateRequired(fieldsForTab(form?.fields || [], tabNow), effParams);
     if (miss.length) {
       setMissing(miss);
@@ -194,7 +197,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
           <button onClick={() => navigate(zurueck)}
             style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
               border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
-            <ArrowLeft size={14} /> {eingebettet ? "Cockpits" : "Übersicht"}
+            <ArrowLeft size={14} /> Übersicht
           </button>
           <span style={{ color: S.border }}>|</span>
           <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>{form?.name || slug}</span>
@@ -213,7 +216,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
   const allowDownload  = form?.allow_download || false;
   // Optionale Ergebnis-Register (aus schema.result_tabs). Jeder Tab bündelt Action-IDs.
   const resultTabs = form?.result_tabs || [];
-  const currentTab = activeTab || resultTabs[0]?.id || null;
+  const currentTab = (activeTab && resultTabs.some(t => t.id === activeTab) ? activeTab : resultTabs[0]?.id) || null;
   const tabActionIds = resultTabs.length
     ? new Set((resultTabs.find(t => t.id === currentTab)?.action_ids) || [])
     : null;
@@ -230,11 +233,13 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
         borderBottom: `1px solid ${S.border}`, backgroundColor: S.bgCard }}>
         <div style={{ maxWidth: widgets.length ? 1760 : 1100, margin: "0 auto", padding: "12px 24px",
           display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          {/* Im Büro stehen Name und Rückweg im Rubrik-Kopf. */}
+          {eingebettet === "seite" ? <span /> : (
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button onClick={() => navigate(zurueck)}
               style={{ display: "flex", alignItems: "center", gap: 5, background: "none",
                 border: "none", color: S.textDim, cursor: "pointer", fontSize: 13 }}>
-              <ArrowLeft size={14} /> {eingebettet ? "Cockpits" : "Übersicht"}
+              <ArrowLeft size={14} /> Übersicht
             </button>
             <span style={{ color: S.border }}>|</span>
             <span style={{ fontSize: 15, fontWeight: 600, color: S.textBright }}>
@@ -242,6 +247,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
               {form?.name || slug}
             </span>
           </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
             {widgets.length > 0 && allowDownload && (
               <button onClick={() => setReportModal(true)} disabled={reporting || aiBusy}
@@ -317,6 +323,7 @@ export default function PortalRunner({ slug: slugProp = null, eingebettet = null
 
         <RunnerErgebnis form={form} actions={actions} widgets={widgets} results={results}
           resultTabs={resultTabs} currentTab={currentTab} onTab={setActiveTab} tabActionIds={tabActionIds}
+          reiterScroll={eingebettet === "seite"}
           params={params} allowDownload={allowDownload} onDownload={downloadExport}
           onAiText={(aid, text, loading) => {
             setAiSummaries(prev => prev[aid] === text ? prev : { ...prev, [aid]: text });

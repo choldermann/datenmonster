@@ -5,6 +5,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useLizenz } from "../../contexts/LizenzContext";
 import { PasswortKnopf } from "../../components/portal/PortalKopfzeile";
 import { S, knopf, karte, Seitenkopf } from "./StartLayout";
+import { useRubriken } from "./rubriken";
 
 const block = { ...karte, padding: 18, display: "flex", flexDirection: "column", gap: 12, minWidth: 0 };
 const h2 = { margin: 0, fontSize: 17, fontWeight: 700, color: S.textBright };
@@ -14,6 +15,7 @@ export default function Einstellungen() {
   const lizenz = useLizenz();
   const navigate = useNavigate();
   const portal = !!user?.is_portal_only;
+  const { projekte, projekteAus, projektUmschalten } = useRubriken();
 
   const [status, setStatus] = useState(null);
   const [werkstattStart, setWerkstattStart] = useState(false);
@@ -90,6 +92,23 @@ export default function Einstellungen() {
             </label>
           )}
         </section>
+
+        {projekte.length > 1 && (
+          <section style={block}>
+            <h2 style={h2}>Projekte im Menü</h2>
+            <span style={{ fontSize: 13, color: S.textDim, lineHeight: 1.5 }}>
+              Cockpits ausgeblendeter Projekte erscheinen links nicht mehr. Die Daten bleiben unverändert.
+            </span>
+            {projekte.map((p) => (
+              <label key={p.id} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, cursor: "pointer" }}>
+                <input type="checkbox" id={`projekt-${p.id}`} checked={!projekteAus.includes(p.id)}
+                  onChange={() => projektUmschalten(p.id)} style={{ width: 18, height: 18 }} />
+                <span style={{ flex: 1 }}>{p.name}</span>
+                <span style={{ fontSize: 12, color: S.textDim, fontFamily: "var(--font-mono)" }}>{p.anzahl}</span>
+              </label>
+            ))}
+          </section>
+        )}
 
         {!portal && (
           <section style={block}>

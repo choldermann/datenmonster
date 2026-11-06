@@ -16,8 +16,7 @@ import FormEditor from "./pages/FormEditor";
 import FormRunner from "./pages/FormRunner";
 import StartLayout from "./pages/start/StartLayout";
 import Uebersicht from "./pages/start/Uebersicht";
-import Cockpits from "./pages/start/Cockpits";
-import CockpitAnsicht from "./pages/start/CockpitAnsicht";
+import RubrikAnsicht, { ZurErstenRubrik, AlteCockpitAdresse } from "./pages/start/RubrikAnsicht";
 import Auswertung from "./pages/start/Auswertung";
 import PerMail from "./pages/start/PerMail";
 import Einstellungen from "./pages/start/Einstellungen";
@@ -63,7 +62,7 @@ function AiAssistantGate() {
 
   // Formularlauf und Portal: nur, wenn das Formular ihn ausdrücklich einblendet
   // (schema.show_ai_assistant). Dort sitzen auch Anwender ohne Editor-Rechte.
-  if (/^\/forms\/[^/]+\/run$/.test(pfad) || pfad.startsWith("/app/") || pfad.startsWith("/start/cockpit/")) {
+  if (/^\/forms\/[^/]+\/run$/.test(pfad) || pfad.startsWith("/app/") || pfad.startsWith("/start/cockpit/") || pfad.startsWith("/start/r/")) {
     return formAiAllowed ? <FloatingAIAssistant /> : null;
   }
 
@@ -171,8 +170,11 @@ export default function App() {
               {/* Büro (alle angemeldeten Benutzer) */}
               <Route path="/start" element={<PrivateRoute><StartLayout /></PrivateRoute>}>
                 <Route index                element={<Uebersicht />} />
-                <Route path="cockpits"      element={<Cockpits />} />
-                <Route path="cockpit/:id"   element={<CockpitAnsicht />} />
+                {/* Ein Cockpit mit Rubriken: das Menü links führt nach /start/r/<rubrik>. */}
+                <Route path="r/:rubrik"         element={<RubrikAnsicht />} />
+                <Route path="r/:rubrik/:formId" element={<RubrikAnsicht />} />
+                <Route path="cockpits"      element={<ZurErstenRubrik />} />
+                <Route path="cockpit/:id"   element={<AlteCockpitAdresse />} />
                 <Route path="auswertung"    element={<EditorRoute><Auswertung /></EditorRoute>} />
                 <Route path="mail"          element={<EditorRoute><PerMail /></EditorRoute>} />
                 <Route path="einstellungen" element={<Einstellungen />} />

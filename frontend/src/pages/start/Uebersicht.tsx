@@ -194,7 +194,7 @@ export default function Uebersicht() {
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: S.textBright }}>Meine Cockpits</h2>
           {daten && !(daten.angeheftet || []).length && (
             <p style={{ margin: 0, fontSize: 13, color: S.textDim, lineHeight: 1.5 }}>
-              Cockpits, die Sie oft brauchen, heften Sie unter „Cockpits“ mit dem Stern an.
+              Cockpits, die Sie oft brauchen, heften Sie oben im Cockpit mit „Anheften“ an.
               Sie erscheinen dann hier.
             </p>
           )}
