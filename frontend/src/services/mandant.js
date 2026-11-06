@@ -38,9 +38,13 @@ export async function setzeMandant(projectId, connectionId) {
   const { data } = await api.put("/api/mandanten/aktiv", {
     project_id: projectId ?? null, connection_id: connectionId,
   });
-  const k = schluessel(projectId);
-  const stand = cache.get(k) || { mandanten: [] };
-  cache.set(k, { ...stand, aktiv: data.aktiv });
+  // Der Server zieht die Wahl in allen Projekten mit, die diesen Mandanten kennen.
+  // Deshalb überall den Zwischenstand nachführen, nicht nur im eigenen Projekt.
+  for (const [k, stand] of cache) {
+    if (k === schluessel(projectId) || (stand.mandanten || []).some(m => m.connection_id === data.aktiv)) {
+      cache.set(k, { ...stand, aktiv: data.aktiv });
+    }
+  }
   listeners.forEach(fn => { try { fn(projectId, data.aktiv); } catch { /* egal */ } });
   return data.aktiv;
 }

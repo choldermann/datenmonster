@@ -163,6 +163,7 @@ def waehlen(project_id: Optional[int], user, connection_id: int, db) -> int:
     else:
         db.add(MandantAuswahl(user_id=user.id, project_id=project_id,
                               connection_id=connection_id))
+    _ueberall_mitziehen(project_id, user, connection_id, db)
     db.commit()
     # Beim Wechsel den Kompatibilitaetsbefund verwerfen: wurde die JTL-Wawi des
     # Mandanten zwischenzeitlich aktualisiert, soll der Hinweis sofort weg sein
@@ -173,6 +174,32 @@ def waehlen(project_id: Optional[int], user, connection_id: int, db) -> int:
     except Exception:
         pass
     return connection_id
+
+
+def _ueberall_mitziehen(project_id: Optional[int], user, connection_id: int, db) -> None:
+    """Die Wahl gilt für alle Cockpits, nicht nur für das Projekt, in dem gewechselt wurde.
+
+    Im Büro liegen die Rubriken in verschiedenen Projekten (GF in „JTL Statistiken“,
+    Intrastat und DATEV in eigenen). Wer auf HyDa umschaltet, erwartet HyDa überall.
+    Mitgezogen wird nur, wo dieselbe Verbindung auch Mandant und für den Benutzer
+    freigegeben ist; Projekte ohne diesen Mandanten behalten ihre Wahl.
+    """
+    from app.models.mandant import MandantAuswahl
+    from app.models.project import Project
+    andere = [p.id for p in db.query(Project.id).all() if p.id != project_id]
+    if project_id is not None:
+        andere.append(None)              # Cockpits ohne Projekt
+    for pid in andere:
+        if connection_id not in [m["connection_id"] for m in erlaubte(pid, user, db)]:
+            continue
+        q = db.query(MandantAuswahl).filter(MandantAuswahl.user_id == user.id)
+        q = q.filter(MandantAuswahl.project_id == pid) if pid is not None \
+            else q.filter(MandantAuswahl.project_id.is_(None))
+        row = q.first()
+        if row:
+            row.connection_id = connection_id
+        else:
+            db.add(MandantAuswahl(user_id=user.id, project_id=pid, connection_id=connection_id))
 
 
 def kontext(project_id: Optional[int], user, db) -> dict:

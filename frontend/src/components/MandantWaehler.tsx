@@ -35,10 +35,12 @@ export default function MandantWaehler({ projectId, onWechsel = null, kompakt = 
     return () => { lebt = false; };
   }, [projectId]);
 
-  // Wechsel an anderer Stelle (z.B. zweites Cockpit im selben Tab) mitziehen.
+  // Wechsel an anderer Stelle mitziehen. Die Wahl gilt für alle Cockpits: auch
+  // ein anderes Projekt mit demselben Mandanten schaltet mit (so speichert es der Server).
   useEffect(() => onMandantChange((pid, neu) => {
-    if (String(pid ?? "") === String(projectId ?? "")) setAktiv(neu);
-  }), [projectId]);
+    if (String(pid ?? "") === String(projectId ?? "")
+        || mandanten.some(m => m.connection_id === neu)) setAktiv(neu);
+  }), [projectId, mandanten]);
 
   if (!mandanten.length) return null;
 
