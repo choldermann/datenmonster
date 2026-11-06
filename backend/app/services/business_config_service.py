@@ -630,10 +630,14 @@ def apply_config(run_params: Optional[dict], project_id, db, mandant_id=None) ->
         # Kostenblöcke als JSON: im SQL per OPENJSON eine fertige Tabelle, ohne
         # neun einzelne Parameter per UNION zusammenstückeln zu müssen.
         je_gruppe = kosten_zeitraum_gruppen(project_id, db, von, bis, mandant_id) if von else {}
+        # Vorjahr je Block (Baumansicht: Fixkosten-Äste mit Vorjahresvergleich).
+        je_gruppe_vj = kosten_zeitraum_gruppen(project_id, db, _minus_jahr(von), _minus_jahr(bis),
+                                               mandant_id) if von else {}
         run_params.setdefault("cfg_kosten_gruppen", json.dumps([
             {"key": g["key"], "gruppe": g["label"],
              "monat": monat["gruppen"].get(g["key"], 0.0),
-             "zeitraum": je_gruppe.get(g["key"], 0.0)}
+             "zeitraum": je_gruppe.get(g["key"], 0.0),
+             "zeitraum_vj": je_gruppe_vj.get(g["key"], 0.0)}
             for g in COST_GROUPS]))
     except Exception:
         pass

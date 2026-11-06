@@ -23,6 +23,7 @@ import InventurWidget from "./widgets/InventurWidget";
 import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
 import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
 import ZugferdWidget from "./widgets/ZugferdWidget";
+import BaumWidget from "./widgets/BaumWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -38,7 +39,7 @@ const WIDGET_LABELS = {
   datev_stammdaten: "DATEV-Stammdaten",
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
   inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
-  datenpflege: "Datenpflege", zugferd: "ZUGFeRD-Ausgang",
+  datenpflege: "Datenpflege", zugferd: "ZUGFeRD-Ausgang", baum: "Baumansicht",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -49,7 +50,7 @@ export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_researc
                                                 "inventur", "kunden_ausschluss",
                                                 "datenpflege", "zugferd"]);
 
-function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams }) {
+function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams, onTab }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
   if (widget.type === "eingangsrechnung") return <EingangsrechnungWidget widget={widget} />;
   // Braucht Jahr/Monat aus dem Formular – deshalb baseParams.
@@ -100,6 +101,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "tasklist": return <TaskListWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "alerts": return <AlertsWidget widget={widget} result={result} onTaskClick={onTaskClick} />;
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
+    case "baum": return <BaumWidget widget={widget} result={result} results={results} formId={formId} onTab={onTab} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }
 }
@@ -113,7 +115,7 @@ const EXPORT_ZEILEN = 100000;
 const dokumentAus = (dd) => dd?.dokument_spalte
   ? { spalte: dd.dokument_spalte, datei_spalte: dd.datei_spalte || null } : null;
 
-export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null, formId = null }) {
+export default function WidgetRenderer({ widgets = [], results = {}, allowDownload = false, baseParams = {}, onAiText, projectId = null, formId = null, onTab = null }) {
   // Mehrstufiger Drilldown als Navigations-Stack: jede Ebene ist ein "Frame" mit
   // Titel + Detailzeilen. Klick auf eine Zeile öffnet – sofern eine tiefere Ebene
   // (config.drilldown.levels[]) konfiguriert ist – die nächste Ebene.
@@ -239,7 +241,8 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
             const flex = `0 0 calc(${(ww / 12) * 100}% - ${16 * (rowWidgets.length - 1) / rowWidgets.length}px)`;
             const result = results[widget.action_id] || { columns: [], rows: [], total: 0 };
             const title  = widget.label || WIDGET_LABELS[widget.type] || widget.type;
-            const showHeader = widget.type !== "kpi";
+            // KPI und Baum bringen ihren Kopf selbst mit.
+            const showHeader = widget.type !== "kpi" && widget.type !== "baum";
 
             return (
               <div key={widget.id} style={{ flex, backgroundColor: S.bgCard,
@@ -262,7 +265,7 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
                     <span>{widget.config.info}</span>
                   </div>
                 )}
-                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} formId={formId} baseParams={baseParams} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} />
+                <WidgetBody widget={widget} result={result} results={results} allowDownload={allowDownload} projectId={projectId} formId={formId} baseParams={baseParams} onDrilldown={handleDrilldown} onAiAction={handleAiAction} onTaskClick={(row, detail) => handleTaskClick(widget, row, detail)} onAiText={onAiText} onTab={onTab} />
               </div>
             );
           })}

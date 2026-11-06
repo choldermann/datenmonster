@@ -146,7 +146,7 @@ export default function RunnerErgebnis({
           widgets={widgetsForTab(widgets, currentTab, tabActionIds)}
           results={results || {}} allowDownload={allowDownload} baseParams={params}
           projectId={form.project_id} formId={form.id}
-          onAiText={onAiText} />
+          onAiText={onAiText} onTab={onTab} />
       )}
 
       {/* Rohtabellen für Aktionen ohne Widget */}
