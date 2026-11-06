@@ -129,3 +129,10 @@ textarea.input { resize: vertical; }
   background-color: var(--accent) !important;
   color: var(--accent-fg) !important;
 }
+
+/* Büro-Menü (StartLayout): Hover wie in der Werkbank, aber über die Akzentfarbe,
+   damit es in allen Farbschemata sichtbar ist. Aktiver Punkt (aria-current) bleibt. */
+.start-menue-punkt { transition: background-color .12s ease; }
+.start-menue-punkt:hover:not([aria-current="page"]) {
+  background-color: color-mix(in srgb, var(--accent) 7%, transparent);
+}

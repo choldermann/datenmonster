@@ -69,7 +69,8 @@ export default function StartLayout() {
     display: "flex", alignItems: "center", gap: 10, textDecoration: "none", borderRadius: 8,
     padding: eingerueckt ? "5px 12px 5px 38px" : "8px 12px", minHeight: eingerueckt ? 30 : 38,
     fontSize: eingerueckt ? 13 : 14, lineHeight: 1.3,
-    backgroundColor: aktiv ? "color-mix(in srgb, var(--accent) 14%, transparent)" : "transparent",
+    // Ohne Hintergrund, wenn nicht aktiv: den Hover setzt .start-menue-punkt in index.css.
+    ...(aktiv ? { backgroundColor: "color-mix(in srgb, var(--accent) 14%, transparent)" } : {}),
     color: aktiv ? S.accent : eingerueckt ? S.textDim : S.textMain, fontWeight: aktiv ? 700 : 500,
   });
   const gruppenKopf = { fontSize: 11, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase" as const,
@@ -106,7 +107,7 @@ export default function StartLayout() {
       <div style={{ display: "flex", flexWrap: "wrap", flex: 1 }}>
         <nav aria-label="Hauptmenü" style={{ flex: "1 1 200px", maxWidth: 240, padding: "20px 12px",
           borderRight: `1px solid ${S.border}`, display: "flex", flexDirection: "column", gap: 4 }}>
-          <NavLink to="/start" end style={({ isActive }) => punkt(isActive)}>
+          <NavLink to="/start" end className="start-menue-punkt" style={({ isActive }) => punkt(isActive)}>
             <Home size={16} /> Übersicht
           </NavLink>
           {rubriken.gruppen === null && <span style={{ ...gruppenKopf, textTransform: "none" }}>Lädt…</span>}
@@ -120,7 +121,7 @@ export default function StartLayout() {
                 return (
                   <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     <Link to={rubrikPfad(r)} aria-current={hauptAktiv ? "page" : undefined}
-                      style={punkt(hauptAktiv)}>
+                      className="start-menue-punkt" style={punkt(hauptAktiv)}>
                       <Icon size={16} style={{ flex: "none" }} />
                       <span style={{ flex: 1, minWidth: 0 }}>{r.name}</span>
                       {rubriken.pins.includes(r.haupt.id) && (
@@ -131,7 +132,7 @@ export default function StartLayout() {
                       const aktiv = pfad === `${basis}/${e.id}`;
                       return (
                         <Link key={e.id} to={rubrikPfad(r, e)} aria-current={aktiv ? "page" : undefined}
-                          style={punkt(aktiv, true)} title={e.zusatz ? `${e.name} · ${e.zusatz}` : e.name}>
+                          className="start-menue-punkt" style={punkt(aktiv, true)} title={e.zusatz ? `${e.name} · ${e.zusatz}` : e.name}>
                           <span style={{ flex: 1, minWidth: 0 }}>
                             {e.name}
                             {e.zusatz && <span style={{ display: "block", fontSize: 11.5, color: S.textDim }}>{e.zusatz}</span>}
@@ -151,7 +152,7 @@ export default function StartLayout() {
           {rubriken.fehler && <span style={{ fontSize: 12, color: "var(--err)", padding: "6px 12px" }}>{rubriken.fehler}</span>}
           <div style={{ height: 1, backgroundColor: S.border, margin: "12px 6px" }} />
           {menueUnten.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} style={({ isActive }) => punkt(isActive)}>
+            <NavLink key={to} to={to} className="start-menue-punkt" style={({ isActive }) => punkt(isActive)}>
               <Icon size={16} /> {label}
             </NavLink>
           ))}
