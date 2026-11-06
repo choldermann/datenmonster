@@ -1736,10 +1736,55 @@ def _verbindungen_ableiten(vorlage, installiert, gefunden: dict) -> None:
             _verbindungen_ableiten(v, gegen, gefunden)
 
 
+_PLATZHALTER_RE = re.compile(r"\{\{(\w+)\}\}")
+
+
+def _einstellungen_ableiten(vorlage, installiert, schluessel: set, gefunden: dict) -> None:
+    """Liest aus einem installierten Objekt ab, welcher Wert für einen {{key}}-
+    Platzhalter der Vorlage eingesetzt wurde – auch mitten in einem Text oder SQL
+    (`DATEADD(DAY, -{{ladenhueter_tage}}, …)`). Gesucht wird über den Text links und
+    rechts des Platzhalters, damit es auch klappt, wenn sich die Vorlage an anderer
+    Stelle derselben Zeichenkette geändert hat. Struktur wie _verbindungen_ableiten."""
+    if isinstance(vorlage, str):
+        if not isinstance(installiert, str) or "{{" not in vorlage:
+            return
+        for m in _PLATZHALTER_RE.finditer(vorlage):
+            key = m.group(1)
+            if key not in schluessel or key in gefunden:
+                continue
+            # Umgebender Text bis zum nächsten Platzhalter. Erst mit viel Kontext, dann
+            # mit weniger – hat sich die Vorlage nahe am Platzhalter geändert, findet
+            # der kürzere Kontext die Stelle trotzdem.
+            links_voll = _PLATZHALTER_RE.split(vorlage[:m.start()])[-1]
+            rest = vorlage[m.end():]
+            n = _PLATZHALTER_RE.search(rest)
+            rechts_voll = rest[:n.start()] if n else rest
+            for laenge in (40, 20, 10):
+                links, rechts = links_voll[-laenge:], rechts_voll[:laenge]
+                muster = ((re.escape(links) if links else r"^") + r"(.+?)"
+                          + (re.escape(rechts) if rechts else r"$"))
+                treffer = re.search(muster, installiert, re.DOTALL)
+                if treffer and "{{" not in treffer.group(1) and len(treffer.group(1)) <= 200:
+                    gefunden[key] = treffer.group(1)
+                    break
+    elif isinstance(vorlage, dict) and isinstance(installiert, dict):
+        for k, v in vorlage.items():
+            if k in installiert:
+                _einstellungen_ableiten(v, installiert[k], schluessel, gefunden)
+    elif isinstance(vorlage, list) and isinstance(installiert, list):
+        nach_id = {e.get("id"): e for e in installiert if isinstance(e, dict) and e.get("id") is not None}
+        for i, v in enumerate(vorlage):
+            gegen = nach_id.get(v.get("id")) if isinstance(v, dict) and v.get("id") is not None else None
+            if gegen is None and i < len(installiert):
+                gegen = installiert[i]
+            _einstellungen_ableiten(v, gegen, schluessel, gefunden)
+
+
 def _config_der_installation(t, content: dict, project_id: int, db: Session):
     """Einstellungen, mit denen das Template zuletzt in dieses Projekt installiert
-    wurde. Ältere Installationen haben sie nicht protokolliert – dann werden die
-    Verbindungen aus den installierten Mappings/Datasets abgelesen.
+    wurde. Ältere Installationen haben sie nicht protokolliert – dann werden
+    Verbindungen und übrige Einstellungen aus den installierten Mappings/Datasets
+    abgelesen (ohne Ref-Protokoll über den Namen), sonst gilt die Vorgabe der Vorlage.
     Gibt (config, fehlende_pflicht_verbindungen) zurück."""
     from app.models.mapping import Mapping
     from app.models.dataset import Dataset
@@ -1750,22 +1795,42 @@ def _config_der_installation(t, content: dict, project_id: int, db: Session):
         config.update(r.get("config") or {})
         for typ in refs:
             refs[typ].update((r.get("refs") or {}).get(typ) or {})
-    verbindungen = [r.get("key") for r in content.get("config_required", []) or []
-                    if r.get("type") == "connection" and r.get("key")]
-    if any(k not in config for k in verbindungen):
-        gefunden = {}
+    pflicht = [r for r in content.get("config_required", []) or [] if r.get("key")]
+    verbindungen = [r["key"] for r in pflicht if r.get("type") == "connection"]
+    # Übrige Einstellungen (z.B. IDEV-Kennnummer, Ladenhüter-Tage). Fehlen sie, würde
+    # ein Update den Platzhalter selbst ins Mapping schreiben – beim Intrastat-Export
+    # stünde dann "{{idev_login_name}}" statt der Kennnummer in der Datei.
+    texte = {r["key"] for r in pflicht
+             if r.get("type") != "connection" and r.get("type") not in _GEHEIME_TYPEN}
+    if any(k not in config for k in verbindungen) or any(k not in config for k in texte):
+        gefunden, text_gefunden = {}, {}
+        offen = {k for k in texte if k not in config}
         for typ, model, defs in (("mappings", Mapping, content.get("mappings") or []),
                                  ("datasets", Dataset, content.get("datasets") or [])):
             for d in defs:
                 oid = refs[typ].get(str(d.get("id")))
                 obj = db.query(model).filter(model.id == oid, model.project_id == project_id).first() \
                     if oid is not None else None
+                if obj is None and d.get("name"):
+                    # Installationen von vor dem Ref-Protokoll (Aug. 2026) kennen die
+                    # Zuordnung nicht – dann wie der Installer selbst über den Namen
+                    # im Projekt. Nur zum Ablesen der Verbindung, es wird nichts geändert.
+                    obj = db.query(model).filter(model.project_id == project_id,
+                                                 model.name == d.get("name")).first()
                 if obj is None:
                     continue
                 spalten = {c.name: getattr(obj, c.name) for c in model.__table__.columns}
                 _verbindungen_ableiten(d, spalten, gefunden)
+                if offen:
+                    _einstellungen_ableiten(d, spalten, offen, text_gefunden)
         for k, v in gefunden.items():
             config.setdefault(k, v)
+        for k, v in text_gefunden.items():
+            config.setdefault(k, v)
+        # Nicht ablesbar → die Vorgabe der Vorlage, wie sie auch der Installationsdialog vorschlägt.
+        for r in pflicht:
+            if r["key"] in texte and r["key"] not in config and str(r.get("default") or "") != "":
+                config[r["key"]] = r["default"]
     return config, [k for k in verbindungen if k not in config]
 
 
