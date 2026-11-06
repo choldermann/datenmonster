@@ -156,11 +156,11 @@ export function zeitraumVorgabe(f) {
  *  Vorgaben legen. Gibt true zurück, wenn es welche gab – dann startet der Runner selbst.
  *  - Zeitraum: erst die Vorgabe setzen, damit das Zeitraumfeld nicht einen zweiten Lauf
  *    auslöst; mitgegebene von/bis überschreiben sie.
- *  - Ganzzahlen werden Zahlen, weil die Auswahllisten ihre Werte streng vergleichen.
+ *  - Werte bleiben Text wie in der Adresse: Auch die Auswahllisten liefern ihre Werte als Text
+ *    (/api/lookup/options), sonst fände das Dropdown den Namen zum Wert nicht.
  *  - Unbekannte Namen werden ignoriert: ein Sprung kann kein fremdes Feld setzen. */
 export function startWerteAnwenden(fields, werte, start) {
   if (!start || !Object.keys(start).length) return false;
-  const zahl = v => (typeof v === "string" && /^-?\d+$/.test(v) ? Number(v) : v);
   const liste = v => (Array.isArray(v) ? v : [v]);
   // Erst sammeln: greift kein einziger Wert, bleibt alles bei den Vorgaben (sonst stünde der
   // Zeitraum fest, ohne dass jemand einen Lauf startet).
@@ -176,7 +176,7 @@ export function startWerteAnwenden(fields, werte, start) {
     }
     if (!f.name || start[f.name] == null) continue;
     const multi = f.type === "multiselect" || (f.type === "db_dropdown" && f.config?.multiple);
-    neu[f.name] = multi ? liste(start[f.name]).map(zahl) : zahl(liste(start[f.name])[0]);
+    neu[f.name] = multi ? liste(start[f.name]).map(String) : String(liste(start[f.name])[0]);
     gesetzt = true;
   }
   if (gesetzt) Object.assign(werte, neu);
