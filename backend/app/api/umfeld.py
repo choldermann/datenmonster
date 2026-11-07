@@ -91,7 +91,7 @@ class ReihenIn(BaseModel):
 
 @router.post("/reihen")
 def reihen(body: ReihenIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    if not body.groessen or len(body.groessen) > 8 or len(body.regionen) > 17:
+    if not body.groessen or len(body.groessen) > 8 or len(body.regionen) > 20:   # 16 Länder + DE; Insolvenzen: Insgesamt + 19 Abschnitte
         raise HTTPException(400, "Zu viele oder keine Größen/Regionen")
     return _fragen(db, "reihen", {"groessen": sorted(set(body.groessen)), "regionen": sorted(set(body.regionen)),
                                   "von": body.von or "", "bis": body.bis or ""})
