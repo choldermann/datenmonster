@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.31",
+  "version": "2.32",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12823,6 +12823,17 @@
               "width": 12,
               "full_rows": true,
               "info": "Kostenblöcke des Zeitraums, taggenau anteilig aus den monatlichen Sätzen. Das ist eine Managementsicht, keine BWA: Abgrenzungen, Bestandsveränderungen und Steuern sind nicht enthalten."
+            }
+          },
+          {
+            "id": "w_energie",
+            "type": "energie",
+            "label": "Energie & Kraftstoff: Preise und Wirkung auf Ihre Kosten",
+            "action_id": "act_ergebnis_bloecke",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Diesel-, Super- und Heizölpreise in Deutschland (EU Weekly Oil Bulletin) und der Erzeugerpreis für Strom (Destatis), jeweils zum Vorjahr. Heißt ein Kostenblock z. B. „Fuhrpark“ oder „Strom“, rechnet die Kachel, wie viel davon höchstens auf die Preisänderung zurückgeht. Es werden keine Kundendaten übertragen."
             }
           },
           {
