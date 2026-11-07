@@ -480,3 +480,43 @@ def delete_branche(project_id: Optional[int] = None, db: Session = Depends(get_d
     require_editor(project_id, user, db)
     mandant_id = mandant_service.aktiver(project_id, user, db)
     return {"ok": cfg_service.reset_value(project_id, db, "branche", "auswahl", mandant_id)}
+
+
+# ── Arbeitstage (Kalenderbereinigung) ──
+# Bundesland der Feiertage, Samstag als Arbeitstag, 24./31.12. halb. Je Mandant streng:
+# zwei Firmen eines Projekts können in verschiedenen Ländern sitzen. Gerechnet wird im Frontend
+# (components/forms/arbeitstage.tsx), hier steht nur die Einstellung.
+
+_BUNDESLAENDER = {"Baden-Württemberg", "Bayern", "Berlin", "Brandenburg", "Bremen", "Hamburg", "Hessen",
+                  "Mecklenburg-Vorpommern", "Niedersachsen", "Nordrhein-Westfalen", "Rheinland-Pfalz", "Saarland",
+                  "Sachsen", "Sachsen-Anhalt", "Schleswig-Holstein", "Thüringen"}
+
+
+class ArbeitstageIn(BaseModel):
+    project_id: Optional[int] = None
+    bundesland: str = ""
+    samstag: bool = False
+    halbe_tage: bool = False
+
+
+@router.get("/arbeitstage")
+def get_arbeitstage(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                    user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "arbeitstage", mandant_id, strikt=True)
+    wahl = dict(zeilen[0].value or {}) if zeilen else None
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db), "auswahl": wahl}
+
+
+@router.put("/arbeitstage")
+def set_arbeitstage(body: ArbeitstageIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    if body.bundesland and body.bundesland not in _BUNDESLAENDER:
+        raise HTTPException(400, "Unbekanntes Bundesland")
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    wert = {"bundesland": body.bundesland, "samstag": body.samstag, "halbe_tage": body.halbe_tage, "von": user.username}
+    cfg_service.set_value(body.project_id, db, "arbeitstage", "auswahl", wert, mandant_id)
+    return {"auswahl": wert}

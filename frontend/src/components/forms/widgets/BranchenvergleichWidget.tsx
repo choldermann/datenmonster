@@ -10,6 +10,8 @@
  * Nominal: eigener Umsatz gegen NETTUR (Umsatz in jeweiligen Preisen).
  * Real:    eigener Umsatz geteilt durch den Preisindex des Mandanten (preisbereinigung.tsx)
  *          gegen VOL_SLS (Verkaufsvolumen). Ohne gewählten Preisindex nicht möglich.
+ * Arbeitstage (Schalter): eigener Umsatz kalenderbereinigt (arbeitstage.tsx) gegen die
+ *          kalenderbereinigte Eurostat-Reihe (CA) – beide Seiten ohne Arbeitstage-Effekt.
  *
  * Branche je Mandant: /api/business-config/branche. Ohne Auswahl wird sie aus dem Preisindex
  * abgeleitet (WZ08-46494 → G464), sonst Großhandel gesamt.
@@ -24,6 +26,8 @@ import { useAuth } from "../../../context/AuthContext";
 import { monatText } from "./monat";
 import { monatsFolge } from "./UmfeldWidget";
 import { usePreisindex, bereinigen, PreisindexDialog } from "../preisbereinigung";
+import { CalendarDays } from "lucide-react";
+import { useArbeitstage, bereinigt as atBereinigt, einstellungText, schalterLesen, schalterSchreiben, ArbeitstageDialog } from "../arbeitstage";
 
 const FARBE_ICH = "var(--accent)";
 const FARBE_BRANCHE = "#a78bfa";
@@ -83,6 +87,10 @@ export default function BranchenvergleichWidget({ widget, result, params = {}, p
   const [laedt, setLaedt] = useState(false);
   const [piDialog, setPiDialog] = useState(false);
   const pi = usePreisindex(projectId, true);
+  const at = useArbeitstage(projectId, true);
+  const [atAn, setAtAn] = useState(() => schalterLesen(widget.id));
+  const [atDialog, setAtDialog] = useState(false);
+  const atAktiv = atAn && !!at;
 
   useEffect(() => {
     let lebt = true;
@@ -133,7 +141,7 @@ export default function BranchenvergleichWidget({ widget, result, params = {}, p
   }, [result]);
   const von = eigen[0]?.[0], bis = eigen[eigen.length - 1]?.[0];
 
-  const groesse = art === "real" ? "umsatz_handel_real" : "umsatz_handel";
+  const groesse = (art === "real" ? "umsatz_handel_real" : "umsatz_handel") + (atAktiv ? "_ka" : "");
   useEffect(() => {
     if (!code || !von || !bis) return;
     let lebt = true;
@@ -146,7 +154,7 @@ export default function BranchenvergleichWidget({ widget, result, params = {}, p
   }, [code, groesse, von, bis]);
 
   const monate = eigen.map(([m]) => m);
-  const ichRoh = eigen.map(([, v]) => v);
+  const ichRoh = eigen.map(([m, v]) => (atAktiv ? atBereinigt(m, v, at.e) : v));
   const realOk = art !== "real" || !!pi.werte;
   const ich = art === "real" ? (pi.werte ? bereinigen(monate, ichRoh, pi.werte).werte : monate.map(() => null)) : ichRoh;
   const brancheWerte = reihe?.werte?.[code] || {};
@@ -228,6 +236,17 @@ export default function BranchenvergleichWidget({ widget, result, params = {}, p
             title="Preissteigerung herausgerechnet: verkaufte Menge statt Euro">real</button>
         </div>
         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 4, marginRight: 8 }}>
+            <button onClick={() => { setAtAn(!atAn); schalterSchreiben(widget.id, !atAn); }} aria-pressed={atAn}
+              title={`Arbeitstage herausrechnen: Ihr Umsatz kalenderbereinigt, die Branche als kalenderbereinigte Reihe\n${einstellungText(at?.e || null)}`}
+              style={{ ...knopf(atAn), borderRadius: 6, display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <CalendarDays size={12} /> Arbeitstage{atAn ? " bereinigt" : ""}
+            </button>
+            {darfAendern && at && (
+              <button onClick={() => setAtDialog(true)} style={{ border: "none", background: "transparent", color: "var(--text-dim)",
+                cursor: "pointer", fontSize: 11.5, textDecoration: "underline" }} title="Bundesland, Samstag, 24./31.12.">einstellen</button>
+            )}
+          </span>
           {istVorschlag ? "Vorschlag" + (pi.auswahl ? " aus dem Preisindex" : "") + (darfAendern ? " – zum Festlegen auswählen" : "") : ""}
           {gespeichert?.code && mandantName ? `gilt für ${mandantName}` : ""}
         </span>
@@ -290,17 +309,21 @@ export default function BranchenvergleichWidget({ widget, result, params = {}, p
           Verglichen werden Wachstumsraten, nicht Größen: die Branche ist ein Index aller deutschen Unternehmen dieses Handelszweigs.
           Ihr Umsatz = Rechnungen netto ohne Stornos (gefiltert nach Plattform, falls gewählt).
           {art === "real" ? " Real: Ihr Umsatz geteilt durch den gewählten Preisindex, die Branche als Verkaufsvolumen." : ""}
+          {atAktiv ? ` Arbeitstagbereinigt (${einstellungText(at.e)}), die Branche kalenderbereinigt.` : ""}
           {" "}Die Branchenwerte erscheinen etwa zwei Monate nach Monatsende.
         </span>
       </div>
 
       {(reihe || katalog) && (
         <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
-          Quelle: {reihe?.quelle || "Eurostat"}, Index 2021 = 100, nicht saisonbereinigt
+          Quelle: {reihe?.quelle || "Eurostat"}, Index 2021 = 100, {atAktiv ? "kalenderbereinigt" : "nicht saisonbereinigt"}
           {reihe?.werte?.[code] && Object.keys(reihe.werte[code]).length
             ? ` · Branche bis ${monatText(Object.keys(reihe.werte[code]).sort().pop())}` : ""}
           {reihe?.hinweis ? ` · ${reihe.hinweis}` : ""}
         </span>
+      )}
+      {atDialog && at && (
+        <ArbeitstageDialog projectId={projectId} aktuell={at.gewaehlt ? at.e : null} mandantName={at.mandantName} onClose={() => setAtDialog(false)} />
       )}
       {piDialog && (
         <PreisindexDialog projectId={projectId} aktuell={pi.auswahl} mandantName={pi.mandantName} onClose={() => setPiDialog(false)} />

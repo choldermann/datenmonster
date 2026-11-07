@@ -3,11 +3,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, ReferenceArea,
 } from "recharts";
-import { Flag, Plus, TrendingDown } from "lucide-react";
+import { CalendarDays, Flag, Plus, Settings2, TrendingDown } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { useEreignisse, aufAchse, ereignisZeitraum, EreignisDialog } from "../ereignisse";
 import { monatsAchse } from "./monat";
 import { usePreisindex, bereinigen, bezugText, PreisindexDialog } from "../preisbereinigung";
+import { useArbeitstage, bereinigt as atBereinigt, arbeitstage as atZahl, ueblicheArbeitstage, einstellungText,
+  schalterLesen, schalterSchreiben, ArbeitstageDialog } from "../arbeitstage";
 
 const S = { textDim: "var(--text-dim)" };
 
@@ -20,6 +22,10 @@ const COLORS = ["var(--accent)", "var(--ok)", "#a78bfa", "var(--err)", "#60a5fa"
  *
  * config.preisbereinigt = { spalte: "Umsatz" } legt bei einer Monatsachse eine gestrichelte Linie
  * „Umsatz preisbereinigt“ dazu – geteilt durch den Preisindex der Branche des Mandanten (Destatis).
+ *
+ * config.arbeitstage = { spalten: { Umsatz: 0, UmsatzVorjahr: -1 } } bietet bei einer Monatsachse den
+ * Schalter „Arbeitstage“: die genannten Spalten werden kalenderbereinigt (Wert × übliche ÷ tatsächliche
+ * Arbeitstage des Monats); die Zahl gibt an, zu welchem Jahr relativ zur Achse der Wert gehört.
  */
 export default function LineWidget({ widget, result, onDrilldown, projectId = null }) {
   const { rows = [] } = result;
@@ -33,6 +39,10 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
   const pbSpalte = cfg.preisbereinigt?.spalte || null;
   const pi = usePreisindex(projectId, !!pbSpalte);
   const [piDialog, setPiDialog] = useState(false);
+  const atSpalten = cfg.arbeitstage?.spalten || null;
+  const atStand = useArbeitstage(projectId, !!atSpalten);
+  const [atAn, setAtAn] = useState(() => !!atSpalten && schalterLesen(widget.id));
+  const [atDialog, setAtDialog] = useState(false);
 
   if (!x_column || !y_columns.length) return (
     <div style={{ padding: "32px 20px", textAlign: "center", color: S.textDim, fontSize: 12 }}>
@@ -46,8 +56,22 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
     return entry;
   });
 
-  // Preisbereinigung (nur bei Monatsachse und gewählter Branche)
   const monatsachse = !!monatsAchse(data.map(d => d[x_column]));
+
+  // Arbeitstage: konfigurierte Spalten kalenderbereinigen (vor der Preisbereinigung)
+  const atMoeglich = !!atSpalten && monatsachse && !!atStand;
+  const atAktiv = atMoeglich && atAn;
+  if (atAktiv) {
+    for (const d of data) {
+      const mo = String(d[x_column]).slice(0, 7);
+      for (const [col, versatz] of Object.entries(atSpalten)) {
+        if (y_columns.includes(col)) d[col] = atBereinigt(mo, d[col], atStand.e, Number(versatz) || 0);
+      }
+    }
+  }
+  const linienName = (col) => (atAktiv && atSpalten[col] != null ? `${col} (arbeitstagbereinigt)` : col);
+
+  // Preisbereinigung (nur bei Monatsachse und gewählter Branche)
   const pbAktiv = !!pbSpalte && y_columns.includes(pbSpalte) && monatsachse;
   const pbName = pbSpalte ? `${pbSpalte} preisbereinigt` : null;
   let pbRef = null;
@@ -89,6 +113,15 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
             <span style={{ color: "var(--text-main)" }}>{Number(p.value).toLocaleString("de-DE")}</span>
           </div>
         ))}
+        {atMoeglich && alsMonat && (() => {
+          const mo = String(label).slice(0, 7);
+          const n = atZahl(mo, atStand.e), u = ueblicheArbeitstage(Number(mo.slice(5, 7)), atStand.e);
+          return (
+            <div style={{ marginTop: 4, color: "var(--text-dim)" }}>
+              {String(n).replace(".", ",")} Arbeitstage (üblich {u.toFixed(1).replace(".", ",")})
+            </div>
+          );
+        })()}
         {es.length > 0 && (
           <div style={{ marginTop: 5, paddingTop: 5, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 3 }}>
             {es.map(e => (
@@ -105,8 +138,28 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
 
   return (
     <div style={{ padding: "8px 8px 16px" }}>
-      {(darfErfassen || (marken && marken.length > 0) || (pbAktiv && (pbRef || darfPreise))) && (
+      {(darfErfassen || (marken && marken.length > 0) || (pbAktiv && (pbRef || darfPreise)) || atMoeglich) && (
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "0 12px 4px", fontSize: 11.5, color: S.textDim, flexWrap: "wrap" }}>
+          {atMoeglich && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+              <button onClick={() => { setAtAn(!atAn); schalterSchreiben(widget.id, !atAn); }}
+                aria-pressed={atAn}
+                title={`Kalendereffekt herausrechnen: Wert × übliche ÷ tatsächliche Arbeitstage des Monats\n${einstellungText(atStand.e)}`}
+                style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, padding: "2px 8px", borderRadius: 5,
+                  border: "1px solid var(--border)", cursor: "pointer",
+                  background: atAn ? "color-mix(in srgb, var(--accent) 18%, transparent)" : "transparent",
+                  color: atAn ? "var(--text-bright)" : "var(--text-main)" }}>
+                <CalendarDays size={11} /> Arbeitstage{atAn ? " bereinigt" : ""}
+              </button>
+              {!user?.is_portal_only && projectId != null && (
+                <button onClick={() => setAtDialog(true)} aria-label="Arbeitstage einstellen"
+                  title={`Arbeitstage einstellen (${einstellungText(atStand.gewaehlt ? atStand.e : null)})`}
+                  style={{ display: "inline-flex", padding: 2, border: "none", background: "transparent", color: S.textDim, cursor: "pointer" }}>
+                  <Settings2 size={12} />
+                </button>
+              )}
+            </span>
+          )}
           {pbAktiv && pbRef && (
             <span title={`${pi.auswahl?.label || ""}\n${pi.quelle || ""}\nBereinigt: ${pbSpalte} × Index ${bezugText(pbRef).replace("Preisstand ", "")} ÷ Index des Monats`}>
               <TrendingDown size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />
@@ -157,7 +210,7 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
           <Tooltip content={<HinweisMitEreignissen />} />
           {linien.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {y_columns.map((col, i) => (
-            <Line key={col} dataKey={col} stroke={COLORS[i % COLORS.length]}
+            <Line key={col} dataKey={col} name={linienName(col)} stroke={COLORS[i % COLORS.length]}
               strokeWidth={2} type={curved ? "monotone" : "linear"}
               dot={{ r: 3, fill: COLORS[i % COLORS.length] }} activeDot={{ r: 5 }} />
           ))}
@@ -171,6 +224,10 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
       {piDialog && (
         <PreisindexDialog projectId={projectId} aktuell={pi.auswahl} mandantName={pi.mandantName}
           onClose={() => setPiDialog(false)} />
+      )}
+      {atDialog && atStand && (
+        <ArbeitstageDialog projectId={projectId} aktuell={atStand.gewaehlt ? atStand.e : null} mandantName={atStand.mandantName}
+          onClose={() => setAtDialog(false)} />
       )}
       {dialog && (
         <EreignisDialog projectId={projectId} vorgabe={dialog} kategorien={ev.kategorien}

@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.28",
+  "version": "2.29",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -18,7 +18,8 @@
     "Der erste Reiter „Baum“ zeigt das Ergebnis als aufklappbaren Baum: Umsatz, Wareneinsatz und Kosten bis zum DB III, jede Ebene ergibt in Summe ihren Oberpunkt. Kanäle, Warengruppen, Lieferanten, Versandarten und Kostenblöcke kommen aus den Daten.",
     "Versandkosten im Baum sind der EK der Versandpositionen, also der Wert, der in JTL an der Versandart hinterlegt ist. Fehlt er, zeigt der Baum, wie viele Versandpositionen ohne Kosten sind.",
     "Die Fixkosten werden im letzten Reiter „Kostenstruktur“ gepflegt (dieselbe Maske wie im Formular Kostenstruktur).",
-    "Ausblick › Branchenvergleich stellt die eigene Umsatzentwicklung der des Handelszweigs gegenüber (Eurostat, Deutschland). Die Branche wird je Mandant gewählt."
+    "Ausblick › Branchenvergleich stellt die eigene Umsatzentwicklung der des Handelszweigs gegenüber (Eurostat, Deutschland). Die Branche wird je Mandant gewählt.",
+    "Umsatzverläufe und Branchenvergleich lassen sich arbeitstagbereinigt anzeigen (Schalter „Arbeitstage“); Bundesland, Samstag und 24./31.12. je Mandant einstellbar."
   ],
   "config_required": [
     {
@@ -10818,7 +10819,14 @@
                     "title": "Positionen der Rechnung"
                   }
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Umsatz": 0,
+                  "UmsatzVorjahr": -1
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands). Ein Monat mit zwei Feiertagen mehr als im Vorjahr sieht dann nicht mehr wie ein Einbruch aus."
             }
           },
           {
@@ -11221,7 +11229,13 @@
               "preisbereinigt": {
                 "spalte": "Umsatz"
               },
-              "info": "Die gestrichelte Linie zeigt den Umsatz preisbereinigt: geteilt durch den Preisindex der gewählten Branche (Destatis, 2021 = 100), umgerechnet auf die Preise des letzten verfügbaren Monats. Liegt sie flacher als der Umsatz, kommt das Wachstum aus Preiserhöhungen, nicht aus mehr verkaufter Ware. Die Branche wird je Mandant einmal über „Preisbereinigung“ gewählt."
+              "info": "Die gestrichelte Linie zeigt den Umsatz preisbereinigt: geteilt durch den Preisindex der gewählten Branche (Destatis, 2021 = 100), umgerechnet auf die Preise des letzten verfügbaren Monats. Liegt sie flacher als der Umsatz, kommt das Wachstum aus Preiserhöhungen, nicht aus mehr verkaufter Ware. Die Branche wird je Mandant einmal über „Preisbereinigung“ gewählt. Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands). Ein Monat mit zwei Feiertagen mehr als im Vorjahr sieht dann nicht mehr wie ein Einbruch aus.",
+              "arbeitstage": {
+                "spalten": {
+                  "Umsatz": 0,
+                  "Rohertrag": 0
+                }
+              }
             }
           },
           {
