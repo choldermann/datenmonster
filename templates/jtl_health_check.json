@@ -4,7 +4,7 @@
   "template_name": "JTL – Stammdaten-Health-Check",
   "description": "Prüft Artikel- und Kundenstammdaten der JTL-Wawi auf Lücken und Widersprüche: fehlende EAN/Gewichte/Einkaufspreise, VK unter EK, fehlende Warentarifnummer und Herkunftsland, doppelte EANs, Kunden ohne E-Mail und Dubletten – mit Ampel-Übersicht und Arbeitslisten.",
   "category": "jtl-reporting",
-  "version": "1.16",
+  "version": "1.17",
   "author": "Datenmonster",
   "hinweise": [
     "Geprüft werden aktive, nicht gelöschte Artikel ohne Vater-Artikel (Väter tragen selbst keine EAN/Gewichte) sowie nicht gesperrte Kunden mit Standardadresse.",
@@ -17,7 +17,8 @@
     "Ebenfalls im Reiter „Datenpflege“: die KI-gestützte Artikelbeschreibung. Klick auf einen Artikel öffnet ein Fenster mit den Stammdaten, per Knopf erzeugt die KI daraus einen Beschreibungsvorschlag zum Kopieren. Die KI erfindet nichts — je weniger Stammdaten vorhanden sind, desto knapper fällt der Vorschlag aus. Zurückgeschrieben wird nichts, die Übernahme in die Wawi bleibt manuell.",
     "Am Ende des Reiters „Datenpflege“ steht die Hersteller-Übersicht: je Hersteller die Lücken (ohne EAN, ohne Herstellernummer, dürftiger Text) und ob seine Produktseiten auswertbar sind. Klick auf einen Hersteller listet dessen Artikel, Klick auf einen Artikel öffnet den Beschreibungsvorschlag.",
     "Alle Befundlisten sind anklickbar: Ein Klick auf eine Artikelzeile öffnet das Artikel-Detail mit allen Pflichtfeldern, den fehlenden Feldern und der Verkaufshistorie – so ist sofort sichtbar, ob sich die Pflege für diesen Artikel überhaupt lohnt. Kundenzeilen führen zum Kunden-Detail, doppelte EANs zu den betroffenen Artikeln.",
-    "Kundenprüfungen lesen ausschließlich die Rechnungsadresse (nTyp=1, nStandard=1) – sie ist je Kunde eindeutig. Ohne diesen Filter zählen Standard-Lieferadressen mit, und Kunden erscheinen als Dublette ihrer selbst. Die Dublettenliste unterscheidet „Dublettenverdacht“ (gleiche Straße) von „eigener Standort“ (gleiche Firma und PLZ, andere Straße); Firma, PLZ und Straße werden vor dem Vergleich normalisiert."
+    "Kundenprüfungen lesen ausschließlich die Rechnungsadresse (nTyp=1, nStandard=1) – sie ist je Kunde eindeutig. Ohne diesen Filter zählen Standard-Lieferadressen mit, und Kunden erscheinen als Dublette ihrer selbst. Die Dublettenliste unterscheidet „Dublettenverdacht“ (gleiche Straße) von „eigener Standort“ (gleiche Firma und PLZ, andere Straße); Firma, PLZ und Straße werden vor dem Vergleich normalisiert.",
+    "USt-ID-Prüfung: Rechnungen mit nSteuereinstellung = 10 (steuerfreie innergemeinschaftliche Lieferung). „Bei VIES prüfen“ fragt die EU-Kommission direkt aus der Installation; Ergebnisse je Mandant in business_config (ustid_pruefung). JTLs eigene Prüfung steht in Kunde.tUmsatzSteuerPruefung."
   ],
   "config_required": [
     {
@@ -3736,6 +3737,125 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_hc_ustid",
+      "name": "Health-Check – USt-IDs bei steuerfreien EU-Lieferungen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "KundenNr",
+            "Kunde",
+            "Land",
+            "UStID",
+            "Rechnungen",
+            "LetzteRechnung",
+            "JTLGeprueft"
+          ],
+          "sql": "WITH re AS (\n    SELECT RE.kRechnung, RE.kKunde, RE.dErstellt, RE.cKundennr, RE.nSteuereinstellung,\n        UPPER(REPLACE(REPLACE(REPLACE(ISNULL(NULLIF(RE.cKundeUstId, ''), RA.cKundeUstId), ' ', ''), '.', ''), '-', '')) AS UStID,\n        RA.cISO, ISNULL(NULLIF(RA.cFirma, ''), LTRIM(ISNULL(RA.cVorname, '') + ' ' + ISNULL(RA.cName, ''))) AS Kunde\n    FROM Rechnung.vRechnung RE\n    JOIN Rechnung.vRechnungRechnungsadresse RA ON RA.kRechnung = RE.kRechnung\n    WHERE ISNULL(RE.nStorno, 0) = 0 AND ISNULL(RE.nIstEntwurf, 0) = 0\n      AND RE.dErstellt >= DATEADD(MONTH, -24, CAST(GETDATE() AS DATE))\n      AND RE.nSteuereinstellung = 10\n), je AS (\n    SELECT kKunde, ISNULL(UStID, '') AS UStID, MAX(cKundennr) AS KundenNr, MAX(cISO) AS Land,\n        MAX(Kunde) AS Kunde, COUNT(*) AS Rechnungen, MAX(dErstellt) AS LetzteRechnung\n    FROM re GROUP BY kKunde, ISNULL(UStID, '')\n)\nSELECT je.KundenNr, je.Kunde, je.Land, je.UStID, je.Rechnungen,\n    CONVERT(char(10), je.LetzteRechnung, 23) AS LetzteRechnung,\n    CONVERT(char(10), P.dErfolgreichGerpueft, 23) AS JTLGeprueft\nFROM je\nLEFT JOIN Kunde.tUmsatzSteuerPruefung P ON P.kKunde = je.kKunde\n     AND UPPER(REPLACE(P.cUSTID, ' ', '')) = je.UStID\nORDER BY je.LetzteRechnung DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Health-Check – USt-IDs bei steuerfreien EU-Lieferungen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "KundenNr",
+              "target_field": "KundenNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "KundenNr"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Land",
+              "target_field": "Land",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Land"
+              }
+            },
+            {
+              "source_field": "UStID",
+              "target_field": "UStID",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "UStID"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "LetzteRechnung",
+              "target_field": "LetzteRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "LetzteRechnung"
+              }
+            },
+            {
+              "source_field": "JTLGeprueft",
+              "target_field": "JTLGeprueft",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "JTLGeprueft"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -3899,6 +4019,13 @@
             "mapping_id": "m_hc_adresse_ohne_kunde",
             "pipeline_id": null,
             "label": "Adressen ohne Kunden"
+          },
+          {
+            "id": "act_hc_ustid",
+            "type": "run_mapping",
+            "mapping_id": "m_hc_ustid",
+            "pipeline_id": null,
+            "label": "USt-IDs bei steuerfreien EU-Lieferungen"
           }
         ],
         "widgets": [
@@ -4636,6 +4763,18 @@
               ],
               "info": "Adressen, deren Kunde nicht mehr existiert – Karteileichen aus gelöschten Kunden. Freie Adressen (ohne Kundenbezug) sind ausgenommen."
             }
+          },
+          {
+            "id": "w_hc_ustid",
+            "type": "ustid",
+            "label": "USt-IDs Ihrer EU-Kunden (steuerfreie Lieferungen)",
+            "action_id": "act_hc_ustid",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "alter_tage": 90,
+              "info": "Kunden, an die in den letzten 24 Monaten steuerfrei innergemeinschaftlich geliefert wurde, und der Stand ihrer USt-ID: fehlt, falsches Format, bei VIES gültig oder ungültig. Die Prüfung startet nur per Knopf; dann gehen die USt-IDs direkt von dieser Installation an VIES (EU-Kommission)."
+            }
           }
         ],
         "result_tabs": [
@@ -4684,7 +4823,8 @@
             "label": "Außenhandel",
             "action_ids": [
               "act_hc_ohne_taric",
-              "act_hc_ohne_herkunftsland"
+              "act_hc_ohne_herkunftsland",
+              "act_hc_ustid"
             ]
           },
           {
