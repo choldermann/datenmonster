@@ -37,7 +37,7 @@ _REGELN = [
     ({"GET"},            r"/api/connections"),
     # Fach-Widgets mit eigenen Portal-Pruefungen im jeweiligen Router
     # Umfelddaten (Wetter, Atemwegsinfekte) für die Umfeld-Seite im GF-Cockpit
-    (ALLE, r"/api/umfeld/(katalog|reihen|preise/katalog|branchen/katalog|aussenhandel|strukturdaten)"),
+    (ALLE, r"/api/umfeld/(katalog|reihen|preise/katalog|branchen/katalog|aussenhandel|strukturdaten|insolvenzen/katalog)"),
     (ALLE, r"/api/(business-config|datenpflege|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
            r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten|zugferd)(/.*)?"),
 ]

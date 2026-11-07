@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.30",
+  "version": "2.31",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -9906,6 +9906,92 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_zahlungsmoral_monat",
+      "name": "Cockpit – Zahlungsmoral je Monat (Insolvenzklima)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CONVERT(char(7), RE.dErstellt, 126) AS Monat,\n    COUNT(*) AS Rechnungen,\n    CAST(AVG(CASE WHEN DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) < 0 THEN 0 ELSE DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) END * 1.0) AS DECIMAL(18,1)) AS ZahldauerTage,\n    CAST(100.0 * SUM(CASE WHEN DATEDIFF(DAY, RE.dErstellt, Z.dZahlung) > 30 THEN 1 ELSE 0 END) / COUNT(*) AS DECIMAL(18,1)) AS AnteilVerspaetet\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN (SELECT kRechnung, MAX(dDatum) AS dZahlung FROM dbo.tZahlung WHERE kRechnung IS NOT NULL AND fBetrag > 0 GROUP BY kRechnung) Z ON Z.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= DATEADD(MONTH, -35, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1)) AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY CONVERT(char(7), RE.dErstellt, 126)\nORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Rechnungen",
+            "ZahldauerTage",
+            "AnteilVerspaetet"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Zahlungsmoral je Monat (Insolvenzklima)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "ZahldauerTage",
+              "target_field": "ZahldauerTage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ZahldauerTage"
+              }
+            },
+            {
+              "source_field": "AnteilVerspaetet",
+              "target_field": "AnteilVerspaetet",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "AnteilVerspaetet"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -10423,6 +10509,13 @@
             "mapping_id": "m_branche_umsatz",
             "pipeline_id": null,
             "label": "Cockpit – Umsatz je Monat (Branchenvergleich)"
+          },
+          {
+            "id": "act_zm_monat",
+            "type": "run_mapping",
+            "mapping_id": "m_zahlungsmoral_monat",
+            "pipeline_id": null,
+            "label": "Cockpit – Zahlungsmoral je Monat"
           }
         ],
         "widgets": [
@@ -13342,6 +13435,17 @@
               },
               "info": "Vergleicht die Entwicklung Ihres Umsatzes mit der Ihres Handelszweigs in Deutschland (Eurostat-Umsatzindex, 2021 = 100). Verglichen werden Veränderungen zum Vorjahr – je Monat die letzten drei Monate gegen dieselben drei Monate im Vorjahr –, keine absoluten Größen. „Real“ rechnet die Preissteigerung heraus: Ihr Umsatz über den gewählten Preisindex, die Branche als Verkaufsvolumen. Die Branche gilt je Mandant; ohne Auswahl wird sie aus dem Preisindex vorgeschlagen. Es werden keine Kundendaten übertragen."
             }
+          },
+          {
+            "id": "w_insolvenzen",
+            "type": "insolvenzen",
+            "label": "Insolvenzklima: Unternehmensinsolvenzen und Ihre Zahlungsmoral",
+            "action_id": "act_zm_monat",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Wie viele Unternehmen in Deutschland Insolvenz beantragen – insgesamt und in den Branchen Ihrer Kunden (je Mandant wählbar) –, verglichen mit dem Vorjahreszeitraum (Destatis). Darunter Ihre durchschnittliche Zahlungsdauer je Rechnungsmonat: steigen die Insolvenzen in Ihren Kundenbranchen und zahlen Ihre Kunden langsamer, lohnt ein Blick auf Kreditlimits und Vorkasse. Es werden keine Kundendaten übertragen."
+            }
           }
         ],
         "result_tabs": [
@@ -13396,7 +13500,8 @@
               "act_zm_kpi",
               "act_zm_kunden",
               "act_zm_verschlechterung",
-              "act_neukunden"
+              "act_neukunden",
+              "act_zm_monat"
             ]
           },
           {

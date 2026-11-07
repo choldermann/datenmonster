@@ -28,6 +28,7 @@ import KarteWidget from "./widgets/KarteWidget";
 import UmfeldWidget from "./widgets/UmfeldWidget";
 import AussenhandelWidget from "./widgets/AussenhandelWidget";
 import WaehrungenWidget from "./widgets/WaehrungenWidget";
+import InsolvenzenWidget from "./widgets/InsolvenzenWidget";
 import BranchenvergleichWidget from "./widgets/BranchenvergleichWidget";
 import EreignisseWidget from "./widgets/EreignisseWidget";
 
@@ -110,6 +111,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     case "karte": return <KarteWidget widget={widget} result={result} />;
     case "umfeld": return <UmfeldWidget widget={widget} result={result} params={baseParams} />;
+    case "insolvenzen": return <InsolvenzenWidget widget={widget} result={result} projectId={projectId} />;
     case "waehrungen": return <WaehrungenWidget widget={widget} result={result} params={baseParams} />;
     case "aussenhandel": return <AussenhandelWidget widget={widget} result={result} params={baseParams} />;
     case "branchenvergleich": return <BranchenvergleichWidget widget={widget} result={result} params={baseParams} projectId={projectId} />;

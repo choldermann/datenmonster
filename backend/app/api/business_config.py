@@ -482,6 +482,44 @@ def delete_branche(project_id: Optional[int] = None, db: Session = Depends(get_d
     return {"ok": cfg_service.reset_value(project_id, db, "branche", "auswahl", mandant_id)}
 
 
+# ── Kundenbranchen für das Insolvenzklima ──
+# Wirtschaftszweige (WZ 2008) der Insolvenzstatistik, in denen die eigenen Kunden überwiegend sind.
+# JTL kennt keine Branche am Kunden, deshalb wählt sie der Nutzer. Je Mandant streng.
+
+class KundenbranchenIn(BaseModel):
+    project_id: Optional[int] = None
+    zweige: list[dict] = []      # [{code: "WZ08-8121", label: "…"}]
+
+
+@router.get("/kundenbranchen")
+def get_kundenbranchen(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "kundenbranchen", mandant_id, strikt=True)
+    wahl = dict(zeilen[0].value or {}) if zeilen else None
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db), "auswahl": wahl}
+
+
+@router.put("/kundenbranchen")
+def set_kundenbranchen(body: KundenbranchenIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    import re
+    zweige = []
+    for z in body.zweige[:12]:
+        code = str(z.get("code") or "")
+        if not re.fullmatch(r"WZ08-([A-U]|\d{2,5})", code):
+            raise HTTPException(400, f"Unbekannter Wirtschaftszweig: {code[:20]}")
+        if code not in {x["code"] for x in zweige}:
+            zweige.append({"code": code, "label": str(z.get("label") or "")[:120]})
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    wert = {"zweige": zweige, "von": user.username}
+    cfg_service.set_value(body.project_id, db, "kundenbranchen", "auswahl", wert, mandant_id)
+    return {"auswahl": wert}
+
+
 # ── Arbeitstage (Kalenderbereinigung) ──
 # Bundesland der Feiertage, Samstag als Arbeitstag, 24./31.12. halb. Je Mandant streng:
 # zwei Firmen eines Projekts können in verschiedenen Ländern sitzen. Gerechnet wird im Frontend

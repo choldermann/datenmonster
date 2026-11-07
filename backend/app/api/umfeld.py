@@ -65,6 +65,12 @@ def branchen_katalog(db: Session = Depends(get_db), user: User = Depends(get_cur
     return _fragen(db, "branchen/katalog", {})
 
 
+@router.get("/insolvenzen/katalog")
+def insolvenzen_katalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Wirtschaftszweige der Insolvenzstatistik (Destatis) für die Auswahl der Kundenbranchen."""
+    return _fragen(db, "insolvenzen/katalog", {})
+
+
 @router.get("/strukturdaten")
 def strukturdaten(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Einwohner und verfügbares Einkommen je Bundesland (Destatis) – Bezugsgrößen für die Deutschlandkarte."""
