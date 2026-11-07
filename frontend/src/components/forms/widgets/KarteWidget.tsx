@@ -13,6 +13,11 @@
  *   ausschnitt: "europa" (Vorgabe) | "welt"  – nur bei karte = "welt", umschaltbar
  *   hoehe:   460
  *
+ * Deutschlandkarte mit Euro-Werten: Umschalter „Bezug“ – Gesamt, je 1.000 Einwohner oder je 1 Mio. €
+ * verfügbares Einkommen der Haushalte („Kaufkraft“), dazu ein Index (Ø Deutschland = 100). Einwohner und
+ * Einkommen je Bundesland kommen von Destatis über den monstersuite-Datendienst (/api/umfeld/strukturdaten),
+ * erst wenn jemand umschaltet; es gehen keine Kundendaten hinaus. Die Wahl merkt sich der Browser je Widget.
+ *
  * Kartenumrisse: Natural Earth (gemeinfrei) – Welt aus world-atlas (1:50 Mio.), Bundesländer
  * aus admin-1 1:10 Mio., vereinfacht (src/assets/geo). Beides wird erst geladen, wenn eine Karte
  * erscheint, und liegt in der App: keine Kartendienste, keine Daten nach außen.
@@ -20,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { geoPath, geoNaturalEarth1, geoConicConformal, geoMercator } from "d3-geo";
 import { feature } from "topojson-client";
+import api, { fehlerText } from "../../../api/client";
 
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -38,6 +44,39 @@ const kurz = (v, einheit = "eur") => {
 const STUFEN = [18, 34, 52, 72, 92];
 const stufeFarbe = (i) => `color-mix(in srgb, var(--accent) ${STUFEN[i]}%, var(--bg-card))`;
 const OHNE = "var(--bg-elevated)";
+
+const nf2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const BEZUG = {
+  gesamt:    { text: "Gesamt" },
+  einwohner: { text: "je Einwohner", einheit: "€ je 1.000 Einwohner", kurz: "€/1.000 EW" },
+  kaufkraft: { text: "je Kaufkraft", einheit: "€ je 1 Mio. € Haushaltseinkommen", kurz: "€/Mio. € Eink." },
+};
+let strukturCache: Promise<any> | null = null;
+const ladeStruktur = () => (strukturCache || (strukturCache = api.get("/api/umfeld/strukturdaten").then((r) => {
+  if (r.data?.hinweis) strukturCache = null;           // „wird geladen“ nicht festhalten
+  return r.data;
+}).catch((e) => { strukturCache = null; throw e; })));
+const bezugLesen = (id) => { try { const v = localStorage.getItem(`dm-karte-bezug-${id}`); return v && BEZUG[v] ? v : "gesamt"; } catch { return "gesamt"; } };
+const bezugSchreiben = (id, v) => { try { localStorage.setItem(`dm-karte-bezug-${id}`, v); } catch { /* ohne Speicher */ } };
+
+/** Werte je Bundesland auf Einwohner bzw. Einkommen beziehen; Index = Wert / Bundesschnitt × 100.
+ *  Der Schnitt zählt alle 16 Länder, auch solche ohne Umsatz. */
+export function aufBezug(eintraege, laender, bezug) {
+  const nenner = (k) => {
+    const l = laender?.[k]; if (!l) return null;
+    return bezug === "einwohner" ? (l.einwohner ? l.einwohner / 1000 : null) : (l.einkommen_mio ? l.einkommen_mio : null);
+  };
+  let sv = 0, sn = 0;
+  for (const k of Object.keys(laender || {})) { const n = nenner(k); if (n) sn += n; }
+  for (const d of eintraege) if (d.v > 0 && nenner(d.key)) sv += d.v;
+  const schnitt = sn > 0 ? sv / sn : null;
+  return eintraege.map((d) => {
+    const n = nenner(d.key);
+    if (!n) return { ...d, v: null, p: null, roh: d.v, index: null };
+    const v = d.v == null ? null : d.v / n;
+    return { ...d, v, p: d.p == null ? null : d.p / n, roh: d.v, index: v != null && schnitt ? (v / schnitt) * 100 : null };
+  });
+}
 
 // Geometrien einmal je Sitzung laden (eigene Chunks, nur wenn eine Karte gezeigt wird).
 const cache: Record<string, Promise<any>> = {};
@@ -71,6 +110,19 @@ export default function KarteWidget({ widget, result }) {
   const [tipp, setTipp] = useState(null);         // {x, y} relativ zur Kartenfläche
   const flaecheRef = useRef(null);
   const [breite, setBreite] = useState(640);
+  const mitBezug = karte === "deutschland" && einheit !== "anzahl";
+  const [bezug, setBezugRoh] = useState(() => (mitBezug ? bezugLesen(widget.id) : "gesamt"));
+  const setBezug = (b) => { setBezugRoh(b); bezugSchreiben(widget.id, b); };
+  const [struktur, setStruktur] = useState(null);
+  const [strukturFehler, setStrukturFehler] = useState(null);
+  useEffect(() => {
+    if (bezug === "gesamt" || struktur) return;
+    let lebt = true;
+    ladeStruktur().then((d) => { if (!lebt) return; if (d?.hinweis && !Object.values(d.laender || {}).some((l: any) => l.einwohner)) setStrukturFehler(d.hinweis); else setStruktur(d); })
+      .catch((e) => lebt && setStrukturFehler(fehlerText(e)));
+    return () => { lebt = false; };
+  }, [bezug, struktur]);
+  const bezogen = bezug !== "gesamt" && !!struktur;
 
   useEffect(() => {
     let lebt = true;
@@ -100,9 +152,13 @@ export default function KarteWidget({ widget, result }) {
       if (!k && v == null) continue;
       m.set(k || `__${r[sp.name]}`, { key: k, name: r[sp.name] ?? k, v, p: sp.vj ? zahl(r[sp.vj]) : null, row: r });
     }
-    return m;
+    if (!bezogen) return m;
+    return new Map(aufBezug([...m.values()], struktur.laender, bezug).map((d) => [d.key || `__${d.name}`, d]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, widget]);
+  }, [result, widget, bezogen, bezug, struktur]);
+  // Bezogene Werte sind klein (Euro je 1.000 Einwohner) – eigene Formate
+  const fmtW = (v) => (!bezogen ? fmt(v, einheit) : v == null ? "–" : `${v < 100 ? nf2.format(v) : nf0.format(v)} €`);
+  const kurzW = (v) => (!bezogen ? kurz(v, einheit) : v == null ? "–" : v < 100 ? nf2.format(v) : nf0.format(v));
 
   const summe = useMemo(() => [...daten.values()].reduce((a, d) => a + (d.v > 0 ? d.v : 0), 0), [daten]);
   const geoKeys = useMemo(() => new Set((geo || []).map((f) => norm(karte === "welt" ? f.id : f.properties?.id))),
@@ -151,7 +207,7 @@ export default function KarteWidget({ widget, result }) {
     const n = grenzen.length + 1, ab = STUFEN.length - n;
     return Array.from({ length: n }, (_, i) => ({
       farbe: stufeFarbe(ab + i),
-      text: i === 0 ? (n === 1 ? "mit Wert" : `bis ${kurz(grenzen[0], einheit)}`) : i === n - 1 ? `ab ${kurz(grenzen[i - 1], einheit)}` : `${kurz(grenzen[i - 1], einheit)} – ${kurz(grenzen[i], einheit)}`,
+      text: i === 0 ? (n === 1 ? "mit Wert" : `bis ${kurzW(grenzen[0])}`) : i === n - 1 ? `ab ${kurzW(grenzen[i - 1])}` : `${kurzW(grenzen[i - 1])} – ${kurzW(grenzen[i])}`,
     }));
   })();
 
@@ -169,6 +225,20 @@ export default function KarteWidget({ widget, result }) {
             ))}
           </div>
         )}
+        {mitBezug && (
+          <div role="group" aria-label="Bezug" style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+            {Object.entries(BEZUG).map(([b, { text }]) => (
+              <button key={b} onClick={() => setBezug(b)} aria-pressed={bezug === b}
+                title={b === "gesamt" ? "Absolute Werte" : `Wert ${BEZUG[b].einheit} – zeigt, wo Sie gemessen an der Größe des Landes stark oder schwach sind`}
+                style={{ padding: "3px 11px", borderRadius: 999, fontSize: 12, cursor: "pointer",
+                  border: `1px solid ${bezug === b ? "var(--accent)" : "var(--border)"}`,
+                  background: bezug === b ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
+                  color: bezug === b ? "var(--accent)" : "var(--text-main)", fontWeight: bezug === b ? 600 : 500 }}>{text}</button>
+            ))}
+            {bezug !== "gesamt" && !struktur && !strukturFehler && <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>Einwohnerdaten laden…</span>}
+            {strukturFehler && bezug !== "gesamt" && <span style={{ fontSize: 11.5, color: "var(--err-soft, var(--err))" }}>Bezugsdaten nicht verfügbar: {strukturFehler}</span>}
+          </div>
+        )}
         <div ref={flaecheRef} style={{ position: "relative", height: hoeheKarte, overflow: "hidden", borderRadius: 8,
           background: "color-mix(in srgb, var(--bg-elevated) 45%, transparent)" }}
           onMouseLeave={() => { setHover(null); setTipp(null); }}>
@@ -176,7 +246,7 @@ export default function KarteWidget({ widget, result }) {
           {!geo && !fehler && <p style={{ padding: 16, color: "var(--text-dim)", fontSize: 12 }}>Karte lädt…</p>}
           {geo && (
             <svg width={breite} height={hoeheKarte} role="img"
-              aria-label={`${widget.label || "Karte"}: ${rangliste.slice(0, 5).map((d) => `${d.name} ${fmt(d.v, einheit)}`).join(", ")}`}>
+              aria-label={`${widget.label || "Karte"}: ${rangliste.slice(0, 5).map((d) => `${d.name} ${fmtW(d.v)}`).join(", ")}`}>
               {pfade.map((p) => p.d && (
                 <path key={p.key || p.name} d={p.d} fill={farbe(p.key)}
                   stroke={hover === p.key ? "var(--text-bright)" : "var(--bg-card)"} strokeWidth={hover === p.key ? 1.6 : 0.7}
@@ -195,11 +265,16 @@ export default function KarteWidget({ widget, result }) {
               boxShadow: "0 6px 20px rgba(0,0,0,.18)", padding: "9px 11px", fontSize: 12, color: "var(--text-main)", zIndex: 2 }}>
               <div style={{ fontWeight: 650, color: "var(--text-bright)", marginBottom: 4 }}>{hName}</div>
               {hd && hd.v != null ? (<>
-                <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, color: "var(--text-bright)" }}>{fmt(hd.v, einheit)}</div>
-                {summe > 0 && hd.v > 0 && <div style={{ color: "var(--text-dim)" }}>{nf1.format((hd.v / summe) * 100)} % vom Gesamt</div>}
+                <div style={{ fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 600, color: "var(--text-bright)" }}>{fmtW(hd.v)}</div>
+                {bezogen && <div style={{ color: "var(--text-dim)", fontSize: 11 }}>{BEZUG[bezug].einheit}</div>}
+                {bezogen && hd.index != null && (
+                  <div style={{ color: "var(--text-dim)" }}>Index <b style={{ color: hd.index >= 100 ? "var(--ok)" : "var(--text-main)" }}>{nf0.format(hd.index)}</b> (Ø Deutschland = 100)</div>
+                )}
+                {bezogen && hd.roh != null && <div style={{ color: "var(--text-dim)" }}>gesamt {fmt(hd.roh, einheit)}</div>}
+                {!bezogen && summe > 0 && hd.v > 0 && <div style={{ color: "var(--text-dim)" }}>{nf1.format((hd.v / summe) * 100)} % vom Gesamt</div>}
                 {hd.p != null && (
                   <div style={{ color: "var(--text-dim)" }}>
-                    Vorjahr {fmt(hd.p, einheit)}
+                    Vorjahr {fmtW(hd.p)}
                     {hd.p !== 0 && (
                       <span style={{ marginLeft: 6, color: hd.v >= hd.p ? "var(--ok)" : "var(--err)" }}>
                         {hd.v >= hd.p ? "▲" : "▼"} {nf1.format(Math.abs((hd.v - hd.p) / hd.p) * 100)} %
@@ -227,16 +302,24 @@ export default function KarteWidget({ widget, result }) {
           <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
             <span style={{ width: 16, height: 10, borderRadius: 2, background: OHNE, border: "1px solid var(--border)" }} />kein Wert
           </span>
+          {bezogen && (
+            <span style={{ flexBasis: "100%", fontSize: 11 }}>
+              {BEZUG[bezug].einheit}. Quelle: Destatis, {bezug === "einwohner"
+                ? `Bevölkerungsstand 31.12.${struktur.stand?.einwohner || ""}`
+                : `verfügbares Einkommen der privaten Haushalte ${struktur.stand?.einkommen_mio || ""} (VGR der Länder)`} – Datenlizenz Deutschland 2.0
+            </span>
+          )}
         </div>
       </div>
 
       {/* Rangliste = Textansicht der Karte; Überfahren hebt das Gebiet hervor */}
       <div style={{ flex: "1 1 220px", minWidth: 200, display: "flex", flexDirection: "column", gap: 2, maxHeight: hoeheKarte + 60, overflow: "auto" }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-dim)", textTransform: "uppercase", letterSpacing: ".06em", padding: "2px 0 6px" }}>
-          Rangfolge
+          Rangfolge{bezogen ? ` · ${BEZUG[bezug].kurz}` : ""}
         </div>
         {rangliste.map((d) => {
-          const anteil = summe > 0 && d.v > 0 ? d.v / summe : 0;
+          const maxV = rangliste[0]?.v || 0;
+          const anteil = bezogen ? (maxV > 0 && d.v > 0 ? d.v / maxV : 0) : summe > 0 && d.v > 0 ? d.v / summe : 0;
           const aktiv = hover === d.key;
           return (
             <div key={d.key || d.name} onMouseEnter={() => { setHover(d.key); setTipp(null); }} onMouseLeave={() => setHover(null)}
@@ -244,7 +327,7 @@ export default function KarteWidget({ widget, result }) {
                 background: aktiv ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
                 <span style={{ color: "var(--text-main)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
-                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-bright)", whiteSpace: "nowrap" }}>{kurz(d.v, einheit)}</span>
+                <span style={{ fontFamily: "var(--font-mono)", color: "var(--text-bright)", whiteSpace: "nowrap" }}>{kurzW(d.v)}</span>
               </div>
               <div style={{ height: 3, marginTop: 4, borderRadius: 2, background: "var(--bg-elevated)" }}>
                 <div style={{ height: 3, width: `${Math.max(anteil > 0 ? 1.5 : 0, anteil * 100)}%`, borderRadius: 2, background: "var(--accent)" }} />
@@ -254,7 +337,7 @@ export default function KarteWidget({ widget, result }) {
         })}
         {nichtAufKarte.length > 0 && (
           <p style={{ margin: "8px 0 0", fontSize: 11.5, color: "var(--text-dim)", lineHeight: 1.45 }}>
-            Nicht auf der Karte: {nichtAufKarte.map((d) => `${d.name} (${kurz(d.v, einheit)})`).join(", ")}
+            Nicht auf der Karte: {nichtAufKarte.map((d) => `${d.name} (${kurzW(d.v)})`).join(", ")}
           </p>
         )}
       </div>
