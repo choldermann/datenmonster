@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.26",
+  "version": "2.27",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -11145,7 +11145,11 @@
                     "title": "Positionen der Rechnung"
                   }
                 ]
-              }
+              },
+              "preisbereinigt": {
+                "spalte": "Umsatz"
+              },
+              "info": "Die gestrichelte Linie zeigt den Umsatz preisbereinigt: geteilt durch den Preisindex der gewählten Branche (Destatis, 2021 = 100), umgerechnet auf die Preise des letzten verfügbaren Monats. Liegt sie flacher als der Umsatz, kommt das Wachstum aus Preiserhöhungen, nicht aus mehr verkaufter Ware. Die Branche wird je Mandant einmal über „Preisbereinigung“ gewählt."
             }
           },
           {

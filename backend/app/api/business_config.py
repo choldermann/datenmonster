@@ -391,3 +391,50 @@ def delete_ereignis(eid: str, project_id: Optional[int] = None, db: Session = De
     if not cfg_service.reset_value(project_id, db, "ereignis", eid, mandant_id):
         raise HTTPException(404, "Ereignis nicht gefunden")
     return {"ok": True}
+
+
+# ── Preisindex für die Preisbereinigung: welche Branche gehört zu diesem Betrieb ──
+# Ein Wert je Mandant (streng, wie Ereignisse): der Großhändler für Reinigungsmittel und der
+# Shop desselben Projekts haben verschiedene Preisentwicklungen. Die Liste der Indizes kommt
+# vom Datendienst (/api/umfeld/preise/katalog), hier steht nur die Auswahl.
+
+class PreisindexIn(BaseModel):
+    project_id: Optional[int] = None
+    key: str            # preise_grosshandel | preise_verbraucher
+    region: str         # WZ08-… bzw. Deutschland
+    label: str = ""
+
+
+@router.get("/preisindex")
+def get_preisindex(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "preisindex", mandant_id, strikt=True)
+    wahl = dict(zeilen[0].value or {}) if zeilen else None
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db), "auswahl": wahl}
+
+
+@router.put("/preisindex")
+def set_preisindex(body: PreisindexIn, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    import re
+    if body.key not in ("preise_grosshandel", "preise_verbraucher"):
+        raise HTTPException(400, "Unbekannter Preisindex")
+    if not (body.region == "Deutschland" or re.fullmatch(r"WZ08-\d{2,5}", body.region or "")):
+        raise HTTPException(400, "Unbekannte Branche")
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    wert = {"key": body.key, "region": body.region, "label": (body.label or "")[:160], "von": user.username}
+    cfg_service.set_value(body.project_id, db, "preisindex", "auswahl", wert, mandant_id)
+    return {"auswahl": wert}
+
+
+@router.delete("/preisindex")
+def delete_preisindex(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                      user: User = Depends(get_current_user)):
+    require_editor(project_id, user, db)
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    return {"ok": cfg_service.reset_value(project_id, db, "preisindex", "auswahl", mandant_id)}

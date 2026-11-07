@@ -1,4 +1,4 @@
-"""Umfelddaten (Wetter, Atemwegsinfekte) vom monstersuite-Datendienst durchreichen.
+"""Umfelddaten (Wetter, Atemwegsinfekte, Preisindizes) vom monstersuite-Datendienst durchreichen.
 
 Die Installation schickt nur Lizenz, Größen, Regionen und Zeitraum – keine Kundendaten.
 Antworten werden im Prozess 6 Stunden gehalten: die Quellen ändern sich höchstens täglich
@@ -43,8 +43,18 @@ def _fragen(db: Session, pfad: str, extra: dict) -> dict:
             msg = None
         raise HTTPException(502, msg or f"Datendienst antwortet mit {r.status_code}")
     daten = r.json()
-    _CACHE[schluessel] = (time.time(), daten)
+    # Antworten mit Hinweis („wird gerade geladen“, „letzter Abruf fehlgeschlagen“) nicht 6 h festhalten,
+    # sonst bliebe ein Cockpit den halben Tag leer, obwohl die Daten eine Minute später da sind.
+    vorlaeufig = bool(daten.get("hinweis")) or any((x or {}).get("hinweis") for x in daten.get("reihen") or [])
+    if not vorlaeufig:
+        _CACHE[schluessel] = (time.time(), daten)
     return daten
+
+
+@router.get("/preise/katalog")
+def preise_katalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Preisindizes (Destatis) für die Preisbereinigung: Großhandel je Branche, Verbraucherpreise."""
+    return _fragen(db, "preise/katalog", {})
 
 
 @router.get("/katalog")

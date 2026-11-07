@@ -87,5 +87,22 @@ pruefe("ohne Titel", fehler_bei(lambda: bc.add_ereignis(bc.EreignisIn(project_id
 pruefe("kaputtes Datum", (fehler_bei(lambda: bc.add_ereignis(bc.EreignisIn(project_id=1, datum="morgen", titel="x"), db, u))
                          or "").startswith("Ungültiges Datum"))
 
+print("Preisindex je Mandant")
+pruefe("anfangs keine Auswahl", bc.get_preisindex(1, db, u)["auswahl"] is None)
+bc.set_preisindex(bc.PreisindexIn(project_id=1, key="preise_grosshandel", region="WZ08-46442", label="Reinigungsmittel"), db, u)
+pruefe("gespeichert", bc.get_preisindex(1, db, u)["auswahl"]["region"] == "WZ08-46442")
+bc.set_preisindex(bc.PreisindexIn(project_id=1, key="preise_verbraucher", region="Deutschland"), db, u)
+pruefe("überschrieben, nicht doppelt", bc.get_preisindex(1, db, u)["auswahl"]["key"] == "preise_verbraucher"
+       and db.query(BusinessConfig).filter(BusinessConfig.scope == "preisindex").count() == 1)
+MANDANT["id"] = 5
+pruefe("anderer Mandant: eigene (keine) Auswahl", bc.get_preisindex(1, db, u)["auswahl"] is None)
+MANDANT["id"] = 7
+pruefe("unbekannter Index abgelehnt", fehler_bei(lambda: bc.set_preisindex(
+    bc.PreisindexIn(project_id=1, key="ifo", region="Deutschland"), db, u)) == "Unbekannter Preisindex")
+pruefe("unsinnige Branche abgelehnt", fehler_bei(lambda: bc.set_preisindex(
+    bc.PreisindexIn(project_id=1, key="preise_grosshandel", region="x; DROP"), db, u)) == "Unbekannte Branche")
+bc.delete_preisindex(1, db, u)
+pruefe("zurückgesetzt", bc.get_preisindex(1, db, u)["auswahl"] is None)
+
 print("\n" + (f"{len(FEHLER)} Fehler: {', '.join(FEHLER)}" if FEHLER else "Alle Prüfungen bestanden."))
 sys.exit(1 if FEHLER else 0)

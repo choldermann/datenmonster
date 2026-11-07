@@ -3,10 +3,11 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer, ReferenceLine, ReferenceArea,
 } from "recharts";
-import { Flag, Plus } from "lucide-react";
+import { Flag, Plus, TrendingDown } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { useEreignisse, aufAchse, ereignisZeitraum, EreignisDialog } from "../ereignisse";
 import { monatsAchse } from "./monat";
+import { usePreisindex, bereinigen, bezugText, PreisindexDialog } from "../preisbereinigung";
 
 const S = { textDim: "var(--text-dim)" };
 
@@ -16,6 +17,9 @@ const COLORS = ["var(--accent)", "var(--ok)", "#a78bfa", "var(--err)", "#60a5fa"
  * Liniendiagramm. Liegt auf der x-Achse eine Zeitachse (Monat „2026-03“ oder Datum), erscheinen
  * die eigenen Ereignisse automatisch: Tag = gestrichelte Linie, Zeitraum = leichte Fläche, im
  * Hinweisfenster mit Bezeichnung. config.ereignisse = false schaltet das für ein Diagramm ab.
+ *
+ * config.preisbereinigt = { spalte: "Umsatz" } legt bei einer Monatsachse eine gestrichelte Linie
+ * „Umsatz preisbereinigt“ dazu – geteilt durch den Preisindex der Branche des Mandanten (Destatis).
  */
 export default function LineWidget({ widget, result, onDrilldown, projectId = null }) {
   const { rows = [] } = result;
@@ -26,6 +30,9 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
   const mitEreignissen = cfg.ereignisse !== false;
   const ev = useEreignisse(projectId, mitEreignissen);
   const [dialog, setDialog] = useState(null);
+  const pbSpalte = cfg.preisbereinigt?.spalte || null;
+  const pi = usePreisindex(projectId, !!pbSpalte);
+  const [piDialog, setPiDialog] = useState(false);
 
   if (!x_column || !y_columns.length) return (
     <div style={{ padding: "32px 20px", textAlign: "center", color: S.textDim, fontSize: 12 }}>
@@ -39,6 +46,18 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
     return entry;
   });
 
+  // Preisbereinigung (nur bei Monatsachse und gewählter Branche)
+  const monatsachse = !!monatsAchse(data.map(d => d[x_column]));
+  const pbAktiv = !!pbSpalte && y_columns.includes(pbSpalte) && monatsachse;
+  const pbName = pbSpalte ? `${pbSpalte} preisbereinigt` : null;
+  let pbRef = null;
+  if (pbAktiv && pi.werte) {
+    const b = bereinigen(data.map(d => String(d[x_column]).slice(0, 7)), data.map(d => d[pbSpalte]), pi.werte);
+    pbRef = b.ref;
+    if (pbRef) data.forEach((d, i) => { d[pbName] = b.werte[i]; });
+  }
+  const linien = pbRef ? [...y_columns, pbName] : y_columns;
+
   // Ereignisse auf die Achse legen (null = keine Zeitachse → keine Markierungen, kein Knopf)
   const marken = mitEreignissen ? aufAchse(data.map(d => d[x_column]), ev.ereignisse) : null;
   const jeX = new Map();
@@ -50,6 +69,7 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
   // Monatsachse als „Feb 2024“ statt „2024-02“ (Werte bleiben roh – Drilldown und Ereignisse brauchen sie)
   const alsMonat = monatsAchse(data.map(d => d[x_column]));
   const darfErfassen = !!marken && !user?.is_portal_only && projectId != null;
+  const darfPreise = pbAktiv && !user?.is_portal_only && projectId != null;
   const tage = (marken || []).filter(m => m.x2 == null);
   const beschriften = tage.length <= 4;
 
@@ -85,8 +105,23 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
 
   return (
     <div style={{ padding: "8px 8px 16px" }}>
-      {(darfErfassen || (marken && marken.length > 0)) && (
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "0 12px 4px", fontSize: 11.5, color: S.textDim }}>
+      {(darfErfassen || (marken && marken.length > 0) || (pbAktiv && (pbRef || darfPreise))) && (
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "0 12px 4px", fontSize: 11.5, color: S.textDim, flexWrap: "wrap" }}>
+          {pbAktiv && pbRef && (
+            <span title={`${pi.auswahl?.label || ""}\n${pi.quelle || ""}\nBereinigt: ${pbSpalte} × Index ${bezugText(pbRef).replace("Preisstand ", "")} ÷ Index des Monats`}>
+              <TrendingDown size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />
+              preisbereinigt ({bezugText(pbRef)}){pi.auswahl?.label ? ` · ${pi.auswahl.label.replace(/^Großhandel: /, "")}` : ""}
+            </span>
+          )}
+          {pbAktiv && pi.fehler && <span style={{ color: "var(--err-soft, var(--err))" }}>Preisindex nicht verfügbar</span>}
+          {darfPreise && pi.auswahl !== undefined && (
+            <button onClick={() => setPiDialog(true)}
+              title="Branche wählen: die Preissteigerung wird aus dem Umsatz herausgerechnet (Destatis-Preisindex)"
+              style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, padding: "2px 8px", borderRadius: 5,
+                border: "1px solid var(--border)", background: "transparent", color: "var(--text-main)", cursor: "pointer" }}>
+              {pi.auswahl ? "Branche ändern" : <><TrendingDown size={11} /> Preisbereinigung</>}
+            </button>
+          )}
           {marken && marken.length > 0 && (
             <span title={marken.map(m => `${m.e.titel} (${ereignisZeitraum(m.e)})`).join("\n")}>
               <Flag size={11} style={{ verticalAlign: "-1px", marginRight: 3 }} />
@@ -120,14 +155,23 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
                 position: "insideTopLeft", fontSize: 10, fill: "var(--text-dim)", offset: 4 } : undefined} />
           ))}
           <Tooltip content={<HinweisMitEreignissen />} />
-          {y_columns.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
+          {linien.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {y_columns.map((col, i) => (
             <Line key={col} dataKey={col} stroke={COLORS[i % COLORS.length]}
               strokeWidth={2} type={curved ? "monotone" : "linear"}
               dot={{ r: 3, fill: COLORS[i % COLORS.length] }} activeDot={{ r: 5 }} />
           ))}
+          {pbRef && (() => {
+            const farbe = COLORS[y_columns.indexOf(pbSpalte) % COLORS.length];   // gehört zum Umsatz: gleiche Farbe, gestrichelt
+            return <Line key={pbName} dataKey={pbName} stroke={farbe} strokeWidth={2} strokeDasharray="5 4"
+              type={curved ? "monotone" : "linear"} dot={false} activeDot={{ r: 4 }} connectNulls />;
+          })()}
         </LineChart>
       </ResponsiveContainer>
+      {piDialog && (
+        <PreisindexDialog projectId={projectId} aktuell={pi.auswahl} mandantName={pi.mandantName}
+          onClose={() => setPiDialog(false)} />
+      )}
       {dialog && (
         <EreignisDialog projectId={projectId} vorgabe={dialog} kategorien={ev.kategorien}
           mandantName={ev.mandant_name} onClose={() => setDialog(null)} />
