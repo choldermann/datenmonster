@@ -27,6 +27,7 @@ import BaumWidget from "./widgets/BaumWidget";
 import KarteWidget from "./widgets/KarteWidget";
 import UmfeldWidget from "./widgets/UmfeldWidget";
 import AussenhandelWidget from "./widgets/AussenhandelWidget";
+import WaehrungenWidget from "./widgets/WaehrungenWidget";
 import BranchenvergleichWidget from "./widgets/BranchenvergleichWidget";
 import EreignisseWidget from "./widgets/EreignisseWidget";
 
@@ -109,6 +110,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     case "karte": return <KarteWidget widget={widget} result={result} />;
     case "umfeld": return <UmfeldWidget widget={widget} result={result} params={baseParams} />;
+    case "waehrungen": return <WaehrungenWidget widget={widget} result={result} params={baseParams} />;
     case "aussenhandel": return <AussenhandelWidget widget={widget} result={result} params={baseParams} />;
     case "branchenvergleich": return <BranchenvergleichWidget widget={widget} result={result} params={baseParams} projectId={projectId} />;
     case "baum": return <BaumWidget widget={widget} result={result} results={results} formId={formId} onTab={onTab} params={baseParams} />;
