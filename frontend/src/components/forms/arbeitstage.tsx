@@ -17,7 +17,8 @@
  *   halbe_tage: 24. und 31.12. zählen als halbe Arbeitstage.
  */
 import { useEffect, useState } from "react";
-import { X } from "lucide-react";
+import { CalendarDays, Settings2, X } from "lucide-react";
+import { useAuth } from "../../context/AuthContext";
 import api, { fehlerText } from "../../api/client";
 
 export const BUNDESLAENDER = ["Baden-Württemberg", "Bayern", "Berlin", "Brandenburg", "Bremen", "Hamburg", "Hessen",
@@ -230,4 +231,65 @@ export function ArbeitstageDialog({ projectId, aktuell, mandantName, onClose }) 
       </div>
     </div>
   );
+}
+
+/**
+ * Schalter „Arbeitstage“ für Diagramme mit Monatsachse (Linie, Balken).
+ * `spalten`: { Spalte: Jahresversatz } oder "*" (alle Serien, Versatz 0 – z. B. Pivot-Balken).
+ * Liefert Knopf, Dialog und Hinweiszeile fertig; `anwenden` bereinigt die Daten an Ort und Stelle.
+ */
+export function useArbeitstageSchalter({ widget, projectId, spalten, monatsachse }) {
+  const { user } = useAuth();
+  const stand = useArbeitstage(projectId, !!spalten);
+  const [an, setAn] = useState(() => !!spalten && schalterLesen(widget.id));
+  const [dialog, setDialog] = useState(false);
+  const moeglich = !!spalten && monatsachse && !!stand;
+  const aktiv = moeglich && an;
+  const versatzVon = (col) => (spalten === "*" ? 0 : spalten?.[col] != null ? Number(spalten[col]) || 0 : null);
+
+  const anwenden = (data, xCol, cols) => {
+    if (!aktiv) return;
+    for (const d of data) {
+      const mo = String(d[xCol]).slice(0, 7);
+      for (const col of cols) {
+        const v = versatzVon(col);
+        if (v != null) d[col] = bereinigt(mo, d[col], stand.e, v);
+      }
+    }
+  };
+  const name = (col) => (aktiv && versatzVon(col) != null ? `${col} (arbeitstagbereinigt)` : col);
+  const hinweis = (label) => {
+    if (!moeglich || !/^\d{4}-\d{2}/.test(String(label))) return null;
+    const mo = String(label).slice(0, 7);
+    const n = arbeitstage(mo, stand.e), u = ueblicheArbeitstage(Number(mo.slice(5, 7)), stand.e);
+    return (
+      <div style={{ marginTop: 4, color: "var(--text-dim)" }}>
+        {String(n).replace(".", ",")} Arbeitstage (üblich {u.toFixed(1).replace(".", ",")})
+      </div>
+    );
+  };
+  const knopf = moeglich ? (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <button onClick={() => { setAn(!an); schalterSchreiben(widget.id, !an); }} aria-pressed={an}
+        title={`Kalendereffekt herausrechnen: Wert × übliche ÷ tatsächliche Arbeitstage des Monats\n${einstellungText(stand.e)}`}
+        style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11.5, padding: "2px 8px", borderRadius: 5,
+          border: "1px solid var(--border)", cursor: "pointer",
+          background: an ? "color-mix(in srgb, var(--accent) 18%, transparent)" : "transparent",
+          color: an ? "var(--text-bright)" : "var(--text-main)" }}>
+        <CalendarDays size={11} /> Arbeitstage{an ? " bereinigt" : ""}
+      </button>
+      {!user?.is_portal_only && projectId != null && (
+        <button onClick={() => setDialog(true)} aria-label="Arbeitstage einstellen"
+          title={`Arbeitstage einstellen (${einstellungText(stand.gewaehlt ? stand.e : null)})`}
+          style={{ display: "inline-flex", padding: 2, border: "none", background: "transparent", color: "var(--text-dim)", cursor: "pointer" }}>
+          <Settings2 size={12} />
+        </button>
+      )}
+    </span>
+  ) : null;
+  const dialogEl = dialog && stand ? (
+    <ArbeitstageDialog projectId={projectId} aktuell={stand.gewaehlt ? stand.e : null} mandantName={stand.mandantName}
+      onClose={() => setDialog(false)} />
+  ) : null;
+  return { moeglich, aktiv, anwenden, name, hinweis, knopf, dialog: dialogEl };
 }

@@ -4,7 +4,7 @@
   "template_name": "JTL – Versand-Cockpit",
   "description": "Versandsicht auf die JTL-Wawi: Sendungsaufkommen je Versandart, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und der Rückstand nicht versendeter Lieferscheine.",
   "category": "jtl-reporting",
-  "version": "1.5",
+  "version": "1.6",
   "author": "Datenmonster",
   "hinweise": [
     "Der Versanddienstleister kommt aus dbo.tVersandArt.cName – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt und ist durchgängig leer.",
@@ -2053,7 +2053,14 @@
                     "title": "Positionen des Auftrags"
                   }
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Sendungen": 0,
+                  "Vorjahr": -1
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {
@@ -2474,7 +2481,9 @@
           "id": "versand"
         }
       },
-      "portal_config": {"icon": "🚚"}
+      "portal_config": {
+        "icon": "🚚"
+      }
     }
   ],
   "knowledge": [

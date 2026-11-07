@@ -98,7 +98,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
   switch (widget.type) {
     case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} onAiAction={aiAct} />;
     case "kpi":   return <KpiWidget   widget={widget} result={result} />;
-    case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} />;
+    case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} projectId={projectId} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} projectId={projectId} />;
     case "pie":   return <PieWidget   widget={widget} result={result} onDrilldown={drill} />;
     case "timeline": return <TimelineWidget widget={widget} result={result} />;

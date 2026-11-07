@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.29",
+  "version": "2.30",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -12173,7 +12173,13 @@
                   "Schluessel",
                   "sort"
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Wert": 0
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {

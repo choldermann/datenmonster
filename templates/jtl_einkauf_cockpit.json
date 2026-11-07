@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
   "category": "jtl-reporting",
-  "version": "1.6",
+  "version": "1.7",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -2881,7 +2881,14 @@
                     "title": "Positionen der Bestellung"
                   }
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Bestellvolumen": 0,
+                  "Vorjahr": -1
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {
@@ -3399,7 +3406,9 @@
           "id": "einkauf"
         }
       },
-      "portal_config": {"icon": "🛒"}
+      "portal_config": {
+        "icon": "🛒"
+      }
     }
   ],
   "knowledge": [

@@ -3,6 +3,7 @@ import {
   Legend, ResponsiveContainer,
 } from "recharts";
 import { monatsAchse } from "./monat";
+import { useArbeitstageSchalter } from "../arbeitstage";
 
 const S = { textDim: "var(--text-dim)", border: "var(--border)" };
 
@@ -14,11 +15,17 @@ const COLORS = ["var(--accent)", "var(--ok)", "#a78bfa", "var(--err)", "#60a5fa"
 const NF = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const fmtNum = (v) => (v == null || v === "" || isNaN(Number(v))) ? v : NF.format(Number(v));
 
-export default function BarWidget({ widget, result, onDrilldown }) {
+/**
+ * Balkendiagramm. config.arbeitstage = { spalten: { Wert: 0 } } oder { spalten: "*" } (alle Serien,
+ * z. B. im Serien-Pivot) bietet bei einer Monatsachse den Schalter „Arbeitstage“ (siehe arbeitstage.tsx).
+ */
+export default function BarWidget({ widget, result, onDrilldown, projectId = null }) {
   const { rows = [] } = result;
   const cfg = widget.config || {};
   const { x_column, y_columns = [], series_column, value_column } = cfg;
   const canDrill = !!onDrilldown && !!x_column;
+  const at = useArbeitstageSchalter({ widget, projectId, spalten: cfg.arbeitstage?.spalten || null,
+    monatsachse: !!monatsAchse(rows.map(r => r[x_column])) });
 
   // Zwei Modi:
   //  a) klassisch: feste Wert-Spalten (y_columns)
@@ -53,6 +60,7 @@ export default function BarWidget({ widget, result, onDrilldown }) {
     });
   }
 
+  at.anwenden(data, x_column, seriesKeys);
   const stacked = pivot ? (cfg.stacked !== false) : !!cfg.stacked;
 
   if (!x_column || !seriesKeys.length) return (
@@ -65,7 +73,10 @@ export default function BarWidget({ widget, result, onDrilldown }) {
   const alsMonat = monatsAchse(data.map(d => d[x_column]));
 
   return (
-    <div style={{ padding: "16px 8px" }}>
+    <div style={{ padding: at.moeglich ? "8px 8px 16px" : "16px 8px" }}>
+      {at.moeglich && (
+        <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 12px 4px" }}>{at.knopf}</div>
+      )}
       <ResponsiveContainer width="100%" height={280}>
         <BarChart data={data} margin={{ top: 4, right: 20, bottom: 4, left: 0 }}
           style={canDrill ? { cursor: "pointer" } : undefined}
@@ -79,15 +90,18 @@ export default function BarWidget({ widget, result, onDrilldown }) {
               borderRadius: 6, fontSize: 11 }}
             labelStyle={{ color: "var(--text-bright)", fontWeight: 600 }}
             formatter={(v, name) => [fmtNum(v), name]}
-            labelFormatter={alsMonat || undefined}
+            labelFormatter={(l) => at.moeglich
+              ? <>{alsMonat ? alsMonat(l) : l}{at.hinweis(l)}</>
+              : (alsMonat ? alsMonat(l) : l)}
           />
           {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {seriesKeys.map((col, i) => (
-            <Bar key={col} dataKey={col} name={col} stackId={stacked ? "a" : undefined}
+            <Bar key={col} dataKey={col} name={at.name(col)} stackId={stacked ? "a" : undefined}
               fill={COLORS[i % COLORS.length]} radius={stacked ? 0 : [3, 3, 0, 0]} />
           ))}
         </BarChart>
       </ResponsiveContainer>
+      {at.dialog}
     </div>
   );
 }

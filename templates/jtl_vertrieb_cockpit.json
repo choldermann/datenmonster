@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.16",
+  "version": "1.17",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -5046,7 +5046,14 @@
                     "title": "Positionen des Vorgangs"
                   }
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Auftragseingang": 0,
+                  "Vorjahr": -1
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {
@@ -5458,7 +5465,14 @@
                     "title": "Positionen des Vorgangs"
                   }
                 ]
-              }
+              },
+              "arbeitstage": {
+                "spalten": {
+                  "Angebote": 0,
+                  "Gewonnen": 0
+                }
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {

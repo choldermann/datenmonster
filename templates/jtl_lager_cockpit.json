@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.14",
+  "version": "1.15",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -5928,7 +5928,9 @@
   "forms": [
     {
       "name": "Lager-Cockpit",
-      "portal_config": {"icon": "🏭"},
+      "portal_config": {
+        "icon": "🏭"
+      },
       "schema": {
         "fields": [
           {
@@ -7615,7 +7617,11 @@
                 "Fremdkunden",
                 "Verbundene",
                 "ohne Kundenbezug"
-              ]
+              ],
+              "arbeitstage": {
+                "spalten": "*"
+              },
+              "info": "Mit dem Schalter „Arbeitstage“ wird der Kalendereffekt herausgerechnet: jeder Monat wird auf seine übliche Zahl an Arbeitstagen umgerechnet (Feiertage des eingestellten Bundeslands)."
             }
           },
           {
