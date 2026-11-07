@@ -1,6 +1,7 @@
 /**
  * Umsatz & Umfeld: Monatsumsatz neben einer externen Größe (Wetter vom DWD, Atemwegsinfekte
- * aus RKI-GrippeWeb), je Deutschland oder Bundesland, mit Zusammenhangs- und Versatzanalyse.
+ * aus RKI-GrippeWeb, Übernachtungen und Gastgewerbe-Umsatz), je Deutschland oder Bundesland,
+ * mit Zusammenhangs- und Versatzanalyse. Größen mit nurDE gibt es nur für Deutschland insgesamt.
  *
  * Bewusst zwei Diagramme mit gemeinsamer Monatsachse statt einer zweiten y-Achse – zwei
  * Skalen in einem Bild erzeugen Scheinzusammenhänge. Die Umfelddaten kommen über
@@ -12,7 +13,7 @@
  *
  * Konfiguration (widget.config):
  *   spalten: { monat: "Monat", region: "Bundesland", wert: "Umsatz" }
- *   groesse: "atemwege" (Vorgabe) | "grippe" | "temperatur" | "niederschlag" | "sonne"
+ *   groesse: "atemwege" (Vorgabe) | "grippe" | "temperatur" | "niederschlag" | "sonne" | "uebernachtungen" | "umsatz_gastgewerbe"
  *   region:  "Deutschland" (Vorgabe) | Bundesland
  *   warengruppen: { liste: { mapping_id }, umsatz: { mapping_id } } – optional. Die Liste liefert
  *     die Warengruppen (Spalte „Warengruppe“, größte zuerst); bei Auswahl einer Gruppe lädt die
@@ -30,6 +31,8 @@ const GROESSEN = [
   { key: "temperatur", label: "Temperatur (Monatsmittel)" },
   { key: "niederschlag", label: "Niederschlag (Monatssumme)" },
   { key: "sonne", label: "Sonnenscheindauer (Monatssumme)" },
+  { key: "uebernachtungen", label: "Übernachtungen (Hotels, Pensionen …)" },
+  { key: "umsatz_gastgewerbe", label: "Umsatz im Gastgewerbe (Index)", nurDE: true },
 ];
 const LAENDER = ["Baden-Württemberg", "Bayern", "Berlin", "Brandenburg", "Bremen", "Hamburg", "Hessen", "Mecklenburg-Vorpommern",
   "Niedersachsen", "Nordrhein-Westfalen", "Rheinland-Pfalz", "Saarland", "Sachsen", "Sachsen-Anhalt", "Schleswig-Holstein", "Thüringen"];
@@ -147,18 +150,20 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
   }, [result, region, wg, wgZeilen]);
   const von = umsatz[0]?.[0], bis = umsatz[umsatz.length - 1]?.[0];
 
+  const nurDE = !!GROESSEN.find((g) => g.key === groesse)?.nurDE;
+  const umfeldRegion = nurDE ? "Deutschland" : region;
   useEffect(() => {
     if (!von || !bis) return;
     let lebt = true;
     setLaedt(true); setFehler(null);
-    api.post("/api/umfeld/reihen", { groessen: [groesse], regionen: [region], von, bis })
+    api.post("/api/umfeld/reihen", { groessen: [groesse], regionen: [umfeldRegion], von, bis })
       .then(({ data }) => lebt && setUmfeld(data.reihen?.[0] || null))
       .catch((e) => lebt && setFehler(fehlerText(e)))
       .finally(() => lebt && setLaedt(false));
     return () => { lebt = false; };
-  }, [groesse, region, von, bis]);
+  }, [groesse, umfeldRegion, von, bis]);
 
-  const werteUmfeld = umfeld?.werte?.[region] || {};
+  const werteUmfeld = umfeld?.werte?.[umfeldRegion] || {};
   const daten = umsatz.map(([m, v]) => ({ Monat: m, Umsatz: Math.round(v), Umfeld: werteUmfeld[m] ?? null }));
   // Angezeigt wird der gewählte Zeitraum; ist er kürzer als 3 Monate, die letzten 12 als Verlauf.
   const selVon = String(params?.von || "").slice(0, 7), selBis = String(params?.bis || "").slice(0, 7);
@@ -177,7 +182,8 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
   const kurzG = gLabel.replace(/ \(.*\)$/, "");
   const einheit = umfeld?.einheit || "";
   const fmtU = (v) => v == null ? "–" : `${nf0.format(v)} €`;
-  const fmtF = (v) => v == null ? "–" : `${einheit === "°C" ? nf1.format(v) : nf0.format(v)} ${einheit}`;
+  const fmtF = (v) => v == null ? "–" : einheit === "2021 = 100" ? `${nf1.format(v)} (2021 = 100)`
+    : `${einheit === "°C" ? nf1.format(v) : v >= 1e6 ? `${nf1.format(v / 1e6)} Mio.` : nf0.format(v)} ${einheit}`;
   const satz = (k, bereinigtText) => {
     if (!k || k.r == null) return null;
     const richtung = k.r >= 0 ? "mehr" : "weniger";
@@ -253,7 +259,7 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
           <LineChart data={anzeige} syncId={`umfeld-${widget.id}`} margin={{ top: 6, right: 16, bottom: 4, left: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(127,127,127,0.12)" />
             <XAxis dataKey="Monat" tick={achse} minTickGap={18} tickFormatter={monatText} />
-            <YAxis tick={achse} width={60} tickFormatter={(v) => einheit === "°C" ? nf1.format(v) : nf0.format(v)} />
+            <YAxis tick={achse} width={60} tickFormatter={(v) => einheit === "°C" ? nf1.format(v) : v >= 1e6 ? `${nf1.format(v / 1e6)} Mio` : nf0.format(v)} />
             <Tooltip content={hinweis} />
             <Line dataKey="Umfeld" stroke={FARBE_UMFELD} strokeWidth={2} dot={false} activeDot={{ r: 4 }} connectNulls isAnimationActive={false} />
           </LineChart>
@@ -289,8 +295,9 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
       {umfeld && (
         <span style={{ fontSize: 11.5, color: "var(--text-dim)" }}>
           Quelle: {umfeld.quelle}{umfeld.stand ? ` · Stand ${/^\d{4}-W\d{2}$/.test(umfeld.stand) ? `KW ${umfeld.stand.slice(6)}/${umfeld.stand.slice(0, 4)}` : monatText(umfeld.stand)}` : ""}
-          {region !== "Deutschland" && groesse !== "temperatur" && groesse !== "niederschlag" && groesse !== "sonne"
+          {region !== "Deutschland" && (groesse === "atemwege" || groesse === "grippe")
             ? " · Bundesländer erben den Wert ihrer GrippeWeb-Großregion" : ""}
+          {region !== "Deutschland" && nurDE ? ` · ${gLabel.replace(/ \(.*\)$/, "")} gibt es nur für Deutschland insgesamt – verglichen wird mit Ihrem Umsatz in ${region}` : ""}
           {umfeld.hinweis ? ` · ${umfeld.hinweis}` : ""}
         </span>
       )}
