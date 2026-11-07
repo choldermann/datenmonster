@@ -100,7 +100,7 @@ export default function FormPreview({ schema, formId, onClose }) {
           {/* Widget-Ergebnisse */}
           {results && widgets.length > 0 && (
             <div style={{ marginTop: 20 }}>
-              <WidgetRenderer widgets={widgets} results={results} allowDownload={false} />
+              <WidgetRenderer widgets={widgets} results={results} allowDownload={false} baseParams={params} />
             </div>
           )}
 

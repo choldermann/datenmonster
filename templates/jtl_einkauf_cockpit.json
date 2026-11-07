@@ -2,16 +2,17 @@
   "format_version": "1.0",
   "template_id": "jtl_einkauf_cockpit",
   "template_name": "JTL – Einkaufs-Cockpit",
-  "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung.",
+  "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung, Einkaufspreise je Warennummer gegen die Einfuhrpreise Deutschlands.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
     "„Offen\" = Bestellung mit Restmenge (fAnzahlOffen > 0), weder gelöscht noch manuell abgeschlossen. Die Reiter „Offene Bestellungen\" und „Lieferantenstamm\" sind Momentaufnahmen und ignorieren den Zeitraumfilter.",
     "Termintreue vergleicht den Soll-Liefertermin der Bestellung mit dem tatsächlichen Wareneingang (dbo.tWarenLagerEingang). Ausgewertet werden nur Bestellungen mit gesetztem Liefertermin.",
     "Sehr alte offene Bestellungen verzerren den Ø-Verzug – in der Praxis meist Karteileichen, die in der Wawi manuell abgeschlossen werden sollten.",
-    "Der Lieferanten-Filter nutzt die Lookup-Art „lieferant\" (aktive Lieferanten aus dbo.tlieferant)."
+    "Der Lieferanten-Filter nutzt die Lookup-Art „lieferant\" (aktive Lieferanten aus dbo.tlieferant).",
+    "„Markt & Außenhandel“ braucht die achtstellige Warennummer (tArtikel.cTaric) und das Artikelgewicht; die Marktdaten (Eurostat Comext) kommen über den monstersuite-Datendienst und laufen etwa zwei Monate hinterher."
   ],
   "config_required": [
     {
@@ -2605,6 +2606,125 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ek_warennummern",
+      "name": "Einkauf – Einkauf je Warennummer (Außenhandel)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Warennummer",
+            "Hauptartikel",
+            "Artikel",
+            "Einkaufswert",
+            "GewichtKg",
+            "EKjeKg",
+            "Lieferland"
+          ],
+          "sql": "WITH pos AS (\n    SELECT A.cTaric, P.kArtikel, P.fMenge, P.fEKNetto, A.fGewicht, L.cISO\n    FROM dbo.tLieferantenBestellung B\n    JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellung = B.kLieferantenBestellung\n    JOIN dbo.tArtikel A ON A.kArtikel = P.kArtikel\n    LEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\n    WHERE ISNULL(B.nDeleted, 0) = 0\n      AND B.dErstellt >= :von AND B.dErstellt < DATEADD(DAY, 1, :bis)\n      AND (:lieferant_empty = 1 OR B.kLieferant IN (:lieferant))\n      AND LEN(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', '')) = 8\n), kn AS (\n    SELECT REPLACE(REPLACE(cTaric, ' ', ''), '.', '') AS kn, kArtikel, fMenge, fEKNetto, fGewicht, cISO FROM pos\n), art AS (\n    SELECT kn, kArtikel, SUM(fMenge * fEKNetto) AS wert,\n        ROW_NUMBER() OVER (PARTITION BY kn ORDER BY SUM(fMenge * fEKNetto) DESC) AS rn\n    FROM kn GROUP BY kn, kArtikel\n), land AS (\n    SELECT kn, cISO, ROW_NUMBER() OVER (PARTITION BY kn ORDER BY SUM(fMenge * fEKNetto) DESC) AS rn\n    FROM kn WHERE ISNULL(cISO, '') <> '' GROUP BY kn, cISO\n), agg AS (\n    SELECT kn,\n        COUNT(DISTINCT kArtikel) AS Artikel,\n        SUM(fMenge * fEKNetto) AS Einkaufswert,\n        SUM(CASE WHEN fGewicht > 0 THEN fMenge * fGewicht END) AS GewichtKg,\n        SUM(CASE WHEN fGewicht > 0 THEN fMenge * fEKNetto END) AS WertMitGewicht\n    FROM kn GROUP BY kn\n)\nSELECT TOP 30\n    agg.kn AS Warennummer,\n    ISNULL(AB.cName, '') AS Hauptartikel,\n    agg.Artikel,\n    CAST(agg.Einkaufswert AS DECIMAL(18,2)) AS Einkaufswert,\n    CAST(agg.GewichtKg AS DECIMAL(18,1)) AS GewichtKg,\n    CAST(CASE WHEN agg.GewichtKg > 0 THEN agg.WertMitGewicht / agg.GewichtKg END AS DECIMAL(18,4)) AS EKjeKg,\n    ISNULL(land.cISO, '') AS Lieferland\nFROM agg\nLEFT JOIN art ON art.kn = agg.kn AND art.rn = 1\nLEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = art.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\nLEFT JOIN land ON land.kn = agg.kn AND land.rn = 1\nWHERE agg.Einkaufswert > 0\nORDER BY agg.Einkaufswert DESC"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Einkauf – Einkauf je Warennummer (Außenhandel)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Warennummer",
+              "target_field": "Warennummer",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Warennummer"
+              }
+            },
+            {
+              "source_field": "Hauptartikel",
+              "target_field": "Hauptartikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Hauptartikel"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            },
+            {
+              "source_field": "GewichtKg",
+              "target_field": "GewichtKg",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "GewichtKg"
+              }
+            },
+            {
+              "source_field": "EKjeKg",
+              "target_field": "EKjeKg",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EKjeKg"
+              }
+            },
+            {
+              "source_field": "Lieferland",
+              "target_field": "Lieferland",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferland"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -2744,6 +2864,13 @@
             "mapping_id": "m_ek_preise",
             "pipeline_id": null,
             "label": "EK-Preisentwicklung"
+          },
+          {
+            "id": "act_ek_aussenhandel",
+            "type": "run_mapping",
+            "mapping_id": "m_ek_warennummern",
+            "pipeline_id": null,
+            "label": "Einkauf je Warennummer"
           }
         ],
         "widgets": [
@@ -3347,6 +3474,18 @@
                 "title": "Bestellhistorie des Artikels"
               }
             }
+          },
+          {
+            "id": "w_ek_aussenhandel",
+            "type": "aussenhandel",
+            "label": "Ihr Einkauf gegen den Einfuhrpreis Deutschlands",
+            "action_id": "act_ek_aussenhandel",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "richtung": "einfuhr",
+              "info": "Vergleicht je Warennummer (Zolltarifnummer am Artikel in JTL) Ihren Einkaufspreis je kg mit dem durchschnittlichen Wert je kg aller Einfuhren nach Deutschland unter derselben Nummer (Eurostat Comext). Dazu das Einfuhrvolumen als Marktgröße und per Klick der Monatsverlauf und die Herkunftsländer mit ihrem Preis je kg. Übermittelt werden nur die Warennummern, keine Mengen, Preise oder Lieferanten."
+            }
           }
         ],
         "result_tabs": [
@@ -3392,6 +3531,13 @@
             "action_ids": [
               "act_ek_artikel",
               "act_ek_preise"
+            ]
+          },
+          {
+            "id": "tab_ek_markt",
+            "label": "Markt & Außenhandel",
+            "action_ids": [
+              "act_ek_aussenhandel"
             ]
           }
         ],

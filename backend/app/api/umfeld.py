@@ -1,6 +1,7 @@
-"""Umfelddaten (Wetter, Atemwegsinfekte, Preisindizes, Handelsumsatz) vom monstersuite-Datendienst durchreichen.
+"""Umfelddaten (Wetter, Atemwegsinfekte, Preisindizes, Handelsumsatz, Außenhandel) vom monstersuite-Datendienst durchreichen.
 
 Die Installation schickt nur Lizenz, Größen, Regionen und Zeitraum – keine Kundendaten.
+Beim Außenhandel gehen zusätzlich die Warennummern (KN8) mit, nie Mengen, Preise oder Lieferanten.
 Antworten werden im Prozess 6 Stunden gehalten: die Quellen ändern sich höchstens täglich
 (DWD monatlich, RKI wöchentlich), und ein Cockpit fragt bei jedem Öffnen.
 """
@@ -45,7 +46,8 @@ def _fragen(db: Session, pfad: str, extra: dict) -> dict:
     daten = r.json()
     # Antworten mit Hinweis („wird gerade geladen“, „letzter Abruf fehlgeschlagen“) nicht 6 h festhalten,
     # sonst bliebe ein Cockpit den halben Tag leer, obwohl die Daten eine Minute später da sind.
-    vorlaeufig = bool(daten.get("hinweis")) or any((x or {}).get("hinweis") for x in daten.get("reihen") or [])
+    vorlaeufig = bool(daten.get("hinweis")) or any((x or {}).get("hinweis") for x in
+                                                   (daten.get("reihen") or []) + (daten.get("warennummern") or []))
     if not vorlaeufig:
         _CACHE[schluessel] = (time.time(), daten)
     return daten
@@ -81,3 +83,18 @@ def reihen(body: ReihenIn, db: Session = Depends(get_db), user: User = Depends(g
         raise HTTPException(400, "Zu viele oder keine Größen/Regionen")
     return _fragen(db, "reihen", {"groessen": sorted(set(body.groessen)), "regionen": sorted(set(body.regionen)),
                                   "von": body.von or "", "bis": body.bis or ""})
+
+
+class AussenhandelIn(BaseModel):
+    warennummern: List[str]
+    von: Optional[str] = ""
+    bis: Optional[str] = ""
+
+
+@router.post("/aussenhandel")
+def aussenhandel(body: AussenhandelIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Ein- und Ausfuhr Deutschlands je Warennummer (Eurostat Comext): Monate Welt, Länder im Zeitraum."""
+    codes = sorted({"".join(ch for ch in c if ch.isdigit()) for c in body.warennummern} - {""})
+    if not codes or len(codes) > 15 or any(len(c) != 8 for c in codes):
+        raise HTTPException(400, "1 bis 15 achtstellige Warennummern angeben")
+    return _fragen(db, "aussenhandel", {"warennummern": codes, "von": body.von or "", "bis": body.bis or ""})
