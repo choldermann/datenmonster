@@ -71,6 +71,12 @@ def insolvenzen_katalog(db: Session = Depends(get_db), user: User = Depends(get_
     return _fragen(db, "insolvenzen/katalog", {})
 
 
+@router.get("/erzeugerpreise/katalog")
+def erzeugerpreise_katalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Güterklassen des Erzeugerpreisindex (Destatis, GP2019) für die Auswahl im Einkauf."""
+    return _fragen(db, "erzeugerpreise/katalog", {})
+
+
 @router.get("/strukturdaten")
 def strukturdaten(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Einwohner und verfügbares Einkommen je Bundesland (Destatis) – Bezugsgrößen für die Deutschlandkarte."""

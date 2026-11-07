@@ -17,7 +17,7 @@ import api, { fehlerText } from "../../../api/client";
 import { useAuth } from "../../../context/AuthContext";
 import { monatText } from "./monat";
 
-const zahl = (x) => { const n = typeof x === "number" ? x : Number(String(x ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+const zahl = (x) => { if (x == null || x === "") return null; const n = typeof x === "number" ? x : Number(String(x).replace(",", ".")); return Number.isFinite(n) ? n : null; };
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nfP = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0, signDisplay: "exceptZero" });

@@ -18,7 +18,7 @@ import { monatText } from "./monat";
 
 const MAX_CODES = 15;
 const FARBE_MARKT = "#a78bfa";
-const zahl = (x) => { const n = typeof x === "number" ? x : Number(String(x ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+const zahl = (x) => { if (x == null || x === "") return null; const n = typeof x === "number" ? x : Number(String(x).replace(",", ".")); return Number.isFinite(n) ? n : null; };
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nfP = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0, signDisplay: "exceptZero" });
@@ -169,7 +169,7 @@ export default function AussenhandelWidget({ widget, result, params = {} }) {
         </table>
       </div>
       <span style={{ fontSize: 12, color: "var(--text-dim)", lineHeight: 1.5 }}>
-        Ihr Preis = Einkaufswert der Bestellungen je kg Artikelgewicht aus JTL (Artikel ohne Gewicht zählen beim Preis nicht mit).
+        Ihr Preis = Einkaufswert der Bestellungen je kg Artikelgewicht aus JTL (Artikel ohne Gewicht zählen beim Preis nicht mit).{" "}
         {wort}preis = durchschnittlicher Wert je kg aller {wort === "Einfuhr" ? "Einfuhren nach" : "Ausfuhren aus"} Deutschland
         unter dieser Warennummer im selben Zeitraum – ein Richtwert: dort steckt die ganze Bandbreite der Qualitäten,
         und das JTL-Gewicht enthält oft die Verpackung. Rot: Sie zahlen mehr als 5 % über dem Schnitt, grün: mehr als 5 % darunter.

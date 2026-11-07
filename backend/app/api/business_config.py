@@ -520,6 +520,43 @@ def set_kundenbranchen(body: KundenbranchenIn, db: Session = Depends(get_db), us
     return {"auswahl": wert}
 
 
+# ── Erzeugerpreise im Einkauf ──
+# Güterklassen (GP2019) des Erzeugerpreisindex, die zu den eingekauften Waren passen. Je Mandant streng.
+
+class ErzeugerpreiseIn(BaseModel):
+    project_id: Optional[int] = None
+    gueter: list[dict] = []      # [{code: "GP19-172211", label: "…"}]
+
+
+@router.get("/erzeugerpreise")
+def get_erzeugerpreise(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                       user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "erzeugerpreise", mandant_id, strikt=True)
+    wahl = dict(zeilen[0].value or {}) if zeilen else None
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db), "auswahl": wahl}
+
+
+@router.put("/erzeugerpreise")
+def set_erzeugerpreise(body: ErzeugerpreiseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    import re
+    gueter = []
+    for z in body.gueter[:12]:
+        code = str(z.get("code") or "")
+        if not re.fullmatch(r"GP19-\d{2,6}", code):
+            raise HTTPException(400, f"Unbekannte Güterklasse: {code[:20]}")
+        if code not in {x["code"] for x in gueter}:
+            gueter.append({"code": code, "label": str(z.get("label") or "")[:120]})
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    wert = {"gueter": gueter, "von": user.username}
+    cfg_service.set_value(body.project_id, db, "erzeugerpreise", "auswahl", wert, mandant_id)
+    return {"auswahl": wert}
+
+
 # ── Arbeitstage (Kalenderbereinigung) ──
 # Bundesland der Feiertage, Samstag als Arbeitstag, 24./31.12. halb. Je Mandant streng:
 # zwei Firmen eines Projekts können in verschiedenen Ländern sitzen. Gerechnet wird im Frontend

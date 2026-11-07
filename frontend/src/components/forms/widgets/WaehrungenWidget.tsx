@@ -35,7 +35,7 @@ const NAME = {
 };
 const FARBEN = ["var(--accent)", "#a78bfa", "#60a5fa", "#f472b6", "#34d399", "#fbbf24", "#f87171", "#94a3b8"];
 const MAX = 8;
-const zahl = (x) => { const n = typeof x === "number" ? x : Number(String(x ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+const zahl = (x) => { if (x == null || x === "") return null; const n = typeof x === "number" ? x : Number(String(x).replace(",", ".")); return Number.isFinite(n) ? n : null; };
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1, signDisplay: "exceptZero" });
 const kurs = (v) => (v == null ? "–" : new Intl.NumberFormat("de-DE", { maximumSignificantDigits: 5 }).format(v));

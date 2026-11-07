@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung, Einkaufspreise je Warennummer gegen die Einfuhrpreise Deutschlands und die Wechselkurse der Lieferländer.",
   "category": "jtl-reporting",
-  "version": "1.9",
+  "version": "1.10",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -13,7 +13,8 @@
     "Sehr alte offene Bestellungen verzerren den Ø-Verzug – in der Praxis meist Karteileichen, die in der Wawi manuell abgeschlossen werden sollten.",
     "Der Lieferanten-Filter nutzt die Lookup-Art „lieferant\" (aktive Lieferanten aus dbo.tlieferant).",
     "„Markt & Außenhandel“ braucht die achtstellige Warennummer (tArtikel.cTaric) und das Artikelgewicht; die Marktdaten (Eurostat Comext) kommen über den monstersuite-Datendienst und laufen etwa zwei Monate hinterher.",
-    "„Währungen Ihrer Lieferländer“ ordnet jeden Lieferanten über sein Land (tlieferant.cISO) einer Währung zu; bestellt wurde in der Bestellwährung (tLieferantenBestellung.cWaehrungISO). Kurse: EZB-Referenzkurse über den monstersuite-Datendienst."
+    "„Währungen Ihrer Lieferländer“ ordnet jeden Lieferanten über sein Land (tlieferant.cISO) einer Währung zu; bestellt wurde in der Bestellwährung (tLieferantenBestellung.cWaehrungISO). Kurse: EZB-Referenzkurse über den monstersuite-Datendienst.",
+    "„Erzeugerpreise Ihrer Waren“ nutzt die Zeilen aus „Einkauf je Warennummer“ nur für den Vorschlag (Zolltarif-Kapitel → GP2019-Klasse, grob); die Auswahl je Mandant steht in business_config (erzeugerpreise)."
   ],
   "config_required": [
     {
@@ -3593,6 +3594,17 @@
             }
           },
           {
+            "id": "w_ek_erzeugerpreise",
+            "type": "erzeugerpreise",
+            "label": "Erzeugerpreise Ihrer Waren",
+            "action_id": "act_ek_aussenhandel",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Wie sich die Herstellerpreise in Deutschland für die Waren entwickeln, die Sie einkaufen (Destatis-Erzeugerpreisindex, 2021 = 100) – sie laufen den Einkaufspreisen meist einige Monate voraus. Vorschlag aus Ihren Warennummern, die Auswahl der Güterklassen gilt je Mandant. Es werden keine Kundendaten übertragen."
+            }
+          },
+          {
             "id": "w_ek_waehrungen",
             "type": "waehrungen",
             "label": "Währungen Ihrer Lieferländer",
@@ -3651,7 +3663,7 @@
           },
           {
             "id": "tab_ek_markt",
-            "label": "Markt, Außenhandel & Währungen",
+            "label": "Markt, Preise & Währungen",
             "action_ids": [
               "act_ek_aussenhandel",
               "act_ek_waehrungen"

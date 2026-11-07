@@ -39,7 +39,7 @@ _REGELN = [
     # Umfelddaten (Wetter, Atemwegsinfekte) für die Umfeld-Seite im GF-Cockpit
     # USt-ID-Prüfung: Ergebnisse lesen; Prüfen selbst braucht Bearbeitungsrecht (api/ustid.py)
     ({"GET"},            r"/api/ustid/ergebnisse"),
-    (ALLE, r"/api/umfeld/(katalog|reihen|preise/katalog|branchen/katalog|aussenhandel|strukturdaten|insolvenzen/katalog)"),
+    (ALLE, r"/api/umfeld/(katalog|reihen|preise/katalog|branchen/katalog|aussenhandel|strukturdaten|insolvenzen/katalog|erzeugerpreise/katalog)"),
     (ALLE, r"/api/(business-config|datenpflege|datev|eingangsrechnung|er-posteingang|intrastat|inventur"
            r"|kunden-ausschluss|lookup|preisregeln|research|stammdaten|zugferd)(/.*)?"),
 ]
