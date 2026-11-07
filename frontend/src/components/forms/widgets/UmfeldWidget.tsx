@@ -14,10 +14,15 @@
  *   spalten: { monat: "Monat", region: "Bundesland", wert: "Umsatz" }
  *   groesse: "atemwege" (Vorgabe) | "grippe" | "temperatur" | "niederschlag" | "sonne"
  *   region:  "Deutschland" (Vorgabe) | Bundesland
+ *   warengruppen: { liste: { mapping_id }, umsatz: { mapping_id } } – optional. Die Liste liefert
+ *     die Warengruppen (Spalte „Warengruppe“, größte zuerst); bei Auswahl einer Gruppe lädt die
+ *     Kachel deren Umsätze über das zweite Mapping (Parameter :warengruppe) nach. Alle Gruppen
+ *     auf einmal zu laden sprengte die Zeilengrenze (36 Monate × 17 Regionen × n Gruppen).
  */
 import { useEffect, useMemo, useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import api, { fehlerText } from "../../../api/client";
+import { monatText } from "./monat";
 
 const GROESSEN = [
   { key: "atemwege", label: "Akute Atemwegserkrankungen (ARE)" },
@@ -33,9 +38,6 @@ const FARBE_UMFELD = "#a78bfa";
 const nf0 = new Intl.NumberFormat("de-DE", { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// „2024-02“ liest sich leicht als 2. Quartal – deshalb überall „Feb 2024“.
-const MONATE = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
-export const monatText = (m) => /^\d{4}-\d{2}/.test(String(m)) ? `${MONATE[Number(String(m).slice(5, 7)) - 1]} ${String(m).slice(0, 4)}` : String(m ?? "");
 const zahl = (x) => { const n = typeof x === "number" ? x : Number(String(x ?? "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
 
 // ── Statistik (rein) ──
@@ -66,6 +68,20 @@ export function besterVersatz(umsatz, umfeld, maxLag = 3, nur = null) {
   }
   return best;
 }
+// Lückenlose Monatsfolge von a bis b („2024-01“ … „2026-10“) – Monate ohne Umsatz zählen als 0,
+// sonst verrutschen Vormonat und Vorjahresmonat (i - 1, i - 12) bei einer kleinen Warengruppe.
+export function monatsFolge(a, b) {
+  const aus = [];
+  if (!a || !b || a > b) return aus;
+  let [j, m] = a.split("-").map(Number);
+  const [jb, mb] = b.split("-").map(Number);
+  while (j < jb || (j === jb && m <= mb)) {
+    aus.push(`${j}-${String(m).padStart(2, "0")}`);
+    if (++m > 12) { m = 1; j++; }
+  }
+  return aus;
+}
+const istId = (x) => typeof x === "number" || /^\d+$/.test(String(x ?? ""));
 const staerke = (r) => { const a = Math.abs(r); return a >= 0.6 ? "deutlich" : a >= 0.3 ? "mäßig" : "kaum"; };
 
 export default function UmfeldWidget({ widget, result, params = {} }) {
@@ -77,18 +93,58 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
   const [fehler, setFehler] = useState(null);
   const [laedt, setLaedt] = useState(false);
 
+  // ── Warengruppe (optional): Liste und Umsätze der gewählten Gruppe per Mapping nachladen ──
+  const wgCfg = cfg.warengruppen || {};
+  const listeId = istId(wgCfg.liste?.mapping_id) ? Number(wgCfg.liste.mapping_id) : null;
+  const umsatzId = istId(wgCfg.umsatz?.mapping_id) ? Number(wgCfg.umsatz.mapping_id) : null;
+  const [wgListe, setWgListe] = useState([]);
+  const [wg, setWg] = useState("");
+  const [wgZeilen, setWgZeilen] = useState(null);
+  const [wgLaedt, setWgLaedt] = useState(false);
+  const [wgFehler, setWgFehler] = useState(null);
+  const paramSchl = JSON.stringify(params || {});
+  useEffect(() => {
+    if (!listeId || !umsatzId) return;
+    let lebt = true;
+    api.post("/api/forms/drilldown", { mapping_id: listeId, params: params || {}, max_rows: 500 })
+      .then(({ data }) => {
+        if (!lebt) return;
+        const namen = (data.rows || []).map((r) => String(r.Warengruppe ?? "")).filter(Boolean);
+        setWgListe(namen);
+        if (wg && !namen.includes(wg)) setWg("");      // Gruppe hat im neuen Zeitraum keinen Umsatz mehr
+      })
+      .catch(() => lebt && setWgListe([]));
+    return () => { lebt = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listeId, umsatzId, paramSchl]);
+  useEffect(() => {
+    if (!wg || !umsatzId) { setWgZeilen(null); setWgFehler(null); return; }
+    let lebt = true;
+    setWgLaedt(true); setWgFehler(null);
+    api.post("/api/forms/drilldown", { mapping_id: umsatzId, params: { ...(params || {}), warengruppe: wg }, max_rows: 2000 })
+      .then(({ data }) => { if (!lebt) return; setWgZeilen(data.rows || []); if (data.error) setWgFehler(data.error); })
+      .catch((e) => lebt && setWgFehler(fehlerText(e)))
+      .finally(() => lebt && setWgLaedt(false));
+    return () => { lebt = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wg, umsatzId, paramSchl]);
+
   // Umsatz je Monat für die Region; der laufende Monat ist unvollständig und fällt weg.
+  // Der Monatsrahmen kommt immer aus dem Gesamtergebnis, damit eine Warengruppe dieselbe Achse hat.
   const umsatz = useMemo(() => {
+    const jetzt = new Date().toISOString().slice(0, 7);
+    const alleMonate = (result?.rows || []).map((r) => String(r[sp.monat]).slice(0, 7)).filter((k) => k < jetzt).sort();
+    const quelle = wg ? (wgZeilen || []) : (result?.rows || []);
     const m = new Map();
-    for (const r of result?.rows || []) {
+    for (const r of quelle) {
       if (region !== "Deutschland" && r[sp.region] !== region) continue;
       const k = String(r[sp.monat]).slice(0, 7);
       m.set(k, (m.get(k) || 0) + (zahl(r[sp.wert]) || 0));
     }
-    const jetzt = new Date().toISOString().slice(0, 7);
-    return [...m.entries()].filter(([k]) => k < jetzt).sort((a, b) => a[0].localeCompare(b[0]));
+    if (wg && !wgZeilen) return [];
+    return monatsFolge(alleMonate[0], alleMonate[alleMonate.length - 1]).map((k) => [k, m.get(k) || 0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result, region]);
+  }, [result, region, wg, wgZeilen]);
   const von = umsatz[0]?.[0], bis = umsatz[umsatz.length - 1]?.[0];
 
   useEffect(() => {
@@ -161,18 +217,25 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
           <option value="Deutschland">Deutschland</option>
           {LAENDER.map((l) => <option key={l} value={l}>{l}</option>)}
         </select>
+        {wgListe.length > 1 && (
+          <select value={wg} onChange={(e) => setWg(e.target.value)} style={{ ...auswahl, maxWidth: 240 }} aria-label="Warengruppe">
+            <option value="">Alle Warengruppen</option>
+            {wgListe.map((g) => <option key={g} value={g}>{g}</option>)}
+          </select>
+        )}
         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
-          Umsatz nach Lieferadresse{region !== "Deutschland" ? ` in ${region}` : " (Deutschland)"}
+          Umsatz{wg ? ` der Warengruppe „${wg}“` : ""} nach Lieferadresse{region !== "Deutschland" ? ` in ${region}` : " (Deutschland)"}
           {anzeige.length ? `, ${monatText(anzeige[0].Monat)} bis ${monatText(anzeige[anzeige.length - 1].Monat)}` : ""}
           {zuKurz ? " (gewählter Zeitraum zu kurz, gezeigt: die letzten 12 abgeschlossenen Monate)" : ""}
         </span>
       </div>
 
+      {wgFehler && <p style={{ margin: 0, fontSize: 12.5, color: "var(--err-soft, var(--err))" }}>Umsatz der Warengruppe nicht verfügbar: {wgFehler}</p>}
       {fehler && <p style={{ margin: 0, fontSize: 12.5, color: "var(--err-soft, var(--err))" }}>Umfelddaten nicht verfügbar: {fehler}</p>}
 
       <div>
         <div style={{ fontSize: 12, fontWeight: 600, color: "var(--text-main)", margin: "2px 0 2px 4px" }}>
-          <span style={{ color: FARBE_UMSATZ }}>■</span> Umsatz je Monat
+          <span style={{ color: FARBE_UMSATZ }}>■</span> Umsatz je Monat{wg ? ` – ${wg}` : ""}{wgLaedt ? " – lädt…" : ""}
         </div>
         <ResponsiveContainer width="100%" height={190}>
           <LineChart data={anzeige} syncId={`umfeld-${widget.id}`} margin={{ top: 6, right: 16, bottom: 0, left: 4 }}>
@@ -209,6 +272,11 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
         {roh?.n != null && roh.n < 12 && (
           <span style={{ fontSize: 12, color: "var(--warn, var(--text-dim))" }}>
             Nur {roh.n} Monate – die Aussage ist unsicher. Mit „Letzte 12 Monate“ oder einem längeren Zeitraum wird sie belastbarer.
+          </span>
+        )}
+        {wg && (
+          <span style={{ fontSize: 12, color: "var(--text-dim)" }}>
+            Nur Artikelpositionen der Warengruppe „{wg}“; Versandkosten und Freipositionen zählen hier nicht mit.
           </span>
         )}
         <span style={{ fontSize: 12, color: "var(--text-dim)" }}>

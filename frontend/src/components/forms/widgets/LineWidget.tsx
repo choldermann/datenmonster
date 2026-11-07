@@ -6,6 +6,7 @@ import {
 import { Flag, Plus } from "lucide-react";
 import { useAuth } from "../../../context/AuthContext";
 import { useEreignisse, aufAchse, ereignisZeitraum, EreignisDialog } from "../ereignisse";
+import { monatsAchse } from "./monat";
 
 const S = { textDim: "var(--text-dim)" };
 
@@ -46,6 +47,8 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
     const i1 = xs.indexOf(String(m.x1)), i2 = m.x2 != null ? xs.indexOf(String(m.x2)) : i1;
     for (let i = i1; i <= i2; i++) jeX.set(xs[i], [...(jeX.get(xs[i]) || []), m.e]);
   }
+  // Monatsachse als „Feb 2024“ statt „2024-02“ (Werte bleiben roh – Drilldown und Ereignisse brauchen sie)
+  const alsMonat = monatsAchse(data.map(d => d[x_column]));
   const darfErfassen = !!marken && !user?.is_portal_only && projectId != null;
   const tage = (marken || []).filter(m => m.x2 == null);
   const beschriften = tage.length <= 4;
@@ -56,7 +59,7 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
     return (
       <div style={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 6,
         fontSize: 11, padding: "7px 10px", maxWidth: 260 }}>
-        <div style={{ color: "var(--text-bright)", fontWeight: 600, marginBottom: 3 }}>{label}</div>
+        <div style={{ color: "var(--text-bright)", fontWeight: 600, marginBottom: 3 }}>{alsMonat ? alsMonat(label) : label}</div>
         {payload.map(p => (
           <div key={p.dataKey} style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
             <span style={{ color: "var(--text-dim)" }}>
@@ -105,7 +108,8 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
           style={canDrill ? { cursor: "pointer" } : undefined}
           onClick={canDrill ? (e) => { if (e && e.activeLabel != null) onDrilldown(x_column, e.activeLabel); } : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-          <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }} />
+          <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }}
+            tickFormatter={alsMonat || undefined} minTickGap={alsMonat ? 12 : 5} />
           <YAxis tick={{ fontSize: 11, fill: S.textDim }} width={52} />
           {(marken || []).filter(m => m.x2 != null).map(m => (
             <ReferenceArea key={`a-${m.e.id}`} x1={m.x1} x2={m.x2} fill="var(--accent)" fillOpacity={0.08} ifOverflow="extendDomain" />

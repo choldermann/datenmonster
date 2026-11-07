@@ -2,6 +2,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   Legend, ResponsiveContainer,
 } from "recharts";
+import { monatsAchse } from "./monat";
 
 const S = { textDim: "var(--text-dim)", border: "var(--border)" };
 
@@ -60,6 +61,9 @@ export default function BarWidget({ widget, result, onDrilldown }) {
     </div>
   );
 
+  // Monatsachse als „Feb 2024“ statt „2024-02“ (Werte bleiben roh für den Drilldown)
+  const alsMonat = monatsAchse(data.map(d => d[x_column]));
+
   return (
     <div style={{ padding: "16px 8px" }}>
       <ResponsiveContainer width="100%" height={280}>
@@ -67,13 +71,15 @@ export default function BarWidget({ widget, result, onDrilldown }) {
           style={canDrill ? { cursor: "pointer" } : undefined}
           onClick={canDrill ? (e) => { if (e && e.activeLabel != null) onDrilldown(x_column, e.activeLabel); } : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-          <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }} />
+          <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }}
+            tickFormatter={alsMonat || undefined} minTickGap={alsMonat ? 12 : 5} />
           <YAxis tick={{ fontSize: 11, fill: S.textDim }} width={72} tickFormatter={fmtNum} />
           <Tooltip
             contentStyle={{ backgroundColor: "var(--bg-card)", border: "1px solid var(--border)",
               borderRadius: 6, fontSize: 11 }}
             labelStyle={{ color: "var(--text-bright)", fontWeight: 600 }}
             formatter={(v, name) => [fmtNum(v), name]}
+            labelFormatter={alsMonat || undefined}
           />
           {seriesKeys.length > 1 && <Legend wrapperStyle={{ fontSize: 11 }} />}
           {seriesKeys.map((col, i) => (
