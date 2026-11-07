@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.32",
+  "version": "2.33",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -13448,6 +13448,21 @@
             }
           },
           {
+            "id": "w_stimmung",
+            "type": "stimmung",
+            "label": "Stimmung: Wirtschaftsklima und Ihr Umsatzwachstum",
+            "action_id": "act_branche",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "spalten": {
+                "monat": "Monat",
+                "wert": "Umsatz"
+              },
+              "info": "Konjunkturumfragen der EU-Kommission für Deutschland (Eurostat, saisonbereinigt): Wirtschaftsklima und Vertrauen in Einzelhandel, Verbraucher, Industrie, Dienstleistungen und Bau. Sie erscheinen zum Monatsende – Wochen vor jeder Umsatzstatistik. Darunter Ihr Umsatzwachstum und ob es der Stimmung mit Verzug folgt. Es werden keine Kundendaten übertragen."
+            }
+          },
+          {
             "id": "w_insolvenzen",
             "type": "insolvenzen",
             "label": "Insolvenzklima: Unternehmensinsolvenzen und Ihre Zahlungsmoral",
@@ -13619,7 +13634,7 @@
           },
           {
             "id": "tab_branche",
-            "label": "Branchenvergleich",
+            "label": "Branche & Stimmung",
             "action_ids": [
               "act_branche"
             ]

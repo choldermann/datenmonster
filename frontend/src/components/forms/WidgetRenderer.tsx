@@ -32,6 +32,7 @@ import InsolvenzenWidget from "./widgets/InsolvenzenWidget";
 import UstidWidget from "./widgets/UstidWidget";
 import ErzeugerpreiseWidget from "./widgets/ErzeugerpreiseWidget";
 import EnergieWidget from "./widgets/EnergieWidget";
+import StimmungWidget from "./widgets/StimmungWidget";
 import BranchenvergleichWidget from "./widgets/BranchenvergleichWidget";
 import EreignisseWidget from "./widgets/EreignisseWidget";
 
@@ -114,6 +115,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     case "karte": return <KarteWidget widget={widget} result={result} />;
     case "umfeld": return <UmfeldWidget widget={widget} result={result} params={baseParams} />;
+    case "stimmung": return <StimmungWidget widget={widget} result={result} />;
     case "energie": return <EnergieWidget widget={widget} result={result} />;
     case "erzeugerpreise": return <ErzeugerpreiseWidget widget={widget} result={result} projectId={projectId} />;
     case "ustid": return <UstidWidget widget={widget} result={result} projectId={projectId} />;
