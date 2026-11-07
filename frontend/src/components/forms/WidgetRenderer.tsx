@@ -26,6 +26,7 @@ import ZugferdWidget from "./widgets/ZugferdWidget";
 import BaumWidget from "./widgets/BaumWidget";
 import KarteWidget from "./widgets/KarteWidget";
 import UmfeldWidget from "./widgets/UmfeldWidget";
+import BranchenvergleichWidget from "./widgets/BranchenvergleichWidget";
 import EreignisseWidget from "./widgets/EreignisseWidget";
 
 const S = {
@@ -107,6 +108,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     case "hersteller_navigator": return <HerstellerNavigator widget={widget} result={result} />;
     case "karte": return <KarteWidget widget={widget} result={result} />;
     case "umfeld": return <UmfeldWidget widget={widget} result={result} params={baseParams} />;
+    case "branchenvergleich": return <BranchenvergleichWidget widget={widget} result={result} params={baseParams} projectId={projectId} />;
     case "baum": return <BaumWidget widget={widget} result={result} results={results} formId={formId} onTab={onTab} params={baseParams} />;
     default:      return <p style={{ padding: 14, color: S.textDim, fontSize: 12 }}>Unbekannter Widget-Typ: {widget.type}</p>;
   }

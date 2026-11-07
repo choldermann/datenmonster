@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.27",
+  "version": "2.28",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -17,7 +17,8 @@
     "Das mitinstallierte Formular 'Kostenstruktur' pflegt die monatlichen Fixkosten (Personal, Miete, Strom, Fahrzeuge …). Erst damit füllt sich der Reiter 'Ergebnis' mit Betriebsergebnis, Umsatzrendite und Break-even – ohne gepflegte Kosten sind die Fixkosten 0 und das Betriebsergebnis entspricht dem Rohertrag gesamt. Wichtig: den ersten Eintrag je Kostenart weit genug zurückdatieren, sonst rechnet der Vorjahresvergleich dort mit 0 €.",
     "Der erste Reiter „Baum“ zeigt das Ergebnis als aufklappbaren Baum: Umsatz, Wareneinsatz und Kosten bis zum DB III, jede Ebene ergibt in Summe ihren Oberpunkt. Kanäle, Warengruppen, Lieferanten, Versandarten und Kostenblöcke kommen aus den Daten.",
     "Versandkosten im Baum sind der EK der Versandpositionen, also der Wert, der in JTL an der Versandart hinterlegt ist. Fehlt er, zeigt der Baum, wie viele Versandpositionen ohne Kosten sind.",
-    "Die Fixkosten werden im letzten Reiter „Kostenstruktur“ gepflegt (dieselbe Maske wie im Formular Kostenstruktur)."
+    "Die Fixkosten werden im letzten Reiter „Kostenstruktur“ gepflegt (dieselbe Maske wie im Formular Kostenstruktur).",
+    "Ausblick › Branchenvergleich stellt die eigene Umsatzentwicklung der des Handelszweigs gegenüber (Eurostat, Deutschland). Die Branche wird je Mandant gewählt."
   ],
   "config_required": [
     {
@@ -9840,6 +9841,70 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_branche_umsatz",
+      "name": "Cockpit – Umsatz je Monat für den Branchenvergleich (48 Monate)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "-- Umsatz je Monat, 48 Monate bis zum Ende des gewählten Zeitraums: der Branchenvergleich rechnet\n-- gleitende 3 Monate gegen das Vorjahr und braucht dafür 14 Monate Vorlauf.\nSELECT CONVERT(char(7), RE.dErstellt, 120) AS Monat,\n    CAST(SUM(POS.fAnzahl * POS.fVkNetto) AS DECIMAL(18,2)) AS Umsatz\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\nJOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\nWHERE RE.dErstellt >= DATEADD(MONTH, -47, DATEADD(DAY, 1 - DAY(:bis), CAST(:bis AS DATE)))\n  AND RE.dErstellt < DATEADD(DAY, 1, :bis)\nGROUP BY CONVERT(char(7), RE.dErstellt, 120) ORDER BY Monat",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Monat",
+            "Umsatz"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Umsatz je Monat für den Branchenvergleich (48 Monate)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -10350,6 +10415,13 @@
             "mapping_id": "m_umfeld_umsatz",
             "pipeline_id": null,
             "label": "Cockpit – Umsatz je Monat und Bundesland"
+          },
+          {
+            "id": "act_branche",
+            "type": "run_mapping",
+            "mapping_id": "m_branche_umsatz",
+            "pipeline_id": null,
+            "label": "Cockpit – Umsatz je Monat (Branchenvergleich)"
           }
         ],
         "widgets": [
@@ -13235,6 +13307,21 @@
                 }
               }
             }
+          },
+          {
+            "id": "w_branche",
+            "type": "branchenvergleich",
+            "label": "Ich gegen meine Branche: Umsatzentwicklung im Vergleich",
+            "action_id": "act_branche",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "spalten": {
+                "monat": "Monat",
+                "wert": "Umsatz"
+              },
+              "info": "Vergleicht die Entwicklung Ihres Umsatzes mit der Ihres Handelszweigs in Deutschland (Eurostat-Umsatzindex, 2021 = 100). Verglichen werden Veränderungen zum Vorjahr – je Monat die letzten drei Monate gegen dieselben drei Monate im Vorjahr –, keine absoluten Größen. „Real“ rechnet die Preissteigerung heraus: Ihr Umsatz über den gewählten Preisindex, die Branche als Verkaufsvolumen. Die Branche gilt je Mandant; ohne Auswahl wird sie aus dem Preisindex vorgeschlagen. Es werden keine Kundendaten übertragen."
+            }
           }
         ],
         "result_tabs": [
@@ -13395,6 +13482,13 @@
             ]
           },
           {
+            "id": "tab_branche",
+            "label": "Branchenvergleich",
+            "action_ids": [
+              "act_branche"
+            ]
+          },
+          {
             "id": "tab_ergebnis",
             "label": "Ergebnis & Break-even",
             "action_ids": [
@@ -13465,7 +13559,8 @@
             "reiter": [
               "tab_ausblick",
               "tab_trends",
-              "tab_umfeld"
+              "tab_umfeld",
+              "tab_branche"
             ]
           },
           {

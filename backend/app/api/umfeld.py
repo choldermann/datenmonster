@@ -1,4 +1,4 @@
-"""Umfelddaten (Wetter, Atemwegsinfekte, Preisindizes) vom monstersuite-Datendienst durchreichen.
+"""Umfelddaten (Wetter, Atemwegsinfekte, Preisindizes, Handelsumsatz) vom monstersuite-Datendienst durchreichen.
 
 Die Installation schickt nur Lizenz, Größen, Regionen und Zeitraum – keine Kundendaten.
 Antworten werden im Prozess 6 Stunden gehalten: die Quellen ändern sich höchstens täglich
@@ -55,6 +55,12 @@ def _fragen(db: Session, pfad: str, extra: dict) -> dict:
 def preise_katalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Preisindizes (Destatis) für die Preisbereinigung: Großhandel je Branche, Verbraucherpreise."""
     return _fragen(db, "preise/katalog", {})
+
+
+@router.get("/branchen/katalog")
+def branchen_katalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Branchen für den Umsatzvergleich (Eurostat, Groß- und Einzelhandel Deutschland)."""
+    return _fragen(db, "branchen/katalog", {})
 
 
 @router.get("/katalog")

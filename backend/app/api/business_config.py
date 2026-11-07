@@ -438,3 +438,45 @@ def delete_preisindex(project_id: Optional[int] = None, db: Session = Depends(ge
     require_editor(project_id, user, db)
     mandant_id = mandant_service.aktiver(project_id, user, db)
     return {"ok": cfg_service.reset_value(project_id, db, "preisindex", "auswahl", mandant_id)}
+
+
+# ── Branche für den Umsatzvergleich („Ich gegen meine Branche“) ──
+# NACE-Code des Handelszweigs (Eurostat, bis zum 3-Steller), je Mandant streng wie der Preisindex.
+# Ohne Auswahl schlägt das Widget eine Branche aus dem Preisindex vor.
+
+class BrancheIn(BaseModel):
+    project_id: Optional[int] = None
+    code: str           # z. B. G464, G4791, G47_X_G473
+    label: str = ""
+
+
+@router.get("/branche")
+def get_branche(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                user: User = Depends(get_current_user)):
+    if not can_read_project(project_id, user, db):
+        raise HTTPException(403, "Kein Zugriff auf dieses Projekt")
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    zeilen = cfg_service._rows(project_id, db, "branche", mandant_id, strikt=True)
+    wahl = dict(zeilen[0].value or {}) if zeilen else None
+    return {"project_id": project_id, "mandant_id": mandant_id,
+            "mandant_name": mandant_service.name_von(mandant_id, db), "auswahl": wahl}
+
+
+@router.put("/branche")
+def set_branche(body: BrancheIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    require_editor(body.project_id, user, db)
+    import re
+    if not re.fullmatch(r"G\d{0,4}(_[A-Z0-9_]{1,20})?", body.code or ""):
+        raise HTTPException(400, "Unbekannte Branche")
+    mandant_id = mandant_service.aktiver(body.project_id, user, db)
+    wert = {"code": body.code, "label": (body.label or "")[:160], "von": user.username}
+    cfg_service.set_value(body.project_id, db, "branche", "auswahl", wert, mandant_id)
+    return {"auswahl": wert}
+
+
+@router.delete("/branche")
+def delete_branche(project_id: Optional[int] = None, db: Session = Depends(get_db),
+                   user: User = Depends(get_current_user)):
+    require_editor(project_id, user, db)
+    mandant_id = mandant_service.aktiver(project_id, user, db)
+    return {"ok": cfg_service.reset_value(project_id, db, "branche", "auswahl", mandant_id)}
