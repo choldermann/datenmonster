@@ -1,6 +1,6 @@
 /**
  * Umsatz & Umfeld: Monatsumsatz neben einer externen Größe (Wetter vom DWD, Atemwegsinfekte
- * aus RKI-GrippeWeb, Übernachtungen und Gastgewerbe-Umsatz), je Deutschland oder Bundesland,
+ * aus RKI-GrippeWeb, DWD-Hitzewarnungen und Pollenflug, Übernachtungen und Gastgewerbe-Umsatz), je Deutschland oder Bundesland,
  * mit Zusammenhangs- und Versatzanalyse. Größen mit nurDE gibt es nur für Deutschland insgesamt.
  *
  * Bewusst zwei Diagramme mit gemeinsamer Monatsachse statt einer zweiten y-Achse – zwei
@@ -13,7 +13,7 @@
  *
  * Konfiguration (widget.config):
  *   spalten: { monat: "Monat", region: "Bundesland", wert: "Umsatz" }
- *   groesse: "atemwege" (Vorgabe) | "grippe" | "temperatur" | "niederschlag" | "sonne" | "uebernachtungen" | "umsatz_gastgewerbe"
+ *   groesse: "atemwege" (Vorgabe) | "grippe" | "temperatur" | "niederschlag" | "sonne" | "hitzetage" | "pollen" | "uebernachtungen" | "umsatz_gastgewerbe"
  *   region:  "Deutschland" (Vorgabe) | Bundesland
  *   warengruppen: { liste: { mapping_id }, umsatz: { mapping_id } } – optional. Die Liste liefert
  *     die Warengruppen (Spalte „Warengruppe“, größte zuerst); bei Auswahl einer Gruppe lädt die
@@ -31,6 +31,8 @@ const GROESSEN = [
   { key: "temperatur", label: "Temperatur (Monatsmittel)" },
   { key: "niederschlag", label: "Niederschlag (Monatssumme)" },
   { key: "sonne", label: "Sonnenscheindauer (Monatssumme)" },
+  { key: "hitzetage", label: "Hitzewarntage (Ø je Kreis)" },
+  { key: "pollen", label: "Pollenflug (Ø Tageshöchstwert 0–3, ab Nov. 2026)" },
   { key: "uebernachtungen", label: "Übernachtungen (Hotels, Pensionen …)" },
   { key: "umsatz_gastgewerbe", label: "Umsatz im Gastgewerbe (Index)", nurDE: true },
 ];
@@ -182,7 +184,8 @@ export default function UmfeldWidget({ widget, result, params = {} }) {
   const kurzG = gLabel.replace(/ \(.*\)$/, "");
   const einheit = umfeld?.einheit || "";
   const fmtU = (v) => v == null ? "–" : `${nf0.format(v)} €`;
-  const fmtF = (v) => v == null ? "–" : einheit === "2021 = 100" ? `${nf1.format(v)} (2021 = 100)`
+  const fmtF = (v) => v == null ? "–" : einheit === "Tage" || einheit === "Index 0–3" ? `${nf1.format(v)} ${einheit === "Tage" ? "Tage" : ""}`.trim()
+    : einheit === "2021 = 100" ? `${nf1.format(v)} (2021 = 100)`
     : `${einheit === "°C" ? nf1.format(v) : v >= 1e6 ? `${nf1.format(v / 1e6)} Mio.` : nf0.format(v)} ${einheit}`;
   const satz = (k, bereinigtText) => {
     if (!k || k.r == null) return null;
