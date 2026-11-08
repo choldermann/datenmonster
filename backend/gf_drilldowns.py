@@ -210,8 +210,8 @@ NEUE_MAPPINGS = {
     },
 }
 
-BESTEHENDE = {"m_rg_pos": "Cockpit – Rechnungspositionen"}
-EBENE2 = {"mapping": "m_rg_pos", "param": "kRechnung", "key_column": "kRechnung",
+BESTEHENDE = {"m_positionen": "Cockpit – Rechnungspositionen"}
+EBENE2 = {"mapping": "m_positionen", "param": "kRechnung", "key_column": "kRechnung",
           "title": "Positionen der Rechnung"}
 
 DRILLDOWNS = {

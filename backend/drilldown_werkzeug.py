@@ -204,6 +204,18 @@ def anwenden_template(mod, pfad: str, anwenden: bool):
             m["sql_nodes"][0].setdefault("output_fields", []).append(d["feld"])
             m["targets"][0]["fields"] = felder
             print(f"  ± {schluessel}: Spalte {d['feld']} ergänzt")
+    # In der Vorlage gibt es keine Namensauflösung wie in anwenden_db: jede verwendete
+    # symbolische ID muss als Mapping in der Vorlage stehen – sonst zeigt der Drilldown
+    # beim Kunden ins Leere (so geschehen bei m_rg_pos, m_ek_pos, m_auftrag_pos_detail).
+    ids_vorlage = {m["id"] for m in t["mappings"]}
+    benutzt = {d[0] for d in mod.DRILLDOWNS.values()}
+    ebene2 = getattr(mod, "EBENE2", None)
+    if ebene2:
+        benutzt.add(ebene2["mapping"])
+    fehlend = sorted(benutzt - ids_vorlage)
+    if fehlend:
+        raise SystemExit(f"Diese Mappings fehlen in der Vorlage {pfad}: {', '.join(fehlend)} – "
+                         "erst in die Vorlage aufnehmen (BESTEHENDE gilt nur für die Installation).")
     n = widgets_verdrahten(t["forms"][0]["schema"].get("widgets") or [],
                            mod.DRILLDOWNS, getattr(mod, "EBENE2", None), lambda k: k)
     print(f"\n{pfad}: {n} Drilldowns gesetzt, {len(t['mappings'])} Mappings")

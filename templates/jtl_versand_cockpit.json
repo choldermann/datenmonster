@@ -4,7 +4,7 @@
   "template_name": "JTL – Versand-Cockpit",
   "description": "Versandsicht auf die JTL-Wawi: Sendungsaufkommen je Versandart, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und der Rückstand nicht versendeter Lieferscheine.",
   "category": "jtl-reporting",
-  "version": "1.6",
+  "version": "1.7",
   "author": "Datenmonster",
   "hinweise": [
     "Der Versanddienstleister kommt aus dbo.tVersandArt.cName – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt und ist durchgängig leer.",
@@ -1799,6 +1799,136 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "kArtikel"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_auftrag_pos_detail",
+      "name": "Versand – Auftragspositionen (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(POS.kArtikel AS VARCHAR(20)) AS kArtikel,\n    ISNULL(POS.cArtNr, '') AS ArtNr,\n    POS.cName AS Bezeichnung,\n    CAST(POS.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    ISNULL(POS.cEinheit, '') AS Einheit,\n    CAST(POS.fVkNetto AS DECIMAL(18,2)) AS EinzelNetto,\n    CAST(POS.fAnzahl * POS.fVkNetto AS DECIMAL(18,2)) AS Positionswert,\n    CAST(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0))\n        AS DECIMAL(18,2)) AS DB\nFROM Verkauf.tAuftragPosition POS\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE POS.kAuftrag = :kAuftrag\nORDER BY POS.nSort",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Einheit",
+            "EinzelNetto",
+            "Positionswert",
+            "DB"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Auftragspositionen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_field": "EinzelNetto",
+              "target_field": "EinzelNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EinzelNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            },
+            {
+              "source_field": "DB",
+              "target_field": "DB",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB"
               }
             }
           ]

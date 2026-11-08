@@ -4,7 +4,7 @@
   "template_name": "JTL – Einkaufs-Cockpit",
   "description": "Einkaufssicht auf die JTL-Wawi: Bestellvolumen und Lieferanten, offene Bestellungen mit Verzug, Termintreue aus echten Wareneingängen, offene Verbindlichkeiten sowie EK-Preisentwicklung, Einkaufspreise je Warennummer gegen die Einfuhrpreise Deutschlands und die Wechselkurse der Lieferländer.",
   "category": "jtl-reporting",
-  "version": "1.10",
+  "version": "1.11",
   "author": "Datenmonster",
   "hinweise": [
     "Bestellwert = Summe der Positionen aus dbo.tLieferantenBestellungPos (fMenge × fEKNetto), netto. Alle Bestellungen der Prüf-DB laufen in EUR mit Faktor 1.",
@@ -3108,7 +3108,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_ek_pos",
+                    "mapping_id": "m_ek_pos_detail",
                     "param": "kLieferantenBestellung",
                     "key_column": "kLieferantenBestellung",
                     "title": "Positionen der Bestellung"
@@ -3250,7 +3250,7 @@
                 ],
                 "levels": [
                   {
-                    "mapping_id": "m_ek_pos",
+                    "mapping_id": "m_ek_pos_detail",
                     "param": "kLieferantenBestellung",
                     "key_column": "kLieferantenBestellung",
                     "title": "Positionen der Bestellung"

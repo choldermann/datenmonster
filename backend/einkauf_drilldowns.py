@@ -85,8 +85,8 @@ NEUE_MAPPINGS = {
     },
 }
 
-BESTEHENDE = {"m_ek_pos": "Einkauf – Bestellpositionen (Detail)"}
-EBENE2 = {"mapping": "m_ek_pos", "param": "kLieferantenBestellung",
+BESTEHENDE = {"m_ek_pos_detail": "Einkauf – Bestellpositionen (Detail)"}
+EBENE2 = {"mapping": "m_ek_pos_detail", "param": "kLieferantenBestellung",
           "key_column": "kLieferantenBestellung", "title": "Positionen der Bestellung"}
 
 DRILLDOWNS = {
