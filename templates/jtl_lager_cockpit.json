@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.15",
+  "version": "1.16",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -14,7 +14,8 @@
     "Im Reiter „Preishistorie\" wählt das Auswahlfeld den Artikel. Es zeigt nur Artikel, für die überhaupt Einkaufspreise gebucht sind. Der VK ist der mittlere Netto-Verkaufspreis der im jeweiligen Monat berechneten Positionen; Monate ohne Verkauf bleiben leer.",
     "Korrekturbuchungen und Inventurdifferenzbuchungen sind in JTL getrennte Buchungsarten. Beide zusammen ergeben den Reiter „Inventur & Schwund\"; ein dauerhaft negativer Wert ist ein Hinweis auf Schwund oder Pflegefehler, keine Buchungsgröße für die Buchhaltung.",
     "Der Reiter „Inventur“ friert Bestände zum Stichtag ein, bewertet sie und gibt eine dokumentierte Liste für den Steuerberater aus. Der Bestandswert wird NICHT in die WaWi zurückgeschrieben – JTL kennt keinen Abwertungswert.",
-    "Im Reiter „Abflüsse je Artikel“ filtert das Artikelfeld: leer zeigt alle Artikel nach Menge, eine Vater-Artikelnummer (VAR…) alle Größen darunter."
+    "Im Reiter „Abflüsse je Artikel“ filtert das Artikelfeld: leer zeigt alle Artikel nach Menge, eine Vater-Artikelnummer (VAR…) alle Größen darunter.",
+    "Der Reiter „Bedarf & Bestellvorschlag“ rechnet den Absatz der letzten 90 Tage auf 14–90 Tage hoch: erwarteter Umsatz und Rohertrag, Bestellvorschlag je Artikel und Lieferant (Mindestabnahme, Lieferzeit, Zulauf berücksichtigt, Streckengeschäft herausgerechnet)."
   ],
   "config_required": [
     {
@@ -5923,6 +5924,735 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_lg_bedarf_kpi",
+      "name": "Lager – Bedarf Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CAST(GETDATE() AS date) AS heute,\n    CASE WHEN TRY_CONVERT(INT, :horizont) BETWEEN 7 AND 365 THEN TRY_CONVERT(INT, :horizont) ELSE 30 END AS H\n),\nverkauf AS (\n  -- Absatz der letzten 90 abgeschlossenen Tage (Rechnungen ohne Stornos, nur Artikelpositionen)\n  SELECT POS.kArtikel, SUM(POS.fAnzahl) AS Menge, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM Rechnung.vRechnung RE\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung AND POS.nType = 1 AND POS.kArtikel > 0\n  LEFT JOIN dbo.tArtikel A ON A.kArtikel = POS.kArtikel\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.dErstellt >= DATEADD(DAY, -90, p.heute) AND RE.dErstellt < p.heute\n  GROUP BY POS.kArtikel\n  HAVING SUM(POS.fAnzahl) > 0\n),\nstrecke AS (\n  -- über Streckengeschäft (Dropshipping) bestellte Mengen der letzten 90 Tage: gehen nie durchs eigene Lager\n  SELECT BP.kArtikel, SUM(BP.fMenge) AS Menge\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung\n  CROSS JOIN p\n  WHERE B.nDropShipping = 1 AND ISNULL(B.nDeleted, 0) = 0\n    AND B.dErstellt >= DATEADD(DAY, -90, p.heute) AND B.dErstellt < p.heute\n  GROUP BY BP.kArtikel\n),\nzulauf AS (\n  -- offene Lieferantenbestellungen: im Horizont (Termin bis Horizontende, höchstens 1 Jahr überfällig) vs. Rest\n  SELECT BP.kArtikel,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufH,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufHWert,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufUnsicher,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufUnsicherWert,\n    MIN(CASE WHEN x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN x.Termin END) AS NaechsteLieferung\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung AND BP.fAnzahlOffen > 0\n  CROSS JOIN p\n  CROSS APPLY (SELECT CAST(COALESCE(BP.dLieferdatum, B.dLieferdatum) AS date) AS Termin) x\n  WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND ISNULL(B.nDropShipping, 0) = 0\n  GROUP BY BP.kArtikel\n),\nlief AS (\n  SELECT LA.tArtikel_kArtikel AS kArtikel, LA.tLieferant_kLieferant AS kLieferant, LA.fEKNetto, LA.nLieferzeit,\n    LA.nMindestAbnahme, LA.nAbnahmeIntervall,\n    ROW_NUMBER() OVER (PARTITION BY LA.tArtikel_kArtikel ORDER BY LA.nStandard DESC, LA.kLiefArtikel) AS rn\n  FROM dbo.tliefartikel LA\n),\nart AS (\n  SELECT A.kArtikel, A.cArtNr, ISNULL(NULLIF(AB.cName, ''), A.cArtNr) AS Artikel,\n    CASE WHEN A.cLagerAktiv = 'Y' AND ISNULL(A.kStueckliste, 0) = 0 THEN 1 ELSE 0 END AS Lagerartikel,\n    ISNULL(LB.fLagerbestand, 0) AS Bestand, ISNULL(LB.fInAuftraegen, 0) AS Reserviert,\n    ISNULL(A.nMidestbestand, 0) AS Mindestbestand,\n    v.Menge / 90.0 AS ProTag, v.Umsatz / v.Menge AS VK, v.Rohertrag / v.Menge AS RohJeStk,\n    -- Lagerabsatz: ohne Strecke, nie unter 0\n    CASE WHEN v.Menge - ISNULL(s.Menge, 0) > 0 THEN (v.Menge - ISNULL(s.Menge, 0)) / 90.0 ELSE 0 END AS LagerProTag,\n    CASE WHEN ISNULL(s.Menge, 0) >= v.Menge THEN 100.0 ELSE 100.0 * ISNULL(s.Menge, 0) / v.Menge END AS StreckeProz,\n    ISNULL(z.ZulaufH, 0) AS ZulaufH, ISNULL(z.ZulaufHWert, 0) AS ZulaufHWert,\n    ISNULL(z.ZulaufUnsicher, 0) AS ZulaufUnsicher, ISNULL(z.ZulaufUnsicherWert, 0) AS ZulaufUnsicherWert,\n    z.NaechsteLieferung,\n    COALESCE(NULLIF(l.fEKNetto, 0), NULLIF(A.fEKNetto, 0), 0) AS EK,\n    l.kLieferant, NULLIF(l.nLieferzeit, 0) AS Lieferzeit,\n    CASE WHEN l.nMindestAbnahme > 1 THEN l.nMindestAbnahme ELSE 1 END AS MinAbnahme,\n    CASE WHEN l.nAbnahmeIntervall > 1 THEN l.nAbnahmeIntervall ELSE 1 END AS Intervall,\n    p.H, p.heute\n  FROM verkauf v\n  CROSS JOIN p\n  JOIN dbo.tArtikel A ON A.kArtikel = v.kArtikel AND A.cAktiv = 'Y' AND ISNULL(A.nIstVater, 0) = 0\n  LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n  LEFT JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n  LEFT JOIN zulauf z ON z.kArtikel = A.kArtikel\n  LEFT JOIN strecke s ON s.kArtikel = A.kArtikel\n  LEFT JOIN lief l ON l.kArtikel = A.kArtikel AND l.rn = 1\n),\ncalc AS (\n  SELECT a.*,\n    -- Bedarf im Horizont: Absatz-Hochrechnung, mindestens die schon reservierte Menge\n    CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END AS BedarfH,\n    CASE WHEN a.Lagerartikel = 1 THEN\n      (CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END) + a.Mindestbestand - a.Bestand - a.ZulaufH\n    END AS Fehl,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert) / a.LagerProTag END AS ReichTage,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert + a.ZulaufH) / a.LagerProTag END AS ReichTageZulauf\n  FROM art a\n),\nvorschlag AS (\n  SELECT c.*,\n    CASE WHEN c.Fehl > 0 THEN\n      -- auf Mindestabnahme und Abnahmeintervall des Lieferanten aufrunden\n      CASE WHEN CEILING(c.Fehl) < c.MinAbnahme THEN c.MinAbnahme\n           ELSE CEILING(CEILING(c.Fehl) / c.Intervall) * c.Intervall END\n    ELSE 0 END AS Bestellmenge\n  FROM calc c\n)\nSELECT\n  MAX(H) AS [Horizont Tage],\n  CAST(SUM(ProTag * H * VK) AS DECIMAL(18,2)) AS [Erwarteter Umsatz],\n  CAST(SUM(ProTag * H * RohJeStk) AS DECIMAL(18,2)) AS [Erwarteter Rohertrag],\n  SUM(CASE WHEN Bestellmenge > 0 THEN 1 ELSE 0 END) AS [Artikel zu bestellen],\n  CAST(SUM(Bestellmenge * EK) AS DECIMAL(18,2)) AS [Wareneinkauf nötig],\n  CAST(SUM(ZulaufHWert) AS DECIMAL(18,2)) AS [Zulauf im Horizont],\n  CAST(SUM(ZulaufUnsicherWert) AS DECIMAL(18,2)) AS [Zulauf ohne Termin oder alt],\n  SUM(CASE WHEN Lagerartikel = 1 AND ReichTageZulauf < 7 THEN 1 ELSE 0 END) AS [Reicht keine Woche]\nFROM vorschlag",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Horizont Tage",
+            "Erwarteter Umsatz",
+            "Erwarteter Rohertrag",
+            "Artikel zu bestellen",
+            "Wareneinkauf nötig",
+            "Zulauf im Horizont",
+            "Zulauf ohne Termin oder alt",
+            "Reicht keine Woche"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Bedarf Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Horizont Tage",
+              "target_field": "Horizont Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Horizont Tage"
+              }
+            },
+            {
+              "source_field": "Erwarteter Umsatz",
+              "target_field": "Erwarteter Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erwarteter Umsatz"
+              }
+            },
+            {
+              "source_field": "Erwarteter Rohertrag",
+              "target_field": "Erwarteter Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erwarteter Rohertrag"
+              }
+            },
+            {
+              "source_field": "Artikel zu bestellen",
+              "target_field": "Artikel zu bestellen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel zu bestellen"
+              }
+            },
+            {
+              "source_field": "Wareneinkauf nötig",
+              "target_field": "Wareneinkauf nötig",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wareneinkauf nötig"
+              }
+            },
+            {
+              "source_field": "Zulauf im Horizont",
+              "target_field": "Zulauf im Horizont",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zulauf im Horizont"
+              }
+            },
+            {
+              "source_field": "Zulauf ohne Termin oder alt",
+              "target_field": "Zulauf ohne Termin oder alt",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zulauf ohne Termin oder alt"
+              }
+            },
+            {
+              "source_field": "Reicht keine Woche",
+              "target_field": "Reicht keine Woche",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reicht keine Woche"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_bedarf_lief",
+      "name": "Lager – Bedarf je Lieferant",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CAST(GETDATE() AS date) AS heute,\n    CASE WHEN TRY_CONVERT(INT, :horizont) BETWEEN 7 AND 365 THEN TRY_CONVERT(INT, :horizont) ELSE 30 END AS H\n),\nverkauf AS (\n  -- Absatz der letzten 90 abgeschlossenen Tage (Rechnungen ohne Stornos, nur Artikelpositionen)\n  SELECT POS.kArtikel, SUM(POS.fAnzahl) AS Menge, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM Rechnung.vRechnung RE\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung AND POS.nType = 1 AND POS.kArtikel > 0\n  LEFT JOIN dbo.tArtikel A ON A.kArtikel = POS.kArtikel\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.dErstellt >= DATEADD(DAY, -90, p.heute) AND RE.dErstellt < p.heute\n  GROUP BY POS.kArtikel\n  HAVING SUM(POS.fAnzahl) > 0\n),\nstrecke AS (\n  -- über Streckengeschäft (Dropshipping) bestellte Mengen der letzten 90 Tage: gehen nie durchs eigene Lager\n  SELECT BP.kArtikel, SUM(BP.fMenge) AS Menge\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung\n  CROSS JOIN p\n  WHERE B.nDropShipping = 1 AND ISNULL(B.nDeleted, 0) = 0\n    AND B.dErstellt >= DATEADD(DAY, -90, p.heute) AND B.dErstellt < p.heute\n  GROUP BY BP.kArtikel\n),\nzulauf AS (\n  -- offene Lieferantenbestellungen: im Horizont (Termin bis Horizontende, höchstens 1 Jahr überfällig) vs. Rest\n  SELECT BP.kArtikel,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufH,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufHWert,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufUnsicher,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufUnsicherWert,\n    MIN(CASE WHEN x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN x.Termin END) AS NaechsteLieferung\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung AND BP.fAnzahlOffen > 0\n  CROSS JOIN p\n  CROSS APPLY (SELECT CAST(COALESCE(BP.dLieferdatum, B.dLieferdatum) AS date) AS Termin) x\n  WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND ISNULL(B.nDropShipping, 0) = 0\n  GROUP BY BP.kArtikel\n),\nlief AS (\n  SELECT LA.tArtikel_kArtikel AS kArtikel, LA.tLieferant_kLieferant AS kLieferant, LA.fEKNetto, LA.nLieferzeit,\n    LA.nMindestAbnahme, LA.nAbnahmeIntervall,\n    ROW_NUMBER() OVER (PARTITION BY LA.tArtikel_kArtikel ORDER BY LA.nStandard DESC, LA.kLiefArtikel) AS rn\n  FROM dbo.tliefartikel LA\n),\nart AS (\n  SELECT A.kArtikel, A.cArtNr, ISNULL(NULLIF(AB.cName, ''), A.cArtNr) AS Artikel,\n    CASE WHEN A.cLagerAktiv = 'Y' AND ISNULL(A.kStueckliste, 0) = 0 THEN 1 ELSE 0 END AS Lagerartikel,\n    ISNULL(LB.fLagerbestand, 0) AS Bestand, ISNULL(LB.fInAuftraegen, 0) AS Reserviert,\n    ISNULL(A.nMidestbestand, 0) AS Mindestbestand,\n    v.Menge / 90.0 AS ProTag, v.Umsatz / v.Menge AS VK, v.Rohertrag / v.Menge AS RohJeStk,\n    -- Lagerabsatz: ohne Strecke, nie unter 0\n    CASE WHEN v.Menge - ISNULL(s.Menge, 0) > 0 THEN (v.Menge - ISNULL(s.Menge, 0)) / 90.0 ELSE 0 END AS LagerProTag,\n    CASE WHEN ISNULL(s.Menge, 0) >= v.Menge THEN 100.0 ELSE 100.0 * ISNULL(s.Menge, 0) / v.Menge END AS StreckeProz,\n    ISNULL(z.ZulaufH, 0) AS ZulaufH, ISNULL(z.ZulaufHWert, 0) AS ZulaufHWert,\n    ISNULL(z.ZulaufUnsicher, 0) AS ZulaufUnsicher, ISNULL(z.ZulaufUnsicherWert, 0) AS ZulaufUnsicherWert,\n    z.NaechsteLieferung,\n    COALESCE(NULLIF(l.fEKNetto, 0), NULLIF(A.fEKNetto, 0), 0) AS EK,\n    l.kLieferant, NULLIF(l.nLieferzeit, 0) AS Lieferzeit,\n    CASE WHEN l.nMindestAbnahme > 1 THEN l.nMindestAbnahme ELSE 1 END AS MinAbnahme,\n    CASE WHEN l.nAbnahmeIntervall > 1 THEN l.nAbnahmeIntervall ELSE 1 END AS Intervall,\n    p.H, p.heute\n  FROM verkauf v\n  CROSS JOIN p\n  JOIN dbo.tArtikel A ON A.kArtikel = v.kArtikel AND A.cAktiv = 'Y' AND ISNULL(A.nIstVater, 0) = 0\n  LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n  LEFT JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n  LEFT JOIN zulauf z ON z.kArtikel = A.kArtikel\n  LEFT JOIN strecke s ON s.kArtikel = A.kArtikel\n  LEFT JOIN lief l ON l.kArtikel = A.kArtikel AND l.rn = 1\n),\ncalc AS (\n  SELECT a.*,\n    -- Bedarf im Horizont: Absatz-Hochrechnung, mindestens die schon reservierte Menge\n    CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END AS BedarfH,\n    CASE WHEN a.Lagerartikel = 1 THEN\n      (CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END) + a.Mindestbestand - a.Bestand - a.ZulaufH\n    END AS Fehl,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert) / a.LagerProTag END AS ReichTage,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert + a.ZulaufH) / a.LagerProTag END AS ReichTageZulauf\n  FROM art a\n),\nvorschlag AS (\n  SELECT c.*,\n    CASE WHEN c.Fehl > 0 THEN\n      -- auf Mindestabnahme und Abnahmeintervall des Lieferanten aufrunden\n      CASE WHEN CEILING(c.Fehl) < c.MinAbnahme THEN c.MinAbnahme\n           ELSE CEILING(CEILING(c.Fehl) / c.Intervall) * c.Intervall END\n    ELSE 0 END AS Bestellmenge\n  FROM calc c\n)\nSELECT ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '(ohne Lieferant)') AS Lieferant,\n  COUNT(*) AS Artikel,\n  SUM(CASE WHEN v.ReichTageZulauf < 7 THEN 1 ELSE 0 END) AS [davon reicht keine Woche],\n  CAST(SUM(v.Bestellmenge * v.EK) AS DECIMAL(18,2)) AS Einkaufswert,\n  MAX(v.Lieferzeit) AS [Lieferzeit Tage]\nFROM vorschlag v\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = v.kLieferant\nWHERE v.Bestellmenge > 0\nGROUP BY ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '(ohne Lieferant)')\nORDER BY 4 DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Lieferant",
+            "Artikel",
+            "davon reicht keine Woche",
+            "Einkaufswert",
+            "Lieferzeit Tage"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Bedarf je Lieferant",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "davon reicht keine Woche",
+              "target_field": "davon reicht keine Woche",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "davon reicht keine Woche"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            },
+            {
+              "source_field": "Lieferzeit Tage",
+              "target_field": "Lieferzeit Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferzeit Tage"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_bedarf_liste",
+      "name": "Lager – Bestellvorschlag",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CAST(GETDATE() AS date) AS heute,\n    CASE WHEN TRY_CONVERT(INT, :horizont) BETWEEN 7 AND 365 THEN TRY_CONVERT(INT, :horizont) ELSE 30 END AS H\n),\nverkauf AS (\n  -- Absatz der letzten 90 abgeschlossenen Tage (Rechnungen ohne Stornos, nur Artikelpositionen)\n  SELECT POS.kArtikel, SUM(POS.fAnzahl) AS Menge, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM Rechnung.vRechnung RE\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung AND POS.nType = 1 AND POS.kArtikel > 0\n  LEFT JOIN dbo.tArtikel A ON A.kArtikel = POS.kArtikel\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.dErstellt >= DATEADD(DAY, -90, p.heute) AND RE.dErstellt < p.heute\n  GROUP BY POS.kArtikel\n  HAVING SUM(POS.fAnzahl) > 0\n),\nstrecke AS (\n  -- über Streckengeschäft (Dropshipping) bestellte Mengen der letzten 90 Tage: gehen nie durchs eigene Lager\n  SELECT BP.kArtikel, SUM(BP.fMenge) AS Menge\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung\n  CROSS JOIN p\n  WHERE B.nDropShipping = 1 AND ISNULL(B.nDeleted, 0) = 0\n    AND B.dErstellt >= DATEADD(DAY, -90, p.heute) AND B.dErstellt < p.heute\n  GROUP BY BP.kArtikel\n),\nzulauf AS (\n  -- offene Lieferantenbestellungen: im Horizont (Termin bis Horizontende, höchstens 1 Jahr überfällig) vs. Rest\n  SELECT BP.kArtikel,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufH,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufHWert,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufUnsicher,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufUnsicherWert,\n    MIN(CASE WHEN x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN x.Termin END) AS NaechsteLieferung\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung AND BP.fAnzahlOffen > 0\n  CROSS JOIN p\n  CROSS APPLY (SELECT CAST(COALESCE(BP.dLieferdatum, B.dLieferdatum) AS date) AS Termin) x\n  WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND ISNULL(B.nDropShipping, 0) = 0\n  GROUP BY BP.kArtikel\n),\nlief AS (\n  SELECT LA.tArtikel_kArtikel AS kArtikel, LA.tLieferant_kLieferant AS kLieferant, LA.fEKNetto, LA.nLieferzeit,\n    LA.nMindestAbnahme, LA.nAbnahmeIntervall,\n    ROW_NUMBER() OVER (PARTITION BY LA.tArtikel_kArtikel ORDER BY LA.nStandard DESC, LA.kLiefArtikel) AS rn\n  FROM dbo.tliefartikel LA\n),\nart AS (\n  SELECT A.kArtikel, A.cArtNr, ISNULL(NULLIF(AB.cName, ''), A.cArtNr) AS Artikel,\n    CASE WHEN A.cLagerAktiv = 'Y' AND ISNULL(A.kStueckliste, 0) = 0 THEN 1 ELSE 0 END AS Lagerartikel,\n    ISNULL(LB.fLagerbestand, 0) AS Bestand, ISNULL(LB.fInAuftraegen, 0) AS Reserviert,\n    ISNULL(A.nMidestbestand, 0) AS Mindestbestand,\n    v.Menge / 90.0 AS ProTag, v.Umsatz / v.Menge AS VK, v.Rohertrag / v.Menge AS RohJeStk,\n    -- Lagerabsatz: ohne Strecke, nie unter 0\n    CASE WHEN v.Menge - ISNULL(s.Menge, 0) > 0 THEN (v.Menge - ISNULL(s.Menge, 0)) / 90.0 ELSE 0 END AS LagerProTag,\n    CASE WHEN ISNULL(s.Menge, 0) >= v.Menge THEN 100.0 ELSE 100.0 * ISNULL(s.Menge, 0) / v.Menge END AS StreckeProz,\n    ISNULL(z.ZulaufH, 0) AS ZulaufH, ISNULL(z.ZulaufHWert, 0) AS ZulaufHWert,\n    ISNULL(z.ZulaufUnsicher, 0) AS ZulaufUnsicher, ISNULL(z.ZulaufUnsicherWert, 0) AS ZulaufUnsicherWert,\n    z.NaechsteLieferung,\n    COALESCE(NULLIF(l.fEKNetto, 0), NULLIF(A.fEKNetto, 0), 0) AS EK,\n    l.kLieferant, NULLIF(l.nLieferzeit, 0) AS Lieferzeit,\n    CASE WHEN l.nMindestAbnahme > 1 THEN l.nMindestAbnahme ELSE 1 END AS MinAbnahme,\n    CASE WHEN l.nAbnahmeIntervall > 1 THEN l.nAbnahmeIntervall ELSE 1 END AS Intervall,\n    p.H, p.heute\n  FROM verkauf v\n  CROSS JOIN p\n  JOIN dbo.tArtikel A ON A.kArtikel = v.kArtikel AND A.cAktiv = 'Y' AND ISNULL(A.nIstVater, 0) = 0\n  LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n  LEFT JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n  LEFT JOIN zulauf z ON z.kArtikel = A.kArtikel\n  LEFT JOIN strecke s ON s.kArtikel = A.kArtikel\n  LEFT JOIN lief l ON l.kArtikel = A.kArtikel AND l.rn = 1\n),\ncalc AS (\n  SELECT a.*,\n    -- Bedarf im Horizont: Absatz-Hochrechnung, mindestens die schon reservierte Menge\n    CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END AS BedarfH,\n    CASE WHEN a.Lagerartikel = 1 THEN\n      (CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END) + a.Mindestbestand - a.Bestand - a.ZulaufH\n    END AS Fehl,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert) / a.LagerProTag END AS ReichTage,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert + a.ZulaufH) / a.LagerProTag END AS ReichTageZulauf\n  FROM art a\n),\nvorschlag AS (\n  SELECT c.*,\n    CASE WHEN c.Fehl > 0 THEN\n      -- auf Mindestabnahme und Abnahmeintervall des Lieferanten aufrunden\n      CASE WHEN CEILING(c.Fehl) < c.MinAbnahme THEN c.MinAbnahme\n           ELSE CEILING(CEILING(c.Fehl) / c.Intervall) * c.Intervall END\n    ELSE 0 END AS Bestellmenge\n  FROM calc c\n)\nSELECT\n  CAST(v.kArtikel AS VARCHAR(20)) AS kArtikel,\n  v.cArtNr AS ArtNr, v.Artikel,\n  ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '(ohne Lieferant)') AS Lieferant,\n  CASE WHEN v.ReichTageZulauf < 7 THEN '1 – reicht keine Woche'\n       WHEN v.ReichTage < v.H AND v.ReichTageZulauf >= v.H THEN '3 – Zulauf deckt'\n       ELSE '2 – bestellen' END AS Dringlichkeit,\n  CAST(v.LagerProTag * 30 AS DECIMAL(18,1)) AS [Lagerabsatz je 30 Tage],\n  CAST(v.StreckeProz AS DECIMAL(9,0)) AS [Strecke %],\n  CAST(v.Bestand AS DECIMAL(18,2)) AS Bestand,\n  CAST(v.Reserviert AS DECIMAL(18,2)) AS Reserviert,\n  CAST(v.ZulaufH AS DECIMAL(18,2)) AS [Zulauf im Horizont],\n  ISNULL(CONVERT(char(10), v.NaechsteLieferung, 104), '') AS [Nächste Lieferung],\n  CAST(CASE WHEN v.ReichTage < 0 THEN 0 ELSE v.ReichTage END AS DECIMAL(18,0)) AS [Reicht Tage],\n  CAST(v.BedarfH AS DECIMAL(18,1)) AS [Bedarf im Horizont],\n  CAST(v.Mindestbestand AS DECIMAL(18,0)) AS Mindestbestand,\n  CAST(v.Bestellmenge AS DECIMAL(18,2)) AS Bestellmenge,\n  CAST(v.EK AS DECIMAL(18,4)) AS EK,\n  CAST(v.Bestellmenge * v.EK AS DECIMAL(18,2)) AS Einkaufswert,\n  v.Lieferzeit AS [Lieferzeit Tage],\n  CASE WHEN v.Lieferzeit IS NOT NULL AND v.ReichTage IS NOT NULL\n       THEN CONVERT(char(10), DATEADD(DAY, CAST(CASE WHEN v.ReichTage - v.Lieferzeit < 0 THEN 0 ELSE v.ReichTage - v.Lieferzeit END AS INT), v.heute), 104)\n       ELSE '' END AS [Bestellen bis]\nFROM vorschlag v\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = v.kLieferant\nWHERE v.Bestellmenge > 0\nORDER BY 5, v.Bestellmenge * v.EK DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Lieferant",
+            "Dringlichkeit",
+            "Lagerabsatz je 30 Tage",
+            "Strecke %",
+            "Bestand",
+            "Reserviert",
+            "Zulauf im Horizont",
+            "Nächste Lieferung",
+            "Reicht Tage",
+            "Bedarf im Horizont",
+            "Mindestbestand",
+            "Bestellmenge",
+            "EK",
+            "Einkaufswert",
+            "Lieferzeit Tage",
+            "Bestellen bis"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Bestellvorschlag",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Dringlichkeit",
+              "target_field": "Dringlichkeit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Dringlichkeit"
+              }
+            },
+            {
+              "source_field": "Lagerabsatz je 30 Tage",
+              "target_field": "Lagerabsatz je 30 Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerabsatz je 30 Tage"
+              }
+            },
+            {
+              "source_field": "Strecke %",
+              "target_field": "Strecke %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Strecke %"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Reserviert",
+              "target_field": "Reserviert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reserviert"
+              }
+            },
+            {
+              "source_field": "Zulauf im Horizont",
+              "target_field": "Zulauf im Horizont",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zulauf im Horizont"
+              }
+            },
+            {
+              "source_field": "Nächste Lieferung",
+              "target_field": "Nächste Lieferung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Nächste Lieferung"
+              }
+            },
+            {
+              "source_field": "Reicht Tage",
+              "target_field": "Reicht Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reicht Tage"
+              }
+            },
+            {
+              "source_field": "Bedarf im Horizont",
+              "target_field": "Bedarf im Horizont",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bedarf im Horizont"
+              }
+            },
+            {
+              "source_field": "Mindestbestand",
+              "target_field": "Mindestbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mindestbestand"
+              }
+            },
+            {
+              "source_field": "Bestellmenge",
+              "target_field": "Bestellmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellmenge"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            },
+            {
+              "source_field": "Lieferzeit Tage",
+              "target_field": "Lieferzeit Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferzeit Tage"
+              }
+            },
+            {
+              "source_field": "Bestellen bis",
+              "target_field": "Bestellen bis",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellen bis"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_lg_bedarf_lief_detail",
+      "name": "Lager – Bestellvorschlag eines Lieferanten (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CAST(GETDATE() AS date) AS heute,\n    CASE WHEN TRY_CONVERT(INT, :horizont) BETWEEN 7 AND 365 THEN TRY_CONVERT(INT, :horizont) ELSE 30 END AS H\n),\nverkauf AS (\n  -- Absatz der letzten 90 abgeschlossenen Tage (Rechnungen ohne Stornos, nur Artikelpositionen)\n  SELECT POS.kArtikel, SUM(POS.fAnzahl) AS Menge, SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM Rechnung.vRechnung RE\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung AND POS.nType = 1 AND POS.kArtikel > 0\n  LEFT JOIN dbo.tArtikel A ON A.kArtikel = POS.kArtikel\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.dErstellt >= DATEADD(DAY, -90, p.heute) AND RE.dErstellt < p.heute\n  GROUP BY POS.kArtikel\n  HAVING SUM(POS.fAnzahl) > 0\n),\nstrecke AS (\n  -- über Streckengeschäft (Dropshipping) bestellte Mengen der letzten 90 Tage: gehen nie durchs eigene Lager\n  SELECT BP.kArtikel, SUM(BP.fMenge) AS Menge\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung\n  CROSS JOIN p\n  WHERE B.nDropShipping = 1 AND ISNULL(B.nDeleted, 0) = 0\n    AND B.dErstellt >= DATEADD(DAY, -90, p.heute) AND B.dErstellt < p.heute\n  GROUP BY BP.kArtikel\n),\nzulauf AS (\n  -- offene Lieferantenbestellungen: im Horizont (Termin bis Horizontende, höchstens 1 Jahr überfällig) vs. Rest\n  SELECT BP.kArtikel,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufH,\n    SUM(CASE WHEN x.Termin IS NOT NULL AND x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufHWert,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen ELSE 0 END) AS ZulaufUnsicher,\n    SUM(CASE WHEN x.Termin IS NULL OR x.Termin < DATEADD(DAY, -365, p.heute) THEN BP.fAnzahlOffen * BP.fEKNetto ELSE 0 END) AS ZulaufUnsicherWert,\n    MIN(CASE WHEN x.Termin >= DATEADD(DAY, -365, p.heute) AND x.Termin < DATEADD(DAY, p.H + 1, p.heute) THEN x.Termin END) AS NaechsteLieferung\n  FROM dbo.tLieferantenBestellung B\n  JOIN dbo.tLieferantenBestellungPos BP ON BP.kLieferantenBestellung = B.kLieferantenBestellung AND BP.fAnzahlOffen > 0\n  CROSS JOIN p\n  CROSS APPLY (SELECT CAST(COALESCE(BP.dLieferdatum, B.dLieferdatum) AS date) AS Termin) x\n  WHERE ISNULL(B.nDeleted, 0) = 0 AND ISNULL(B.nManuellAbgeschlossen, 0) = 0 AND ISNULL(B.nDropShipping, 0) = 0\n  GROUP BY BP.kArtikel\n),\nlief AS (\n  SELECT LA.tArtikel_kArtikel AS kArtikel, LA.tLieferant_kLieferant AS kLieferant, LA.fEKNetto, LA.nLieferzeit,\n    LA.nMindestAbnahme, LA.nAbnahmeIntervall,\n    ROW_NUMBER() OVER (PARTITION BY LA.tArtikel_kArtikel ORDER BY LA.nStandard DESC, LA.kLiefArtikel) AS rn\n  FROM dbo.tliefartikel LA\n),\nart AS (\n  SELECT A.kArtikel, A.cArtNr, ISNULL(NULLIF(AB.cName, ''), A.cArtNr) AS Artikel,\n    CASE WHEN A.cLagerAktiv = 'Y' AND ISNULL(A.kStueckliste, 0) = 0 THEN 1 ELSE 0 END AS Lagerartikel,\n    ISNULL(LB.fLagerbestand, 0) AS Bestand, ISNULL(LB.fInAuftraegen, 0) AS Reserviert,\n    ISNULL(A.nMidestbestand, 0) AS Mindestbestand,\n    v.Menge / 90.0 AS ProTag, v.Umsatz / v.Menge AS VK, v.Rohertrag / v.Menge AS RohJeStk,\n    -- Lagerabsatz: ohne Strecke, nie unter 0\n    CASE WHEN v.Menge - ISNULL(s.Menge, 0) > 0 THEN (v.Menge - ISNULL(s.Menge, 0)) / 90.0 ELSE 0 END AS LagerProTag,\n    CASE WHEN ISNULL(s.Menge, 0) >= v.Menge THEN 100.0 ELSE 100.0 * ISNULL(s.Menge, 0) / v.Menge END AS StreckeProz,\n    ISNULL(z.ZulaufH, 0) AS ZulaufH, ISNULL(z.ZulaufHWert, 0) AS ZulaufHWert,\n    ISNULL(z.ZulaufUnsicher, 0) AS ZulaufUnsicher, ISNULL(z.ZulaufUnsicherWert, 0) AS ZulaufUnsicherWert,\n    z.NaechsteLieferung,\n    COALESCE(NULLIF(l.fEKNetto, 0), NULLIF(A.fEKNetto, 0), 0) AS EK,\n    l.kLieferant, NULLIF(l.nLieferzeit, 0) AS Lieferzeit,\n    CASE WHEN l.nMindestAbnahme > 1 THEN l.nMindestAbnahme ELSE 1 END AS MinAbnahme,\n    CASE WHEN l.nAbnahmeIntervall > 1 THEN l.nAbnahmeIntervall ELSE 1 END AS Intervall,\n    p.H, p.heute\n  FROM verkauf v\n  CROSS JOIN p\n  JOIN dbo.tArtikel A ON A.kArtikel = v.kArtikel AND A.cAktiv = 'Y' AND ISNULL(A.nIstVater, 0) = 0\n  LEFT JOIN dbo.tArtikelBeschreibung AB ON AB.kArtikel = A.kArtikel AND AB.kSprache = 1 AND AB.kPlattform = 1 AND AB.kShop = 0\n  LEFT JOIN dbo.tlagerbestand LB ON LB.kArtikel = A.kArtikel\n  LEFT JOIN zulauf z ON z.kArtikel = A.kArtikel\n  LEFT JOIN strecke s ON s.kArtikel = A.kArtikel\n  LEFT JOIN lief l ON l.kArtikel = A.kArtikel AND l.rn = 1\n),\ncalc AS (\n  SELECT a.*,\n    -- Bedarf im Horizont: Absatz-Hochrechnung, mindestens die schon reservierte Menge\n    CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END AS BedarfH,\n    CASE WHEN a.Lagerartikel = 1 THEN\n      (CASE WHEN a.LagerProTag * a.H > a.Reserviert THEN a.LagerProTag * a.H ELSE a.Reserviert END) + a.Mindestbestand - a.Bestand - a.ZulaufH\n    END AS Fehl,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert) / a.LagerProTag END AS ReichTage,\n    CASE WHEN a.LagerProTag > 0 THEN (a.Bestand - a.Reserviert + a.ZulaufH) / a.LagerProTag END AS ReichTageZulauf\n  FROM art a\n),\nvorschlag AS (\n  SELECT c.*,\n    CASE WHEN c.Fehl > 0 THEN\n      -- auf Mindestabnahme und Abnahmeintervall des Lieferanten aufrunden\n      CASE WHEN CEILING(c.Fehl) < c.MinAbnahme THEN c.MinAbnahme\n           ELSE CEILING(CEILING(c.Fehl) / c.Intervall) * c.Intervall END\n    ELSE 0 END AS Bestellmenge\n  FROM calc c\n)\nSELECT\n  CAST(v.kArtikel AS VARCHAR(20)) AS kArtikel,\n  v.cArtNr AS ArtNr, v.Artikel,\n  ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '(ohne Lieferant)') AS Lieferant,\n  CASE WHEN v.ReichTageZulauf < 7 THEN '1 – reicht keine Woche'\n       WHEN v.ReichTage < v.H AND v.ReichTageZulauf >= v.H THEN '3 – Zulauf deckt'\n       ELSE '2 – bestellen' END AS Dringlichkeit,\n  CAST(v.LagerProTag * 30 AS DECIMAL(18,1)) AS [Lagerabsatz je 30 Tage],\n  CAST(v.StreckeProz AS DECIMAL(9,0)) AS [Strecke %],\n  CAST(v.Bestand AS DECIMAL(18,2)) AS Bestand,\n  CAST(v.Reserviert AS DECIMAL(18,2)) AS Reserviert,\n  CAST(v.ZulaufH AS DECIMAL(18,2)) AS [Zulauf im Horizont],\n  ISNULL(CONVERT(char(10), v.NaechsteLieferung, 104), '') AS [Nächste Lieferung],\n  CAST(CASE WHEN v.ReichTage < 0 THEN 0 ELSE v.ReichTage END AS DECIMAL(18,0)) AS [Reicht Tage],\n  CAST(v.BedarfH AS DECIMAL(18,1)) AS [Bedarf im Horizont],\n  CAST(v.Mindestbestand AS DECIMAL(18,0)) AS Mindestbestand,\n  CAST(v.Bestellmenge AS DECIMAL(18,2)) AS Bestellmenge,\n  CAST(v.EK AS DECIMAL(18,4)) AS EK,\n  CAST(v.Bestellmenge * v.EK AS DECIMAL(18,2)) AS Einkaufswert,\n  v.Lieferzeit AS [Lieferzeit Tage],\n  CASE WHEN v.Lieferzeit IS NOT NULL AND v.ReichTage IS NOT NULL\n       THEN CONVERT(char(10), DATEADD(DAY, CAST(CASE WHEN v.ReichTage - v.Lieferzeit < 0 THEN 0 ELSE v.ReichTage - v.Lieferzeit END AS INT), v.heute), 104)\n       ELSE '' END AS [Bestellen bis]\nFROM vorschlag v\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = v.kLieferant\nWHERE v.Bestellmenge > 0 AND ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '(ohne Lieferant)') = :lieferant\nORDER BY 5, v.Bestellmenge * v.EK DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Artikel",
+            "Lieferant",
+            "Dringlichkeit",
+            "Lagerabsatz je 30 Tage",
+            "Strecke %",
+            "Bestand",
+            "Reserviert",
+            "Zulauf im Horizont",
+            "Nächste Lieferung",
+            "Reicht Tage",
+            "Bedarf im Horizont",
+            "Mindestbestand",
+            "Bestellmenge",
+            "EK",
+            "Einkaufswert",
+            "Lieferzeit Tage",
+            "Bestellen bis"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Lager – Bestellvorschlag eines Lieferanten (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Artikel",
+              "target_field": "Artikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Artikel"
+              }
+            },
+            {
+              "source_field": "Lieferant",
+              "target_field": "Lieferant",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferant"
+              }
+            },
+            {
+              "source_field": "Dringlichkeit",
+              "target_field": "Dringlichkeit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Dringlichkeit"
+              }
+            },
+            {
+              "source_field": "Lagerabsatz je 30 Tage",
+              "target_field": "Lagerabsatz je 30 Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lagerabsatz je 30 Tage"
+              }
+            },
+            {
+              "source_field": "Strecke %",
+              "target_field": "Strecke %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Strecke %"
+              }
+            },
+            {
+              "source_field": "Bestand",
+              "target_field": "Bestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestand"
+              }
+            },
+            {
+              "source_field": "Reserviert",
+              "target_field": "Reserviert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reserviert"
+              }
+            },
+            {
+              "source_field": "Zulauf im Horizont",
+              "target_field": "Zulauf im Horizont",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zulauf im Horizont"
+              }
+            },
+            {
+              "source_field": "Nächste Lieferung",
+              "target_field": "Nächste Lieferung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Nächste Lieferung"
+              }
+            },
+            {
+              "source_field": "Reicht Tage",
+              "target_field": "Reicht Tage",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reicht Tage"
+              }
+            },
+            {
+              "source_field": "Bedarf im Horizont",
+              "target_field": "Bedarf im Horizont",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bedarf im Horizont"
+              }
+            },
+            {
+              "source_field": "Mindestbestand",
+              "target_field": "Mindestbestand",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mindestbestand"
+              }
+            },
+            {
+              "source_field": "Bestellmenge",
+              "target_field": "Bestellmenge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellmenge"
+              }
+            },
+            {
+              "source_field": "EK",
+              "target_field": "EK",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EK"
+              }
+            },
+            {
+              "source_field": "Einkaufswert",
+              "target_field": "Einkaufswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einkaufswert"
+              }
+            },
+            {
+              "source_field": "Lieferzeit Tage",
+              "target_field": "Lieferzeit Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferzeit Tage"
+              }
+            },
+            {
+              "source_field": "Bestellen bis",
+              "target_field": "Bestellen bis",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bestellen bis"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "forms": [
@@ -6169,6 +6899,47 @@
               "auto_run": true,
               "visible_tabs": [
                 "tab_lg_lagerliste"
+              ]
+            }
+          },
+          {
+            "id": "f_bd_horizont",
+            "name": "horizont",
+            "type": "dropdown",
+            "label": "Planungshorizont",
+            "row": 0,
+            "colSpan": 3,
+            "default": "30",
+            "action_ids": [
+              "act_lg_bedarf_kpi",
+              "act_lg_bedarf_lief",
+              "act_lg_bedarf_liste"
+            ],
+            "options": [
+              {
+                "value": "14",
+                "label": "14 Tage"
+              },
+              {
+                "value": "30",
+                "label": "30 Tage"
+              },
+              {
+                "value": "60",
+                "label": "60 Tage"
+              },
+              {
+                "value": "90",
+                "label": "90 Tage"
+              }
+            ],
+            "config": {
+              "auto_run": true,
+              "visible_tabs": [
+                "tab_lg_bedarf"
+              ],
+              "ersetzt_felder": [
+                "f_zeitraum"
               ]
             }
           }
@@ -6431,6 +7202,27 @@
             "mapping_id": "m_lg_ll_liste",
             "pipeline_id": null,
             "label": "Lager – Lagerliste"
+          },
+          {
+            "id": "act_lg_bedarf_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_bedarf_kpi",
+            "pipeline_id": null,
+            "label": "Bedarf – Kennzahlen"
+          },
+          {
+            "id": "act_lg_bedarf_lief",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_bedarf_lief",
+            "pipeline_id": null,
+            "label": "Bedarf je Lieferant"
+          },
+          {
+            "id": "act_lg_bedarf_liste",
+            "type": "run_mapping",
+            "mapping_id": "m_lg_bedarf_liste",
+            "pipeline_id": null,
+            "label": "Bestellvorschlag"
           }
         ],
         "widgets": [
@@ -6730,6 +7522,176 @@
                 ]
               },
               "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_bd_h",
+            "type": "ueberschrift",
+            "label": "Bedarf im Planungshorizont",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 12,
+              "text": "Was in den nächsten Tagen voraussichtlich verkauft wird, was dafür nachgekauft werden muss – und was schon unterwegs ist."
+            }
+          },
+          {
+            "id": "w_lg_bd_umsatz",
+            "type": "kpi",
+            "label": "Erwarteter Umsatz",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Erwarteter Umsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Absatz je Tag × Planungshorizont × Ø Verkaufspreis je Artikel (alle Artikel, auch Strecke). Grundlage: Absatz laut Rechnungen der letzten 90 Tage (ohne Stornos), hochgerechnet auf den Planungshorizont. Über Streckengeschäft bestellte Mengen gehen nicht durchs Lager und zählen für den Nachkauf nicht. Momentaufnahme ab heute – der Zeitraumfilter wirkt hier nicht."
+            }
+          },
+          {
+            "id": "w_lg_bd_roh",
+            "type": "kpi",
+            "label": "Erwarteter Rohertrag",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Erwarteter Rohertrag",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Wie der erwartete Umsatz, mit dem Ø Rohertrag je Stück der letzten 90 Tage."
+            }
+          },
+          {
+            "id": "w_lg_bd_ek",
+            "type": "kpi",
+            "label": "Wareneinkauf nötig",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Wareneinkauf nötig",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Summe der Bestellvorschläge × EK des Standardlieferanten (sonst Artikel-EK)."
+            }
+          },
+          {
+            "id": "w_lg_bd_anz",
+            "type": "kpi",
+            "label": "Artikel zu bestellen",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Artikel zu bestellen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Lagerartikel, bei denen Bestand + Zulauf im Horizont den Bedarf (mindestens die reservierte Menge) plus Mindestbestand nicht decken."
+            }
+          },
+          {
+            "id": "w_lg_bd_woche",
+            "type": "kpi",
+            "label": "Reicht keine Woche",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Reicht keine Woche",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Lagerartikel, deren Bestand abzüglich Reservierungen plus Zulauf im Horizont beim derzeitigen Lagerabsatz keine 7 Tage hält."
+            }
+          },
+          {
+            "id": "w_lg_bd_zulauf",
+            "type": "kpi",
+            "label": "Zulauf im Horizont",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Zulauf im Horizont",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Offene Lieferantenbestellungen (ohne Strecke) mit Liefertermin bis Ende des Horizonts; überfällige bis ein Jahr zählen mit."
+            }
+          },
+          {
+            "id": "w_lg_bd_unsicher",
+            "type": "kpi",
+            "label": "Zulauf ohne Termin oder alt",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Zulauf ohne Termin oder alt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Offene Bestellpositionen ohne Liefertermin oder über ein Jahr überfällig – zählen NICHT als Zulauf. Meist Karteileichen: in JTL abschließen."
+            }
+          },
+          {
+            "id": "w_lg_bd_hz",
+            "type": "kpi",
+            "label": "Planungshorizont",
+            "action_id": "act_lg_bedarf_kpi",
+            "config": {
+              "width": 3,
+              "column": "Horizont Tage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Oben im Feld „Planungshorizont“ einstellbar."
+            }
+          },
+          {
+            "id": "w_lg_bd_lief",
+            "type": "table",
+            "label": "Bestellvorschlag je Lieferant",
+            "action_id": "act_lg_bedarf_lief",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Lieferant = Standardlieferant des Artikels. Klick zeigt die Artikel dieses Lieferanten.",
+              "drilldown": {
+                "mapping_id": "m_lg_bedarf_lief_detail",
+                "key_column": "Lieferant",
+                "param": "lieferant",
+                "title": "Bestellvorschlag dieses Lieferanten",
+                "hidden_columns": [
+                  "kArtikel"
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_lg_bd_liste",
+            "type": "table",
+            "label": "Bestellvorschlag (Klick → Bestellhistorie)",
+            "action_id": "act_lg_bedarf_liste",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "info": "Bedarf im Horizont = Lagerabsatz je Tag × Horizont, mindestens die schon reservierte Menge. Bestellmenge = Bedarf + Mindestbestand − Bestand − Zulauf im Horizont, aufgerundet auf Mindestabnahme und Abnahmeintervall des Lieferanten. „Bestellen bis“ = Tag, an dem der Bestand aufgebraucht ist, minus Lieferzeit. „Strecke %“ = Anteil des Absatzes, der über Streckengeschäft lief. Grundlage: Absatz laut Rechnungen der letzten 90 Tage (ohne Stornos), hochgerechnet auf den Planungshorizont. Über Streckengeschäft bestellte Mengen gehen nicht durchs Lager und zählen für den Nachkauf nicht. Momentaufnahme ab heute – der Zeitraumfilter wirkt hier nicht.",
+              "drilldown": {
+                "mapping_id": "m_ek_artikel_hist_detail",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Bestellhistorie des Artikels"
+              }
             }
           },
           {
@@ -7663,6 +8625,15 @@
               "act_lg_dispo_kpi",
               "act_lg_fehlmengen",
               "act_lg_zulauf"
+            ]
+          },
+          {
+            "id": "tab_lg_bedarf",
+            "label": "Bedarf & Bestellvorschlag",
+            "action_ids": [
+              "act_lg_bedarf_kpi",
+              "act_lg_bedarf_lief",
+              "act_lg_bedarf_liste"
             ]
           },
           {
