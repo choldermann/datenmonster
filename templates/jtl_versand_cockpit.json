@@ -4,13 +4,14 @@
   "template_name": "JTL – Versand-Cockpit",
   "description": "Versandsicht auf die JTL-Wawi: Sendungsaufkommen je Versandart, Durchlaufzeit vom Auftrag bis zum Versand, Tracking-Qualität und der Rückstand nicht versendeter Lieferscheine.",
   "category": "jtl-reporting",
-  "version": "1.7",
+  "version": "1.8",
   "author": "Datenmonster",
   "hinweise": [
     "Der Versanddienstleister kommt aus dbo.tVersandArt.cName – dbo.tVersand.cLogistiker wird von der Wawi nicht befüllt und ist durchgängig leer.",
     "Durchlaufzeit = Stunden vom Auftragsdatum (Verkauf.tAuftrag.dErstellt) bis zum Versanddatum der Sendung. Verknüpfung: tVersand → tLieferschein → tAuftrag (tLieferschein.kBestellung = kAuftrag).",
     "Die Liste „Sendungen ohne Tracking\" blendet Versandarten aus, die generell ohne Tracking-Nummer arbeiten (Selbstabholer, Spedition): gezeigt werden nur Versandarten mit sonst mindestens 50 % Tracking-Quote.",
-    "Der Reiter „Rückstand\" ist eine Momentaufnahme und ignoriert den Zeitraumfilter. Sehr alte Lieferscheine ohne Versand sind meist Altlasten aus der Wawi-Einführung."
+    "Der Reiter „Rückstand\" ist eine Momentaufnahme und ignoriert den Zeitraumfilter. Sehr alte Lieferscheine ohne Versand sind meist Altlasten aus der Wawi-Einführung.",
+    "Der Reiter „Versandleistung“ zeigt Pakete je Arbeitstag und Stunde, die Verteilung über den Tag, Pakete je Mitarbeiter und den Anteil der Aufträge, die vor dem Annahmeschluss eingehen und am selben Tag rausgehen."
   ],
   "config_required": [
     {
@@ -1934,6 +1935,720 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_vs_leistung_kpi",
+      "name": "Versand – Versandleistung Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CASE WHEN TRY_CONVERT(INT, :annahmeschluss) BETWEEN 6 AND 22 THEN TRY_CONVERT(INT, :annahmeschluss) ELSE 12 END AS Schluss,\n    DATEDIFF(DAY, :von, :bis) + 1 AS Tage\n),\nakt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\nvor AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= DATEADD(DAY, -(SELECT Tage FROM p), CAST(:von AS date)) AND V.dErstellt < DATEADD(DAY, 1, DATEADD(DAY, -1, CAST(:von AS date))) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\nfenster AS (SELECT Tag, DATEDIFF(MINUTE, MIN(dErstellt), MAX(dErstellt)) AS Min FROM akt GROUP BY Tag),\nls AS (\n  SELECT LS.kLieferschein, MIN(V.dErstellt) AS ErstesPaket, MIN(A.dErstellt) AS Auftrag\n  FROM dbo.tVersand V\n  JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n  JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n  GROUP BY LS.kLieferschein\n),\nst AS (\n  SELECT ls.*, CASE WHEN CAST(ErstesPaket AS date) = CAST(Auftrag AS date) THEN 1 ELSE 0 END AS SelberTag\n  FROM ls CROSS JOIN p\n  WHERE DATEDIFF(DAY, '19000101', Auftrag) % 7 < 5            -- Mo–Fr (19000101 war ein Montag)\n    AND DATEPART(HOUR, Auftrag) < p.Schluss\n)\nSELECT\n  (SELECT COUNT(*) FROM akt) AS Pakete,\n  (SELECT COUNT(DISTINCT kLieferschein) FROM akt) AS Lieferscheine,\n  (SELECT COUNT(DISTINCT Tag) FROM akt) AS Arbeitstage,\n  CAST((SELECT 1.0 * COUNT(*) / NULLIF(COUNT(DISTINCT Tag), 0) FROM akt) AS DECIMAL(18,1)) AS [Pakete je Arbeitstag],\n  CAST((SELECT 1.0 * COUNT(*) / NULLIF(COUNT(DISTINCT Tag), 0) FROM vor) AS DECIMAL(18,1)) AS [Pakete je Arbeitstag Vorperiode],\n  CAST((SELECT 60.0 * (SELECT COUNT(*) FROM akt) / NULLIF(SUM(Min), 0) FROM fenster) AS DECIMAL(18,1)) AS [Pakete je Stunde],\n  CAST((SELECT AVG(Min / 60.0) FROM fenster) AS DECIMAL(18,1)) AS [Ø Versandfenster Std],\n  (SELECT COUNT(*) FROM st) AS [Aufträge vor Annahmeschluss],\n  CAST((SELECT 100.0 * AVG(1.0 * SelberTag) FROM st) AS DECIMAL(9,1)) AS [Am selben Tag raus %],\n  (SELECT MAX(Schluss) FROM p) AS Annahmeschluss",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Pakete",
+            "Lieferscheine",
+            "Arbeitstage",
+            "Pakete je Arbeitstag",
+            "Pakete je Arbeitstag Vorperiode",
+            "Pakete je Stunde",
+            "Ø Versandfenster Std",
+            "Aufträge vor Annahmeschluss",
+            "Am selben Tag raus %",
+            "Annahmeschluss"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Versandleistung Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Lieferscheine",
+              "target_field": "Lieferscheine",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferscheine"
+              }
+            },
+            {
+              "source_field": "Arbeitstage",
+              "target_field": "Arbeitstage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Arbeitstage"
+              }
+            },
+            {
+              "source_field": "Pakete je Arbeitstag",
+              "target_field": "Pakete je Arbeitstag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Arbeitstag"
+              }
+            },
+            {
+              "source_field": "Pakete je Arbeitstag Vorperiode",
+              "target_field": "Pakete je Arbeitstag Vorperiode",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Arbeitstag Vorperiode"
+              }
+            },
+            {
+              "source_field": "Pakete je Stunde",
+              "target_field": "Pakete je Stunde",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Stunde"
+              }
+            },
+            {
+              "source_field": "Ø Versandfenster Std",
+              "target_field": "Ø Versandfenster Std",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Versandfenster Std"
+              }
+            },
+            {
+              "source_field": "Aufträge vor Annahmeschluss",
+              "target_field": "Aufträge vor Annahmeschluss",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aufträge vor Annahmeschluss"
+              }
+            },
+            {
+              "source_field": "Am selben Tag raus %",
+              "target_field": "Am selben Tag raus %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Am selben Tag raus %"
+              }
+            },
+            {
+              "source_field": "Annahmeschluss",
+              "target_field": "Annahmeschluss",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Annahmeschluss"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_leistung_stunden",
+      "name": "Versand – Pakete je Tagesstunde",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH akt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\ntage AS (SELECT COUNT(DISTINCT Tag) AS n FROM akt)\nSELECT RIGHT('0' + CAST(DATEPART(HOUR, dErstellt) AS VARCHAR(2)), 2) + ' Uhr' AS Stunde,\n  COUNT(*) AS Pakete,\n  CAST(1.0 * COUNT(*) / NULLIF((SELECT n FROM tage), 0) AS DECIMAL(18,1)) AS [Ø Pakete je Arbeitstag],\n  CAST(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM akt), 0) AS DECIMAL(9,1)) AS [Anteil %]\nFROM akt\nGROUP BY DATEPART(HOUR, dErstellt)\nORDER BY DATEPART(HOUR, dErstellt)",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Stunde",
+            "Pakete",
+            "Ø Pakete je Arbeitstag",
+            "Anteil %"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Pakete je Tagesstunde",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Stunde",
+              "target_field": "Stunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stunde"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Ø Pakete je Arbeitstag",
+              "target_field": "Ø Pakete je Arbeitstag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Pakete je Arbeitstag"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_leistung_monate",
+      "name": "Versand – Versandleistung je Monat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CASE WHEN TRY_CONVERT(INT, :annahmeschluss) BETWEEN 6 AND 22 THEN TRY_CONVERT(INT, :annahmeschluss) ELSE 12 END AS Schluss,\n    DATEDIFF(DAY, :von, :bis) + 1 AS Tage\n),\nakt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\nfenster AS (SELECT Tag, DATEDIFF(MINUTE, MIN(dErstellt), MAX(dErstellt)) AS Min FROM akt GROUP BY Tag),\nls AS (\n  SELECT LS.kLieferschein, MIN(V.dErstellt) AS ErstesPaket, MIN(A.dErstellt) AS Auftrag\n  FROM dbo.tVersand V\n  JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n  JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n  GROUP BY LS.kLieferschein\n),\nst AS (\n  SELECT ls.*, CASE WHEN CAST(ErstesPaket AS date) = CAST(Auftrag AS date) THEN 1 ELSE 0 END AS SelberTag\n  FROM ls CROSS JOIN p\n  WHERE DATEDIFF(DAY, '19000101', Auftrag) % 7 < 5            -- Mo–Fr (19000101 war ein Montag)\n    AND DATEPART(HOUR, Auftrag) < p.Schluss\n),\nm AS (\n  SELECT CONVERT(char(7), Tag, 120) AS Monat, COUNT(*) AS Pakete, COUNT(DISTINCT kLieferschein) AS Lieferscheine, COUNT(DISTINCT Tag) AS Arbeitstage\n  FROM akt GROUP BY CONVERT(char(7), Tag, 120)\n),\nf AS (SELECT CONVERT(char(7), Tag, 120) AS Monat, SUM(Min) AS Min FROM fenster GROUP BY CONVERT(char(7), Tag, 120)),\ns AS (SELECT CONVERT(char(7), ErstesPaket, 120) AS Monat, COUNT(*) AS n, AVG(1.0 * SelberTag) AS q FROM st GROUP BY CONVERT(char(7), ErstesPaket, 120))\nSELECT m.Monat, m.Pakete, m.Lieferscheine, m.Arbeitstage,\n  CAST(1.0 * m.Pakete / NULLIF(m.Arbeitstage, 0) AS DECIMAL(18,1)) AS [Pakete je Arbeitstag],\n  CAST(1.0 * LAG(m.Pakete) OVER (ORDER BY m.Monat) / NULLIF(LAG(m.Arbeitstage) OVER (ORDER BY m.Monat), 0) AS DECIMAL(18,1)) AS [Vormonat je Arbeitstag],\n  CAST(60.0 * m.Pakete / NULLIF(f.Min, 0) AS DECIMAL(18,1)) AS [Pakete je Stunde],\n  CAST(100.0 * s.q AS DECIMAL(9,1)) AS [Am selben Tag raus %]\nFROM m LEFT JOIN f ON f.Monat = m.Monat LEFT JOIN s ON s.Monat = m.Monat\nORDER BY m.Monat",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Monat",
+            "Pakete",
+            "Lieferscheine",
+            "Arbeitstage",
+            "Pakete je Arbeitstag",
+            "Vormonat je Arbeitstag",
+            "Pakete je Stunde",
+            "Am selben Tag raus %"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Versandleistung je Monat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Lieferscheine",
+              "target_field": "Lieferscheine",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferscheine"
+              }
+            },
+            {
+              "source_field": "Arbeitstage",
+              "target_field": "Arbeitstage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Arbeitstage"
+              }
+            },
+            {
+              "source_field": "Pakete je Arbeitstag",
+              "target_field": "Pakete je Arbeitstag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Arbeitstag"
+              }
+            },
+            {
+              "source_field": "Vormonat je Arbeitstag",
+              "target_field": "Vormonat je Arbeitstag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vormonat je Arbeitstag"
+              }
+            },
+            {
+              "source_field": "Pakete je Stunde",
+              "target_field": "Pakete je Stunde",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Stunde"
+              }
+            },
+            {
+              "source_field": "Am selben Tag raus %",
+              "target_field": "Am selben Tag raus %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Am selben Tag raus %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_leistung_ma",
+      "name": "Versand – Pakete je Mitarbeiter",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH akt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart)))\nSELECT ISNULL(NULLIF(LTRIM(RTRIM(B.cName)), ''), '(ohne Benutzer)') AS Mitarbeiter,\n  COUNT(*) AS Pakete,\n  CAST(100.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM akt), 0) AS DECIMAL(9,1)) AS [Anteil %],\n  COUNT(DISTINCT a.Tag) AS [Tage mit Paketen],\n  CAST(1.0 * COUNT(*) / NULLIF(COUNT(DISTINCT a.Tag), 0) AS DECIMAL(18,1)) AS [Pakete je Tag],\n  RIGHT('0' + CAST(MIN(DATEPART(HOUR, a.dErstellt)) AS VARCHAR(2)), 2) + '–' + RIGHT('0' + CAST(MAX(DATEPART(HOUR, a.dErstellt)) AS VARCHAR(2)), 2) + ' Uhr' AS [Uhrzeiten]\nFROM akt a\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = a.kBenutzer\nGROUP BY ISNULL(NULLIF(LTRIM(RTRIM(B.cName)), ''), '(ohne Benutzer)')\nORDER BY COUNT(*) DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Mitarbeiter",
+            "Pakete",
+            "Anteil %",
+            "Tage mit Paketen",
+            "Pakete je Tag",
+            "Uhrzeiten"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Pakete je Mitarbeiter",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Mitarbeiter",
+              "target_field": "Mitarbeiter",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Mitarbeiter"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Anteil %",
+              "target_field": "Anteil %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Anteil %"
+              }
+            },
+            {
+              "source_field": "Tage mit Paketen",
+              "target_field": "Tage mit Paketen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Tage mit Paketen"
+              }
+            },
+            {
+              "source_field": "Pakete je Tag",
+              "target_field": "Pakete je Tag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete je Tag"
+              }
+            },
+            {
+              "source_field": "Uhrzeiten",
+              "target_field": "Uhrzeiten",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Uhrzeiten"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_leistung_tage_monat",
+      "name": "Versand – Versandleistung je Tag eines Monats (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CASE WHEN TRY_CONVERT(INT, :annahmeschluss) BETWEEN 6 AND 22 THEN TRY_CONVERT(INT, :annahmeschluss) ELSE 12 END AS Schluss,\n    DATEDIFF(DAY, :von, :bis) + 1 AS Tage\n),\nakt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\nls AS (\n  SELECT LS.kLieferschein, MIN(V.dErstellt) AS ErstesPaket, MIN(A.dErstellt) AS Auftrag\n  FROM dbo.tVersand V\n  JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n  JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n  GROUP BY LS.kLieferschein\n),\nst AS (\n  SELECT ls.*, CASE WHEN CAST(ErstesPaket AS date) = CAST(Auftrag AS date) THEN 1 ELSE 0 END AS SelberTag\n  FROM ls CROSS JOIN p\n  WHERE DATEDIFF(DAY, '19000101', Auftrag) % 7 < 5            -- Mo–Fr (19000101 war ein Montag)\n    AND DATEPART(HOUR, Auftrag) < p.Schluss\n),\ns AS (SELECT CAST(ErstesPaket AS date) AS Tag, COUNT(*) AS n, AVG(1.0 * SelberTag) AS q FROM st GROUP BY CAST(ErstesPaket AS date))\nSELECT CONVERT(char(10), a.Tag, 104) AS Datum,\n  COUNT(*) AS Pakete, COUNT(DISTINCT a.kLieferschein) AS Lieferscheine,\n  CONVERT(char(5), MIN(a.dErstellt), 108) AS [Erstes Paket], CONVERT(char(5), MAX(a.dErstellt), 108) AS [Letztes Paket],\n  CAST(100.0 * MAX(s.q) AS DECIMAL(9,1)) AS [Am selben Tag raus %],\n  a.Tag AS sort\nFROM akt a\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = a.kBenutzer\nLEFT JOIN s ON s.Tag = a.Tag\nWHERE CONVERT(char(7), a.Tag, 120) = :monat\nGROUP BY a.Tag\nORDER BY a.Tag",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Datum",
+            "Pakete",
+            "Lieferscheine",
+            "Erstes Paket",
+            "Letztes Paket",
+            "Am selben Tag raus %",
+            "sort"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Versandleistung je Tag eines Monats (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Lieferscheine",
+              "target_field": "Lieferscheine",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferscheine"
+              }
+            },
+            {
+              "source_field": "Erstes Paket",
+              "target_field": "Erstes Paket",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erstes Paket"
+              }
+            },
+            {
+              "source_field": "Letztes Paket",
+              "target_field": "Letztes Paket",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letztes Paket"
+              }
+            },
+            {
+              "source_field": "Am selben Tag raus %",
+              "target_field": "Am selben Tag raus %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Am selben Tag raus %"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_vs_leistung_tage_ma",
+      "name": "Versand – Versandleistung je Tag eines Mitarbeiters (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  SELECT CASE WHEN TRY_CONVERT(INT, :annahmeschluss) BETWEEN 6 AND 22 THEN TRY_CONVERT(INT, :annahmeschluss) ELSE 12 END AS Schluss,\n    DATEDIFF(DAY, :von, :bis) + 1 AS Tage\n),\nakt AS (SELECT V.kVersand, V.kLieferschein, V.dErstellt, CAST(V.dErstellt AS date) AS Tag, V.kBenutzer\n  FROM dbo.tVersand V\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))),\nls AS (\n  SELECT LS.kLieferschein, MIN(V.dErstellt) AS ErstesPaket, MIN(A.dErstellt) AS Auftrag\n  FROM dbo.tVersand V\n  JOIN dbo.tLieferschein LS ON LS.kLieferschein = V.kLieferschein\n  JOIN Verkauf.tAuftrag A ON A.kAuftrag = LS.kBestellung AND A.nType = 1\n  WHERE V.dErstellt >= :von AND V.dErstellt < DATEADD(DAY, 1, :bis) AND (:versandart_empty = 1 OR V.kVersandArt IN (:versandart))\n  GROUP BY LS.kLieferschein\n),\nst AS (\n  SELECT ls.*, CASE WHEN CAST(ErstesPaket AS date) = CAST(Auftrag AS date) THEN 1 ELSE 0 END AS SelberTag\n  FROM ls CROSS JOIN p\n  WHERE DATEDIFF(DAY, '19000101', Auftrag) % 7 < 5            -- Mo–Fr (19000101 war ein Montag)\n    AND DATEPART(HOUR, Auftrag) < p.Schluss\n),\ns AS (SELECT CAST(ErstesPaket AS date) AS Tag, COUNT(*) AS n, AVG(1.0 * SelberTag) AS q FROM st GROUP BY CAST(ErstesPaket AS date))\nSELECT CONVERT(char(10), a.Tag, 104) AS Datum,\n  COUNT(*) AS Pakete, COUNT(DISTINCT a.kLieferschein) AS Lieferscheine,\n  CONVERT(char(5), MIN(a.dErstellt), 108) AS [Erstes Paket], CONVERT(char(5), MAX(a.dErstellt), 108) AS [Letztes Paket],\n  CAST(100.0 * MAX(s.q) AS DECIMAL(9,1)) AS [Am selben Tag raus %],\n  a.Tag AS sort\nFROM akt a\nLEFT JOIN dbo.tBenutzer B ON B.kBenutzer = a.kBenutzer\nLEFT JOIN s ON s.Tag = a.Tag\nWHERE ISNULL(NULLIF(LTRIM(RTRIM(B.cName)), ''), '(ohne Benutzer)') = :mitarbeiter\nGROUP BY a.Tag\nORDER BY a.Tag",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Datum",
+            "Pakete",
+            "Lieferscheine",
+            "Erstes Paket",
+            "Letztes Paket",
+            "Am selben Tag raus %",
+            "sort"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Versand – Versandleistung je Tag eines Mitarbeiters (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Pakete",
+              "target_field": "Pakete",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pakete"
+              }
+            },
+            {
+              "source_field": "Lieferscheine",
+              "target_field": "Lieferscheine",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Lieferscheine"
+              }
+            },
+            {
+              "source_field": "Erstes Paket",
+              "target_field": "Erstes Paket",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erstes Paket"
+              }
+            },
+            {
+              "source_field": "Letztes Paket",
+              "target_field": "Letztes Paket",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letztes Paket"
+              }
+            },
+            {
+              "source_field": "Am selben Tag raus %",
+              "target_field": "Am selben Tag raus %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Am selben Tag raus %"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -1971,6 +2686,45 @@
               "multiple": true,
               "auto_run": false,
               "placeholder": "Alle Versandarten"
+            }
+          },
+          {
+            "id": "f_vs_annahmeschluss",
+            "name": "annahmeschluss",
+            "type": "dropdown",
+            "label": "Annahmeschluss für „am selben Tag“",
+            "row": 1,
+            "colSpan": 4,
+            "default": "12",
+            "action_ids": [
+              "act_vs_leistung_kpi",
+              "act_vs_leistung_stunden",
+              "act_vs_leistung_monate",
+              "act_vs_leistung_ma"
+            ],
+            "options": [
+              {
+                "value": "10",
+                "label": "10 Uhr"
+              },
+              {
+                "value": "12",
+                "label": "12 Uhr"
+              },
+              {
+                "value": "14",
+                "label": "14 Uhr"
+              },
+              {
+                "value": "16",
+                "label": "16 Uhr"
+              }
+            ],
+            "config": {
+              "auto_run": true,
+              "visible_tabs": [
+                "tab_vs_leistung"
+              ]
             }
           }
         ],
@@ -2052,6 +2806,34 @@
             "mapping_id": "m_vs_rueckstand_liste",
             "pipeline_id": null,
             "label": "Lieferscheine ohne Versand"
+          },
+          {
+            "id": "act_vs_leistung_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_leistung_kpi",
+            "pipeline_id": null,
+            "label": "Versandleistung – Kennzahlen"
+          },
+          {
+            "id": "act_vs_leistung_stunden",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_leistung_stunden",
+            "pipeline_id": null,
+            "label": "Pakete je Tagesstunde"
+          },
+          {
+            "id": "act_vs_leistung_monate",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_leistung_monate",
+            "pipeline_id": null,
+            "label": "Versandleistung je Monat"
+          },
+          {
+            "id": "act_vs_leistung_ma",
+            "type": "run_mapping",
+            "mapping_id": "m_vs_leistung_ma",
+            "pipeline_id": null,
+            "label": "Pakete je Mitarbeiter"
           }
         ],
         "widgets": [
@@ -2393,6 +3175,184 @@
             }
           },
           {
+            "id": "w_vs_l_jetag",
+            "type": "kpi",
+            "label": "Pakete je Arbeitstag",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Pakete je Arbeitstag",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 1,
+              "info": "Pakete im Zeitraum geteilt durch die Tage, an denen gepackt wurde. Vergleich: gleich langer Zeitraum direkt davor. Paket = Versandeintrag in JTL, gezählt zum Zeitpunkt, an dem er angelegt wurde (Etikett/Packen) – nicht nach Versanddatum. Arbeitstag = Tag mit mindestens einem Paket. Echte Pack- oder Pickzeiten speichert JTL nicht verlässlich; deshalb Leistung je Tag und Stunde.",
+              "compare_column": "Pakete je Arbeitstag Vorperiode",
+              "compare_label": "Vorperiode",
+              "invert_delta": false
+            }
+          },
+          {
+            "id": "w_vs_l_jestd",
+            "type": "kpi",
+            "label": "Pakete je Stunde",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Pakete je Stunde",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 1,
+              "info": "Pakete geteilt durch die Summe der täglichen Versandfenster (erstes bis letztes Paket des Tages)."
+            }
+          },
+          {
+            "id": "w_vs_l_fenster",
+            "type": "kpi",
+            "label": "Ø Versandfenster",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Ø Versandfenster Std",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " h",
+              "decimals": 1,
+              "info": "Durchschnittliche Spanne vom ersten bis zum letzten Paket eines Arbeitstags."
+            }
+          },
+          {
+            "id": "w_vs_l_selber",
+            "type": "kpi",
+            "label": "Am selben Tag raus",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Am selben Tag raus %",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1,
+              "info": "Anteil der Aufträge (Mo–Fr, vor dem Annahmeschluss eingegangen), deren erstes Paket noch am Auftragstag angelegt wurde. Annahmeschluss oben einstellbar."
+            }
+          },
+          {
+            "id": "w_vs_l_pakete",
+            "type": "kpi",
+            "label": "Pakete",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Pakete",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Versandeinträge im Zeitraum (ein Lieferschein kann mehrere Pakete haben)."
+            }
+          },
+          {
+            "id": "w_vs_l_ls",
+            "type": "kpi",
+            "label": "Lieferscheine",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Lieferscheine",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Lieferscheine mit mindestens einem Paket im Zeitraum."
+            }
+          },
+          {
+            "id": "w_vs_l_tage",
+            "type": "kpi",
+            "label": "Arbeitstage",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Arbeitstage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Tage mit mindestens einem Paket."
+            }
+          },
+          {
+            "id": "w_vs_l_basis",
+            "type": "kpi",
+            "label": "Aufträge vor Annahmeschluss",
+            "action_id": "act_vs_leistung_kpi",
+            "config": {
+              "width": 3,
+              "column": "Aufträge vor Annahmeschluss",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Grundlage für „Am selben Tag raus“."
+            }
+          },
+          {
+            "id": "w_vs_l_stunden",
+            "type": "bar",
+            "label": "Wann gepackt wird: Ø Pakete je Arbeitstag und Stunde",
+            "action_id": "act_vs_leistung_stunden",
+            "config": {
+              "width": 12,
+              "x_column": "Stunde",
+              "y_columns": [
+                "Ø Pakete je Arbeitstag"
+              ],
+              "stacked": false,
+              "info": "Zeigt Spitzen und Leerlauf im Tagesverlauf – etwa ob der Nachmittag zur Engstelle wird. Paket = Versandeintrag in JTL, gezählt zum Zeitpunkt, an dem er angelegt wurde (Etikett/Packen) – nicht nach Versanddatum. Arbeitstag = Tag mit mindestens einem Paket. Echte Pack- oder Pickzeiten speichert JTL nicht verlässlich; deshalb Leistung je Tag und Stunde."
+            }
+          },
+          {
+            "id": "w_vs_l_monate",
+            "type": "table",
+            "label": "Versandleistung je Monat (Klick → Tage)",
+            "action_id": "act_vs_leistung_monate",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "„Vormonat je Arbeitstag“ zum direkten Vergleich. Klick zeigt die einzelnen Tage des Monats.",
+              "drilldown": {
+                "mapping_id": "m_vs_leistung_tage_monat",
+                "key_column": "Monat",
+                "param": "monat",
+                "title": "Versandleistung je Tag",
+                "hidden_columns": [
+                  "sort"
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_vs_l_ma",
+            "type": "table",
+            "label": "Pakete je Mitarbeiter (Klick → Tage)",
+            "action_id": "act_vs_leistung_ma",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Mitarbeiter = JTL-Benutzer, unter dem das Paket angelegt wurde. Arbeitet das Lager mit einem gemeinsamen Benutzer (z. B. „Lager“), steht dort fast alles. Hinweis: Auswertungen je Mitarbeiter können mitbestimmungspflichtig sein (Betriebsrat).",
+              "drilldown": {
+                "mapping_id": "m_vs_leistung_tage_ma",
+                "key_column": "Mitarbeiter",
+                "param": "mitarbeiter",
+                "title": "Pakete dieses Mitarbeiters je Tag",
+                "hidden_columns": [
+                  "sort"
+                ]
+              }
+            }
+          },
+          {
             "id": "w_vs_t_anz",
             "type": "kpi",
             "label": "Sendungen",
@@ -2581,6 +3541,16 @@
               "act_vs_dauer_kpi",
               "act_vs_dauer_klassen",
               "act_vs_langsam"
+            ]
+          },
+          {
+            "id": "tab_vs_leistung",
+            "label": "Versandleistung",
+            "action_ids": [
+              "act_vs_leistung_kpi",
+              "act_vs_leistung_stunden",
+              "act_vs_leistung_monate",
+              "act_vs_leistung_ma"
             ]
           },
           {
