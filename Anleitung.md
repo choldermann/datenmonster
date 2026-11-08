@@ -62,7 +62,7 @@ Stand: 27.08.2026 · Version 1.0.2
 ### Erststart (manuell)
 
 ```bash
-git clone https://github.com/HoldermannIT/datenmonster.git
+git clone https://github.com/choldermann/datenmonster.git
 cd datenmonster
 
 # 1. Konfiguration anlegen – SECRET_KEY ist Pflicht!

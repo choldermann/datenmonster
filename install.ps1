@@ -8,7 +8,7 @@
 #   - Internetverbindung
 #
 # Verwendung (als Administrator in PowerShell):
-#   irm https://install.datenmonster.com/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/choldermann/datenmonster/main/install.ps1 | iex
 #   oder:
 #   .\install.ps1 [-InstallDir "C:\datenmonster"] [-FrontendPort 5173] [-NoStart]
 # ─────────────────────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ function Get-Datenmonster {
 
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 
-    $zipUrl = "https://github.com/HoldermannIT/datenmonster/archive/refs/heads/main.zip"
+    $zipUrl = "https://github.com/choldermann/datenmonster/archive/refs/heads/main.zip"
     $zipPath = "$env:TEMP\datenmonster.zip"
     $extractPath = "$env:TEMP\datenmonster_extract"
 
