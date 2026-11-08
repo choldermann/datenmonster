@@ -4,7 +4,7 @@
   "template_name": "JTL – Vertriebs-Cockpit",
   "description": "Vertriebssicht auf die JTL-Wawi: Auftragseingang statt nur Rechnungen, Auftragsbestand (Backlog), Angebote inkl. Nachfass-Liste, Kunden, Artikel und Mitarbeiter.",
   "category": "jtl-reporting",
-  "version": "1.17",
+  "version": "1.18",
   "author": "Datenmonster",
   "hinweise": [
     "Auftragseingang = Nettowert der im Zeitraum erfassten Aufträge (Verkauf.tAuftrag, nType=1), Stornos ausgenommen. Das ist der Frühindikator VOR der Rechnung.",
@@ -1895,17 +1895,25 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH base AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt, POS.fAnzahl*POS.fVkNetto AS Netto\n  FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0 AND (:plattform_empty = 1 OR kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))) RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung=RE.kRechnung\n  WHERE RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n    AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')\n),\nagg AS (\n  SELECT kKunde,\n    COUNT(DISTINCT kRechnung) AS Bestellungen,\n    MIN(dErstellt) AS ErsterKauf,\n    MAX(dErstellt) AS LetzterKauf,\n    SUM(Netto) AS Umsatz\n  FROM base GROUP BY kKunde\n  HAVING COUNT(DISTINCT kRechnung) >= 2 AND SUM(Netto) > 0\n),\ncalc AS (\n  SELECT a.*,\n    DATEDIFF(DAY, LetzterKauf, :bis) AS TageInaktiv,\n    CAST(DATEDIFF(DAY, ErsterKauf, LetzterKauf)*1.0/NULLIF(Bestellungen-1,0) AS DECIMAL(18,0)) AS IntervallTage\n  FROM agg a\n)\nSELECT TOP 25\n  c.kKunde,\n  (SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END),''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))))\n     FROM Rechnung.vRechnungRechnungsadresse RA WHERE RA.kKunde=c.kKunde) AS Kunde,\n  CONVERT(VARCHAR(10), c.LetzterKauf, 104) AS [Letzter Kauf],\n  c.TageInaktiv AS [Tage inaktiv],\n  c.Bestellungen,\n  c.IntervallTage AS [Ø Intervall Tage],\n  CAST(c.Umsatz AS DECIMAL(18,2)) AS [Umsatz 24M]\nFROM calc c\nWHERE c.TageInaktiv > 90 AND c.TageInaktiv > 2 * c.IntervallTage\nORDER BY c.Umsatz DESC",
+          "sql": "WITH base AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt, POS.cArtNr, POS.cName AS Artikel, POS.nType,\n    POS.fAnzahl * POS.fVkNetto AS Netto,\n    POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0)) AS Roh\n  FROM Rechnung.vRechnung RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE ISNULL(RE.nStorno,0) = 0 AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n    AND RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n    AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')\n),\nagg AS (\n  SELECT kKunde, COUNT(DISTINCT kRechnung) AS Bestellungen, COUNT(DISTINCT CAST(dErstellt AS date)) AS Kauftage,\n    MIN(dErstellt) AS ErsterKauf, MAX(dErstellt) AS LetzterKauf,\n    SUM(Netto) AS Umsatz, SUM(Roh) AS Rohertrag\n  FROM base GROUP BY kKunde\n  HAVING COUNT(DISTINCT CAST(dErstellt AS date)) >= 2 AND SUM(Netto) > 0\n),\ncalc AS (\n  SELECT a.*, DATEDIFF(DAY, LetzterKauf, :bis) AS TageInaktiv,\n    CAST(DATEDIFF(DAY, ErsterKauf, LetzterKauf)*1.0/NULLIF(Kauftage-1,0) AS DECIMAL(18,0)) AS IntervallTage\n  FROM agg a\n),\nschlaf AS (\n  SELECT c.*,\n    -- Jahreswert: Umsatz je Jahr, solange der Kunde aktiv war (erster bis letzter Kauf + ein Intervall),\n    -- nie über ein Jahr hinaus hochgerechnet\n    c.Umsatz * 365.0 / CASE WHEN DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage < 365 THEN 365\n                            ELSE DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage END AS JahrU,\n    c.Rohertrag * 365.0 / CASE WHEN DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage < 365 THEN 365\n                            ELSE DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage END AS JahrR\n  FROM calc c\n  WHERE c.TageInaktiv > 90 AND c.TageInaktiv > 2 * c.IntervallTage\n)\n\nSELECT\n  s.kKunde,\n  LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), ''), ISNULL(AD.cVorname,'') + ' ' + ISNULL(AD.cName,'')))) AS Kunde,\n  K.cKundenNr AS Kundennr,\n  CONVERT(VARCHAR(10), s.LetzterKauf, 104) AS [Letzter Kauf],\n  s.TageInaktiv AS [Tage inaktiv],\n  s.Bestellungen,\n  s.IntervallTage AS [Ø Intervall Tage],\n  CAST(s.TageInaktiv * 1.0 / NULLIF(s.IntervallTage,0) AS DECIMAL(9,1)) AS [Überfällig ×],\n  CAST(s.Umsatz AS DECIMAL(18,2)) AS [Umsatz 24M],\n  CAST(s.JahrU AS DECIMAL(18,2)) AS [Jahreswert Umsatz],\n  CAST(s.JahrR AS DECIMAL(18,2)) AS [Jahreswert Rohertrag],\n  ISNULL((SELECT TOP 1 MAX(POS.cName)\n     FROM Rechnung.vRechnung RE\n     JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung AND POS.nType = 1\n     WHERE RE.kKunde = s.kKunde AND ISNULL(RE.nStorno,0) = 0\n       AND RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n     GROUP BY POS.cArtNr ORDER BY SUM(POS.fAnzahl * POS.fVkNetto) DESC), '') AS [Meistgekauft],\n  ISNULL(NULLIF(LTRIM(RTRIM(AD.cMail)),''), '') AS [E-Mail],\n  ISNULL(NULLIF(LTRIM(RTRIM(AD.cTel)),''), ISNULL(LTRIM(RTRIM(AD.cMobil)),'')) AS Telefon,\n  CASE WHEN K.cNewsletter = 'Y' THEN 'ja' ELSE 'nein' END AS Newsletter\nFROM schlaf s\nJOIN dbo.tKunde K ON K.kKunde = s.kKunde\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = s.kKunde AND AD.nTyp = 1 AND AD.nStandard = 1\nORDER BY s.JahrU DESC",
           "mode": "transform",
           "output_field": null,
           "output_fields": [
             "kKunde",
             "Kunde",
+            "Kundennr",
             "Letzter Kauf",
             "Tage inaktiv",
             "Bestellungen",
             "Ø Intervall Tage",
-            "Umsatz 24M"
+            "Überfällig ×",
+            "Umsatz 24M",
+            "Jahreswert Umsatz",
+            "Jahreswert Rohertrag",
+            "Meistgekauft",
+            "E-Mail",
+            "Telefon",
+            "Newsletter"
           ]
         }
       ],
@@ -1937,6 +1945,16 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Kundennr",
+              "target_field": "Kundennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennr"
               }
             },
             {
@@ -1980,6 +1998,16 @@
               }
             },
             {
+              "source_field": "Überfällig ×",
+              "target_field": "Überfällig ×",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Überfällig ×"
+              }
+            },
+            {
               "source_field": "Umsatz 24M",
               "target_field": "Umsatz 24M",
               "target_type": "float",
@@ -1987,6 +2015,66 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Umsatz 24M"
+              }
+            },
+            {
+              "source_field": "Jahreswert Umsatz",
+              "target_field": "Jahreswert Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Jahreswert Umsatz"
+              }
+            },
+            {
+              "source_field": "Jahreswert Rohertrag",
+              "target_field": "Jahreswert Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Jahreswert Rohertrag"
+              }
+            },
+            {
+              "source_field": "Meistgekauft",
+              "target_field": "Meistgekauft",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Meistgekauft"
+              }
+            },
+            {
+              "source_field": "E-Mail",
+              "target_field": "E-Mail",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "E-Mail"
+              }
+            },
+            {
+              "source_field": "Telefon",
+              "target_field": "Telefon",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Telefon"
+              }
+            },
+            {
+              "source_field": "Newsletter",
+              "target_field": "Newsletter",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Newsletter"
               }
             }
           ]
@@ -4698,6 +4786,537 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_ve_rg_kpi",
+      "name": "Vertrieb – Kundenrückgewinnung Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH base AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt, POS.cArtNr, POS.cName AS Artikel, POS.nType,\n    POS.fAnzahl * POS.fVkNetto AS Netto,\n    POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0)) AS Roh\n  FROM Rechnung.vRechnung RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE ISNULL(RE.nStorno,0) = 0 AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n    AND RE.dErstellt >= DATEADD(MONTH,-24,:bis) AND RE.dErstellt < DATEADD(DAY,1,:bis)\n    AND RE.kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')\n),\nagg AS (\n  SELECT kKunde, COUNT(DISTINCT kRechnung) AS Bestellungen, COUNT(DISTINCT CAST(dErstellt AS date)) AS Kauftage,\n    MIN(dErstellt) AS ErsterKauf, MAX(dErstellt) AS LetzterKauf,\n    SUM(Netto) AS Umsatz, SUM(Roh) AS Rohertrag\n  FROM base GROUP BY kKunde\n  HAVING COUNT(DISTINCT CAST(dErstellt AS date)) >= 2 AND SUM(Netto) > 0\n),\ncalc AS (\n  SELECT a.*, DATEDIFF(DAY, LetzterKauf, :bis) AS TageInaktiv,\n    CAST(DATEDIFF(DAY, ErsterKauf, LetzterKauf)*1.0/NULLIF(Kauftage-1,0) AS DECIMAL(18,0)) AS IntervallTage\n  FROM agg a\n),\nschlaf AS (\n  SELECT c.*,\n    -- Jahreswert: Umsatz je Jahr, solange der Kunde aktiv war (erster bis letzter Kauf + ein Intervall),\n    -- nie über ein Jahr hinaus hochgerechnet\n    c.Umsatz * 365.0 / CASE WHEN DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage < 365 THEN 365\n                            ELSE DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage END AS JahrU,\n    c.Rohertrag * 365.0 / CASE WHEN DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage < 365 THEN 365\n                            ELSE DATEDIFF(DAY, c.ErsterKauf, c.LetzterKauf) + c.IntervallTage END AS JahrR\n  FROM calc c\n  WHERE c.TageInaktiv > 90 AND c.TageInaktiv > 2 * c.IntervallTage\n)\n,\nr AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform))) AND RE.kKunde > 0\n    AND RE.dErstellt < DATEADD(DAY,1,:bis)\n),\ntag AS (SELECT DISTINCT kKunde, CAST(dErstellt AS date) AS Tag FROM r),\nseq AS (\n  SELECT kKunde, Tag AS dErstellt,\n    LAG(Tag) OVER (PARTITION BY kKunde ORDER BY Tag) AS vorher,\n    MIN(Tag) OVER (PARTITION BY kKunde) AS erster,\n    ROW_NUMBER() OVER (PARTITION BY kKunde ORDER BY Tag) - 1 AS frueher\n  FROM tag\n),\nrueck AS (\n  SELECT kKunde, dErstellt AS Rueckkehr, DATEDIFF(DAY, vorher, dErstellt) AS Pause,\n    CAST(DATEDIFF(DAY, erster, vorher) * 1.0 / NULLIF(frueher - 1, 0) AS DECIMAL(18,0)) AS Intervall,\n    ROW_NUMBER() OVER (PARTITION BY kKunde ORDER BY dErstellt) AS rn\n  FROM seq\n  WHERE dErstellt >= :von AND frueher >= 2\n    AND DATEDIFF(DAY, vorher, dErstellt) > 90\n    AND DATEDIFF(DAY, vorher, dErstellt) > 2 * DATEDIFF(DAY, erster, vorher) * 1.0 / (frueher - 1)\n),\nerst AS (SELECT * FROM rueck WHERE rn = 1 AND kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')),\nseit AS (\n  SELECT e.kKunde, COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM erst e\n  JOIN r ON r.kKunde = e.kKunde AND r.dErstellt >= e.Rueckkehr\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  GROUP BY e.kKunde\n)\nSELECT\n  (SELECT COUNT(*) FROM schlaf) AS [Schlafende Kunden],\n  (SELECT CAST(SUM(JahrU) AS DECIMAL(18,2)) FROM schlaf) AS [Jahresumsatz in Gefahr],\n  (SELECT CAST(SUM(JahrR) AS DECIMAL(18,2)) FROM schlaf) AS [Jahresrohertrag in Gefahr],\n  (SELECT COUNT(*) FROM erst e JOIN seit s ON s.kKunde = e.kKunde) AS [Zurückgewonnen],\n  (SELECT CAST(SUM(s.Umsatz) AS DECIMAL(18,2)) FROM erst e JOIN seit s ON s.kKunde = e.kKunde) AS [Umsatz seither],\n  (SELECT CAST(SUM(s.Rohertrag) AS DECIMAL(18,2)) FROM erst e JOIN seit s ON s.kKunde = e.kKunde) AS [Rohertrag seither]",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Schlafende Kunden",
+            "Jahresumsatz in Gefahr",
+            "Jahresrohertrag in Gefahr",
+            "Zurückgewonnen",
+            "Umsatz seither",
+            "Rohertrag seither"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Kundenrückgewinnung Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Schlafende Kunden",
+              "target_field": "Schlafende Kunden",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Schlafende Kunden"
+              }
+            },
+            {
+              "source_field": "Jahresumsatz in Gefahr",
+              "target_field": "Jahresumsatz in Gefahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Jahresumsatz in Gefahr"
+              }
+            },
+            {
+              "source_field": "Jahresrohertrag in Gefahr",
+              "target_field": "Jahresrohertrag in Gefahr",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Jahresrohertrag in Gefahr"
+              }
+            },
+            {
+              "source_field": "Zurückgewonnen",
+              "target_field": "Zurückgewonnen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zurückgewonnen"
+              }
+            },
+            {
+              "source_field": "Umsatz seither",
+              "target_field": "Umsatz seither",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz seither"
+              }
+            },
+            {
+              "source_field": "Rohertrag seither",
+              "target_field": "Rohertrag seither",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag seither"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_rg_zurueck",
+      "name": "Vertrieb – Zurückgewonnene Kunden",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH r AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform))) AND RE.kKunde > 0\n    AND RE.dErstellt < DATEADD(DAY,1,:bis)\n),\ntag AS (SELECT DISTINCT kKunde, CAST(dErstellt AS date) AS Tag FROM r),\nseq AS (\n  SELECT kKunde, Tag AS dErstellt,\n    LAG(Tag) OVER (PARTITION BY kKunde ORDER BY Tag) AS vorher,\n    MIN(Tag) OVER (PARTITION BY kKunde) AS erster,\n    ROW_NUMBER() OVER (PARTITION BY kKunde ORDER BY Tag) - 1 AS frueher\n  FROM tag\n),\nrueck AS (\n  SELECT kKunde, dErstellt AS Rueckkehr, DATEDIFF(DAY, vorher, dErstellt) AS Pause,\n    CAST(DATEDIFF(DAY, erster, vorher) * 1.0 / NULLIF(frueher - 1, 0) AS DECIMAL(18,0)) AS Intervall,\n    ROW_NUMBER() OVER (PARTITION BY kKunde ORDER BY dErstellt) AS rn\n  FROM seq\n  WHERE dErstellt >= :von AND frueher >= 2\n    AND DATEDIFF(DAY, vorher, dErstellt) > 90\n    AND DATEDIFF(DAY, vorher, dErstellt) > 2 * DATEDIFF(DAY, erster, vorher) * 1.0 / (frueher - 1)\n),\nerst AS (SELECT * FROM rueck WHERE rn = 1 AND kKunde NOT IN (SELECT kKunde FROM dbo.tKunde WHERE cSperre='Y')),\nseit AS (\n  SELECT e.kKunde, COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM erst e\n  JOIN r ON r.kKunde = e.kKunde AND r.dErstellt >= e.Rueckkehr\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  GROUP BY e.kKunde\n)\nSELECT\n  e.kKunde,\n  CONCAT(e.kKunde, '|', CONVERT(char(8), e.Rueckkehr, 112)) AS Schluessel,\n  LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(AD.cFirma,'')) + CASE WHEN ISNULL(AD.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(AD.cZusatz)), ISNULL(AD.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(AD.cZusatz)) END), ''), ISNULL(AD.cVorname,'') + ' ' + ISNULL(AD.cName,'')))) AS Kunde,\n  K.cKundenNr AS Kundennr,\n  CONVERT(VARCHAR(10), e.Rueckkehr, 104) AS [Zurück am],\n  e.Pause AS [Pause Tage],\n  e.Intervall AS [Ø Intervall vorher],\n  s.Rechnungen AS [Rechnungen seither],\n  CAST(s.Umsatz AS DECIMAL(18,2)) AS [Umsatz seither],\n  CAST(s.Rohertrag AS DECIMAL(18,2)) AS [Rohertrag seither]\nFROM erst e\nJOIN seit s ON s.kKunde = e.kKunde\nJOIN dbo.tKunde K ON K.kKunde = e.kKunde\nLEFT JOIN dbo.tAdresse AD ON AD.kKunde = e.kKunde AND AD.nTyp = 1 AND AD.nStandard = 1\nORDER BY s.Umsatz DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kKunde",
+            "Schluessel",
+            "Kunde",
+            "Kundennr",
+            "Zurück am",
+            "Pause Tage",
+            "Ø Intervall vorher",
+            "Rechnungen seither",
+            "Umsatz seither",
+            "Rohertrag seither"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Zurückgewonnene Kunden",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Schluessel",
+              "target_field": "Schluessel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Schluessel"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Kundennr",
+              "target_field": "Kundennr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kundennr"
+              }
+            },
+            {
+              "source_field": "Zurück am",
+              "target_field": "Zurück am",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Zurück am"
+              }
+            },
+            {
+              "source_field": "Pause Tage",
+              "target_field": "Pause Tage",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Pause Tage"
+              }
+            },
+            {
+              "source_field": "Ø Intervall vorher",
+              "target_field": "Ø Intervall vorher",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Intervall vorher"
+              }
+            },
+            {
+              "source_field": "Rechnungen seither",
+              "target_field": "Rechnungen seither",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen seither"
+              }
+            },
+            {
+              "source_field": "Umsatz seither",
+              "target_field": "Umsatz seither",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz seither"
+              }
+            },
+            {
+              "source_field": "Rohertrag seither",
+              "target_field": "Rohertrag seither",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag seither"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_rg_seit",
+      "name": "Vertrieb – Rechnungen seit der Rückkehr (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH beleg AS (\n  SELECT RE.kRechnung, MAX(RE.cRechnungsnr) AS Rechnungsnr, MAX(RE.dErstellt) AS dErstellt,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag,\n    COUNT(*) AS Positionen\n  FROM Rechnung.vRechnung RE\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE ISNULL(RE.nStorno,0) = 0 AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n    AND RE.kKunde = TRY_CONVERT(INT, LEFT(:schluessel, CHARINDEX('|', :schluessel) - 1))\n    AND RE.dErstellt >= TRY_CONVERT(date, SUBSTRING(:schluessel, CHARINDEX('|', :schluessel) + 1, 8), 112)\n    AND RE.dErstellt < DATEADD(DAY, 1, :bis)\n  GROUP BY RE.kRechnung\n), sortiert AS (\n  SELECT *, ROW_NUMBER() OVER (ORDER BY dErstellt DESC, kRechnung DESC) AS rn FROM beleg\n)\nSELECT 0 AS Sortierung, Rechnungsnr, CONVERT(char(10), dErstellt, 104) AS Datum,\n  CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz, CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag,\n  Positionen, CAST(kRechnung AS VARCHAR(20)) AS kRechnung, dErstellt AS sort\nFROM sortiert WHERE rn <= 499\nUNION ALL\nSELECT 1, '', CONCAT('… ', COUNT(*), ' weitere'), CAST(SUM(Umsatz) AS DECIMAL(18,2)), CAST(SUM(Rohertrag) AS DECIMAL(18,2)),\n  SUM(Positionen), '', NULL\nFROM sortiert WHERE rn > 499 HAVING COUNT(*) > 0\nORDER BY Sortierung, sort DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Sortierung",
+            "Rechnungsnr",
+            "Datum",
+            "Umsatz",
+            "Rohertrag",
+            "Positionen",
+            "kRechnung",
+            "sort"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Rechnungen seit der Rückkehr (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Sortierung",
+              "target_field": "Sortierung",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Sortierung"
+              }
+            },
+            {
+              "source_field": "Rechnungsnr",
+              "target_field": "Rechnungsnr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungsnr"
+              }
+            },
+            {
+              "source_field": "Datum",
+              "target_field": "Datum",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Datum"
+              }
+            },
+            {
+              "source_field": "Umsatz",
+              "target_field": "Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz"
+              }
+            },
+            {
+              "source_field": "Rohertrag",
+              "target_field": "Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag"
+              }
+            },
+            {
+              "source_field": "Positionen",
+              "target_field": "Positionen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionen"
+              }
+            },
+            {
+              "source_field": "kRechnung",
+              "target_field": "kRechnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kRechnung"
+              }
+            },
+            {
+              "source_field": "sort",
+              "target_field": "sort",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "sort"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_ve_rg_pos",
+      "name": "Vertrieb – Rechnungspositionen (Detail)",
+      "canvas_nodes": [],
+      "joins": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "SELECT\n    CAST(POS.kArtikel AS VARCHAR(20)) AS kArtikel,\n    POS.cArtNr AS ArtNr,\n    POS.cName AS Bezeichnung,\n    CAST(POS.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    POS.cEinheit AS Einheit,\n    CAST(POS.fVkNetto AS DECIMAL(18,2)) AS EinzelNetto,\n    CAST(POS.fAnzahl * POS.fVkNetto AS DECIMAL(18,2)) AS Positionswert,\n    CAST(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) AS DECIMAL(18,2)) AS DB,\n    CAST(CASE WHEN POS.fVkNetto <> 0 THEN 100.0 * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto, 0), A.fEKNetto, 0)) / POS.fVkNetto END AS DECIMAL(18,1)) AS [Rohertragsmarge %]\nFROM Rechnung.tRechnungPosition POS\nLEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\nWHERE POS.kRechnung = :kRechnung\nORDER BY Positionswert DESC",
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "kArtikel",
+            "ArtNr",
+            "Bezeichnung",
+            "Menge",
+            "Einheit",
+            "EinzelNetto",
+            "Positionswert",
+            "DB",
+            "Rohertragsmarge %"
+          ]
+        }
+      ],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Vertrieb – Rechnungspositionen (Detail)",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kArtikel",
+              "target_field": "kArtikel",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kArtikel"
+              }
+            },
+            {
+              "source_field": "ArtNr",
+              "target_field": "ArtNr",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "ArtNr"
+              }
+            },
+            {
+              "source_field": "Bezeichnung",
+              "target_field": "Bezeichnung",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Bezeichnung"
+              }
+            },
+            {
+              "source_field": "Menge",
+              "target_field": "Menge",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Menge"
+              }
+            },
+            {
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_field": "EinzelNetto",
+              "target_field": "EinzelNetto",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "EinzelNetto"
+              }
+            },
+            {
+              "source_field": "Positionswert",
+              "target_field": "Positionswert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Positionswert"
+              }
+            },
+            {
+              "source_field": "DB",
+              "target_field": "DB",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "DB"
+              }
+            },
+            {
+              "source_field": "Rohertragsmarge %",
+              "target_field": "Rohertragsmarge %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertragsmarge %"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -4914,6 +5533,20 @@
             "mapping_id": "m_ve_geo_bundeslaender",
             "pipeline_id": null,
             "label": "Vertrieb – Auftragseingang je Bundesland"
+          },
+          {
+            "id": "act_ve_rg_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_rg_kpi",
+            "pipeline_id": null,
+            "label": "Kundenrückgewinnung – Kennzahlen"
+          },
+          {
+            "id": "act_ve_rg_zurueck",
+            "type": "run_mapping",
+            "mapping_id": "m_ve_rg_zurueck",
+            "pipeline_id": null,
+            "label": "Zurückgewonnene Kunden"
           }
         ],
         "widgets": [
@@ -5662,12 +6295,102 @@
             }
           },
           {
+            "id": "w_ve_rg_schlaf",
+            "type": "kpi",
+            "label": "Schlafende Kunden",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Schlafende Kunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Anzahl der Kunden in der Liste unten. Kunden, die in den 24 Monaten bis zum Ende des Zeitraums an mindestens zwei Tagen gekauft haben und jetzt deutlich länger als ihr gewohnter Rhythmus nichts mehr bestellt haben: über 90 Tage UND mehr als das Doppelte ihres Ø Abstands zwischen zwei Kauftagen. „Überfällig ×“ = so viele Intervalle ist der letzte Kauf her. Jahreswert = Umsatz bzw. Rohertrag je Jahr, solange der Kunde aktiv war (nie über ein Jahr hinaus hochgerechnet) – das, was auf dem Spiel steht. Sortiert danach. E-Mail und Telefon aus der Rechnungsadresse; „Newsletter“ = Einwilligung laut JTL. Gesperrte Kunden fehlen."
+            }
+          },
+          {
+            "id": "w_ve_rg_gefahr",
+            "type": "kpi",
+            "label": "Jahresumsatz in Gefahr",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Jahresumsatz in Gefahr",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Summe der Jahreswerte aller schlafenden Kunden: so viel Umsatz brachten sie je Jahr, solange sie aktiv waren."
+            }
+          },
+          {
+            "id": "w_ve_rg_gefahr_re",
+            "type": "kpi",
+            "label": "… davon Rohertrag",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Jahresrohertrag in Gefahr",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Wie daneben, für den Rohertrag."
+            }
+          },
+          {
+            "id": "w_ve_rg_zurueck",
+            "type": "kpi",
+            "label": "Zurückgewonnen im Zeitraum",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Zurückgewonnen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Kunden, die im gewählten Zeitraum nach einer solchen Pause wieder gekauft haben (über 90 Tage und mehr als das Doppelte ihres früheren Ø Abstands, mindestens zwei Kauftage davor). „Seither“ = ab dem Tag der Rückkehr bis zum Ende des Zeitraums. Klick zeigt die Rechnungen seit der Rückkehr."
+            }
+          },
+          {
+            "id": "w_ve_rg_zurueck_u",
+            "type": "kpi",
+            "label": "Umsatz der Zurückgewonnenen seither",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Umsatz seither",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Umsatz der zurückgewonnenen Kunden ab ihrer Rückkehr bis zum Ende des Zeitraums."
+            }
+          },
+          {
+            "id": "w_ve_rg_zurueck_re",
+            "type": "kpi",
+            "label": "… davon Rohertrag",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rohertrag seither",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Wie daneben, für den Rohertrag."
+            }
+          },
+          {
             "id": "w_ve_tbl_churn",
             "type": "table",
-            "label": "Schlafende Kunden (Wiedergewinnung)",
+            "label": "Schlafende Kunden – zurückgewinnen",
             "action_id": "act_ve_churn",
             "config": {
-              "width": 6,
+              "width": 12,
               "full_rows": true,
               "drilldown": {
                 "mapping_id": "m_ve_kunde_letzte_detail",
@@ -5697,7 +6420,49 @@
               },
               "hidden_columns": [
                 "kKunde"
-              ]
+              ],
+              "info": "Kunden, die in den 24 Monaten bis zum Ende des Zeitraums an mindestens zwei Tagen gekauft haben und jetzt deutlich länger als ihr gewohnter Rhythmus nichts mehr bestellt haben: über 90 Tage UND mehr als das Doppelte ihres Ø Abstands zwischen zwei Kauftagen. „Überfällig ×“ = so viele Intervalle ist der letzte Kauf her. Jahreswert = Umsatz bzw. Rohertrag je Jahr, solange der Kunde aktiv war (nie über ein Jahr hinaus hochgerechnet) – das, was auf dem Spiel steht. Sortiert danach. E-Mail und Telefon aus der Rechnungsadresse; „Newsletter“ = Einwilligung laut JTL. Gesperrte Kunden fehlen. Klick zeigt die letzten Aufträge des Kunden."
+            }
+          },
+          {
+            "id": "w_ve_rg_zurueck_tbl",
+            "type": "table",
+            "label": "Zurückgewonnene Kunden im Zeitraum",
+            "action_id": "act_ve_rg_zurueck",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "kKunde",
+                "Schluessel"
+              ],
+              "info": "Kunden, die im gewählten Zeitraum nach einer solchen Pause wieder gekauft haben (über 90 Tage und mehr als das Doppelte ihres früheren Ø Abstands, mindestens zwei Kauftage davor). „Seither“ = ab dem Tag der Rückkehr bis zum Ende des Zeitraums. Klick zeigt die Rechnungen seit der Rückkehr.",
+              "drilldown": {
+                "mapping_id": "m_ve_rg_seit",
+                "key_column": "Schluessel",
+                "param": "schluessel",
+                "title": "Rechnungen seit der Rückkehr",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ],
+                "levels": [
+                  {
+                    "mapping_id": "m_ve_rg_pos",
+                    "param": "kRechnung",
+                    "key_column": "kRechnung",
+                    "title": "Positionen der Rechnung"
+                  }
+                ]
+              }
             }
           },
           {
@@ -6119,7 +6884,9 @@
               "act_ve_neukunden",
               "act_ve_top_kunden",
               "act_ve_rueckgang",
+              "act_ve_rg_kpi",
               "act_ve_churn",
+              "act_ve_rg_zurueck",
               "act_ve_abc"
             ]
           },
