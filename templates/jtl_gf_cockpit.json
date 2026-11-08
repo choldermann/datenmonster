@@ -4,7 +4,7 @@
   "template_name": "JTL – Geschäftsführer-Cockpit",
   "description": "Unternehmenscockpit für Geschäftsführer/Inhaber: Übersicht, Ergebnis (Betriebsergebnis und Break-even nach Fixkosten), Kundenentwicklung, Umsatzanalyse, Kapitalbindung, Trends und Warnungen – mit Vorjahresvergleich und konkretem Handlungsbedarf.",
   "category": "jtl-reporting",
-  "version": "2.33",
+  "version": "2.34",
   "author": "Datenmonster",
   "hinweise": [
     "Beim Installieren die JTL-Datenbankverbindung (MS SQL Server) auswählen – Zugangsdaten werden nicht mitgeliefert.",
@@ -19,7 +19,8 @@
     "Versandkosten im Baum sind der EK der Versandpositionen, also der Wert, der in JTL an der Versandart hinterlegt ist. Fehlt er, zeigt der Baum, wie viele Versandpositionen ohne Kosten sind.",
     "Die Fixkosten werden im letzten Reiter „Kostenstruktur“ gepflegt (dieselbe Maske wie im Formular Kostenstruktur).",
     "Ausblick › Branchenvergleich stellt die eigene Umsatzentwicklung der des Handelszweigs gegenüber (Eurostat, Deutschland). Die Branche wird je Mandant gewählt.",
-    "Umsatzverläufe und Branchenvergleich lassen sich arbeitstagbereinigt anzeigen (Schalter „Arbeitstage“); Bundesland, Samstag und 24./31.12. je Mandant einstellbar."
+    "Umsatzverläufe und Branchenvergleich lassen sich arbeitstagbereinigt anzeigen (Schalter „Arbeitstage“); Bundesland, Samstag und 24./31.12. je Mandant einstellbar.",
+    "Ausblick › Prognose, Neukunden & Churn: Neukundenprognose – was ein Neukunde im Erstkaufmonat und den 11 Monaten danach im Schnitt bringt (Umsatz, Rohertrag, Wiederkauf), je Erstkaufmonat aufgeschlüsselt, und was die Neukunden aus dem Zeitraum voraussichtlich noch bringen. Grundlage sind die 24 abgeschlossenen Monate vor dem Ende des Zeitraums."
   ],
   "config_required": [
     {
@@ -9992,6 +9993,559 @@
           ]
         }
       ]
+    },
+    {
+      "id": "m_nk_kpi",
+      "name": "Cockpit – Neukundenprognose Kennzahlen",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  -- Stichmonat S: erster Monat, der noch nicht abgeschlossen ist (Ende des Zeitraums, höchstens der laufende Monat)\n  SELECT CASE WHEN DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) > DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              THEN DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              ELSE DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) END AS S\n),\nre AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.kKunde > 0\n    AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n),\nerst AS (\n  SELECT kKunde, MIN(dErstellt) AS Erstkauf,\n    DATEFROMPARTS(YEAR(MIN(dErstellt)),MONTH(MIN(dErstellt)),1) AS KMonat\n  FROM re GROUP BY kKunde\n),\nkohorte AS (\n  -- Neukunden der 24 abgeschlossenen Monate vor dem Stichmonat\n  SELECT e.kKunde, e.KMonat, DATEDIFF(MONTH, e.KMonat, p.S) AS Reife\n  FROM erst e CROSS JOIN p\n  WHERE e.KMonat >= DATEADD(MONTH,-24,p.S) AND e.KMonat < p.S\n),\nmon AS (\n  -- je Kunde und Folgemonat (0 = Monat des Erstkaufs) nur abgeschlossene Monate\n  SELECT r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt) AS FM,\n    COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM re r\n  JOIN kohorte k ON k.kKunde = r.kKunde\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE r.dErstellt < p.S AND DATEDIFF(MONTH, k.KMonat, r.dErstellt) <= 12\n  GROUP BY r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt)\n),\nfm AS (SELECT n FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12)) v(n)),\nbasis AS (\n  SELECT fm.n AS FM, COUNT(*) AS Basis\n  FROM fm JOIN kohorte k ON k.Reife > fm.n\n  GROUP BY fm.n\n),\nagg AS (\n  SELECT m.FM, COUNT(*) AS Aktiv, SUM(m.Rechnungen) AS Rechnungen, SUM(m.Umsatz) AS Umsatz, SUM(m.Rohertrag) AS Rohertrag\n  FROM mon m JOIN kohorte k ON k.kKunde = m.kKunde\n  WHERE k.Reife > m.FM\n  GROUP BY m.FM\n),\nje AS (\n  SELECT b.FM, b.Basis, ISNULL(a.Aktiv,0) AS Aktiv,\n    1.0 * ISNULL(a.Rechnungen,0) / b.Basis AS RechJe,\n    ISNULL(a.Umsatz,0) / b.Basis AS UmsatzJe,\n    ISNULL(a.Rohertrag,0) / b.Basis AS RohJe\n  FROM basis b LEFT JOIN agg a ON a.FM = b.FM\n),\nw12 AS (\n  SELECT COUNT(*) AS Basis12, COUNT(x.kKunde) AS Wieder12\n  FROM kohorte k\n  LEFT JOIN (SELECT DISTINCT kKunde FROM mon WHERE FM BETWEEN 1 AND 11) x ON x.kKunde = k.kKunde\n  WHERE k.Reife >= 12\n),\nneu AS (\n  -- Neukunden im gewählten Zeitraum, je Anzahl schon abgeschlossener Monate (mindestens 1: der Erstkaufmonat ist gekauft)\n  SELECT CASE WHEN DATEDIFF(MONTH, e.KMonat, p.S) < 1 THEN 1 ELSE DATEDIFF(MONTH, e.KMonat, p.S) END AS ab, COUNT(*) AS Anz\n  FROM erst e CROSS JOIN p\n  WHERE e.Erstkauf >= :von AND e.Erstkauf < DATEADD(DAY, 1, :bis)\n  GROUP BY CASE WHEN DATEDIFF(MONTH, e.KMonat, p.S) < 1 THEN 1 ELSE DATEDIFF(MONTH, e.KMonat, p.S) END\n),\noffen AS (\n  -- je Folgemonat: wie viele Neukunden aus dem Zeitraum diesen Monat noch vor sich haben\n  SELECT fm.n AS FM, SUM(neu.Anz) AS Anz FROM fm JOIN neu ON neu.ab <= fm.n GROUP BY fm.n\n),\nsumme AS (\n  SELECT SUM(j.UmsatzJe) AS W12U, SUM(j.RohJe) AS W12R,\n    SUM(j.UmsatzJe * ISNULL(o.Anz,0)) AS EU, SUM(j.RohJe * ISNULL(o.Anz,0)) AS ER\n  FROM je j LEFT JOIN offen o ON o.FM = j.FM\n  WHERE j.FM <= 11\n)\nSELECT\n  (SELECT ISNULL(SUM(Anz),0) FROM neu) AS Neukunden,\n  CAST(s.W12U AS DECIMAL(18,2)) AS [Wert 12 Monate],\n  CAST(s.W12R AS DECIMAL(18,2)) AS [Rohertrag 12 Monate],\n  CAST(100.0 * w.Wieder12 / NULLIF(w.Basis12,0) AS DECIMAL(9,1)) AS [Wiederkauf 12 Monate %],\n  w.Basis12 AS [Basis 12 Monate],\n  CAST(s.EU AS DECIMAL(18,2)) AS [Erwarteter Folgeumsatz],\n  CAST(s.ER AS DECIMAL(18,2)) AS [Erwarteter Folgerohertrag]\nFROM summe s CROSS JOIN w12 w",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Neukunden",
+            "Wert 12 Monate",
+            "Rohertrag 12 Monate",
+            "Wiederkauf 12 Monate %",
+            "Basis 12 Monate",
+            "Erwarteter Folgeumsatz",
+            "Erwarteter Folgerohertrag"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Neukundenprognose Kennzahlen",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Neukunden",
+              "target_field": "Neukunden",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Neukunden"
+              }
+            },
+            {
+              "source_field": "Wert 12 Monate",
+              "target_field": "Wert 12 Monate",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wert 12 Monate"
+              }
+            },
+            {
+              "source_field": "Rohertrag 12 Monate",
+              "target_field": "Rohertrag 12 Monate",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag 12 Monate"
+              }
+            },
+            {
+              "source_field": "Wiederkauf 12 Monate %",
+              "target_field": "Wiederkauf 12 Monate %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wiederkauf 12 Monate %"
+              }
+            },
+            {
+              "source_field": "Basis 12 Monate",
+              "target_field": "Basis 12 Monate",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Basis 12 Monate"
+              }
+            },
+            {
+              "source_field": "Erwarteter Folgeumsatz",
+              "target_field": "Erwarteter Folgeumsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erwarteter Folgeumsatz"
+              }
+            },
+            {
+              "source_field": "Erwarteter Folgerohertrag",
+              "target_field": "Erwarteter Folgerohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erwarteter Folgerohertrag"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_nk_kurve",
+      "name": "Cockpit – Neukundenprognose je Folgemonat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  -- Stichmonat S: erster Monat, der noch nicht abgeschlossen ist (Ende des Zeitraums, höchstens der laufende Monat)\n  SELECT CASE WHEN DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) > DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              THEN DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              ELSE DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) END AS S\n),\nre AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.kKunde > 0\n    AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n),\nerst AS (\n  SELECT kKunde, MIN(dErstellt) AS Erstkauf,\n    DATEFROMPARTS(YEAR(MIN(dErstellt)),MONTH(MIN(dErstellt)),1) AS KMonat\n  FROM re GROUP BY kKunde\n),\nkohorte AS (\n  -- Neukunden der 24 abgeschlossenen Monate vor dem Stichmonat\n  SELECT e.kKunde, e.KMonat, DATEDIFF(MONTH, e.KMonat, p.S) AS Reife\n  FROM erst e CROSS JOIN p\n  WHERE e.KMonat >= DATEADD(MONTH,-24,p.S) AND e.KMonat < p.S\n),\nmon AS (\n  -- je Kunde und Folgemonat (0 = Monat des Erstkaufs) nur abgeschlossene Monate\n  SELECT r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt) AS FM,\n    COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM re r\n  JOIN kohorte k ON k.kKunde = r.kKunde\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE r.dErstellt < p.S AND DATEDIFF(MONTH, k.KMonat, r.dErstellt) <= 12\n  GROUP BY r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt)\n),\nfm AS (SELECT n FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12)) v(n)),\nbasis AS (\n  SELECT fm.n AS FM, COUNT(*) AS Basis\n  FROM fm JOIN kohorte k ON k.Reife > fm.n\n  GROUP BY fm.n\n),\nagg AS (\n  SELECT m.FM, COUNT(*) AS Aktiv, SUM(m.Rechnungen) AS Rechnungen, SUM(m.Umsatz) AS Umsatz, SUM(m.Rohertrag) AS Rohertrag\n  FROM mon m JOIN kohorte k ON k.kKunde = m.kKunde\n  WHERE k.Reife > m.FM\n  GROUP BY m.FM\n),\nje AS (\n  SELECT b.FM, b.Basis, ISNULL(a.Aktiv,0) AS Aktiv,\n    1.0 * ISNULL(a.Rechnungen,0) / b.Basis AS RechJe,\n    ISNULL(a.Umsatz,0) / b.Basis AS UmsatzJe,\n    ISNULL(a.Rohertrag,0) / b.Basis AS RohJe\n  FROM basis b LEFT JOIN agg a ON a.FM = b.FM\n)\nSELECT\n  CASE WHEN FM = 0 THEN 'Erstkaufmonat' ELSE CONCAT('+', FM, ' Mon.') END AS Monat,\n  FM AS Folgemonat,\n  Basis AS Neukunden,\n  CAST(100.0 * Aktiv / Basis AS DECIMAL(9,1)) AS [Kaufen %],\n  CAST(RechJe AS DECIMAL(9,2)) AS [Ø Rechnungen],\n  CAST(UmsatzJe AS DECIMAL(18,2)) AS [Ø Umsatz],\n  CAST(RohJe AS DECIMAL(18,2)) AS [Ø Rohertrag],\n  CAST(SUM(UmsatzJe) OVER (ORDER BY FM ROWS UNBOUNDED PRECEDING) AS DECIMAL(18,2)) AS [Umsatz kumuliert],\n  CAST(SUM(RohJe) OVER (ORDER BY FM ROWS UNBOUNDED PRECEDING) AS DECIMAL(18,2)) AS [Rohertrag kumuliert]\nFROM je\nORDER BY FM",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Monat",
+            "Folgemonat",
+            "Neukunden",
+            "Kaufen %",
+            "Ø Rechnungen",
+            "Ø Umsatz",
+            "Ø Rohertrag",
+            "Umsatz kumuliert",
+            "Rohertrag kumuliert"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Neukundenprognose je Folgemonat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Monat",
+              "target_field": "Monat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monat"
+              }
+            },
+            {
+              "source_field": "Folgemonat",
+              "target_field": "Folgemonat",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Folgemonat"
+              }
+            },
+            {
+              "source_field": "Neukunden",
+              "target_field": "Neukunden",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Neukunden"
+              }
+            },
+            {
+              "source_field": "Kaufen %",
+              "target_field": "Kaufen %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kaufen %"
+              }
+            },
+            {
+              "source_field": "Ø Rechnungen",
+              "target_field": "Ø Rechnungen",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Rechnungen"
+              }
+            },
+            {
+              "source_field": "Ø Umsatz",
+              "target_field": "Ø Umsatz",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Umsatz"
+              }
+            },
+            {
+              "source_field": "Ø Rohertrag",
+              "target_field": "Ø Rohertrag",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Rohertrag"
+              }
+            },
+            {
+              "source_field": "Umsatz kumuliert",
+              "target_field": "Umsatz kumuliert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz kumuliert"
+              }
+            },
+            {
+              "source_field": "Rohertrag kumuliert",
+              "target_field": "Rohertrag kumuliert",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag kumuliert"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_nk_kohorten",
+      "name": "Cockpit – Neukunden je Erstkaufmonat",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH p AS (\n  -- Stichmonat S: erster Monat, der noch nicht abgeschlossen ist (Ende des Zeitraums, höchstens der laufende Monat)\n  SELECT CASE WHEN DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) > DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              THEN DATEFROMPARTS(YEAR(GETDATE()),MONTH(GETDATE()),1)\n              ELSE DATEFROMPARTS(YEAR(DATEADD(DAY,1,:bis)),MONTH(DATEADD(DAY,1,:bis)),1) END AS S\n),\nre AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.kKunde > 0\n    AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n),\nerst AS (\n  SELECT kKunde, MIN(dErstellt) AS Erstkauf,\n    DATEFROMPARTS(YEAR(MIN(dErstellt)),MONTH(MIN(dErstellt)),1) AS KMonat\n  FROM re GROUP BY kKunde\n),\nkohorte AS (\n  -- Neukunden der 24 abgeschlossenen Monate vor dem Stichmonat\n  SELECT e.kKunde, e.KMonat, DATEDIFF(MONTH, e.KMonat, p.S) AS Reife\n  FROM erst e CROSS JOIN p\n  WHERE e.KMonat >= DATEADD(MONTH,-24,p.S) AND e.KMonat < p.S\n),\nmon AS (\n  -- je Kunde und Folgemonat (0 = Monat des Erstkaufs) nur abgeschlossene Monate\n  SELECT r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt) AS FM,\n    COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS Umsatz,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS Rohertrag\n  FROM re r\n  JOIN kohorte k ON k.kKunde = r.kKunde\n  CROSS JOIN p\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  WHERE r.dErstellt < p.S AND DATEDIFF(MONTH, k.KMonat, r.dErstellt) <= 12\n  GROUP BY r.kKunde, DATEDIFF(MONTH, k.KMonat, r.dErstellt)\n),\nfm AS (SELECT n FROM (VALUES (0),(1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12)) v(n)),\nbasis AS (\n  SELECT fm.n AS FM, COUNT(*) AS Basis\n  FROM fm JOIN kohorte k ON k.Reife > fm.n\n  GROUP BY fm.n\n),\nagg AS (\n  SELECT m.FM, COUNT(*) AS Aktiv, SUM(m.Rechnungen) AS Rechnungen, SUM(m.Umsatz) AS Umsatz, SUM(m.Rohertrag) AS Rohertrag\n  FROM mon m JOIN kohorte k ON k.kKunde = m.kKunde\n  WHERE k.Reife > m.FM\n  GROUP BY m.FM\n),\nje AS (\n  SELECT b.FM, b.Basis, ISNULL(a.Aktiv,0) AS Aktiv,\n    1.0 * ISNULL(a.Rechnungen,0) / b.Basis AS RechJe,\n    ISNULL(a.Umsatz,0) / b.Basis AS UmsatzJe,\n    ISNULL(a.Rohertrag,0) / b.Basis AS RohJe\n  FROM basis b LEFT JOIN agg a ON a.FM = b.FM\n),\nkk AS (\n  SELECT k.kKunde, k.KMonat, k.Reife,\n    SUM(CASE WHEN m.FM = 0 THEN m.Umsatz ELSE 0 END) AS U0,\n    SUM(CASE WHEN m.FM <= 2 THEN m.Umsatz ELSE 0 END) AS U3,\n    SUM(CASE WHEN m.FM <= 5 THEN m.Umsatz ELSE 0 END) AS U6,\n    SUM(CASE WHEN m.FM <= 11 THEN m.Umsatz ELSE 0 END) AS U12,\n    SUM(CASE WHEN m.FM <= 11 THEN m.Rohertrag ELSE 0 END) AS R12,\n    MAX(CASE WHEN m.FM BETWEEN 1 AND 2 THEN 1 ELSE 0 END) AS W3,\n    MAX(CASE WHEN m.FM BETWEEN 1 AND 5 THEN 1 ELSE 0 END) AS W6,\n    MAX(CASE WHEN m.FM BETWEEN 1 AND 11 THEN 1 ELSE 0 END) AS W12\n  FROM kohorte k LEFT JOIN mon m ON m.kKunde = k.kKunde\n  GROUP BY k.kKunde, k.KMonat, k.Reife\n)\nSELECT\n  CONVERT(char(7), KMonat, 120) AS Erstkaufmonat,\n  COUNT(*) AS Neukunden,\n  CAST(AVG(U0) AS DECIMAL(18,2)) AS [Ø Erstkaufmonat],\n  CAST(CASE WHEN MAX(Reife) >= 3 THEN AVG(U3) END AS DECIMAL(18,2)) AS [Ø Umsatz 3 Mon.],\n  CAST(CASE WHEN MAX(Reife) >= 6 THEN AVG(U6) END AS DECIMAL(18,2)) AS [Ø Umsatz 6 Mon.],\n  CAST(CASE WHEN MAX(Reife) >= 12 THEN AVG(U12) END AS DECIMAL(18,2)) AS [Ø Umsatz 12 Mon.],\n  CAST(CASE WHEN MAX(Reife) >= 12 THEN AVG(R12) END AS DECIMAL(18,2)) AS [Ø Rohertrag 12 Mon.],\n  CAST(CASE WHEN MAX(Reife) >= 3 THEN 100.0 * AVG(1.0 * W3) END AS DECIMAL(9,1)) AS [Wiederkauf 3 Mon. %],\n  CAST(CASE WHEN MAX(Reife) >= 6 THEN 100.0 * AVG(1.0 * W6) END AS DECIMAL(9,1)) AS [Wiederkauf 6 Mon. %],\n  CAST(CASE WHEN MAX(Reife) >= 12 THEN 100.0 * AVG(1.0 * W12) END AS DECIMAL(9,1)) AS [Wiederkauf 12 Mon. %]\nFROM kk\nGROUP BY KMonat\nORDER BY KMonat DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "Erstkaufmonat",
+            "Neukunden",
+            "Ø Erstkaufmonat",
+            "Ø Umsatz 3 Mon.",
+            "Ø Umsatz 6 Mon.",
+            "Ø Umsatz 12 Mon.",
+            "Ø Rohertrag 12 Mon.",
+            "Wiederkauf 3 Mon. %",
+            "Wiederkauf 6 Mon. %",
+            "Wiederkauf 12 Mon. %"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Cockpit – Neukunden je Erstkaufmonat",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "Erstkaufmonat",
+              "target_field": "Erstkaufmonat",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erstkaufmonat"
+              }
+            },
+            {
+              "source_field": "Neukunden",
+              "target_field": "Neukunden",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Neukunden"
+              }
+            },
+            {
+              "source_field": "Ø Erstkaufmonat",
+              "target_field": "Ø Erstkaufmonat",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Erstkaufmonat"
+              }
+            },
+            {
+              "source_field": "Ø Umsatz 3 Mon.",
+              "target_field": "Ø Umsatz 3 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Umsatz 3 Mon."
+              }
+            },
+            {
+              "source_field": "Ø Umsatz 6 Mon.",
+              "target_field": "Ø Umsatz 6 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Umsatz 6 Mon."
+              }
+            },
+            {
+              "source_field": "Ø Umsatz 12 Mon.",
+              "target_field": "Ø Umsatz 12 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Umsatz 12 Mon."
+              }
+            },
+            {
+              "source_field": "Ø Rohertrag 12 Mon.",
+              "target_field": "Ø Rohertrag 12 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ø Rohertrag 12 Mon."
+              }
+            },
+            {
+              "source_field": "Wiederkauf 3 Mon. %",
+              "target_field": "Wiederkauf 3 Mon. %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wiederkauf 3 Mon. %"
+              }
+            },
+            {
+              "source_field": "Wiederkauf 6 Mon. %",
+              "target_field": "Wiederkauf 6 Mon. %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wiederkauf 6 Mon. %"
+              }
+            },
+            {
+              "source_field": "Wiederkauf 12 Mon. %",
+              "target_field": "Wiederkauf 12 Mon. %",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Wiederkauf 12 Mon. %"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_nk_kohorte_kunden",
+      "name": "Drilldown – Neukunden eines Erstkaufmonats",
+      "canvas_nodes": [],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 120,
+          "y": 40,
+          "width": 380,
+          "height": 260,
+          "connection_id": "{{connection_jtl}}",
+          "sql": "WITH re AS (\n  SELECT RE.kKunde, RE.kRechnung, RE.dErstellt\n  FROM Rechnung.vRechnung RE\n  WHERE ISNULL(RE.nStorno,0) = 0 AND RE.kKunde > 0\n    AND (:plattform_empty = 1 OR RE.kPlattform IN (SELECT nPlattform FROM dbo.tPlattform WHERE nTyp IN (:plattform)))\n),\nerst AS (\n  SELECT kKunde, MIN(dErstellt) AS Erstkauf FROM re GROUP BY kKunde\n),\nk AS (\n  SELECT kKunde, Erstkauf, DATEFROMPARTS(YEAR(Erstkauf),MONTH(Erstkauf),1) AS KMonat\n  FROM erst WHERE CONVERT(char(7), Erstkauf, 120) = :erstkaufmonat\n),\nz AS (\n  SELECT k.kKunde, k.Erstkauf,\n    COUNT(DISTINCT r.kRechnung) AS Rechnungen,\n    COUNT(DISTINCT CASE WHEN DATEDIFF(MONTH, k.KMonat, r.dErstellt) >= 1 THEN DATEFROMPARTS(YEAR(r.dErstellt),MONTH(r.dErstellt),1) END) AS Folgemonate,\n    MAX(r.dErstellt) AS LetzterKauf,\n    SUM(CASE WHEN DATEDIFF(MONTH, k.KMonat, r.dErstellt) = 0 THEN POS.fAnzahl * POS.fVkNetto ELSE 0 END) AS U0,\n    SUM(POS.fAnzahl * POS.fVkNetto) AS U12,\n    SUM(POS.fAnzahl * (POS.fVkNetto - COALESCE(NULLIF(POS.fEkNetto,0), A.fEKNetto, 0))) AS R12\n  FROM k\n  JOIN re r ON r.kKunde = k.kKunde AND DATEDIFF(MONTH, k.KMonat, r.dErstellt) <= 11\n  JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = r.kRechnung\n  LEFT JOIN dbo.tArtikel A ON A.cArtNr = POS.cArtNr\n  GROUP BY k.kKunde, k.Erstkauf\n)\nSELECT TOP 500\n  CAST(z.kKunde AS VARCHAR(20)) AS kKunde,\n  (SELECT MAX(LTRIM(RTRIM(ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(RA.cFirma,'')) + CASE WHEN ISNULL(RA.cZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(RA.cZusatz)), ISNULL(RA.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(RA.cZusatz)) END),''), ISNULL(RA.cVorname,'')+' '+ISNULL(RA.cName,'')))))\n     FROM Rechnung.vRechnungRechnungsadresse RA WHERE RA.kKunde = z.kKunde) AS Kunde,\n  CONVERT(char(10), z.Erstkauf, 104) AS Erstkauf,\n  CAST(z.U0 AS DECIMAL(18,2)) AS [Umsatz Erstkaufmonat],\n  z.Rechnungen,\n  z.Folgemonate AS [Monate mit Kauf danach],\n  CAST(z.U12 AS DECIMAL(18,2)) AS [Umsatz 12 Mon.],\n  CAST(z.R12 AS DECIMAL(18,2)) AS [Rohertrag 12 Mon.],\n  CONVERT(char(10), z.LetzterKauf, 104) AS [Letzter Kauf (12 Mon.)]\nFROM z\nORDER BY z.U12 DESC",
+          "mode": "transform",
+          "output_field": null,
+          "output_fields": [
+            "kKunde",
+            "Kunde",
+            "Erstkauf",
+            "Umsatz Erstkaufmonat",
+            "Rechnungen",
+            "Monate mit Kauf danach",
+            "Umsatz 12 Mon.",
+            "Rohertrag 12 Mon.",
+            "Letzter Kauf (12 Mon.)"
+          ]
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Drilldown – Neukunden eines Erstkaufmonats",
+          "target_type": "dataset",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_field": "kKunde",
+              "target_field": "kKunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "kKunde"
+              }
+            },
+            {
+              "source_field": "Kunde",
+              "target_field": "Kunde",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Kunde"
+              }
+            },
+            {
+              "source_field": "Erstkauf",
+              "target_field": "Erstkauf",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Erstkauf"
+              }
+            },
+            {
+              "source_field": "Umsatz Erstkaufmonat",
+              "target_field": "Umsatz Erstkaufmonat",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz Erstkaufmonat"
+              }
+            },
+            {
+              "source_field": "Rechnungen",
+              "target_field": "Rechnungen",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rechnungen"
+              }
+            },
+            {
+              "source_field": "Monate mit Kauf danach",
+              "target_field": "Monate mit Kauf danach",
+              "target_type": "integer",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Monate mit Kauf danach"
+              }
+            },
+            {
+              "source_field": "Umsatz 12 Mon.",
+              "target_field": "Umsatz 12 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Umsatz 12 Mon."
+              }
+            },
+            {
+              "source_field": "Rohertrag 12 Mon.",
+              "target_field": "Rohertrag 12 Mon.",
+              "target_type": "float",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Rohertrag 12 Mon."
+              }
+            },
+            {
+              "source_field": "Letzter Kauf (12 Mon.)",
+              "target_field": "Letzter Kauf (12 Mon.)",
+              "target_type": "string",
+              "source_dataset_id": "__sql__sql1",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Letzter Kauf (12 Mon.)"
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
   "pipelines": [],
@@ -10516,6 +11070,27 @@
             "mapping_id": "m_zahlungsmoral_monat",
             "pipeline_id": null,
             "label": "Cockpit – Zahlungsmoral je Monat"
+          },
+          {
+            "id": "act_nk_kpi",
+            "type": "run_mapping",
+            "mapping_id": "m_nk_kpi",
+            "pipeline_id": null,
+            "label": "Neukundenprognose – Kennzahlen"
+          },
+          {
+            "id": "act_nk_kurve",
+            "type": "run_mapping",
+            "mapping_id": "m_nk_kurve",
+            "pipeline_id": null,
+            "label": "Neukundenprognose je Folgemonat"
+          },
+          {
+            "id": "act_nk_kohorten",
+            "type": "run_mapping",
+            "mapping_id": "m_nk_kohorten",
+            "pipeline_id": null,
+            "label": "Neukunden je Erstkaufmonat"
           }
         ],
         "widgets": [
@@ -11997,6 +12572,154 @@
               "suffix": "",
               "decimals": 0,
               "info": "Lineare Hochrechnung ohne Saison. Die Hauptprognose berücksichtigt den Vorjahres-Verlauf."
+            }
+          },
+          {
+            "id": "w_nk_neukunden",
+            "type": "kpi",
+            "label": "Neukunden im Zeitraum",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Neukunden",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Kunden mit ihrer ersten Rechnung im gewählten Zeitraum."
+            }
+          },
+          {
+            "id": "w_nk_wert",
+            "type": "kpi",
+            "label": "Ein Neukunde bringt in 12 Monaten",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Wert 12 Monate",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Durchschnittlicher Umsatz eines Neukunden im Erstkaufmonat und den 11 Monaten danach – Summe der Monatswerte aus der Kurve unten. Grundlage: alle Kunden, deren erste Rechnung in den 24 abgeschlossenen Monaten vor dem Ende des Zeitraums liegt (Stornos herausgerechnet, Plattformfilter gilt). Monat 0 ist der Monat des Erstkaufs. Je Folgemonat zählen nur Kunden, für die dieser Monat schon abgeschlossen ist – jüngere Neukunden verzerren die späten Monate also nicht."
+            }
+          },
+          {
+            "id": "w_nk_rohertrag",
+            "type": "kpi",
+            "label": "… davon Rohertrag",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Rohertrag 12 Monate",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Rohertrag gesamt (alle Positionsarten, EK der Rechnungsposition, sonst aktueller Artikel-EK) in denselben 12 Monaten. So viel darf die Gewinnung eines Neukunden höchstens kosten, damit sie sich im ersten Jahr trägt."
+            }
+          },
+          {
+            "id": "w_nk_wiederkauf",
+            "type": "kpi",
+            "label": "Kaufen innerhalb von 12 Monaten wieder",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Wiederkauf 12 Monate %",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " %",
+              "decimals": 1,
+              "info": "Anteil der Neukunden, die in den 11 Monaten nach dem Erstkaufmonat noch mindestens einmal gekauft haben. Gezählt werden nur Neukunden, deren 12 Monate schon vollständig vorbei sind."
+            }
+          },
+          {
+            "id": "w_nk_erwartet",
+            "type": "kpi",
+            "label": "Noch zu erwarten von den Neukunden im Zeitraum",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Erwarteter Folgeumsatz",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Prognose: Umsatz, den die Neukunden aus dem gewählten Zeitraum in ihren ersten 12 Monaten voraussichtlich NOCH bringen – je Kunde die Monatswerte der Kurve für die Monate, die bei ihm noch ausstehen. Bereits gekaufte Monate zählen nicht mit."
+            }
+          },
+          {
+            "id": "w_nk_erwartet_re",
+            "type": "kpi",
+            "label": "… davon Rohertrag",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 4,
+              "column": "Erwarteter Folgerohertrag",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 0,
+              "info": "Wie die Kachel daneben, für den Rohertrag."
+            }
+          },
+          {
+            "id": "w_nk_kurve",
+            "type": "line",
+            "label": "Was ein Neukunde einbringt (kumuliert je Kunde)",
+            "action_id": "act_nk_kurve",
+            "config": {
+              "width": 12,
+              "x_column": "Monat",
+              "y_columns": [
+                "Umsatz kumuliert",
+                "Rohertrag kumuliert"
+              ],
+              "curved": true,
+              "info": "Durchschnittlicher Umsatz und Rohertrag je Neukunde, aufsummiert vom Erstkaufmonat bis 12 Monate danach. Grundlage: alle Kunden, deren erste Rechnung in den 24 abgeschlossenen Monaten vor dem Ende des Zeitraums liegt (Stornos herausgerechnet, Plattformfilter gilt). Monat 0 ist der Monat des Erstkaufs. Je Folgemonat zählen nur Kunden, für die dieser Monat schon abgeschlossen ist – jüngere Neukunden verzerren die späten Monate also nicht."
+            }
+          },
+          {
+            "id": "w_nk_kurve_tbl",
+            "type": "table",
+            "label": "Neukunden je Folgemonat",
+            "action_id": "act_nk_kurve",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "Folgemonat"
+              ],
+              "info": "„Neukunden“ = Kunden, für die dieser Folgemonat schon abgeschlossen ist. „Kaufen %“ = Anteil davon mit einer Rechnung in diesem Monat. Ø-Werte je Neukunde, auch über die, die nicht gekauft haben. Grundlage: alle Kunden, deren erste Rechnung in den 24 abgeschlossenen Monaten vor dem Ende des Zeitraums liegt (Stornos herausgerechnet, Plattformfilter gilt). Monat 0 ist der Monat des Erstkaufs. Je Folgemonat zählen nur Kunden, für die dieser Monat schon abgeschlossen ist – jüngere Neukunden verzerren die späten Monate also nicht."
+            }
+          },
+          {
+            "id": "w_nk_kohorten",
+            "type": "table",
+            "label": "Neukunden je Erstkaufmonat",
+            "action_id": "act_nk_kohorten",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Jede Zeile eine Gruppe von Neukunden mit demselben Erstkaufmonat. Ø Umsatz nach 3/6/12 Monaten = je Kunde aufsummiert ab dem Erstkaufmonat; Wiederkauf = Anteil mit mindestens einer weiteren Rechnung in dieser Zeit. Leer, solange der Zeitraum für diese Gruppe noch nicht abgeschlossen ist. Klick auf eine Zeile zeigt die Kunden.",
+              "drilldown": {
+                "mapping_id": "m_nk_kohorte_kunden",
+                "key_column": "Erstkaufmonat",
+                "param": "erstkaufmonat",
+                "title": "Neukunden dieses Monats (erste 12 Monate)",
+                "hidden_columns": [
+                  "Sortierung",
+                  "kArtikel",
+                  "kAuftrag",
+                  "kKunde",
+                  "kLieferant",
+                  "kLieferantenBestellung",
+                  "kEingangsrechnung",
+                  "kRechnung",
+                  "Schluessel",
+                  "sort"
+                ]
+              }
             }
           },
           {
@@ -13611,9 +14334,12 @@
           },
           {
             "id": "tab_ausblick",
-            "label": "Prognose & Churn",
+            "label": "Prognose, Neukunden & Churn",
             "action_ids": [
               "act_forecast",
+              "act_nk_kpi",
+              "act_nk_kurve",
+              "act_nk_kohorten",
               "act_churn"
             ]
           },
