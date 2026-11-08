@@ -13008,6 +13008,16 @@
             }
           },
           {
+            "id": "w_h_prognose",
+            "type": "ueberschrift",
+            "label": "Umsatzprognose",
+            "action_id": "act_forecast",
+            "config": {
+              "width": 12,
+              "text": "Hochrechnung des laufenden Jahres auf das Jahresende."
+            }
+          },
+          {
             "id": "w_fc_prognose",
             "type": "kpi",
             "label": "Prognose Jahresende",
@@ -13065,6 +13075,16 @@
               "suffix": "",
               "decimals": 0,
               "info": "Lineare Hochrechnung ohne Saison. Die Hauptprognose berücksichtigt den Vorjahres-Verlauf."
+            }
+          },
+          {
+            "id": "w_h_neukunden",
+            "type": "ueberschrift",
+            "label": "Neukunden",
+            "action_id": "act_nk_kpi",
+            "config": {
+              "width": 12,
+              "text": "Was ein neuer Kunde im ersten Jahr bringt – und was von den Neukunden im Zeitraum noch zu erwarten ist."
             }
           },
           {
@@ -13213,6 +13233,16 @@
                   "sort"
                 ]
               }
+            }
+          },
+          {
+            "id": "w_h_schlafend",
+            "type": "ueberschrift",
+            "label": "Schlafende Kunden",
+            "action_id": "act_rg_kpi",
+            "config": {
+              "width": 12,
+              "text": "Wer deutlich länger als gewohnt nichts gekauft hat, was auf dem Spiel steht – und wer im Zeitraum zurückgekommen ist."
             }
           },
           {

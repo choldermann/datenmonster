@@ -51,6 +51,7 @@ const WIDGET_LABELS = {
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
   inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
   datenpflege: "Datenpflege", zugferd: "ZUGFeRD-Ausgang", baum: "Baumansicht",
+  ueberschrift: "Überschrift",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -261,6 +262,19 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
           {rowWidgets.map(widget => {
             const ww = Number(widget.config?.width) || 12;
             const flex = `0 0 calc(${(ww / 12) * 100}% - ${16 * (rowWidgets.length - 1) / rowWidgets.length}px)`;
+            // Abschnitts-Überschrift: keine Karte, nur Titel (+ optional Untertitel) über den
+            // folgenden Widgets. Hängt an der Aktion des Abschnitts, damit sie im richtigen Reiter steht.
+            if (widget.type === "ueberschrift") {
+              return (
+                <div key={widget.id} style={{ flex, minWidth: 0, padding: ri === 0 ? "0 2px 6px" : "14px 2px 6px",
+                  borderBottom: "2px solid var(--accent)" }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: S.textBright }}>{widget.label}</div>
+                  {widget.config?.text && (
+                    <div style={{ fontSize: 12, color: S.textDim, marginTop: 3, lineHeight: 1.5 }}>{widget.config.text}</div>
+                  )}
+                </div>
+              );
+            }
             const result = results[widget.action_id] || { columns: [], rows: [], total: 0 };
             const title  = widget.label || WIDGET_LABELS[widget.type] || widget.type;
             // KPI und Baum bringen ihren Kopf selbst mit.

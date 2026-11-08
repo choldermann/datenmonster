@@ -6295,6 +6295,16 @@
             }
           },
           {
+            "id": "w_ve_h_schlafend",
+            "type": "ueberschrift",
+            "label": "Schlafende Kunden",
+            "action_id": "act_ve_rg_kpi",
+            "config": {
+              "width": 12,
+              "text": "Wer deutlich länger als gewohnt nichts gekauft hat, was auf dem Spiel steht – und wer im Zeitraum zurückgekommen ist."
+            }
+          },
+          {
             "id": "w_ve_rg_schlaf",
             "type": "kpi",
             "label": "Schlafende Kunden",

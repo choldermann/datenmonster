@@ -456,7 +456,11 @@ def _render_tab(schema: dict, tab: dict, results: dict) -> str:
                 parts.append(flush_kpis())
             continue
         parts.append(flush_kpis())
-        if wt == "tasklist":
+        if wt == "ueberschrift":
+            parts.append(f'<div style="font-size:11pt;font-weight:bold;margin:10px 0 2px;color:{ACCENT}">{_esc(w.get("label",""))}</div>')
+            if (w.get("config") or {}).get("text"):
+                parts.append(f'<div style="font-size:8pt;margin:0 0 4px;color:{MUTED}">{_esc(w["config"]["text"])}</div>')
+        elif wt == "tasklist":
             parts.append(_tasklist_html(w, res))
         elif wt == "alerts":
             parts.append(_alerts_html(w, res))

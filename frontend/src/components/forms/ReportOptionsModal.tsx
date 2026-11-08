@@ -28,9 +28,9 @@ export function reportSections(schema = {}) {
   }
   for (const tab of (schema.result_tabs || [])) {
     const ids = new Set(tab.action_ids || []);
-    const n = widgets.filter(w => w.action_id && ids.has(w.action_id)).length;
+    const n = widgets.filter(w => w.action_id && ids.has(w.action_id) && w.type !== "ueberschrift").length;
     // Reiter ohne Auswertungen (Pflegemaske) oder nur mit Baum lässt der Report ohnehin weg.
-    const druckbar = widgets.some(w => w.action_id && ids.has(w.action_id) && w.type !== "baum" && w.type !== "karte" && w.type !== "umfeld" && w.type !== "branchenvergleich" && w.type !== "aussenhandel" && w.type !== "waehrungen" && w.type !== "insolvenzen" && w.type !== "ustid" && w.type !== "erzeugerpreise" && w.type !== "energie" && w.type !== "stimmung");
+    const druckbar = widgets.some(w => w.action_id && ids.has(w.action_id) && w.type !== "baum" && w.type !== "karte" && w.type !== "umfeld" && w.type !== "branchenvergleich" && w.type !== "aussenhandel" && w.type !== "waehrungen" && w.type !== "insolvenzen" && w.type !== "ustid" && w.type !== "erzeugerpreise" && w.type !== "energie" && w.type !== "stimmung" && w.type !== "ueberschrift");
     if (!druckbar) continue;
     out.push({ id: tab.id, label: tab.label || tab.id,
       hint: n ? `${n} Auswertung${n === 1 ? "" : "en"}` : "" });
