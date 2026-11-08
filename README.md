@@ -12,7 +12,6 @@
   <em>Connect, transform and automate your data pipelines – without cloud dependency.</em>
 </p>
 
-![License](https://img.shields.io/badge/license-MIT-green)
 ![Docker](https://img.shields.io/badge/docker-ready-blue)
 ![Python](https://img.shields.io/badge/python-3.11-blue)
 ![React](https://img.shields.io/badge/react-18-61dafb)
@@ -194,7 +193,8 @@ API Docs: http://localhost:8000/docs
 
 ## 📄 License
 
-MIT License – see [LICENSE](LICENSE) for details.
+Für die Nutzung von Datenmonster gelten die [AGB](https://datenmonster.monstersuite.de/agb) von Holdermann IT;
+die Basis-Stufe ist kostenlos, Pro-Funktionen werden per Lizenzschlüssel freigeschaltet – siehe [Lizenzmodell](https://monstersuite.de/lizenzmodell/).
 
 ---
 
