@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X, ArrowRight, Hash, Calendar, Type, GitBranch, ChevronDown } from "lucide-react";
 import { S, TRANSFORMER_TYPES, JOIN_TYPES, JOIN_COLOR, DATE_FORMATS } from "./constants";
 
@@ -149,7 +149,23 @@ function TransformerEditor({ connection, allSourceFields, onClose, onChange }) {
 }
 
 // ─── Join Editor Popup ─────────────────────────────────────────────────────────
+// Kurz erklärt, was jede Join-Art liefert – als Tooltip auf den Knöpfen
+const JOIN_HILFE = {
+  "INNER JOIN": "Nur Zeilen, die auf beiden Seiten einen Partner haben",
+  "LEFT JOIN": "Alle Zeilen links, rechts leer, wenn kein Partner",
+  "RIGHT JOIN": "Alle Zeilen rechts, links leer, wenn kein Partner",
+  "FULL OUTER JOIN": "Alle Zeilen beider Seiten",
+  "LEFT ANTI JOIN": "Nur Zeilen links OHNE Partner (z. B. Kunden ohne Rechnung)",
+  "RIGHT ANTI JOIN": "Nur Zeilen rechts OHNE Partner",
+};
+
 function JoinEditor({ join, onClose, onChange, onDelete }) {
+  // Escape schließt – bisher ging das nur über ✕ oder einen Klick daneben
+  useEffect(() => {
+    const taste = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", taste);
+    return () => window.removeEventListener("keydown", taste);
+  }, [onClose]);
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.6)" }} onClick={onClose}>
       <div style={{ backgroundColor: S.bgCard, border: `1px solid color-mix(in srgb, ${JOIN_COLOR} 33.3%, transparent)`, borderRadius: 8, padding: 20, width: 320, boxShadow: "0 16px 48px rgba(0,0,0,0.6)" }} onClick={(e) => e.stopPropagation()}>
@@ -168,7 +184,8 @@ function JoinEditor({ join, onClose, onChange, onDelete }) {
             const isAnti = jt.value.includes("ANTI");
             const activeColor = isAnti ? "var(--err-soft)" : JOIN_COLOR;
             return (
-            <button key={jt.value} onClick={() => onChange({ ...join, join_type: jt.value })}
+            <button key={jt.value} onClick={() => { onChange({ ...join, join_type: jt.value }); onClose(); }}
+              title={JOIN_HILFE[jt.value]}
               style={{
                 padding: "8px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer",
                 backgroundColor: join.join_type === jt.value ? activeColor + "22" : S.bgEl,

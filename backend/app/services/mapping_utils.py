@@ -234,8 +234,16 @@ def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
         "LEFT JOIN": "left",
         "RIGHT JOIN": "right",
         "FULL OUTER JOIN": "outer",
+        # Anti-Joins: Zeilen OHNE Partner („Kunden ohne Rechnung“). Der Editor bot
+        # sie an, die Engine kannte sie nicht und rechnete still einen INNER JOIN –
+        # also genau das Gegenteil.
+        "LEFT ANTI JOIN": "left",
+        "RIGHT ANTI JOIN": "right",
     }
-    how = how_map.get(join_type, "inner")
+    if join_type not in how_map:
+        raise ValueError(f"Unbekannte Join-Art „{join_type}“")
+    how = how_map[join_type]
+    anti = join_type.endswith("ANTI JOIN")
 
     # Join-Keys typ-angleichen (Cross-DB-Type-Mismatch), Merge über temporäre
     # Hilfsspalten – die Original-Keyspalten bleiben unverändert im Ergebnis.
@@ -245,10 +253,15 @@ def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
             lk, rk = _prep_join_keys(left_df[left_key], right_df[right_key])
             left_df = left_df.assign(**{_LK: lk})
             right_df = right_df.assign(**{_RK: rk})
-            merged = pd.merge(left_df, right_df, left_on=_LK, right_on=_RK, how=how, suffixes=("", "_r"))
+            merged = pd.merge(left_df, right_df, left_on=_LK, right_on=_RK, how=how, suffixes=("", "_r"),
+                              indicator=anti)
             merged = merged.drop(columns=[_LK, _RK], errors="ignore")
         else:
-            merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"))
+            merged = pd.merge(left_df, right_df, left_on=left_key, right_on=right_key, how=how, suffixes=("", "_r"),
+                              indicator=anti)
+        if anti:
+            nur = "left_only" if how == "left" else "right_only"
+            merged = merged[merged["_merge"] == nur].drop(columns=["_merge"]).reset_index(drop=True)
     except Exception as e:
         raise ValueError(f"Join fehlgeschlagen: {e}")
 

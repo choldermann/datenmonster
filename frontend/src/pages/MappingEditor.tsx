@@ -268,7 +268,20 @@ export default function MappingEditor() {
   }, [activeTargetId, targets]);
 
   const [lineTick, setLineTick] = useState(0);
-  const allSourceFieldsFlat = canvasNodes.flatMap((n) => n.dataset_columns || []);
+  // Feldauswahl der Knoten. Kommt ein Name in mehreren Datasets vor (kKunde in
+  // Kunden und Rechnungen), stand er früher zweimal gleich in der Liste – nach
+  // einem LEFT JOIN war nicht zu erkennen, welche Seite gemeint ist. Doppelte
+  // Namen deshalb als „Dataset.Feld“; das Backend löst beide Schreibweisen auf.
+  const allSourceFieldsFlat = (() => {
+    const anzahl: Record<string, number> = {};
+    canvasNodes.forEach((n) => (n.dataset_columns || []).forEach((c) => {
+      const k = typeof c === "string" ? c : c?.name; anzahl[k] = (anzahl[k] || 0) + 1;
+    }));
+    return canvasNodes.flatMap((n) => (n.dataset_columns || []).map((c) => {
+      const k = typeof c === "string" ? c : c?.name;
+      return anzahl[k] > 1 ? `${n.dataset_name}.${k}` : c;
+    }));
+  })();
   const triggerLineDraw = useCallback(() => setLineTick((t) => t + 1), []);
 
   const insertGeneratedNodes = useCallback((result: { nodes: any[]; explanation: string }) => {

@@ -113,6 +113,13 @@ pruefe("LEFT: Kunde ohne Rechnung bleibt, Lücke ist leer (nicht NaN)",
 pruefe("LEFT: Ganzzahl bleibt Ganzzahl", r["rows"][0]["kRechnung"] == 10 and not isinstance(r["rows"][0]["kRechnung"], float),
        repr(r["rows"][0]["kRechnung"]))
 
+r = lauf(canvas_nodes=canvas(1, 2), joins=[dict(join, join_type="LEFT ANTI JOIN")],
+         connections=[v(1, "kKunde"), v(1, "cName")])
+pruefe("LEFT ANTI: nur Kunde ohne Rechnung", [z["cName"] for z in r["rows"]] == ["Ohne Umsatz AG"], r["rows"])
+r = lauf(canvas_nodes=canvas(1, 2), joins=[dict(join, join_type="RIGHT ANTI JOIN")],
+         connections=[v(2, "kRechnung")])
+pruefe("RIGHT ANTI: nur Rechnung ohne Kunde", [z["kRechnung"] for z in r["rows"]] == [13], r["rows"])
+
 # ── 3. Filter und Sortierung am Dataset ───────────────────────────────────────
 print("3. Filter und Sortierung")
 cn = canvas(2)
