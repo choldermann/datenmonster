@@ -196,10 +196,28 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
           <Plus size={10} /> Regel hinzufügen
         </button>
 
-        <div style={{ fontSize: 9, color: S.textDim, padding: "4px 8px", borderRadius: 4, backgroundColor: C + "08", border: "1px solid " + C + "22", lineHeight: 1.4 }}>
-          💡 Fügt <code style={{ color: C, background: "none" }}>__dq_valid__</code> und{" "}
-          <code style={{ color: C, background: "none" }}>__dq_errors__</code> zu jeder Zeile hinzu.
-        </div>
+        {/* Ausgaben: auf ein Zielfeld ziehen. Bis 2026-11 stand hier nur ein Hinweis,
+            die beiden Felder ließen sich aber nirgends abgreifen – das Prüfergebnis
+            kam nie in der Ausgabe an. */}
+        {[
+          { feld: "__dq_valid__", text: "Gültig (ja/nein)" },
+          { feld: "__dq_errors__", text: "Fehlermeldungen" },
+        ].map(({ feld, text }) => (
+          <div key={feld} style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "flex-end" }}>
+            <span style={{ fontSize: 10, color: S.textDim }}>{text}</span>
+            <code style={{ fontSize: 9, color: C, background: "none" }}>{feld}</code>
+            <div
+              draggable
+              onDragStart={(e) => {
+                e.stopPropagation();
+                e.dataTransfer.setData("source_dataset_id", "__quality__" + node.id);
+                e.dataTransfer.setData("source_field", feld);
+              }}
+              title="Auf ein Zielfeld ziehen"
+              style={{ width: 10, height: 10, borderRadius: "50%", flexShrink: 0, backgroundColor: C, border: "2px solid " + C, cursor: "grab", marginRight: -16 }}
+            />
+          </div>
+        ))}
 
         {debugStats && (
           <div style={{ fontSize: 9, color: S.textDim, display: "flex", gap: 8, paddingTop: 2, borderTop: `1px solid color-mix(in srgb, ${C} 13.3%, transparent)` }}>

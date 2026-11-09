@@ -81,6 +81,7 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
           <span style={{ fontSize: 10, color: S.textDim }}>
             {result.total} Zeilen · {result.columns.length} Spalten
             {result.errors?.length > 0 && <span style={{ color: "var(--err-soft)", marginLeft: 8 }}>⚠ {result.errors.length} Fehler</span>}
+            {result.warnings?.length > 0 && <span style={{ color: "var(--accent)", marginLeft: 8 }}>ⓘ {result.warnings.length} Hinweis{result.warnings.length > 1 ? "e" : ""}</span>}
           </span>
         )}
         {open && (
@@ -104,10 +105,13 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
             </div>
           )}
 
-          {!loading && result?.errors?.length > 0 && result.rows.length === 0 && (
+          {!loading && (result?.errors?.length > 0 || result?.warnings?.length > 0) && result.rows.length === 0 && (
             <div style={{ padding: 16 }}>
-              {result.errors.map((e, i) => (
+              {(result.errors || []).map((e, i) => (
                 <p key={i} style={{ fontSize: 11, color: "var(--err-soft)", marginBottom: 4 }}>⚠ {e}</p>
+              ))}
+              {(result.warnings || []).map((w, i) => (
+                <p key={"w" + i} style={{ fontSize: 11, color: "var(--accent)", marginBottom: 4 }}>ⓘ {w}</p>
               ))}
             </div>
           )}
@@ -117,6 +121,12 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
               {result.errors?.length > 0 && (
                 <div style={{ padding: "6px 12px", backgroundColor: "color-mix(in srgb, var(--err-soft) 6%, transparent)", borderBottom: `1px solid ${S.border}` }}>
                   {result.errors.map((e, i) => <span key={i} style={{ fontSize: 10, color: "var(--err-soft)", marginRight: 12 }}>⚠ {e}</span>)}
+                </div>
+              )}
+              {/* Hinweise: nichts ist kaputt, aber vermutlich nicht so gemeint (Spalte fehlt, Knoten ohne Wirkung) */}
+              {result.warnings?.length > 0 && (
+                <div style={{ padding: "6px 12px", backgroundColor: "color-mix(in srgb, var(--accent) 6%, transparent)", borderBottom: `1px solid ${S.border}` }}>
+                  {result.warnings.map((w, i) => <span key={i} style={{ fontSize: 10, color: "var(--accent)", marginRight: 12 }}>ⓘ {w}</span>)}
                 </div>
               )}
               <table style={{ fontSize: 11, borderCollapse: "collapse", minWidth: "max-content", width: "100%" }}>

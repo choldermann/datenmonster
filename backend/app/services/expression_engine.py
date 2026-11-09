@@ -315,7 +315,17 @@ def _eval_expression(expr: str, row: dict):
         "sqrt": _math.sqrt, "floor": _math.floor, "ceil": _math.ceil,
         "True": True, "False": False, "None": None,
     }
-    pruefe_ausdruck(expr_py, {k for k in ns if not k.startswith("__")}, platzhalter=("__r__",))
+    # UPPER(…), Concat(…), IF_(…): Wer aus Excel oder SQL kommt, schreibt Funktionen
+    # groß. Bekannte Namen deshalb ohne Rücksicht auf die Schreibweise annehmen.
+    _namen = {k.lower(): k for k in ns if not k.startswith("__") and k not in ("True", "False", "None")}
+    expr_py = _re.sub(r'\b([A-Za-z_]\w*)(\s*\()',
+                      lambda m: _namen.get(m.group(1).lower(), m.group(1)) + m.group(2), expr_py)
+    try:
+        pruefe_ausdruck(expr_py, {k for k in ns if not k.startswith("__")}, platzhalter=("__r__",))
+    except ValueError as e:
+        if "Funktion" in str(e):
+            raise ValueError(f"{e}. Verfügbar: {', '.join(sorted(_namen))}") from None
+        raise
     return eval(expr_py, ns)  # noqa: S307 – vorher durch pruefe_ausdruck
 
 

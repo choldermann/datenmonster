@@ -904,6 +904,16 @@ def _json_type(t: str) -> str:
             "boolean": "boolean", "number": "number"}.get(t, "string")
 
 
+def _ist_luecke(val) -> bool:
+    """NaN, NaT oder pd.NA – fehlende Werte aus pandas, die als None ausgegeben werden."""
+    if isinstance(val, (str, bytes, list, dict, tuple, set)):
+        return False
+    try:
+        return bool(pd.isna(val))
+    except (TypeError, ValueError):
+        return False
+
+
 def execute_mapping(
     canvas_nodes: List[Dict],
     connections: List[Dict],
@@ -935,6 +945,10 @@ def execute_mapping(
     Returns: { columns, rows, total, errors }
     """
     errors = []
+    # Hinweise: nichts ist kaputt, aber das Ergebnis ist vermutlich nicht das, was
+    # gemeint war (Spalte fehlt, Knoten ohne Wirkung …). Getrennt von errors, damit
+    # ein laufendes Cockpit davon nicht als fehlgeschlagen gilt.
+    warnings: List[str] = []
     output_rows = []   # initialized early to prevent NameError in REST/Lookup sections
     _dbg_t = __import__('time').perf_counter if _debug_trace is not None else None
     _dbg_err_idx = 0   # track error count per stage
@@ -942,6 +956,12 @@ def execute_mapping(
     # Transform-SQL-Node kann ohne Canvas-Datasets laufen
     has_transform_sql = any(sn.get("mode") == "transform" for sn in (sql_nodes or []))
     if not canvas_nodes and not has_transform_sql:
+        if sql_nodes:
+            # Häufigste Falle beim Selbstbauen: eine Abfrage als Datenquelle, der
+            # SQL-Knoten steht aber noch auf „Skalar“ (ein Wert je Zeile).
+            return {"columns": [], "rows": [], "total": 0, "errors": [
+                "Kein Dataset auf dem Canvas und kein SQL-Knoten im Modus „Transform“. "
+                "Soll die Abfrage selbst die Daten liefern, beim SQL-Knoten den Modus „Transform“ wählen."]}
         return {"columns": [], "rows": [], "total": 0, "errors": ["Keine Datasets auf dem Canvas"]}
 
     if not connections and not agg_nodes and not has_transform_sql:
@@ -1424,6 +1444,8 @@ def execute_mapping(
             group_fields = [f for f in fields if f.get("func") == "group_by" and f.get("input_field")]
             agg_fields  = [f for f in fields if f.get("func") != "group_by" and f.get("input_field") and f.get("output_field")]
             if not agg_fields:
+                warnings.append(f"Aggregation '{an.get('id', '?')}' hat kein Rechenfeld (Summe, Anzahl …) "
+                                "mit Eingabe- und Ausgabefeld und wurde übersprungen.")
                 continue
 
             if group_fields:
@@ -1436,7 +1458,9 @@ def execute_mapping(
                     new_row = dict(rows[0])  # alle original-felder übernehmen
                     for i, gf in enumerate(group_fields):
                         out = gf.get("output_field") or gf["input_field"]
-                        new_row[out] = key[i]
+                        # Gruppiert wird über den Text, ausgegeben der Originalwert –
+                        # sonst wird aus Kundennummer 1 der Text "1".
+                        new_row[out] = rows[0].get(gf["input_field"], key[i])
                     for af in agg_fields:
                         new_row[af["output_field"]] = _agg(af["func"], rows, af["input_field"])
                     agg_rows.append(new_row)
@@ -1866,6 +1890,7 @@ def execute_mapping(
                 continue
 
             chosen_ds_id = None
+            chosen_label = None
             for branch in branches:
                 condition = branch.get("condition", "always")
                 ds_id = branch.get("dataset_id")
@@ -1873,6 +1898,7 @@ def execute_mapping(
 
                 if condition == "always":
                     chosen_ds_id = branch.get("source_dataset_id")
+                    chosen_label = branch.get("label")
                     break
                 elif condition in ("has_rows", "no_rows", "row_count_gt", "row_count_lt") and ds_id:
                     try:
@@ -1890,25 +1916,34 @@ def execute_mapping(
                             match = row_count < threshold
                         if match:
                             chosen_ds_id = branch.get("source_dataset_id")
+                            chosen_label = branch.get("label")
                             break
                     except Exception as e:
                         errors.append(f"Switch-Node Bedingung fehlgeschlagen: {str(e)[:100]}")
                         continue
 
-            if chosen_ds_id:
-                try:
-                    switch_connector = get_connector(chosen_ds_id)
-                    switch_df = switch_connector.fetch_full()
-                    # Spalten als Felder in output_rows verfügbar machen
-                    for col in switch_df.columns:
-                        field_name = f"{output_field}__{col}"
-                        for i, row in enumerate(output_rows):
-                            row[field_name] = switch_df.iloc[i][col] if i < len(switch_df) else None
-                    # Metafeld: welcher Zweig gewählt wurde
-                    for row in output_rows:
-                        row[output_field] = str(chosen_ds_id)
-                except Exception as e:
-                    errors.append(f"Switch-Node Ausgabe fehlgeschlagen: {str(e)[:100]}")
+            # Bis 2026-11 schrieb der Knoten in output_rows – die ist hier aber
+            # immer leer (dasselbe Muster wie früher bei REST und Nachschlagen).
+            # Die Weiche lief deshalb nie. Jetzt landen ihre Felder als Spalten in
+            # result_df und sind damit Quellfelder wie alle anderen.
+            if chosen_ds_id is None:
+                warnings.append(f"Weiche '{output_field}': keine Bedingung traf zu und kein Zweig "
+                                "„Sonst“ ist gesetzt – das Feld bleibt leer.")
+                continue
+            if result_df is None:
+                continue
+            try:
+                switch_connector = get_connector(chosen_ds_id)
+                switch_df = switch_connector.fetch_full().reset_index(drop=True)
+                anzahl = len(result_df)
+                for col in switch_df.columns:
+                    werte = list(switch_df[col])[:anzahl]
+                    werte += [None] * (anzahl - len(werte))
+                    result_df[f"{output_field}__{col}"] = werte
+                # Welcher Zweig gewählt wurde: seine Bezeichnung, sonst die Dataset-ID
+                result_df[output_field] = chosen_label or str(chosen_ds_id)
+            except Exception as e:
+                errors.append(f"Switch-Node Ausgabe fehlgeschlagen: {str(e)[:100]}")
 
     target_columns = [c["target_field"] for c in connections if c.get("target_field")]
     # Transform-Node: target_columns aus result_df Spalten wenn keine Connections
@@ -1940,6 +1975,10 @@ def execute_mapping(
         # Nur die gemappten Felder aus result_df selektieren
         mapped_fields = {c.get("source_field"): c.get("target_field") for c in connections if c.get("source_field") and c.get("target_field")}
         valid_fields = {src: tgt for src, tgt in mapped_fields.items() if src in result_df.columns}
+        for _src, _tgt in mapped_fields.items():
+            if _src not in result_df.columns:
+                warnings.append(f"Zielfeld '{_tgt}': Die Abfrage liefert keine Spalte '{_src}' – "
+                                "das Feld fehlt in der Ausgabe.")
         if valid_fields:
             df_mapped = result_df[list(valid_fields.keys())].rename(columns=valid_fields)
             output_rows = _rows_to_json(df_mapped.where(df_mapped.notna(), other=None).to_dict(orient="records"))
@@ -1970,6 +2009,7 @@ def execute_mapping(
                 "rows": output_rows,
                 "total": total,
                 "errors": errors,
+                "warnings": warnings,
             }
 
     # Lookup-Modus: Batch-IN Nodes vorverarbeiten (einmalige IN-Query vor der Row-Loop)
@@ -2247,7 +2287,8 @@ def execute_mapping(
                     _msg = _rule.get("message") or f"{_field}: {_rtype} Fehler"
                     _row_errors.append(_msg)
             flat_no_prefix["__dq_valid__"] = len(_row_errors) == 0
-            flat_no_prefix["__dq_errors__"] = _row_errors
+            # Als Text, damit es in CSV, Excel und Tabellen lesbar ankommt
+            flat_no_prefix["__dq_errors__"] = "; ".join(_row_errors)
 
         out_row = {}
         for conn in connections:
@@ -2263,7 +2304,7 @@ def execute_mapping(
                     # Fallback auf default_value wenn kein source_field verbunden
                     if conn.get("source_field") is None and (conn.get("transformer") or {}).get("type", "direct") == "direct":
                         val = conn.get("default_value")
-                if val is None:
+                if val is None or _ist_luecke(val):
                     out_row[target] = None
                 elif isinstance(val, str) and val.strip().lower() in ("nan", "none", ""):
                     out_row[target] = None
@@ -2309,6 +2350,13 @@ def execute_mapping(
     output_rows, _dbg_err_idx = _run_window_calc_nodes(
         output_rows, calc_nodes, errors, _debug_trace, _dbg_err_idx
     )
+    # Fenster-Berechnungen laufen auf der fertigen Ausgabe und hängen dort eine
+    # Spalte an. Ohne Eintrag in columns zeigt die Vorschau sie nicht.
+    for _cn in (calc_nodes or []):
+        _of = _cn.get("output_field")
+        if (_cn.get("calc_type") or "formula") != "formula" and _of and _of not in target_columns \
+                and output_rows and _of in output_rows[0]:
+            target_columns.append(_of)
 
     # ── Python Script Nodes ────────────────────────────────────────────────────
     for pn in (python_nodes or []):
@@ -2436,4 +2484,5 @@ def execute_mapping(
         "rows": output_rows,
         "total": total,
         "errors": errors,
+        "warnings": warnings,
     }

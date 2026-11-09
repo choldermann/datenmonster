@@ -33,6 +33,16 @@ import NodePaletteModal from "../components/mapping/NodePaletteModal";
 import { ExportModal, ContextMenu, TargetConfig, TargetAddField } from "../components/mapping/ExportModal";
 import { FieldPickerModal, TargetConfigModal } from "../components/mapping/Modals";
 
+/**
+ * Quelle einer Verbindung aus dem Drag-Datum: Knoten-Ausgaben tragen eine
+ * Kennung wie "__expr__e1", Datasets ihre Zahl. Früher stand hier eine Liste
+ * erlaubter Präfixe – Python, Ausdruck, KI und Qualität fehlten darin, und ein
+ * Feld dieser Knoten ließ sich nicht als neues Zielfeld ablegen.
+ */
+function quellId(raw: string): string | number {
+  return raw.startsWith("__") ? raw : parseInt(raw);
+}
+
 export default function MappingEditor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -1851,7 +1861,7 @@ export default function MappingEditor() {
                   const srcDsId = e.dataTransfer.getData("source_dataset_id");
                   const srcField = e.dataTransfer.getData("source_field");
                   if (!srcField || !srcDsId) return;
-                  const dsId = srcDsId.startsWith("__transform__") || srcDsId.startsWith("__const__") || srcDsId.startsWith("__sql__") || srcDsId.startsWith("__agg__") || srcDsId.startsWith("__params__") ? srcDsId : parseInt(srcDsId);
+                  const dsId = quellId(srcDsId);
                   e.preventDefault(); e.stopPropagation();
                   setConnections((prev) => {
                     if (prev.find((c) => c.target_field === srcField)) return prev;
@@ -1888,7 +1898,7 @@ export default function MappingEditor() {
                         const srcDsIdRaw = e.dataTransfer.getData("source_dataset_id");
                         const draggedField = e.dataTransfer.getData("source_field");
                         if (draggedField && srcDsIdRaw) {
-                          const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") || srcDsIdRaw.startsWith("__params__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
+                          const srcDsId = quellId(srcDsIdRaw);
                           setConnections((prev) => prev.map((c, i) => i === idx ? { ...c, source_dataset_id: srcDsId, source_field: draggedField, transformer: { type: "direct", source_field: draggedField } } : c));
                           setTimeout(triggerLineDraw, 50); return;
                         }
@@ -2024,7 +2034,7 @@ export default function MappingEditor() {
                     const srcDsIdRaw = e.dataTransfer.getData("source_dataset_id");
                     const draggedField = e.dataTransfer.getData("source_field");
                     if (!draggedField || !srcDsIdRaw) return;
-                    const srcDsId = srcDsIdRaw.startsWith("__transform__") || srcDsIdRaw.startsWith("__const__") || srcDsIdRaw.startsWith("__sql__") || srcDsIdRaw.startsWith("__agg__") || srcDsIdRaw.startsWith("__rest__") || srcDsIdRaw.startsWith("__lookup__") || srcDsIdRaw.startsWith("__calc__") || srcDsIdRaw.startsWith("__switch__") || srcDsIdRaw.startsWith("__params__") ? srcDsIdRaw : parseInt(srcDsIdRaw);
+                    const srcDsId = quellId(srcDsIdRaw);
                     if (!srcDsId) return;
                     e.preventDefault(); e.stopPropagation();
                     setConnections((prev) => {

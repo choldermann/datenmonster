@@ -252,6 +252,19 @@ def _apply_join(left_df: pd.DataFrame, right_df: pd.DataFrame,
     except Exception as e:
         raise ValueError(f"Join fehlgeschlagen: {e}")
 
+    # Bei LEFT/RIGHT/FULL fehlen auf einer Seite Werte. pandas macht dann aus jeder
+    # Ganzzahlspalte eine Kommazahl (kRechnung 10 → 10.0) und füllt mit NaN. Die
+    # Ganzzahlspalten deshalb als Ganzzahl mit Lücke zurückholen.
+    if how != "inner":
+        ganzzahl = [c for d in (left_df, right_df) for c in d.columns
+                    if pd.api.types.is_integer_dtype(d[c].dtype)]
+        for c in ganzzahl:
+            if c in merged.columns and merged[c].dtype.kind == "f":
+                try:
+                    merged[c] = merged[c].astype("Int64")
+                except (TypeError, ValueError):
+                    pass
+
     return merged
 
 
