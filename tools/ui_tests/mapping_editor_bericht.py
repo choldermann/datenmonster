@@ -125,6 +125,13 @@ with sync_playwright() as p:
     pg.locator("span", has_text="Vorschau").filter(has_text="▶").first.click(); pg.wait_for_timeout(5000)
     shot(pg, "vorschau")
     print("ZIELFELDER", pg.locator("text=DIRECT").count())
+    # Ohne Namen darf nicht gespeichert werden
+    pg.get_by_role("button", name="Speichern").click(); pg.wait_for_timeout(800)
+    print("Ohne Namen abgelehnt:", pg.get_by_text("Bitte zuerst einen Namen vergeben").count() == 1, "URL", pg.url)
+    pg.get_by_placeholder("Name des Mappings eingeben …").fill("Browser-Test: Umsatz je Kunde")
+    print("Vorschläge im Qualitäts-Feld:", pg.locator("datalist option").evaluate_all("o => o.map(x => x.value)"))
+    print("Linien gezeichnet:", pg.locator("svg path").count())
+    shot(pg, "vor_speichern")
     pg.get_by_role("button", name="Speichern").click(); pg.wait_for_timeout(2500)
     print("URL", pg.url)
     shot(pg, "gespeichert")

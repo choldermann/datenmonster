@@ -343,8 +343,14 @@ def infer_column_types(df: pd.DataFrame, db_raw_types: dict = None) -> dict:
                         simple = "decimal"
                 else:
                     simple = "integer"
+            elif not df[col].isna().any():
+                # Ohne Lücke wird eine Spalte nur dann Kommazahl, wenn die Datei
+                # selbst Dezimalstellen schreibt („100.00“) – das ist ein Betrag,
+                # auch wenn zufällig alle Werte glatt sind.
+                simple = "decimal"
             else:
-                # Auch ohne DB-Typ: wenn alle Float-Werte ganzzahlig sind → integer
+                # Mit Lücken macht pandas aus Ganzzahlen Kommazahlen (NaN) – sind
+                # alle vorhandenen Werte ganzzahlig, ist es eine Ganzzahlspalte.
                 sample = df[col].dropna()
                 if len(sample) > 0:
                     try:

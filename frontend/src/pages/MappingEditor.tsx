@@ -51,7 +51,11 @@ export default function MappingEditor() {
   const canEdit = !activeProject || activeProject.role !== "viewer";
   const { setPageContext, setPageContextActions, setGenerateNodesCallback, setSuggestTablesCallback, triggerExplainError } = useAIAssistant();
 
-  const [name, setName] = useState("Neues Mapping");
+  // Neues Mapping startet ohne Namen: früher stand hier „Neues Mapping“, und so hieß
+  // dann jedes Mapping, weil das Namensfeld im Kopf nicht als Feld zu erkennen war.
+  const [name, setName] = useState("");
+  const [nameFehlt, setNameFehlt] = useState(false);
+  const nameRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [showJoinList, setShowJoinList] = useState(false);
   const [allDatasets, setAllDatasets] = useState([]);
@@ -91,6 +95,7 @@ export default function MappingEditor() {
   const aiOutputRefs = useRef({});
   const [exprNodes, setExprNodes] = useState([]);
   const exprOutputRefs = useRef({});
+  const qualityOutputRefs = useRef({});
   const [qualityNodes, setQualityNodes] = useState([]);
   const [paramNodes, setParamNodes] = useState([]);
   const paramOutputRefs = useRef({});
@@ -282,6 +287,16 @@ export default function MappingEditor() {
       return anzahl[k] > 1 ? `${n.dataset_name}.${k}` : c;
     }));
   })();
+  // Alles, was eine Zeile zur Prüfzeit enthält: Quellfelder plus die Ausgaben der
+  // Knoten, die vorher laufen (Aggregation, Berechnung, Ausdruck, Konstante, Parameter).
+  const feldnamenFuerPruefung = Array.from(new Set([
+    ...allSourceFieldsFlat.map((f) => (typeof f === "string" ? f : f?.name)),
+    ...aggNodes.flatMap((n) => (n.fields || []).map((f) => f.output_field)),
+    ...calcNodes.map((n) => n.output_field),
+    ...exprNodes.flatMap((n) => (n.output_fields || []).map((f) => f.name)),
+    ...constantNodes.map((n) => n.output_field),
+    ...paramNodes.flatMap((n) => (n.fields || []).map((f) => f.name)),
+  ].filter(Boolean)));
   const triggerLineDraw = useCallback(() => setLineTick((t) => t + 1), []);
 
   const insertGeneratedNodes = useCallback((result: { nodes: any[]; explanation: string }) => {
@@ -935,6 +950,11 @@ export default function MappingEditor() {
   const [savedToast, setSavedToast] = useState(false);
 
   const handleSave = async () => {
+    if (!name.trim() || name.trim() === "Neues Mapping") {
+      setNameFehlt(true);
+      nameRef.current?.focus();
+      return;
+    }
     setSaving(true);
     try {
       const payload = { name, canvas_nodes: canvasNodes, joins, transform_nodes: transformNodes, constant_nodes: constantNodes, sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes, lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes, python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes, param_nodes: paramNodes, targets, project_id: projectId };
@@ -1204,7 +1224,11 @@ export default function MappingEditor() {
       <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "10px 16px", backgroundColor: S.bgCard, borderBottom: `1px solid ${S.border}`, flexShrink: 0 }}>
         <button onClick={() => navigate("/dashboard", { state: { tab: "mappings" } })} className="btn-ghost text-xs"><ArrowLeft size={13} /> Dashboard</button>
         <div style={{ width: 1, height: 20, backgroundColor: S.border }} />
-        <input value={name} onChange={(e) => setName(e.target.value)} style={{ background: "transparent", border: "none", outline: "none", fontSize: 13, fontWeight: 600, color: S.textBright, flex: 1 }} />
+        <input ref={nameRef} value={name} placeholder="Name des Mappings eingeben …" title="Name ändern"
+          onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameFehlt(false); }}
+          style={{ background: "transparent", border: "none", outline: "none", fontSize: 13, fontWeight: 600, color: S.textBright, flex: 1,
+                   borderBottom: `1px dashed ${nameFehlt ? "var(--err)" : S.border}`, padding: "2px 0" }} />
+        {nameFehlt && <span style={{ fontSize: 11, color: "var(--err)", whiteSpace: "nowrap" }}>Bitte zuerst einen Namen vergeben</span>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
           <span style={{ fontSize: 11, color: S.textDim }}>{connections.length} Felder · {joins.length} Joins · {targets.length} Ziel{targets.length !== 1 ? "e" : ""}</span>
           {!canEdit && (
@@ -1427,10 +1451,14 @@ export default function MappingEditor() {
                         onDragStart={e => e.dataTransfer.setData("node_type", item.type)}
                         onClick={() => setPaletteInfo(item)}
                         title={item.title + " – klicken für Info, ziehen zum Platzieren"}
-                        style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, cursor: "grab", backgroundColor: item.color + "18", border: `1px solid color-mix(in srgb, ${item.color} 27.1%, transparent)`, color: item.color, flexShrink: 0, transition: "background-color 0.15s, border-color 0.15s" }}
+                        // Mit Beschriftung: nur Symbole waren für Neue nicht zu deuten
+                        style={{ width: 60, height: 46, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 3, borderRadius: 6, cursor: "grab", backgroundColor: item.color + "18", border: `1px solid color-mix(in srgb, ${item.color} 27.1%, transparent)`, color: item.color, flexShrink: 0, transition: "background-color 0.15s, border-color 0.15s" }}
                         onMouseEnter={e => { e.currentTarget.style.backgroundColor = item.color + "35"; e.currentTarget.style.borderColor = item.color + "90"; }}
                         onMouseLeave={e => { e.currentTarget.style.backgroundColor = item.color + "18"; e.currentTarget.style.borderColor = item.color + "45"; }}>
                         <item.Icon size={15} />
+                        <span style={{ fontSize: 8.5, lineHeight: 1.1, color: S.textMain, textAlign: "center", maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {item.title.replace(/ Node$/, "").replace("Python Script", "Python")}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -1479,7 +1507,7 @@ export default function MappingEditor() {
                 </div>
               )}
 
-              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} aiOutputRefs={aiOutputRefs} aiNodes={aiNodes} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} paramOutputRefs={paramOutputRefs} paramNodes={paramNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
+              <SvgOverlay connections={connections} joins={joins} fieldRefs={fieldRefs} targetRefs={targetRefs} nodeFieldListRefs={nodeFieldListRefs} targetListRef={targetListRef} transformOutputRefs={transformOutputRefs} transformInputRefs={transformInputRefs} transformNodes={transformNodes} constantOutputRefs={constantOutputRefs} sqlOutputRefs={sqlOutputRefs} sqlNodes={sqlNodes} aggOutputRefs={aggOutputRefs} aggInputRefs={aggInputRefs} aggNodeRefs={aggNodeRefs} aggNodes={aggNodes} restOutputRefs={restOutputRefs} restInputRefs={restInputRefs} restNodes={restNodes} lookupOutputRefs={lookupOutputRefs} lookupInputRefs={lookupInputRefs} lookupNodes={lookupNodes} calcOutputRefs={calcOutputRefs} calcInputPortRefs={calcInputPortRefs} calcNodes={calcNodes} switchOutputRefs={switchOutputRefs} switchNodes={switchNodes} pythonOutputRefs={pythonOutputRefs} pythonNodes={pythonNodes} aiOutputRefs={aiOutputRefs} aiNodes={aiNodes} qualityOutputRefs={qualityOutputRefs} exprOutputRefs={exprOutputRefs} exprNodes={exprNodes} paramOutputRefs={paramOutputRefs} paramNodes={paramNodes} canvasRef={canvasRef} tick={lineTick} onJoinClick={(i) => setEditingJoin(i)} onConnectionClick={(conn, i) => setConfirmDeleteConn({ conn, index: i })} dragJoin={dragJoin} canvasNodes={canvasNodes} nodeBodyRefs={nodeBodyRefs} miniPortRefs={miniPortRefs} targetColumnTypes={targetColumnTypes} />
 
               {canvasNodes.map((node) => (
                 <DatasetNode key={node.dataset_id} node={node} connections={connections} joins={joins}
@@ -1697,7 +1725,7 @@ export default function MappingEditor() {
               ))}
 
               {qualityNodes.map((qn) => (
-                <DataQualityNode key={qn.id} node={qn}
+                <DataQualityNode key={qn.id} node={qn} feldnamen={feldnamenFuerPruefung} outputRefs={qualityOutputRefs}
                   onPositionChange={(id, x, y) => { setQualityNodes(prev => prev.map(n => n.id === id ? { ...n, x, y } : n)); triggerLineDraw(); }}
                   onUpdate={(updated) => { setQualityNodes(prev => prev.map(n => n.id === updated.id ? updated : n)); }}
                   onRemove={(id) => { setQualityNodes(prev => prev.filter(n => n.id !== id)); }}

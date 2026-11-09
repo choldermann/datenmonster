@@ -8,7 +8,22 @@ import { PYTHON_NODE_COLOR } from "./PythonNode";
 import { PARAMS_NODE_COLOR } from "./constants";
 import { AI_NODE_COLOR } from "./AiTransformNode";
 
-function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, exprOutputRefs, exprNodes, paramOutputRefs, paramNodes, aiOutputRefs, aiNodes, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
+function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRefs, targetListRef, transformOutputRefs, transformInputRefs, transformNodes, constantOutputRefs, sqlOutputRefs, sqlNodes, aggOutputRefs, aggInputRefs, aggNodeRefs, aggNodes, restOutputRefs, restInputRefs, restNodes, lookupOutputRefs, lookupInputRefs, lookupNodes, calcOutputRefs, calcInputPortRefs, calcNodes, switchOutputRefs, switchNodes, pythonOutputRefs, pythonNodes, exprOutputRefs, exprNodes, paramOutputRefs, paramNodes, aiOutputRefs, aiNodes, qualityOutputRefs, canvasRef, tick, onJoinClick, dragJoin, canvasNodes, nodeBodyRefs, miniPortRefs, onConnectionClick, targetColumnTypes }) {
+  // Schlüssel des Quellfelds in fieldRefs („<datasetId>__<feld>“). Versteht auch
+  // „Dataset.Feld“, wie die Knoten gleichnamige Felder aus mehreren Datasets
+  // anzeigen (Kunden.kKunde) – sonst fand sich keine Quelle und es fehlte die Linie.
+  const feldSchluessel = (feld) => {
+    if (!feld) return undefined;
+    const punkt = feld.indexOf(".");
+    if (punkt > 0) {
+      const ds = canvasNodes?.find((n) => n.dataset_name === feld.slice(0, punkt));
+      const k = ds && `${ds.dataset_id}__${feld.slice(punkt + 1)}`;
+      if (k && fieldRefs.current[k]) return k;
+    }
+    const treffer = Object.keys(fieldRefs.current).filter((k) => k.endsWith(`__${feld}`));
+    return treffer.length === 1 ? treffer[0]
+      : (treffer.find((k) => canvasNodes?.some((n) => n.dataset_id == k.split("__")[0])) || treffer[0]);
+  };
   const canvasEl = canvasRef.current;
   if (!canvasEl) return null;
 
@@ -370,7 +385,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           } else {
             const srcKey = srcDsId
               ? `${srcDsId}__${inp.field}`
-              : (Object.keys(fieldRefs.current).filter(k => k.endsWith(`__${inp.field}`)).find(k => canvasNodes?.some(n => n.dataset_id == k.split("__")[0])) || Object.keys(fieldRefs.current).find(k => k.endsWith(`__${inp.field}`)));
+              : feldSchluessel(inp.field);
             if (!srcKey) return [];
             const srcEl = fieldRefs.current[srcKey];
             if (!srcEl) return [];
@@ -396,7 +411,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         if (srcDsId && String(srcDsId).startsWith("__")) {
           sp = getSourcePoint(null, srcDsId, ln.input_field);
         } else {
-          const srcKey = srcDsId ? srcDsId + "__" + ln.input_field : (Object.keys(fieldRefs.current).filter(k => k.endsWith("__" + ln.input_field)).find(k => canvasNodes?.some(n => n.dataset_id == k.split("__")[0])) || Object.keys(fieldRefs.current).find(k => k.endsWith("__" + ln.input_field)));
+          const srcKey = srcDsId ? srcDsId + "__" + ln.input_field : feldSchluessel(ln.input_field);
           if (!srcKey) return [];
           const srcEl = fieldRefs.current[srcKey];
           if (!srcEl) return [];
@@ -423,7 +438,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           // Bevorzuge source_dataset_id wenn vorhanden (eindeutig)
           const srcKey = part.source_dataset_id
             ? `${part.source_dataset_id}__${part.value}`
-            : Object.keys(fieldRefs.current).find(k => k.endsWith(`__${part.value}`));
+            : feldSchluessel(part.value);
           if (!srcKey) return null;
           const srcEl = fieldRefs.current[srcKey];
           if (!srcEl) return null;
@@ -443,12 +458,7 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
       {(aggNodes || []).flatMap((an) =>
         (an.fields || []).filter(f => f.input_field).map((f, fi) => {
           // Suche das Quellfeld - bevorzuge eindeutige Keys (keine Kollision)
-          const matchingKeys = Object.keys(fieldRefs.current).filter(k => k.endsWith(`__${f.input_field}`));
-          if (!matchingKeys.length) return null;
-          // Bei mehreren Treffern: bevorzuge den Key dessen Dataset im Mapping aktiv ist
-          const srcKey = matchingKeys.length === 1
-            ? matchingKeys[0]
-            : (matchingKeys.find(k => canvasNodes?.some(n => n.dataset_id == k.split("__")[0])) || matchingKeys[0]);
+          const srcKey = feldSchluessel(f.input_field);
           if (!srcKey) return null;
           const srcEl = fieldRefs.current[srcKey];
           if (!srcEl) return null;
@@ -481,7 +491,8 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
         const isExpr   = String(conn.source_dataset_id).startsWith("__expr__");
         const isParams = String(conn.source_dataset_id).startsWith("__params__");
         const isAiNode = String(conn.source_dataset_id).startsWith("__ai__");
-        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython || isExpr || isParams || isAiNode;
+        const isQuality = String(conn.source_dataset_id).startsWith("__quality__");
+        const isSpecialNode = isTransform || isConst || isSql || isAgg || isRest || isLookup || isCalc || isSwitch || isPython || isExpr || isParams || isAiNode || isQuality;
         const srcKey = `${conn.source_dataset_id}__${conn.source_field}`;
         const srcEl = isSpecialNode ? null : fieldRefs.current[srcKey];
         const tgtEl = targetRefs.current[conn.target_field];
@@ -589,6 +600,13 @@ function SvgOverlay({ connections, joins, fieldRefs, targetRefs, nodeFieldListRe
           const fieldIdx = (paramNode.fields || []).findIndex(f => f.name === conn.source_field);
           const dotKey = nodeId + "_" + (fieldIdx >= 0 ? fieldIdx : 0);
           const outEl = paramOutputRefs.current[dotKey]?.current || paramOutputRefs.current[dotKey];
+          if (!isInDOM(outEl)) return null;
+          const r = toSvg(outEl.getBoundingClientRect());
+          sp = { x: r.right, y: r.top + r.height / 2, clamped: false };
+        } else if (isQuality) {
+          // Ausgänge des Qualitäts-Knotens (__dq_valid__, __dq_errors__)
+          const nodeId = String(conn.source_dataset_id).replace("__quality__", "");
+          const outEl = qualityOutputRefs?.current?.[nodeId + "_" + conn.source_field];
           if (!isInDOM(outEl)) return null;
           const r = toSvg(outEl.getBoundingClientRect());
           sp = { x: r.right, y: r.top + r.height / 2, clamped: false };

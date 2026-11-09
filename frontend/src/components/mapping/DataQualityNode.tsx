@@ -21,7 +21,7 @@ const RULE_TYPES = [
 
 const ACTIVE_BORDER = "var(--accent)";
 
-export default function DataQualityNode({ node, onUpdate, onRemove, onPositionChange, debugHighlight, debugStats, isActive, onActivate }) {
+export default function DataQualityNode({ node, onUpdate, onRemove, onPositionChange, debugHighlight, debugStats, isActive, onActivate, feldnamen = [], outputRefs = null }) {
   const dragging = useRef(false);
   const offset = useRef({ x: 0, y: 0 });
   const C = DQ_NODE_COLOR;
@@ -130,6 +130,8 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
                 value={rule.field || ""}
                 onChange={(e) => updateRule(i, "field", e.target.value)}
                 onClick={(e) => e.stopPropagation()}
+                // Auswahl aus den vorhandenen Feldern; Eintippen bleibt möglich (z. B. Ausgaben anderer Knoten)
+                list={"dq-felder-" + node.id}
                 placeholder="Feldname"
                 style={{
                   width: 90, flexShrink: 0, padding: "3px 6px", fontSize: 11,
@@ -185,6 +187,9 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
           </div>
         ))}
 
+        <datalist id={"dq-felder-" + node.id}>
+          {feldnamen.map((f) => <option key={f} value={f} />)}
+        </datalist>
         <button
           onClick={addRule}
           style={{
@@ -207,6 +212,7 @@ export default function DataQualityNode({ node, onUpdate, onRemove, onPositionCh
             <span style={{ fontSize: 10, color: S.textDim }}>{text}</span>
             <code style={{ fontSize: 9, color: C, background: "none" }}>{feld}</code>
             <div
+              ref={(el) => { if (outputRefs?.current) outputRefs.current[node.id + "_" + feld] = el; }}
               draggable
               onDragStart={(e) => {
                 e.stopPropagation();
