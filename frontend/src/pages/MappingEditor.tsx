@@ -1054,6 +1054,7 @@ export default function MappingEditor() {
           sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
           lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
           python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
+          param_nodes: paramNodes,
           targets: targets.length ? targets : undefined,
           fields: activeTarget?.fields || connections,
           preview_rows: 50,
@@ -1080,6 +1081,7 @@ export default function MappingEditor() {
         sql_nodes: sqlNodes, agg_nodes: aggNodes, rest_nodes: restNodes,
         lookup_nodes: lookupNodes, calc_nodes: calcNodes, switch_nodes: switchNodes,
         python_nodes: pythonNodes, ai_nodes: aiNodes, expr_nodes: exprNodes, quality_nodes: qualityNodes,
+          param_nodes: paramNodes,
         targets: targets.length ? targets : undefined,
         fields: !targets.length ? connections : undefined,
       };

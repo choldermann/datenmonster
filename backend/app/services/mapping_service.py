@@ -2172,7 +2172,10 @@ def execute_mapping(
                     num = _to_numeric_loose(val)
                     expr.append(str(num if num is not None else 0.0))
             try:
-                flat_no_prefix[out_field] = safe_eval_expr(" ".join(expr))
+                _erg = safe_eval_expr(" ".join(expr))
+                # 30 × 1,19 ergibt binär 35.699999999999996 – auf 10 Stellen runden,
+                # das ändert keinen echten Wert, entfernt aber die Rundungsreste.
+                flat_no_prefix[out_field] = round(_erg, 10) if isinstance(_erg, float) else _erg
             except Exception as ce:
                 errors.append(f"Formel-Fehler: {str(ce)[:100]}")
                 flat_no_prefix[out_field] = None

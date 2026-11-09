@@ -3,7 +3,7 @@ import { Loader2, ChevronDown } from "lucide-react";
 import api from "../../api/client";
 import { S } from "./constants";
 
-function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, targets }) {
+function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, transformNodes, constantNodes, sqlNodes, aggNodes, restNodes, lookupNodes, calcNodes, switchNodes, pythonNodes, aiNodes, exprNodes, qualityNodes, paramNodes = [], targets }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -36,6 +36,9 @@ function PreviewPanel({ mappingId = null, canvasNodes, connections, joins, trans
         ai_nodes:        aiNodes,
         expr_nodes:      exprNodes,
         quality_nodes:   qualityNodes,
+        // Fehlte bis 2026-11: Der Editor reichte die Parameter-Knoten zwar herein,
+        // die Vorschau schickte sie aber nicht mit – Parameterfelder blieben leer.
+        param_nodes:     paramNodes,
         // Targets bevorzugen (inkl. target_type pro Connection)
         // Fallback: legacy fields-Liste
         targets:         targets?.length ? targets : undefined,

@@ -162,6 +162,10 @@ try:
     o = zeilen.get(3, {})
     pruefe("Kunde ohne Rechnung: Umsatz 0, 0 Rechnungen", o.get("Umsatz") == 0 and o.get("Anzahl") == 0, o)
     pruefe("absteigend nach Umsatz", [z["Kundennr"] for z in vs.get("rows", [])] == [1, 2, 3], vs.get("rows"))
+    pruefe("Schmidt: Brutto 35,7 ohne Rundungsreste", zeilen.get(2, {}).get("Brutto") == 35.7, zeilen.get(2))
+    # Vorschau ohne Laufwerte, wie im Editor: Parameter nimmt seinen Standardwert
+    r = c.post("/api/mappings/preview", json={k: v for k, v in anfrage.items() if k != "run_params"})
+    pruefe("ohne Laufwert gilt der Standardwert", (r.json().get("rows") or [{}])[0].get("Jahr") == 2026, r.json().get("rows", [None])[0])
 
     # ── 4. Export als Excel und CSV ───────────────────────────────────────────
     print("4. Export")
@@ -200,6 +204,9 @@ try:
     pruefe("gleiche Zahlen wie Vorschau", ez.get(1, {}).get("Umsatz") == 150 and ez.get(1, {}).get("Jahr") == 2024, ez.get(1))
 
 finally:
+    if "--behalten" in sys.argv:
+        print(f"Behalten: Projekt {ANGELEGT['projekt']}, Mapping {ANGELEGT['mapping']} – Editor: /mappings/{ANGELEGT['mapping']}")
+        ANGELEGT = {"mapping": None, "datasets": [], "projekt": None}
     print("Aufräumen")
     if ANGELEGT["mapping"]:
         c.delete(f"/api/mappings/{ANGELEGT['mapping']}")
