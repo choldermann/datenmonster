@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ─────────────────────────────────────────────────────────────────────────────
 # Datenmonster Installer
-# Holdermann IT – https://datenmonster.com
+# Holdermann IT – https://monstersuite.de/produkt/datenmonster/
 #
 # Verwendung:
 #   curl -fsSL https://raw.githubusercontent.com/choldermann/datenmonster/main/install.sh | bash
@@ -57,7 +57,7 @@ print_banner() {
   echo "  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝   ╚═╝   ╚══════╝╚═╝  ╚═╝"
   echo -e "${NC}"
   echo -e "  ${BOLD}ETL & Datenintegration – by Holdermann IT${NC}"
-  echo -e "  ${BLUE}https://datenmonster.com${NC}"
+  echo -e "  ${BLUE}https://monstersuite.de/produkt/datenmonster/${NC}"
   echo ""
 }
 
@@ -313,7 +313,7 @@ print_success() {
   echo -e "  docker compose pull && docker compose up -d  # Manuelles Update"
   echo -e "  docker compose down             # Stoppen"
   echo ""
-  echo -e "  ${BOLD}Dokumentation:${NC}  https://datenmonster.com/docs"
+  echo -e "  ${BOLD}Dokumentation:${NC}  https://monstersuite.de/produkt/datenmonster/dokumentation/"
   echo ""
 }
 

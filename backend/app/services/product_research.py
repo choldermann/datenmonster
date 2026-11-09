@@ -28,7 +28,7 @@ from app.core.net_guard import guarded_request
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "DatenmonsterBot/1.0 (+https://datenmonster.monstersuite.de)"
+USER_AGENT = "DatenmonsterBot/1.0 (+https://monstersuite.de/produkt/datenmonster/)"
 TIMEOUT = 20
 SITEMAP_TTL = 24 * 3600          # Produktlisten ändern sich selten
 _sitemap_cache: dict[str, tuple[float, dict[str, str]]] = {}

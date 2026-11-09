@@ -1,6 +1,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 # Datenmonster Installer für Windows
-# Holdermann IT – https://datenmonster.com
+# Holdermann IT – https://monstersuite.de/produkt/datenmonster/
 #
 # Voraussetzungen:
 #   - Windows 10/11 (64-bit)
@@ -35,7 +35,7 @@ function Write-Banner {
   ╚═════╝ ╚═╝  ╚═╝   ╚═╝   ╚══════╝╚═╝  ╚═══╝
 
   MONSTER – ETL & Datenintegration
-  by Holdermann IT – https://datenmonster.com
+  by Holdermann IT – https://monstersuite.de/produkt/datenmonster/
 "@
     Write-Host $banner -ForegroundColor Cyan
 }
@@ -298,7 +298,7 @@ function Write-Success {
     Write-Host "  docker compose down             # Stoppen"
     Write-Host "  docker compose up -d            # Starten"
     Write-Host ""
-    Write-Host "  Dokumentation:  https://datenmonster.com/docs" -ForegroundColor Cyan
+    Write-Host "  Dokumentation:  https://monstersuite.de/produkt/datenmonster/dokumentation/" -ForegroundColor Cyan
     Write-Host ""
 }
 

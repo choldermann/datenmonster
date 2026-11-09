@@ -1,7 +1,7 @@
 """
 Update-Check Endpoint
 Prüft ob eine neue Version auf dem Update-Server verfügbar ist.
-Update-Server: https://datenmonster.com/updates/latest.json
+Update-Server: https://datenmonster.monstersuite.de/updates/latest.json
 """
 from fastapi import APIRouter, Depends
 from app.api.auth import get_current_user
@@ -10,8 +10,8 @@ import os, subprocess
 
 router = APIRouter(prefix="/api/update", tags=["update"])
 
-UPDATE_URL    = "https://datenmonster.com/updates/latest.json"
-ZIP_URL       = "https://datenmonster.com/install/datenmonster.zip"
+UPDATE_URL    = "https://datenmonster.monstersuite.de/updates/latest.json"
+ZIP_URL       = "https://datenmonster.monstersuite.de/install/datenmonster.zip"
 VERSION_FILE  = os.path.join(os.path.dirname(__file__), "../../VERSION")
 
 
@@ -66,7 +66,7 @@ def check_update(user: User = Depends(get_current_user)):
 def install_update(user: User = Depends(get_current_user)):
     """
     Aktualisiert Datenmonster:
-    1. Neue ZIP von datenmonster.com herunterladen
+    1. Neue ZIP vom Update-Server herunterladen
     2. Dateien entpacken (ohne .env und uploads)
     3. Docker Container neu bauen und starten
     """
