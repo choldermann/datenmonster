@@ -217,6 +217,8 @@ def anlegen(w, r: random.Random) -> dict:
             plz, ort = r.choice(welt.ORTE)
         strasse = r.choice(welt.STRASSEN)
         firma = "" if gruppe == 1 else r.choice(welt.PRAXISFORMEN[gruppe]).format(n=n, n2=n2, v=v, o=ort, s=strasse)
+        # „Praxis am {s}“ mit Straße „Am Markt“ ergab „Praxis am Am Markt“
+        firma = firma.replace(" am Am ", " am ")
         erstellt = START - dt.timedelta(days=r.randint(0, 1200)) if kk <= 900 else \
             START + dt.timedelta(days=int((kk - 900) / 400 * 1090))
         zz = 30 if gruppe in (2, 3, 5) else (14 if gruppe in (4, 6) else 0)
