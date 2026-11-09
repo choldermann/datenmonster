@@ -554,6 +554,73 @@ def _bausteine_aktualisieren(vorhanden: dict, vorlage: dict, stand: Optional[dic
     return aktualisiert, geschuetzt, neuer_stand
 
 
+def _entfernte_bausteine(vorhanden: dict, entfernt: Optional[dict], stand: Optional[dict]):
+    """Entfernt Reiter und Felder, die eine neue Vorlagen-Version ausdrücklich streicht.
+
+    Kacheln entfernt _bausteine_aktualisieren selbst. Bei Reitern und Feldern geht
+    das nicht pauschal – ein Kunde könnte eigene Kacheln daran hängen. Deshalb nur,
+    was die Vorlage unter `entfernt` (Formular-Definition, neben `schema`) mit ihrer
+    bisherigen Fassung aufführt: Stimmt der Baustein im Formular noch mit dieser
+    Fassung (oder mit dem Fingerabdruck der letzten Installation) überein, fällt er
+    weg. Angepasstes bleibt und wird als geschützt gemeldet. Ein Reiter fällt
+    zusätzlich nur, wenn jede seiner Aktionen in einem anderen Reiter weiterlebt –
+    sonst würde eine Auswertung unerreichbar.
+
+    `entfernt` muss bereits aufgelöst sein (_form_schema_aufloesen).
+    Gibt (entfernt_ids, geschuetzt) zurück; `vorhanden` wird verändert.
+    """
+    stand = stand or {}
+    weg, geschuetzt = [], []
+    for liste in ("result_tabs", "fields"):
+        alt = {e.get("id"): e for e in ((entfernt or {}).get(liste) or [])
+               if isinstance(e, dict) and e.get("id") is not None}
+        if not alt or not isinstance(vorhanden.get(liste), list):
+            continue
+        bleiben = []
+        for el in vorhanden[liste]:
+            eid = el.get("id") if isinstance(el, dict) else None
+            if eid not in alt:
+                bleiben.append(el)
+                continue
+            h = _stand_hash(el)
+            unveraendert = h == _stand_hash(alt[eid]) or stand.get(f"{liste}::{eid}") == h
+            if unveraendert and liste == "result_tabs":
+                anderswo = {a for r in vorhanden[liste] if isinstance(r, dict) and r.get("id") != eid
+                            and r.get("id") not in alt for a in (r.get("action_ids") or [])}
+                unveraendert = all(a in anderswo for a in (el.get("action_ids") or []))
+            if unveraendert:
+                weg.append(f"{liste}::{eid} (entfernt)")
+                continue
+            geschuetzt.append(f"{liste}::{eid}")
+            bleiben.append(el)
+        vorhanden[liste] = bleiben
+    return weg, geschuetzt
+
+
+def _reiter_ordnen(vorhanden: dict, vorlage: dict, liste_name: str = "result_tabs") -> bool:
+    """Bausteine (Reiter, Kacheln) in die Reihenfolge der Vorlage bringen. Eigene
+    des Kunden bleiben hinter dem Baustein, hinter dem sie standen. Nur aufrufen,
+    wenn die Vorlage es verlangt (neu_ordnen) – sonst ginge eine im Betrieb
+    gewählte Reihenfolge verloren. True = Reihenfolge geändert."""
+    t_ids = [r.get("id") for r in (vorlage.get(liste_name) or []) if isinstance(r, dict)]
+    liste = vorhanden.get(liste_name)
+    if not t_ids or not isinstance(liste, list):
+        return False
+    rang, letzter = {}, -1.0
+    for i, r in enumerate(liste):
+        rid = r.get("id") if isinstance(r, dict) else None
+        if rid in t_ids:
+            letzter = float(t_ids.index(rid))
+            rang[i] = letzter
+        else:
+            rang[i] = letzter + 0.5 + i / 10000   # eigener Reiter: hinter seinem Vorgänger
+    neu = [liste[i] for i in sorted(range(len(liste)), key=lambda i: rang[i])]
+    if [id(x) for x in neu] == [id(x) for x in liste]:
+        return False
+    vorhanden[liste_name] = neu
+    return True
+
+
 def _rubrik_uebernehmen(vorhanden: dict, vorlage: dict) -> bool:
     """Rubrik fürs Büro-Menü (schema.rubrik) aus der Vorlage übernehmen, wenn das
     installierte Formular noch keine hat. Eine eigene Angabe bleibt. True = gesetzt."""
@@ -1398,6 +1465,18 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             aktualisiert, geschuetzt, neuer_stand = _bausteine_aktualisieren(
                 sc, vorlage_schema, stand)
             ergaenzt = _formular_ergaenzen(sc, vorlage_schema, bisher)
+            # Was die Vorlage ausdrücklich streicht (Reiter, Felder), dann ihre Reihenfolge
+            if f_def.get("entfernt"):
+                entfernt_def = _form_schema_aufloesen(f_def["entfernt"], mapping_id_map, ds_id_map, config)
+                weg, geschuetzt_weg = _entfernte_bausteine(sc, entfernt_def, stand)
+                aktualisiert = aktualisiert + weg
+                geschuetzt = geschuetzt + geschuetzt_weg
+            # Reihenfolge nur übernehmen, wenn die Vorlage bewusst neu ordnet (z. B. Lager
+            # 1.17: zwölf Reiter zu sieben) – sonst bleibt eine eigene Sortierung erhalten.
+            if f_def.get("neu_ordnen"):
+                for _l in ("result_tabs", "widgets"):
+                    if _reiter_ordnen(sc, vorlage_schema, _l):
+                        aktualisiert = aktualisiert + [f"{_l} (Reihenfolge)"]
             _stand_ergaenzen(neuer_stand, sc, ergaenzt)
             if aktualisiert:
                 eintrag["aktualisiert"] = aktualisiert

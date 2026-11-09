@@ -248,6 +248,46 @@ def test_entfallene_kachel_wird_entfernt_angepasste_bleibt():
     _bausteine_aktualisieren(vorhanden, {"widgets": []}, {})
     assert [w["id"] for w in vorhanden["widgets"]] == ["a"]
 
+def test_gestrichener_reiter_und_feld_fallen_weg_angepasste_bleiben():
+    """Lager 1.17: zwölf Reiter zu sieben zusammengelegt. Was die Vorlage unter
+    `entfernt` mit seiner alten Fassung führt, fällt beim Update weg – nur wenn es
+    beim Kunden noch genauso aussieht und seine Aktionen anderswo weiterleben."""
+    from app.api.templates import _entfernte_bausteine
+    alt_dispo = {"id": "tab_dispo", "label": "Disposition", "action_ids": ["act_dispo"]}
+    alt_preis = {"id": "tab_preis", "label": "Preise", "action_ids": ["act_preis"]}
+    alt_feld = {"id": "f_art", "name": "artikel", "type": "db_dropdown"}
+    vorhanden = {
+        "result_tabs": [
+            {"id": "tab_bestellen", "label": "Bestellen", "action_ids": ["act_bedarf", "act_dispo"]},
+            dict(alt_dispo),
+            {**alt_preis, "label": "Meine Preise"},                      # im Betrieb umbenannt
+            {"id": "tab_eigen", "label": "Eigener", "action_ids": ["act_nur_hier"]},
+        ],
+        "fields": [dict(alt_feld), {"id": "f_hist", "name": "artikel_hist"}],
+    }
+    entfernt = {"result_tabs": [alt_dispo, alt_preis, {"id": "tab_eigen", "action_ids": ["act_nur_hier"]}],
+                "fields": [alt_feld]}
+    weg, gesch = _entfernte_bausteine(vorhanden, entfernt, {})
+    assert [r["id"] for r in vorhanden["result_tabs"]] == ["tab_bestellen", "tab_preis", "tab_eigen"]
+    assert [f["id"] for f in vorhanden["fields"]] == ["f_hist"]
+    assert "result_tabs::tab_dispo (entfernt)" in weg and "fields::f_art (entfernt)" in weg
+    assert "result_tabs::tab_preis" in gesch                       # angepasst → bleibt
+    assert "result_tabs::tab_eigen" in gesch                       # seine Aktion lebt nirgends sonst
+
+
+def test_reiter_folgen_der_vorlage_eigene_bleiben_hinter_ihrem_vorgaenger():
+    from app.api.templates import _reiter_ordnen
+    vorhanden = {"result_tabs": [{"id": "b"}, {"id": "mein"}, {"id": "a"}, {"id": "c"}]}
+    vorlage = {"result_tabs": [{"id": "a"}, {"id": "b"}, {"id": "c"}]}
+    assert _reiter_ordnen(vorhanden, vorlage) is True
+    assert [r["id"] for r in vorhanden["result_tabs"]] == ["a", "b", "mein", "c"]
+    assert _reiter_ordnen(vorhanden, vorlage) is False             # zweites Mal: nichts zu tun
+    # Dieselbe Regel für Kacheln
+    w = {"widgets": [{"id": "w2"}, {"id": "w_eigen"}, {"id": "w1"}]}
+    assert _reiter_ordnen(w, {"widgets": [{"id": "w1"}, {"id": "w2"}]}, "widgets") is True
+    assert [x["id"] for x in w["widgets"]] == ["w1", "w2", "w_eigen"]
+
+
 if __name__ == "__main__":
     fehler = 0
     for name, fn in list(globals().items()):

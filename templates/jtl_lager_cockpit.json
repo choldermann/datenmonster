@@ -4,7 +4,7 @@
   "template_name": "JTL – Lager-Cockpit",
   "description": "Lagersicht auf die JTL-Wawi aus der Buchungshistorie: Lagerwert zum Stichtag und im Verlauf (bewertet zum historischen Einkaufspreis), Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite, Ladenhüter mit gebundenem Kapital, Inventurdifferenzen sowie der Preisverlauf einzelner Artikel im Vergleich zum Verkaufspreis.",
   "category": "jtl-reporting",
-  "version": "1.16",
+  "version": "1.17",
   "author": "Datenmonster",
   "hinweise": [
     "Grundlage ist dbo.vArtikelHistorie, die Lagerbuchungshistorie der Wawi. Der Bestand zu einem Stichtag wird daraus als Summe aller Buchungen bis zu diesem Tag rekonstruiert. Gegenprobe auf der Prüf-DB: bei 2817 von 2817 aktiven Artikeln deckt sich das Ergebnis exakt mit dbo.tlagerbestand.",
@@ -1985,7 +1985,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC) AS DECIMAL(18,4)) AS EKAktuell,\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht) AS DECIMAL(18,4)) AS EKErster,\n    CAST((SELECT MIN(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMinimum,\n    CAST((SELECT MAX(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMaximum,\n    (SELECT COUNT(DISTINCT fEKNetto) FROM eing) AS Preisstufen,\n    CAST(100.0 * ((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC)\n        - (SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht))\n        / NULLIF((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht), 0)\n        AS DECIMAL(18,1)) AS [Veränderung %]",
+          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC) AS DECIMAL(18,4)) AS EKAktuell,\n    CAST((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht) AS DECIMAL(18,4)) AS EKErster,\n    CAST((SELECT MIN(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMinimum,\n    CAST((SELECT MAX(fEKNetto) FROM eing) AS DECIMAL(18,4)) AS EKMaximum,\n    (SELECT COUNT(DISTINCT fEKNetto) FROM eing) AS Preisstufen,\n    CAST(100.0 * ((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht DESC)\n        - (SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht))\n        / NULLIF((SELECT TOP 1 fEKNetto FROM eing ORDER BY dGebucht), 0)\n        AS DECIMAL(18,1)) AS [Veränderung %]",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2093,7 +2093,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH monate AS (\n    SELECT CAST(DATEADD(MONTH, -n, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1)) AS DATE) AS Monat\n    FROM (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY object_id) - 1 AS n FROM sys.objects) z\n)\nSELECT CONVERT(varchar(7), m.Monat, 126) AS Monat,\n    CAST((SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n          WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n            AND H.dGebucht < DATEADD(MONTH, 1, m.Monat)\n          ORDER BY H.dGebucht DESC) AS DECIMAL(18,4)) AS EKNetto,\n    CAST((SELECT AVG(POS.fVkNetto) FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0) RE\n          JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n          WHERE POS.kArtikel = :artikel AND RE.nStorno = 0 AND POS.fVkNetto > 0\n            AND RE.dErstellt >= m.Monat AND RE.dErstellt < DATEADD(MONTH, 1, m.Monat))\n        AS DECIMAL(18,4)) AS VKNetto\nFROM monate m ORDER BY m.Monat",
+          "sql": "WITH monate AS (\n    SELECT CAST(DATEADD(MONTH, -n, DATEFROMPARTS(YEAR(:bis), MONTH(:bis), 1)) AS DATE) AS Monat\n    FROM (SELECT TOP 24 ROW_NUMBER() OVER (ORDER BY object_id) - 1 AS n FROM sys.objects) z\n)\nSELECT CONVERT(varchar(7), m.Monat, 126) AS Monat,\n    CAST((SELECT TOP 1 H.fEKNetto FROM dbo.vArtikelHistorie H\n          WHERE H.kArtikel = :artikel_hist AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n            AND H.dGebucht < DATEADD(MONTH, 1, m.Monat)\n          ORDER BY H.dGebucht DESC) AS DECIMAL(18,4)) AS EKNetto,\n    CAST((SELECT AVG(POS.fVkNetto) FROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0) RE\n          JOIN Rechnung.tRechnungPosition POS ON POS.kRechnung = RE.kRechnung\n          WHERE POS.kArtikel = :artikel_hist AND RE.nStorno = 0 AND POS.fVkNetto > 0\n            AND RE.dErstellt >= m.Monat AND RE.dErstellt < DATEADD(MONTH, 1, m.Monat))\n        AS DECIMAL(18,4)) AS VKNetto\nFROM monate m ORDER BY m.Monat",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -2168,7 +2168,7 @@
           "width": 380,
           "height": 260,
           "connection_id": "{{connection_jtl}}",
-          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto, H.fAnzahl, H.kLieferantenBestellungPos,\n        LAG(H.fEKNetto) OVER (ORDER BY H.dGebucht) AS EKVorher\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT TOP 200 CONVERT(varchar(10), e.dGebucht, 104) AS Datum,\n    CAST(e.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(e.EKVorher AS DECIMAL(18,4)) AS EKVorher,\n    CAST(e.fEKNetto - e.EKVorher AS DECIMAL(18,4)) AS Differenz,\n    CAST(100.0 * (e.fEKNetto - e.EKVorher) / NULLIF(e.EKVorher, 0) AS DECIMAL(18,1)) AS [Veränderung %],\n    CAST(e.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '') AS Lieferant\nFROM eing e\nLEFT JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellungPos = e.kLieferantenBestellungPos\nLEFT JOIN dbo.tLieferantenBestellung B ON B.kLieferantenBestellung = P.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE e.EKVorher IS NULL OR ABS(e.fEKNetto - e.EKVorher) > 0.0001\nORDER BY e.dGebucht DESC",
+          "sql": "WITH eing AS (\n    SELECT H.dGebucht, H.fEKNetto, H.fAnzahl, H.kLieferantenBestellungPos,\n        LAG(H.fEKNetto) OVER (ORDER BY H.dGebucht) AS EKVorher\n    FROM dbo.vArtikelHistorie H\n    WHERE H.kArtikel = :artikel_hist AND H.cTyp = 'Eingang' AND ISNULL(H.fEKNetto, 0) > 0\n)\nSELECT TOP 200 CONVERT(varchar(10), e.dGebucht, 104) AS Datum,\n    CAST(e.fEKNetto AS DECIMAL(18,4)) AS EKNetto,\n    CAST(e.EKVorher AS DECIMAL(18,4)) AS EKVorher,\n    CAST(e.fEKNetto - e.EKVorher AS DECIMAL(18,4)) AS Differenz,\n    CAST(100.0 * (e.fEKNetto - e.EKVorher) / NULLIF(e.EKVorher, 0) AS DECIMAL(18,1)) AS [Veränderung %],\n    CAST(e.fAnzahl AS DECIMAL(18,2)) AS Menge,\n    ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(L.cFirma,'')) + CASE WHEN ISNULL(L.cFirmenZusatz,'') = '' OR CHARINDEX(LTRIM(RTRIM(L.cFirmenZusatz)), ISNULL(L.cFirma,'')) > 0 THEN '' ELSE ' ' + LTRIM(RTRIM(L.cFirmenZusatz)) END), ''), '') AS Lieferant\nFROM eing e\nLEFT JOIN dbo.tLieferantenBestellungPos P ON P.kLieferantenBestellungPos = e.kLieferantenBestellungPos\nLEFT JOIN dbo.tLieferantenBestellung B ON B.kLieferantenBestellung = P.kLieferantenBestellung\nLEFT JOIN dbo.tlieferant L ON L.kLieferant = B.kLieferant\nWHERE e.EKVorher IS NULL OR ABS(e.fEKNetto - e.EKVorher) > 0.0001\nORDER BY e.dGebucht DESC",
           "mode": "transform",
           "output_field": "sql_1",
           "output_fields": [
@@ -6661,6 +6661,7 @@
       "portal_config": {
         "icon": "🏭"
       },
+      "neu_ordnen": true,
       "schema": {
         "fields": [
           {
@@ -6679,29 +6680,6 @@
             }
           },
           {
-            "id": "f_artikel",
-            "type": "db_dropdown",
-            "row": 1,
-            "colSpan": 6,
-            "label": "Artikel für die Preishistorie",
-            "name": "artikel",
-            "action_ids": [
-              "act_lg_preis_kpi",
-              "act_lg_preis_verlauf",
-              "act_lg_preis_aenderungen"
-            ],
-            "config": {
-              "connection_id": "{{connection_jtl}}",
-              "kind": "artikel",
-              "multiple": false,
-              "auto_run": true,
-              "placeholder": "Artikel wählen …",
-              "visible_tabs": [
-                "tab_lg_preise"
-              ]
-            }
-          },
-          {
             "id": "f_artikel_hist",
             "type": "db_dropdown",
             "row": 1,
@@ -6711,7 +6689,10 @@
             "action_ids": [
               "act_lg_ah_kpi",
               "act_lg_ah_verlauf",
-              "act_lg_ah_buchungen"
+              "act_lg_ah_buchungen",
+              "act_lg_preis_kpi",
+              "act_lg_preis_verlauf",
+              "act_lg_preis_aenderungen"
             ],
             "config": {
               "connection_id": "{{connection_jtl}}",
@@ -6844,7 +6825,7 @@
             "config": {
               "auto_run": true,
               "visible_tabs": [
-                "tab_lg_lagerliste"
+                "tab_inventur"
               ],
               "ersetzt_felder": [
                 "f_zeitraum"
@@ -6869,7 +6850,7 @@
               "auto_run": true,
               "placeholder": "Alle Lager",
               "visible_tabs": [
-                "tab_lg_lagerliste"
+                "tab_inventur"
               ]
             }
           },
@@ -6898,7 +6879,7 @@
             "config": {
               "auto_run": true,
               "visible_tabs": [
-                "tab_lg_lagerliste"
+                "tab_inventur"
               ]
             }
           },
@@ -7411,6 +7392,35 @@
             }
           },
           {
+            "id": "w_lg_tbl_lager",
+            "type": "table",
+            "label": "Bestand und Wert je Warenlager",
+            "action_id": "act_lg_lager",
+            "config": {
+              "width": 6,
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_lg_lager_artikel",
+                "key_column": "Lager",
+                "param": "lager",
+                "title": "Artikel im Warenlager",
+                "levels": [
+                  {
+                    "mapping_id": "m_lg_artikel_historie",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Buchungshistorie des Artikels"
+                  }
+                ],
+                "hidden_columns": [
+                  "kArtikel",
+                  "Schluessel",
+                  "Sortierung"
+                ]
+              }
+            }
+          },
+          {
             "id": "w_lg_tbl_top",
             "type": "table",
             "label": "Artikel nach gebundenem Kapital (Klick → Buchungen)",
@@ -7425,101 +7435,6 @@
                 "key_column": "kArtikel",
                 "param": "kArtikel",
                 "title": "Buchungshistorie des Artikels"
-              },
-              "full_rows": true
-            }
-          },
-          {
-            "id": "w_lg_dispo_fehl",
-            "type": "kpi",
-            "label": "Artikel mit Fehlmenge",
-            "action_id": "act_lg_dispo_kpi",
-            "config": {
-              "width": 3,
-              "column": "ArtikelFehlmenge",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_dispo_wert",
-            "type": "kpi",
-            "label": "Wert der Fehlmenge",
-            "action_id": "act_lg_dispo_kpi",
-            "config": {
-              "width": 3,
-              "column": "WertFehlmenge",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2
-            }
-          },
-          {
-            "id": "w_lg_dispo_ueber",
-            "type": "kpi",
-            "label": "Überreserviert",
-            "action_id": "act_lg_dispo_kpi",
-            "config": {
-              "width": 3,
-              "column": "Ueberreserviert",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_dispo_zulauf",
-            "type": "kpi",
-            "label": "Artikel mit Zulauf",
-            "action_id": "act_lg_dispo_kpi",
-            "config": {
-              "width": 3,
-              "column": "MitZulauf",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_tbl_fehlmengen",
-            "type": "table",
-            "label": "Fehlmengen gegen offene Aufträge (Klick → Bestellhistorie)",
-            "action_id": "act_lg_fehlmengen",
-            "config": {
-              "width": 12,
-              "drilldown": {
-                "mapping_id": "m_ek_artikel_hist_detail",
-                "key_column": "ArtNr",
-                "param": "artnr",
-                "title": "Bestellhistorie des Artikels"
-              },
-              "info": "Momentaufnahme aus dbo.tlagerbestand – Reservierungen und Zulauf stehen nur als aktueller Stand zur Verfügung, nicht in der Historie. Der Zeitraumfilter wirkt hier nicht.",
-              "full_rows": true
-            }
-          },
-          {
-            "id": "w_lg_tbl_zulauf",
-            "type": "table",
-            "label": "Erwarteter Zulauf aus offenen Bestellungen (Klick → Positionen)",
-            "action_id": "act_lg_zulauf",
-            "config": {
-              "width": 12,
-              "hidden_columns": [
-                "kLieferantenBestellung"
-              ],
-              "drilldown": {
-                "mapping_id": "m_ek_pos_detail",
-                "key_column": "kLieferantenBestellung",
-                "param": "kLieferantenBestellung",
-                "title": "Positionen der Bestellung",
-                "hidden_columns": [
-                  "kArtikel"
-                ]
               },
               "full_rows": true
             }
@@ -7695,41 +7610,23 @@
             }
           },
           {
-            "id": "w_lg_um_kpi_umschlag",
-            "type": "kpi",
-            "label": "Ø Umschlag pro Jahr",
-            "action_id": "act_lg_umschlag_kpi",
+            "id": "w_lg_h_dispo",
+            "type": "ueberschrift",
+            "label": "Fehlmengen und Zulauf",
+            "action_id": "act_lg_dispo_kpi",
             "config": {
-              "width": 3,
-              "column": "UmschlagDurchschnitt",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 2
+              "width": 12,
+              "text": "Was heute schon fehlt: Aufträge, die der Bestand nicht deckt, und was aus offenen Bestellungen kommt. Aktueller Stand – der Zeitraum wirkt hier nicht."
             }
           },
           {
-            "id": "w_lg_um_kpi_reichweite",
+            "id": "w_lg_dispo_fehl",
             "type": "kpi",
-            "label": "Ø Reichweite",
-            "action_id": "act_lg_umschlag_kpi",
+            "label": "Artikel mit Fehlmenge",
+            "action_id": "act_lg_dispo_kpi",
             "config": {
               "width": 3,
-              "column": "ReichweiteTage",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": " Tage",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_um_kpi_ohne",
-            "type": "kpi",
-            "label": "Artikel ohne Abgang (12 M)",
-            "action_id": "act_lg_umschlag_kpi",
-            "config": {
-              "width": 3,
-              "column": "OhneAbgang12M",
+              "column": "ArtikelFehlmenge",
               "aggregation": "first",
               "prefix": "",
               "suffix": "",
@@ -7737,13 +7634,13 @@
             }
           },
           {
-            "id": "w_lg_um_kpi_kapital",
+            "id": "w_lg_dispo_wert",
             "type": "kpi",
-            "label": "Kapital ohne Abgang",
-            "action_id": "act_lg_umschlag_kpi",
+            "label": "Wert der Fehlmenge",
+            "action_id": "act_lg_dispo_kpi",
             "config": {
               "width": 3,
-              "column": "KapitalOhneAbgang",
+              "column": "WertFehlmenge",
               "aggregation": "first",
               "prefix": "€ ",
               "suffix": "",
@@ -7751,54 +7648,69 @@
             }
           },
           {
-            "id": "w_lg_bar_reichweite",
-            "type": "bar",
-            "label": "Lagerwert nach Reichweite",
-            "action_id": "act_lg_reichweite",
+            "id": "w_lg_dispo_ueber",
+            "type": "kpi",
+            "label": "Überreserviert",
+            "action_id": "act_lg_dispo_kpi",
             "config": {
-              "width": 12,
-              "x_column": "Klasse",
-              "y_columns": [
-                "Lagerwert"
-              ],
-              "drilldown": {
-                "mapping_id": "m_lg_reichweite_artikel",
-                "key_column": "Klasse",
-                "param": "klasse",
-                "title": "Artikel dieser Reichweite-Klasse",
-                "levels": [
-                  {
-                    "mapping_id": "m_lg_artikel_historie",
-                    "param": "kArtikel",
-                    "key_column": "kArtikel",
-                    "title": "Buchungshistorie des Artikels"
-                  }
-                ],
-                "hidden_columns": [
-                  "kArtikel",
-                  "Schluessel",
-                  "Sortierung"
-                ]
-              }
+              "width": 3,
+              "column": "Ueberreserviert",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
             }
           },
           {
-            "id": "w_lg_tbl_umschlag",
+            "id": "w_lg_dispo_zulauf",
+            "type": "kpi",
+            "label": "Artikel mit Zulauf",
+            "action_id": "act_lg_dispo_kpi",
+            "config": {
+              "width": 3,
+              "column": "MitZulauf",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_tbl_fehlmengen",
             "type": "table",
-            "label": "Umschlag und Reichweite je Artikel (Klick → Buchungen)",
-            "action_id": "act_lg_umschlag",
+            "label": "Fehlmengen gegen offene Aufträge (Klick → Bestellhistorie)",
+            "action_id": "act_lg_fehlmengen",
+            "config": {
+              "width": 12,
+              "drilldown": {
+                "mapping_id": "m_ek_artikel_hist_detail",
+                "key_column": "ArtNr",
+                "param": "artnr",
+                "title": "Bestellhistorie des Artikels"
+              },
+              "info": "Momentaufnahme aus dbo.tlagerbestand – Reservierungen und Zulauf stehen nur als aktueller Stand zur Verfügung, nicht in der Historie. Der Zeitraumfilter wirkt hier nicht.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_tbl_zulauf",
+            "type": "table",
+            "label": "Erwarteter Zulauf aus offenen Bestellungen (Klick → Positionen)",
+            "action_id": "act_lg_zulauf",
             "config": {
               "width": 12,
               "hidden_columns": [
-                "kArtikel"
+                "kLieferantenBestellung"
               ],
               "drilldown": {
-                "mapping_id": "m_lg_artikel_historie",
-                "key_column": "kArtikel",
-                "param": "kArtikel",
-                "title": "Buchungshistorie des Artikels"
+                "mapping_id": "m_ek_pos_detail",
+                "key_column": "kLieferantenBestellung",
+                "param": "kLieferantenBestellung",
+                "title": "Positionen der Bestellung",
+                "hidden_columns": [
+                  "kArtikel"
+                ]
               },
-              "info": "Umschlag = Abgang der letzten 12 Monate geteilt durch den mittleren Bestand (Mittel aus Bestand vor 12 Monaten und am Stichtag). Reichweite = aktueller Bestand geteilt durch den Tagesabgang.",
               "full_rows": true
             }
           },
@@ -7907,6 +7819,271 @@
                 "title": "Buchungshistorie des Artikels"
               },
               "full_rows": true
+            }
+          },
+          {
+            "id": "w_lg_h_umschlag",
+            "type": "ueberschrift",
+            "label": "Umschlag und Reichweite",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 12,
+              "text": "Wie oft sich der Bestand im Jahr dreht und wie lange er beim heutigen Abverkauf reicht."
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_umschlag",
+            "type": "kpi",
+            "label": "Ø Umschlag pro Jahr",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 6,
+              "column": "UmschlagDurchschnitt",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_um_kpi_reichweite",
+            "type": "kpi",
+            "label": "Ø Reichweite",
+            "action_id": "act_lg_umschlag_kpi",
+            "config": {
+              "width": 6,
+              "column": "ReichweiteTage",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " Tage",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_bar_reichweite",
+            "type": "bar",
+            "label": "Lagerwert nach Reichweite",
+            "action_id": "act_lg_reichweite",
+            "config": {
+              "width": 12,
+              "x_column": "Klasse",
+              "y_columns": [
+                "Lagerwert"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_reichweite_artikel",
+                "key_column": "Klasse",
+                "param": "klasse",
+                "title": "Artikel dieser Reichweite-Klasse",
+                "levels": [
+                  {
+                    "mapping_id": "m_lg_artikel_historie",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Buchungshistorie des Artikels"
+                  }
+                ],
+                "hidden_columns": [
+                  "kArtikel",
+                  "Schluessel",
+                  "Sortierung"
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_lg_tbl_umschlag",
+            "type": "table",
+            "label": "Umschlag und Reichweite je Artikel (Klick → Buchungen)",
+            "action_id": "act_lg_umschlag",
+            "config": {
+              "width": 12,
+              "hidden_columns": [
+                "kArtikel"
+              ],
+              "drilldown": {
+                "mapping_id": "m_lg_artikel_historie",
+                "key_column": "kArtikel",
+                "param": "kArtikel",
+                "title": "Buchungshistorie des Artikels"
+              },
+              "info": "Umschlag = Abgang der letzten 12 Monate geteilt durch den mittleren Bestand (Mittel aus Bestand vor 12 Monaten und am Stichtag). Reichweite = aktueller Bestand geteilt durch den Tagesabgang.",
+              "full_rows": true
+            }
+          },
+          {
+            "id": "w_inv_wert",
+            "type": "kpi",
+            "label": "Bestandswert zum Stichtag",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "Bestandswert",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_inv_abgelaufen",
+            "type": "kpi",
+            "label": "davon MHD überschritten",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertAbgelaufen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2,
+              "info": "Wert der Chargen, deren Mindesthaltbarkeit am Stichtag abgelaufen war."
+            }
+          },
+          {
+            "id": "w_inv_unter3",
+            "type": "kpi",
+            "label": "läuft in unter 3 Monaten ab",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertUnter3Monate",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_inv_ohne_abgang",
+            "type": "kpi",
+            "label": "ohne Abgang seit 12 Monaten",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 3,
+              "column": "WertOhneAbgang",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": " €",
+              "decimals": 2,
+              "breakdown": [
+                {
+                  "label": "Artikel",
+                  "column": "OhneAbgang12M",
+                  "decimals": 0,
+                  "suffix": ""
+                }
+              ]
+            }
+          },
+          {
+            "id": "w_inventur",
+            "type": "inventur",
+            "label": "Inventur zum Stichtag",
+            "action_id": "act_inv_kpi",
+            "config": {
+              "width": 12,
+              "info": "Bestände einfrieren, bewerten und als Liste an den Steuerberater geben. Eine abgeschlossene Inventur bleibt unverändert."
+            }
+          },
+          {
+            "id": "w_inv_mhd",
+            "type": "bar",
+            "label": "Bestandswert nach Restlaufzeit",
+            "action_id": "act_inv_mhd",
+            "config": {
+              "width": 6,
+              "x_column": "Restlaufzeit",
+              "y_columns": [
+                "Wert"
+              ],
+              "suffix": " €"
+            }
+          },
+          {
+            "id": "w_inv_mhd_tab",
+            "type": "table",
+            "label": "Restlaufzeit im Überblick",
+            "action_id": "act_inv_mhd",
+            "config": {
+              "width": 6
+            }
+          },
+          {
+            "id": "w_lg_h_ll",
+            "type": "ueberschrift",
+            "label": "Lagerliste zum Stichtag",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 12,
+              "text": "Bestand je Artikel, Lager, Charge und MHD – Stichtag, Lager und Nullbestände wählst du oben."
+            }
+          },
+          {
+            "id": "w_lg_ll_pos",
+            "type": "kpi",
+            "label": "Positionen",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "Positionen",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ll_menge",
+            "type": "kpi",
+            "label": "Menge gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "Menge",
+              "aggregation": "first",
+              "prefix": "",
+              "suffix": "",
+              "decimals": 0
+            }
+          },
+          {
+            "id": "w_lg_ll_ek",
+            "type": "kpi",
+            "label": "EK gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "EKGesamt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_ll_vk",
+            "type": "kpi",
+            "label": "VK gesamt",
+            "action_id": "act_lg_ll_kpi",
+            "config": {
+              "width": 3,
+              "column": "VKGesamt",
+              "aggregation": "first",
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 2
+            }
+          },
+          {
+            "id": "w_lg_ll_tabelle",
+            "type": "table",
+            "label": "Lagerliste je Artikel, Lager, Charge und MHD",
+            "action_id": "act_lg_ll_liste",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "info": "Bestand am Ende des Stichtags, aus den Warenein- und -ausgängen der Wawi. EK zum Stichtag wie auf dem Reiter Lagerwert: der Einkaufspreis der letzten Eingangsbuchung bis zum Stichtag, sonst der EK aus den Artikelstammdaten. Daneben steht der heutige Stamm-EK – große Unterschiede deuten auf einen Pflegefehler hin. VK aus den Artikelstammdaten. Die Tabelle zeigt höchstens 2.000 Zeilen, die Summen oben gelten immer für alle."
             }
           },
           {
@@ -8048,88 +8225,52 @@
             }
           },
           {
-            "id": "w_lg_pr_kpi_aktuell",
-            "type": "kpi",
-            "label": "EK aktuell",
-            "action_id": "act_lg_preis_kpi",
-            "config": {
-              "width": 3,
-              "column": "EKAktuell",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 4,
-              "compare_column": "EKErster",
-              "compare_label": "erster EK",
-              "invert_delta": true
-            }
-          },
-          {
-            "id": "w_lg_pr_kpi_min",
-            "type": "kpi",
-            "label": "Tiefster EK",
-            "action_id": "act_lg_preis_kpi",
-            "config": {
-              "width": 3,
-              "column": "EKMinimum",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 4
-            }
-          },
-          {
-            "id": "w_lg_pr_kpi_max",
-            "type": "kpi",
-            "label": "Höchster EK",
-            "action_id": "act_lg_preis_kpi",
-            "config": {
-              "width": 3,
-              "column": "EKMaximum",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 4
-            }
-          },
-          {
-            "id": "w_lg_pr_kpi_stufen",
-            "type": "kpi",
-            "label": "Verschiedene Preise",
-            "action_id": "act_lg_preis_kpi",
-            "config": {
-              "width": 3,
-              "column": "Preisstufen",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_line_preis",
-            "type": "line",
-            "label": "Preisverlauf: Einkauf gegen Verkauf (24 Monate)",
-            "action_id": "act_lg_preis_verlauf",
+            "id": "w_lg_h_ba",
+            "type": "ueberschrift",
+            "label": "Buchungsarten im Zeitraum",
+            "action_id": "act_lg_buchungsarten",
             "config": {
               "width": 12,
-              "x_column": "Monat",
-              "y_columns": [
-                "EKNetto",
-                "VKNetto"
-              ],
-              "curved": true,
-              "info": "EK = zuletzt gebuchter Einkaufspreis des Monats, fortgeschrieben bis zum nächsten Wareneingang. VK = mittlerer Netto-Verkaufspreis der in diesem Monat berechneten Positionen. Monate ohne Verkauf bleiben beim VK leer."
+              "text": "Alle Lagerbewegungen nach Art – Wareneingang, Lieferung, Umbuchung, Korrektur."
             }
           },
           {
-            "id": "w_lg_tbl_preis",
+            "id": "w_lg_tbl_buchungsarten",
             "type": "table",
-            "label": "Jede EK-Änderung mit Lieferant",
-            "action_id": "act_lg_preis_aenderungen",
+            "label": "Buchungsarten im Zeitraum",
+            "action_id": "act_lg_buchungsarten",
+            "config": {
+              "width": 6,
+              "full_rows": true,
+              "drilldown": {
+                "mapping_id": "m_lg_buchungsart_detail",
+                "key_column": "Schluessel",
+                "param": "schluessel",
+                "title": "Buchungen dieser Art",
+                "levels": [
+                  {
+                    "mapping_id": "m_lg_artikel_historie",
+                    "param": "kArtikel",
+                    "key_column": "kArtikel",
+                    "title": "Buchungshistorie des Artikels"
+                  }
+                ],
+                "hidden_columns": [
+                  "kArtikel",
+                  "Schluessel",
+                  "Sortierung"
+                ]
+              }
+            }
+          },
+          {
+            "id": "w_lg_h_ah",
+            "type": "ueberschrift",
+            "label": "Lagerbewegungen",
+            "action_id": "act_lg_ah_kpi",
             "config": {
               "width": 12,
-              "full_rows": true
+              "text": "Jede Buchung des gewählten Artikels: Zugänge, Abgänge und der Bestand danach."
             }
           },
           {
@@ -8243,226 +8384,98 @@
             }
           },
           {
-            "id": "w_lg_ll_pos",
-            "type": "kpi",
-            "label": "Positionen",
-            "action_id": "act_lg_ll_kpi",
-            "config": {
-              "width": 3,
-              "column": "Positionen",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_ll_menge",
-            "type": "kpi",
-            "label": "Menge gesamt",
-            "action_id": "act_lg_ll_kpi",
-            "config": {
-              "width": 3,
-              "column": "Menge",
-              "aggregation": "first",
-              "prefix": "",
-              "suffix": "",
-              "decimals": 0
-            }
-          },
-          {
-            "id": "w_lg_ll_ek",
-            "type": "kpi",
-            "label": "EK gesamt",
-            "action_id": "act_lg_ll_kpi",
-            "config": {
-              "width": 3,
-              "column": "EKGesamt",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2
-            }
-          },
-          {
-            "id": "w_lg_ll_vk",
-            "type": "kpi",
-            "label": "VK gesamt",
-            "action_id": "act_lg_ll_kpi",
-            "config": {
-              "width": 3,
-              "column": "VKGesamt",
-              "aggregation": "first",
-              "prefix": "€ ",
-              "suffix": "",
-              "decimals": 2
-            }
-          },
-          {
-            "id": "w_lg_ll_tabelle",
-            "type": "table",
-            "label": "Lagerliste je Artikel, Lager, Charge und MHD",
-            "action_id": "act_lg_ll_liste",
+            "id": "w_lg_h_preis",
+            "type": "ueberschrift",
+            "label": "Preishistorie",
+            "action_id": "act_lg_preis_kpi",
             "config": {
               "width": 12,
-              "full_rows": true,
-              "info": "Bestand am Ende des Stichtags, aus den Warenein- und -ausgängen der Wawi. EK zum Stichtag wie auf dem Reiter Lagerwert: der Einkaufspreis der letzten Eingangsbuchung bis zum Stichtag, sonst der EK aus den Artikelstammdaten. Daneben steht der heutige Stamm-EK – große Unterschiede deuten auf einen Pflegefehler hin. VK aus den Artikelstammdaten. Die Tabelle zeigt höchstens 2.000 Zeilen, die Summen oben gelten immer für alle."
+              "text": "Jede Einkaufspreis-Änderung des Artikels mit Lieferant, daneben der Verkaufspreis."
             }
           },
           {
-            "id": "w_lg_tbl_lager",
-            "type": "table",
-            "label": "Bestand und Wert je Warenlager",
-            "action_id": "act_lg_lager",
-            "config": {
-              "width": 6,
-              "full_rows": true,
-              "drilldown": {
-                "mapping_id": "m_lg_lager_artikel",
-                "key_column": "Lager",
-                "param": "lager",
-                "title": "Artikel im Warenlager",
-                "levels": [
-                  {
-                    "mapping_id": "m_lg_artikel_historie",
-                    "param": "kArtikel",
-                    "key_column": "kArtikel",
-                    "title": "Buchungshistorie des Artikels"
-                  }
-                ],
-                "hidden_columns": [
-                  "kArtikel",
-                  "Schluessel",
-                  "Sortierung"
-                ]
-              }
-            }
-          },
-          {
-            "id": "w_lg_tbl_buchungsarten",
-            "type": "table",
-            "label": "Buchungsarten im Zeitraum",
-            "action_id": "act_lg_buchungsarten",
-            "config": {
-              "width": 6,
-              "full_rows": true,
-              "drilldown": {
-                "mapping_id": "m_lg_buchungsart_detail",
-                "key_column": "Schluessel",
-                "param": "schluessel",
-                "title": "Buchungen dieser Art",
-                "levels": [
-                  {
-                    "mapping_id": "m_lg_artikel_historie",
-                    "param": "kArtikel",
-                    "key_column": "kArtikel",
-                    "title": "Buchungshistorie des Artikels"
-                  }
-                ],
-                "hidden_columns": [
-                  "kArtikel",
-                  "Schluessel",
-                  "Sortierung"
-                ]
-              }
-            }
-          },
-          {
-            "id": "w_inv_wert",
+            "id": "w_lg_pr_kpi_aktuell",
             "type": "kpi",
-            "label": "Bestandswert zum Stichtag",
-            "action_id": "act_inv_kpi",
+            "label": "EK aktuell",
+            "action_id": "act_lg_preis_kpi",
             "config": {
               "width": 3,
-              "column": "Bestandswert",
+              "column": "EKAktuell",
               "aggregation": "first",
-              "prefix": "",
-              "suffix": " €",
-              "decimals": 2
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4,
+              "compare_column": "EKErster",
+              "compare_label": "erster EK",
+              "invert_delta": true
             }
           },
           {
-            "id": "w_inv_abgelaufen",
+            "id": "w_lg_pr_kpi_min",
             "type": "kpi",
-            "label": "davon MHD überschritten",
-            "action_id": "act_inv_kpi",
+            "label": "Tiefster EK",
+            "action_id": "act_lg_preis_kpi",
             "config": {
               "width": 3,
-              "column": "WertAbgelaufen",
+              "column": "EKMinimum",
               "aggregation": "first",
-              "prefix": "",
-              "suffix": " €",
-              "decimals": 2,
-              "info": "Wert der Chargen, deren Mindesthaltbarkeit am Stichtag abgelaufen war."
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4
             }
           },
           {
-            "id": "w_inv_unter3",
+            "id": "w_lg_pr_kpi_max",
             "type": "kpi",
-            "label": "läuft in unter 3 Monaten ab",
-            "action_id": "act_inv_kpi",
+            "label": "Höchster EK",
+            "action_id": "act_lg_preis_kpi",
             "config": {
               "width": 3,
-              "column": "WertUnter3Monate",
+              "column": "EKMaximum",
               "aggregation": "first",
-              "prefix": "",
-              "suffix": " €",
-              "decimals": 2
+              "prefix": "€ ",
+              "suffix": "",
+              "decimals": 4
             }
           },
           {
-            "id": "w_inv_ohne_abgang",
+            "id": "w_lg_pr_kpi_stufen",
             "type": "kpi",
-            "label": "ohne Abgang seit 12 Monaten",
-            "action_id": "act_inv_kpi",
+            "label": "Verschiedene Preise",
+            "action_id": "act_lg_preis_kpi",
             "config": {
               "width": 3,
-              "column": "WertOhneAbgang",
+              "column": "Preisstufen",
               "aggregation": "first",
               "prefix": "",
-              "suffix": " €",
-              "decimals": 2,
-              "breakdown": [
-                {
-                  "label": "Artikel",
-                  "column": "OhneAbgang12M",
-                  "decimals": 0,
-                  "suffix": ""
-                }
-              ]
+              "suffix": "",
+              "decimals": 0
             }
           },
           {
-            "id": "w_inv_mhd",
-            "type": "bar",
-            "label": "Bestandswert nach Restlaufzeit",
-            "action_id": "act_inv_mhd",
+            "id": "w_lg_line_preis",
+            "type": "line",
+            "label": "Preisverlauf: Einkauf gegen Verkauf (24 Monate)",
+            "action_id": "act_lg_preis_verlauf",
             "config": {
-              "width": 6,
-              "x_column": "Restlaufzeit",
+              "width": 12,
+              "x_column": "Monat",
               "y_columns": [
-                "Wert"
+                "EKNetto",
+                "VKNetto"
               ],
-              "suffix": " €"
+              "curved": true,
+              "info": "EK = zuletzt gebuchter Einkaufspreis des Monats, fortgeschrieben bis zum nächsten Wareneingang. VK = mittlerer Netto-Verkaufspreis der in diesem Monat berechneten Positionen. Monate ohne Verkauf bleiben beim VK leer."
             }
           },
           {
-            "id": "w_inv_mhd_tab",
+            "id": "w_lg_tbl_preis",
             "type": "table",
-            "label": "Restlaufzeit im Überblick",
-            "action_id": "act_inv_mhd",
-            "config": {
-              "width": 6
-            }
-          },
-          {
-            "id": "w_inventur",
-            "type": "inventur",
-            "label": "Inventur zum Stichtag",
-            "action_id": "act_inv_kpi",
+            "label": "Jede EK-Änderung mit Lieferant",
+            "action_id": "act_lg_preis_aenderungen",
             "config": {
               "width": 12,
-              "info": "Bestände einfrieren, bewerten und als Liste an den Steuerberater geben. Eine abgeschlossene Inventur bleibt unverändert."
+              "full_rows": true
             }
           },
           {
@@ -8539,6 +8552,16 @@
             }
           },
           {
+            "id": "w_ab_ausschluss",
+            "type": "kunden_ausschluss",
+            "label": "Verbundene Unternehmen",
+            "action_id": "act_ab_kpi",
+            "config": {
+              "width": 12,
+              "info": "Diese Kunden werden aus den Listen oben ausgeblendet. Achtung: Ist ein Betrieb doppelt in der WaWi angelegt, gehören beide Datensätze hier hinein."
+            }
+          },
+          {
             "id": "w_ab_artikel",
             "type": "table",
             "label": "Abgang je Artikel und Größe",
@@ -8594,55 +8617,76 @@
             "config": {
               "width": 6
             }
-          },
-          {
-            "id": "w_ab_ausschluss",
-            "type": "kunden_ausschluss",
-            "label": "Verbundene Unternehmen",
-            "action_id": "act_ab_kpi",
-            "config": {
-              "width": 12,
-              "info": "Diese Kunden werden aus den Listen oben ausgeblendet. Achtung: Ist ein Betrieb doppelt in der WaWi angelegt, gehören beide Datensätze hier hinein."
-            }
           }
         ],
         "result_tabs": [
           {
             "id": "tab_lg_wert",
-            "label": "Lagerwert",
+            "label": "Überblick",
             "action_ids": [
               "act_lg_kpi",
               "act_lg_verlauf",
               "act_lg_warengruppe",
               "act_lg_hersteller",
+              "act_lg_lager",
               "act_lg_top"
             ]
           },
           {
-            "id": "tab_lg_dispo",
-            "label": "Disposition",
+            "id": "tab_lg_bedarf",
+            "label": "Bestellen",
             "action_ids": [
+              "act_lg_bedarf_kpi",
+              "act_lg_bedarf_lief",
+              "act_lg_bedarf_liste",
               "act_lg_dispo_kpi",
               "act_lg_fehlmengen",
               "act_lg_zulauf"
             ]
           },
           {
-            "id": "tab_lg_bedarf",
-            "label": "Bedarf & Bestellvorschlag",
+            "id": "tab_lg_ladenhueter",
+            "label": "Ladenhüter & Reichweite",
             "action_ids": [
-              "act_lg_bedarf_kpi",
-              "act_lg_bedarf_lief",
-              "act_lg_bedarf_liste"
-            ]
-          },
-          {
-            "id": "tab_lg_umschlag",
-            "label": "Umschlag & Reichweite",
-            "action_ids": [
+              "act_lg_lh_kpi",
+              "act_lg_lh_klassen",
+              "act_lg_lh",
               "act_lg_umschlag_kpi",
               "act_lg_reichweite",
               "act_lg_umschlag"
+            ]
+          },
+          {
+            "id": "tab_inventur",
+            "label": "Inventur & Lagerliste",
+            "action_ids": [
+              "act_inv_kpi",
+              "act_inv_mhd",
+              "act_lg_ll_kpi",
+              "act_lg_ll_liste"
+            ]
+          },
+          {
+            "id": "tab_lg_schwund",
+            "label": "Korrekturen & Buchungen",
+            "action_ids": [
+              "act_lg_schwund_kpi",
+              "act_lg_schwund_monat",
+              "act_lg_schwund_artikel",
+              "act_lg_schwund_benutzer",
+              "act_lg_buchungsarten"
+            ]
+          },
+          {
+            "id": "tab_lg_artikel",
+            "label": "Artikel",
+            "action_ids": [
+              "act_lg_ah_kpi",
+              "act_lg_ah_verlauf",
+              "act_lg_ah_buchungen",
+              "act_lg_preis_kpi",
+              "act_lg_preis_verlauf",
+              "act_lg_preis_aenderungen"
             ]
           },
           {
@@ -8655,41 +8699,40 @@
               "act_ab_monat",
               "act_ab_arten"
             ]
-          },
+          }
+        ],
+        "doku": {
+          "intro": "Der Lagerwert zum Stichtag und im Verlauf, bewertet zum damals gültigen Einkaufspreis. Die Reiter gehen vom Überblick ins Detail: Überblick → Bestellen (Bedarf, Bestellvorschlag, Fehlmengen, Zulauf) → Ladenhüter & Reichweite → Inventur & Lagerliste → Korrekturen & Buchungen → Artikel (Bewegungen und Preise eines Artikels) → Abflüsse je Artikel. Der Verlauf wird aus der Buchungshistorie rekonstruiert — das Cockpit kann also auch rückwirkend sagen, was im Lager lag, was JTL selbst nicht beantwortet.",
+          "hinweise": [
+            "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Bei Fehlmengen und Zulauf (Reiter Bestellen) wirkt der Zeitraumfilter deshalb nicht.",
+            "Vaterartikel von Variationen werden nicht doppelt gezählt.",
+            "Artikel: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant.",
+            "Lagerliste (Reiter Inventur & Lagerliste): Bestand je Artikel, Lager, Charge und MHD zum Stichtag (Vorgabe: heute) – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt. Bewertet wird mit dem EK der letzten Eingangsbuchung bis zum Stichtag (wie auf dem Reiter Überblick), nicht mit dem heutigen Stamm-EK – eine spätere EK-Pflege ändert einen vergangenen Stichtag also nicht mehr."
+          ]
+        },
+        "rubrik": {
+          "id": "lager"
+        }
+      },
+      "entfernt": {
+        "_hinweis": "Seit 1.17 gestrichen (Reiter zusammengelegt). Fassung von 1.16 – beim Update wird nur entfernt, was beim Kunden noch genau so aussieht.",
+        "result_tabs": [
           {
-            "id": "tab_lg_ladenhueter",
-            "label": "Ladenhüter",
+            "id": "tab_lg_dispo",
+            "label": "Disposition",
             "action_ids": [
-              "act_lg_lh_kpi",
-              "act_lg_lh_klassen",
-              "act_lg_lh"
+              "act_lg_dispo_kpi",
+              "act_lg_fehlmengen",
+              "act_lg_zulauf"
             ]
           },
           {
-            "id": "tab_inventur",
-            "label": "Inventur zum Stichtag",
+            "id": "tab_lg_umschlag",
+            "label": "Umschlag & Reichweite",
             "action_ids": [
-              "act_inv_kpi",
-              "act_inv_mhd"
-            ]
-          },
-          {
-            "id": "tab_lg_schwund",
-            "label": "Schwund & Korrekturen",
-            "action_ids": [
-              "act_lg_schwund_kpi",
-              "act_lg_schwund_monat",
-              "act_lg_schwund_artikel",
-              "act_lg_schwund_benutzer"
-            ]
-          },
-          {
-            "id": "tab_lg_artikel",
-            "label": "Artikelhistorie",
-            "action_ids": [
-              "act_lg_ah_kpi",
-              "act_lg_ah_verlauf",
-              "act_lg_ah_buchungen"
+              "act_lg_umschlag_kpi",
+              "act_lg_reichweite",
+              "act_lg_umschlag"
             ]
           },
           {
@@ -8718,18 +8761,31 @@
             ]
           }
         ],
-        "doku": {
-          "intro": "Der Lagerwert zum Stichtag und im Verlauf, bewertet zum damals gültigen Einkaufspreis, dazu Disposition mit Fehlmengen und Zulauf, Umschlag und Reichweite sowie die Ladenhüter mit dem darin gebundenen Kapital. Der Verlauf wird aus der Buchungshistorie rekonstruiert — das Cockpit kann also auch rückwirkend sagen, was im Lager lag, was JTL selbst nicht beantwortet.",
-          "hinweise": [
-            "Reservierungen und Zulauf gibt es nur als aktuellen Stand, nicht in der Historie. Auf dem Reiter Disposition wirkt der Zeitraumfilter deshalb nicht.",
-            "Vaterartikel von Variationen werden nicht doppelt gezählt.",
-            "Artikelhistorie: jede Lagerbuchung eines Artikels im Zeitraum – Zugänge links, Abgänge rechts, in der Mitte der Bestand danach. Bei Abgängen steht der Auftrag und der Kunde, bei Zugängen die Bestellung und der Lieferant.",
-            "Lagerliste: Bestand je Artikel, Lager, Charge und MHD zum Stichtag (Vorgabe: heute) – wie das Access-Lagertool, aber aus den echten Warenein- und -ausgängen. Die Access-Abfrage liest die Zwischentabelle tArtikelHistory, in der JTL einzelne Buchungen doppelt führt. Bewertet wird mit dem EK der letzten Eingangsbuchung bis zum Stichtag (wie auf dem Reiter Lagerwert), nicht mit dem heutigen Stamm-EK – eine spätere EK-Pflege ändert einen vergangenen Stichtag also nicht mehr."
-          ]
-        },
-        "rubrik": {
-          "id": "lager"
-        }
+        "fields": [
+          {
+            "id": "f_artikel",
+            "type": "db_dropdown",
+            "row": 1,
+            "colSpan": 6,
+            "label": "Artikel für die Preishistorie",
+            "name": "artikel",
+            "action_ids": [
+              "act_lg_preis_kpi",
+              "act_lg_preis_verlauf",
+              "act_lg_preis_aenderungen"
+            ],
+            "config": {
+              "connection_id": "{{connection_jtl}}",
+              "kind": "artikel",
+              "multiple": false,
+              "auto_run": true,
+              "placeholder": "Artikel wählen …",
+              "visible_tabs": [
+                "tab_lg_preise"
+              ]
+            }
+          }
+        ]
       }
     }
   ],
