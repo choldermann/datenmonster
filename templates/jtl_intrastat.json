@@ -4,7 +4,7 @@
  "template_name": "JTL Intrastat (eSTATISTIK + Destatis)",
  "description": "Vollständiges Intrastat-Setup: Mappings Ausfuhr/Einfuhr (eSTATISTIK.core + Destatis-CSV), Formular Intrastat Zeitraum, monatliche Pipelines. DB-Verbindung beim Installieren wählen.",
  "category": "jtl",
- "version": "1.8",
+ "version": "1.9",
  "author": "christof",
  "datasets": [],
  "mappings": [
@@ -977,7 +977,7 @@
      "x": 111,
      "y": 28,
      "connection_id": "{{connection_10}}",
-     "sql": "SELECT\n    'V' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, 'DE') AS country_of_origin,\n    RELI.cISO AS partner_country,\n    CASE WHEN Y.ustMeldung = 'QN999999999999' THEN '12' ELSE '11' END AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(REPO.fAnzahl * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS statistical_value,\n    Y.ustMeldung AS vat_id_recipient,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0) RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN Rechnung.vRechnungRechnungsadresse RERA ON RE.kRechnung = RERA.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nLEFT JOIN dbo.tKunde K ON K.kKunde = RE.kKunde\nLEFT JOIN dbo.tadresse RAD ON RAD.kKunde = RE.kKunde AND RAD.nTyp = 1 AND RAD.nStandard = 1\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(COALESCE(VS.dErstellt, LS.dErstellt)) AS dVersand\n             FROM dbo.tLieferscheinPos LP\n             JOIN dbo.tLieferschein LS ON LS.kLieferschein = LP.kLieferschein\n             LEFT JOIN dbo.tVersand VS ON VS.kLieferschein = LS.kLieferschein\n             WHERE REPO.kAuftragPosition > 0 AND LP.kBestellPos = REPO.kAuftragPosition) VB\nCROSS APPLY (SELECT\n    COALESCE(VB.dVersand, RE.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht,\n    ISNULL(REPLACE(COALESCE(NULLIF(LTRIM(RTRIM(RE.cKundeUstId)), ''), NULLIF(LTRIM(RTRIM(RAD.cUSTID)), ''),\n           CASE WHEN REPLACE(K.cSteuerNr, ' ', '') LIKE '[A-Z][A-Z][0-9A-Z]%' THEN LTRIM(RTRIM(K.cSteuerNr)) END), ' ', ''), '') AS ustid,\n    CASE WHEN LTRIM(RTRIM(ISNULL(RERA.cFirma, ''))) NOT IN ('', 'Herr', 'Frau', 'Divers', 'Familie') THEN 1 ELSE 0 END AS istFirma) X\nCROSS APPLY (SELECT CASE WHEN X.ustid <> '' THEN X.ustid\n                         WHEN X.istFirma = 1 THEN 'QV999999999999'\n                         ELSE 'QN999999999999' END AS ustMeldung) Y\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND RE.dErstellt < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, 'DE'), RELI.cISO, Y.ustMeldung\n\nUNION ALL\n\nSELECT\n    'E' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, E.cLandISO) AS country_of_origin,\n    E.cLandISO AS partner_country,\n    '11' AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(EP.fMenge * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS statistical_value,\n    '' AS vat_id_recipient,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(WE.dErstellt) AS dEingang FROM dbo.tWarenLagerEingang WE\n             WHERE EP.kLieferantenBestellungPos > 0 AND WE.kLieferantenBestellungPos = EP.kLieferantenBestellungPos) WB\nCROSS APPLY (SELECT\n    COALESCE(WB.dEingang, E.dBelegdatum, E.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht) X\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND ISNULL(E.dBelegdatum, E.dErstellt) >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND ISNULL(E.dBelegdatum, E.dErstellt) < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, E.cLandISO), E.cLandISO",
+     "sql": "SELECT\n    'V' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, 'DE') AS country_of_origin,\n    RELI.cISO AS partner_country,\n    CASE WHEN Y.ustMeldung = 'QN999999999999' THEN '12' ELSE '11' END AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(REPO.fAnzahl * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS statistical_value,\n    Y.ustMeldung AS vat_id_recipient,\n    CASE WHEN COALESCE(X.ursprung, 'DE') = 'DE' THEN '{{idev_bundesland}}' ELSE '99' END AS bundesland,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0) RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN Rechnung.vRechnungRechnungsadresse RERA ON RE.kRechnung = RERA.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nLEFT JOIN dbo.tKunde K ON K.kKunde = RE.kKunde\nLEFT JOIN dbo.tadresse RAD ON RAD.kKunde = RE.kKunde AND RAD.nTyp = 1 AND RAD.nStandard = 1\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(COALESCE(VS.dErstellt, LS.dErstellt)) AS dVersand\n             FROM dbo.tLieferscheinPos LP\n             JOIN dbo.tLieferschein LS ON LS.kLieferschein = LP.kLieferschein\n             LEFT JOIN dbo.tVersand VS ON VS.kLieferschein = LS.kLieferschein\n             WHERE REPO.kAuftragPosition > 0 AND LP.kBestellPos = REPO.kAuftragPosition) VB\nCROSS APPLY (SELECT\n    COALESCE(VB.dVersand, RE.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht,\n    ISNULL(REPLACE(COALESCE(NULLIF(LTRIM(RTRIM(RE.cKundeUstId)), ''), NULLIF(LTRIM(RTRIM(RAD.cUSTID)), ''),\n           CASE WHEN REPLACE(K.cSteuerNr, ' ', '') LIKE '[A-Z][A-Z][0-9A-Z]%' THEN LTRIM(RTRIM(K.cSteuerNr)) END), ' ', ''), '') AS ustid,\n    CASE WHEN LTRIM(RTRIM(ISNULL(RERA.cFirma, ''))) NOT IN ('', 'Herr', 'Frau', 'Divers', 'Familie') THEN 1 ELSE 0 END AS istFirma) X\nCROSS APPLY (SELECT CASE WHEN X.ustid <> '' THEN X.ustid\n                         WHEN X.istFirma = 1 THEN 'QV999999999999'\n                         ELSE 'QN999999999999' END AS ustMeldung) Y\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND RE.dErstellt < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, 'DE'), RELI.cISO, Y.ustMeldung\n\nUNION ALL\n\nSELECT\n    'E' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, E.cLandISO) AS country_of_origin,\n    E.cLandISO AS partner_country,\n    '11' AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(EP.fMenge * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS statistical_value,\n    '' AS vat_id_recipient,\n    '{{idev_bundesland}}' AS bundesland,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(WE.dErstellt) AS dEingang FROM dbo.tWarenLagerEingang WE\n             WHERE EP.kLieferantenBestellungPos > 0 AND WE.kLieferantenBestellungPos = EP.kLieferantenBestellungPos) WB\nCROSS APPLY (SELECT\n    COALESCE(WB.dEingang, E.dBelegdatum, E.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht) X\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND ISNULL(E.dBelegdatum, E.dErstellt) >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND ISNULL(E.dBelegdatum, E.dErstellt) < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, E.cLandISO), E.cLandISO",
      "mode": "transform",
      "output_field": "sql_idev",
      "output_fields": [
@@ -1145,6 +1145,16 @@
         "type": "direct",
         "source_field": "statistical_value"
        }
+      },
+      {
+       "source_field": "bundesland",
+       "target_field": "bundesland",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "bundesland"
+       }
       }
      ]
     },
@@ -1279,6 +1289,211 @@
        "transformer": {
         "type": "direct",
         "source_field": "bzr"
+       }
+      },
+      {
+       "source_field": "bundesland",
+       "target_field": "bundesland",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "bundesland"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "mapping_27",
+   "name": "Intrastat INSTAT/XML (eSTATISTIK.core)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sqlidev",
+     "x": 111,
+     "y": 28,
+     "connection_id": "{{connection_10}}",
+     "sql": "SELECT\n    'V' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, 'DE') AS country_of_origin,\n    RELI.cISO AS partner_country,\n    CASE WHEN Y.ustMeldung = 'QN999999999999' THEN '12' ELSE '11' END AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(REPO.fAnzahl * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(REPO.fAnzahl * REPO.fVkNetto), 0) AS INT) AS statistical_value,\n    Y.ustMeldung AS vat_id_recipient,\n    CASE WHEN COALESCE(X.ursprung, 'DE') = 'DE' THEN '{{idev_bundesland}}' ELSE '99' END AS bundesland,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM (SELECT * FROM Rechnung.vRechnung WHERE ISNULL(nStorno,0) = 0) RE\nJOIN Rechnung.tRechnungPosition REPO ON RE.kRechnung = REPO.kRechnung\nJOIN Rechnung.vRechnungLieferadresse RELI ON RE.kRechnung = RELI.kRechnung\nJOIN Rechnung.vRechnungRechnungsadresse RERA ON RE.kRechnung = RERA.kRechnung\nJOIN dbo.tArtikel A ON A.kArtikel = REPO.kArtikel\nLEFT JOIN dbo.tKunde K ON K.kKunde = RE.kKunde\nLEFT JOIN dbo.tadresse RAD ON RAD.kKunde = RE.kKunde AND RAD.nTyp = 1 AND RAD.nStandard = 1\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(COALESCE(VS.dErstellt, LS.dErstellt)) AS dVersand\n             FROM dbo.tLieferscheinPos LP\n             JOIN dbo.tLieferschein LS ON LS.kLieferschein = LP.kLieferschein\n             LEFT JOIN dbo.tVersand VS ON VS.kLieferschein = LS.kLieferschein\n             WHERE REPO.kAuftragPosition > 0 AND LP.kBestellPos = REPO.kAuftragPosition) VB\nCROSS APPLY (SELECT\n    COALESCE(VB.dVersand, RE.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht,\n    ISNULL(REPLACE(COALESCE(NULLIF(LTRIM(RTRIM(RE.cKundeUstId)), ''), NULLIF(LTRIM(RTRIM(RAD.cUSTID)), ''),\n           CASE WHEN REPLACE(K.cSteuerNr, ' ', '') LIKE '[A-Z][A-Z][0-9A-Z]%' THEN LTRIM(RTRIM(K.cSteuerNr)) END), ' ', ''), '') AS ustid,\n    CASE WHEN LTRIM(RTRIM(ISNULL(RERA.cFirma, ''))) NOT IN ('', 'Herr', 'Frau', 'Divers', 'Familie') THEN 1 ELSE 0 END AS istFirma) X\nCROSS APPLY (SELECT CASE WHEN X.ustid <> '' THEN X.ustid\n                         WHEN X.istFirma = 1 THEN 'QV999999999999'\n                         ELSE 'QN999999999999' END AS ustMeldung) Y\nWHERE RELI.cISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND RE.dErstellt >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND RE.dErstellt < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, 'DE'), RELI.cISO, Y.ustMeldung\n\nUNION ALL\n\nSELECT\n    'E' AS richtung,\n    X.warennr AS commodity_code,\n    COALESCE(X.ursprung, E.cLandISO) AS country_of_origin,\n    E.cLandISO AS partner_country,\n    '11' AS transaction_nature,\n    '{{verkehrszweig}}' AS mode_of_transport,\n    CAST(ROUND(SUM(EP.fMenge * X.gewicht), 0) AS INT) AS net_mass,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS invoiced_amount,\n    CAST(ROUND(SUM(EP.fMenge * EP.fEKNetto), 0) AS INT) AS statistical_value,\n    '' AS vat_id_recipient,\n    '{{idev_bundesland}}' AS bundesland,\n    RIGHT('0' + CAST(:month AS VARCHAR(2)), 2) AS monat,\n    CAST(:year AS VARCHAR(4)) AS bzr\nFROM dbo.tEingangsrechnung E\nJOIN dbo.tEingangsrechnungPos EP ON EP.kEingangsrechnung = E.kEingangsrechnung\nJOIN dbo.tArtikel A ON A.kArtikel = EP.kArtikel\nOUTER APPLY (SELECT TOP 1 TL.cISO FROM dbo.tland TL WHERE TL.cName = LTRIM(RTRIM(A.cHerkunftsland))) HL\nOUTER APPLY (SELECT MIN(WE.dErstellt) AS dEingang FROM dbo.tWarenLagerEingang WE\n             WHERE EP.kLieferantenBestellungPos > 0 AND WE.kLieferantenBestellungPos = EP.kLieferantenBestellungPos) WB\nCROSS APPLY (SELECT\n    COALESCE(WB.dEingang, E.dBelegdatum, E.dErstellt) AS dBewegung,\n    LEFT(REPLACE(REPLACE(ISNULL(A.cTaric, ''), ' ', ''), '.', ''), 8) AS warennr,\n    COALESCE(CASE WHEN LEN(LTRIM(RTRIM(A.cHerkunftsland))) = 2 THEN UPPER(LTRIM(RTRIM(A.cHerkunftsland))) END, HL.cISO) AS ursprung,\n    COALESCE(NULLIF(A.fArtGewicht, 0), A.fGewicht, 0) AS gewicht) X\nWHERE E.cLandISO IN ('AT','BE','BG','HR','CY','CZ','DK','EE','ES','FI','FR','GR','HU','IE','IT','LT','LU','LV','MT','NL','PL','PT','RO','SE','SI','SK')\n  AND ISNULL(E.dBelegdatum, E.dErstellt) >= DATEADD(MONTH, -3, DATEFROMPARTS(:year, :month, 1)) AND ISNULL(E.dBelegdatum, E.dErstellt) < DATEADD(MONTH, 4, DATEFROMPARTS(:year, :month, 1))\n  AND X.dBewegung >= DATEFROMPARTS(:year, :month, 1) AND X.dBewegung < DATEADD(MONTH, 1, DATEFROMPARTS(:year, :month, 1))\n  AND (:excluded_articles_empty = 1 OR A.kArtikel NOT IN (:excluded_articles))\nGROUP BY X.warennr, COALESCE(X.ursprung, E.cLandISO), E.cLandISO",
+     "mode": "transform",
+     "output_field": "sql_idev",
+     "output_fields": [
+      "richtung",
+      "commodity_code",
+      "country_of_origin",
+      "partner_country",
+      "transaction_nature",
+      "mode_of_transport",
+      "net_mass",
+      "invoiced_amount",
+      "statistical_value",
+      "vat_id_recipient",
+      "monat",
+      "bzr"
+     ]
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t_instat",
+     "name": "INSTAT/XML (Upload eSTATISTIK.core)",
+     "target_type": "destatis_instat_xml",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "insert",
+     "target_options": {
+      "instat_config": {
+       "psi_id": "{{core_melder_id}}",
+       "firma": "{{core_firma}}",
+       "strasse": "{{core_strasse}}",
+       "plz": "{{core_plz}}",
+       "ort": "{{core_ort}}",
+       "ansprechpartner": "{{core_ansprechpartner}}",
+       "telefon": "{{core_telefon}}",
+       "email": "{{core_email}}",
+       "bundesland": "{{idev_bundesland}}",
+       "test": false
+      }
+     },
+     "fields": [
+      {
+       "source_field": "richtung",
+       "target_field": "richtung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "richtung"
+       }
+      },
+      {
+       "source_field": "commodity_code",
+       "target_field": "commodity_code",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "commodity_code"
+       }
+      },
+      {
+       "source_field": "country_of_origin",
+       "target_field": "country_of_origin",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "country_of_origin"
+       }
+      },
+      {
+       "source_field": "partner_country",
+       "target_field": "partner_country",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "partner_country"
+       }
+      },
+      {
+       "source_field": "transaction_nature",
+       "target_field": "transaction_nature",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "transaction_nature"
+       }
+      },
+      {
+       "source_field": "mode_of_transport",
+       "target_field": "mode_of_transport",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "mode_of_transport"
+       }
+      },
+      {
+       "source_field": "net_mass",
+       "target_field": "net_mass",
+       "target_type": "integer",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "net_mass"
+       }
+      },
+      {
+       "source_field": "invoiced_amount",
+       "target_field": "invoiced_amount",
+       "target_type": "integer",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "invoiced_amount"
+       }
+      },
+      {
+       "source_field": "vat_id_recipient",
+       "target_field": "vat_id_recipient",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "vat_id_recipient"
+       }
+      },
+      {
+       "source_field": "monat",
+       "target_field": "monat",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "monat"
+       }
+      },
+      {
+       "source_field": "bzr",
+       "target_field": "bzr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "bzr"
+       }
+      },
+      {
+       "source_field": "statistical_value",
+       "target_field": "statistical_value",
+       "target_type": "integer",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "statistical_value"
+       }
+      },
+      {
+       "source_field": "bundesland",
+       "target_field": "bundesland",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sqlidev",
+       "transformer": {
+        "type": "direct",
+        "source_field": "bundesland"
        }
       }
      ]
@@ -1587,6 +1802,24 @@
       "fullWidth": true
      },
      {
+      "id": "f_btn_core",
+      "type": "button",
+      "row": 1,
+      "colSpan": 3,
+      "label": "Export .CORE",
+      "name": "",
+      "required": false,
+      "placeholder": "",
+      "default": "",
+      "options": [],
+      "action_ids": [
+       "a_export_core"
+      ],
+      "action_id": "",
+      "content": "",
+      "fullWidth": true
+     },
+     {
       "id": "f_exclusions",
       "type": "article_exclusion",
       "row": 2,
@@ -1647,6 +1880,12 @@
       "type": "export_mapping",
       "mapping_id": "mapping_26",
       "label": "IDEV/CSV Export"
+     },
+     {
+      "id": "a_export_core",
+      "type": "export_mapping",
+      "mapping_id": "mapping_27",
+      "label": ".CORE-Export (INSTAT/XML)"
      }
     ],
     "widgets": [
@@ -1840,6 +2079,54 @@
    "label": "Verkehrszweig (5 = Post-/Paketdienst, 3 = Straße/Spedition, 4 = Luft, 1 = See)",
    "type": "text",
    "default": "5"
+  },
+  {
+   "key": "core_melder_id",
+   "label": "eSTATISTIK.core: Melder-ID, 16-stellig (Bundesland Finanzamt + Steuernummer + Unterscheidungsnr.)",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_firma",
+   "label": "eSTATISTIK.core: Firma des Meldepflichtigen",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_strasse",
+   "label": "eSTATISTIK.core: Straße und Hausnummer",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_plz",
+   "label": "eSTATISTIK.core: PLZ",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_ort",
+   "label": "eSTATISTIK.core: Ort",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_ansprechpartner",
+   "label": "eSTATISTIK.core: Ansprechperson",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_telefon",
+   "label": "eSTATISTIK.core: Telefon",
+   "type": "text",
+   "default": ""
+  },
+  {
+   "key": "core_email",
+   "label": "eSTATISTIK.core: E-Mail",
+   "type": "text",
+   "default": ""
   }
  ],
  "hinweise": [

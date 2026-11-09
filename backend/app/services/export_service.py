@@ -299,6 +299,179 @@ def export_destatis_idev(df: pd.DataFrame, config: Optional[dict] = None) -> byt
     return bytes([0x1D, 0xE5, 0x00, 0x01]) + gz_buf.getvalue()
 
 
+def export_destatis_instat_xml(df: pd.DataFrame, config: Optional[dict] = None) -> bytes:
+    """
+    Intrastat-Meldung als INSTAT/XML 6.2 für den Datei-Upload in eSTATISTIK.core.
+
+    Grundlage: Destatis, „INSTAT/XML Integration“ (Gültigkeit Oktober 2025) mit den
+    Beispieldokumenten im Anhang. Eine Datei enthält je Kombination aus Bezugszeitraum
+    und Verkehrsrichtung genau eine Declaration (Nr. 5.1) – Versendung (D) und
+    Eingang (A) also als zwei Meldungen im selben Dokument.
+
+    Erwartete df-Spalten wie export_destatis_idev: richtung ('V'/'E'), commodity_code,
+    country_of_origin, partner_country, transaction_nature (zweistellig), mode_of_transport,
+    net_mass, invoiced_amount, statistical_value, vat_id_recipient, monat, bzr und
+    optional bundesland, goods_description.
+
+    config: {
+        "psi_id": "0612345678910001",  # 16-stellig: Bundesland Finanzamt + Steuernummer + Unterscheidungsnr.
+        "firma": "…", "strasse": "…", "plz": "…", "ort": "…",
+        "ansprechpartner": "…", "telefon": "…", "email": "…",
+        "bundesland": "05",            # Fallback Ursprungs-/Bestimmungsbundesland
+        "test": False,                 # testIndicator
+    }
+    """
+    from datetime import datetime as _dt
+    from xml.sax.saxutils import escape as _esc
+
+    # Nicht ausgefüllte Vorlagen-Einstellungen kommen als "{{core_firma}}" an – wie leer behandeln.
+    cfg = {k: ("" if isinstance(v, str) and v.strip().startswith("{{") else v)
+           for k, v in (config or {}).items()}
+
+    def _s(v) -> str:
+        if v is None:
+            return ""
+        try:
+            if pd.isna(v):
+                return ""
+        except (TypeError, ValueError):
+            pass
+        return str(v).strip()
+
+    def _num(v) -> int:
+        s = _s(v)
+        try:
+            return int(round(float(s))) if s else 0
+        except (TypeError, ValueError):
+            return 0
+
+    def _t(name: str, wert, kurz: int = 0) -> str:
+        w = _s(wert)
+        if kurz:
+            w = w[:kurz]
+        return f"<{name}>{_esc(w)}</{name}>"
+
+    psi = re.sub(r"\D", "", _s(cfg.get("psi_id")))
+    if len(psi) != 16:
+        raise ValueError("INSTAT/XML: Melder-ID (psi_id) muss 16-stellig sein – "
+                         "Bundesland des Finanzamts (2) + Steuernummer (11) + Unterscheidungsnummer (3)")
+    for feld in ("firma", "strasse", "plz", "ort"):
+        if not _s(cfg.get(feld)):
+            raise ValueError(f"INSTAT/XML: Angabe '{feld}' des Meldepflichtigen fehlt")
+
+    jetzt = _dt.now()
+    datum, zeit = jetzt.strftime("%Y-%m-%d"), jetzt.strftime("%H:%M:%S")
+    bl_cfg = _s(cfg.get("bundesland"))
+
+    # Positionen je (Bezugszeitraum, Richtung) sammeln
+    meldungen: Dict[tuple, list] = {}
+    for _, row in df.iterrows():
+        richtung = (_s(row.get("richtung")) or _s(cfg.get("direction")) or "V").upper()
+        jahr, monat = _s(row.get("bzr")), _s(row.get("monat")).zfill(2)
+        if not jahr or monat == "00":
+            raise ValueError("INSTAT/XML: Spalten 'bzr' (Jahr) und 'monat' fehlen")
+        meldungen.setdefault((f"{jahr}-{monat}", richtung), []).append(row)
+    if not meldungen:
+        raise ValueError("INSTAT/XML: keine Positionen")
+
+    # .CORE lehnt die ganze Datei ab, wenn eine Pflichtangabe fehlt – lieber vorher klar sagen, welche.
+    maengel = []
+    for (ref, richtung), zeilen in meldungen.items():
+        for row in zeilen:
+            wn = re.sub(r"\D", "", _s(row.get("commodity_code")))
+            wo = f"{'Versendung' if richtung == 'V' else 'Eingang'} {ref}, {_s(row.get('partner_country'))}"
+            if len(wn) != 8:
+                maengel.append(f"{wo}: Warennummer '{_s(row.get('commodity_code'))}' ist nicht 8-stellig "
+                               f"({_num(row.get('invoiced_amount'))} €)")
+            if not re.fullmatch(r"[A-Z]{2}", _s(row.get("country_of_origin"))):
+                maengel.append(f"{wo}: Ursprungsland '{_s(row.get('country_of_origin'))}' ist kein Ländercode")
+            if richtung == "V" and not _s(row.get("vat_id_recipient")):
+                maengel.append(f"{wo}: USt-IdNr. des Partners fehlt")
+    if maengel:
+        raise ValueError("INSTAT/XML nicht erstellt – bitte zuerst in JTL pflegen (siehe Datenqualität) "
+                         "oder den Artikel als Ausschlussartikel ausnehmen: " + "; ".join(maengel[:10])
+                         + (f" … und {len(maengel) - 10} weitere" if len(maengel) > 10 else ""))
+
+    ref0 = sorted(meldungen)[0][0].replace("-", "")
+    teile = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        "<INSTAT>",
+        "  <Envelope>",
+        f"    <envelopeId>INTRA-{ref0}-{jetzt.strftime('%Y%m%d-%H%M')}</envelopeId>",
+        f"    <DateTime><date>{datum}</date><time>{zeit}</time></DateTime>",
+        '    <Party partyType="CC" partyRole="receiver">',
+        "      <partyId>00</partyId>",
+        "      <partyName>Statistisches Bundesamt</partyName>",
+        "      <Address><streetName>Gustav-Stresemann-Ring 11</streetName>"
+        "<postalCode>65189</postalCode><cityName>Wiesbaden</cityName></Address>",
+        "    </Party>",
+        '    <Party partyType="PSI" partyRole="sender">',
+        f"      <partyId>{psi}</partyId>",
+        "      " + _t("partyName", cfg.get("firma"), 105),
+        "      <Address>" + _t("streetName", cfg.get("strasse"), 30) + _t("postalCode", cfg.get("plz"), 30)
+        + _t("cityName", cfg.get("ort"), 30) + "<countryName>Deutschland</countryName>"
+        + (_t("phoneNumber", cfg.get("telefon"), 30) if _s(cfg.get("telefon")) else "")
+        + (_t("e-mail", cfg.get("email"), 30) if _s(cfg.get("email")) else "") + "</Address>",
+        "      <ContactPerson>" + _t("contactPersonName", cfg.get("ansprechpartner") or cfg.get("firma"), 30)
+        + "</ContactPerson>",
+        "    </Party>",
+        f"    <testIndicator>{'true' if cfg.get('test') else 'false'}</testIndicator>",
+        "    <softwareUsed>Datenmonster Intrastat</softwareUsed>",
+    ]
+
+    pos_nr = 0
+    for nr, ((ref, richtung), zeilen) in enumerate(sorted(meldungen.items()), start=1):
+        flow = "D" if richtung == "V" else "A"
+        items = []
+        sum_masse = sum_rech = sum_stat = 0
+        for row in zeilen:
+            pos_nr += 1
+            adg = re.sub(r"\D", "", _s(row.get("transaction_nature"))) or "11"
+            masse, rech = _num(row.get("net_mass")), _num(row.get("invoiced_amount"))
+            stat = _num(row.get("statistical_value")) if _s(row.get("statistical_value")) else rech
+            sum_masse, sum_rech, sum_stat = sum_masse + masse, sum_rech + rech, sum_stat + stat
+            region = _s(row.get("bundesland")) or bl_cfg
+            item = ["      <Item>",
+                    f"        <itemNumber>{pos_nr}</itemNumber>",
+                    "        <CN8>" + _t("CN8Code", row.get("commodity_code")) + "</CN8>"]
+            if _s(row.get("goods_description")):
+                item.append("        " + _t("goodsDescription", row.get("goods_description"), 105))
+            item += ["        " + _t("MSConsDestCode", row.get("partner_country")),
+                     "        " + _t("countryOfOriginCode", row.get("country_of_origin")),
+                     f"        <netMass>{masse}</netMass>",
+                     f"        <invoicedAmount>{rech}</invoicedAmount>",
+                     f"        <statisticalValue>{stat}</statisticalValue>"]
+            if flow == "D":
+                # nur Versendung – bei Eingang verboten (Nr. 6.4 partnerId)
+                item.append("        " + _t("partnerId", row.get("vat_id_recipient")))
+            item += ["        <NatureOfTransaction>"
+                     f"<natureOfTransactionACode>{adg[0:1]}</natureOfTransactionACode>"
+                     f"<natureOfTransactionBCode>{adg[1:2] or '1'}</natureOfTransactionBCode>"
+                     "</NatureOfTransaction>",
+                     "        " + _t("modeOfTransportCode", row.get("mode_of_transport")),
+                     "        " + _t("regionCode", region),
+                     "      </Item>"]
+            items += item
+        teile += [
+            "    <Declaration>",
+            f"      <declarationId>{nr}</declarationId>",
+            f"      <DateTime><date>{datum}</date><time>{zeit}</time></DateTime>",
+            f"      <referencePeriod>{ref}</referencePeriod>",
+            f"      <PSIId>{psi}</PSIId>",
+            "      <Function><functionCode>O</functionCode><previousDeclarationId/></Function>",
+            "      <declarationTypeCode/>",
+            f"      <flowCode>{flow}</flowCode>",
+            "      <currencyCode>EUR</currencyCode>",
+            f"      <totalNetMass>{sum_masse}</totalNetMass>",
+            f"      <totalInvoicedAmount>{sum_rech}</totalInvoicedAmount>",
+            f"      <totalStatisticalValue>{sum_stat}</totalStatisticalValue>",
+        ] + items + ["    </Declaration>"]
+
+    teile += [f"    <numberOfDeclarations>{len(meldungen)}</numberOfDeclarations>",
+              "  </Envelope>", "</INSTAT>", ""]
+    return "\n".join(teile).encode("utf-8")
+
+
 # ─── DATEV Buchungsstapel (EXTF) ────────────────────────────────────────────────
 
 # Die 125 Spalten des Buchungsstapels, Formatversion 700 / Kategorie 21 / Version 13.

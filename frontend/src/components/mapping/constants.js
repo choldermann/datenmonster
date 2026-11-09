@@ -45,6 +45,7 @@ export const TARGET_TYPE_COLORS = {
   destatis_csv: "#5eead4",
   destatis_idev: "#2dd4bf",
   destatis_intra_csv: "#34d399",
+  destatis_instat_xml: "#22d3ee",
   estatistik_intrastat: "#c4b5fd",
 };
 export const PLUGIN_TARGET_DEFAULT_COLOR = "#a78bfa";
@@ -57,6 +58,7 @@ export const TARGET_TYPES = [
   { value: "destatis_csv", label: "Destatis CSV" },
   { value: "destatis_idev", label: "Intrastat .idev" },
   { value: "destatis_intra_csv", label: "Intrahandel CSV" },
+  { value: "destatis_instat_xml", label: "Intrastat INSTAT/XML (.CORE)" },
   { value: "db",   label: "Datenbank" },
 ];
 

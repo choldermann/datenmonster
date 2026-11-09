@@ -7,7 +7,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 _BUILTIN_TARGET_TYPES = {"csv", "xlsx", "json", "xml", "db", "dataset", "destatis_csv",
-                         "destatis_idev", "destatis_intra_csv",
+                         "destatis_idev", "destatis_intra_csv", "destatis_instat_xml",
                          "datev_extf", "datev_kompakt"}
 
 

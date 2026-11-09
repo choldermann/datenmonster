@@ -89,13 +89,14 @@ def save_export_file(
     from app.models.export_file import ExportFile
     from app.services.export_service import (
         export_csv, export_xlsx, export_json, export_xml, export_destatis_csv,
-        export_destatis_idev, export_destatis_intrahandel_csv,
+        export_destatis_idev, export_destatis_intrahandel_csv, export_destatis_instat_xml,
         export_datev_extf, export_datev_kompakt,
     )
 
     context = f"job_{job_id}" if job_id else "manual"
     ext_map = {"csv": "csv", "xlsx": "xlsx", "json": "json", "xml": "xml",
                "destatis_csv": "csv", "destatis_idev": "idev", "destatis_intra_csv": "csv",
+               "destatis_instat_xml": "xml",
                "datev_extf": "csv", "datev_kompakt": "csv"}
     ext = ext_map.get(target_type, "csv")
 
@@ -110,6 +111,8 @@ def save_export_file(
         content = export_destatis_idev(df, opts.get("idev_config"))
     elif target_type == "destatis_intra_csv":
         content = export_destatis_intrahandel_csv(df, opts.get("intra_csv_config"))
+    elif target_type == "destatis_instat_xml":
+        content = export_destatis_instat_xml(df, opts.get("instat_config"))
     elif target_type == "datev_extf":
         content = export_datev_extf(df, opts.get("datev_config"))
     elif target_type == "datev_kompakt":

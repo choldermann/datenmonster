@@ -172,6 +172,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
 
   // Intrahandel-CSV (IDEV Formularmeldung) – Bundesland-Fallback, Richtung pro Zeile
   const [intraCsvConfig, setIntraCsvConfig] = useState(target?.target_options?.intra_csv_config || { bundesland: "05" });
+  const [instatConfig, setInstatConfig] = useState(target?.target_options?.instat_config || { psi_id: "", firma: "", strasse: "", plz: "", ort: "", ansprechpartner: "", telefon: "", email: "", bundesland: "05", test: false });
 
   // DB Key-Columns
   const [keyColumns, setKeyColumns] = useState((target?.target_options?.key_columns || []).join(", "));
@@ -262,6 +263,7 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
         ...(targetType === "destatis_csv" ? { destatis_config: destatisConfig } : {}),
         ...(targetType === "destatis_idev" ? { idev_config: idevConfig } : {}),
         ...(targetType === "destatis_intra_csv" ? { intra_csv_config: intraCsvConfig } : {}),
+        ...(targetType === "destatis_instat_xml" ? { instat_config: instatConfig } : {}),
         dataset_write_mode: datasetWriteMode,
         required_fields: requiredFields,
         deduplicate_enabled: deduplicateEnabled,
@@ -413,6 +415,34 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 </div>
                 <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
                   Erzeugt EINE <code>.idev</code>-Datei (gzip-JSON) mit beiden Richtungen. Die Richtung (V/E) kommt pro Zeile aus der Spalte <code>richtung</code>, Zeitraum (<code>monat</code>/<code>bzr</code>) aus dem Mapping. Für Versendungen ist die USt-IdNr des Empfängers (<code>vat_id_recipient</code>) Pflicht. Die Datei kann im IDEV-Onlineformular importiert werden.
+                </div>
+              </div>
+            )}
+            {/* Intrastat INSTAT/XML für den Datei-Upload in eSTATISTIK.core */}
+            {targetType === "destatis_instat_xml" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[
+                  ["psi_id", "Melder-ID (16-stellig)", "z.B. 0612345678910001"],
+                  ["firma", "Firma", ""],
+                  ["strasse", "Straße und Hausnummer", ""],
+                  ["plz", "PLZ", ""],
+                  ["ort", "Ort", ""],
+                  ["ansprechpartner", "Ansprechperson", ""],
+                  ["telefon", "Telefon", ""],
+                  ["email", "E-Mail", ""],
+                  ["bundesland", "Bundesland (Fallback)", "z.B. 05"],
+                ].map(([k, label, ph]) => (
+                  <div key={k}>
+                    <label style={lS}>{label}</label>
+                    <input style={iS} value={instatConfig[k] || ""} onChange={(e) => setInstatConfig({ ...instatConfig, [k]: e.target.value })} placeholder={ph} />
+                  </div>
+                ))}
+                <label style={{ ...lS, display: "flex", alignItems: "center", gap: 6 }}>
+                  <input type="checkbox" checked={!!instatConfig.test} onChange={(e) => setInstatConfig({ ...instatConfig, test: e.target.checked })} />
+                  Testmeldung (testIndicator)
+                </label>
+                <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
+                  INSTAT/XML 6.2 nach der Destatis-Spezifikation für den Datei-Upload unter eSTATISTIK.core. Je Bezugszeitraum und Richtung eine Meldung; Richtung, Zeitraum, USt-IdNr und Bundesland kommen pro Zeile aus dem Mapping. Die Melder-ID setzt sich aus Bundesland des Finanzamts, 11-stelliger Steuernummer und dreistelliger Unterscheidungsnummer zusammen.
                 </div>
               </div>
             )}
