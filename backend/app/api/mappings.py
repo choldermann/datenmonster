@@ -449,6 +449,9 @@ def create_mapping(data: MappingCreate, db: Session = Depends(get_db),
         python_nodes=data.python_nodes or [],
         ai_nodes=data.ai_nodes or [],
         expr_nodes=data.expr_nodes or [], quality_nodes=data.quality_nodes or [],
+        # Fehlte bis 2026-11: Formular-Parameter gingen beim ersten Speichern
+        # verloren und kamen erst mit dem zweiten (PUT) an.
+        param_nodes=data.param_nodes or [],
         targets=data.targets,             project_id=data.project_id,
     )
     db.add(m); db.commit(); db.refresh(m)

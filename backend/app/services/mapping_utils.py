@@ -285,7 +285,13 @@ def _to_numeric_loose(v) -> float:
     if v is None:
         return None
     if isinstance(v, (int, float)):
-        return float(v)
+        # NaN (Lücke aus einem LEFT JOIN) ist keine Zahl – sonst landet „nan“ in Formeln
+        return None if v != v else float(v)
+    try:
+        if pd.isna(v):          # pd.NA, NaT
+            return None
+    except (TypeError, ValueError):
+        pass
     s = str(v).strip().replace(" ", "")
     if not s:
         return None

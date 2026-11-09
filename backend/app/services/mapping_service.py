@@ -1407,14 +1407,16 @@ def execute_mapping(
         from collections import defaultdict as _dd
 
         def _to_num(v):
-            if v is None: return None
+            if v is None or _ist_luecke(v): return None
             if isinstance(v, (int, float)): return float(v)
             try: return float(str(v).replace(",", ".").strip())
             except: return None
 
         def _agg(func, rows, field):
             vals = [r.get(field) for r in rows]
-            non_null = [v for v in vals if v is not None and str(v).strip() != ""]
+            # Lücken (NaN/NA aus einem LEFT JOIN) zählen nicht: sonst ist die Summe
+            # eines Kunden ohne Rechnung NaN und „Anzahl“ zählt die Lücke als 1.
+            non_null = [v for v in vals if v is not None and not _ist_luecke(v) and str(v).strip() != ""]
             nv = [n for n in (_to_num(v) for v in non_null) if n is not None]
             try:
                 if func == "sum": return round(sum(nv), 10) if nv else 0
@@ -1436,7 +1438,12 @@ def execute_mapping(
             for k, v in dict(raw).items():
                 flat[k] = v
                 short = k.split(".")[-1]
-                flat[short] = v  # immer überschreiben damit short-key immer gesetzt
+                # Kurzname (kKunde statt Kunden.kKunde): der erste Wert gewinnt, eine
+                # Lücke wird überschrieben. Früher gewann immer der letzte – nach
+                # einem LEFT JOIN also die rechte, bei fehlendem Partner leere Seite,
+                # und die Aggregation gruppierte Kunden ohne Rechnung unter „NaN“.
+                if short not in flat or flat[short] is None or _ist_luecke(flat[short]):
+                    flat[short] = v
             all_flat.append(flat)
 
         for an in agg_nodes:
