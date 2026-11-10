@@ -1,5 +1,5 @@
 import { csvZelle } from "../../utils/csvSicher";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
 import { tabelleAlsExcel } from "./excelExport";
@@ -130,6 +130,12 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   downloadErlaubt = false, dokument = null, begrenzt = false, ladeAlle = null }) {
   const [exportiert, setExportiert] = useState(false);
   const [exportFehler, setExportFehler] = useState("");
+  // Escape schließt die Liste – bisher nur ✕ oder ein Klick daneben.
+  useEffect(() => {
+    const taste = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", taste);
+    return () => window.removeEventListener("keydown", taste);
+  }, [onClose]);
   const hidden = new Set(hiddenColumns || []);
   const columns = (rows.length ? Object.keys(rows[0]) : []).filter(c => !hidden.has(c));
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
