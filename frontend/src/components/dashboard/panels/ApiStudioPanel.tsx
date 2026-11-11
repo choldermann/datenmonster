@@ -65,7 +65,7 @@ function JsonAnsicht({ text }) {
   }, [text]);
 
   return (
-    <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre", color: "var(--muted)" }}>
+    <pre style={{ margin: 0, fontFamily: "monospace", fontSize: 11, lineHeight: 1.6, whiteSpace: "pre-wrap", overflowWrap: "anywhere", color: "var(--muted)" }}>
       {teile.map((p, i) => <span key={i} style={{ color: p.f }}>{p.t}</span>)}
     </pre>
   );
