@@ -234,7 +234,7 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
             <tbody>
               {daten.inventar.map(f => (
                 <tr key={f.pfad}>
-                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#e2e8f0", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "#e2e8f0", minWidth: 120, overflowWrap: "anywhere", verticalAlign: "top" }}>
                     {f.pfad}
                     {f.wirkt_wie_schluessel && <span title="Wert ist in allen Datensätzen eindeutig" style={{ marginLeft: 6, fontSize: 9, color: "var(--warn)" }}>◆</span>}
                   </td>
@@ -245,7 +245,7 @@ function AnalysePanel({ antwort, kontext, aufDatenpfad, aufPaginierung, aufInteg
                     </span>
                     <span style={{ fontSize: 10, color: "var(--muted-2)", marginLeft: 6 }}>{Math.round(f.anteil_gefuellt * 100)}%</span>
                   </td>
-                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "var(--muted-2)", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "4px 10px 4px 0", fontFamily: "monospace", color: "var(--muted-2)", minWidth: 120, maxWidth: 320, overflowWrap: "anywhere", verticalAlign: "top" }}>
                     {f.beispiel === null || f.beispiel === undefined ? "–" : String(f.beispiel)}
                   </td>
                   {daten.ki && <td style={{ padding: "4px 0", color: "var(--muted)" }}>{bedeutungen[f.pfad] || ""}</td>}
@@ -1314,7 +1314,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
         )}
         {aktiv === "tabelle" && (
           <div style={{ overflowX: "auto" }}>
-            <table style={{ fontSize: 10, borderCollapse: "collapse", minWidth: "max-content" }}>
+            <table style={{ fontSize: 10, borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr>{antwort.columns.map(c => (
                   <th key={c} style={{ textAlign: "left", padding: "4px 10px", color: "var(--muted-2)", borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap", fontFamily: "monospace" }}>{c}</th>
@@ -1323,7 +1323,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
               <tbody>
                 {antwort.preview.map((row, i) => (
                   <tr key={i}>{antwort.columns.map(c => (
-                    <td key={c} style={{ padding: "3px 10px", color: "var(--muted)", fontFamily: "monospace", whiteSpace: "nowrap", maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <td key={c} style={{ padding: "3px 10px", color: "var(--muted)", fontFamily: "monospace", minWidth: 80, maxWidth: 360, overflowWrap: "anywhere", verticalAlign: "top" }}>
                       {row[c] === null || row[c] === undefined ? "–" : String(row[c])}
                     </td>
                   ))}</tr>
