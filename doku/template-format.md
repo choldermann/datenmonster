@@ -486,7 +486,7 @@ auf interne Adressen.
 | `input_fields` | Felder, deren Werte eingesetzt werden. `{Feld}` und `{{Feld}}` funktionieren beide |
 | `{{json:Feld}}` | setzt den Wert **unmaskiert** ein – für JSON, das die Datenbank schon fertig gebaut hat (siehe unten) |
 | `body_type` / `body_content` | `none`, `json`, `form`, `xml`, `raw`. Werte im JSON-Rumpf werden JSON-gerecht maskiert |
-| `auth_type` / `auth_config` | `none`, `basic`, `bearer`, `apikey`, `oauth2_cc`, `oauth2_refresh` |
+| `auth_type` / `auth_config` | `none`, `basic`, `bearer`, `apikey`, `oauth2_cc`, `oauth2_refresh`, `login` (`login_url` absolut oder relativ zur Sammlung, `username`, `password`, optional `login_body`, `token_path` = `access_token`, `ttl_minutes`, `header_name`, `header_prefix`) |
 | `response_mappings` | `json_path` → `output_field` |
 | `status_field` / `error_field` | optionale Spalten für Statuscode und Fehlertext |
 | `store_response` | ob die Antwort im Systemprotokoll aufgehoben wird (kann personenbezogene Daten enthalten) |

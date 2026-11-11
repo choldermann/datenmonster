@@ -13,6 +13,7 @@ const REST_AUTH_TYPES = [
   { v: "apikey",    l: "API Key" },
   { v: "oauth2_cc", l: "OAuth2 Client Credentials" },
   { v: "oauth2_refresh", l: "OAuth2 Refresh Token" },
+  { v: "login",     l: "Login-Endpunkt" },
 ];
 const REST_PAG_TYPES = [
   { v: "none",        l: "Keine Paginierung" },
@@ -150,6 +151,25 @@ function AuthEditor({ authType, authConfig, onChange }) {
       <div style={{ gridColumn: "1/-1" }}><label style={lS2}>Refresh Token</label><input style={iS2} type="password" value={authConfig.refresh_token || ""} onChange={e => set("refresh_token", e.target.value)} /></div>
       <p style={{ gridColumn: "1/-1", fontSize: 10, color: "var(--muted-3)", margin: 0 }}>
         Refresh-Token einmalig beim Anbieter holen. Access-Tokens werden automatisch erneuert; gibt der Anbieter dabei ein neues Refresh-Token aus, wird es hier gespeichert.
+      </p>
+    </div>
+  );
+  if (authType === "login") return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 8 }}>
+      <div style={{ gridColumn: "1/-1" }}><label style={lS2}>Login-URL</label><input style={iS2} value={authConfig.login_url || ""} onChange={e => set("login_url", e.target.value)} placeholder="/auth oder https://api.example.com/auth" /></div>
+      <div><label style={lS2}>Benutzername</label><input style={iS2} value={authConfig.username || ""} onChange={e => set("username", e.target.value)} placeholder="z.B. {{benutzer}}" /></div>
+      <div><label style={lS2}>Passwort</label><input style={iS2} type="password" value={authConfig.password || ""} onChange={e => set("password", e.target.value)} placeholder="z.B. {{passwort}}" /></div>
+      <div style={{ gridColumn: "1/-1" }}><label style={lS2}>Anmelde-Rumpf (JSON, optional)</label>
+        <textarea style={{ ...iS2, fontFamily: "monospace", minHeight: 44, resize: "vertical" }} value={authConfig.login_body || ""} onChange={e => set("login_body", e.target.value)}
+          placeholder={'{"username": "{{username}}", "password": "{{password}}"}'} />
+      </div>
+      <div><label style={lS2}>Token in der Antwort unter</label><input style={iS2} value={authConfig.token_path || ""} onChange={e => set("token_path", e.target.value)} placeholder="access_token" /></div>
+      <div><label style={lS2}>Gültigkeit in Minuten (optional)</label><input style={iS2} type="number" min={1} value={authConfig.ttl_minutes || ""} onChange={e => set("ttl_minutes", e.target.value)} placeholder="aus dem Token" /></div>
+      <div><label style={lS2}>Header</label><input style={iS2} value={authConfig.header_name || ""} onChange={e => set("header_name", e.target.value)} placeholder="Authorization" /></div>
+      <div><label style={lS2}>Präfix</label><input style={iS2} value={authConfig.header_prefix ?? ""} onChange={e => set("header_prefix", e.target.value)} placeholder="Bearer" /></div>
+      <p style={{ gridColumn: "1/-1", fontSize: 10, color: "var(--muted-3)", margin: 0 }}>
+        Datenmonster meldet sich vor dem ersten Aufruf selbst an und merkt sich das Token bis kurz vor Ablauf. Lehnt die API es vorher ab (401), wird einmal neu angemeldet.
+        Eine relative Login-URL gilt zur Basis-URL der Sammlung. Im Rumpf stehen <code style={{ fontFamily: "monospace" }}>{"{{username}}"}</code> und <code style={{ fontFamily: "monospace" }}>{"{{password}}"}</code> für die Felder oben.
       </p>
     </div>
   );

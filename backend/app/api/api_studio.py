@@ -26,7 +26,7 @@ from app.models.rest_source import RestSource
 from app.models.api_studio import ApiCollection, ApiEnvironment, ApiRequestHistory
 from app.api.projects import require_editor, can_read_project, get_accessible_project_ids
 from app.services.rest_service import (
-    execute_request, join_url, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
+    execute_request, join_url, login_url_aufloesen, _SENSITIVE_AUTH_KEYS, _mask_headers, HTTP_METHODS,
     mask_url, mask_params,
     fetch_rest_source, umgebungs_variablen, _builtin_vars,
 )
@@ -443,6 +443,8 @@ def _build_config(payload: SendIn, db: Session, user: User) -> tuple[dict, Optio
         if cfg["auth_type"] in ("inherit", None, ""):
             cfg["auth_type"] = collection.auth_type or "none"
             cfg["auth_config"] = dict(collection.auth_config or {})
+        cfg["auth_config"] = login_url_aufloesen(
+            cfg["auth_type"], cfg["auth_config"], collection.base_url)
 
     if cfg["auth_type"] == "inherit":   # keine Sammlung dahinter
         cfg["auth_type"] = "none"

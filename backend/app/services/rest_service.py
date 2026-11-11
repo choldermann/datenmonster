@@ -5,7 +5,8 @@ Features:
 - Template-Variablen in URL, Headern, Body: {{heute}}, {{gestern}}, {{timestamp}}, {{iso_heute}}
   sowie freie Variablen aus einer API-Studio-Umgebung
 - Auth: none, basic, bearer, apikey (header/query), oauth2_cc (mit Token-Cache),
-  oauth2_refresh (Refresh-Token-Grant)
+  oauth2_refresh (Refresh-Token-Grant), login (eigener Login-Endpunkt, Token-Cache,
+  bei 401 einmal neu anmelden)
 - Methoden: GET POST PUT PATCH DELETE HEAD OPTIONS
 - Body: none, json, form, multipart, xml, raw
 - Paginierung: none, page, offset, cursor, link_header
@@ -312,6 +313,123 @@ def _get_oauth2_token(
     return token
 
 
+# ── Login-Endpunkt ────────────────────────────────────────────────────────────
+#
+# Viele APIs haben kein OAuth2, sondern einen eigenen Anmelde-Aufruf: Benutzer und
+# Passwort per POST an /auth o. ä., zurück kommt ein Token (oft ein JWT), das dann
+# als „Authorization: Bearer …" mitgeht. Bisher hieß das: Token von Hand holen und
+# in eine Variable kopieren – für den Zeitplan unbrauchbar, weil es abläuft.
+
+_LOGIN_BODY_VORGABE = '{"username": "{{username}}", "password": "{{password}}"}'
+_login_cache: dict[str, tuple[str, float]] = {}   # key → (token, gültig_bis)
+
+
+def _login_cache_key(cfg: dict, variables: Optional[dict]) -> str:
+    seed = "|".join([
+        _resolve_templates(cfg.get("login_url", ""), variables),
+        _resolve_templates(cfg.get("username", ""), variables),
+        _resolve_templates(cfg.get("password", ""), variables),
+        cfg.get("login_body") or "",
+    ])
+    return hashlib.sha256(seed.encode()).hexdigest()
+
+
+def login_cache_leeren(cfg: dict, variables: Optional[dict] = None) -> None:
+    """Gemerktes Token verwerfen – nach einer 401 der Ziel-API."""
+    _login_cache.pop(_login_cache_key(cfg, variables), None)
+
+
+def _jwt_ablauf(token: str) -> Optional[float]:
+    """`exp` aus einem JWT lesen (ohne Prüfung der Signatur – nur zur Planung)."""
+    import base64
+    teile = token.split(".")
+    if len(teile) != 3:
+        return None
+    try:
+        nutz = teile[1] + "=" * (-len(teile[1]) % 4)
+        exp = json.loads(base64.urlsafe_b64decode(nutz)).get("exp")
+        return float(exp) if exp else None
+    except Exception:
+        return None
+
+
+def _json_text(wert: str) -> str:
+    """Wert so maskieren, dass er in einem JSON-String stehen kann."""
+    return json.dumps(wert, ensure_ascii=False)[1:-1]
+
+
+def _login_token(cfg: dict, variables: Optional[dict] = None) -> str:
+    """
+    Token über den Login-Endpunkt holen; im Speicher gemerkt bis kurz vor Ablauf.
+
+    Ablauf in dieser Reihenfolge: feste Gültigkeit aus der Konfiguration, `exp`
+    eines JWT, `expires_in` der Antwort, sonst 60 Minuten.
+    """
+    key = _login_cache_key(cfg, variables)
+    gemerkt = _login_cache.get(key)
+    if gemerkt and time.time() < gemerkt[1] - 60:   # 1 Minute Puffer
+        return gemerkt[0]
+
+    url = _resolve_templates(cfg.get("login_url") or "", variables)
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("Login-Endpunkt: keine vollständige URL "
+                         "(relativ geht nur innerhalb einer Sammlung mit Basis-URL)")
+    benutzer = _resolve_templates(cfg.get("username", ""), variables)
+    passwort = _resolve_templates(cfg.get("password", ""), variables)
+
+    # Benutzer und Passwort JSON-gerecht einsetzen – ein Anführungszeichen im
+    # Passwort darf den Rumpf nicht zerbrechen.
+    rumpf = (cfg.get("login_body") or _LOGIN_BODY_VORGABE)
+    rumpf = re.sub(r"\{\{\s*username\s*\}\}", lambda m: _json_text(benutzer), rumpf)
+    rumpf = re.sub(r"\{\{\s*password\s*\}\}", lambda m: _json_text(passwort), rumpf)
+    rumpf = _resolve_templates(rumpf, variables)
+    try:
+        json.loads(rumpf)
+    except ValueError:
+        raise ValueError("Login-Endpunkt: der Anmelde-Rumpf ist kein gültiges JSON")
+
+    methode = (cfg.get("login_method") or "POST").upper()
+    resp = guarded_request(requests.Session(), methode, url, data=rumpf.encode("utf-8"),
+                           headers={"Content-Type": "application/json",
+                                    "Accept": "application/json"}, timeout=15)
+    if not resp.ok:
+        raise requests.HTTPError(
+            f"Anmeldung am Login-Endpunkt fehlgeschlagen: {resp.status_code} {resp.reason}"
+            f" – {(resp.text or '')[:200].strip()}", response=resp)
+    try:
+        antwort = resp.json()
+    except ValueError:
+        raise ValueError("Login-Endpunkt: Antwort ist kein JSON")
+
+    pfad = cfg.get("token_path") or "access_token"
+    token = _extract_path(antwort, pfad)
+    if not token or not isinstance(token, str):
+        felder = ", ".join(antwort.keys()) if isinstance(antwort, dict) else type(antwort).__name__
+        raise ValueError(f"Login-Endpunkt: kein Token unter „{pfad}“ (Antwort enthält: {felder})")
+
+    jetzt = time.time()
+    ttl = cfg.get("ttl_minutes")
+    if ttl not in (None, "", 0, "0"):
+        gueltig_bis = jetzt + float(ttl) * 60
+    else:
+        gueltig_bis = (_jwt_ablauf(token)
+                       or (jetzt + float(antwort["expires_in"])
+                           if isinstance(antwort, dict) and antwort.get("expires_in") else None)
+                       or jetzt + 3600)
+    _login_cache[key] = (token, gueltig_bis)
+    return token
+
+
+def login_url_aufloesen(auth_type: Optional[str], auth_config: dict,
+                        base_url: Optional[str]) -> dict:
+    """Relativen Login-Pfad (z. B. „/auth") an die Basis-URL der Sammlung hängen."""
+    if auth_type != "login" or not base_url:
+        return auth_config
+    ac = dict(auth_config or {})
+    ac["login_url"] = join_url(base_url, ac.get("login_url") or "")
+    return ac
+
+
 def _build_session(
     auth_type: str,
     auth_config: dict,
@@ -347,6 +465,12 @@ def _build_session(
     elif auth_type == "oauth2_refresh":
         token = _get_oauth2_token(auth_config, "refresh_token", on_new_refresh_token)
         extra_headers["Authorization"] = f"Bearer {token}"
+    elif auth_type == "login":
+        token = _login_token(auth_config, variables)
+        name = (auth_config.get("header_name") or "Authorization").strip()
+        # Leeres Feld = übliches „Bearer"; das Leerzeichen dahinter setzen wir selbst.
+        praefix = (auth_config.get("header_prefix") or "Bearer").strip()
+        extra_headers[name] = f"{praefix} {token}" if praefix else token
 
     return session, extra_headers, extra_params
 
@@ -695,6 +819,7 @@ def aufgeloeste_config(source) -> dict:
         auth_config = vorgaben.get("auth_config", {})
     if auth_type == "inherit":          # keine Sammlung dahinter
         auth_type = "none"
+    auth_config = login_url_aufloesen(auth_type, auth_config, vorgaben.get("base_url"))
 
     return {
         "url": join_url(vorgaben.get("base_url"), getattr(source, "url", "") or ""),
@@ -724,27 +849,33 @@ def fetch_rest_source(source, variables: Optional[dict] = None) -> pd.DataFrame:
     params  = _resolve_dict(source.query_params or {}, variables)
 
     # Auth (Secrets vor Gebrauch entschlüsseln – stored=verschlüsselt, Test=Klartext)
-    session, extra_headers, extra_params = _build_session(
-        cfg["auth_type"],
-        _decrypt_auth_config(cfg["auth_config"]),
-        variables,
-    )
-    headers.update(extra_headers)
-    params.update(extra_params)
+    auth_klar = _decrypt_auth_config(cfg["auth_config"])
 
-    # Alle Seiten holen
-    records = _fetch_all_pages(
-        session=session,
-        method=source.method or "GET",
-        base_url=url,
-        headers=headers,
-        base_params=params,
-        body_type=source.body_type or "none",
-        body_content=source.body_content,
-        data_path=source.data_path,
-        pagination=source.pagination or {},
-        variables=variables,
-    )
+    def _holen():
+        session, extra_headers, extra_params = _build_session(
+            cfg["auth_type"], auth_klar, variables)
+        return _fetch_all_pages(
+            session=session,
+            method=source.method or "GET",
+            base_url=url,
+            headers={**headers, **extra_headers},
+            base_params={**params, **extra_params},
+            body_type=source.body_type or "none",
+            body_content=source.body_content,
+            data_path=source.data_path,
+            pagination=source.pagination or {},
+            variables=variables,
+        )
+
+    try:
+        records = _holen()
+    except requests.HTTPError as e:
+        # Gemerktes Login-Token kann serverseitig ungültig geworden sein (Neustart,
+        # Passwortwechsel): einmal neu anmelden, dann gilt der Fehler.
+        if cfg["auth_type"] != "login" or getattr(e.response, "status_code", None) != 401:
+            raise
+        login_cache_leeren(auth_klar, variables)
+        records = _holen()
 
     if not records:
         return pd.DataFrame()
@@ -914,9 +1045,10 @@ def execute_request(
         headers = _resolve_dict(cfg.get("headers") or {}, variables)
         params  = _resolve_dict(cfg.get("query_params") or {}, variables)
 
+        auth_klar = _decrypt_auth_config(cfg.get("auth_config") or {})
         session, extra_headers, extra_params = _build_session(
             cfg.get("auth_type") or "none",
-            _decrypt_auth_config(cfg.get("auth_config") or {}),
+            auth_klar,
             variables,
             on_new_refresh_token,
         )
@@ -949,6 +1081,12 @@ def execute_request(
             logger.warning("REST %s %s: Status %d – Wiederholung %d/%d in %.1fs",
                            method, url, resp.status_code, versuch + 1, versuche, warten)
             time.sleep(warten)
+        if resp.status_code == 401 and cfg.get("auth_type") == "login":
+            # Gemerktes Token abgelehnt: einmal frisch anmelden und erneut senden.
+            login_cache_leeren(auth_klar, variables)
+            _, neue_header, _ = _build_session("login", auth_klar, variables)
+            kwargs["headers"] = {**kwargs["headers"], **neue_header}
+            resp = guarded_request(session, method, url, **kwargs)
         ergebnis["duration_ms"] = int((time.perf_counter() - start) * 1000)
     except Exception as e:
         ergebnis["error"] = str(e)[:500]

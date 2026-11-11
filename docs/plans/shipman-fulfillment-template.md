@@ -423,6 +423,8 @@ Das geht mit dem heutigen Pipeline-Modell **nicht direkt**. Vier Optionen:
 | **C: Langlebiger Token in der Verbindungskonfiguration** | Setzt eine bekannte, lange Token-Laufzeit voraus – ist **undokumentiert** (F5). Nicht planbar, bevor F5 beantwortet ist. |
 | **D: `_get_prev_data` um Mehrfach-Eingänge erweitern** | Plattformänderung, ~30 Zeilen, aber sie berührt jeden Pipeline-Node. |
 
+**Erledigt 11.11.2026:** Option E – neue Anmeldeart `login` in `rest_service` (Login-Endpunkt, Token-Cache bis `exp`, bei 401 einmal neu anmelden). Gilt in Studio, Zeitplan, Pipeline und Import; die Auth-Kette ist damit überflüssig.
+
 *Empfehlung: Entscheidung vertagen, bis F5 (Token-Lebensdauer) beantwortet ist.*
 Ist der Token lang genug gültig (Stunden), ist **C** der einfachste Weg mit einem
 Erneuerungsschritt im Zeitplan. Ist er kurzlebig, führt kein Weg an **D** vorbei.
