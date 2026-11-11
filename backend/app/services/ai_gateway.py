@@ -61,6 +61,33 @@ def describe_gateway_error(exc: Exception) -> str:
     return f"Gateway nicht erreichbar: {exc}"
 
 
+def streng_schema(schema):
+    """Schema in die Form bringen, die OpenAIs strict-Modus verlangt.
+
+    Jedes Objekt braucht `additionalProperties: false`, und `required` muss ALLE
+    Eigenschaften aufzählen. Optionale Felder gibt es damit nicht – das Modell
+    liefert sie dann leer, was die Aufrufer ohnehin so behandeln.
+    """
+    if isinstance(schema, list):
+        return [streng_schema(x) for x in schema]
+    if not isinstance(schema, dict):
+        return schema
+    s = dict(schema)
+    for k in ("anyOf", "oneOf", "allOf"):
+        if isinstance(s.get(k), list):
+            s[k] = [streng_schema(x) for x in s[k]]
+    typ = s.get("type")
+    ist_objekt = typ == "object" or (isinstance(typ, list) and "object" in typ) or "properties" in s
+    if ist_objekt:
+        eigenschaften = {k: streng_schema(v) for k, v in (s.get("properties") or {}).items()}
+        s["properties"] = eigenschaften
+        s["required"] = list(eigenschaften)
+        s["additionalProperties"] = False
+    if isinstance(s.get("items"), dict):
+        s["items"] = streng_schema(s["items"])
+    return s
+
+
 class DatamonsterAIService:
     # Kennzeichen für Aufrufer, die je nach Anbieter anders entscheiden müssen
     # (Modellwahl!). Bewusst am Objekt und nicht an der globalen Einstellung: die
@@ -188,7 +215,11 @@ class DatamonsterAIService:
                             temperature: float = 0.2, request_type: str = "TRANSFORMATION") -> dict:
         """Single-shot strukturierte JSON-Ausgabe (für KI-Transform-Node-Preview)."""
         params = AIParams(temperature=temperature, max_tokens=1000)
-        payload = self._payload(messages, "", params, model, True, request_type, json_schema=json_schema)
+        # OpenAI weist ein Schema ohne strict-Form mit „Invalid schema for
+        # response_format" ab. Hier zentral angleichen, damit nicht jede Stelle,
+        # die ein Schema baut, daran denken muss (Ollama braucht das nicht).
+        payload = self._payload(messages, "", params, model, True, request_type,
+                                json_schema=streng_schema(json_schema))
         out: list[str] = []
         self.last_usage = None
         async with httpx.AsyncClient(timeout=self.timeout) as client:
