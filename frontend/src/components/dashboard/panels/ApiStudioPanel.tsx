@@ -1752,7 +1752,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "250px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "250px minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
         {/* ── Seitenleiste ── */}
         <div style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: 10, position: "sticky", top: 20 }}>
           {canEdit && (
@@ -1836,7 +1836,7 @@ function ApiStudioPanel({ projectId, canEdit }) {
         </div>
 
         {/* ── Arbeitsbereich ── */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14, minWidth: 0 }}>
           {/* URL-Leiste */}
           <div style={{ backgroundColor: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: 14 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
