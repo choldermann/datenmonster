@@ -1313,11 +1313,14 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
           </table>
         )}
         {aktiv === "tabelle" && (
-          <div style={{ overflowX: "auto" }}>
+          <div>
+            {/* Eigener Scrollbereich in beide Richtungen: so liegt der waagerechte
+                Balken immer sichtbar unter der Tabelle, nicht erst an ihrem Ende. */}
+            <div style={{ overflow: "auto", maxHeight: 340 }}>
             <table style={{ fontSize: 10, borderCollapse: "collapse", width: "100%" }}>
               <thead>
                 <tr>{antwort.columns.map(c => (
-                  <th key={c} style={{ textAlign: "left", padding: "4px 10px", color: "var(--muted-2)", borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap", fontFamily: "monospace" }}>{c}</th>
+                  <th key={c} style={{ textAlign: "left", padding: "4px 10px", color: "var(--muted-2)", borderBottom: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap", fontFamily: "monospace", position: "sticky", top: 0, backgroundColor: "var(--bg-card)" }}>{c}</th>
                 ))}</tr>
               </thead>
               <tbody>
@@ -1330,6 +1333,7 @@ function AntwortAnsicht({ antwort, aufDatenpfad, aufPaginierung, kontext, onUebe
                 ))}
               </tbody>
             </table>
+            </div>
             {antwort.rows > antwort.preview.length && (
               <p style={{ fontSize: 10, color: "var(--muted-3)", marginTop: 8 }}>
                 Vorschau der ersten {antwort.preview.length} von {antwort.rows} Zeilen.
