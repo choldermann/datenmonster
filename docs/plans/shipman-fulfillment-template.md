@@ -493,6 +493,34 @@ Teil nicht entwerfen, nur raten.
 | F10 | **Verhalten von `PUT /cancel`** bei bereits versandtem oder unbekanntem Auftrag. | Bestimmt den Storno-Zweig. | mittel |
 | F11 | *(an den Kunden, nicht an Shipman)* **Welcher Rückschreibeweg in die Wawi ist verfügbar** – Versanddaten-Import, JTL-API-Lizenz, Ameise? | Bestimmt §2.5. | **blockierend** für Phase 4 |
 
+### 3.1 Antworten von Shipman (Mail, dem Anwender vorgelegt am 11.11.2026)
+
+Antwort auf die Fragenliste vom 19.10.2026 (PDF in `~/Nextcloud/Gewerbe/holdermann/`).
+Die Nummern der Mail weichen ab 3.2 um eins ab (3.2 = Signaturen, 3.3 = Storno, 3.4 = Teilsendungen).
+
+| # | Antwort | Folge für den Plan |
+|---|---|---|
+| F1 | `POST /orders` liefert `_id`; für `/orders/{ID}/…` gehen **`_id` und `id_external`**. | **Entblockt.** Rückkanal und Storno laufen über unsere eigene `id_external` – keine Antwort muss gespeichert werden, damit der Rückweg funktioniert (`_id` trotzdem ins Journal). |
+| F2 | `https://shipman-api.de/` (ohne `/api`), z. B. `…/auth`. | Erledigt. |
+| F3 | `id_external` nur einmal vergebbar; Wiederholung → Fehlermeldung (400, „Auftrag … existiert bereits"). | Wiederholungslauf ist ungefährlich. Diese 400 muss das Journal als „bereits übermittelt" werten, nicht als Fehler – Erkennung nur über den Meldungstext. |
+| F4 | Hauptsächlich 400/401/404/500. Fehlerobjekt `{statusCode, timestamp, exception:{response,status,message,name}}`. | Vorschlag: 401 → Token neu holen, 500 → später erneut, 400/404 → fehlgeschlagen (außer „existiert bereits"). Welche Fehler vorübergehend sind, wurde **nicht** beantwortet. |
+| F5 | JWT 48 Stunden gültig. Refresh und Ratenbegrenzung **nicht beantwortet**. | Token lang genug für Option C (§2.4) mit Erneuerung im Zeitplan; sauberer wäre ein Auth-Typ „Login-Endpunkt mit Token-Cache" in `rest_service` (analog `oauth2_cc`). Vor dem Bau entscheiden. |
+| 1.6 | **Sandbox** für alle: `https://shipman-api.de/sandbox/…` mit allgemeinem Login (steht in der Mail), Beispielprodukte, beliebig testbar. | Testplan §4 ist ab sofort ohne Kundenzugang durchführbar; T5 erzeugt dort keine echten Sendungen. |
+| F6 | Artikelnummer oder EAN mit `alias:` (z. B. `alias:<EAN>`). | Template-Parameter Artikelnummer/EAN bleibt. |
+| 2.2 | Produkte sind im System; Abgleich über `GET /products`; fehlende pflegt Shipman ein. | Vorab-Prüfung „Artikel bei Shipman vorhanden" über `/products` möglich. |
+| F8 | Kein Bestandsrückfluss außerhalb; nur API oder Frontend. | §2.3 Option 2 entfällt; Bestand per API. |
+| 2.4 | Wareneingänge und Retouren nicht über die API, mit der Dispo klären. | Außerhalb des Templates. |
+| F7 | Trackingcodes werden unverändert von den Versanddiensten übernommen. | Statusableitung wie geplant. |
+| F10 | Storno nur, solange nicht in Bearbeitung; unbekannte nicht. | Storno-Zweig: Fehlermeldung als „zu spät" anzeigen. |
+| 3.4 | Teilsendungen nicht per API; manuell mit Dispo oder zwei Aufträge. | Kein Teilsendungs-Zweig. |
+| F9 | Keine Positionsgrenze; Dokumente nur Bild/PDF, max. 50 MB, nur als Lieferschein; UTF-8 überall; Feldlängen in den DTOs; Länder ISO 3166-1 alpha-2. | Erledigt. |
+| 4.5 | Sonderfälle komplett in `street`. | **Adresstrennung (§6) entschärft:** nicht trennbare Adressen müssen nicht in den Fehlerstatus, sondern kommen ganz in `street`. In der Sandbox prüfen, ob `house_number` dann leer sein darf. |
+
+**Noch offen bei Shipman:** Token-Refresh, Ratenbegrenzung, welche Fehler vorübergehend sind.
+**Für den Start beim Kunden (operativ, mit der Shipman-Dispo):** neuer Kunde mit
+Zugangsdaten; welche Firmierung angebunden wird (PPS oder Hygiene Daheim); eigener
+DHL-/GLS-Account oder der von Shipman; Wareneingang/Retouren. **F11** bleibt beim Kunden offen.
+
 ---
 
 ## 4. Testplan für das API Studio
