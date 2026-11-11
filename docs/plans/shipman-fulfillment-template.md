@@ -518,7 +518,7 @@ Die Nummern der Mail weichen ab 3.2 um eins ab (3.2 = Signaturen, 3.3 = Storno, 
 
 **Noch offen bei Shipman:** Token-Refresh, Ratenbegrenzung, welche Fehler vorübergehend sind.
 **Für den Start beim Kunden (operativ, mit der Shipman-Dispo):** neuer Kunde mit
-Zugangsdaten; welche Firmierung angebunden wird (PPS oder Hygiene Daheim); eigener
+Zugangsdaten; Firmierung: **Hygiene Daheim** (entschieden 11.11.); eigener
 DHL-/GLS-Account oder der von Shipman; Wareneingang/Retouren. **F11** bleibt beim Kunden offen.
 
 ---
