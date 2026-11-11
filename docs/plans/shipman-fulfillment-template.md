@@ -590,6 +590,31 @@ Festhalten: welche `code`-Werte tatsächlich vorkommen und ob die Booleans
 429 auftritt und ob `Retry-After` gesetzt ist. *Relevant, weil der Rückkanal
 pro offenem Auftrag einen Aufruf macht und `for_each` bei 100 deckelt.*
 
+### 4.1 Ergebnisse in der Sandbox (11.11.2026)
+
+Direkt per HTTP gegen `https://shipman-api.de/sandbox/…` (allgemeiner Sandbox-Login aus
+der Shipman-Mail). Aktuelle Spec liegt unter `https://shipman-api.de/api-json` und ist
+**neuer** als unsere Fassung: zusätzlich `GET /products`, `/products/search`,
+`/products/stock`, `/products/{ID}`, `/products/{ID}/stock`.
+
+| Test | Ergebnis |
+|---|---|
+| T1 Basis-URL | `https://shipman-api.de/sandbox/auth` → 200; mit `/api/` → 404. Bestätigt. |
+| T2 Token | Antwort nur `{access_token}`, kein `expires_in`/Refresh. JWT-Inhalt: `client`, `warehouse`, `sandbox:true`, **Laufzeit 12 h** (Mail: 48 h – evtl. nur Sandbox). |
+| T3 Anlegen | 201, Antwort enthält `_id`, `status`/`status_name` („open“), `delivery.carrier` („dhl“), `items[].item` als Shipman-Produkt-ID. Umlaute/`&` unversehrt. |
+| T4 ID | **In der Sandbox nicht prüfbar:** angelegte Aufträge werden nicht gespeichert (`_id` = „sandbox“+Zähler); `tracking`, `signatures`, `cancel` liefern für `_id` wie `id_external` 404. |
+| T5 Doppelt | **Sandbox nimmt dieselbe `id_external` zweimal an (zwei 201).** Widerspricht der Mail (1.3) – vermutlich weil nichts gespeichert wird. Im Echtbetrieb zu bestätigen; bis dahin muss das Journal allein vor Doppelübergabe schützen. |
+| T6 Fehler | 400 bei: `name` fehlt/<2/>250, `data` fehlt, `id_external` fehlt/<3/>100, `street` >100, `country_code` nicht ISO-Alpha-2 (`DEU`, `XX`), `items` leer, **Menge 0 oder nicht ganzzahlig** („Menge muss eine ganze Zahl sein“), unbekannter Artikel („Produkt alias:… existiert nicht“). 401 bei falschem/fehlendem Token. 404 „… nicht gefunden“ bei unbekannter ID. `exception.response` ist mal Text, mal Objekt → immer `exception.message` lesen. |
+| Adresse | **`house_number` darf fehlen oder leer sein** (trotz `required` in der Spec), „12 Rue de la Paix“ komplett in `street` → 201. |
+| Artikel | `alias:<ArtNr>` und die nackte ArtNr werden beide aufgelöst. `GET /products/alias:<ArtNr>` und `/products/{ID}/stock` (`stock`, `charge_numbers`) funktionieren → Vorab-Prüfung und Bestandsabgleich per API möglich. |
+| T7 Tracking | Nicht prüfbar (keine gespeicherten Aufträge). |
+| T8 Ratenbegrenzung | `X-RateLimit-Limit: 5` je Sekunde; nach ~10 schnellen Aufrufen 429 mit `Retry-After: 1`. → `pause_ms` ≥ 250 im REST-Knoten, 429 als „später erneut“. |
+
+**Folgen:** Mengen in T-SQL auf ganze Zahl prüfen (Bruchmengen → Fehlerstatus). Adresstrennung
+nur noch „trennen, wenn sicher, sonst alles in `street`“. Token-Erneuerung so auslegen, dass
+sie mit 12 h auskommt. Rückweg, Storno und die Doppel-Sperre erst mit dem echten Kundenzugang
+testen – dafür einen klar markierten Testauftrag mit Shipman-Dispo absprechen.
+
 **Abschluss:** Ergebnisse aus T1–T8 in diesen Plan zurückschreiben, dann §5–§7
 verfeinern. Über „Integration erstellen" im API Studio lassen sich die
 funktionierenden Aufrufe direkt in REST-Quellen überführen.
