@@ -4,13 +4,14 @@
  "template_name": "JTL – Wettbewerbspreise",
  "description": "Preise von Wettbewerbern automatisch abrufen und mit dem eigenen Verkaufspreis aus der JTL-Wawi vergleichen – mit Cockpit und Warnung, wenn der Wettbewerb deutlich günstiger ist.",
  "category": "jtl-reporting",
- "version": "1.0",
+ "version": "1.1",
  "author": "Datenmonster",
  "hinweise": [
   "Nach der Installation in Datasets „Wettbewerbspreise – URL-Liste“ öffnen und je Zeile ArtNr, Wettbewerber und die URL der Produktseite beim Wettbewerber eintragen.",
   "Dann beim Dataset „Wettbewerbspreise – Abruf“ auf „Jetzt abrufen“ klicken; danach unter Einstellungen → Zeitplan z.B. täglich 06:00 einstellen.",
   "Gelesen werden die Produktdaten, die Shops für Suchmaschinen mitliefern (Preis, Verfügbarkeit, EAN). Seiten ohne solche Daten liefern keinen Preis – dort in der Web-Quelle die Extraktion „KI“ wählen.",
-  "Unser Preis = Grundpreis der Standard-Kundengruppe ohne Shop-Bezug (Preisliste.vPreislisteNetto, ab Menge 0) zzgl. Inlands-MwSt. Sonderpreise sind nicht berücksichtigt.",
+  "Unser Preis = aktiver Sonderpreis der Standard-Kundengruppe, sonst Grundpreis (Preisliste.vPreislisteNetto, ohne Shop-Bezug, ab Menge 0) – jeweils zzgl. Inlands-MwSt. Normal- und Sonderpreis stehen getrennt in der Tabelle.",
+  "Preise in Fremdwährung (z.B. USD, GBP, CHF) werden mit dem EZB-Monatsdurchschnitt in Euro umgerechnet; ohne erreichbaren Kurs bleibt der Vergleich für diese Angebote leer.",
   "Abrufe sind höflich eingestellt (1,5 s Pause, robots.txt). Nur öffentlich sichtbare Preise; viele große Shops sperren automatische Abrufe."
  ],
  "config_required": [
@@ -44,9 +45,12 @@
     "VK_netto",
     "MwSt",
     "VK_brutto",
+    "Sonderpreis_brutto",
+    "Sonderpreis_bis",
+    "Preis_aktuell_brutto",
     "EK_netto"
    ],
-   "sql": "SELECT a.cArtNr AS ArtNr,\n       ab.cName AS Artikel,\n       NULLIF(LTRIM(RTRIM(a.cBarcode)), '') AS EAN,\n       CAST(p.fNettoPreis AS DECIMAL(18,2)) AS VK_netto,\n       CAST(ISNULL(s.fSteuersatz, 0) AS DECIMAL(5,2)) AS MwSt,\n       CAST(p.fNettoPreis * (1 + ISNULL(s.fSteuersatz, 0) / 100.0) AS DECIMAL(18,2)) AS VK_brutto,\n       CAST(a.fEKNetto AS DECIMAL(18,2)) AS EK_netto\nFROM dbo.tArtikel a\nJOIN dbo.tArtikelBeschreibung ab\n  ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\nJOIN Preisliste.vPreislisteNetto p\n  ON p.kArtikel = a.kArtikel AND p.kShop = 0 AND p.nAnzahlAb = 0\nJOIN dbo.tKundenGruppe g\n  ON g.kKundenGruppe = p.kKundenGruppe AND g.nStandard = 1\nLEFT JOIN dbo.tSteuersatz s\n  ON s.kSteuerklasse = a.kSteuerklasse\n AND s.kSteuerzone = (SELECT TOP 1 kSteuerzone FROM dbo.tSteuerzoneLand WHERE cISO = 'DE')\nWHERE a.cAktiv = 'Y'",
+   "sql": "WITH zone AS (\n  SELECT TOP 1 kSteuerzone FROM dbo.tSteuerzoneLand WHERE cISO = 'DE'\n),\nstandard AS (\n  SELECT TOP 1 kKundenGruppe FROM dbo.tKundenGruppe WHERE nStandard = 1\n),\nsonder AS (\n  SELECT sp.kArtikel, MIN(sp.fNettoPreis) AS fNettoPreis, MIN(sp.dEnde) AS dEnde\n  FROM DbeS.vArtikelSonderpreis sp\n  WHERE sp.cAktiv = 'Y' AND sp.kShop = 0\n    AND sp.kKundenGruppe = (SELECT kKundenGruppe FROM standard)\n    AND (sp.nIstDatum = 0 OR (GETDATE() >= sp.dStart AND GETDATE() < DATEADD(DAY, 1, sp.dEnde)))\n    AND (sp.nIstAnzahl = 0 OR sp.nAnzahl > 0)\n  GROUP BY sp.kArtikel\n)\nSELECT a.cArtNr AS ArtNr,\n       ab.cName AS Artikel,\n       NULLIF(LTRIM(RTRIM(a.cBarcode)), '') AS EAN,\n       CAST(p.fNettoPreis AS DECIMAL(18,2)) AS VK_netto,\n       CAST(ISNULL(s.fSteuersatz, 0) AS DECIMAL(5,2)) AS MwSt,\n       CAST(p.fNettoPreis * (1 + ISNULL(s.fSteuersatz, 0) / 100.0) AS DECIMAL(18,2)) AS VK_brutto,\n       CAST(so.fNettoPreis * (1 + ISNULL(s.fSteuersatz, 0) / 100.0) AS DECIMAL(18,2)) AS Sonderpreis_brutto,\n       CASE WHEN so.kArtikel IS NOT NULL AND so.dEnde IS NOT NULL THEN CAST(so.dEnde AS date) END AS Sonderpreis_bis,\n       CAST(ISNULL(so.fNettoPreis, p.fNettoPreis) * (1 + ISNULL(s.fSteuersatz, 0) / 100.0) AS DECIMAL(18,2)) AS Preis_aktuell_brutto,\n       CAST(a.fEKNetto AS DECIMAL(18,2)) AS EK_netto\nFROM dbo.tArtikel a\nJOIN dbo.tArtikelBeschreibung ab\n  ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\nJOIN Preisliste.vPreislisteNetto p\n  ON p.kArtikel = a.kArtikel AND p.kShop = 0 AND p.nAnzahlAb = 0\n AND p.kKundenGruppe = (SELECT kKundenGruppe FROM standard)\nLEFT JOIN sonder so ON so.kArtikel = a.kArtikel\nLEFT JOIN dbo.tSteuersatz s\n  ON s.kSteuerklasse = a.kSteuerklasse AND s.kSteuerzone = (SELECT kSteuerzone FROM zone)\nWHERE a.cAktiv = 'Y'",
    "source_connection_id": "{{connection_jtl}}"
   },
   {
@@ -60,7 +64,7 @@
     "url_spalte": "url",
     "eigene_preise_dataset_id": "ds_eigen",
     "abgleich_spalte": "ArtNr",
-    "eigener_preis_spalte": "VK_brutto",
+    "eigener_preis_spalte": "Preis_aktuell_brutto",
     "verlauf": "ja",
     "verlauf_tage": 365,
     "pause_ms": 1500,
@@ -108,7 +112,7 @@
      "target_options": {
       "sort_fields": [
        {
-        "field": "Differenz_Prozent",
+        "field": "Differenz %",
         "dir": "asc"
        }
       ]
@@ -152,8 +156,26 @@
       },
       {
        "source_dataset_id": "ds_web",
+       "source_field": "waehrung",
+       "target_field": "Währung",
+       "transformer": {
+        "type": "direct",
+        "source_field": "waehrung"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "preis_eur",
+       "target_field": "Wettbewerbspreis in €",
+       "transformer": {
+        "type": "direct",
+        "source_field": "preis_eur"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
        "source_field": "eigener_preis",
-       "target_field": "Unser_Preis",
+       "target_field": "Unser Preis",
        "transformer": {
         "type": "direct",
         "source_field": "eigener_preis"
@@ -161,8 +183,35 @@
       },
       {
        "source_dataset_id": "ds_web",
+       "source_field": "Sonderpreis_brutto",
+       "target_field": "Unser Sonderpreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sonderpreis_brutto"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "Sonderpreis_bis",
+       "target_field": "Sonderpreis bis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sonderpreis_bis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "VK_brutto",
+       "target_field": "Unser Normalpreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VK_brutto"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
        "source_field": "differenz",
-       "target_field": "Differenz",
+       "target_field": "Differenz €",
        "transformer": {
         "type": "direct",
         "source_field": "differenz"
@@ -171,7 +220,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "differenz_prozent",
-       "target_field": "Differenz_Prozent",
+       "target_field": "Differenz %",
        "transformer": {
         "type": "direct",
         "source_field": "differenz_prozent"
@@ -180,7 +229,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "unterbietung_prozent",
-       "target_field": "Unterbietung_Prozent",
+       "target_field": "Unterbietung %",
        "transformer": {
         "type": "direct",
         "source_field": "unterbietung_prozent"
@@ -189,7 +238,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "guenstiger",
-       "target_field": "Guenstiger",
+       "target_field": "Wettbewerber günstiger",
        "transformer": {
         "type": "direct",
         "source_field": "guenstiger"
@@ -198,7 +247,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "marge_bei_wettbewerbspreis",
-       "target_field": "Marge_bei_Wettbewerbspreis",
+       "target_field": "Marge bei Wettbewerbspreis %",
        "transformer": {
         "type": "direct",
         "source_field": "marge_bei_wettbewerbspreis"
@@ -207,7 +256,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "verfuegbar",
-       "target_field": "Verfuegbarkeit",
+       "target_field": "Verfügbarkeit",
        "transformer": {
         "type": "direct",
         "source_field": "verfuegbar"
@@ -216,7 +265,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "aenderung_prozent",
-       "target_field": "Aenderung_seit_letztem_Abruf",
+       "target_field": "Änderung seit letztem Abruf %",
        "transformer": {
         "type": "direct",
         "source_field": "aenderung_prozent"
@@ -225,7 +274,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "name",
-       "target_field": "Bezeichnung_beim_Wettbewerber",
+       "target_field": "Bezeichnung beim Wettbewerber",
        "transformer": {
         "type": "direct",
         "source_field": "name"
@@ -238,6 +287,15 @@
        "transformer": {
         "type": "direct",
         "source_field": "abgerufen_am"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "kurs",
+       "target_field": "Kurs je €",
+       "transformer": {
+        "type": "direct",
+        "source_field": "kurs"
        }
       },
       {
@@ -291,7 +349,7 @@
      "target_options": {
       "sort_fields": [
        {
-        "field": "Differenz_Prozent",
+        "field": "Differenz %",
         "dir": "asc"
        }
       ]
@@ -335,8 +393,26 @@
       },
       {
        "source_dataset_id": "ds_web",
+       "source_field": "waehrung",
+       "target_field": "Währung",
+       "transformer": {
+        "type": "direct",
+        "source_field": "waehrung"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "preis_eur",
+       "target_field": "Wettbewerbspreis in €",
+       "transformer": {
+        "type": "direct",
+        "source_field": "preis_eur"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
        "source_field": "eigener_preis",
-       "target_field": "Unser_Preis",
+       "target_field": "Unser Preis",
        "transformer": {
         "type": "direct",
         "source_field": "eigener_preis"
@@ -344,8 +420,35 @@
       },
       {
        "source_dataset_id": "ds_web",
+       "source_field": "Sonderpreis_brutto",
+       "target_field": "Unser Sonderpreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sonderpreis_brutto"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "Sonderpreis_bis",
+       "target_field": "Sonderpreis bis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sonderpreis_bis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "VK_brutto",
+       "target_field": "Unser Normalpreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VK_brutto"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
        "source_field": "differenz",
-       "target_field": "Differenz",
+       "target_field": "Differenz €",
        "transformer": {
         "type": "direct",
         "source_field": "differenz"
@@ -354,7 +457,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "differenz_prozent",
-       "target_field": "Differenz_Prozent",
+       "target_field": "Differenz %",
        "transformer": {
         "type": "direct",
         "source_field": "differenz_prozent"
@@ -363,7 +466,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "unterbietung_prozent",
-       "target_field": "Unterbietung_Prozent",
+       "target_field": "Unterbietung %",
        "transformer": {
         "type": "direct",
         "source_field": "unterbietung_prozent"
@@ -372,7 +475,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "guenstiger",
-       "target_field": "Guenstiger",
+       "target_field": "Wettbewerber günstiger",
        "transformer": {
         "type": "direct",
         "source_field": "guenstiger"
@@ -381,7 +484,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "marge_bei_wettbewerbspreis",
-       "target_field": "Marge_bei_Wettbewerbspreis",
+       "target_field": "Marge bei Wettbewerbspreis %",
        "transformer": {
         "type": "direct",
         "source_field": "marge_bei_wettbewerbspreis"
@@ -390,7 +493,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "verfuegbar",
-       "target_field": "Verfuegbarkeit",
+       "target_field": "Verfügbarkeit",
        "transformer": {
         "type": "direct",
         "source_field": "verfuegbar"
@@ -399,7 +502,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "aenderung_prozent",
-       "target_field": "Aenderung_seit_letztem_Abruf",
+       "target_field": "Änderung seit letztem Abruf %",
        "transformer": {
         "type": "direct",
         "source_field": "aenderung_prozent"
@@ -408,7 +511,7 @@
       {
        "source_dataset_id": "ds_web",
        "source_field": "name",
-       "target_field": "Bezeichnung_beim_Wettbewerber",
+       "target_field": "Bezeichnung beim Wettbewerber",
        "transformer": {
         "type": "direct",
         "source_field": "name"
@@ -421,6 +524,15 @@
        "transformer": {
         "type": "direct",
         "source_field": "abgerufen_am"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "kurs",
+       "target_field": "Kurs je €",
+       "transformer": {
+        "type": "direct",
+        "source_field": "kurs"
        }
       },
       {
@@ -497,7 +609,7 @@
       "action_id": "act_vergleich",
       "config": {
        "width": 4,
-       "column": "Guenstiger",
+       "column": "Wettbewerber günstiger",
        "aggregation": "sum",
        "prefix": "",
        "suffix": "",
@@ -511,7 +623,7 @@
       "action_id": "act_vergleich",
       "config": {
        "width": 4,
-       "column": "Differenz_Prozent",
+       "column": "Differenz %",
        "aggregation": "avg",
        "prefix": "",
        "suffix": " %",
@@ -567,7 +679,7 @@
     "label_column": "Artikel",
     "value_unit": "",
     "row_filter": {
-     "column": "Unterbietung_Prozent",
+     "column": "Unterbietung %",
      "op": ">=",
      "value_config": "wettbewerb_unterbietung_prozent",
      "value": 5
@@ -586,19 +698,19 @@
     },
     {
      "label": "Unser Preis",
-     "column": "Unser_Preis",
+     "column": "Unser Preis",
      "unit": "€",
      "decimals": 2
     },
     {
      "label": "Wettbewerbspreis",
-     "column": "Wettbewerbspreis",
+     "column": "Wettbewerbspreis in €",
      "unit": "€",
      "decimals": 2
     },
     {
      "label": "Unterbietung",
-     "column": "Unterbietung_Prozent",
+     "column": "Unterbietung %",
      "unit": "%",
      "decimals": 1
     }

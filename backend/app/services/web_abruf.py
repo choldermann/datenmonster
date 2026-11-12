@@ -50,6 +50,48 @@ def web_plugin(file_type: str):
     return plugin
 
 
+_SYMBOLE = [("CHF", "CHF"), ("US$", "USD"), ("$", "USD"), ("£", "GBP"), ("€", "EUR"), ("EUR", "EUR"),
+            ("USD", "USD"), ("GBP", "GBP"), ("zł", "PLN"), ("PLN", "PLN"), ("Kč", "CZK"), ("CZK", "CZK"),
+            ("SEK", "SEK"), ("DKK", "DKK"), ("NOK", "NOK")]
+
+
+def waehrung_aus_text(v):
+    if v is None or isinstance(v, (int, float)):
+        return None
+    t = str(v)
+    for zeichen, iso in _SYMBOLE:
+        if zeichen in t:
+            return iso
+    return None
+
+
+def _iso(w) -> str:
+    w = str(w or "").strip().upper()
+    return {"€": "EUR", "EURO": "EUR", "$": "USD", "£": "GBP"}.get(w, w)
+
+
+def wechselkurse(waehrungen) -> dict:
+    """{ISO: (Fremdwährung je Euro, Monat)} aus dem Umfelddienst (EZB-Monatsdurchschnitt)."""
+    from app.core.database import SessionLocal
+    from app.api.umfeld import _fragen
+    gesucht = sorted({w for w in waehrungen if w and w != "EUR"})
+    if not gesucht:
+        return {}
+    db = SessionLocal()
+    try:
+        von = (datetime.now() - pd.Timedelta(days=120)).strftime("%Y-%m")
+        daten = _fragen(db, "reihen", {"groessen": ["wechselkurse"], "regionen": gesucht, "von": von, "bis": ""})
+    finally:
+        db.close()
+    kurse = {}
+    for reihe in daten.get("reihen") or []:
+        for iso, werte in (reihe.get("werte") or {}).items():
+            if werte:
+                monat = max(werte)
+                kurse[iso] = (float(werte[monat]), monat)
+    return kurse
+
+
 def _schluessel(df: pd.DataFrame, config: dict) -> List[str]:
     eigen = [s.strip() for s in str(config.get("schluessel") or "").split(",") if s.strip()]
     if eigen:
@@ -58,6 +100,11 @@ def _schluessel(df: pd.DataFrame, config: dict) -> List[str]:
             raise ValueError(f"Schlüssel-Spalte(n) fehlen im Ergebnis: {', '.join(fehlt)}")
         return eigen
     teile = ["quelle_url"] if "quelle_url" in df.columns else []
+    # Eigene Artikelnummer aus der URL-Liste gehört dazu: zwei eigene Artikel
+    # können auf dieselbe Wettbewerberseite zeigen (Varianten, Kartons).
+    abgleich = (config.get("abgleich_spalte") or "ArtNr").strip()
+    if abgleich in df.columns:
+        teile.append(abgleich)
     for k in ("gtin", "sku", "mpn", "name"):
         if k in df.columns and df[k].notna().any() and (df[k].astype(str).str.strip() != "").any():
             teile.append(k)
@@ -80,6 +127,13 @@ def vergleichen(neu: pd.DataFrame, alt: pd.DataFrame, config: dict, zeitpunkt) -
         neu = neu.drop_duplicates(subset=schl, keep="first")
     preis = "preis" if "preis" in neu.columns else None
     if preis:
+        # Währung aus „$295.99“ / „£51.77“, wenn die Seite keine eigene Angabe hat
+        erkannt = neu[preis].map(waehrung_aus_text)
+        if "waehrung" not in neu.columns:
+            neu["waehrung"] = erkannt
+        else:
+            leer = neu["waehrung"].isna() | (neu["waehrung"].astype(str).str.strip() == "")
+            neu.loc[leer, "waehrung"] = erkannt[leer]
         # „£51.77“, „12,90 €“ aus Klick-Selektoren → Zahl (produkte liefert schon Zahlen)
         from app.plugins.builtin.web.produktdaten import preis_zahl
         neu[preis] = neu[preis].map(lambda v: preis_zahl(v) if not isinstance(v, (int, float)) else v)
@@ -175,6 +229,7 @@ def abruf_ausfuehren(dataset_id: int) -> dict:
             raise ValueError("Nichts abgerufen: " + "; ".join(info["fehler"][:3]))
         stand = vergleichen(roh, _letzter_stand(ds), config, jetzt)
         stand = mit_eigenen_preisen(stand, config, ds, db)
+        info["fehler"] = info["fehler"] + list(stand.attrs.get("hinweise") or [])
         # ist_aktuell + neuester Abruf oben: Warnregeln und Vorschauen lesen nur
         # die ersten Zeilen – das sollen die aktuellen sein, nicht die ältesten.
         stand["ist_aktuell"] = "ja"
@@ -254,7 +309,7 @@ def laeuft(dataset_id: int) -> bool:
 
 
 ABGLEICH = ["eigener_preis", "differenz", "differenz_prozent", "unterbietung_prozent",
-            "guenstiger", "marge_bei_wettbewerbspreis"]
+            "guenstiger", "marge_bei_wettbewerbspreis", "preis_eur", "kurs", "kurs_stand"]
 
 
 def mit_eigenen_preisen(stand: pd.DataFrame, config: dict, ds, db) -> pd.DataFrame:
@@ -287,16 +342,37 @@ def mit_eigenen_preisen(stand: pd.DataFrame, config: dict, ds, db) -> pd.DataFra
     if schl not in stand.columns:
         raise ValueError(f"Abgleich über „{schl}“: die Spalte fehlt im Abruf – "
                          "kommt sie aus der URL-Liste (URLs aus Dataset)?")
-    nimm = [schl, preis_sp] + [c for c in ("Artikel", "EK_netto", "MwSt") if c in eigen.columns]
+    zusatz = ("Artikel", "EK_netto", "MwSt", "VK_brutto", "Sonderpreis_brutto", "Sonderpreis_bis")
+    nimm = [schl, preis_sp] + [c for c in zusatz if c in eigen.columns and c != preis_sp]
     eigen = eigen[nimm].copy()
     eigen[schl] = eigen[schl].astype(str).str.strip()
     eigen = eigen.drop_duplicates(schl).rename(columns={preis_sp: "eigener_preis",
                                                         "Artikel": "artikel_eigen"})
-    stand = stand.drop(columns=[c for c in ABGLEICH + ["artikel_eigen", "EK_netto", "MwSt"]
+    stand = stand.drop(columns=[c for c in ABGLEICH + ["artikel_eigen", "EK_netto", "MwSt", "VK_brutto",
+                                                       "Sonderpreis_brutto", "Sonderpreis_bis"]
                                 if c in stand.columns])
     stand["_k"] = stand[schl].astype(str).str.strip()
     stand = stand.merge(eigen.rename(columns={schl: "_k"}), on="_k", how="left").drop(columns=["_k"])
     p = pd.to_numeric(stand.get("preis"), errors="coerce")
+    hinweise = []
+    if "waehrung" in stand.columns:
+        iso = stand["waehrung"].map(_iso)
+        fremd = iso.notna() & (iso != "") & (iso != "EUR")
+        if fremd.any():
+            try:
+                kurse = wechselkurse(iso[fremd].unique())
+            except Exception as ex:   # Dienst/Lizenz nicht erreichbar: lieber kein Vergleich als ein falscher
+                kurse = {}
+                hinweise.append(f"Wechselkurse nicht abrufbar ({str(ex)[:80]}) – Fremdwährungen ohne Vergleich")
+            stand["kurs"] = iso.map(lambda w: kurse.get(w, (None,))[0] if w not in ("", "EUR") else None)
+            stand["kurs_stand"] = iso.map(lambda w: kurse.get(w, (None, None))[1] if w not in ("", "EUR") else None)
+            fehlt = sorted({w for w in iso[fremd] if w not in kurse})
+            if fehlt and not hinweise:
+                hinweise.append(f"Kein EZB-Kurs für {', '.join(fehlt)} – diese Angebote ohne Vergleich")
+            umgerechnet = p / pd.to_numeric(stand["kurs"], errors="coerce")
+            p = p.where(~fremd, umgerechnet)
+    stand["preis_eur"] = p.round(2)   # immer da – bei Euro-Preisen einfach der Preis
+    stand.attrs["hinweise"] = hinweise
     e = pd.to_numeric(stand["eigener_preis"], errors="coerce")
     stand["eigener_preis"] = e
     stand["differenz"] = (p - e).round(2)

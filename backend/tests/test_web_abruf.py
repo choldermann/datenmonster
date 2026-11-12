@@ -327,3 +327,38 @@ def test_abgleich_mit_eigenen_preisen(netz):
             if pfad and os.path.exists(pfad):
                 os.remove(pfad)
         db.commit(); db.close()
+
+
+def test_waehrung_wird_umgerechnet(monkeypatch):
+    from types import SimpleNamespace
+    import app.services.web_abruf as wa
+    monkeypatch.setattr(wa, "wechselkurse", lambda ws: {"USD": (1.12, "2026-10")})
+
+    class _Conn:
+        def fetch_full(self):
+            return pd.DataFrame({"ArtNr": ["A1", "A2"], "Preis_aktuell_brutto": [300.0, 100.0],
+                                 "EK_netto": [100.0, 50.0], "MwSt": [19, 19]})
+    import app.connectors.factory as fac
+    monkeypatch.setattr(fac, "get_connector", lambda i: _Conn())
+
+    class _Q:
+        def filter(self, *a):
+            return self
+        def first(self):
+            return SimpleNamespace(id=1, project_id=4, name="eigen")
+    db = SimpleNamespace(query=lambda m: _Q())
+    ds = SimpleNamespace(project_id=4)
+    roh = pd.DataFrame({"quelle_url": ["u1", "u2"], "ArtNr": ["A1", "A2"], "preis": ["$336.00", "95,00 €"]})
+    stand = vergleichen(roh, None, {}, "T1")
+    assert stand["waehrung"].tolist() == ["USD", "EUR"]
+    erg = wa.mit_eigenen_preisen(stand, {"eigene_preise_dataset_id": 1, "eigener_preis_spalte": "Preis_aktuell_brutto"}, ds, db)
+    a1 = erg[erg["ArtNr"] == "A1"].iloc[0]
+    assert a1["preis_eur"] == 300.0 and a1["kurs"] == 1.12 and a1["kurs_stand"] == "2026-10"
+    assert a1["guenstiger"] == 0 and a1["differenz"] == 0.0
+    a2 = erg[erg["ArtNr"] == "A2"].iloc[0]
+    assert a2["guenstiger"] == 1 and a2["differenz_prozent"] == -5.0
+
+    monkeypatch.setattr(wa, "wechselkurse", lambda ws: (_ for _ in ()).throw(RuntimeError("offline")))
+    erg = wa.mit_eigenen_preisen(stand, {"eigene_preise_dataset_id": 1, "eigener_preis_spalte": "Preis_aktuell_brutto"}, ds, db)
+    assert pd.isna(erg[erg["ArtNr"] == "A1"].iloc[0]["differenz"])
+    assert "Wechselkurse nicht abrufbar" in erg.attrs["hinweise"][0]
