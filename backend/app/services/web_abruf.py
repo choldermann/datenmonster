@@ -180,6 +180,13 @@ def abruf_ausfuehren(dataset_id: int) -> dict:
         if str(config.get("verlauf", "nein")).lower() in ("ja", "true", "1") and not alt_gesamt.empty:
             alt_gesamt = alt_gesamt.copy()
             alt_gesamt["ist_aktuell"] = "nein"
+            try:
+                tage = int(config.get("verlauf_tage") if config.get("verlauf_tage") not in (None, "") else 365)
+            except (TypeError, ValueError):
+                tage = 365
+            if tage > 0 and "abgerufen_am" in alt_gesamt.columns:
+                grenze = jetzt - pd.Timedelta(days=tage)
+                alt_gesamt = alt_gesamt[pd.to_datetime(alt_gesamt["abgerufen_am"], errors="coerce") >= grenze]
             gesamt = pd.concat([stand, alt_gesamt], ignore_index=True)
         else:
             gesamt = stand

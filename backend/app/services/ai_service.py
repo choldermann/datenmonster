@@ -410,7 +410,8 @@ class AIService:
             yield token
 
     async def complete_json(self, messages: list[dict], json_schema: dict, model: str | None = None,
-                            temperature: float = 0.2, request_type: str = "TRANSFORMATION") -> dict:
+                            temperature: float = 0.2, request_type: str = "TRANSFORMATION",
+                            max_tokens: int = 1000) -> dict:
         """Single-shot strukturierte JSON-Ausgabe via Ollamas format-Feld.
 
         Ollama erwartet in `format` das JSON-Schema DIREKT. Der OpenAI-Umschlag
@@ -425,7 +426,7 @@ class AIService:
                     "messages": messages,
                     "stream":   False,
                     "format":   json_schema,
-                    "options":  {"temperature": temperature},
+                    "options":  {"temperature": temperature, "num_predict": max_tokens},
                 },
             )
             r.raise_for_status()

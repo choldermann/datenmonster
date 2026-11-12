@@ -212,9 +212,10 @@ class DatamonsterAIService:
             yield tok
 
     async def complete_json(self, messages: list[dict], json_schema: dict, model: str | None = None,
-                            temperature: float = 0.2, request_type: str = "TRANSFORMATION") -> dict:
+                            temperature: float = 0.2, request_type: str = "TRANSFORMATION",
+                            max_tokens: int = 1000) -> dict:
         """Single-shot strukturierte JSON-Ausgabe (für KI-Transform-Node-Preview)."""
-        params = AIParams(temperature=temperature, max_tokens=1000)
+        params = AIParams(temperature=temperature, max_tokens=max_tokens)
         # OpenAI weist ein Schema ohne strict-Form mit „Invalid schema for
         # response_format" ab. Hier zentral angleichen, damit nicht jede Stelle,
         # die ein Schema baut, daran denken muss (Ollama braucht das nicht).

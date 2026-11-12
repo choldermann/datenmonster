@@ -513,7 +513,14 @@ function StepPluginSource({ onDone, projectId }) {
               placeholder="z.B. Testdaten Faker" autoFocus />
           </div>
 
-          {(selected.config_schema || []).filter(f => !f.hidden).map((field) => (
+          {(selected.config_schema || []).filter(f => !f.hidden).filter((f) => {
+            // zeige_bei: { feld: [werte] } – z.B. KI-Felder nur bei Extraktion „ki“
+            const bed = f.zeige_bei || {};
+            return Object.keys(bed).every((k) => {
+              const def = (selected.config_schema || []).find((x) => x.key === k)?.default;
+              return (bed[k] || []).includes(String(config[k] ?? def ?? ""));
+            });
+          }).map((field) => (
             <div key={field.key}>
               <label style={labelStyle}>{field.label}</label>
               {field.type === "select" ? (
@@ -522,7 +529,7 @@ function StepPluginSource({ onDone, projectId }) {
                   value={config[field.key] ?? field.default ?? ""}
                   onChange={(e) => handleFieldChange(field.key, e.target.value)}>
                   {(field.options || []).map((opt) => (
-                    <option key={opt} value={opt}>{opt}</option>
+                    <option key={opt} value={opt}>{field.option_labels?.[opt] ?? opt}</option>
                   ))}
                 </select>
               ) : field.type === "number" ? (

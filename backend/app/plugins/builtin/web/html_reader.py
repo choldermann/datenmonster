@@ -51,7 +51,14 @@ class HtmlDocumentSource(DocumentSourcePlugin):
             "key": "extract_type",
             "label": "Extraktion",
             "type": "select",
-            "options": ["auto", "produkte", "tables", "links", "images", "lists", "meta", "css_selector"],
+            "options": ["auto", "produkte", "ki", "tables", "links", "images", "lists", "meta", "css_selector"],
+            "option_labels": {
+                "auto": "Automatisch (Tabelle, sonst Text)",
+                "produkte": "Produkte – Preis, EAN, Verfügbarkeit (empfohlen für Shops)",
+                "ki": "KI – frei wählbare Felder aus dem Seitentext (kostet KI-Guthaben)",
+                "tables": "Tabelle", "links": "Links", "images": "Bilder", "lists": "Listen",
+                "meta": "Meta-Angaben der Seite", "css_selector": "CSS-Selektor / Visueller Selektor",
+            },
             "default": "auto",
             "description": "produkte = Name, Preis, EAN, Verfügbarkeit aus den Produktdaten der Shopseite "
                            "(JSON-LD/Microdata) – für Wettbewerbspreise die erste Wahl.",
@@ -59,6 +66,7 @@ class HtmlDocumentSource(DocumentSourcePlugin):
         {
             "key": "table_index",
             "label": "Tabellen-Index",
+            "zeige_bei": {"extract_type": ["auto", "tables"]},
             "type": "number",
             "default": 0,
             "description": "Bei Modus 'tables': welche Tabelle (0 = erste)?",
@@ -66,6 +74,7 @@ class HtmlDocumentSource(DocumentSourcePlugin):
         {
             "key": "css_selector",
             "label": "CSS-Selektor",
+            "zeige_bei": {"extract_type": ["css_selector"]},
             "type": "string",
             "placeholder": "table.products, div.item, #main-content",
             "description": "Nur bei Modus 'css_selector'. Leerlassen wenn Visual-Selektor genutzt wird.",
@@ -74,10 +83,30 @@ class HtmlDocumentSource(DocumentSourcePlugin):
         {
             "key": "list_selector",
             "label": "Listen-Selektor (optional)",
+            "zeige_bei": {"extract_type": ["lists"]},
             "type": "string",
             "placeholder": "ul.results",
             "default": "",
             "description": "Bei Modus 'lists': nur Listen innerhalb dieses Selektors extrahieren.",
+        },
+        {
+            "key": "ki_felder",
+            "label": "KI: gewünschte Felder",
+            "zeige_bei": {"extract_type": ["ki"]},
+            "type": "string",
+            "placeholder": "name, preis, lieferzeit, verfuegbar",
+            "default": "name, preis",
+            "description": "Kommagetrennt. Ein Feld „preis“ wird für den Preisvergleich genutzt. "
+                           "Nur Werte, die wörtlich auf der Seite stehen, werden übernommen. "
+                           "Ein KI-Aufruf je Seite; unveränderte Seiten kosten beim nächsten Abruf nichts.",
+        },
+        {
+            "key": "ki_hinweis",
+            "label": "KI: Hinweis (optional)",
+            "zeige_bei": {"extract_type": ["ki"]},
+            "type": "string",
+            "placeholder": "z.B. nur der Preis für 1 Stück, ohne Versand",
+            "default": "",
         },
         # ── Viele Seiten ──────────────────────────────────────────────────────
         {
@@ -154,6 +183,14 @@ class HtmlDocumentSource(DocumentSourcePlugin):
             "default": "nein",
             "description": "ja = jeder Abruf bleibt mit Zeitstempel erhalten; nein = nur der letzte Stand "
                            "(mit Vergleich zum vorigen: preis_vorher, aenderung_prozent, status).",
+        },
+        {
+            "key": "verlauf_tage",
+            "label": "Verlauf aufbewahren (Tage)",
+            "zeige_bei": {"verlauf": ["ja"]},
+            "type": "number",
+            "default": 365,
+            "description": "Ältere Abrufe werden beim nächsten Abruf gelöscht. 0 = unbegrenzt.",
         },
         {
             "key": "schluessel",
@@ -430,6 +467,11 @@ class HtmlDocumentSource(DocumentSourcePlugin):
             from app.plugins.builtin.web.produktdaten import produkte_aus_html, SPALTEN
             zeilen = produkte_aus_html(html, url)
             return pd.DataFrame(zeilen, columns=SPALTEN) if zeilen else pd.DataFrame()
+        if art == "ki":
+            from app.plugins.builtin.web.ki_extraktion import ki_extrahieren
+            felder = [f.strip() for f in str(config.get("ki_felder") or "name, preis").split(",")]
+            zeilen = ki_extrahieren(html, felder, str(config.get("ki_hinweis") or ""))
+            return pd.DataFrame(zeilen, columns=[f for f in felder if f]) if zeilen else pd.DataFrame()
         extractors = {
             "tables": self._extract_tables, "links": self._extract_links,
             "images": self._extract_images, "lists": self._extract_lists,

@@ -216,3 +216,74 @@ def test_preiswarnung_meldet_gesenkten_preis(netz):
         db.delete(db.get(Dataset, ds.id)); db.commit(); db.close()
         if pfad and os.path.exists(pfad):
             os.remove(pfad)
+
+
+# ─── KI-Extraktion ────────────────────────────────────────────────────────────
+
+class _FakeKI:
+    def __init__(self, antwort):
+        self.antwort, self.aufrufe = antwort, 0
+
+    async def complete_json(self, messages, schema, **kw):
+        self.aufrufe += 1
+        assert set(schema["properties"]["zeilen"]["items"]["properties"]) == {"name", "preis", "lieferzeit"}
+        return self.antwort
+
+
+@pytest.fixture
+def ki(monkeypatch, tmp_path):
+    import app.services.ai_service as ais
+    from app.plugins.builtin.web import ki_extraktion as kx
+    monkeypatch.setattr(kx, "_cache_pfad", lambda k: str(tmp_path / f"{k}.json"))
+    fake = _FakeKI({"zeilen": [{"name": "Bettschutz Classic", "preis": "12,90", "lieferzeit": "2-3 Tage"},
+                               {"name": "Erfunden", "preis": "9,99", "lieferzeit": None}]})
+    monkeypatch.setattr(ais, "build_ai_service", lambda db: fake)
+    return fake
+
+
+SEITE = ("<html><body><nav>Menü</nav><h1>Bettschutz Classic</h1><p>Preis: 12,90 €</p>"
+         "<p>Lieferzeit: 2-3 Tage</p><script>var x=1</script></body></html>")
+
+
+def test_ki_nur_belegte_werte_und_cache(ki):
+    from app.plugins.builtin.web.ki_extraktion import ki_extrahieren
+    z = ki_extrahieren(SEITE, ["name", "preis", "lieferzeit"])
+    # „Erfunden“ / 9,99 stehen nicht auf der Seite → Zeile fällt weg
+    assert z == [{"name": "Bettschutz Classic", "preis": "12,90", "lieferzeit": "2-3 Tage"}]
+    assert ki_extrahieren(SEITE, ["name", "preis", "lieferzeit"]) == z
+    assert ki.aufrufe == 1          # zweiter Abruf aus dem Zwischenspeicher
+
+
+def test_ki_im_html_leser_mit_preisvergleich(ki, netz):
+    NETZ["https://k.de/a"] = SEITE
+    df, info = HtmlDocumentSource().abrufen({"url": "https://k.de/a", "extract_type": "ki",
+                                             "ki_felder": "name, preis, lieferzeit"})
+    assert df["preis"].tolist() == ["12,90"]
+    t = vergleichen(df, None, {}, "T1")
+    assert t.iloc[0]["preis"] == 12.9
+
+
+def test_verlauf_wird_gekuerzt(netz):
+    from app.core.database import SessionLocal
+    from app.models.dataset import Dataset
+    from app.services.web_abruf import abruf_ausfuehren
+    db = SessionLocal()
+    ds = Dataset(name="__test_verlauf_tage", file_type="doc_html", project_id=4, xml_configured=1,
+                 row_count=0, columns=[], query_config={"url": "https://s.de/p/1", "extract_type": "produkte",
+                                                        "verlauf": "ja", "verlauf_tage": 30, "pause_ms": 0})
+    db.add(ds); db.commit(); db.refresh(ds)
+    try:
+        NETZ["https://s.de/p/1"] = jsonld(produkt("Eins", "10.00", "4000000000011"))
+        abruf_ausfuehren(ds.id)
+        db.refresh(ds)
+        alt = pd.read_parquet(ds.file_path)
+        alt["abgerufen_am"] = pd.Timestamp("2020-01-01")      # uralter Abruf
+        alt.to_parquet(ds.file_path, index=False)
+        abruf_ausfuehren(ds.id)
+        df = pd.read_parquet(ds.file_path)
+        assert len(df) == 1 and df.iloc[0]["ist_aktuell"] == "ja"
+    finally:
+        pfad = ds.file_path
+        db.delete(db.get(Dataset, ds.id)); db.commit(); db.close()
+        if pfad and os.path.exists(pfad):
+            os.remove(pfad)
