@@ -27,6 +27,8 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     skip_rows: source?.skip_rows || 0,
     csv_decimal: source?.csv_decimal || ".",
     xml_target_node: source?.xml_target_node || "",
+    error_dir: source?.error_dir || "",
+    csv_header: source?.csv_header !== false,
     after_import: source?.after_import || "nothing",
     move_dir: source?.move_dir || "",
     dataset_id: (source?.dataset_id && datasets?.find(d => d.id === source.dataset_id)) ? source.dataset_id : "",
@@ -48,11 +50,12 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
   const row = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 };
 
   const handleSave = async () => {
-    if (!form.name || !form.host || !form.username) { alert("Name, Host und Benutzer sind Pflichtfelder"); return; }
+    const istOrdner = form.protocol === "ordner";
+    if (!form.name || (!istOrdner && (!form.host || !form.username))) { alert(istOrdner ? "Name ist Pflichtfeld" : "Name, Host und Benutzer sind Pflichtfelder"); return; }
     setSaving(true);
     try {
       const dsId = form.dataset_id && datasets?.find(d => d.id === parseInt(form.dataset_id)) ? parseInt(form.dataset_id) : null;
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null };
+      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null, error_dir: form.error_dir || null, ...(istOrdner ? { host: "", username: "", port: null } : {}) };
       if (isNew) await api.post("/api/ftp-sources/", payload);
       else await api.put(`/api/ftp-sources/${source.id}`, payload);
       onDone();
@@ -76,7 +79,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     <div style={{ position: "fixed", inset: 0, zIndex: 60, backgroundColor: "rgba(0,0,0,0.75)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
       <div style={{ width: 560, maxHeight: "90vh", overflowY: "hidden", backgroundColor: S.bgCard, borderRadius: 10, border: `1px solid ${S.border}`, display: "flex", flexDirection: "column" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 18px", borderBottom: `1px solid ${S.border}` }}>
-          <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>{isNew ? "Neue FTP/SFTP-Quelle" : "FTP/SFTP-Quelle bearbeiten"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright }}>{isNew ? "Neue Datei-Quelle (FTP, SFTP, Ordner)" : "Datei-Quelle bearbeiten"}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}><X size={15} /></button>
         </div>
 
@@ -88,14 +91,21 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
           <div>
             <label style={lS}>Protokoll</label>
             <div style={{ display: "flex", gap: 8 }}>
-              {["ftp", "sftp"].map((p) => (
-                <button key={p} onClick={() => set("protocol", p)} style={{ padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.protocol === p ? S.accent : S.border}`, backgroundColor: form.protocol === p ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "#1a1a1a", color: form.protocol === p ? S.accent : S.textDim }}>
-                  {p.toUpperCase()}
+              {[{ v: "ftp", l: "FTP" }, { v: "sftp", l: "SFTP" }, { v: "ordner", l: "Ordner (Hotfolder)" }].map((p) => (
+                <button key={p.v} onClick={() => set("protocol", p.v)} style={{ padding: "5px 14px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${form.protocol === p.v ? S.accent : S.border}`, backgroundColor: form.protocol === p.v ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "#1a1a1a", color: form.protocol === p.v ? S.accent : S.textDim }}>
+                  {p.l}
                 </button>
               ))}
             </div>
+            {form.protocol === "ordner" && (
+              <div style={{ fontSize: 11, color: S.textDim, marginTop: 6, lineHeight: 1.5 }}>
+                Liest aus dem Austauschordner des Servers (<code>./austausch</code> neben docker-compose.yml, oder ein Netzlaufwerk über <code>AUSTAUSCH_DIR</code> in der .env).
+                Alle Pfade unten sind relativ dazu, z.B. <code>/eingang</code>. Dateien, die noch geschrieben werden, wartet der Lauf ab.
+              </div>
+            )}
           </div>
 
+          {form.protocol !== "ordner" && <>
           {/* Host + Port */}
           <div style={row}>
             <div><label style={lS}>Host</label><input style={iS} value={form.host} onChange={(e) => set("host", e.target.value)} placeholder="ftp.example.com" /></div>
@@ -107,10 +117,11 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
             <div><label style={lS}>Benutzername</label><input style={iS} value={form.username} onChange={(e) => set("username", e.target.value)} /></div>
             <div><label style={lS}>Passwort</label><input style={{ ...iS }} type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder={!isNew && !form.password ? "••••••••  (unverändert)" : ""} /></div>
           </div>
+          </>}
 
           {/* Verzeichnis + Filter */}
           <div style={row}>
-            <div><label style={lS}>Verzeichnis</label><input style={iS} value={form.remote_dir} onChange={(e) => set("remote_dir", e.target.value)} placeholder="/export/" /></div>
+            <div><label style={lS}>Verzeichnis</label><input style={iS} value={form.remote_dir} onChange={(e) => set("remote_dir", e.target.value)} placeholder={form.protocol === "ordner" ? "/eingang" : "/export/"} /></div>
             <div><label style={lS}>Dateifilter (Glob)</label><input style={iS} value={form.filename_filter} onChange={(e) => set("filename_filter", e.target.value)} placeholder="*.csv" /></div>
           </div>
 
@@ -131,6 +142,15 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
                 <select style={iS} value={form.csv_delimiter} onChange={(e) => set("csv_delimiter", e.target.value)}>
                   {[";", ",", "|", "\t"].map((d) => <option key={d} value={d}>{d === "\t" ? "Tab" : d}</option>)}
                 </select>
+              </div>
+            )}
+            {form.file_type === "csv" && (
+              <div>
+                <label style={{ ...lS, display: "flex", alignItems: "center", gap: 6, textTransform: "none", letterSpacing: 0, fontSize: 11 }}>
+                  <input type="checkbox" checked={form.csv_header} onChange={(e) => set("csv_header", e.target.checked)} />
+                  Erste Zeile ist Kopfzeile
+                </label>
+                {!form.csv_header && <div style={{ fontSize: 10, color: S.textDim }}>Spalten heißen dann Spalte_1, Spalte_2, …</div>}
               </div>
             )}
             {form.file_type === "csv" && (
@@ -180,8 +200,13 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
               ))}
             </div>
             {form.after_import === "move" && (
-              <input style={{ ...iS, marginTop: 8 }} value={form.move_dir} onChange={(e) => set("move_dir", e.target.value)} placeholder="Zielverzeichnis z.B. /processed/" />
+              <input style={{ ...iS, marginTop: 8 }} value={form.move_dir} onChange={(e) => set("move_dir", e.target.value)} placeholder={form.protocol === "ordner" ? "z.B. /erledigt" : "Zielverzeichnis z.B. /processed/"} />
             )}
+            {form.protocol === "ordner" && form.after_import === "nothing" && (
+              <div style={{ fontSize: 11, color: "var(--err)", marginTop: 6 }}>Bei einem Hotfolder wird dieselbe Datei sonst bei jedem Lauf erneut eingelesen.</div>
+            )}
+            <label style={{ ...lS, marginTop: 10 }}>Nicht lesbare Dateien verschieben nach (optional)</label>
+            <input style={iS} value={form.error_dir} onChange={(e) => set("error_dir", e.target.value)} placeholder={form.protocol === "ordner" ? "z.B. /fehler" : "z.B. /error/"} />
           </div>
 
           {/* Dataset-Ziel */}

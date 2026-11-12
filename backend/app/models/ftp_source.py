@@ -8,7 +8,7 @@ class FtpSource(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    protocol = Column(String, default="ftp")       # ftp | sftp
+    protocol = Column(String, default="ftp")       # ftp | sftp | ordner (Hotfolder)
     host = Column(String, nullable=False)
     port = Column(Integer, nullable=True)           # None → default (21/22)
     username = Column(String, nullable=False)
@@ -43,3 +43,5 @@ class FtpSource(Base):
     skip_rows = Column(Integer, default=0, nullable=True)   # Zeilen überspringen beim Import
     csv_decimal = Column(String, default=".", nullable=True)  # "." | "," (deutsche Zahlen)
     xml_target_node = Column(String, nullable=True)           # z.B. "Auftraege/Auftrag"
+    error_dir = Column(String, nullable=True)                 # nicht lesbare Dateien hierhin
+    csv_header = Column(Boolean, default=True, nullable=True) # erste Zeile = Kopfzeile

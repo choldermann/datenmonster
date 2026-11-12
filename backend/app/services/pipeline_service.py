@@ -434,11 +434,11 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False,
                             df = prev_data.get("df")
                             if df is None:
                                 df = pd.DataFrame(index=range(prev_data.get("rows", 0)))
+                            from app.services.csv_format import csv_optionen
+                            # Vorgaben wie bisher: Komma, UTF-8 ohne BOM
                             row_count = upload_file_ftp_source(
                                 src, df, remote_dir, filename,
-                                delimiter=config.get("delimiter") or ",",
-                                encoding=config.get("encoding") or "utf-8",
-                                decimal=config.get("decimal") or ".")
+                                **csv_optionen(config, vorgabe_trenner=",", vorgabe_kodierung="utf-8"))
                             results[nid] = {"status": "ok", "message": f"{filename} hochgeladen ({row_count} Zeilen)"}
                             log(db, "success", "pipeline_service", "node_ftp_upload",
                                 f"FTP-Upload: {filename} → {src.name}:{remote_dir}",

@@ -19,9 +19,9 @@ router = APIRouter(prefix="/api/ftp-sources", tags=["ftp-sources"])
 class FtpSourceCreate(BaseModel):
     name: str
     protocol: str = "ftp"
-    host: str
+    host: str = ""                      # leer bei protocol="ordner"
     port: Optional[int] = None
-    username: str
+    username: str = ""
     password: Optional[str] = None
     remote_dir: str = "/"
     filename_filter: str = "*"
@@ -30,6 +30,8 @@ class FtpSourceCreate(BaseModel):
     skip_rows: int = 0
     csv_decimal: str = "."              # "." oder "," (deutsche Zahlen)
     xml_target_node: Optional[str] = None
+    error_dir: Optional[str] = None     # nicht lesbare Dateien hierhin verschieben
+    csv_header: bool = True             # erste Zeile ist Kopfzeile
     after_import: str = "nothing"   # nothing | move | delete
     move_dir: Optional[str] = None
     dataset_id: Optional[int] = None
@@ -69,6 +71,8 @@ def _out(s: FtpSource) -> dict:
         "skip_rows": s.skip_rows or 0,
         "csv_decimal": getattr(s, "csv_decimal", None) or ".",
         "xml_target_node": getattr(s, "xml_target_node", None),
+        "error_dir": getattr(s, "error_dir", None),
+        "csv_header": getattr(s, "csv_header", 1) != 0,
         "after_import": s.after_import,
         "move_dir": s.move_dir,
         "dataset_id": s.dataset_id,
@@ -118,6 +122,8 @@ def create_ftp_source(
     d = data.model_dump()
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
+    else:
+        d["password"] = ""   # Spalte NOT NULL; Ordner-Quellen haben keins
     s = FtpSource(**d)
     db.add(s); db.commit(); db.refresh(s)
     _sync_scheduler(s)
@@ -163,7 +169,7 @@ def update_ftp_source(
 
 @router.delete("/{source_id}")
 def delete_ftp_source(source_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    _lade(source_id, user, db, schreiben=True)
+    s = _lade(source_id, user, db, schreiben=True)   # s fehlte → Löschen scheiterte immer
     _unregister_ftp_job(source_id)
     db.delete(s); db.commit()
     return {"ok": True}
@@ -207,19 +213,9 @@ def test_ftp_connection(source_id: int, db: Session = Depends(get_db), user: Use
     # Nur gespeicherter Host + Passwort, daher genügt Leserecht im Projekt.
     s = _lade(source_id, user, db)
     try:
-        from app.services.ftp_service import (
-            _connect_ftp, _connect_sftp,
-            list_files_ftp, list_files_sftp,
-        )
-        proto = (s.protocol or "ftp").lower()
-        if proto == "sftp":
-            conn = _connect_sftp(s.host, s.port, s.username, decrypt_credential(s.password))
-            files = list_files_sftp(conn, s.remote_dir, s.filename_filter or "*")
-            conn.close()
-        else:
-            conn = _connect_ftp(s.host, s.port, s.username, decrypt_credential(s.password))
-            files = list_files_ftp(conn, s.remote_dir, s.filename_filter or "*")
-            conn.quit()
+        from app.services.ablage import ablage_oeffnen
+        with ablage_oeffnen(s) as ablage:
+            files = ablage.dateien(s.remote_dir, s.filename_filter or "*")
         return {"ok": True, "files": files, "count": len(files)}
     except Exception as e:
         raise HTTPException(400, f"Verbindungsfehler: {str(e)[:300]}")

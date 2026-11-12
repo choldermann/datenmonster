@@ -218,6 +218,7 @@ async def upload_file(
     csv_delimiter: Optional[str] = Form(None),
     skip_rows: Optional[int] = Form(None),
     csv_decimal: Optional[str] = Form(None),
+    csv_header: Optional[bool] = Form(True),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -251,7 +252,7 @@ async def upload_file(
         f.write(content)
     try:
         df = parse_file(tmp_path, file_type, csv_delimiter=csv_delimiter, skip_rows=skip_rows or 0,
-                        csv_decimal=csv_decimal or ".")
+                        csv_decimal=csv_decimal or ".", csv_header=csv_header is not False)
         storage_path = dataframe_to_storage(df, ds.id)
         ds.file_path = storage_path
         ds.row_count = len(df)

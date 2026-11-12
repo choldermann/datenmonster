@@ -16,9 +16,9 @@ import pandas as pd
 # ─── CSV ──────────────────────────────────────────────────────────────────────
 
 def export_csv(df: pd.DataFrame, delimiter: str = ";", encoding: str = "utf-8-sig",
-               decimal: str = ".") -> bytes:
+               decimal: str = ".", **weitere) -> bytes:
     from app.services.csv_format import csv_schreiben
-    return csv_schreiben(df, delimiter=delimiter, encoding=encoding, decimal=decimal)
+    return csv_schreiben(df, delimiter=delimiter, encoding=encoding, decimal=decimal, **weitere)
 
 
 # ─── Destatis Intrastat CSV (IDEV-Upload) ───────────────────────────────────────

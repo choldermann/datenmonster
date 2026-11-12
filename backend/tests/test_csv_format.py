@@ -77,3 +77,86 @@ def test_xml_vom_ftp_liest_verschachtelte_felder():
 def test_xml_vom_ftp_mit_zielknoten():
     df = parse_bytes(XML, "a.xml", "xml", xml_target_node="Auftrag")
     assert df["Summe"].tolist() == ["10", "5"]
+
+
+# ─── CSV-Optionen beim Schreiben ──────────────────────────────────────────────
+from app.services.csv_format import csv_optionen, csv_schreiben
+
+
+def test_csv_optionen_anfuehrung_kopf_zeilenende_datum():
+    d = pd.DataFrame({"Name": ["A;B", "C"], "Menge": [1, 2],
+                      "Datum": pd.to_datetime(["2026-11-12", "2026-01-02"])})
+    b = csv_schreiben(d, **csv_optionen({"quote": "text", "header": False, "line_ending": "crlf",
+                                         "date_format": "%d.%m.%Y", "encoding": "utf-8"}))
+    assert b == b'"A;B";1;"12.11.2026"\r\n"C";2;"02.01.2026"\r\n'
+
+
+def test_csv_optionen_vorgaben_wie_bisher():
+    d = pd.DataFrame({"a": [1.5], "b": ["x"]})
+    assert csv_schreiben(d, **csv_optionen({})) == "a;b\n1.5;x\n".encode("utf-8-sig")
+
+
+def test_lesen_ohne_kopfzeile():
+    df = csv_lesen(b"1;x\n2;y\n", sep=";", header=False)
+    assert list(df.columns) == ["Spalte_1", "Spalte_2"]
+    assert len(df) == 2
+
+
+# ─── Ordner-Ablage (Hotfolder) ────────────────────────────────────────────────
+import time as _time
+
+import pytest
+
+from app.services import ablage as _ablage
+
+
+@pytest.fixture
+def basis(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUSTAUSCH_BASIS", str(tmp_path))
+    (tmp_path / "eingang").mkdir()
+    return tmp_path
+
+
+def _alt(p):
+    alt = _time.time() - 60
+    os.utime(p, (alt, alt))
+
+
+def test_ordner_listet_nur_fertige_passende_dateien(basis):
+    for n in ("a.csv", "b.csv", "c.txt", ".versteckt.csv", "d.csv.part"):
+        (basis / "eingang" / n).write_text("x")
+        _alt(basis / "eingang" / n)
+    (basis / "eingang" / "neu.csv").write_text("x")   # gerade geschrieben → noch nicht
+    assert _ablage.OrdnerAblage().dateien("/eingang", "*.csv") == ["a.csv", "b.csv"]
+
+
+def test_ordner_kommt_nicht_aus_dem_austauschordner(basis):
+    a = _ablage.OrdnerAblage()
+    for boese in ("../", "/../etc", "eingang/../../"):
+        with pytest.raises(ValueError):
+            a.dateien(boese, "*")
+    with pytest.raises(ValueError):
+        a.schreiben("eingang", "../raus.csv", b"x")
+
+
+def test_ordner_verschieben_ueberschreibt_nicht(basis):
+    a = _ablage.OrdnerAblage()
+    (basis / "eingang" / "x.csv").write_text("neu")
+    (basis / "erledigt").mkdir()
+    (basis / "erledigt" / "x.csv").write_text("alt")
+    a.verschieben("eingang", "x.csv", "erledigt")
+    namen = sorted(os.listdir(basis / "erledigt"))
+    assert len(namen) == 2 and "x.csv" in namen
+    assert (basis / "erledigt" / "x.csv").read_text() == "alt"
+
+
+def test_ordner_schreiben_legt_ordner_an_und_hinterlaesst_kein_part(basis):
+    a = _ablage.OrdnerAblage()
+    a.schreiben("ausgang/sub", "e.csv", b"inhalt")
+    assert os.listdir(basis / "ausgang" / "sub") == ["e.csv"]
+
+
+def test_text_in_anfuehrung_mit_dezimalkomma_laesst_zahlen_frei():
+    d = pd.DataFrame({"Name": ['Sag "Hallo"', "B"], "Preis": [1234.5, 0.99], "Menge": [3, 4]})
+    b = csv_schreiben(d, **csv_optionen({"quote": "text", "decimal": ",", "encoding": "utf-8"}))
+    assert b.decode() == '"Name";"Preis";"Menge"\n"Sag ""Hallo""";1234,5;3\n"B";0,99;4\n'

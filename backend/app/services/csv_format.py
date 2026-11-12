@@ -65,7 +65,8 @@ def _deutsche_zahlen(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def csv_lesen(data: bytes, sep: Optional[str] = None, skip_rows: int = 0,
-              decimal: str = ".", encoding: Optional[str] = None) -> pd.DataFrame:
+              decimal: str = ".", encoding: Optional[str] = None,
+              header: bool = True) -> pd.DataFrame:
     """
     sep:      Trennzeichen; None oder "auto" = erkennen
     skip_rows: so viele Zeilen VOR der Kopfzeile überspringen
@@ -79,16 +80,83 @@ def csv_lesen(data: bytes, sep: Optional[str] = None, skip_rows: int = 0,
         text = "\n".join(text.splitlines()[skip_rows:])
     if not sep or sep == "auto":
         sep = trennzeichen_erkennen(text)
+    kopf = {} if header else {"header": None}
     if decimal == ",":
-        df = pd.read_csv(io.StringIO(text), sep=sep, dtype=str, low_memory=False)
-        return _deutsche_zahlen(df)
-    return pd.read_csv(io.StringIO(text), sep=sep, low_memory=False)
+        df = pd.read_csv(io.StringIO(text), sep=sep, dtype=str, low_memory=False, **kopf)
+        df = _deutsche_zahlen(df)
+    else:
+        df = pd.read_csv(io.StringIO(text), sep=sep, low_memory=False, **kopf)
+    if not header:
+        # Ohne Kopfzeile heißen die Spalten Spalte_1, Spalte_2, …
+        df.columns = [f"Spalte_{i + 1}" for i in range(len(df.columns))]
+    return df
+
+
+ANFUEHRUNG = {
+    "minimal": csv.QUOTE_MINIMAL,      # nur wo nötig (Trenner/Zeilenumbruch im Text)
+    "alle": csv.QUOTE_ALL,             # jedes Feld in "…"
+    "text": csv.QUOTE_NONNUMERIC,      # Text in "…", Zahlen ohne
+}
+ZEILENENDE = {"crlf": "\r\n", "lf": "\n"}
 
 
 def csv_schreiben(df: pd.DataFrame, delimiter: str = ";", encoding: str = "utf-8-sig",
-                  decimal: str = ".") -> bytes:
+                  decimal: str = ".", quote: str = "minimal", header: bool = True,
+                  line_ending: str = "lf", date_format: Optional[str] = None) -> bytes:
     """Zeichen, die es in der Zielkodierung nicht gibt (z.B. „→“ in ANSI), werden
-    zu „?“ statt den ganzen Export abzubrechen."""
+    zu „?“ statt den ganzen Export abzubrechen.
+
+    quote:       minimal | alle | text
+    header:      Kopfzeile schreiben
+    line_ending: lf | crlf (Windows-Programme, ältere Importe)
+    date_format: strftime-Muster für Datumsspalten, z.B. "%d.%m.%Y"
+    """
+    if date_format:
+        df = df.copy()
+        for col in df.columns:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].dt.strftime(date_format)
+    if quote == "text" and (decimal or ".") != ".":
+        # pandas macht aus Zahlen mit Dezimalkomma vorher Text und setzt sie dann
+        # mit in "…" – hier also selbst schreiben: Text in "…", Zahlen ohne.
+        return _text_in_anfuehrung(df, delimiter or ";", decimal, header,
+                                   ZEILENENDE.get(line_ending or "lf", "\n")
+                                   ).encode(encoding or "utf-8-sig", errors="replace")
     buf = io.StringIO()
-    df.to_csv(buf, index=False, sep=delimiter or ";", decimal=decimal or ".")
+    df.to_csv(buf, index=False, sep=delimiter or ";", decimal=decimal or ".",
+              quoting=ANFUEHRUNG.get(quote or "minimal", csv.QUOTE_MINIMAL),
+              header=bool(header) if header is not None else True,
+              lineterminator=ZEILENENDE.get(line_ending or "lf", "\n"))
     return buf.getvalue().encode(encoding or "utf-8-sig", errors="replace")
+
+
+def _text_in_anfuehrung(df: pd.DataFrame, sep: str, decimal: str, header, nl: str) -> str:
+    def feld(v) -> str:
+        if v is None or (isinstance(v, float) and pd.isna(v)) or v is pd.NA:
+            return ""
+        if isinstance(v, bool):
+            return '"' + str(v) + '"'
+        if isinstance(v, (int, float)) or pd.api.types.is_number(v):
+            return str(v).replace(".", decimal)
+        return '"' + str(v).replace('"', '""') + '"'
+
+    zeilen = []
+    if header is not False:
+        zeilen.append(sep.join(feld(str(c)) for c in df.columns))
+    for row in df.itertuples(index=False, name=None):
+        zeilen.append(sep.join(feld(v) for v in row))
+    return nl.join(zeilen) + nl
+
+
+def csv_optionen(opts: dict, vorgabe_trenner: str = ";", vorgabe_kodierung: str = "utf-8-sig") -> dict:
+    """Optionen aus einer Ziel-/Knoten-Konfiguration für csv_schreiben."""
+    opts = opts or {}
+    return {
+        "delimiter": opts.get("delimiter") or vorgabe_trenner,
+        "encoding": opts.get("encoding") or vorgabe_kodierung,
+        "decimal": opts.get("decimal") or ".",
+        "quote": opts.get("quote") or "minimal",
+        "header": opts.get("header", True) is not False,
+        "line_ending": opts.get("line_ending") or "lf",
+        "date_format": opts.get("date_format") or None,
+    }

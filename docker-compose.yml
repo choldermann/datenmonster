@@ -19,6 +19,11 @@ services:
       # Host: ein verlorenes Volume nimmt sonst die Sicherungen gleich mit. So
       # sehen die Oberfläche und ./backup.sh dasselbe Verzeichnis.
       - ./backups:/app/backups
+      # Austauschordner für Hotfolder (FTP-Quelle mit Protokoll „Ordner“) und
+      # Datei-Ablage. Für ein Netzlaufwerk: auf dem Server einhängen und
+      # AUSTAUSCH_DIR=/mnt/freigabe in der .env setzen. Quellen kommen nie
+      # aus diesem Ordner heraus.
+      - ${AUSTAUSCH_DIR:-./austausch}:/app/austausch
       # Kein Docker-Socket mehr: die Container-Übersicht läuft über den Updater.
     environment:
       - SECRET_KEY=${SECRET_KEY}

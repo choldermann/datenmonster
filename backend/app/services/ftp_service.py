@@ -130,28 +130,18 @@ def upload_file_sftp(sftp, remote_dir: str, filename: str, data: bytes):
 
 
 def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename: str,
-                           delimiter: str = ",", encoding: str = "utf-8", decimal: str = ".") -> int:
+                           delimiter: str = ",", encoding: str = "utf-8", decimal: str = ".",
+                           **weitere) -> int:
     """Exportiert DataFrame als CSV und lädt auf FTP/SFTP-Ziel hoch. Gibt Zeilenanzahl zurück.
     Vorgaben wie bisher (Komma, UTF-8 ohne BOM), damit bestehende Empfänger nichts merken."""
     from app.services.csv_format import csv_schreiben
-    password = decrypt_credential(source.password) if source.password else ""
-    data = csv_schreiben(df, delimiter=delimiter or ",", encoding=encoding or "utf-8", decimal=decimal or ".")
-
-    if (source.protocol or "ftp") == "sftp":
-        sftp = _connect_sftp(source.host, source.port, source.username, password)
-        try:
-            upload_file_sftp(sftp, remote_dir, filename, data)
-        finally:
-            sftp._ssh.close()
-    else:
-        ftp = _connect_ftp(source.host, source.port, source.username, password)
-        try:
-            upload_file_ftp(ftp, remote_dir, filename, data)
-        finally:
-            try:
-                ftp.quit()
-            except Exception:
-                pass
+    from app.services.ablage import ablage_oeffnen
+    data = csv_schreiben(df, delimiter=delimiter or ",", encoding=encoding or "utf-8", decimal=decimal or ".",
+                         **weitere)
+    # Erst als .part schreiben, dann umbenennen – wer den Ordner beobachtet,
+    # sieht nie eine halbe Datei.
+    with ablage_oeffnen(source) as ablage:
+        ablage.schreiben(remote_dir, filename, data)
 
     logger.info(f"FTP-Upload abgeschlossen: {remote_dir.rstrip('/')}/{filename} ({len(df)} Zeilen)")
     return len(df)
@@ -160,7 +150,8 @@ def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename
 # ─── Datei parsen ─────────────────────────────────────────────────────────────
 
 def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0,
-                csv_decimal: str = ".", xml_target_node: Optional[str] = None) -> pd.DataFrame:
+                csv_decimal: str = ".", xml_target_node: Optional[str] = None,
+                csv_header: bool = True) -> pd.DataFrame:
     """Parse downloaded bytes into a DataFrame."""
     buf = io.BytesIO(data)
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -189,9 +180,9 @@ def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str =
     else:
         from app.services.csv_format import csv_lesen
         try:
-            return csv_lesen(data, sep=csv_delimiter, skip_rows=skip_rows, decimal=csv_decimal or ".")
+            return csv_lesen(data, sep=csv_delimiter, skip_rows=skip_rows, decimal=csv_decimal or ".", header=csv_header)
         except Exception:
-            return csv_lesen(data, sep="auto", skip_rows=skip_rows, decimal=csv_decimal or ".")
+            return csv_lesen(data, sep="auto", skip_rows=skip_rows, decimal=csv_decimal or ".", header=csv_header)
 
 
 # ─── Haupt-Sync-Funktion ──────────────────────────────────────────────────────
@@ -206,43 +197,40 @@ def run_ftp_sync(source, db) -> dict:
     from app.services.file_service import dataframe_to_storage
     from datetime import datetime, timezone
 
-    protocol = (source.protocol or "ftp").lower()
+    from app.services.ablage import ablage_oeffnen
     conn = None
     errors = []
     files_processed = []
+    failed_files = []
     dfs = []
 
     try:
-        # 1. Verbinden
-        if protocol == "sftp":
-            conn = _connect_sftp(source.host, source.port, source.username, decrypt_credential(source.password))
-            files = list_files_sftp(conn, source.remote_dir, source.filename_filter or "*")
-        else:
-            conn = _connect_ftp(source.host, source.port, source.username, decrypt_credential(source.password))
-            files = list_files_ftp(conn, source.remote_dir, source.filename_filter or "*")
+        # 1. Verbinden (FTP, SFTP oder Ordner)
+        conn = ablage_oeffnen(source)
+        files = conn.dateien(source.remote_dir, source.filename_filter or "*")
 
         logger.info(f"FTP sync '{source.name}': {len(files)} Datei(en) gefunden: {files}")
 
         if not files:
             return {"rows": 0, "files_processed": [], "errors": [], "info": "Keine passenden Dateien gefunden"}
+        error_dir = getattr(source, "error_dir", None) or None
 
         # 2. Alle Dateien herunterladen & parsen
         for filename in files:
             try:
-                if protocol == "sftp":
-                    data = download_file_sftp(conn, source.remote_dir, filename)
-                else:
-                    data = download_file_ftp(conn, source.remote_dir, filename)
+                data = conn.lesen(source.remote_dir, filename)
 
                 df = parse_bytes(data, filename, source.file_type, source.csv_delimiter or ";",
                                  getattr(source, 'skip_rows', 0) or 0,
                                  csv_decimal=getattr(source, 'csv_decimal', None) or ".",
-                                 xml_target_node=getattr(source, 'xml_target_node', None) or None)
+                                 xml_target_node=getattr(source, 'xml_target_node', None) or None,
+                                 csv_header=getattr(source, 'csv_header', 1) != 0)
                 dfs.append(df)
                 files_processed.append(filename)
                 logger.info(f"  ✓ {filename}: {len(df)} Zeilen, {len(df.columns)} Spalten")
             except Exception as e:
                 errors.append(f"{filename}: {str(e)[:200]}")
+                failed_files.append(filename)
                 # db_logger: Datei-Fehler in system_logs schreiben
                 try:
                     from app.services.db_logger import log as _dblog
@@ -257,6 +245,16 @@ def run_ftp_sync(source, db) -> dict:
                 except Exception:
                     pass
                 logger.error(f"  ✗ {filename}: {e}")
+
+        # Nicht lesbare Dateien aus dem Eingang nehmen – sonst scheitern sie
+        # bei jedem Lauf erneut und verdecken neue Fehler.
+        if error_dir:
+            for filename in failed_files:
+                try:
+                    conn.verschieben(source.remote_dir, filename, error_dir)
+                    logger.info(f"  → {filename} in Fehler-Ordner {error_dir}")
+                except Exception as e:
+                    errors.append(f"{filename}: Verschieben in Fehler-Ordner fehlgeschlagen: {str(e)[:100]}")
 
         if not dfs:
             raise ValueError("Keine Datei konnte gelesen werden: " + "; ".join(errors))
@@ -313,16 +311,10 @@ def run_ftp_sync(source, db) -> dict:
         if after != "nothing":
             for filename in files_processed:
                 try:
-                    if protocol == "sftp":
-                        if after == "move" and source.move_dir:
-                            move_file_sftp(conn, source.remote_dir, filename, source.move_dir)
-                        elif after == "delete":
-                            delete_file_sftp(conn, source.remote_dir, filename)
-                    else:
-                        if after == "move" and source.move_dir:
-                            move_file_ftp(conn, source.remote_dir, filename, source.move_dir)
-                        elif after == "delete":
-                            delete_file_ftp(conn, source.remote_dir, filename)
+                    if after == "move" and source.move_dir:
+                        conn.verschieben(source.remote_dir, filename, source.move_dir)
+                    elif after == "delete":
+                        conn.loeschen(source.remote_dir, filename)
                 except Exception as e:
                     err_msg = f"After-import '{after}' für {filename}: {str(e)[:100]}"
                     errors.append(err_msg)
@@ -367,13 +359,5 @@ def run_ftp_sync(source, db) -> dict:
 
     finally:
         # Verbindung schließen
-        try:
-            if conn:
-                if protocol == "sftp":
-                    conn.close()
-                    if hasattr(conn, "_ssh"):
-                        conn._ssh.close()
-                else:
-                    conn.quit()
-        except Exception:
-            pass
+        if conn:
+            conn.schliessen()

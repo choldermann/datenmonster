@@ -76,6 +76,7 @@ function StepFileUpload({ onDone, projectId }) {
   const [delimiter, setDelimiter] = useState("auto");
   const [skipRows, setSkipRows] = useState(0);
   const [decimal, setDecimal] = useState(".");
+  const [hatKopf, setHatKopf] = useState(true);
   const [detectedDelimiter, setDetectedDelimiter] = useState(null);
   const inputRef = useRef();
 
@@ -123,6 +124,7 @@ function StepFileUpload({ onDone, projectId }) {
         const sep = delimiter === "auto" ? (detectedDelimiter || ",") : delimiter;
         fd.append("csv_delimiter", sep);
         fd.append("csv_decimal", decimal);
+        fd.append("csv_header", hatKopf ? "true" : "false");
       }
       if (skipRows > 0) fd.append("skip_rows", skipRows);
       await api.post("/api/datasets/upload", fd);
@@ -210,6 +212,10 @@ function StepFileUpload({ onDone, projectId }) {
           {delimiter === "auto" && !detectedDelimiter && (
             <p style={{ fontSize: 11, color: S.textDim, marginTop: 6 }}>Analysiere Datei…</p>
           )}
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.textDim, marginTop: 12, cursor: "pointer" }}>
+            <input type="checkbox" checked={hatKopf} onChange={(e) => setHatKopf(e.target.checked)} />
+            Erste Zeile ist Kopfzeile {!hatKopf && <span>(Spalten heißen dann Spalte_1, Spalte_2, …)</span>}
+          </label>
           <label style={{ ...labelStyle, marginTop: 12 }}>Zahlen in der Datei</label>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {[{ v: ".", l: "1234.56 (Punkt)" }, { v: ",", l: "1.234,56 (deutsch)" }].map(o => (
