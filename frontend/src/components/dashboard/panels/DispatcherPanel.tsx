@@ -67,7 +67,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
         {/* Header */}
         <div style={{ padding: "14px 18px", borderBottom: `1px solid ${S.border}`, display: "flex", alignItems: "center", gap: 10 }}>
           <GitBranch size={14} style={{ color: DISP_COLOR }} />
-          <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright, flex: 1 }}>{isNew ? "Neue Dispatcher-Regel" : "Regel bearbeiten"}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: S.textBright, flex: 1 }}>{isNew ? "Neue Datei-Regel" : "Regel bearbeiten"}</span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: S.textDim, cursor: "pointer" }}><X size={14} /></button>
         </div>
 
@@ -87,9 +87,9 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div>
-              <label style={lS}>FTP-Quelle</label>
+              <label style={lS}>Datei-Quelle</label>
               <select style={iS} value={form.ftp_source_id || ""} onChange={e => set("ftp_source_id", parseInt(e.target.value) || null)}>
-                <option value="">— Alle FTP-Quellen —</option>
+                <option value="">— Alle Datei-Quellen des Projekts —</option>
                 {ftpSources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
@@ -120,7 +120,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
               </div>
             </div>
             {(form.conditions || []).length === 0 && (
-              <p style={{ fontSize: 10, color: S.textDim, fontStyle: "italic" }}>Keine Bedingungen = gilt für alle Dateien dieser FTP-Quelle</p>
+              <p style={{ fontSize: 10, color: S.textDim, fontStyle: "italic" }}>Keine Bedingungen = gilt für alle Dateien der Quelle</p>
             )}
             {(form.conditions || []).map((c, i) => (
               <div key={i} style={{ display: "flex", gap: 6, alignItems: "flex-start", marginBottom: 6 }}>
@@ -287,7 +287,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
     <div style={{ padding: 20, maxWidth: 900 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: S.textBright, margin: 0 }}>Dispatcher</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: S.textBright, margin: 0 }}>Datei-Regeln</h2>
           <p style={{ fontSize: 11, color: S.textDim, marginTop: 4 }}>Eingehende Dateien automatisch erkennen und das passende Mapping starten.</p>
         </div>
         {canEdit && (
@@ -303,7 +303,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
       {!loading && rules.length === 0 && (
         <div style={{ textAlign: "center", padding: 40, border: `1px dashed ${S.border}`, borderRadius: 8 }}>
           <GitBranch size={32} style={{ color: S.textDim, marginBottom: 12 }} />
-          <p style={{ fontSize: 13, color: S.textDim }}>Noch keine Dispatcher-Regeln</p>
+          <p style={{ fontSize: 13, color: S.textDim }}>Noch keine Datei-Regeln</p>
           <p style={{ fontSize: 11, color: S.textDim, marginTop: 4 }}>Erstelle eine Regel um eingehende FTP-Dateien automatisch zu verarbeiten.</p>
         </div>
       )}
@@ -319,7 +319,7 @@ export default function DispatcherPanel({ projectId, canEdit }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 12, fontWeight: 600, color: S.textBright, margin: 0 }}>{rule.name}</p>
                 <p style={{ fontSize: 10, color: S.textDim, margin: "2px 0 0" }}>
-                  {ftp ? `FTP: ${ftp.name}` : "Alle FTP-Quellen"} →
+                  {ftp ? `Quelle: ${ftp.name}` : "Alle Datei-Quellen des Projekts"} →
                   {mapping ? ` Mapping: ${mapping.name}` : " Kein Mapping"}
                   {rule.conditions?.length > 0 ? ` · ${rule.conditions.length} Bedingung(en)` : " · Immer"}
                   {rule.post_actions?.length > 0 ? ` · ${rule.post_actions.length} Aktion(en)` : ""}

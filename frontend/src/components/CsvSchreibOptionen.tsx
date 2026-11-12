@@ -26,8 +26,8 @@ export default function CsvSchreibOptionen({ opts, set, iS, lS, vorgabeTrenner =
         <div>
           <label style={lS}>Zahlen</label>
           <select style={iS} value={opts.decimal || "."} onChange={(e) => set("decimal", e.target.value)}>
-            <option value=".">1234.56 (Punkt)</option>
-            <option value=",">1234,56 (Komma, Excel-DE)</option>
+            <option value=".">{kompakt ? "1234.56" : "1234.56 (Punkt)"}</option>
+            <option value=",">{kompakt ? "1234,56" : "1234,56 (Komma, Excel-DE)"}</option>
           </select>
         </div>
       </div>
@@ -35,17 +35,17 @@ export default function CsvSchreibOptionen({ opts, set, iS, lS, vorgabeTrenner =
         <div>
           <label style={lS}>Kodierung</label>
           <select style={iS} value={opts.encoding || vorgabeKodierung} onChange={(e) => set("encoding", e.target.value)}>
-            <option value="utf-8-sig">UTF-8 mit BOM (Excel)</option>
-            <option value="utf-8">UTF-8 ohne BOM</option>
-            <option value="cp1252">ANSI / Windows-1252</option>
+            <option value="utf-8-sig">{kompakt ? "UTF-8 BOM" : "UTF-8 mit BOM (Excel)"}</option>
+            <option value="utf-8">{kompakt ? "UTF-8" : "UTF-8 ohne BOM"}</option>
+            <option value="cp1252">{kompakt ? "ANSI" : "ANSI / Windows-1252"}</option>
           </select>
         </div>
         <div>
-          <label style={lS}>Anführungszeichen</label>
+          <label style={lS}>{kompakt ? "Anführung" : "Anführungszeichen"}</label>
           <select style={iS} value={opts.quote || "minimal"} onChange={(e) => set("quote", e.target.value)}>
-            <option value="minimal">nur wo nötig</option>
-            <option value="text">um Text, nicht um Zahlen</option>
-            <option value="alle">um jedes Feld</option>
+            <option value="minimal">{kompakt ? "wo nötig" : "nur wo nötig"}</option>
+            <option value="text">{kompakt ? "um Text" : "um Text, nicht um Zahlen"}</option>
+            <option value="alle">{kompakt ? "alle" : "um jedes Feld"}</option>
           </select>
         </div>
       </div>
@@ -53,18 +53,18 @@ export default function CsvSchreibOptionen({ opts, set, iS, lS, vorgabeTrenner =
         <div>
           <label style={lS}>Zeilenende</label>
           <select style={iS} value={opts.line_ending || "lf"} onChange={(e) => set("line_ending", e.target.value)}>
-            <option value="lf">LF (Linux, Standard)</option>
-            <option value="crlf">CRLF (Windows)</option>
+            <option value="lf">{kompakt ? "LF" : "LF (Linux, Standard)"}</option>
+            <option value="crlf">{kompakt ? "CRLF" : "CRLF (Windows)"}</option>
           </select>
         </div>
         <div>
           <label style={lS}>Datumsformat</label>
           <select style={iS} value={opts.date_format || ""} onChange={(e) => set("date_format", e.target.value)}>
-            <option value="">unverändert</option>
+            <option value="">{kompakt ? "wie es ist" : "unverändert"}</option>
             <option value="%d.%m.%Y">12.11.2026</option>
-            <option value="%d.%m.%Y %H:%M:%S">12.11.2026 14:30:00</option>
-            <option value="%Y-%m-%d">2026-11-12 (ISO)</option>
-            <option value="%Y-%m-%d %H:%M:%S">2026-11-12 14:30:00</option>
+            <option value="%d.%m.%Y %H:%M:%S">{kompakt ? "12.11.26 14:30" : "12.11.2026 14:30:00"}</option>
+            <option value="%Y-%m-%d">{kompakt ? "2026-11-12" : "2026-11-12 (ISO)"}</option>
+            <option value="%Y-%m-%d %H:%M:%S">{kompakt ? "ISO + Zeit" : "2026-11-12 14:30:00"}</option>
             <option value="%Y%m%d">20261112</option>
           </select>
         </div>

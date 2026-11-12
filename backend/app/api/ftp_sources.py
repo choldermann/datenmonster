@@ -120,6 +120,10 @@ def create_ftp_source(
     # Der Sync schreibt ins Ziel-Dataset – das muss man selbst ändern dürfen.
     dataset_pruefen(data.dataset_id, user, db, schreiben=True)
     d = data.model_dump()
+    if (d.get("protocol") or "").lower() == "ordner":
+        # Ordner brauchen keine Zugangsdaten – nichts speichern, was der Browser
+        # vielleicht automatisch in die (ausgeblendeten) Felder getragen hat.
+        d.update(host="", username="", password="", port=None)
     if d.get("password"):
         d["password"] = encrypt_credential(d["password"])
     else:
@@ -154,6 +158,10 @@ def update_ftp_source(
             require_editor(d.get("project_id"), user, db)
     if d.get("dataset_id") != s.dataset_id:
         dataset_pruefen(d.get("dataset_id"), user, db, schreiben=True)
+    if (d.get("protocol") or "").lower() == "ordner":
+        d.update(host="", username="", port=None)
+        s.password = ""
+        d.pop("password", None)
     for k, v in d.items():
         if k == "password":
             if not v or set(v) <= {"•", "*"}:

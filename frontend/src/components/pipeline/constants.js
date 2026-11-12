@@ -25,12 +25,12 @@ export const NODE_COLORS = {
 
 export const NODE_TYPES = [
   { type: "trigger",    label: "Trigger",       icon: "⏰", color: NODE_COLORS.trigger,    desc: "Startet die Pipeline" },
-  { type: "ftp",        label: "FTP Input",     icon: "📥", color: NODE_COLORS.ftp,         desc: "Dateien von FTP holen" },
+  { type: "ftp",        label: "Datei-Quelle",  icon: "📥", color: NODE_COLORS.ftp,         desc: "FTP, SFTP oder Ordner einlesen" },
   { type: "rest_fetch", label: "REST Fetch",    icon: "🌐", color: NODE_COLORS.rest_fetch,  desc: "REST API abrufen" },
   { type: "dispatcher", label: "Verzweigung",   icon: "🔀", color: NODE_COLORS.dispatcher,  desc: "Bedingungen & Verzweigung" },
   { type: "mapping",    label: "Mapping",       icon: "⚙️", color: NODE_COLORS.mapping,     desc: "Mapping ausführen" },
   { type: "condition",  label: "Bedingung",     icon: "❓", color: NODE_COLORS.condition,   desc: "Wenn/Dann Verzweigung" },
-  { type: "ftp_upload", label: "FTP Upload",    icon: "📤", color: NODE_COLORS.ftp_upload,  desc: "Datei hochladen" },
+  { type: "ftp_upload", label: "Datei ablegen", icon: "📤", color: NODE_COLORS.ftp_upload,  desc: "FTP, SFTP oder Ordner" },
   { type: "email",             label: "E-Mail",           icon: "📧", color: NODE_COLORS.email,             desc: "E-Mail senden" },
   { type: "business_insights", label: "Business Insights", icon: "💡", color: NODE_COLORS.business_insights, desc: "Umsatz, Trends & Anomalien analysieren" },
 ];

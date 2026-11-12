@@ -165,9 +165,18 @@ def run_dispatcher(ftp_source_id: int, filename: str, df: pd.DataFrame, data_byt
 
     results = []
 
+    # Regeln für genau diese Quelle – und Regeln ohne Quelle („alle Datei-Quellen
+    # des Projekts“), die vorher nie griffen. Ohne Quelle nur im selben Projekt,
+    # damit eine Regel nie Dateien eines fremden Projekts verarbeitet.
+    quelle = db.query(FtpSource).filter(FtpSource.id == ftp_source_id).first()
+    from sqlalchemy import and_, or_
+    passend = DispatcherRule.ftp_source_id == ftp_source_id
+    if quelle is not None:
+        projekt = (DispatcherRule.project_id == quelle.project_id) if quelle.project_id is not None \
+            else DispatcherRule.project_id.is_(None)
+        passend = or_(passend, and_(DispatcherRule.ftp_source_id.is_(None), projekt))
     rules = db.query(DispatcherRule).filter(
-        DispatcherRule.active == True,
-        DispatcherRule.ftp_source_id == ftp_source_id
+        DispatcherRule.active == True, passend
     ).order_by(DispatcherRule.priority).all()
 
     if not rules:

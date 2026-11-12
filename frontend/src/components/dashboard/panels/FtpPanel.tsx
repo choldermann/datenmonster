@@ -55,7 +55,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     setSaving(true);
     try {
       const dsId = form.dataset_id && datasets?.find(d => d.id === parseInt(form.dataset_id)) ? parseInt(form.dataset_id) : null;
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null, error_dir: form.error_dir || null, ...(istOrdner ? { host: "", username: "", port: null } : {}) };
+      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null, error_dir: form.error_dir || null, ...(istOrdner ? { host: "", username: "", password: "", port: null } : {}) };
       if (isNew) await api.post("/api/ftp-sources/", payload);
       else await api.put(`/api/ftp-sources/${source.id}`, payload);
       onDone();
@@ -114,8 +114,8 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
 
           {/* Benutzer + Passwort */}
           <div style={row}>
-            <div><label style={lS}>Benutzername</label><input style={iS} value={form.username} onChange={(e) => set("username", e.target.value)} /></div>
-            <div><label style={lS}>Passwort</label><input style={{ ...iS }} type="password" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder={!isNew && !form.password ? "••••••••  (unverändert)" : ""} /></div>
+            <div><label style={lS}>Benutzername</label><input style={iS} autoComplete="off" name="ftp-benutzer" value={form.username} onChange={(e) => set("username", e.target.value)} /></div>
+            <div><label style={lS}>Passwort</label><input style={{ ...iS }} type="password" autoComplete="new-password" name="ftp-passwort" value={form.password} onChange={(e) => set("password", e.target.value)} placeholder={!isNew && !form.password ? "••••••••  (unverändert)" : ""} /></div>
           </div>
           </>}
 
@@ -367,8 +367,8 @@ function FtpPanel({ projectId, datasets, canEdit }) {
     <div style={{ padding: "28px 32px", maxWidth: 900 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
         <div>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: S.textBright }}>FTP / SFTP Quellen</h2>
-          <p style={{ fontSize: 12, color: S.textDim, marginTop: 2 }}>Dateien von FTP/SFTP-Servern automatisch importieren und in Datasets speichern</p>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: S.textBright }}>Datei-Quellen</h2>
+          <p style={{ fontSize: 12, color: S.textDim, marginTop: 2 }}>Dateien von FTP-/SFTP-Servern oder aus einem Ordner (Hotfolder) automatisch einlesen und in Datasets speichern</p>
         </div>
         {canEdit && (
           <button onClick={() => setEditing("new")} disabled={!!sperre} title={sperre}

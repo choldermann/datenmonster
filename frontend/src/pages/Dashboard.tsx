@@ -241,6 +241,7 @@ export default function Dashboard() {
   const NAV_RECHT: Record<string, string> = {
     werkbank:   "ai_build",
     ftp:        "ftp_sftp",
+    dispatcher: "ftp_sftp",
     rest:       "rest_sources",
     api_studio: "api_studio",
     ai_memory:  "ai_memory",
@@ -251,7 +252,10 @@ export default function Dashboard() {
     { id: "werkbank",    label: "KI-Werkbank",    icon: Wand2,       badge: 0, dividerAfter: true },
     { id: "connections", label: "Verbindungen",  icon: Database,     badge: connectionsCount },
     { id: "datasets",    label: "Datasets",       icon: LayoutGrid,  badge: datasetsCount },
-    { id: "ftp",         label: "FTP / SFTP",     icon: Server,      badge: ftpCount },
+    { id: "ftp",         label: "Datei-Quellen",  icon: Server,      badge: ftpCount },
+    // Regeln je eingehender Datei: Bedingung → Mapping → Nach-Aktionen.
+    // Die Maske gab es schon, nur keinen Weg dorthin.
+    { id: "dispatcher",  label: "Datei-Regeln",   icon: FolderSync,  badge: 0 },
     { id: "rest",        label: "REST API",        icon: Wifi,        badge: restCount },
     { id: "api_studio",  label: "API Studio",      icon: Globe,       badge: 0 },
     { id: "templates",   label: "Cockpits & Erweiterungen", icon: Package,     badge: templatesCount, dividerAfter: true },
