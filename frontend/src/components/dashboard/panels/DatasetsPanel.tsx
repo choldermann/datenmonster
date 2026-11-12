@@ -20,10 +20,24 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
   const [name, setName] = useState(dataset.name);
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("name"); // "name" | "columns" | "schedule"
-  const isDbDataset = dataset.file_type?.startsWith("db_") && !!dataset.source_connection_id;
+  const isDbDataset = (dataset.file_type?.startsWith("db_") && !!dataset.source_connection_id)
+    || dataset.file_type === "doc_html";   // Web-Quelle: Zeitplan = regelmäßiger Abruf
   const [cronExpr, setCronExpr] = useState(dataset.cron_expr || "");
   const [autoRefresh, setAutoRefresh] = useState(dataset.auto_refresh === 1);
   const [savingSchedule, setSavingSchedule] = useState(false);
+  const istWeb = dataset.file_type === "doc_html";
+  const [schwelle, setSchwelle] = useState(String(dataset.query_config?.preiswarnung_schwelle ?? 5));
+  const [warnungStatus, setWarnungStatus] = useState<string>("");
+  const preiswarnungEinrichten = async () => {
+    setWarnungStatus("…");
+    try {
+      const { data } = await api.post(`/api/datasets/${dataset.id}/preiswarnung`,
+        { schwelle_prozent: parseFloat(schwelle.replace(",", ".")) || 5 });
+      setWarnungStatus(`✓ Eingerichtet: Mapping „Preisänderungen – ${dataset.name}“ und ${data.regeln.length} Warnregeln (gesenkt / erhöht um ≥ ${data.schwelle_prozent} %). Sie erscheinen unter „Warnungen“ und im nächtlichen Warnungslauf.`);
+    } catch (e) {
+      setWarnungStatus("✗ " + fehlerText(e));
+    }
+  };
 
   const CRON_PRESETS = [
     { label: "Alle 5 Min",     value: "*/5 * * * *" },
@@ -222,7 +236,8 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                   {dataset.last_refresh_at && (
                     <div style={{ padding: "8px 12px", borderRadius: 6,
                       backgroundColor: dataset.last_refresh_status === "error"
-                        ? "color-mix(in srgb, var(--err) 8%, transparent)" : "color-mix(in srgb, var(--ok) 6%, transparent)",
+                        ? "color-mix(in srgb, var(--err) 8%, transparent)" : dataset.last_refresh_status === "warning"
+                        ? "color-mix(in srgb, var(--accent) 8%, transparent)" : "color-mix(in srgb, var(--ok) 6%, transparent)",
                       border: `1px solid ${dataset.last_refresh_status === "error"
                         ? "color-mix(in srgb, var(--err) 20%, transparent)" : "color-mix(in srgb, var(--ok) 20%, transparent)"}` }}>
                       <p style={{ fontSize: 11, margin: 0,
@@ -234,6 +249,26 @@ function EditDatasetModal({ dataset, onDone, onCancel }) {
                     </div>
                   )}
                 </>
+              )}
+              {istWeb && (
+                <div style={{ padding: "10px 12px", borderRadius: 6, border: "1px solid var(--border)", marginTop: 4 }}>
+                  <p style={{ fontSize: 12, fontWeight: 700, color: "var(--text-bright)", margin: "0 0 4px" }}>Preiswarnung</p>
+                  <p style={{ fontSize: 11, color: "var(--text-dim)", margin: "0 0 8px", lineHeight: 1.5 }}>
+                    Meldet nach jedem Abruf, wenn ein Wettbewerber einen Preis um mindestens diesen Prozentsatz senkt oder erhöht.
+                    Legt ein Mapping „Preisänderungen“ und zwei Warnregeln an; erneut klicken ändert die Schwelle.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input value={schwelle} onChange={e => setSchwelle(e.target.value)} style={{ width: 70,
+                      backgroundColor: "var(--bg-elevated)", border: "1px solid var(--border)", borderRadius: 6,
+                      padding: "5px 8px", fontSize: 13, color: "var(--text-main)" }} />
+                    <span style={{ fontSize: 12, color: "var(--text-dim)" }}>%</span>
+                    <button onClick={preiswarnungEinrichten} className="btn-primary text-xs">Preiswarnung einrichten</button>
+                  </div>
+                  {warnungStatus && (
+                    <p style={{ fontSize: 11, marginTop: 8, lineHeight: 1.5,
+                      color: warnungStatus.startsWith("✗") ? "var(--err)" : "var(--ok)" }}>{warnungStatus}</p>
+                  )}
+                </div>
               )}
             </div>
           )}
@@ -431,10 +466,11 @@ const WEEKDAYS = [
 
 
 function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRows, onRequery, canEdit = true }) {
-  const typeColor = { csv: "var(--ok)", xlsx: "#93c5fd", xml: "#fcd34d", db_mssql: "#c4b5fd", db_mysql: "var(--ok)" };
-  const typeLabel = { csv: "CSV", xlsx: "XLSX", xml: "XML", db_mssql: "SQL Server", db_mysql: "MySQL" };
+  const typeColor = { csv: "var(--ok)", xlsx: "#93c5fd", xml: "#fcd34d", db_mssql: "#c4b5fd", db_mysql: "var(--ok)", doc_html: "var(--accent)" };
+  const typeLabel = { csv: "CSV", xlsx: "XLSX", xml: "XML", db_mssql: "SQL Server", db_mysql: "MySQL", doc_html: "Web" };
   const isPending = dataset.xml_configured === 0;
-  const isDb = dataset.file_type?.startsWith("db_") && dataset.source_sql;
+  const isWeb = dataset.file_type === "doc_html";
+  const isDb = (dataset.file_type?.startsWith("db_") && dataset.source_sql) || isWeb;
   const [requerying, setRequerying] = useState(false);
 
   const handleRequery = async (e) => {
@@ -443,6 +479,8 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
     try {
       await api.post(`/api/datasets/${dataset.id}/requery`);
       onRequery?.();
+      // Web-Abruf läuft im Hintergrund – Stand ein paar Mal nachladen
+      if (isWeb) [4000, 15000, 45000, 120000].forEach(ms => setTimeout(() => onRequery?.(), ms));
     } catch (err) {
       alert(fehlerText(err));
     } finally { setRequerying(false); }
@@ -465,11 +503,11 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
         {canEdit && (
           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2">
             {isDb && (
-              <button onClick={handleRequery} disabled={requerying} title="SQL neu ausführen"
+              <button onClick={handleRequery} disabled={requerying || dataset.abruf_laeuft} title={isWeb ? "Jetzt abrufen" : "SQL neu ausführen"}
                 className="p-1 rounded" style={{ color: "#c4b5fd" }}
                 onMouseEnter={(e) => e.currentTarget.style.color = "#a78bfa"}
                 onMouseLeave={(e) => e.currentTarget.style.color = "#c4b5fd"}>
-                {requerying ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+                {(requerying || dataset.abruf_laeuft) ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
               </button>
             )}
             {dataset.file_type === "static" && onEditRows && (
@@ -536,6 +574,15 @@ function DatasetCard({ dataset, onDelete, onClick, onConfigure, onEdit, onEditRo
               </span>
             )}
           </div>
+          {isWeb && (dataset.abruf_laeuft || dataset.last_refresh_at) && (
+            <div className="mt-2 text-xs" style={{
+              color: dataset.abruf_laeuft ? S.textDim : dataset.last_refresh_status === "error" ? "var(--err)"
+                : dataset.last_refresh_status === "warning" ? "var(--accent)" : "var(--ok)",
+              lineHeight: 1.4, overflowWrap: "anywhere" }}>
+              {dataset.abruf_laeuft ? "Abruf läuft …"
+                : `${dataset.last_refresh_status === "error" ? "✗" : dataset.last_refresh_status === "warning" ? "⚠" : "✓"} ${new Date(dataset.last_refresh_at).toLocaleString("de-DE")} – ${dataset.last_refresh_msg || ""}`}
+            </div>
+          )}
           <div className="flex items-center gap-1 mt-3 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ color: S.accent }}>
             <span>Explorer öffnen</span><ChevronRight size={11} />

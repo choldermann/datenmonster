@@ -243,6 +243,11 @@ def _run_dataset_requery(dataset_id: int):
             logger.error(f"Dataset-Requery: Dataset {dataset_id} nicht gefunden")
             return
 
+        from app.services.web_abruf import ist_web_dataset, abruf_ausfuehren
+        if ist_web_dataset(ds):
+            abruf_ausfuehren(dataset_id)   # protokolliert und setzt last_refresh_* selbst
+            return
+
         if not ds.source_connection_id or not ds.source_sql:
             logger.error(f"Dataset-Requery: Dataset {dataset_id} hat keine SQL-Verbindung")
             return

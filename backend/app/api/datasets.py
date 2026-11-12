@@ -115,6 +115,7 @@ def dataset_out(ds: Dataset) -> dict:
         "last_refresh_at": ds.last_refresh_at.isoformat() if ds.last_refresh_at else None,
         "last_refresh_status": ds.last_refresh_status or "",
         "last_refresh_msg": ds.last_refresh_msg or "",
+        "abruf_laeuft": __import__("app.services.web_abruf", fromlist=["laeuft"]).laeuft(ds.id),
         "created_at": ds.created_at.isoformat() if ds.created_at else None,
         "updated_at": ds.updated_at.isoformat() if ds.updated_at else (ds.created_at.isoformat() if ds.created_at else None),
     }
@@ -492,6 +493,11 @@ def create_plugin_dataset(
     if not plugin:
         raise HTTPException(400, f"Keine Plugin-Quelle mit ID '{body.source_type_id}' gefunden")
     require_editor(body.project_id, user, db)
+    ref = (body.query_config or {}).get("url_dataset_id")
+    if ref not in (None, "", 0, "0"):
+        quelle = _get_ds(int(ref), db, user)
+        if quelle.project_id != body.project_id:
+            raise HTTPException(400, f"URL-Dataset „{quelle.name}“ gehört zu einem anderen Projekt")
 
     # Spalten live vom Plugin holen
     try:
@@ -514,6 +520,9 @@ def create_plugin_dataset(
     db.add(ds)
     db.commit()
     db.refresh(ds)
+    from app.services.web_abruf import ist_web_dataset, abruf_im_hintergrund
+    if ist_web_dataset(ds):
+        abruf_im_hintergrund(ds.id)   # erster vollständiger Abruf läuft im Hintergrund
     return dataset_out(ds)
 
 
@@ -685,6 +694,12 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
     # ── Plugin-Dataset: Spalten + Zeilenzahl live holen ──────────────────────
     _FILE_TYPES = {"csv", "xlsx", "xls", "xml", "json", "ods", "static"}
     _DB_TYPES = {"db_mssql", "db_mysql", "db_postgresql"}
+    from app.services.web_abruf import ist_web_dataset, abruf_im_hintergrund
+    if ist_web_dataset(ds):
+        gestartet = abruf_im_hintergrund(ds.id)
+        out = dataset_out(ds)
+        out["abruf"] = "gestartet" if gestartet else "läuft bereits"
+        return out
     if ds.file_type not in _FILE_TYPES and ds.file_type not in _DB_TYPES and ds.file_type != "rest_api":
         from app.connectors.factory import get_connector
         try:
@@ -723,6 +738,23 @@ def requery_dataset(dataset_id: int, db: Session = Depends(get_db), user: User =
         return dataset_out(ds)
     except Exception as e:
         raise HTTPException(400, f"Re-Query fehlgeschlagen: {str(e)[:400]}")
+
+
+class PreiswarnungIn(BaseModel):
+    schwelle_prozent: float = 5.0
+
+
+@router.post("/{dataset_id}/preiswarnung")
+def preiswarnung(dataset_id: int, body: PreiswarnungIn, db: Session = Depends(get_db),
+                 user: User = Depends(get_current_user)):
+    """Web-Quelle: Mapping + Warnregeln „Preis gesenkt/erhöht um ≥ X %“ anlegen/aktualisieren."""
+    ds = _get_ds(dataset_id, db, user)
+    require_editor(ds.project_id, user, db)
+    from app.services.web_abruf import preiswarnung_einrichten
+    try:
+        return preiswarnung_einrichten(ds, body.schwelle_prozent, db)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/{dataset_id}/detect-schema")

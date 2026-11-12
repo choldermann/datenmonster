@@ -4,6 +4,8 @@ ConnectorFactory – wählt den richtigen Connector für ein Dataset.
 Neue Connector-Typen (REST, MongoDB, ...) werden hier registriert.
 mapping_service.py kennt nur die Factory – nie die konkreten Connector-Klassen.
 """
+import os
+
 from app.connectors.base import BaseConnector
 from app.core.security import decrypt_credential
 
@@ -90,6 +92,13 @@ def get_connector(dataset_id: int) -> BaseConnector:
         else:
             from app.plugins.registry import registry
             plugin = registry.get_source(ds.file_type)
+            # Web-Quellen lesen den gespeicherten Abruf (Preisbeobachtung) –
+            # nicht bei jeder Vorschau alle Seiten neu aus dem Netz.
+            from app.services.web_abruf import ist_web_dataset
+            if ist_web_dataset(ds) and ds.file_path and ds.file_path.endswith(".parquet") \
+                    and os.path.exists(ds.file_path):
+                from app.connectors.file import FileConnector
+                return FileConnector(dataset_id=dataset_id)
             if plugin:
                 query_config = ds.query_config or {}
                 if isinstance(query_config, str):
