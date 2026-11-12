@@ -32,6 +32,7 @@ class FtpSourceCreate(BaseModel):
     xml_target_node: Optional[str] = None
     error_dir: Optional[str] = None     # nicht lesbare Dateien hierhin verschieben
     csv_header: bool = True             # erste Zeile ist Kopfzeile
+    excel_blatt: Optional[str] = None   # Name oder Nummer, leer = erstes Blatt
     after_import: str = "nothing"   # nothing | move | delete
     move_dir: Optional[str] = None
     dataset_id: Optional[int] = None
@@ -73,6 +74,7 @@ def _out(s: FtpSource) -> dict:
         "xml_target_node": getattr(s, "xml_target_node", None),
         "error_dir": getattr(s, "error_dir", None),
         "csv_header": getattr(s, "csv_header", 1) != 0,
+        "excel_blatt": getattr(s, "excel_blatt", None),
         "after_import": s.after_import,
         "move_dir": s.move_dir,
         "dataset_id": s.dataset_id,

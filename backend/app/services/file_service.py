@@ -11,7 +11,8 @@ from app.core.config import UPLOAD_DIR
 
 def parse_file(filepath: str, file_type: str, xml_target_node: Optional[str] = None,
                csv_delimiter: str = None, skip_rows: int = 0,
-               csv_decimal: str = ".", csv_header: bool = True) -> pd.DataFrame:
+               csv_decimal: str = ".", csv_header: bool = True,
+               excel_blatt: Optional[str] = None) -> pd.DataFrame:
     if file_type == "csv":
         from app.services.csv_format import csv_lesen
         with open(filepath, "rb") as f:
@@ -19,10 +20,10 @@ def parse_file(filepath: str, file_type: str, xml_target_node: Optional[str] = N
                              decimal=csv_decimal or ".", header=csv_header)
     elif file_type in ("xlsx", "xls"):
         from app.services.csv_format import excel_lesen
-        return excel_lesen(filepath, skip_rows)
+        return excel_lesen(filepath, skip_rows, blatt=excel_blatt)
     elif file_type == "ods":
         from app.services.csv_format import excel_lesen
-        return excel_lesen(filepath, skip_rows, engine="odf")
+        return excel_lesen(filepath, skip_rows, engine="odf", blatt=excel_blatt)
     raise ValueError(f"Unsupported file_type: {file_type}")
 
 

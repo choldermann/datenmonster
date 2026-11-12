@@ -195,6 +195,14 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
   // Felder aus target.fields extrahieren für Validierung
   const availableFields = (target?.fields || []).map(f => f.target_field).filter(Boolean);
 
+  // Datei-Ziele: Dateiname, eine Datei je Gruppe, zusätzlich ablegen (FTP/SFTP/Ordner)
+  const DATEI_ZIELE = ["csv", "xlsx", "json", "xml", "destatis_csv", "destatis_idev", "destatis_intra_csv", "destatis_instat_xml", "datev_extf", "datev_kompakt"];
+  const istDateiZiel = DATEI_ZIELE.includes(targetType);
+  const [dateiQuellen, setDateiQuellen] = useState<any[]>([]);
+  useEffect(() => {
+    api.get("/api/ftp-sources/").then(r => setDateiQuellen(r.data || [])).catch(() => {});
+  }, []);
+
   // Tabellen-Dropdown State
   const [availableTables, setAvailableTables] = useState([]);
   const [tablesLoading, setTablesLoading] = useState(false);
@@ -583,13 +591,54 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
 
           {/* Tab-Navigation */}
           <div style={{ display: "flex", gap: 0, borderTop: `1px solid ${S.border}`, backgroundColor: S.bgEl }}>
-            {[["general", "Allgemein"], ["sort", "Sortierung"], ["validation", "Validierung"]].map(([tab, label]) => (
+            {[["general", "Allgemein"], ...(istDateiZiel ? [["datei", "Datei & Ablage"]] : []), ["sort", "Sortierung"], ["validation", "Validierung"]].map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)}
                 style={{ padding: "8px 16px", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "none", border: "none", borderBottom: `2px solid ${activeTab === tab ? S.accent : "transparent"}`, color: activeTab === tab ? S.accent : S.textDim }}>
                 {label}
               </button>
             ))}
           </div>
+
+          {/* Datei & Ablage */}
+          {activeTab === "datei" && istDateiZiel && (
+            <div style={{ padding: "14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={lS}>Dateiname (optional)</label>
+                <input style={iS} value={opts.dateiname || ""} onChange={(e) => setOpts({ ...opts, dateiname: e.target.value })}
+                  placeholder="leer = Zielname_Datum_Uhrzeit, z.B. Bestellung_{Lieferant}_{datum}" />
+                <div style={{ fontSize: 10, color: S.textDim, marginTop: 4, lineHeight: 1.5 }}>
+                  Platzhalter: {"{datum} {zeit} {jahr} {monat} {tag} {ziel} {mapping} {gruppe}"} und jede Spalte als {"{Spaltenname}"} (Wert aus der ersten Zeile).
+                  Die Endung wird ergänzt.
+                </div>
+              </div>
+              <div>
+                <label style={lS}>Eine Datei je …</label>
+                <select style={iS} value={opts.gruppe_nach || ""} onChange={(e) => setOpts({ ...opts, gruppe_nach: e.target.value })}>
+                  <option value="">— eine Datei für alles —</option>
+                  {availableFields.map(f => <option key={f} value={f}>{f}</option>)}
+                </select>
+                {opts.gruppe_nach && <div style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>Für jeden Wert von „{opts.gruppe_nach}“ entsteht eine eigene Datei. Im Dateinamen ihn mit {"{gruppe}"} oder {`{${opts.gruppe_nach}}`} einsetzen.</div>}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={lS}>Zusätzlich ablegen in</label>
+                  <select style={iS} value={opts.ablage_quelle_id || ""} onChange={(e) => setOpts({ ...opts, ablage_quelle_id: parseInt(e.target.value) || null })}>
+                    <option value="">— nur unter Exporte —</option>
+                    {dateiQuellen.map(q => <option key={q.id} value={q.id}>{q.name} ({(q.protocol || "ftp").toUpperCase()})</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={lS}>Verzeichnis</label>
+                  <input style={iS} value={opts.ablage_verzeichnis || ""} onChange={(e) => setOpts({ ...opts, ablage_verzeichnis: e.target.value })}
+                    placeholder="/ausgang" disabled={!opts.ablage_quelle_id} />
+                </div>
+              </div>
+              <div style={{ fontSize: 10, color: S.textDim, lineHeight: 1.5 }}>
+                Die Datei liegt immer auch unter „Exporte“. Abgelegt werden darf nur in Datei-Quellen desselben Projekts.
+                Auf FTP/SFTP und im Ordner wird eine gleichnamige Datei ersetzt.
+              </div>
+            </div>
+          )}
 
           {/* Sortierungs-Tab */}
           {activeTab === "sort" && (

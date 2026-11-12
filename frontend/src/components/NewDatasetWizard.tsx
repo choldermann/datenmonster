@@ -77,6 +77,8 @@ function StepFileUpload({ onDone, projectId }) {
   const [skipRows, setSkipRows] = useState(0);
   const [decimal, setDecimal] = useState(".");
   const [hatKopf, setHatKopf] = useState(true);
+  const [blaetter, setBlaetter] = useState<string[]>([]);
+  const [blatt, setBlatt] = useState("");
   const [detectedDelimiter, setDetectedDelimiter] = useState(null);
   const inputRef = useRef();
 
@@ -108,6 +110,15 @@ function StepFileUpload({ onDone, projectId }) {
     setName(f.name.replace(/\.[^.]+$/, "").replace(/[_-]/g, " "));
     const ext = f.name.split(".").pop()?.toLowerCase();
     if (ext === "csv") detectDelimiter(f);
+    setBlaetter([]); setBlatt("");
+    if (["xlsx", "xls", "ods"].includes(ext)) {
+      // Blätter der Arbeitsmappe holen – bei mehr als einem darf man wählen
+      const fd = new FormData();
+      fd.append("file", f);
+      api.post("/api/datasets/excel-blaetter", fd)
+        .then(({ data }) => { setBlaetter(data.blaetter || []); setBlatt((data.blaetter || [])[0] || ""); })
+        .catch(() => setBlaetter([]));
+    }
   };
 
   const handleUpload = async () => {
@@ -127,6 +138,7 @@ function StepFileUpload({ onDone, projectId }) {
         fd.append("csv_header", hatKopf ? "true" : "false");
       }
       if (skipRows > 0) fd.append("skip_rows", skipRows);
+      if (blatt) fd.append("excel_blatt", blatt);
       await api.post("/api/datasets/upload", fd);
       setSuccess(true);
       setTimeout(onDone, 800);
@@ -230,6 +242,20 @@ function StepFileUpload({ onDone, projectId }) {
               Spalten, die nur aus deutschen Zahlen bestehen, werden zu Zahlen. Datum, Text und Nummern mit führender Null bleiben, wie sie sind.
             </p>
           )}
+        </div>
+      )}
+
+      {blaetter.length > 1 && (
+        <div>
+          <label style={labelStyle}>Blatt</label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {blaetter.map(b => (
+              <button key={b} onClick={() => setBlatt(b)}
+                style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${blatt === b ? S.accent : S.border}`, backgroundColor: blatt === b ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent", color: blatt === b ? S.accent : S.textDim }}>
+                {b}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

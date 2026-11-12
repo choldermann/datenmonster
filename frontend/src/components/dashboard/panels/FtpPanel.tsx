@@ -29,6 +29,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     xml_target_node: source?.xml_target_node || "",
     error_dir: source?.error_dir || "",
     csv_header: source?.csv_header !== false,
+    excel_blatt: source?.excel_blatt || "",
     after_import: source?.after_import || "nothing",
     move_dir: source?.move_dir || "",
     dataset_id: (source?.dataset_id && datasets?.find(d => d.id === source.dataset_id)) ? source.dataset_id : "",
@@ -55,7 +56,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     setSaving(true);
     try {
       const dsId = form.dataset_id && datasets?.find(d => d.id === parseInt(form.dataset_id)) ? parseInt(form.dataset_id) : null;
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null, error_dir: form.error_dir || null, ...(istOrdner ? { host: "", username: "", password: "", port: null } : {}) };
+      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null, error_dir: form.error_dir || null, excel_blatt: form.excel_blatt || null, ...(istOrdner ? { host: "", username: "", password: "", port: null } : {}) };
       if (isNew) await api.post("/api/ftp-sources/", payload);
       else await api.put(`/api/ftp-sources/${source.id}`, payload);
       onDone();
@@ -160,6 +161,12 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
                   <option value=".">1234.56 (Punkt)</option>
                   <option value=",">1.234,56 (deutsch)</option>
                 </select>
+              </div>
+            )}
+            {["xlsx", "ods"].includes(form.file_type) && (
+              <div>
+                <label style={lS}>Blatt (optional)</label>
+                <input style={iS} value={form.excel_blatt} onChange={(e) => set("excel_blatt", e.target.value)} placeholder="Name oder Nummer – leer = erstes Blatt" />
               </div>
             )}
             {form.file_type === "xml" && (

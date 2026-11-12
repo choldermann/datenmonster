@@ -210,6 +210,21 @@ def create_dataset_manual(
 
 # ─── Upload ───────────────────────────────────────────────────────────────────
 
+@router.post("/excel-blaetter")
+async def excel_blaetter_lesen(file: UploadFile = File(...), user: User = Depends(get_current_user)):
+    """Blattnamen einer Excel-/ODS-Datei – damit der Assistent sie zur Auswahl anbietet.
+    Liest nur die Arbeitsmappe, speichert nichts."""
+    from io import BytesIO
+    from app.services.csv_format import excel_blaetter
+    ext = file.filename.rsplit(".", 1)[-1].lower() if "." in file.filename else ""
+    if ext not in ("xlsx", "xls", "ods"):
+        raise HTTPException(400, "Nur Excel- oder ODS-Dateien haben Blätter")
+    try:
+        return {"blaetter": excel_blaetter(BytesIO(await file.read()), engine="odf" if ext == "ods" else None)}
+    except Exception as e:
+        raise HTTPException(400, f"Arbeitsmappe nicht lesbar: {str(e)[:200]}")
+
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -219,6 +234,7 @@ async def upload_file(
     skip_rows: Optional[int] = Form(None),
     csv_decimal: Optional[str] = Form(None),
     csv_header: Optional[bool] = Form(True),
+    excel_blatt: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -252,7 +268,8 @@ async def upload_file(
         f.write(content)
     try:
         df = parse_file(tmp_path, file_type, csv_delimiter=csv_delimiter, skip_rows=skip_rows or 0,
-                        csv_decimal=csv_decimal or ".", csv_header=csv_header is not False)
+                        csv_decimal=csv_decimal or ".", csv_header=csv_header is not False,
+                        excel_blatt=excel_blatt)
         storage_path = dataframe_to_storage(df, ds.id)
         ds.file_path = storage_path
         ds.row_count = len(df)

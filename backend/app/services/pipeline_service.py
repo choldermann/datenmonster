@@ -419,7 +419,8 @@ def run_pipeline(pipeline, db, debug: bool = False, dry_run: bool = False,
                     ftp_source_id = config.get("ftp_source_id")
                     remote_dir = config.get("remote_dir", "/")
                     filename = config.get("filename", "export.csv")
-                    filename = filename.replace("{datum}", datetime.now(timezone.utc).strftime("%Y%m%d"))
+                    from app.services.dateiname import dateiname_bauen
+                    filename = dateiname_bauen(filename, {"pipeline": pipeline.name})
                     if not ftp_source_id:
                         results[nid] = {"status": "error", "message": "Kein FTP-Ziel konfiguriert"}
                     else:

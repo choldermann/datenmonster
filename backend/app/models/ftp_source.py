@@ -45,3 +45,4 @@ class FtpSource(Base):
     xml_target_node = Column(String, nullable=True)           # z.B. "Auftraege/Auftrag"
     error_dir = Column(String, nullable=True)                 # nicht lesbare Dateien hierhin
     csv_header = Column(Boolean, default=True, nullable=True) # erste Zeile = Kopfzeile
+    excel_blatt = Column(String, nullable=True)               # Name oder Nummer, leer = erstes

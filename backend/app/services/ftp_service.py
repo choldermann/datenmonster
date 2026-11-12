@@ -164,7 +164,7 @@ def _lesefehler(e: Exception) -> str:
 
 def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0,
                 csv_decimal: str = ".", xml_target_node: Optional[str] = None,
-                csv_header: bool = True) -> pd.DataFrame:
+                csv_header: bool = True, excel_blatt: Optional[str] = None) -> pd.DataFrame:
     """Parse downloaded bytes into a DataFrame."""
     buf = io.BytesIO(data)
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -173,10 +173,10 @@ def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str =
 
     if actual_type == "xlsx" or ext in ("xlsx", "xls"):
         from app.services.csv_format import excel_lesen
-        return excel_lesen(buf, skip_rows)
+        return excel_lesen(buf, skip_rows, blatt=excel_blatt)
     elif actual_type == "ods" or ext == "ods":
         from app.services.csv_format import excel_lesen
-        return excel_lesen(buf, skip_rows, engine="odf")
+        return excel_lesen(buf, skip_rows, engine="odf", blatt=excel_blatt)
     elif actual_type == "xml" or ext == "xml":
         from app.services.file_service import parse_xml_with_config, _flatten_element
         if xml_target_node:
@@ -240,7 +240,8 @@ def run_ftp_sync(source, db) -> dict:
                                  getattr(source, 'skip_rows', 0) or 0,
                                  csv_decimal=getattr(source, 'csv_decimal', None) or ".",
                                  xml_target_node=getattr(source, 'xml_target_node', None) or None,
-                                 csv_header=getattr(source, 'csv_header', 1) != 0)
+                                 csv_header=getattr(source, 'csv_header', 1) != 0,
+                                 excel_blatt=getattr(source, 'excel_blatt', None) or None)
                 dfs.append(df)
                 roh.append(data)
                 files_processed.append(filename)

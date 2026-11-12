@@ -172,7 +172,22 @@ def _als_text(v):
     return str(v)
 
 
-def excel_lesen(quelle, skip_rows: int = 0, engine: Optional[str] = None) -> pd.DataFrame:
+def blatt_auswahl(blatt):
+    """„“/None → erstes Blatt, „2“ → zweites Blatt, sonst der Name."""
+    b = str(blatt).strip() if blatt is not None else ""
+    if not b:
+        return 0
+    if b.isdigit():
+        return max(int(b) - 1, 0)
+    return b
+
+
+def excel_blaetter(quelle, engine: Optional[str] = None) -> list:
+    return list(pd.ExcelFile(quelle, engine=engine).sheet_names)
+
+
+def excel_lesen(quelle, skip_rows: int = 0, engine: Optional[str] = None,
+                blatt=None) -> pd.DataFrame:
     """Excel/ODS lesen, ohne Text in Zahlen zu verwandeln.
 
     pandas' read_excel macht aus der TEXT-Zelle „0815“ die Zahl 815 – Artikel-
@@ -180,7 +195,17 @@ def excel_lesen(quelle, skip_rows: int = 0, engine: Optional[str] = None) -> pd.
     Zelle: Text bleibt Text, Zahl bleibt Zahl, Datum bleibt Datum. Spalten mit
     Text UND Zahlen werden ganz Text (sonst lässt sich die Spalte nicht speichern).
     """
-    df = pd.read_excel(quelle, skiprows=skip_rows or None, engine=engine, dtype=object)
+    auswahl = blatt_auswahl(blatt)
+    try:
+        df = pd.read_excel(quelle, sheet_name=auswahl, skiprows=skip_rows or None,
+                           engine=engine, dtype=object)
+    except (ValueError, IndexError) as e:
+        if isinstance(auswahl, str) or "out of range" in str(e) or "not found" in str(e).lower():
+            if hasattr(quelle, "seek"):
+                quelle.seek(0)
+            vorhanden = excel_blaetter(quelle, engine)
+            raise ValueError(f"Blatt „{blatt}“ gibt es nicht – vorhanden: {', '.join(vorhanden)}")
+        raise
     df = df.infer_objects()
     for col in df.columns:
         if df[col].dtype != object:

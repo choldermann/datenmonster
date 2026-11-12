@@ -102,6 +102,7 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE ftp_sources ADD COLUMN xml_target_node TEXT",
             "ALTER TABLE ftp_sources ADD COLUMN error_dir TEXT",
             "ALTER TABLE ftp_sources ADD COLUMN csv_header BOOLEAN DEFAULT 1",
+            "ALTER TABLE ftp_sources ADD COLUMN excel_blatt TEXT",
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
