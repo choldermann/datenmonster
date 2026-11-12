@@ -199,6 +199,36 @@ Jedes Dataset hat eine **Template-interne String-`id`** (z. B. `"ds_1"`), über 
 
 `rest_config`-Felder: `url`, `method` (GET/POST/…), `headers` (Objekt), `query_params` (Objekt), `body_type` (`"none"`/`"json"`/…), `body_content`, `auth` (`{ "type": "none" | "bearer" | ... }`), `data_path` (Pfad zum Array in der Antwort), `pagination` (Objekt).
 
+### 4.2a `file_type: "doc_html"` – Web-Quelle (Preisbeobachtung)
+
+Ruft Webseiten ab (z. B. Produktseiten von Wettbewerbern), speichert den Stand und
+vergleicht ihn mit dem letzten Abruf. Verweise auf andere Datasets **desselben
+Templates** stehen als Template-`id` in `query_config` und werden beim Install auf die
+echten IDs umgeschrieben – das referenzierte Dataset muss **vorher** in `datasets` stehen.
+
+```json
+{
+  "id": "ds_web", "name": "Wettbewerbspreise – Abruf", "file_type": "doc_html", "columns": [],
+  "query_config": {
+    "extract_type": "produkte",
+    "url_dataset_id": "ds_urls", "url_spalte": "url",
+    "eigene_preise_dataset_id": "ds_eigen", "abgleich_spalte": "ArtNr", "eigener_preis_spalte": "VK_brutto",
+    "verlauf": "ja", "verlauf_tage": 365, "pause_ms": 1500, "max_abrufe": 500, "robots_beachten": "ja"
+  }
+}
+```
+
+- `extract_type`: `produkte` (JSON-LD/Microdata der Shopseite), `ki` (mit `ki_felder`), `tables`, `css_selector` …
+- Ergebnisspalten u. a.: `quelle_url`, `name`, `preis`, `verfuegbar`, `gtin`, `abgerufen_am`, `ist_aktuell` (ja/nein),
+  `status` (neu/geändert/gleich/weg), `preis_vorher`, `aenderung_prozent`; mit eigenen Preisen zusätzlich
+  `eigener_preis`, `differenz`, `differenz_prozent`, `unterbietung_prozent`, `guenstiger` (1/0), `marge_bei_wettbewerbspreis`.
+- Mappings darauf filtern auf `ist_aktuell = ja`, sonst sehen sie bei Verlauf auch alte Abrufe.
+- Abgerufen wird nicht beim Install, sondern über „Jetzt abrufen“ bzw. den Zeitplan des Datasets.
+- Beispiel: `templates/jtl_wettbewerbspreise.json`.
+
+Hinweis zu `db_query`: Der Installer legt das Dataset als `db_<Datenbanktyp>` der gewählten
+Verbindung an (z. B. `db_mssql`) – sonst findet Datenmonster beim Lesen keinen Connector.
+
 ### 4.3 `file_type: "static"` – Statische Daten
 
 ```json

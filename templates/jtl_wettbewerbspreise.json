@@ -1,0 +1,616 @@
+{
+ "format_version": "1.0",
+ "template_id": "jtl_wettbewerbspreise",
+ "template_name": "JTL – Wettbewerbspreise",
+ "description": "Preise von Wettbewerbern automatisch abrufen und mit dem eigenen Verkaufspreis aus der JTL-Wawi vergleichen – mit Cockpit und Warnung, wenn der Wettbewerb deutlich günstiger ist.",
+ "category": "jtl-reporting",
+ "version": "1.0",
+ "author": "Datenmonster",
+ "hinweise": [
+  "Nach der Installation in Datasets „Wettbewerbspreise – URL-Liste“ öffnen und je Zeile ArtNr, Wettbewerber und die URL der Produktseite beim Wettbewerber eintragen.",
+  "Dann beim Dataset „Wettbewerbspreise – Abruf“ auf „Jetzt abrufen“ klicken; danach unter Einstellungen → Zeitplan z.B. täglich 06:00 einstellen.",
+  "Gelesen werden die Produktdaten, die Shops für Suchmaschinen mitliefern (Preis, Verfügbarkeit, EAN). Seiten ohne solche Daten liefern keinen Preis – dort in der Web-Quelle die Extraktion „KI“ wählen.",
+  "Unser Preis = Grundpreis der Standard-Kundengruppe ohne Shop-Bezug (Preisliste.vPreislisteNetto, ab Menge 0) zzgl. Inlands-MwSt. Sonderpreise sind nicht berücksichtigt.",
+  "Abrufe sind höflich eingestellt (1,5 s Pause, robots.txt). Nur öffentlich sichtbare Preise; viele große Shops sperren automatische Abrufe."
+ ],
+ "config_required": [
+  {
+   "key": "connection_jtl",
+   "label": "JTL-Datenbankverbindung (MS SQL Server)",
+   "type": "connection",
+   "default": ""
+  }
+ ],
+ "datasets": [
+  {
+   "id": "ds_urls",
+   "name": "Wettbewerbspreise – URL-Liste",
+   "file_type": "static",
+   "columns": [
+    "ArtNr",
+    "Wettbewerber",
+    "url"
+   ],
+   "initial_data": []
+  },
+  {
+   "id": "ds_eigen",
+   "name": "Wettbewerbspreise – eigene Preise (JTL)",
+   "file_type": "db_query",
+   "columns": [
+    "ArtNr",
+    "Artikel",
+    "EAN",
+    "VK_netto",
+    "MwSt",
+    "VK_brutto",
+    "EK_netto"
+   ],
+   "sql": "SELECT a.cArtNr AS ArtNr,\n       ab.cName AS Artikel,\n       NULLIF(LTRIM(RTRIM(a.cBarcode)), '') AS EAN,\n       CAST(p.fNettoPreis AS DECIMAL(18,2)) AS VK_netto,\n       CAST(ISNULL(s.fSteuersatz, 0) AS DECIMAL(5,2)) AS MwSt,\n       CAST(p.fNettoPreis * (1 + ISNULL(s.fSteuersatz, 0) / 100.0) AS DECIMAL(18,2)) AS VK_brutto,\n       CAST(a.fEKNetto AS DECIMAL(18,2)) AS EK_netto\nFROM dbo.tArtikel a\nJOIN dbo.tArtikelBeschreibung ab\n  ON ab.kArtikel = a.kArtikel AND ab.kSprache = 1 AND ab.kPlattform = 1\nJOIN Preisliste.vPreislisteNetto p\n  ON p.kArtikel = a.kArtikel AND p.kShop = 0 AND p.nAnzahlAb = 0\nJOIN dbo.tKundenGruppe g\n  ON g.kKundenGruppe = p.kKundenGruppe AND g.nStandard = 1\nLEFT JOIN dbo.tSteuersatz s\n  ON s.kSteuerklasse = a.kSteuerklasse\n AND s.kSteuerzone = (SELECT TOP 1 kSteuerzone FROM dbo.tSteuerzoneLand WHERE cISO = 'DE')\nWHERE a.cAktiv = 'Y'",
+   "source_connection_id": "{{connection_jtl}}"
+  },
+  {
+   "id": "ds_web",
+   "name": "Wettbewerbspreise – Abruf",
+   "file_type": "doc_html",
+   "columns": [],
+   "query_config": {
+    "extract_type": "produkte",
+    "url_dataset_id": "ds_urls",
+    "url_spalte": "url",
+    "eigene_preise_dataset_id": "ds_eigen",
+    "abgleich_spalte": "ArtNr",
+    "eigener_preis_spalte": "VK_brutto",
+    "verlauf": "ja",
+    "verlauf_tage": 365,
+    "pause_ms": 1500,
+    "max_abrufe": 500,
+    "robots_beachten": "ja",
+    "max_seiten": 1
+   }
+  }
+ ],
+ "mappings": [
+  {
+   "id": "m_vergleich",
+   "name": "Wettbewerbspreise – Vergleich",
+   "canvas_nodes": [
+    {
+     "id": "ds_web_node",
+     "dataset_id": "ds_web",
+     "dataset_name": "Wettbewerbspreise – Abruf",
+     "x": 40,
+     "y": 40,
+     "filters": {
+      "ist_aktuell": "= ja",
+      "status": "!= weg"
+     }
+    }
+   ],
+   "joins": [],
+   "sql_nodes": [],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "Wettbewerbspreise – Vergleich",
+     "target_type": "xlsx",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {
+      "sort_fields": [
+       {
+        "field": "Differenz_Prozent",
+        "dir": "asc"
+       }
+      ]
+     },
+     "fields": [
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "artikel_eigen",
+       "target_field": "Artikel",
+       "transformer": {
+        "type": "direct",
+        "source_field": "artikel_eigen"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "Wettbewerber",
+       "target_field": "Wettbewerber",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Wettbewerber"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "preis",
+       "target_field": "Wettbewerbspreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "preis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "eigener_preis",
+       "target_field": "Unser_Preis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigener_preis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "differenz",
+       "target_field": "Differenz",
+       "transformer": {
+        "type": "direct",
+        "source_field": "differenz"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "differenz_prozent",
+       "target_field": "Differenz_Prozent",
+       "transformer": {
+        "type": "direct",
+        "source_field": "differenz_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "unterbietung_prozent",
+       "target_field": "Unterbietung_Prozent",
+       "transformer": {
+        "type": "direct",
+        "source_field": "unterbietung_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "guenstiger",
+       "target_field": "Guenstiger",
+       "transformer": {
+        "type": "direct",
+        "source_field": "guenstiger"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "marge_bei_wettbewerbspreis",
+       "target_field": "Marge_bei_Wettbewerbspreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "marge_bei_wettbewerbspreis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "verfuegbar",
+       "target_field": "Verfuegbarkeit",
+       "transformer": {
+        "type": "direct",
+        "source_field": "verfuegbar"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "aenderung_prozent",
+       "target_field": "Aenderung_seit_letztem_Abruf",
+       "transformer": {
+        "type": "direct",
+        "source_field": "aenderung_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "name",
+       "target_field": "Bezeichnung_beim_Wettbewerber",
+       "transformer": {
+        "type": "direct",
+        "source_field": "name"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "abgerufen_am",
+       "target_field": "Abgerufen",
+       "transformer": {
+        "type": "direct",
+        "source_field": "abgerufen_am"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "quelle_url",
+       "target_field": "URL",
+       "transformer": {
+        "type": "direct",
+        "source_field": "quelle_url"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_guenstiger",
+   "name": "Wettbewerbspreise – Wettbewerber günstiger",
+   "canvas_nodes": [
+    {
+     "id": "ds_web_node",
+     "dataset_id": "ds_web",
+     "dataset_name": "Wettbewerbspreise – Abruf",
+     "x": 40,
+     "y": 40,
+     "filters": {
+      "ist_aktuell": "= ja",
+      "status": "!= weg",
+      "guenstiger": "= 1"
+     }
+    }
+   ],
+   "joins": [],
+   "sql_nodes": [],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "Wettbewerbspreise – Wettbewerber günstiger",
+     "target_type": "xlsx",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {
+      "sort_fields": [
+       {
+        "field": "Differenz_Prozent",
+        "dir": "asc"
+       }
+      ]
+     },
+     "fields": [
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "artikel_eigen",
+       "target_field": "Artikel",
+       "transformer": {
+        "type": "direct",
+        "source_field": "artikel_eigen"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "Wettbewerber",
+       "target_field": "Wettbewerber",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Wettbewerber"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "preis",
+       "target_field": "Wettbewerbspreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "preis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "eigener_preis",
+       "target_field": "Unser_Preis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "eigener_preis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "differenz",
+       "target_field": "Differenz",
+       "transformer": {
+        "type": "direct",
+        "source_field": "differenz"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "differenz_prozent",
+       "target_field": "Differenz_Prozent",
+       "transformer": {
+        "type": "direct",
+        "source_field": "differenz_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "unterbietung_prozent",
+       "target_field": "Unterbietung_Prozent",
+       "transformer": {
+        "type": "direct",
+        "source_field": "unterbietung_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "guenstiger",
+       "target_field": "Guenstiger",
+       "transformer": {
+        "type": "direct",
+        "source_field": "guenstiger"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "marge_bei_wettbewerbspreis",
+       "target_field": "Marge_bei_Wettbewerbspreis",
+       "transformer": {
+        "type": "direct",
+        "source_field": "marge_bei_wettbewerbspreis"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "verfuegbar",
+       "target_field": "Verfuegbarkeit",
+       "transformer": {
+        "type": "direct",
+        "source_field": "verfuegbar"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "aenderung_prozent",
+       "target_field": "Aenderung_seit_letztem_Abruf",
+       "transformer": {
+        "type": "direct",
+        "source_field": "aenderung_prozent"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "name",
+       "target_field": "Bezeichnung_beim_Wettbewerber",
+       "transformer": {
+        "type": "direct",
+        "source_field": "name"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "abgerufen_am",
+       "target_field": "Abgerufen",
+       "transformer": {
+        "type": "direct",
+        "source_field": "abgerufen_am"
+       }
+      },
+      {
+       "source_dataset_id": "ds_web",
+       "source_field": "quelle_url",
+       "target_field": "URL",
+       "transformer": {
+        "type": "direct",
+        "source_field": "quelle_url"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "pipelines": [],
+ "forms": [
+  {
+   "name": "Wettbewerbspreise",
+   "portal_config": {
+    "icon": "🔎"
+   },
+   "schema": {
+    "fields": [],
+    "layout": [],
+    "actions": [
+     {
+      "id": "act_vergleich",
+      "type": "run_mapping",
+      "mapping_id": "m_vergleich",
+      "pipeline_id": null,
+      "label": "Alle Angebote"
+     },
+     {
+      "id": "act_guenstiger",
+      "type": "run_mapping",
+      "mapping_id": "m_guenstiger",
+      "pipeline_id": null,
+      "label": "Wettbewerber günstiger"
+     },
+     {
+      "id": "act_warn",
+      "type": "run_alerts",
+      "mapping_id": null,
+      "pipeline_id": null,
+      "label": "Warnungen",
+      "options": {
+       "rule_keys": [
+        "wettbewerb_deutlich_guenstiger"
+       ]
+      }
+     }
+    ],
+    "widgets": [
+     {
+      "id": "w_anzahl",
+      "type": "kpi",
+      "label": "Beobachtete Angebote",
+      "action_id": "act_vergleich",
+      "config": {
+       "width": 4,
+       "column": "ArtNr",
+       "aggregation": "count",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_guenstiger",
+      "type": "kpi",
+      "label": "Davon Wettbewerber günstiger",
+      "action_id": "act_vergleich",
+      "config": {
+       "width": 4,
+       "column": "Guenstiger",
+       "aggregation": "sum",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_abstand",
+      "type": "kpi",
+      "label": "Ø Preisabstand (Wettbewerb zu uns)",
+      "action_id": "act_vergleich",
+      "config": {
+       "width": 4,
+       "column": "Differenz_Prozent",
+       "aggregation": "avg",
+       "prefix": "",
+       "suffix": " %",
+       "decimals": 1
+      }
+     },
+     {
+      "id": "w_warn",
+      "type": "alerts",
+      "label": "Warnungen",
+      "action_id": "act_warn",
+      "config": {
+       "width": 12
+      }
+     },
+     {
+      "id": "w_tbl_guenstiger",
+      "type": "table",
+      "label": "Hier ist der Wettbewerb günstiger",
+      "action_id": "act_guenstiger",
+      "config": {
+       "width": 12,
+       "full_rows": true
+      }
+     },
+     {
+      "id": "w_tbl_alle",
+      "type": "table",
+      "label": "Alle beobachteten Angebote",
+      "action_id": "act_vergleich",
+      "config": {
+       "width": 12,
+       "full_rows": true
+      }
+     }
+    ],
+    "result_tabs": []
+   }
+  }
+ ],
+ "alert_rules": [
+  {
+   "rule_key": "wettbewerb_deutlich_guenstiger",
+   "name": "Wettbewerber deutlich günstiger",
+   "description": "Ein Wettbewerber bietet einen Artikel um mindestens X % unter unserem Preis an.",
+   "category": "Wettbewerb",
+   "cockpit": "wettbewerb",
+   "severity": "warnung",
+   "mapping_name": "Wettbewerbspreise – Wettbewerber günstiger",
+   "condition": {
+    "mode": "rows",
+    "limit": 50,
+    "label_column": "Artikel",
+    "value_unit": "",
+    "row_filter": {
+     "column": "Unterbietung_Prozent",
+     "op": ">=",
+     "value_config": "wettbewerb_unterbietung_prozent",
+     "value": 5
+    }
+   },
+   "facts": [
+    {
+     "label": "Artikel",
+     "column": "Artikel",
+     "unit": ""
+    },
+    {
+     "label": "Wettbewerber",
+     "column": "Wettbewerber",
+     "unit": ""
+    },
+    {
+     "label": "Unser Preis",
+     "column": "Unser_Preis",
+     "unit": "€",
+     "decimals": 2
+    },
+    {
+     "label": "Wettbewerbspreis",
+     "column": "Wettbewerbspreis",
+     "unit": "€",
+     "decimals": 2
+    },
+    {
+     "label": "Unterbietung",
+     "column": "Unterbietung_Prozent",
+     "unit": "%",
+     "decimals": 1
+    }
+   ],
+   "title_template": "{anzahl}× ist ein Wettbewerber deutlich günstiger",
+   "subtitle": "Eigenen Preis prüfen – oder bewusst halten (Service, Lieferzeit).",
+   "drilldown": {
+    "mapping_name": "Wettbewerbspreise – Wettbewerber günstiger",
+    "title": "Wettbewerber günstiger"
+   },
+   "sort": 100
+  }
+ ],
+ "reports": []
+}

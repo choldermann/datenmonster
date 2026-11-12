@@ -287,3 +287,43 @@ def test_verlauf_wird_gekuerzt(netz):
         db.delete(db.get(Dataset, ds.id)); db.commit(); db.close()
         if pfad and os.path.exists(pfad):
             os.remove(pfad)
+
+
+def test_abgleich_mit_eigenen_preisen(netz):
+    from app.core.database import SessionLocal
+    from app.models.dataset import Dataset
+    from app.services.file_service import dataframe_to_storage
+    from app.services.web_abruf import abruf_ausfuehren
+    db = SessionLocal()
+    eigen = Dataset(name="__test_eigene_preise", file_type="csv", project_id=4, xml_configured=1,
+                    row_count=2, columns=["ArtNr", "Artikel", "VK_brutto", "EK_netto", "MwSt"])
+    urls = Dataset(name="__test_url_liste", file_type="csv", project_id=4, xml_configured=1,
+                   row_count=2, columns=["ArtNr", "url"])
+    db.add_all([eigen, urls]); db.commit(); db.refresh(eigen); db.refresh(urls)
+    eigen.file_path = dataframe_to_storage(pd.DataFrame({
+        "ArtNr": ["A1", "A2"], "Artikel": ["Eins", "Zwei"], "VK_brutto": [11.90, 20.00],
+        "EK_netto": [5.0, 15.0], "MwSt": [19, 19]}), eigen.id)
+    urls.file_path = dataframe_to_storage(pd.DataFrame({
+        "ArtNr": ["A1", "A2"], "url": ["https://s.de/p/1", "https://s.de/p/2"]}), urls.id)
+    web = Dataset(name="__test_abgleich", file_type="doc_html", project_id=4, xml_configured=1, row_count=0,
+                  columns=[], query_config={"url_dataset_id": urls.id, "eigene_preise_dataset_id": eigen.id,
+                                            "extract_type": "produkte", "pause_ms": 0})
+    db.add(web); db.commit(); db.refresh(web)
+    try:
+        NETZ["https://s.de/p/1"] = jsonld(produkt("Eins beim Wettbewerb", "10.71", "4000000000011"))
+        NETZ["https://s.de/p/2"] = jsonld(produkt("Zwei beim Wettbewerb", "22.00", "4000000000022"))
+        abruf_ausfuehren(web.id)
+        db.refresh(web)
+        df = pd.read_parquet(web.file_path).set_index("ArtNr")
+        assert df.loc["A1", "eigener_preis"] == 11.9 and df.loc["A1", "guenstiger"] == 1
+        assert df.loc["A1", "differenz_prozent"] == -10.0 and df.loc["A1", "unterbietung_prozent"] == 10.0
+        assert df.loc["A1", "marge_bei_wettbewerbspreis"] == 44.4      # 10,71/1,19 = 9,00 netto, EK 5
+        assert df.loc["A2", "guenstiger"] == 0 and df.loc["A2", "differenz"] == 2.0
+        assert df.loc["A1", "artikel_eigen"] == "Eins"
+    finally:
+        for d in (web, eigen, urls):
+            pfad = db.get(Dataset, d.id).file_path
+            db.delete(db.get(Dataset, d.id))
+            if pfad and os.path.exists(pfad):
+                os.remove(pfad)
+        db.commit(); db.close()

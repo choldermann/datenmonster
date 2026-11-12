@@ -193,6 +193,26 @@ class HtmlDocumentSource(DocumentSourcePlugin):
             "description": "Ältere Abrufe werden beim nächsten Abruf gelöscht. 0 = unbegrenzt.",
         },
         {
+            "key": "eigene_preise_dataset_id",
+            "label": "Abgleich mit eigenen Preisen: Dataset (ID, optional)",
+            "type": "number",
+            "default": "",
+            "description": "Z.B. ein SQL-Dataset aus JTL mit ArtNr und VK_brutto. Ergibt eigener_preis, "
+                           "differenz, differenz_prozent, guenstiger, marge_bei_wettbewerbspreis.",
+        },
+        {
+            "key": "abgleich_spalte",
+            "label": "Abgleich über Spalte",
+            "type": "string",
+            "default": "ArtNr",
+        },
+        {
+            "key": "eigener_preis_spalte",
+            "label": "Spalte mit dem eigenen Preis",
+            "type": "string",
+            "default": "VK_brutto",
+        },
+        {
             "key": "schluessel",
             "label": "Schlüssel für den Vergleich (Spalten, optional)",
             "type": "string",
@@ -448,7 +468,13 @@ class HtmlDocumentSource(DocumentSourcePlugin):
         ds_id = config.get("url_dataset_id")
         if ds_id not in (None, "", 0, "0"):
             from app.connectors.factory import get_connector
-            df = get_connector(int(ds_id)).fetch_full()
+            try:
+                df = get_connector(int(ds_id)).fetch_full()
+            except Exception as e:
+                raise ValueError(f"URL-Liste (Dataset #{ds_id}) ist noch leer oder nicht lesbar – "
+                                 f"bitte Zeilen eintragen ({str(e)[:80]})")
+            if df.empty:
+                raise ValueError(f"URL-Liste (Dataset #{ds_id}) ist noch leer – bitte Zeilen eintragen")
             spalte = (config.get("url_spalte") or "url").strip()
             if spalte not in df.columns:
                 raise ValueError(f"URL-Dataset #{ds_id}: Spalte „{spalte}“ fehlt "

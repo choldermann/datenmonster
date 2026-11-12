@@ -1050,7 +1050,8 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
         existing_ds = _bestehendes("datasets", Dataset, ds_by_name,
                                    ds_def.get("id"), ds_def.get("name", "Dataset"))
         if existing_ds is not None:
-            if file_type == "db_query" and existing_ds.file_type == "db_query":
+            if file_type == "db_query" and (existing_ds.file_type == "db_query"
+                                            or (existing_ds.file_type or "").startswith("db_")):
                 existing_ds.source_sql = _apply_config(ds_def.get("sql", ""), config)
                 existing_ds.source_connection_id = _resolve_conn_value(
                     ds_def.get("source_connection_id"), config)
@@ -1081,6 +1082,13 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             # {{connection_X}}-Platzhalter → gewählte Verbindung
             ds_kwargs["source_connection_id"] = _resolve_conn_value(
                 ds_def.get("source_connection_id"), config)
+            # Gelesen werden SQL-Datasets über db_mssql/db_mysql/… – mit „db_query“
+            # fand die Connector-Fabrik keinen Leser (Fehler beim ersten Abruf).
+            if ds_kwargs["source_connection_id"]:
+                from app.models.dataset import DbConnection as _DbC
+                _c = db.query(_DbC).filter(_DbC.id == ds_kwargs["source_connection_id"]).first()
+                if _c is not None:
+                    ds_kwargs["file_type"] = f"db_{_c.db_type}"
 
         elif file_type == "rest_api":
             # REST API Dataset – echte RestSource anlegen + Dataset verknüpfen
@@ -1162,6 +1170,18 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
             created.setdefault("rest_sources", []).append({"id": src.id, "name": src.name})
             created["datasets"].append({"id": ds.id, "name": ds.name, "file_type": "rest_api"})
             continue  # weiter zum nächsten ds_def, Dataset ist bereits angelegt
+
+        elif file_type == "doc_html":
+            # Web-Quelle (Preisbeobachtung): Verweise auf andere Datasets dieses
+            # Templates (URL-Liste, eigene Preise) auf die echten IDs umschreiben.
+            qc = _apply_config_deep(copy.deepcopy(ds_def.get("query_config") or {}), config)
+            for k in ("url_dataset_id", "eigene_preise_dataset_id"):
+                if isinstance(qc.get(k), str) and qc[k] in ds_id_map:
+                    qc[k] = ds_id_map[qc[k]]
+                elif isinstance(qc.get(k), str):
+                    raise HTTPException(400, f"Web-Quelle „{ds_def.get('name')}“: {k} „{qc[k]}“ "
+                                             "verweist auf kein vorher definiertes Dataset")
+            ds_kwargs["query_config"] = qc
 
         elif file_type == "static":
             # Statisches Dataset mit optionalen Initialdaten

@@ -174,6 +174,7 @@ def abruf_ausfuehren(dataset_id: int) -> dict:
         if roh.empty and info["fehler"]:
             raise ValueError("Nichts abgerufen: " + "; ".join(info["fehler"][:3]))
         stand = vergleichen(roh, _letzter_stand(ds), config, jetzt)
+        stand = mit_eigenen_preisen(stand, config, ds, db)
         # ist_aktuell + neuester Abruf oben: Warnregeln und Vorschauen lesen nur
         # die ersten Zeilen – das sollen die aktuellen sein, nicht die ältesten.
         stand["ist_aktuell"] = "ja"
@@ -250,6 +251,63 @@ def abruf_im_hintergrund(dataset_id: int) -> bool:
 
 def laeuft(dataset_id: int) -> bool:
     return dataset_id in _laufend
+
+
+ABGLEICH = ["eigener_preis", "differenz", "differenz_prozent", "unterbietung_prozent",
+            "guenstiger", "marge_bei_wettbewerbspreis"]
+
+
+def mit_eigenen_preisen(stand: pd.DataFrame, config: dict, ds, db) -> pd.DataFrame:
+    """Abgleich mit dem eigenen Preis (z.B. JTL-VK brutto) über eine Schlüsselspalte.
+
+    eigener_preis               eigener Preis (Spalte „eigener_preis_spalte“, Vorgabe VK_brutto)
+    differenz                   Wettbewerbspreis − eigener Preis (negativ = Wettbewerber günstiger)
+    differenz_prozent           in % vom eigenen Preis
+    unterbietung_prozent        −differenz_prozent: positiv, wenn der Wettbewerber günstiger ist
+    guenstiger                  1 / 0 – für Kennzahlen (Summe = Anzahl)
+    marge_bei_wettbewerbspreis  Rohertrag in %, wenn wir auf den Wettbewerbspreis gingen
+                                (braucht EK_netto und MwSt in den eigenen Preisen)
+    """
+    ref = config.get("eigene_preise_dataset_id")
+    if ref in (None, "", 0, "0") or stand.empty:
+        return stand
+    from app.connectors.factory import get_connector
+    from app.models.dataset import Dataset
+    quelle = db.query(Dataset).filter(Dataset.id == int(ref)).first()
+    if not quelle:
+        raise ValueError(f"Dataset mit eigenen Preisen #{ref} nicht gefunden")
+    if quelle.project_id != ds.project_id:
+        raise ValueError(f"Dataset „{quelle.name}“ gehört zu einem anderen Projekt")
+    schl = (config.get("abgleich_spalte") or "ArtNr").strip()
+    preis_sp = (config.get("eigener_preis_spalte") or "VK_brutto").strip()
+    eigen = get_connector(quelle.id).fetch_full()
+    for sp, wo in ((schl, "eigenen Preisen"), (preis_sp, "eigenen Preisen")):
+        if sp not in eigen.columns:
+            raise ValueError(f"Spalte „{sp}“ fehlt in den {wo} „{quelle.name}“")
+    if schl not in stand.columns:
+        raise ValueError(f"Abgleich über „{schl}“: die Spalte fehlt im Abruf – "
+                         "kommt sie aus der URL-Liste (URLs aus Dataset)?")
+    nimm = [schl, preis_sp] + [c for c in ("Artikel", "EK_netto", "MwSt") if c in eigen.columns]
+    eigen = eigen[nimm].copy()
+    eigen[schl] = eigen[schl].astype(str).str.strip()
+    eigen = eigen.drop_duplicates(schl).rename(columns={preis_sp: "eigener_preis",
+                                                        "Artikel": "artikel_eigen"})
+    stand = stand.drop(columns=[c for c in ABGLEICH + ["artikel_eigen", "EK_netto", "MwSt"]
+                                if c in stand.columns])
+    stand["_k"] = stand[schl].astype(str).str.strip()
+    stand = stand.merge(eigen.rename(columns={schl: "_k"}), on="_k", how="left").drop(columns=["_k"])
+    p = pd.to_numeric(stand.get("preis"), errors="coerce")
+    e = pd.to_numeric(stand["eigener_preis"], errors="coerce")
+    stand["eigener_preis"] = e
+    stand["differenz"] = (p - e).round(2)
+    stand["differenz_prozent"] = ((p - e) / e * 100).round(2)
+    stand["unterbietung_prozent"] = (-stand["differenz_prozent"]).round(2)
+    stand["guenstiger"] = ((p < e - 0.005) & p.notna() & e.notna()).astype(int)
+    if "EK_netto" in stand.columns and "MwSt" in stand.columns:
+        netto = p / (1 + pd.to_numeric(stand["MwSt"], errors="coerce").fillna(0) / 100)
+        ek = pd.to_numeric(stand["EK_netto"], errors="coerce")
+        stand["marge_bei_wettbewerbspreis"] = ((netto - ek) / netto * 100).round(1)
+    return stand
 
 
 def _url_dataset_pruefen(config: dict, ds, db):
