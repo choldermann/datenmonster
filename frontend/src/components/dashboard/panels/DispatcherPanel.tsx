@@ -19,7 +19,7 @@ const CONDITION_TYPES = [
 ];
 
 const POST_ACTION_TYPES = [
-  { v: "ftp_upload",    l: "FTP Upload" },
+  { v: "ftp_upload",    l: "Eingangsdatei ablegen" },
   { v: "chain_mapping", l: "Weiteres Mapping starten" },
   { v: "email",         l: "E-Mail senden" },
 ];
@@ -99,6 +99,7 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
                 <option value="">— Kein Mapping —</option>
                 {mappings.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
+              {form.mapping_id && <div style={{ fontSize: 10, color: S.textDim, marginTop: 3 }}>Die passende Datei ersetzt das erste Dataset auf dem Canvas des Mappings.</div>}
             </div>
           </div>
 
@@ -183,10 +184,12 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
                 {a.type === "ftp_upload" && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
                     <select style={iS} value={a.ftp_source_id || ""} onChange={e => updateAction(i, "ftp_source_id", parseInt(e.target.value) || null)}>
-                      <option value="">— FTP-Ziel wählen —</option>
+                      <option value="">— Ziel wählen (FTP, SFTP, Ordner) —</option>
                       {ftpSources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
-                    <input style={iS} value={a.remote_dir || ""} onChange={e => updateAction(i, "remote_dir", e.target.value)} placeholder="Zielverzeichnis" />
+                    <input style={iS} value={a.remote_dir || ""} onChange={e => updateAction(i, "remote_dir", e.target.value)} placeholder="Zielverzeichnis, z.B. /archiv" />
+                    <input style={{ ...iS, gridColumn: "1 / -1" }} value={a.filename || ""} onChange={e => updateAction(i, "filename", e.target.value)} placeholder="Dateiname (leer = wie Eingang), z.B. {datum}_{datei}" />
+                    <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim }}>Legt die eingegangene Datei unverändert ab – zum Weiterreichen oder Archivieren. Das Ergebnis des Mappings schreibt das Mapping über seine eigenen Ziele.</div>
                   </div>
                 )}
                 {a.type === "chain_mapping" && (
@@ -197,9 +200,14 @@ function RuleModal({ rule, ftpSources, mappings, xmlDatasets, projectId, onSave,
                 )}
                 {a.type === "email" && (
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                    <input style={iS} value={a.to || ""} onChange={e => updateAction(i, "to", e.target.value)} placeholder="E-Mail Adresse" />
-                    <input style={iS} value={a.subject || ""} onChange={e => updateAction(i, "subject", e.target.value)} placeholder="Betreff" />
+                    <input style={iS} value={a.to || ""} onChange={e => updateAction(i, "to", e.target.value)} placeholder="E-Mail-Adresse(n)" />
+                    <input style={iS} value={a.subject || ""} onChange={e => updateAction(i, "subject", e.target.value)} placeholder="Betreff (leer = Datei {datei} verarbeitet)" />
+                    <textarea style={{ ...iS, gridColumn: "1 / -1", minHeight: 48, resize: "vertical", fontFamily: "inherit" }} value={a.body || ""} onChange={e => updateAction(i, "body", e.target.value)} placeholder="Nachricht (leer = Standardtext mit Datei, Regel und Zeilen)" />
+                    <div style={{ gridColumn: "1 / -1", fontSize: 10, color: S.textDim }}>Platzhalter: {"{datei} {regel} {zeilen} {geschrieben} {datum} {zeit}"}</div>
                   </div>
+                )}
+                {a.type === "chain_mapping" && (
+                  <div style={{ fontSize: 10, color: S.textDim, marginTop: 4 }}>Das Folge-Mapping bekommt dieselbe Datei als Hauptquelle.</div>
                 )}
               </div>
             ))}

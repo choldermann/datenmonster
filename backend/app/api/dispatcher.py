@@ -33,6 +33,12 @@ class RuleBody(BaseModel):
     post_actions: Optional[List[Any]] = []
 
 
+def _mail_ziele(aktionen) -> list:
+    """Empfänger aller E-Mail-Nach-Aktionen – dieselbe Grenze wie überall."""
+    return [a.get("to") or "" for a in (aktionen or [])
+            if isinstance(a, dict) and a.get("type") == "email" and a.get("to")]
+
+
 def _regel_lesbar(rule_id: int, db: Session, user: User) -> DispatcherRule:
     """Regel holen – nur wenn der Nutzer ihr Projekt lesen darf."""
     from app.api.projects import can_read_project
@@ -71,6 +77,8 @@ def list_rules(project_id: Optional[int] = None, db: Session = Depends(get_db), 
 def create_rule(body: RuleBody, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     from app.api.projects import require_editor
     require_editor(body.project_id, user, db)
+    from app.core.mail_empfaenger import pruefe_empfaenger
+    pruefe_empfaenger(db, user, ",".join(_mail_ziele(body.post_actions)))
     r = DispatcherRule(**body.dict())
     db.add(r); db.commit(); db.refresh(r)
     return rule_out(r)
@@ -81,6 +89,8 @@ def update_rule(rule_id: int, body: RuleBody, db: Session = Depends(get_db), use
     from app.api.projects import require_editor
     r = _regel_aenderbar(rule_id, db, user)
     require_editor(body.project_id, user, db)   # nicht in ein fremdes Projekt verschieben
+    from app.core.mail_empfaenger import pruefe_neue
+    pruefe_neue(db, user, ",".join(_mail_ziele(body.post_actions)), ",".join(_mail_ziele(r.post_actions)))
     for k, v in body.dict().items():
         setattr(r, k, v)
     db.commit(); db.refresh(r)

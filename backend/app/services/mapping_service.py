@@ -65,6 +65,9 @@ class MappingContext:
     mapping_id:      Optional[int] = None
     mapping_name:    Optional[str] = None
     project_id:      Optional[int] = None
+    # Dataset-ID → DataFrame, der statt des gespeicherten Datasets gelesen wird.
+    # Der Dispatcher gibt so die Datei hinein, die die Regel ausgelöst hat.
+    quellen_ersatz:  Dict       = field(default_factory=dict)
 
     @classmethod
     def from_orm(cls, mapping) -> "MappingContext":
@@ -118,6 +121,7 @@ class MappingContext:
             param_nodes     = self.param_nodes,
             run_params      = self.run_params,
             preview_rows    = preview_rows,
+            quellen_ersatz  = self.quellen_ersatz or None,
             _log_kontext    = {"mapping_id": self.mapping_id,
                                "mapping_name": self.mapping_name,
                                "project_id": self.project_id},
@@ -939,6 +943,7 @@ def execute_mapping(
     _debug_trace: list = None,
     _ai_config: Dict = None,
     _log_kontext: Dict = None,
+    quellen_ersatz: Dict = None,
 ) -> Dict[str, Any]:
     """
     Führt das Mapping aus und gibt Vorschau-Daten zurück.
@@ -977,11 +982,13 @@ def execute_mapping(
         ds_id = node["dataset_id"]
         ds_name = node.get("dataset_name", str(ds_id))
         try:
-            connector = get_connector(ds_id)
             filters = node.get("filters") or {}
             pushdown_used = False
+            connector = None if (quellen_ersatz and ds_id in quellen_ersatz) else get_connector(ds_id)
 
-            if filters and connector.supports_pushdown() and hasattr(connector, "fetch_filtered"):
+            if connector is None:
+                df = quellen_ersatz[ds_id].copy()
+            elif filters and connector.supports_pushdown() and hasattr(connector, "fetch_filtered"):
                 # SQL-Pushdown: Filter direkt auf dem DB-Server ausführen.
                 # Bei Joins kein Limit setzen – ein begrenzter Sample würde Join-Keys
                 # aus der anderen Tabelle verfehlen und leere Ergebnisse liefern.

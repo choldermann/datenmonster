@@ -203,6 +203,7 @@ def run_ftp_sync(source, db) -> dict:
     files_processed = []
     failed_files = []
     dfs = []
+    roh = []   # Bytes je verarbeiteter Datei – Dispatcher prüft/reicht sie weiter
 
     try:
         # 1. Verbinden (FTP, SFTP oder Ordner)
@@ -226,6 +227,7 @@ def run_ftp_sync(source, db) -> dict:
                                  xml_target_node=getattr(source, 'xml_target_node', None) or None,
                                  csv_header=getattr(source, 'csv_header', 1) != 0)
                 dfs.append(df)
+                roh.append(data)
                 files_processed.append(filename)
                 logger.info(f"  ✓ {filename}: {len(df)} Zeilen, {len(df.columns)} Spalten")
             except Exception as e:
@@ -335,9 +337,15 @@ def run_ftp_sync(source, db) -> dict:
                 from app.services.dispatcher_service import run_dispatcher
                 for i, filename in enumerate(files_processed):
                     df_single = dfs[i] if i < len(dfs) else merged
-                    dispatch_results = run_dispatcher(source.id, filename, df_single, b"", db)
+                    dispatch_results = run_dispatcher(source.id, filename, df_single,
+                                                      roh[i] if i < len(roh) else b"", db)
                     if dispatch_results:
                         logger.info(f"Dispatcher Ergebnisse: {dispatch_results}")
+                    for r in dispatch_results or []:
+                        if r.get("status") == "error":
+                            errors.append(f"{filename}: Regel '{r.get('rule')}'"
+                                          + (f" / {r['action']}" if r.get("action") else "")
+                                          + f": {r.get('error', '')}")
             except Exception as de:
                 logger.warning(f"Dispatcher Fehler (nicht kritisch): {de}")
 

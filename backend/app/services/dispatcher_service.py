@@ -195,67 +195,80 @@ def run_dispatcher(ftp_source_id: int, filename: str, df: pd.DataFrame, data_byt
             except Exception:
                 pass
 
-            # Mapping ausführen
+            # Mapping ausführen – mit der Datei, die die Regel ausgelöst hat
+            result = {}
             if rule.mapping_id:
                 result = _run_mapping(rule.mapping_id, df, db)
                 results.append({"rule": rule.name, "status": "ok", "rows": result.get("rows", 0)})
             else:
                 results.append({"rule": rule.name, "status": "ok", "rows": len(df), "info": "Kein Mapping verknüpft"})
 
-            # Post-Actions
+            # Nach-Aktionen
+            kontext = {"datei": filename, "regel": rule.name, "zeilen": len(df),
+                       "geschrieben": result.get("rows", 0), "df": df, "roh": data_bytes,
+                       "project_id": rule.project_id}
             for action in (rule.post_actions or []):
                 try:
-                    _run_post_action(action, result if rule.mapping_id else {}, db)
+                    meldung = _run_post_action(action, kontext, db)
+                    results.append({"rule": rule.name, "action": action.get("type"), "status": "ok",
+                                    "info": meldung})
                 except Exception as e:
-                    logger.error(f"Dispatcher Post-Action fehlgeschlagen: {e}")
+                    logger.error(f"Dispatcher Nach-Aktion fehlgeschlagen: {e}")
                     results.append({"rule": rule.name, "action": action.get("type"), "status": "error", "error": str(e)[:200]})
+                    try:
+                        from app.services.log_service import write_log
+                        write_log(module="dispatcher", action="post_action_error",
+                                  message=f"Regel '{rule.name}', Nach-Aktion {action.get('type')}: {str(e)[:300]}",
+                                  entity_id=rule.id, entity_name=rule.name,
+                                  project_id=rule.project_id, level="error", db=db)
+                    except Exception:
+                        pass
 
             break  # Erstes Match gewinnt
 
         except Exception as e:
             logger.error(f"Dispatcher: Regel '{rule.name}' Fehler: {e}")
             results.append({"rule": rule.name, "status": "error", "error": str(e)[:200]})
+            try:
+                from app.services.log_service import write_log
+                write_log(module="dispatcher", action="rule_error",
+                          message=f"Regel '{rule.name}' für {filename}: {str(e)[:300]}",
+                          entity_id=rule.id, entity_name=rule.name,
+                          project_id=rule.project_id, level="error", db=db)
+            except Exception:
+                pass
 
     return results
 
 
 def _run_mapping(mapping_id: int, df: pd.DataFrame, db):
-    """Speichert DataFrame als temporäres Dataset und führt Mapping aus."""
+    """Führt das Mapping mit der eingegangenen Datei als Hauptquelle aus.
+
+    Die Datei ersetzt das erste Dataset auf dem Canvas – nur für diesen Lauf,
+    nichts wird gespeichert. Früher landete die Datei in einem Dataset, das das
+    Mapping gar nicht las (bzw. im Ausgabe-Dataset des Mappings), und jeder Lauf
+    legte ein neues „dispatcher_input_…“ an.
+    """
     from app.models.mapping import Mapping
-    from app.models.dataset import Dataset
-    from app.services.file_service import dataframe_to_storage, infer_column_types
-    from datetime import datetime, timezone
+    from app.services.mapping_service import MappingContext, run_mapping_object
 
     mapping = db.query(Mapping).filter(Mapping.id == mapping_id).first()
     if not mapping:
         raise ValueError(f"Mapping #{mapping_id} nicht gefunden")
 
-    # DataFrame als Dataset speichern (temporär / Update)
-    # Suche ob es ein Dataset gibt das diesem Mapping zugeordnet ist
-    ds = db.query(Dataset).filter(Dataset.source_mapping_id == mapping_id).first()
-    if not ds:
-        # Neues Dataset anlegen
-        ds = Dataset(
-            name=f"dispatcher_input_{mapping_id}",
-            file_type="csv",
-            row_count=len(df),
-            columns=list(df.columns),
-            column_types=infer_column_types(df),
-            xml_configured=1,
-        )
-        db.add(ds); db.commit(); db.refresh(ds)
-
-    path = dataframe_to_storage(df, ds.id)
-    ds.file_path = path
-    ds.row_count = len(df)
-    ds.columns = list(df.columns)
-    db.commit()
-
-    # Mapping ausführen via einheitlichem run_mapping_object
-    from app.services.mapping_service import MappingContext, run_mapping_object
     ctx = MappingContext.from_orm(mapping)
+    if ctx.canvas_nodes and df is not None:
+        ctx.quellen_ersatz = {ctx.canvas_nodes[0]["dataset_id"]: df}
+    else:
+        logger.warning(f"Dispatcher: Mapping #{mapping_id} hat kein Dataset auf dem Canvas – "
+                       f"läuft mit seinen eigenen Quellen, die Datei wird nicht eingespeist")
     result = run_mapping_object(ctx, preview_rows=999999, db=db,
-                                 mapping_id=mapping_id, triggered_by="dispatcher")
+                                mapping_id=mapping_id, mapping_name=mapping.name,
+                                project_id=mapping.project_id, triggered_by="dispatcher")
+    fehler = [t.get("error") for t in result.get("targets_results", [])
+              if t.get("status") == "error" and t.get("error")]
+    if fehler:
+        raise ValueError(f"Mapping '{mapping.name}': " + "; ".join(fehler)[:300])
     return {"rows": result.get("total_rows_written", 0), "targets": result.get("targets_executed", 0)}
 
 
@@ -271,28 +284,59 @@ def _migrate_legacy_targets(mapping):
     return []
 
 
-def _run_post_action(action: dict, mapping_result: dict, db):
-    """Führt eine Post-Action aus."""
+def _platzhalter(text: str, k: dict) -> str:
+    from datetime import datetime
+    return (text or "").replace("{datei}", str(k.get("datei", ""))) \
+        .replace("{regel}", str(k.get("regel", ""))) \
+        .replace("{zeilen}", str(k.get("zeilen", ""))) \
+        .replace("{geschrieben}", str(k.get("geschrieben", ""))) \
+        .replace("{datum}", datetime.now().strftime("%Y%m%d")) \
+        .replace("{zeit}", datetime.now().strftime("%H%M%S"))
+
+
+def _run_post_action(action: dict, k: dict, db) -> str:
+    """Führt eine Nach-Aktion aus. Wirft bei Fehlern, gibt sonst eine Meldung zurück.
+
+    k: datei, regel, zeilen, geschrieben, df, roh (Bytes der Datei), project_id
+    """
     atype = action.get("type", "")
 
     if atype == "ftp_upload":
+        # Eingangsdatei unverändert weiterreichen/archivieren (FTP, SFTP, Ordner)
         ftp_source_id = action.get("ftp_source_id")
-        remote_dir = action.get("remote_dir", "/")
-        filename = action.get("filename", "export.csv")
-        if ftp_source_id:
-            from app.models.ftp_source import FtpSource
-            src = db.query(FtpSource).filter(FtpSource.id == ftp_source_id).first()
-            if src:
-                import io, pandas as pd
-                # Lade Mapping-Output (falls vorhanden)
-                logger.info(f"Dispatcher FTP-Upload → {src.name}:{remote_dir}/{filename}")
+        if not ftp_source_id:
+            raise ValueError("Kein Ziel gewählt")
+        from app.models.ftp_source import FtpSource
+        from app.services.ablage import ablage_oeffnen
+        src = db.query(FtpSource).filter(FtpSource.id == ftp_source_id).first()
+        if not src:
+            raise ValueError(f"Ziel #{ftp_source_id} nicht gefunden")
+        if not k.get("roh"):
+            raise ValueError("Inhalt der Datei liegt nicht vor")
+        remote_dir = action.get("remote_dir") or "/"
+        name = _platzhalter(action.get("filename") or "{datei}", k)
+        with ablage_oeffnen(src) as ablage:
+            ablage.schreiben(remote_dir, name, k["roh"])
+        logger.info(f"Dispatcher: {name} → {src.name}:{remote_dir}")
+        return f"{name} → {src.name}:{remote_dir}"
 
-    elif atype == "chain_mapping":
+    if atype == "chain_mapping":
         next_mapping_id = action.get("mapping_id")
-        if next_mapping_id:
-            logger.info(f"Dispatcher: Chain → Mapping #{next_mapping_id}")
-            _run_mapping(next_mapping_id, pd.DataFrame(), db)
+        if not next_mapping_id:
+            raise ValueError("Kein Folge-Mapping gewählt")
+        r = _run_mapping(next_mapping_id, k.get("df"), db)
+        return f"Folge-Mapping #{next_mapping_id}: {r.get('rows', 0)} Zeilen"
 
-    elif atype == "email":
-        # Placeholder für E-Mail (kommt später mit Mail-Service)
-        logger.info(f"Dispatcher: E-Mail an {action.get('to')} (noch nicht implementiert)")
+    if atype == "email":
+        to = action.get("to") or ""
+        if not to:
+            raise ValueError("Kein Empfänger")
+        from app.services.email_service import send_email
+        betreff = _platzhalter(action.get("subject") or "Datei {datei} verarbeitet ({regel})", k)
+        text = _platzhalter(action.get("body") or
+                            "Die Datei {datei} wurde von der Regel „{regel}“ verarbeitet.\n"
+                            "Zeilen in der Datei: {zeilen}\nZeilen geschrieben: {geschrieben}", k)
+        send_email(to=to, subject=betreff, body=text, db=db)
+        return f"E-Mail an {to}"
+
+    raise ValueError(f"Unbekannte Nach-Aktion: {atype}")
