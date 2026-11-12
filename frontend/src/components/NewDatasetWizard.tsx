@@ -75,6 +75,7 @@ function StepFileUpload({ onDone, projectId }) {
   const [success, setSuccess] = useState(false);
   const [delimiter, setDelimiter] = useState("auto");
   const [skipRows, setSkipRows] = useState(0);
+  const [decimal, setDecimal] = useState(".");
   const [detectedDelimiter, setDetectedDelimiter] = useState(null);
   const inputRef = useRef();
 
@@ -121,6 +122,7 @@ function StepFileUpload({ onDone, projectId }) {
       if (ext === "csv") {
         const sep = delimiter === "auto" ? (detectedDelimiter || ",") : delimiter;
         fd.append("csv_delimiter", sep);
+        fd.append("csv_decimal", decimal);
       }
       if (skipRows > 0) fd.append("skip_rows", skipRows);
       await api.post("/api/datasets/upload", fd);
@@ -207,6 +209,20 @@ function StepFileUpload({ onDone, projectId }) {
           )}
           {delimiter === "auto" && !detectedDelimiter && (
             <p style={{ fontSize: 11, color: S.textDim, marginTop: 6 }}>Analysiere Datei…</p>
+          )}
+          <label style={{ ...labelStyle, marginTop: 12 }}>Zahlen in der Datei</label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {[{ v: ".", l: "1234.56 (Punkt)" }, { v: ",", l: "1.234,56 (deutsch)" }].map(o => (
+              <button key={o.v} onClick={() => setDecimal(o.v)}
+                style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontWeight: 600, cursor: "pointer", border: `1px solid ${decimal === o.v ? S.accent : S.border}`, backgroundColor: decimal === o.v ? "color-mix(in srgb, var(--accent) 10%, transparent)" : "transparent", color: decimal === o.v ? S.accent : S.textDim }}>
+                {o.l}
+              </button>
+            ))}
+          </div>
+          {decimal === "," && (
+            <p style={{ fontSize: 11, color: S.textDim, marginTop: 6 }}>
+              Spalten, die nur aus deutschen Zahlen bestehen, werden zu Zahlen. Datum, Text und Nummern mit führender Null bleiben, wie sie sind.
+            </p>
           )}
         </div>
       )}

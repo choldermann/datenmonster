@@ -41,3 +41,5 @@ class FtpSource(Base):
     last_run_msg = Column(Text, nullable=True)
     last_rows = Column(Integer, nullable=True)
     skip_rows = Column(Integer, default=0, nullable=True)   # Zeilen überspringen beim Import
+    csv_decimal = Column(String, default=".", nullable=True)  # "." | "," (deutsche Zahlen)
+    xml_target_node = Column(String, nullable=True)           # z.B. "Auftraege/Auftrag"

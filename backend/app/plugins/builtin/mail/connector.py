@@ -239,11 +239,9 @@ class MailConnector(SourcePlugin):
         import pandas as pd
         buf = io.BytesIO(att.content)
         if mode == "attachment_csv":
-            for enc in ("utf-8", "latin-1", "cp1252"):
-                try:
-                    return pd.read_csv(buf, encoding=enc)
-                except Exception:
-                    buf.seek(0)
+            # Trennzeichen erkennen – vorher wurden Semikolon-Dateien zu EINER Spalte
+            from app.services.csv_format import csv_lesen
+            return csv_lesen(att.content, sep="auto")
         elif mode == "attachment_xlsx":
             return pd.read_excel(buf)
         elif mode == "attachment_xml":

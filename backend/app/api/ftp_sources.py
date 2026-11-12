@@ -28,6 +28,8 @@ class FtpSourceCreate(BaseModel):
     file_type: str = "csv"
     csv_delimiter: str = ";"
     skip_rows: int = 0
+    csv_decimal: str = "."              # "." oder "," (deutsche Zahlen)
+    xml_target_node: Optional[str] = None
     after_import: str = "nothing"   # nothing | move | delete
     move_dir: Optional[str] = None
     dataset_id: Optional[int] = None
@@ -63,6 +65,10 @@ def _out(s: FtpSource) -> dict:
         "filename_filter": s.filename_filter,
         "file_type": s.file_type,
         "csv_delimiter": s.csv_delimiter,
+        # fehlte: die Maske zeigte immer 0 und setzte den Wert beim Speichern zurück
+        "skip_rows": s.skip_rows or 0,
+        "csv_decimal": getattr(s, "csv_decimal", None) or ".",
+        "xml_target_node": getattr(s, "xml_target_node", None),
         "after_import": s.after_import,
         "move_dir": s.move_dir,
         "dataset_id": s.dataset_id,

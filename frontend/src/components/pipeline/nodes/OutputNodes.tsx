@@ -31,6 +31,29 @@ export function FtpUploadNode({ node, onRemove, onPositionChange, onUpdate, inpu
           <label style={lS}>Dateiname</label>
           <input style={iS} value={config.filename || ""} onChange={e => set("filename", e.target.value)} placeholder="export_{datum}.csv" />
         </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ flex: 1 }}>
+            <label style={lS}>Trenner</label>
+            <select style={iS} value={config.delimiter || ","} onChange={e => set("delimiter", e.target.value)}>
+              {[",", ";", "|", "\t"].map(d => <option key={d} value={d}>{d === "\t" ? "Tab" : d}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={lS}>Zahlen</label>
+            <select style={iS} value={config.decimal || "."} onChange={e => set("decimal", e.target.value)}>
+              <option value=".">1234.56</option>
+              <option value=",">1234,56</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label style={lS}>Kodierung</label>
+          <select style={iS} value={config.encoding || "utf-8"} onChange={e => set("encoding", e.target.value)}>
+            <option value="utf-8">UTF-8</option>
+            <option value="utf-8-sig">UTF-8 mit BOM (Excel)</option>
+            <option value="cp1252">ANSI / Windows-1252</option>
+          </select>
+        </div>
       </div>
     </BaseNode>
   );

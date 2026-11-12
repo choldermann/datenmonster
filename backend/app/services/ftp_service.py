@@ -129,10 +129,13 @@ def upload_file_sftp(sftp, remote_dir: str, filename: str, data: bytes):
     sftp.putfo(io.BytesIO(data), path)
 
 
-def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename: str) -> int:
-    """Exportiert DataFrame als CSV und lädt auf FTP/SFTP-Ziel hoch. Gibt Zeilenanzahl zurück."""
+def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename: str,
+                           delimiter: str = ",", encoding: str = "utf-8", decimal: str = ".") -> int:
+    """Exportiert DataFrame als CSV und lädt auf FTP/SFTP-Ziel hoch. Gibt Zeilenanzahl zurück.
+    Vorgaben wie bisher (Komma, UTF-8 ohne BOM), damit bestehende Empfänger nichts merken."""
+    from app.services.csv_format import csv_schreiben
     password = decrypt_credential(source.password) if source.password else ""
-    data = df.to_csv(index=False).encode("utf-8")
+    data = csv_schreiben(df, delimiter=delimiter or ",", encoding=encoding or "utf-8", decimal=decimal or ".")
 
     if (source.protocol or "ftp") == "sftp":
         sftp = _connect_sftp(source.host, source.port, source.username, password)
@@ -156,7 +159,8 @@ def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename
 
 # ─── Datei parsen ─────────────────────────────────────────────────────────────
 
-def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0) -> pd.DataFrame:
+def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0,
+                csv_decimal: str = ".", xml_target_node: Optional[str] = None) -> pd.DataFrame:
     """Parse downloaded bytes into a DataFrame."""
     buf = io.BytesIO(data)
     ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
@@ -168,20 +172,26 @@ def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str =
     elif actual_type == "ods" or ext == "ods":
         return pd.read_excel(buf, engine="odf", skiprows=skip_rows if skip_rows else None)
     elif actual_type == "xml" or ext == "xml":
+        from app.services.file_service import parse_xml_with_config, _flatten_element
+        if xml_target_node:
+            # Wie beim Upload: Zielknoten + verschachtelte Felder als Spalten
+            columns, rows = parse_xml_with_config(data, xml_target_node, [])
+            return pd.DataFrame(rows, columns=columns)
         import xml.etree.ElementTree as ET
-        tree = ET.parse(buf)
-        root = tree.getroot()
+        root = ET.fromstring(data)
         rows = []
         for child in root:
-            rows.append({sub.tag: sub.text for sub in child})
+            row = _flatten_element(child)
+            for attr, val in child.attrib.items():
+                row[f"@{attr}"] = val
+            rows.append(row)
         return pd.DataFrame(rows)
     else:
-        # CSV – try configured delimiter, fallback to auto
-        text_data = data.decode("utf-8-sig", errors="replace")
+        from app.services.csv_format import csv_lesen
         try:
-            return pd.read_csv(io.StringIO(text_data), sep=csv_delimiter)
+            return csv_lesen(data, sep=csv_delimiter, skip_rows=skip_rows, decimal=csv_decimal or ".")
         except Exception:
-            return pd.read_csv(io.StringIO(text_data), sep=None, engine="python")
+            return csv_lesen(data, sep="auto", skip_rows=skip_rows, decimal=csv_decimal or ".")
 
 
 # ─── Haupt-Sync-Funktion ──────────────────────────────────────────────────────
@@ -224,7 +234,10 @@ def run_ftp_sync(source, db) -> dict:
                 else:
                     data = download_file_ftp(conn, source.remote_dir, filename)
 
-                df = parse_bytes(data, filename, source.file_type, source.csv_delimiter or ";", getattr(source, 'skip_rows', 0) or 0)
+                df = parse_bytes(data, filename, source.file_type, source.csv_delimiter or ";",
+                                 getattr(source, 'skip_rows', 0) or 0,
+                                 csv_decimal=getattr(source, 'csv_decimal', None) or ".",
+                                 xml_target_node=getattr(source, 'xml_target_node', None) or None)
                 dfs.append(df)
                 files_processed.append(filename)
                 logger.info(f"  ✓ {filename}: {len(df)} Zeilen, {len(df.columns)} Spalten")

@@ -15,10 +15,10 @@ import pandas as pd
 
 # ─── CSV ──────────────────────────────────────────────────────────────────────
 
-def export_csv(df: pd.DataFrame, delimiter: str = ";", encoding: str = "utf-8-sig") -> bytes:
-    buf = io.StringIO()
-    df.to_csv(buf, index=False, sep=delimiter)
-    return buf.getvalue().encode(encoding)
+def export_csv(df: pd.DataFrame, delimiter: str = ";", encoding: str = "utf-8-sig",
+               decimal: str = ".") -> bytes:
+    from app.services.csv_format import csv_schreiben
+    return csv_schreiben(df, delimiter=delimiter, encoding=encoding, decimal=decimal)
 
 
 # ─── Destatis Intrastat CSV (IDEV-Upload) ───────────────────────────────────────

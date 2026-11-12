@@ -381,6 +381,23 @@ function TargetConfigModal({ target, dbConnections, pluginTargetTypes = [], onSa
                 <select style={iS} value={opts.delimiter || ";"} onChange={(e) => setOpts({ ...opts, delimiter: e.target.value })}>
                   {[";", ",", "|", "\t"].map((d) => <option key={d} value={d}>{d === "\t" ? "Tab" : d}</option>)}
                 </select>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                  <div>
+                    <label style={lS}>Zahlen</label>
+                    <select style={iS} value={opts.decimal || "."} onChange={(e) => setOpts({ ...opts, decimal: e.target.value })}>
+                      <option value=".">1234.56 (Punkt)</option>
+                      <option value=",">1234,56 (Komma, Excel-DE)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={lS}>Kodierung</label>
+                    <select style={iS} value={opts.encoding || "utf-8-sig"} onChange={(e) => setOpts({ ...opts, encoding: e.target.value })}>
+                      <option value="utf-8-sig">UTF-8 mit BOM (Excel)</option>
+                      <option value="utf-8">UTF-8 ohne BOM</option>
+                      <option value="cp1252">ANSI / Windows-1252</option>
+                    </select>
+                  </div>
+                </div>
               </div>
             )}
             {/* Destatis-CSV Meldungskopf */}

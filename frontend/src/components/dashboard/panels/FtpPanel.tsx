@@ -25,6 +25,8 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     file_type: source?.file_type || "csv",
     csv_delimiter: source?.csv_delimiter || ";",
     skip_rows: source?.skip_rows || 0,
+    csv_decimal: source?.csv_decimal || ".",
+    xml_target_node: source?.xml_target_node || "",
     after_import: source?.after_import || "nothing",
     move_dir: source?.move_dir || "",
     dataset_id: (source?.dataset_id && datasets?.find(d => d.id === source.dataset_id)) ? source.dataset_id : "",
@@ -50,7 +52,7 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
     setSaving(true);
     try {
       const dsId = form.dataset_id && datasets?.find(d => d.id === parseInt(form.dataset_id)) ? parseInt(form.dataset_id) : null;
-      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0 };
+      const payload = { ...form, port: form.port ? parseInt(form.port) : null, dataset_id: dsId, project_id: projectId, skip_rows: parseInt(form.skip_rows) || 0, xml_target_node: form.xml_target_node || null };
       if (isNew) await api.post("/api/ftp-sources/", payload);
       else await api.put(`/api/ftp-sources/${source.id}`, payload);
       onDone();
@@ -129,6 +131,22 @@ function FtpFormModal({ source, projectId, datasets, onDone, onClose }) {
                 <select style={iS} value={form.csv_delimiter} onChange={(e) => set("csv_delimiter", e.target.value)}>
                   {[";", ",", "|", "\t"].map((d) => <option key={d} value={d}>{d === "\t" ? "Tab" : d}</option>)}
                 </select>
+              </div>
+            )}
+            {form.file_type === "csv" && (
+              <div>
+                <label style={lS}>Zahlen in der Datei</label>
+                <select style={iS} value={form.csv_decimal} onChange={(e) => set("csv_decimal", e.target.value)}>
+                  <option value=".">1234.56 (Punkt)</option>
+                  <option value=",">1.234,56 (deutsch)</option>
+                </select>
+              </div>
+            )}
+            {form.file_type === "xml" && (
+              <div>
+                <label style={lS}>XML-Zielknoten (optional)</label>
+                <input style={iS} value={form.xml_target_node} onChange={(e) => set("xml_target_node", e.target.value)} placeholder="z.B. Auftraege/Auftrag" />
+                <div style={{ fontSize: 10, color: "var(--text-dim)", marginTop: 3 }}>Leer = jedes Kind des Wurzelelements ist eine Zeile.</div>
               </div>
             )}
 

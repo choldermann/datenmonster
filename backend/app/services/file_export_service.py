@@ -104,7 +104,8 @@ def save_export_file(
     opts = target_options or {}
 
     if target_type == "csv":
-        content = export_csv(df, delimiter=opts.get("delimiter", ";"), encoding=opts.get("encoding", "utf-8-sig"))
+        content = export_csv(df, delimiter=opts.get("delimiter", ";"), encoding=opts.get("encoding", "utf-8-sig"),
+                             decimal=opts.get("decimal", "."))
     elif target_type == "destatis_csv":
         content = export_destatis_csv(df, opts.get("destatis_config"))
     elif target_type == "destatis_idev":

@@ -10,15 +10,13 @@ from app.core.config import UPLOAD_DIR
 # ─── CSV / XLSX ───────────────────────────────────────────────────────────────
 
 def parse_file(filepath: str, file_type: str, xml_target_node: Optional[str] = None,
-               csv_delimiter: str = None, skip_rows: int = 0) -> pd.DataFrame:
+               csv_delimiter: str = None, skip_rows: int = 0,
+               csv_decimal: str = ".") -> pd.DataFrame:
     if file_type == "csv":
-        sep = csv_delimiter if csv_delimiter else ","
-        for enc in ["utf-8", "latin-1", "cp1252"]:
-            try:
-                return pd.read_csv(filepath, encoding=enc, sep=sep, low_memory=False)
-            except UnicodeDecodeError:
-                continue
-        return pd.read_csv(filepath, encoding="utf-8", errors="replace", sep=sep, skiprows=skip_rows if skip_rows else None)
+        from app.services.csv_format import csv_lesen
+        with open(filepath, "rb") as f:
+            return csv_lesen(f.read(), sep=csv_delimiter, skip_rows=skip_rows or 0,
+                             decimal=csv_decimal or ".")
     elif file_type in ("xlsx", "xls"):
         return pd.read_excel(filepath, skiprows=skip_rows if skip_rows else None)
     elif file_type == "ods":

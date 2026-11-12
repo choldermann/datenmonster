@@ -96,6 +96,10 @@ async def lifespan(app: FastAPI):
                 updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
             )""",
             "ALTER TABLE datasets ADD COLUMN source_mapping_id INTEGER",
+            # Konvertierungen: FTP-Quellen lesen deutsche Zahlen und XML mit Zielknoten
+            "ALTER TABLE ftp_sources ADD COLUMN skip_rows INTEGER DEFAULT 0",
+            "ALTER TABLE ftp_sources ADD COLUMN csv_decimal TEXT DEFAULT '.'",
+            "ALTER TABLE ftp_sources ADD COLUMN xml_target_node TEXT",
             "ALTER TABLE datasets ADD COLUMN column_types JSON DEFAULT '{}'",
             "ALTER TABLE scheduled_jobs ADD COLUMN created_by INTEGER",
             "ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0",
