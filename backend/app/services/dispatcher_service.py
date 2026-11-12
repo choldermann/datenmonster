@@ -271,9 +271,15 @@ def _run_mapping(mapping_id: int, df: pd.DataFrame, db):
     else:
         logger.warning(f"Dispatcher: Mapping #{mapping_id} hat kein Dataset auf dem Canvas – "
                        f"läuft mit seinen eigenen Quellen, die Datei wird nicht eingespeist")
+    project_name = None
+    if mapping.project_id:
+        from app.models.project import Project
+        p = db.query(Project).filter(Project.id == mapping.project_id).first()
+        project_name = p.name if p else None
     result = run_mapping_object(ctx, preview_rows=999999, db=db,
                                 mapping_id=mapping_id, mapping_name=mapping.name,
-                                project_id=mapping.project_id, triggered_by="dispatcher")
+                                project_id=mapping.project_id, project_name=project_name,
+                                triggered_by="dispatcher")
     fehler = [t.get("error") for t in result.get("targets_results", [])
               if t.get("status") == "error" and t.get("error")]
     if fehler:
