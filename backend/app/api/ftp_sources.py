@@ -199,7 +199,7 @@ def trigger_ftp_source(source_id: int, db: Session = Depends(get_db), user: User
         try:
             result = run_ftp_sync(src, thread_db)
             src.last_run_at = datetime.now(timezone.utc)
-            src.last_run_status = "success"
+            src.last_run_status = "warning" if result.get("errors") else "success"
             src.last_rows = result.get("rows", 0)
             src.last_run_msg = f"{len(result.get('files_processed', []))} Datei(en) · {result.get('rows', 0)} Zeilen" + ((" · Fehler: " + "; ".join(result["errors"])) if result.get("errors") else "")
             safe_commit(thread_db)
@@ -312,7 +312,7 @@ def _run_ftp_job(source_id: int):
             return
         result = run_ftp_sync(source, db)
         source.last_run_at = datetime.now(timezone.utc)
-        source.last_run_status = "success"
+        source.last_run_status = "warning" if result.get("errors") else "success"
         source.last_rows = result.get("rows", 0)
         source.last_run_msg = (
             f"{len(result.get('files_processed', []))} Datei(en) · {result.get('rows', 0)} Zeilen"

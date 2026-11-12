@@ -18,9 +18,11 @@ def parse_file(filepath: str, file_type: str, xml_target_node: Optional[str] = N
             return csv_lesen(f.read(), sep=csv_delimiter, skip_rows=skip_rows or 0,
                              decimal=csv_decimal or ".", header=csv_header)
     elif file_type in ("xlsx", "xls"):
-        return pd.read_excel(filepath, skiprows=skip_rows if skip_rows else None)
+        from app.services.csv_format import excel_lesen
+        return excel_lesen(filepath, skip_rows)
     elif file_type == "ods":
-        return pd.read_excel(filepath, engine="odf", skiprows=skip_rows if skip_rows else None)
+        from app.services.csv_format import excel_lesen
+        return excel_lesen(filepath, skip_rows, engine="odf")
     raise ValueError(f"Unsupported file_type: {file_type}")
 
 

@@ -160,3 +160,28 @@ def test_text_in_anfuehrung_mit_dezimalkomma_laesst_zahlen_frei():
     d = pd.DataFrame({"Name": ['Sag "Hallo"', "B"], "Preis": [1234.5, 0.99], "Menge": [3, 4]})
     b = csv_schreiben(d, **csv_optionen({"quote": "text", "decimal": ",", "encoding": "utf-8"}))
     assert b.decode() == '"Name";"Preis";"Menge"\n"Sag ""Hallo""";1234,5;3\n"B";0,99;4\n'
+
+
+# ─── Excel: Text bleibt Text ──────────────────────────────────────────────────
+import io as _io
+
+from app.services.csv_format import excel_lesen
+
+
+def test_excel_behaelt_fuehrende_null_und_typen():
+    b = _io.BytesIO()
+    pd.DataFrame({"ArtNr": ["0815", "4711"], "Preis": [1234.5, 0.99], "Menge": [3, 10],
+                  "Datum": pd.to_datetime(["2026-11-12", "2026-01-02"])}).to_excel(b, index=False)
+    b.seek(0)
+    df = excel_lesen(b)
+    assert df["ArtNr"].tolist() == ["0815", "4711"]
+    assert df["Preis"].dtype == "float64" and df["Menge"].dtype == "int64"
+    assert str(df["Datum"].dtype).startswith("datetime64")
+
+
+def test_excel_gemischte_spalte_wird_text():
+    import openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active
+    ws.append(["ArtNr"]); ws.append(["0815"]); ws.append([4711]); ws.append([12.0])
+    b = _io.BytesIO(); wb.save(b); b.seek(0)
+    assert excel_lesen(b)["ArtNr"].tolist() == ["0815", "4711", "12"]

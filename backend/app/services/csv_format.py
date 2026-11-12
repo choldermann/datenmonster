@@ -160,3 +160,35 @@ def csv_optionen(opts: dict, vorgabe_trenner: str = ";", vorgabe_kodierung: str 
         "line_ending": opts.get("line_ending") or "lf",
         "date_format": opts.get("date_format") or None,
     }
+
+
+def _als_text(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return v
+    if isinstance(v, str):
+        return v
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))
+    return str(v)
+
+
+def excel_lesen(quelle, skip_rows: int = 0, engine: Optional[str] = None) -> pd.DataFrame:
+    """Excel/ODS lesen, ohne Text in Zahlen zu verwandeln.
+
+    pandas' read_excel macht aus der TEXT-Zelle „0815“ die Zahl 815 – Artikel-
+    nummern, EANs und PLZ verlieren so ihre führende Null. Hier zählt der Typ der
+    Zelle: Text bleibt Text, Zahl bleibt Zahl, Datum bleibt Datum. Spalten mit
+    Text UND Zahlen werden ganz Text (sonst lässt sich die Spalte nicht speichern).
+    """
+    df = pd.read_excel(quelle, skiprows=skip_rows or None, engine=engine, dtype=object)
+    df = df.infer_objects()
+    for col in df.columns:
+        if df[col].dtype != object:
+            continue
+        werte = df[col].dropna()
+        if werte.empty:
+            continue
+        ist_text = werte.map(lambda v: isinstance(v, str))
+        if ist_text.any() and not ist_text.all():
+            df[col] = df[col].map(_als_text)
+    return df

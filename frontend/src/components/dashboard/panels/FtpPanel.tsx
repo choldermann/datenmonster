@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLizenz } from "../../../contexts/LizenzContext";
-import { Check, CheckCircle2, Filter, FolderSync, Loader2, Pencil, Play, Plus, RefreshCw, Server, Trash2, Wifi, WifiOff, X, XCircle } from "lucide-react";
+import { AlertTriangle, Check, CheckCircle2, Filter, FolderSync, Loader2, Pencil, Play, Plus, RefreshCw, Server, Trash2, Wifi, WifiOff, X, XCircle } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 import { S } from "../constants";
 
@@ -361,7 +361,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
     }
   };
 
-  const statusColor = { success: "var(--ok)", error: "var(--err)" };
+  const statusColor = { success: "var(--ok)", warning: "var(--accent)", error: "var(--err)" };
 
   return (
     <div style={{ padding: "28px 32px", maxWidth: 900 }}>
@@ -416,7 +416,7 @@ function FtpPanel({ projectId, datasets, canEdit }) {
                 {/* Letzter Run */}
                 {s.last_run_at && (
                   <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: statusColor[s.last_run_status] || S.textDim }}>
-                    {s.last_run_status === "success" ? <CheckCircle2 size={11} /> : <XCircle size={11} />}
+                    {s.last_run_status === "success" ? <CheckCircle2 size={11} /> : s.last_run_status === "warning" ? <AlertTriangle size={11} /> : <XCircle size={11} />}
                     <span>{new Date(s.last_run_at).toLocaleString("de-DE")} · {s.last_run_msg}</span>
                   </div>
                 )}

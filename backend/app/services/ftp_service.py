@@ -149,6 +149,19 @@ def upload_file_ftp_source(source, df: "pd.DataFrame", remote_dir: str, filename
 
 # ─── Datei parsen ─────────────────────────────────────────────────────────────
 
+def _lesefehler(e: Exception) -> str:
+    """Verständliche Meldung statt pandas-/zipfile-Englisch."""
+    t = str(e)
+    if "Excel file format cannot be determined" in t or "File is not a zip file" in t \
+            or type(e).__name__ in ("BadZipFile", "InvalidFileException"):
+        return "keine gültige Excel-Datei (beschädigt oder anderes Format)"
+    if type(e).__name__ == "ParseError":
+        return f"kein gültiges XML ({t[:120]})"
+    if type(e).__name__ == "EmptyDataError":
+        return "Datei ist leer"
+    return t[:200]
+
+
 def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str = ";", skip_rows: int = 0,
                 csv_decimal: str = ".", xml_target_node: Optional[str] = None,
                 csv_header: bool = True) -> pd.DataFrame:
@@ -159,9 +172,11 @@ def parse_bytes(data: bytes, filename: str, file_type: str, csv_delimiter: str =
     actual_type = file_type or ("xlsx" if ext in ("xlsx", "xls") else "csv")
 
     if actual_type == "xlsx" or ext in ("xlsx", "xls"):
-        return pd.read_excel(buf, skiprows=skip_rows if skip_rows else None)
+        from app.services.csv_format import excel_lesen
+        return excel_lesen(buf, skip_rows)
     elif actual_type == "ods" or ext == "ods":
-        return pd.read_excel(buf, engine="odf", skiprows=skip_rows if skip_rows else None)
+        from app.services.csv_format import excel_lesen
+        return excel_lesen(buf, skip_rows, engine="odf")
     elif actual_type == "xml" or ext == "xml":
         from app.services.file_service import parse_xml_with_config, _flatten_element
         if xml_target_node:
@@ -231,7 +246,7 @@ def run_ftp_sync(source, db) -> dict:
                 files_processed.append(filename)
                 logger.info(f"  ✓ {filename}: {len(df)} Zeilen, {len(df.columns)} Spalten")
             except Exception as e:
-                errors.append(f"{filename}: {str(e)[:200]}")
+                errors.append(f"{filename}: {_lesefehler(e)}")
                 failed_files.append(filename)
                 # db_logger: Datei-Fehler in system_logs schreiben
                 try:

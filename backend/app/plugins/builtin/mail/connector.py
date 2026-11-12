@@ -243,7 +243,8 @@ class MailConnector(SourcePlugin):
             from app.services.csv_format import csv_lesen
             return csv_lesen(att.content, sep="auto")
         elif mode == "attachment_xlsx":
-            return pd.read_excel(buf)
+            from app.services.csv_format import excel_lesen
+            return excel_lesen(buf)
         elif mode == "attachment_xml":
             return pd.read_xml(buf)
         return None
