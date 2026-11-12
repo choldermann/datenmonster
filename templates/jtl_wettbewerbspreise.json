@@ -4,9 +4,10 @@
  "template_name": "JTL – Wettbewerbspreise",
  "description": "Preise von Wettbewerbern automatisch abrufen und mit dem eigenen Verkaufspreis aus der JTL-Wawi vergleichen – mit Cockpit und Warnung, wenn der Wettbewerb deutlich günstiger ist.",
  "category": "jtl-reporting",
- "version": "1.1",
+ "version": "1.2",
  "author": "Datenmonster",
  "hinweise": [
+  "Voraussetzung: Datenmonster mit Stand ab 12.11.2026 (Web-Quelle mit Produktdaten, Preisabgleich und Wechselkursen). Vor dem Installieren die App aktualisieren – mit einem älteren Stand bleibt das Cockpit leer.",
   "Nach der Installation in Datasets „Wettbewerbspreise – URL-Liste“ öffnen und je Zeile ArtNr, Wettbewerber und die URL der Produktseite beim Wettbewerber eintragen.",
   "Dann beim Dataset „Wettbewerbspreise – Abruf“ auf „Jetzt abrufen“ klicken; danach unter Einstellungen → Zeitplan z.B. täglich 06:00 einstellen.",
   "Gelesen werden die Produktdaten, die Shops für Suchmaschinen mitliefern (Preis, Verfügbarkeit, EAN). Seiten ohne solche Daten liefern keinen Preis – dort in der Web-Quelle die Extraktion „KI“ wählen.",
@@ -660,7 +661,20 @@
       }
      }
     ],
-    "result_tabs": []
+    "result_tabs": [],
+    "rubrik": {
+     "id": "preis"
+    },
+    "show_ai_assistant": false,
+    "doku": {
+     "intro": "Zeigt, wo Wettbewerber denselben Artikel günstiger oder teurer anbieten als wir. Datenmonster ruft die Produktseiten aus der URL-Liste regelmäßig ab, liest Preis und Verfügbarkeit aus den Produktdaten der Shops und stellt sie unserem aktuellen Verkaufspreis aus der Wawi gegenüber – samt der Marge, die uns beim Wettbewerbspreis bliebe.",
+     "hinweise": [
+      "Unser Preis ist der aktive Sonderpreis der Standard-Kundengruppe, sonst der Grundpreis – brutto mit Inlands-MwSt.",
+      "Fremdwährungen werden mit dem EZB-Monatsdurchschnitt in Euro umgerechnet.",
+      "„Wettbewerber günstiger“ zählt Angebote unter unserem Preis; die Warnung meldet erst ab der eingestellten Unterbietung (Vorgabe 5 %).",
+      "Die Zahlen stammen vom letzten Abruf (Spalte „Abgerufen“). Neue Preise gibt es mit „Jetzt abrufen“ oder dem Zeitplan der Web-Quelle."
+     ]
+    }
    }
   }
  ],
@@ -724,5 +738,14 @@
    "sort": 100
   }
  ],
- "reports": []
+ "reports": [],
+ "knowledge": [
+  {
+   "category": "rule",
+   "title": "Wettbewerbspreise – Spalten und Bedeutung",
+   "content": "Die Web-Quelle „Wettbewerbspreise – Abruf“ liefert je Angebot: Wettbewerbspreis (Originalwährung), Wettbewerbspreis in € (EZB-Monatsmittel), Unser Preis (aktiver Sonderpreis der Standard-Kundengruppe, sonst Grundpreis, brutto), Differenz € / Differenz % (Wettbewerb minus wir, negativ = Wettbewerber günstiger), Unterbietung % (positiv = Wettbewerber günstiger), Wettbewerber günstiger (1/0), Marge bei Wettbewerbspreis % (Rohertrag, wenn wir auf den Wettbewerbspreis gingen; aus EK netto). Nur Zeilen mit ist_aktuell = ja sind der letzte Stand.",
+   "always_include": false,
+   "scope": "global"
+  }
+ ]
 }
