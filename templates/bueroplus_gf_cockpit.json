@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.3",
+ "version": "0.4",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -34,6 +34,24 @@
    "label": "Listenpreis-Feld des Artikels (ArtVk0Preis … ArtVk9Preis)",
    "type": "text",
    "default": "ArtVk0Preis"
+  },
+  {
+   "key": "schlaf_tage",
+   "label": "Stammkunde gilt als schlafend nach … Tagen ohne Rechnung",
+   "type": "text",
+   "default": "90"
+  },
+  {
+   "key": "schlaf_min_rechnungen",
+   "label": "Stammkunde = mindestens … Rechnungen in 24 Monaten",
+   "type": "text",
+   "default": "4"
+  },
+  {
+   "key": "barverkauf_adrnr",
+   "label": "Adressnummer des Barverkaufs-Kontos (0 = keins)",
+   "type": "text",
+   "default": "0"
   },
   {
    "key": "ek_faktor",
@@ -2998,6 +3016,1112 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_kd_kpi",
+   "name": "büro+ GF – Kunden-Kennzahlen",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AktiveKunden",
+      "AktiveKundenVJ",
+      "Neukunden",
+      "NeukundenVJ",
+      "UmsatzNeukunden",
+      "UmsatzJeKunde",
+      "UmsatzJeKundeVJ",
+      "AnteilTop10",
+      "AnteilTop5",
+      "KundenRueckgang",
+      "Rueckgang",
+      "Schlafend",
+      "UmsatzInGefahr"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n), sb AS (\n    SELECT VogAdrNr AS AdrNr, VogDat, VogGPreisNt AS Netto\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung') AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat > DATEADD(MONTH, -24, CAST(GETDATE() AS date))\n), sl AS (\n    SELECT AdrNr, MAX(VogDat) AS Letzte, COUNT(*) AS Rechnungen24M FROM sb GROUP BY AdrNr\n), schlaf AS (\n    SELECT sl.AdrNr, sl.Letzte, sl.Rechnungen24M, DATEDIFF(DAY, sl.Letzte, CAST(GETDATE() AS date)) AS TageSeither,\n        (SELECT SUM(x.Netto) FROM sb x WHERE x.AdrNr = sl.AdrNr AND x.VogDat > DATEADD(YEAR, -1, sl.Letzte)) AS Jahresumsatz\n    FROM sl\n    WHERE sl.Rechnungen24M >= {{schlaf_min_rechnungen}}\n      AND sl.Letzte < DATEADD(DAY, -{{schlaf_tage}}, CAST(GETDATE() AS date))\n      AND sl.AdrNr <> {{barverkauf_adrnr}}\n),\nrang AS (\n    SELECT AdrNr, U1, ROW_NUMBER() OVER (ORDER BY U1 DESC) AS rn FROM kd WHERE U1 > 0\n), s AS (\n    SELECT\n        SUM(CASE WHEN N1 > 0 THEN 1 ELSE 0 END) AS AktiveKunden,\n        SUM(CASE WHEN N2 > 0 THEN 1 ELSE 0 END) AS AktiveKundenVJ,\n        SUM(U1) AS Umsatz, SUM(U2) AS UmsatzVJ,\n        SUM(CASE WHEN U2 > 0 AND U1 < U2 * 0.8 THEN 1 ELSE 0 END) AS KundenRueckgang,\n        SUM(CASE WHEN U2 > 0 AND U1 < U2 * 0.8 THEN U2 - U1 ELSE 0 END) AS Rueckgang\n    FROM kd\n), neu AS (\n    SELECT\n        SUM(CASE WHEN e.Erste >= :von AND e.Erste < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END) AS Neukunden,\n        SUM(CASE WHEN e.Erste >= DATEADD(YEAR, -1, :von) AND e.Erste < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END) AS NeukundenVJ,\n        SUM(CASE WHEN e.Erste >= :von AND e.Erste < DATEADD(DAY, 1, :bis) THEN ISNULL(kd.U1, 0) ELSE 0 END) AS UmsatzNeukunden\n    FROM erste e LEFT JOIN kd ON kd.AdrNr = e.AdrNr\n), t AS (\n    SELECT SUM(CASE WHEN rn <= 5 THEN U1 ELSE 0 END) AS Top5, SUM(CASE WHEN rn <= 10 THEN U1 ELSE 0 END) AS Top10,\n        SUM(U1) AS Positiv FROM rang\n), sch AS (\n    SELECT COUNT(*) AS Schlafend, ISNULL(SUM(Jahresumsatz), 0) AS UmsatzInGefahr FROM schlaf\n)\nSELECT s.AktiveKunden, s.AktiveKundenVJ, neu.Neukunden, neu.NeukundenVJ,\n    CAST(neu.UmsatzNeukunden AS DECIMAL(18,2)) AS UmsatzNeukunden,\n    CAST(CASE WHEN s.AktiveKunden > 0 THEN s.Umsatz / s.AktiveKunden END AS DECIMAL(18,2)) AS UmsatzJeKunde,\n    CAST(CASE WHEN s.AktiveKundenVJ > 0 THEN s.UmsatzVJ / s.AktiveKundenVJ END AS DECIMAL(18,2)) AS UmsatzJeKundeVJ,\n    CAST(CASE WHEN t.Positiv > 0 THEN 100.0 * t.Top10 / t.Positiv END AS DECIMAL(9,1)) AS AnteilTop10,\n    CAST(CASE WHEN t.Positiv > 0 THEN 100.0 * t.Top5 / t.Positiv END AS DECIMAL(9,1)) AS AnteilTop5,\n    s.KundenRueckgang, CAST(s.Rueckgang AS DECIMAL(18,2)) AS Rueckgang,\n    sch.Schlafend, CAST(sch.UmsatzInGefahr AS DECIMAL(18,2)) AS UmsatzInGefahr\nFROM s CROSS JOIN neu CROSS JOIN t CROSS JOIN sch"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Kunden-Kennzahlen",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AktiveKunden",
+       "target_field": "AktiveKunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AktiveKunden"
+       }
+      },
+      {
+       "source_field": "AktiveKundenVJ",
+       "target_field": "AktiveKundenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AktiveKundenVJ"
+       }
+      },
+      {
+       "source_field": "Neukunden",
+       "target_field": "Neukunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Neukunden"
+       }
+      },
+      {
+       "source_field": "NeukundenVJ",
+       "target_field": "NeukundenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "NeukundenVJ"
+       }
+      },
+      {
+       "source_field": "UmsatzNeukunden",
+       "target_field": "UmsatzNeukunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzNeukunden"
+       }
+      },
+      {
+       "source_field": "UmsatzJeKunde",
+       "target_field": "UmsatzJeKunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzJeKunde"
+       }
+      },
+      {
+       "source_field": "UmsatzJeKundeVJ",
+       "target_field": "UmsatzJeKundeVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzJeKundeVJ"
+       }
+      },
+      {
+       "source_field": "AnteilTop10",
+       "target_field": "AnteilTop10",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AnteilTop10"
+       }
+      },
+      {
+       "source_field": "AnteilTop5",
+       "target_field": "AnteilTop5",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AnteilTop5"
+       }
+      },
+      {
+       "source_field": "KundenRueckgang",
+       "target_field": "KundenRueckgang",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KundenRueckgang"
+       }
+      },
+      {
+       "source_field": "Rueckgang",
+       "target_field": "Rueckgang",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rueckgang"
+       }
+      },
+      {
+       "source_field": "Schlafend",
+       "target_field": "Schlafend",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Schlafend"
+       }
+      },
+      {
+       "source_field": "UmsatzInGefahr",
+       "target_field": "UmsatzInGefahr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzInGefahr"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_top",
+   "name": "büro+ GF – Top-Kunden",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Vertreter",
+      "Umsatz",
+      "UmsatzVJ",
+      "Veraenderung",
+      "Rohertrag",
+      "Marge",
+      "Rechnungen",
+      "LetzteRechnung",
+      "Sperre"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n)\nSELECT TOP 25 kd.AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(adr.AdrReNa2, ''))), ''), CONCAT('Adresse ', kd.AdrNr)) AS Kunde, adr.AdrReOrt AS Ort, adr.AdrVtrNr AS Vertreter,\n    CAST(kd.U1 AS DECIMAL(18,2)) AS Umsatz, CAST(kd.U2 AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN kd.U2 > 0 THEN 100.0 * (kd.U1 - kd.U2) / kd.U2 END AS DECIMAL(9,1)) AS Veraenderung,\n    CAST(kd.R1 AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN kd.U1 > 0 THEN 100.0 * kd.R1 / kd.U1 END AS DECIMAL(9,1)) AS Marge,\n    kd.N1 AS Rechnungen, CONVERT(char(10), kd.Letzte, 104) AS LetzteRechnung,\n    CASE WHEN adr.AdrGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre\nFROM kd LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = kd.AdrNr\nWHERE kd.U1 > 0\nORDER BY kd.U1 DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Top-Kunden",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Veraenderung",
+       "target_field": "Veraenderung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Veraenderung"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Marge",
+       "target_field": "Marge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "LetzteRechnung",
+       "target_field": "LetzteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteRechnung"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_rueckgang",
+   "name": "büro+ GF – Kunden mit Rückgang",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Vertreter",
+      "Umsatz",
+      "UmsatzVJ",
+      "Veraenderung",
+      "VeraenderungProzent",
+      "Rechnungen",
+      "RechnungenVJ",
+      "LetzteRechnung"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n)\nSELECT TOP 50 kd.AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(adr.AdrReNa2, ''))), ''), CONCAT('Adresse ', kd.AdrNr)) AS Kunde, adr.AdrReOrt AS Ort, adr.AdrVtrNr AS Vertreter,\n    CAST(kd.U1 AS DECIMAL(18,2)) AS Umsatz, CAST(kd.U2 AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(kd.U1 - kd.U2 AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(100.0 * (kd.U1 - kd.U2) / kd.U2 AS DECIMAL(9,1)) AS VeraenderungProzent,\n    kd.N1 AS Rechnungen, kd.N2 AS RechnungenVJ, CONVERT(char(10), kd.Letzte, 104) AS LetzteRechnung\nFROM kd LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = kd.AdrNr\nWHERE kd.U2 > 0 AND kd.U1 < kd.U2 * 0.8\nORDER BY kd.U1 - kd.U2"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Kunden mit Rückgang",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Veraenderung",
+       "target_field": "Veraenderung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Veraenderung"
+       }
+      },
+      {
+       "source_field": "VeraenderungProzent",
+       "target_field": "VeraenderungProzent",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VeraenderungProzent"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "RechnungenVJ",
+       "target_field": "RechnungenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "RechnungenVJ"
+       }
+      },
+      {
+       "source_field": "LetzteRechnung",
+       "target_field": "LetzteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteRechnung"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_schlafend",
+   "name": "büro+ GF – Schlafende Stammkunden",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Telefon",
+      "Vertreter",
+      "LetzteRechnung",
+      "TageSeither",
+      "Rechnungen24M",
+      "Jahresumsatz",
+      "Sperre"
+     ],
+     "sql": "WITH sb AS (\n    SELECT VogAdrNr AS AdrNr, VogDat, VogGPreisNt AS Netto\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung') AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat > DATEADD(MONTH, -24, CAST(GETDATE() AS date))\n), sl AS (\n    SELECT AdrNr, MAX(VogDat) AS Letzte, COUNT(*) AS Rechnungen24M FROM sb GROUP BY AdrNr\n), schlaf AS (\n    SELECT sl.AdrNr, sl.Letzte, sl.Rechnungen24M, DATEDIFF(DAY, sl.Letzte, CAST(GETDATE() AS date)) AS TageSeither,\n        (SELECT SUM(x.Netto) FROM sb x WHERE x.AdrNr = sl.AdrNr AND x.VogDat > DATEADD(YEAR, -1, sl.Letzte)) AS Jahresumsatz\n    FROM sl\n    WHERE sl.Rechnungen24M >= {{schlaf_min_rechnungen}}\n      AND sl.Letzte < DATEADD(DAY, -{{schlaf_tage}}, CAST(GETDATE() AS date))\n      AND sl.AdrNr <> {{barverkauf_adrnr}}\n)\nSELECT TOP 500 schlaf.AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(adr.AdrReNa2, ''))), ''), CONCAT('Adresse ', schlaf.AdrNr)) AS Kunde, adr.AdrReOrt AS Ort, adr.AdrReTel AS Telefon,\n    adr.AdrVtrNr AS Vertreter, CONVERT(char(10), schlaf.Letzte, 104) AS LetzteRechnung, schlaf.TageSeither,\n    schlaf.Rechnungen24M, CAST(schlaf.Jahresumsatz AS DECIMAL(18,2)) AS Jahresumsatz,\n    CASE WHEN adr.AdrGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre\nFROM schlaf LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = schlaf.AdrNr\nORDER BY schlaf.Jahresumsatz DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Schlafende Stammkunden",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Telefon",
+       "target_field": "Telefon",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Telefon"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "LetzteRechnung",
+       "target_field": "LetzteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteRechnung"
+       }
+      },
+      {
+       "source_field": "TageSeither",
+       "target_field": "TageSeither",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "TageSeither"
+       }
+      },
+      {
+       "source_field": "Rechnungen24M",
+       "target_field": "Rechnungen24M",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen24M"
+       }
+      },
+      {
+       "source_field": "Jahresumsatz",
+       "target_field": "Jahresumsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Jahresumsatz"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_neu",
+   "name": "büro+ GF – Neukunden",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Vertreter",
+      "Branche",
+      "ErsteRechnung",
+      "Rechnungen",
+      "Umsatz",
+      "Rohertrag"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n),\nseit AS (\n    SELECT k.AdrNr, SUM(k.Umsatz) AS Umsatz, SUM(k.Rohertrag) AS Rohertrag, SUM(CASE WHEN k.Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen\n    FROM k JOIN erste e ON e.AdrNr = k.AdrNr\n    WHERE e.Erste >= :von AND e.Erste < DATEADD(DAY, 1, :bis) AND k.VogDat < DATEADD(DAY, 1, :bis)\n    GROUP BY k.AdrNr\n)\nSELECT TOP 500 seit.AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(adr.AdrReNa2, ''))), ''), CONCAT('Adresse ', seit.AdrNr)) AS Kunde, adr.AdrReOrt AS Ort, adr.AdrVtrNr AS Vertreter,\n    adr.AdrBranche AS Branche, CONVERT(char(10), e.Erste, 104) AS ErsteRechnung,\n    seit.Rechnungen, CAST(seit.Umsatz AS DECIMAL(18,2)) AS Umsatz, CAST(seit.Rohertrag AS DECIMAL(18,2)) AS Rohertrag\nFROM seit JOIN erste e ON e.AdrNr = seit.AdrNr\nLEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = seit.AdrNr\nORDER BY seit.Umsatz DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Neukunden",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "Branche",
+       "target_field": "Branche",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Branche"
+       }
+      },
+      {
+       "source_field": "ErsteRechnung",
+       "target_field": "ErsteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ErsteRechnung"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_abc",
+   "name": "büro+ GF – ABC-Kunden",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Klasse",
+      "Kunden",
+      "Umsatz",
+      "AnteilUmsatz",
+      "AnteilKunden"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n),\nr AS (\n    SELECT AdrNr, U1, SUM(U1) OVER (ORDER BY U1 DESC, AdrNr ROWS UNBOUNDED PRECEDING) AS Kum, SUM(U1) OVER () AS Ges\n    FROM kd WHERE U1 > 0\n), c AS (\n    SELECT CASE WHEN Kum - U1 < 0.8 * Ges THEN 'A' WHEN Kum - U1 < 0.95 * Ges THEN 'B' ELSE 'C' END AS Klasse, U1, Ges FROM r\n)\nSELECT Klasse, COUNT(*) AS Kunden, CAST(SUM(U1) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(100.0 * SUM(U1) / MAX(Ges) AS DECIMAL(9,1)) AS AnteilUmsatz,\n    CAST(100.0 * COUNT(*) / SUM(COUNT(*)) OVER () AS DECIMAL(9,1)) AS AnteilKunden\nFROM c GROUP BY Klasse ORDER BY Klasse"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – ABC-Kunden",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Klasse",
+       "target_field": "Klasse",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Klasse"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "AnteilUmsatz",
+       "target_field": "AnteilUmsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AnteilUmsatz"
+       }
+      },
+      {
+       "source_field": "AnteilKunden",
+       "target_field": "AnteilKunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AnteilKunden"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_status",
+   "name": "büro+ GF – Umsatz nach Adress-Status",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Status",
+      "Kunden",
+      "Umsatz"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), k AS (\n    SELECT VogAdrNr AS AdrNr, VogID, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), kd AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS R1,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS N1, SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS N2,\n        MAX(CASE WHEN Per = 1 AND Vz = 1 THEN VogDat END) AS Letzte\n    FROM k WHERE Per IS NOT NULL GROUP BY AdrNr\n), erste AS (\n    SELECT VogAdrNr AS AdrNr, MIN(VogDat) AS Erste FROM b WHERE Vz = 1 GROUP BY VogAdrNr\n)\nSELECT COALESCE(NULLIF(LTRIM(RTRIM(adr.AdrStatus)), ''), 'ohne Status') AS Status,\n    COUNT(*) AS Kunden, CAST(SUM(kd.U1) AS DECIMAL(18,2)) AS Umsatz\nFROM kd LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = kd.AdrNr\nWHERE kd.U1 > 0\nGROUP BY COALESCE(NULLIF(LTRIM(RTRIM(adr.AdrStatus)), ''), 'ohne Status')\nORDER BY SUM(kd.U1) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Umsatz nach Adress-Status",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Status",
+       "target_field": "Status",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Status"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_kd_belege",
+   "name": "büro+ GF – Belege des Kunden (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Art",
+      "Datum",
+      "Umsatz",
+      "Rohertrag",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    CAST(b.Vz * b.Netto AS DECIMAL(18,2)) AS Umsatz, CAST(b.Vz * (b.Netto - b.Ek) AS DECIMAL(18,2)) AS Rohertrag,\n    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID\nFROM b\nWHERE b.VogAdrNr = CAST(:adrnr AS int)\n  AND b.VogDat >= DATEADD(YEAR, -1, :von) AND b.VogDat < DATEADD(DAY, 1, :bis)\nORDER BY b.VogDat DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Belege des Kunden (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -3105,6 +4229,55 @@
       "mapping_id": "m_bp_art_ohne_verkauf",
       "pipeline_id": null,
       "label": "Artikel ohne Verkauf"
+     },
+     {
+      "id": "act_kd_kpi",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_kpi",
+      "pipeline_id": null,
+      "label": "Kunden-Kennzahlen"
+     },
+     {
+      "id": "act_kd_abc",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_abc",
+      "pipeline_id": null,
+      "label": "ABC-Kunden"
+     },
+     {
+      "id": "act_kd_status",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_status",
+      "pipeline_id": null,
+      "label": "Umsatz nach Adress-Status"
+     },
+     {
+      "id": "act_kd_top",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_top",
+      "pipeline_id": null,
+      "label": "Top-Kunden"
+     },
+     {
+      "id": "act_kd_rueckgang",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_rueckgang",
+      "pipeline_id": null,
+      "label": "Kunden mit Rückgang"
+     },
+     {
+      "id": "act_kd_schlafend",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_schlafend",
+      "pipeline_id": null,
+      "label": "Schlafende Stammkunden"
+     },
+     {
+      "id": "act_kd_neu",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kd_neu",
+      "pipeline_id": null,
+      "label": "Neukunden"
      }
     ],
     "widgets": [
@@ -3764,6 +4937,263 @@
        "full_rows": true,
        "info": "Zuletzt verkaufte zuerst; Artikel ganz ohne Verkauf seit 2020 am Ende."
       }
+     },
+     {
+      "id": "w_kd_aktiv",
+      "type": "kpi",
+      "label": "Aktive Kunden",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 3,
+       "column": "AktiveKunden",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "compare_column": "AktiveKundenVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Adressen mit mindestens einer Rechnung im Zeitraum."
+      }
+     },
+     {
+      "id": "w_kd_neu",
+      "type": "kpi",
+      "label": "Neukunden",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 3,
+       "column": "Neukunden",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "compare_column": "NeukundenVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Kunden, deren allererste Rechnung in den Zeitraum fällt. Maßgeblich ist der geladene Datenbestand (Archiv ab 2020) – für Zeiträume in 2020 ist die Zahl deshalb zu hoch.",
+       "breakdown": [
+        {
+         "label": "Umsatz der Neukunden",
+         "column": "UmsatzNeukunden"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_kd_avg",
+      "type": "kpi",
+      "label": "Ø Umsatz je Kunde",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 3,
+       "column": "UmsatzJeKunde",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "UmsatzJeKundeVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_kd_top10",
+      "type": "kpi",
+      "label": "Umsatzanteil Top-10-Kunden",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 3,
+       "column": "AnteilTop10",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " %",
+       "decimals": 1,
+       "hint": "Klumpenrisiko: wie viel des Umsatzes an den zehn größten Kunden hängt.",
+       "breakdown": [
+        {
+         "label": "Top 5",
+         "column": "AnteilTop5",
+         "prefix": "",
+         "suffix": " %",
+         "decimals": 1
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_kd_rueckgang",
+      "type": "kpi",
+      "label": "Kunden mit Rückgang > 20 %",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 6,
+       "column": "KundenRueckgang",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "hint": "Kunden, die im Zeitraum mehr als 20 % weniger Umsatz brachten als im gleichen Zeitraum des Vorjahres (einschließlich Kunden ganz ohne Umsatz).",
+       "breakdown": [
+        {
+         "label": "Umsatz weniger als im Vorjahr",
+         "column": "Rueckgang"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_kd_schlaf",
+      "type": "kpi",
+      "label": "Schlafende Stammkunden",
+      "action_id": "act_kd_kpi",
+      "config": {
+       "width": 6,
+       "column": "Schlafend",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "hint": "Stand heute: mindestens {{schlaf_min_rechnungen}} Rechnungen in 24 Monaten, aber seit über {{schlaf_tage}} Tagen keine mehr. Jahresumsatz = Umsatz der zwölf Monate vor ihrer letzten Rechnung.",
+       "breakdown": [
+        {
+         "label": "Jahresumsatz in Gefahr",
+         "column": "UmsatzInGefahr"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_kd_abc",
+      "type": "table",
+      "label": "ABC-Verteilung der Kunden",
+      "action_id": "act_kd_abc",
+      "config": {
+       "width": 6,
+       "info": "A = die Kunden, die zusammen 80 % des Umsatzes bringen, B = die nächsten 15 %, C = der Rest."
+      }
+     },
+     {
+      "id": "w_kd_status",
+      "type": "pie",
+      "label": "Umsatz nach Adress-Status",
+      "action_id": "act_kd_status",
+      "config": {
+       "width": 6,
+       "label_column": "Status",
+       "value_column": "Umsatz",
+       "donut": true
+      }
+     },
+     {
+      "id": "w_kd_top",
+      "type": "table",
+      "label": "Top 25 Kunden",
+      "action_id": "act_kd_top",
+      "config": {
+       "width": 12,
+       "drilldown": {
+        "mapping_id": "m_bp_kd_belege",
+        "key_column": "AdrNr",
+        "param": "adrnr",
+        "title": "Belege des Kunden (Zeitraum und Vorjahr)",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Klick: Belege des Kunden im Zeitraum und im Vorjahreszeitraum, weiter bis zu den Positionen."
+      }
+     },
+     {
+      "id": "w_kd_rueckgang_tbl",
+      "type": "table",
+      "label": "Kunden mit dem größten Rückgang",
+      "action_id": "act_kd_rueckgang",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "drilldown": {
+        "mapping_id": "m_bp_kd_belege",
+        "key_column": "AdrNr",
+        "param": "adrnr",
+        "title": "Belege des Kunden (Zeitraum und Vorjahr)",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "id": "w_kd_schlaf_tbl",
+      "type": "table",
+      "label": "Schlafende Stammkunden – zurückgewinnen",
+      "action_id": "act_kd_schlafend",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "drilldown": {
+        "mapping_id": "m_bp_kd_belege",
+        "key_column": "AdrNr",
+        "param": "adrnr",
+        "title": "Belege des Kunden (Zeitraum und Vorjahr)",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Stand heute, unabhängig vom Zeitraum. Größter Jahresumsatz zuerst; Telefon aus der Rechnungsanschrift."
+      }
+     },
+     {
+      "id": "w_kd_neu_tbl",
+      "type": "table",
+      "label": "Neukunden im Zeitraum",
+      "action_id": "act_kd_neu",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "drilldown": {
+        "mapping_id": "m_bp_kd_belege",
+        "key_column": "AdrNr",
+        "param": "adrnr",
+        "title": "Belege des Kunden (Zeitraum und Vorjahr)",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Umsatz und Rohertrag seit der ersten Rechnung bis zum Ende des Zeitraums."
+      }
      }
     ],
     "result_tabs": [
@@ -3789,6 +5219,19 @@
        "act_art_preispflege",
        "act_art_ohne"
       ]
+     },
+     {
+      "id": "tab_kunden",
+      "label": "Kunden",
+      "action_ids": [
+       "act_kd_kpi",
+       "act_kd_abc",
+       "act_kd_status",
+       "act_kd_top",
+       "act_kd_rueckgang",
+       "act_kd_schlafend",
+       "act_kd_neu"
+      ]
      }
     ],
     "reiter_gruppen": [
@@ -3803,6 +5246,7 @@
       "id": "g_vertrieb",
       "label": "Vertrieb & Sortiment",
       "reiter": [
+       "tab_kunden",
        "tab_artikel"
       ]
      }
@@ -3978,6 +5422,51 @@
    "action_kind": null,
    "active": true,
    "sort": 2
+  },
+  {
+   "rule_key": "bp_kd_schlafend",
+   "name": "Schlafende Stammkunden",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Schlafende Stammkunden",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Jahresumsatz",
+    "min_count": 1,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Größter",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Letzte Rechnung",
+     "column": "LetzteRechnung",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Stammkunden bestellen seit über {{schlaf_tage}} Tagen nicht mehr – {summe} € Jahresumsatz in Gefahr",
+   "subtitle": "Größter Jahresumsatz zuerst. Anrufen, bevor der Kunde ganz weg ist.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Schlafende Stammkunden",
+    "title": "Schlafende Stammkunden",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": []
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 4
   },
   {
    "rule_key": "bp_gesperrt_mit_umsatz",

@@ -217,6 +217,7 @@ NAMEN = {
 }
 
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "artikel_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "kunden_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -346,9 +347,46 @@ widgets += [
     {"id": "w_art_preispflege", "type": "table", "label": "Preiserhöhung prüfen", "action_id": "act_art_preispflege",
      "config": {"width": 12, "full_rows": True, "drilldown": DD_ART,
                 "info": "Letzte 90 Tage bis Zeitraumende gegen dieselben 90 Tage im Vorjahr: Einkaufspreis um mehr als 3 % gestiegen, Verkaufspreis nicht im selben Maß, Listenpreis seit über einem Jahr unverändert. MargeVerlust90Tage = Rohertrag, der durch den nicht weitergegebenen Anstieg fehlt."}},
+]
+
+# ── Reiter „Kunden“ ─────────────────────────────────────────────────────────
+DD_KD = {"mapping_id": "m_bp_kd_belege", "key_column": "AdrNr", "param": "adrnr",
+         "title": "Belege des Kunden (Zeitraum und Vorjahr)", "hidden_columns": ["VogID"], "levels": [DD_POS]}
+K = "act_kd_kpi"
+widgets_kd = [
+    kpi("w_kd_aktiv", "Aktive Kunden", "AktiveKunden", act=K, prefix="", dec=0,
+        hint="Adressen mit mindestens einer Rechnung im Zeitraum."),
+    kpi("w_kd_neu", "Neukunden", "Neukunden", act=K, prefix="", dec=0,
+        breakdown=[{"label": "Umsatz der Neukunden", "column": "UmsatzNeukunden"}],
+        hint="Kunden, deren allererste Rechnung in den Zeitraum fällt. Maßgeblich ist der geladene Datenbestand (Archiv ab 2020) – für Zeiträume in 2020 ist die Zahl deshalb zu hoch."),
+    kpi("w_kd_avg", "Ø Umsatz je Kunde", "UmsatzJeKunde", act=K),
+    kpi("w_kd_top10", "Umsatzanteil Top-10-Kunden", "AnteilTop10", act=K, prefix="", suffix=" %", dec=1, vj=False,
+        breakdown=[{"label": "Top 5", "column": "AnteilTop5", "prefix": "", "suffix": " %", "decimals": 1}],
+        hint="Klumpenrisiko: wie viel des Umsatzes an den zehn größten Kunden hängt."),
+    kpi("w_kd_rueckgang", "Kunden mit Rückgang > 20 %", "KundenRueckgang", act=K, prefix="", dec=0, vj=False, width=6, invert=True,
+        breakdown=[{"label": "Umsatz weniger als im Vorjahr", "column": "Rueckgang"}],
+        hint="Kunden, die im Zeitraum mehr als 20 % weniger Umsatz brachten als im gleichen Zeitraum des Vorjahres (einschließlich Kunden ganz ohne Umsatz)."),
+    kpi("w_kd_schlaf", "Schlafende Stammkunden", "Schlafend", act=K, prefix="", dec=0, vj=False, width=6, invert=True,
+        breakdown=[{"label": "Jahresumsatz in Gefahr", "column": "UmsatzInGefahr"}],
+        hint="Stand heute: mindestens {{schlaf_min_rechnungen}} Rechnungen in 24 Monaten, aber seit über {{schlaf_tage}} Tagen keine mehr. Jahresumsatz = Umsatz der zwölf Monate vor ihrer letzten Rechnung."),
+    {"id": "w_kd_abc", "type": "table", "label": "ABC-Verteilung der Kunden", "action_id": "act_kd_abc",
+     "config": {"width": 6, "info": "A = die Kunden, die zusammen 80 % des Umsatzes bringen, B = die nächsten 15 %, C = der Rest."}},
+    {"id": "w_kd_status", "type": "pie", "label": "Umsatz nach Adress-Status", "action_id": "act_kd_status",
+     "config": {"width": 6, "label_column": "Status", "value_column": "Umsatz", "donut": True}},
+    {"id": "w_kd_top", "type": "table", "label": "Top 25 Kunden", "action_id": "act_kd_top",
+     "config": {"width": 12, "drilldown": DD_KD, "info": "Klick: Belege des Kunden im Zeitraum und im Vorjahreszeitraum, weiter bis zu den Positionen."}},
+    {"id": "w_kd_rueckgang_tbl", "type": "table", "label": "Kunden mit dem größten Rückgang", "action_id": "act_kd_rueckgang",
+     "config": {"width": 12, "full_rows": True, "drilldown": DD_KD}},
+    {"id": "w_kd_schlaf_tbl", "type": "table", "label": "Schlafende Stammkunden – zurückgewinnen", "action_id": "act_kd_schlafend",
+     "config": {"width": 12, "full_rows": True, "drilldown": DD_KD,
+                "info": "Stand heute, unabhängig vom Zeitraum. Größter Jahresumsatz zuerst; Telefon aus der Rechnungsanschrift."}},
+    {"id": "w_kd_neu_tbl", "type": "table", "label": "Neukunden im Zeitraum", "action_id": "act_kd_neu",
+     "config": {"width": 12, "full_rows": True, "drilldown": DD_KD, "info": "Umsatz und Rohertrag seit der ersten Rechnung bis zum Ende des Zeitraums."}},
+]
+widgets += [
     {"id": "w_art_ohne_tbl", "type": "table", "label": "Aktive Artikel ohne Verkauf seit 12 Monaten", "action_id": "act_art_ohne",
      "config": {"width": 12, "full_rows": True, "info": "Zuletzt verkaufte zuerst; Artikel ganz ohne Verkauf seit 2020 am Ende."}},
-]
+] + widgets_kd
 
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):
     return {"rule_key": key, "name": name, "category": "Geschäftsführung", "cockpit": "büro+ GF-Cockpit",
@@ -376,6 +414,11 @@ alert_rules = [
              {"label": "Umsatz", "column": "Umsatz", "unit": "€", "decimals": 0}, {"label": "Einsatz", "column": "Einsatz", "unit": "€", "decimals": 0}],
             "{anzahl} Belege mit unplausiblem Einkaufspreis – Rohertrag um {summe} € verfälscht",
             "Einkaufspreis mehr als das eingestellte Vielfache des Umsatzes – meist ein Erfassungsfehler (z. B. Preis je Stück statt je 1.000). In büro+ korrigieren; Zeile anklicken: Belege, dann Positionen.", sort=2),
+    warnung("bp_kd_schlafend", "Schlafende Stammkunden", "m_bp_kd_schlafend",
+            {"mode": "count", "value_column": "Jahresumsatz", "min_count": 1, "value_unit": "€"},
+            [{"label": "Größter", "column": "Kunde", "unit": "", "decimals": 0}, {"label": "Letzte Rechnung", "column": "LetzteRechnung", "unit": "", "decimals": 0}],
+            "{anzahl} Stammkunden bestellen seit über {{schlaf_tage}} Tagen nicht mehr – {summe} € Jahresumsatz in Gefahr",
+            "Größter Jahresumsatz zuerst. Anrufen, bevor der Kunde ganz weg ist.", sort=4, dd_title="Schlafende Stammkunden"),
     warnung("bp_gesperrt_mit_umsatz", "Gesperrte Kunden mit Umsatz", "m_bp_w_gesperrt",
             {"mode": "count", "value_column": "Umsatz", "min_count": 1, "value_unit": "€"},
             [{"label": "Größter", "column": "Kunde", "unit": "", "decimals": 0}],
@@ -394,7 +437,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.3",
+    "version": "0.4",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -405,6 +448,9 @@ tpl = {
         {"key": "lieferschein_tage", "label": "Lieferschein ohne Rechnung melden ab … Tagen", "type": "text", "default": "7"},
         {"key": "angebot_tage", "label": "Angebot gilt als alt ab … Tagen", "type": "text", "default": "90"},
         {"key": "listenpreis", "label": "Listenpreis-Feld des Artikels (ArtVk0Preis … ArtVk9Preis)", "type": "text", "default": "ArtVk0Preis"},
+        {"key": "schlaf_tage", "label": "Stammkunde gilt als schlafend nach … Tagen ohne Rechnung", "type": "text", "default": "90"},
+        {"key": "schlaf_min_rechnungen", "label": "Stammkunde = mindestens … Rechnungen in 24 Monaten", "type": "text", "default": "4"},
+        {"key": "barverkauf_adrnr", "label": "Adressnummer des Barverkaufs-Kontos (0 = keins)", "type": "text", "default": "0"},
         {"key": "ek_faktor", "label": "Einkaufspreis unplausibel ab dem …-fachen des Umsatzes", "type": "text", "default": "2"},
     ],
     "datasets": [], "pipelines": [],
@@ -429,15 +475,25 @@ tpl = {
                 {"id": "act_art_unter_ek", "type": "run_mapping", "mapping_id": "m_bp_art_unter_ek", "pipeline_id": None, "label": "Verkauf unter Einkaufspreis"},
                 {"id": "act_art_preispflege", "type": "run_mapping", "mapping_id": "m_bp_art_preispflege", "pipeline_id": None, "label": "Preiserhöhung prüfen"},
                 {"id": "act_art_ohne", "type": "run_mapping", "mapping_id": "m_bp_art_ohne_verkauf", "pipeline_id": None, "label": "Artikel ohne Verkauf"},
+                {"id": "act_kd_kpi", "type": "run_mapping", "mapping_id": "m_bp_kd_kpi", "pipeline_id": None, "label": "Kunden-Kennzahlen"},
+                {"id": "act_kd_abc", "type": "run_mapping", "mapping_id": "m_bp_kd_abc", "pipeline_id": None, "label": "ABC-Kunden"},
+                {"id": "act_kd_status", "type": "run_mapping", "mapping_id": "m_bp_kd_status", "pipeline_id": None, "label": "Umsatz nach Adress-Status"},
+                {"id": "act_kd_top", "type": "run_mapping", "mapping_id": "m_bp_kd_top", "pipeline_id": None, "label": "Top-Kunden"},
+                {"id": "act_kd_rueckgang", "type": "run_mapping", "mapping_id": "m_bp_kd_rueckgang", "pipeline_id": None, "label": "Kunden mit Rückgang"},
+                {"id": "act_kd_schlafend", "type": "run_mapping", "mapping_id": "m_bp_kd_schlafend", "pipeline_id": None, "label": "Schlafende Stammkunden"},
+                {"id": "act_kd_neu", "type": "run_mapping", "mapping_id": "m_bp_kd_neu", "pipeline_id": None, "label": "Neukunden"},
             ],
             "widgets": widgets,
             "result_tabs": [{"id": "tab_uebersicht", "label": "Übersicht",
                              "action_ids": ["act_alerts", "act_kpi", "act_pipeline", "act_verlauf"]},
                             {"id": "tab_artikel", "label": "Artikel & Warengruppen",
                              "action_ids": ["act_art_kpi", "act_wg_top", "act_wg", "act_top_artikel", "act_art_unter_ek",
-                                            "act_art_preispflege", "act_art_ohne"]}],
+                                            "act_art_preispflege", "act_art_ohne"]},
+                            {"id": "tab_kunden", "label": "Kunden",
+                             "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
+                                            "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
-                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_artikel"]}],
+                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},
             "doku": {"intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",
