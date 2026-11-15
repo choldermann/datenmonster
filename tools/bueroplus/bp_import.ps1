@@ -171,15 +171,17 @@ function Lese-Datei([string]$pfad, [string[]]$spalten, [string]$tabelle) {
     }
     $dt = New-Object System.Data.DataTable
     foreach ($s in $spalten) { [void]$dt.Columns.Add($s, [string]) }
-    $erwartet = $kopf.Length
+    $n = $spalten.Length
     for ($z = 1; $z -lt $saetze.Count; $z++) {
         $f = [string[]]$saetze[$z]
-        if ($f.Length -ne $erwartet) {
-            throw ("$tabelle`: Datensatz {0} hat {1} statt {2} Felder (beginnt mit '{3}')." -f $z, $f.Length, $erwartet, $f[0])
+        # büro+ beendet Datenzeilen oft mit „;“ – unabhängig davon, ob die Kopfzeile es auch tut.
+        # Ein leeres Feld genau hinter der letzten Spalte wird deshalb weggelassen.
+        if ($f.Length -eq $n + 1) {
+            if ($f[$n] -ne '') { throw "$tabelle`: Datensatz $z hat Inhalt hinter der letzten Spalte (beginnt mit '$($f[0])')." }
+            $f = $f[0..($n - 1)]
         }
-        if ($leerAmEnde) {
-            if ($f[$f.Length - 1] -ne '') { throw "$tabelle`: Datensatz $z hat Inhalt in der letzten, unbenannten Spalte." }
-            $f = $f[0..($f.Length - 2)]
+        if ($f.Length -ne $n) {
+            throw ("$tabelle`: Datensatz {0} hat {1} statt {2} Felder (beginnt mit '{3}')." -f $z, $f.Length, $n, $f[0])
         }
         [void]$dt.Rows.Add([object[]]$f)
     }
