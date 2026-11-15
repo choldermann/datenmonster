@@ -398,14 +398,15 @@ widgets += [
     {"id": "w_v12", "type": "gruppentabelle", "label": "Artikel-Verkauf – rollierende 12-Monats-Scheiben", "action_id": "act_v12",
      "config": {"width": 12, "full_rows": 8000, "gruppe": "Warengruppe",
                 "text_spalten": ["ArtNr", "Bezeichnung", "Einheit", "Sperre"],
-                "kennzahlen": [{"id": "menge", "label": "Menge", "praefix": "M", "summe": False, "dezimal": 0},
+                "kennzahlen": [{"id": "menge", "label": "Menge", "praefix": "M", "summe": "einheit", "dezimal": 0},
                                {"id": "umsatz", "label": "Umsatz €", "praefix": "U", "summe": True, "dezimal": 0},
                                {"id": "rohertrag", "label": "Rohertrag €", "praefix": "R", "summe": True, "dezimal": 0}],
-                "scheiben": 6,
+                "scheiben": 6, "einheit_spalte": "Einheit",
+                "einheit_gleich": {"%o": "Stück", "%": "Stück", "Stk": "Stück", "Stück": "Stück", "Stk.": "Stück", "St": "Stück"},
                 "zusatz_spalten": [{"spalte": "Kunden0", "titel": "Kunden 12 M"}, {"spalte": "Kunden1", "titel": "Kunden VJ"},
                                    {"spalte": "LetzterVerkauf", "titel": "zuletzt verkauft"}],
                 "aktiv_spalte": "Aktuell", "such_spalte": "Suchtext", "drilldown": DD_V12,
-                "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück) – deshalb ohne Warengruppen-Summe. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."}},
+                "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück); bei gemischten Einheiten ist die Warengruppen-Summe blass mit „≈“ markiert. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."}},
 ]
 
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):

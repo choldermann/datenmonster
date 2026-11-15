@@ -9,6 +9,9 @@
  *   text_spalten:  ["ArtNr", "Bezeichnung", "Einheit"] – Textspalten der Einzelzeile
  *   kennzahlen:    [{ id, label, praefix: "U", summe: true, dezimal: 0 }]
  *                  – Werte stehen in <praefix>0 … <praefix>(scheiben-1), 0 = jüngste Scheibe
+ *                  – summe: "einheit" = Gruppensumme nur „echt“, wenn alle Zeilen dieselbe Einheit
+ *                    haben; sonst wird sie blass mit „≈“ gezeigt (gemischte Einheiten im Tooltip)
+ *   einheit_spalte:"Einheit",  einheit_gleich: { "%o": "Stück", "Stk": "Stück" } – Einheiten zusammenfassen
  *   scheiben:      6
  *   scheiben_titel:["letzte 12 Monate", "Vorjahr", …]  – optional; sonst aus params.bis berechnet
  *   zusatz_spalten:[{ spalte: "Kunden0", titel: "Kunden" }] – rechts angehängt
@@ -114,11 +117,17 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
       name,
       zeilen: [...zeilen].sort((a, b) => zahl(b[`${kz.praefix}${sortIdx}`]) - zahl(a[`${kz.praefix}${sortIdx}`])),
       summen: kz.summe ? Array.from({ length: anzahl }, (_, i) => sum(zeilen, kz.praefix, i)) : null,
+      einheiten: kz.summe === "einheit" && cfg.einheit_spalte
+        ? [...new Set(zeilen.map(r => {
+            const e = String(r[cfg.einheit_spalte] ?? "").trim();
+            return (cfg.einheit_gleich || {})[e] || e || "ohne Einheit";
+          }))].sort()
+        : [],
       ordnung: sum(zeilen, umsatzRef.praefix, sortIdx),
     }));
     liste.sort((a, b) => b.ordnung - a.ordnung);
     return liste;
-  }, [gefiltert, gruppe, kz, sortIdx, anzahl, umsatzRef]);
+  }, [gefiltert, gruppe, kz, sortIdx, anzahl, umsatzRef, cfg.einheit_spalte, cfg.einheit_gleich]);
 
   if (!rows.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
@@ -217,6 +226,9 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
           <tbody>
             {gruppen.map(g => {
               const auf = istOffen(g.name);
+              const gemischt = g.einheiten.length > 1;
+              const summenStil = gemischt ? { opacity: 0.55, fontStyle: "italic" } : {};
+              const summenTitel = gemischt ? `Summe über gemischte Einheiten: ${g.einheiten.join(", ")}` : undefined;
               return [
                 <tr key={`g:${g.name}`} onClick={() => umschalten(g.name)}
                   style={{ cursor: "pointer", backgroundColor: "color-mix(in srgb, var(--accent) 7%, transparent)",
@@ -229,8 +241,8 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
                     </span>
                   </td>
                   {titel.map((_, i) => (
-                    <td key={i} style={{ ...td, textAlign: "right", fontWeight: 600 }}>
-                      {g.summen ? zelle(g.summen[i]) : ""}
+                    <td key={i} title={summenTitel} style={{ ...td, textAlign: "right", fontWeight: 600, ...summenStil }}>
+                      {g.summen ? <>{gemischt && g.summen[i] !== 0 ? "≈ " : ""}{zelle(g.summen[i])}</> : ""}
                     </td>
                   ))}
                   <td style={{ ...td, textAlign: "right", fontWeight: 600 }}>

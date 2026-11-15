@@ -5942,7 +5942,7 @@
          "id": "menge",
          "label": "Menge",
          "praefix": "M",
-         "summe": false,
+         "summe": "einheit",
          "dezimal": 0
         },
         {
@@ -5961,6 +5961,15 @@
         }
        ],
        "scheiben": 6,
+       "einheit_spalte": "Einheit",
+       "einheit_gleich": {
+        "%o": "Stück",
+        "%": "Stück",
+        "Stk": "Stück",
+        "Stück": "Stück",
+        "Stk.": "Stück",
+        "St": "Stück"
+       },
        "zusatz_spalten": [
         {
          "spalte": "Kunden0",
@@ -6003,7 +6012,7 @@
          }
         ]
        },
-       "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück) – deshalb ohne Warengruppen-Summe. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."
+       "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück); bei gemischten Einheiten ist die Warengruppen-Summe blass mit „≈“ markiert. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."
       }
      }
     ],
