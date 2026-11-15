@@ -126,3 +126,7 @@ updater/compose/bekannte_staende.txt
 
 # beim Build erzeugt (scripts/lizenzen.mjs)
 frontend/public/lizenzen.txt
+
+# büro+-Import: lokale Konfiguration und verschlüsseltes Passwort nie einchecken
+tools/bueroplus/bp_import.config.psd1
+tools/bueroplus/bp_import.passwort
