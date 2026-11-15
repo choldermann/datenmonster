@@ -124,13 +124,13 @@ def _run_actions(schema: dict, params: dict, db, only_ids: Optional[set] = None,
     ~28 Cockpit-Abfragen nicht in einen Timeout laufen (analog Form-Run).
     only_ids: nur diese Action-IDs ausführen (Abschnittsauswahl im Report-Dialog) –
     abgewählte Reiter kosten so auch keine Laufzeit mehr."""
-    from app.api.forms import _expandable_action_ids, FULL_ROWS_CAP
-    expandable = _expandable_action_ids(schema)
+    from app.api.forms import _full_rows_caps
+    caps = _full_rows_caps(schema)
     actions = [a for a in schema.get("actions", [])
                if a.get("type") == "run_mapping" and a.get("mapping_id")
                and (only_ids is None or a.get("id") in only_ids)]
     def _cap(a):
-        return FULL_ROWS_CAP if a.get("id") in expandable else None
+        return caps.get(a.get("id"))
     results = {}
     if len(actions) == 1:
         results[actions[0]["id"]] = _run_one_action(actions[0], params, _cap(actions[0]),

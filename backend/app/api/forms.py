@@ -680,6 +680,31 @@ def _expandable_action_ids(schema: dict) -> set:
     return out
 
 
+# Höchstwert für eine am Widget ausdrücklich angegebene Zeilenzahl (config.full_rows = 6000).
+FULL_ROWS_MAX = 20000
+
+
+def _full_rows_caps(schema: dict) -> dict:
+    """Zeilenobergrenze je Action für full_rows-Widgets: `full_rows: true` = FULL_ROWS_CAP,
+    eine Zahl = genau so viele Zeilen (höchstens FULL_ROWS_MAX) – z. B. eine Gruppentabelle
+    über alle verkauften Artikel, die im Browser gefiltert und aufgeklappt wird."""
+    caps = {}
+    for w in (schema.get("widgets") or []):
+        fr = (w.get("config") or {}).get("full_rows")
+        aid = w.get("action_id")
+        if not fr or not aid:
+            continue
+        if isinstance(fr, bool):
+            cap = FULL_ROWS_CAP
+        else:
+            try:
+                cap = max(1, min(int(fr), FULL_ROWS_MAX))
+            except (TypeError, ValueError):
+                cap = FULL_ROWS_CAP
+        caps[aid] = max(caps.get(aid, 0), cap)
+    return caps
+
+
 def _run_mapping_preview(action: dict, run_params: dict, preview_rows: int,
                          row_cap: int = None, mandant_id: int = None) -> dict:
     """Führt EINE run_mapping-Action read-only aus. Öffnet eine EIGENE DB-Session
@@ -766,9 +791,9 @@ def _execute_form(f: Form, data: FormRunRequest, db: Session,
     results = {}
 
     # Als full_rows markierte Tabellen (z.B. Cockpit-Listen) vollständig laden.
-    expandable = _expandable_action_ids(schema)
+    caps = _full_rows_caps(schema)
     def _cap_for(a):
-        return FULL_ROWS_CAP if a.get("id") in expandable else None
+        return caps.get(a.get("id"))
 
     # Read-only Mapping-Vorschauen gedrosselt parallel (der große Zeitgewinn bei
     # Cockpit-Formularen). Übrige Action-Typen laufen danach sequenziell weiter.

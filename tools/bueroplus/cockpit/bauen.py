@@ -218,6 +218,7 @@ NAMEN = {
 
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "artikel_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "kunden_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "verkauf12_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -388,6 +389,25 @@ widgets += [
      "config": {"width": 12, "full_rows": True, "info": "Zuletzt verkaufte zuerst; Artikel ganz ohne Verkauf seit 2020 am Ende."}},
 ] + widgets_kd
 
+# ── Reiter „Artikel-Verkauf“: Gruppentabelle Warengruppe → Artikel, rollierende 12-Monats-Scheiben ──
+DD_V12 = {"mapping_id": "m_bp_v12_kunden", "key_column": "ArtNr", "param": "artnr",
+          "title": "Kunden dieses Artikels – wer kauft ihn nicht mehr?", "hidden_columns": ["KdArt"],
+          "levels": [{"mapping_id": "m_bp_v12_kd_belege", "param": "kdart", "key_column": "KdArt",
+                      "title": "Belege des Kunden mit diesem Artikel", "hidden_columns": ["VogID"]}, DD_POS]}
+widgets += [
+    {"id": "w_v12", "type": "gruppentabelle", "label": "Artikel-Verkauf – rollierende 12-Monats-Scheiben", "action_id": "act_v12",
+     "config": {"width": 12, "full_rows": 8000, "gruppe": "Warengruppe",
+                "text_spalten": ["ArtNr", "Bezeichnung", "Einheit", "Sperre"],
+                "kennzahlen": [{"id": "menge", "label": "Menge", "praefix": "M", "summe": False, "dezimal": 0},
+                               {"id": "umsatz", "label": "Umsatz €", "praefix": "U", "summe": True, "dezimal": 0},
+                               {"id": "rohertrag", "label": "Rohertrag €", "praefix": "R", "summe": True, "dezimal": 0}],
+                "scheiben": 6,
+                "zusatz_spalten": [{"spalte": "Kunden0", "titel": "Kunden 12 M"}, {"spalte": "Kunden1", "titel": "Kunden VJ"},
+                                   {"spalte": "LetzterVerkauf", "titel": "zuletzt verkauft"}],
+                "aktiv_spalte": "Aktuell", "such_spalte": "Suchtext", "drilldown": DD_V12,
+                "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück) – deshalb ohne Warengruppen-Summe. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."}},
+]
+
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):
     return {"rule_key": key, "name": name, "category": "Geschäftsführung", "cockpit": "büro+ GF-Cockpit",
             "description": None, "severity": sev, "severity_levels": [], "mapping_id": None,
@@ -437,7 +457,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.4",
+    "version": "0.5",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -475,6 +495,7 @@ tpl = {
                 {"id": "act_art_unter_ek", "type": "run_mapping", "mapping_id": "m_bp_art_unter_ek", "pipeline_id": None, "label": "Verkauf unter Einkaufspreis"},
                 {"id": "act_art_preispflege", "type": "run_mapping", "mapping_id": "m_bp_art_preispflege", "pipeline_id": None, "label": "Preiserhöhung prüfen"},
                 {"id": "act_art_ohne", "type": "run_mapping", "mapping_id": "m_bp_art_ohne_verkauf", "pipeline_id": None, "label": "Artikel ohne Verkauf"},
+                {"id": "act_v12", "type": "run_mapping", "mapping_id": "m_bp_v12_artikel", "pipeline_id": None, "label": "Artikel-Verkauf 12-Monats-Vergleich"},
                 {"id": "act_kd_kpi", "type": "run_mapping", "mapping_id": "m_bp_kd_kpi", "pipeline_id": None, "label": "Kunden-Kennzahlen"},
                 {"id": "act_kd_abc", "type": "run_mapping", "mapping_id": "m_bp_kd_abc", "pipeline_id": None, "label": "ABC-Kunden"},
                 {"id": "act_kd_status", "type": "run_mapping", "mapping_id": "m_bp_kd_status", "pipeline_id": None, "label": "Umsatz nach Adress-Status"},
@@ -489,11 +510,12 @@ tpl = {
                             {"id": "tab_artikel", "label": "Artikel & Warengruppen",
                              "action_ids": ["act_art_kpi", "act_wg_top", "act_wg", "act_top_artikel", "act_art_unter_ek",
                                             "act_art_preispflege", "act_art_ohne"]},
+                            {"id": "tab_v12", "label": "Artikel-Verkauf", "action_ids": ["act_v12"]},
                             {"id": "tab_kunden", "label": "Kunden",
                              "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
                                             "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
-                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel"]}],
+                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel", "tab_v12"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},
             "doku": {"intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",

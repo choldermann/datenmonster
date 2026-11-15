@@ -24,6 +24,7 @@ import KundenAusschlussWidget from "./widgets/KundenAusschlussWidget";
 import DatenpflegeWidget from "./widgets/DatenpflegeWidget";
 import ZugferdWidget from "./widgets/ZugferdWidget";
 import BaumWidget from "./widgets/BaumWidget";
+import GruppenTabelleWidget from "./widgets/GruppenTabelleWidget";
 import KarteWidget from "./widgets/KarteWidget";
 import UmfeldWidget from "./widgets/UmfeldWidget";
 import AussenhandelWidget from "./widgets/AussenhandelWidget";
@@ -105,6 +106,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
 
   switch (widget.type) {
     case "table": return <TableWidget widget={widget} result={result} allowDownload={allowDownload} onDrilldown={drill} onAiAction={aiAct} />;
+    case "gruppentabelle": return <GruppenTabelleWidget widget={widget} result={result} params={baseParams} allowDownload={allowDownload} onDrilldown={drill} />;
     case "kpi":   return <KpiWidget   widget={widget} result={result} />;
     case "bar":   return <BarWidget   widget={widget} result={result} onDrilldown={drill} projectId={projectId} />;
     case "line":  return <LineWidget  widget={widget} result={result} onDrilldown={drill} projectId={projectId} />;

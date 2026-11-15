@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.4",
+ "version": "0.5",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -4122,6 +4122,726 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_v12_artikel",
+   "name": "büro+ GF – Artikel-Verkauf 12-Monats-Vergleich",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Warengruppe",
+      "ArtNr",
+      "Bezeichnung",
+      "Einheit",
+      "Aktuell",
+      "Sperre",
+      "M0",
+      "M1",
+      "M2",
+      "M3",
+      "M4",
+      "M5",
+      "U0",
+      "U1",
+      "U2",
+      "U3",
+      "U4",
+      "U5",
+      "R0",
+      "R1",
+      "R2",
+      "R3",
+      "R4",
+      "R5",
+      "Kunden0",
+      "Kunden1",
+      "LetzterVerkauf",
+      "Suchtext"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat > DATEADD(YEAR, -6, :bis) AND VogDat < DATEADD(DAY, 1, :bis)\n), pos AS (\n    SELECT p.ArtNr, b.VogAdrNr AS AdrNr, b.VogDat, (DATEDIFF(MONTH, b.VogDat, :bis) - CASE WHEN DAY(b.VogDat) > DAY(:bis) THEN 1 ELSE 0 END) / 12 AS S,\n        b.Vz * p.BuchMge AS Menge, b.Vz * p.NettoPos AS Umsatz, b.Vz * p.RohertragPos AS Rohertrag\n    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID\n    WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL\n), g AS (\n    SELECT ArtNr, S, SUM(Menge) AS Menge, SUM(Umsatz) AS Umsatz, SUM(Rohertrag) AS Rohertrag,\n        COUNT(DISTINCT AdrNr) AS Kunden, MAX(VogDat) AS Letzter\n    FROM pos GROUP BY ArtNr, S\n),\na AS (\n    SELECT ArtNr,\n    CAST(SUM(CASE WHEN S = 0 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M0,\n    CAST(SUM(CASE WHEN S = 1 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M1,\n    CAST(SUM(CASE WHEN S = 2 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M2,\n    CAST(SUM(CASE WHEN S = 3 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M3,\n    CAST(SUM(CASE WHEN S = 4 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M4,\n    CAST(SUM(CASE WHEN S = 5 THEN Menge ELSE 0 END) AS DECIMAL(18,2)) AS M5,\n    CAST(SUM(CASE WHEN S = 0 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U0,\n    CAST(SUM(CASE WHEN S = 1 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U1,\n    CAST(SUM(CASE WHEN S = 2 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U2,\n    CAST(SUM(CASE WHEN S = 3 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U3,\n    CAST(SUM(CASE WHEN S = 4 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U4,\n    CAST(SUM(CASE WHEN S = 5 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS U5,\n    CAST(SUM(CASE WHEN S = 0 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R0,\n    CAST(SUM(CASE WHEN S = 1 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R1,\n    CAST(SUM(CASE WHEN S = 2 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R2,\n    CAST(SUM(CASE WHEN S = 3 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R3,\n    CAST(SUM(CASE WHEN S = 4 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R4,\n    CAST(SUM(CASE WHEN S = 5 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS R5,\n    MAX(CASE WHEN S = 0 THEN Kunden ELSE 0 END) AS Kunden0,\n    MAX(CASE WHEN S = 1 THEN Kunden ELSE 0 END) AS Kunden1,\n    MAX(Letzter) AS Letzter\n    FROM g GROUP BY ArtNr\n)\nSELECT COALESCE(NULLIF(LTRIM(RTRIM(art.ArtWgrNrInfo)), ''), 'ohne Warengruppe') AS Warengruppe,\n    a.ArtNr, COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtBez1, 80), '(Artikel fehlt)') AS Bezeichnung,\n    art.ArtEinh AS Einheit,\n    CASE WHEN a.U0 <> 0 OR a.M0 <> 0 THEN 1 ELSE 0 END AS Aktuell,\n    CASE WHEN art.ArtGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre,\n    a.M0, a.M1, a.M2, a.M3, a.M4, a.M5,\n    a.U0, a.U1, a.U2, a.U3, a.U4, a.U5,\n    a.R0, a.R1, a.R2, a.R3, a.R4, a.R5,\n    a.Kunden0, a.Kunden1, CONVERT(char(10), a.Letzter, 104) AS LetzterVerkauf,\n    LEFT(CONCAT(a.ArtNr, ' ', art.ArtKuBez1, ' ', art.ArtBez1, ' ', art.ArtKuBez2, ' ', art.ArtSuchBeg, ' ', art.ArtBarCd), 600) AS Suchtext\nFROM a LEFT JOIN dbo.Artikel art ON art.ArtArtNr = a.ArtNr\nORDER BY Warengruppe, a.U0 DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Artikel-Verkauf 12-Monats-Vergleich",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Warengruppe",
+       "target_field": "Warengruppe",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Warengruppe"
+       }
+      },
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Bezeichnung",
+       "target_field": "Bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bezeichnung"
+       }
+      },
+      {
+       "source_field": "Einheit",
+       "target_field": "Einheit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einheit"
+       }
+      },
+      {
+       "source_field": "Aktuell",
+       "target_field": "Aktuell",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Aktuell"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      },
+      {
+       "source_field": "M0",
+       "target_field": "M0",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M0"
+       }
+      },
+      {
+       "source_field": "M1",
+       "target_field": "M1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M1"
+       }
+      },
+      {
+       "source_field": "M2",
+       "target_field": "M2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M2"
+       }
+      },
+      {
+       "source_field": "M3",
+       "target_field": "M3",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M3"
+       }
+      },
+      {
+       "source_field": "M4",
+       "target_field": "M4",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M4"
+       }
+      },
+      {
+       "source_field": "M5",
+       "target_field": "M5",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "M5"
+       }
+      },
+      {
+       "source_field": "U0",
+       "target_field": "U0",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U0"
+       }
+      },
+      {
+       "source_field": "U1",
+       "target_field": "U1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U1"
+       }
+      },
+      {
+       "source_field": "U2",
+       "target_field": "U2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U2"
+       }
+      },
+      {
+       "source_field": "U3",
+       "target_field": "U3",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U3"
+       }
+      },
+      {
+       "source_field": "U4",
+       "target_field": "U4",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U4"
+       }
+      },
+      {
+       "source_field": "U5",
+       "target_field": "U5",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "U5"
+       }
+      },
+      {
+       "source_field": "R0",
+       "target_field": "R0",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R0"
+       }
+      },
+      {
+       "source_field": "R1",
+       "target_field": "R1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R1"
+       }
+      },
+      {
+       "source_field": "R2",
+       "target_field": "R2",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R2"
+       }
+      },
+      {
+       "source_field": "R3",
+       "target_field": "R3",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R3"
+       }
+      },
+      {
+       "source_field": "R4",
+       "target_field": "R4",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R4"
+       }
+      },
+      {
+       "source_field": "R5",
+       "target_field": "R5",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "R5"
+       }
+      },
+      {
+       "source_field": "Kunden0",
+       "target_field": "Kunden0",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden0"
+       }
+      },
+      {
+       "source_field": "Kunden1",
+       "target_field": "Kunden1",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden1"
+       }
+      },
+      {
+       "source_field": "LetzterVerkauf",
+       "target_field": "LetzterVerkauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterVerkauf"
+       }
+      },
+      {
+       "source_field": "Suchtext",
+       "target_field": "Suchtext",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Suchtext"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_v12_kunden",
+   "name": "büro+ GF – Kunden des Artikels (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Status",
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Telefon",
+      "Vertreter",
+      "LetzterKauf",
+      "MengeAktuell",
+      "MengeVorjahr",
+      "MengeVor2J",
+      "UmsatzAktuell",
+      "UmsatzVorjahr",
+      "UmsatzVor2J",
+      "Sperre",
+      "KdArt"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat > DATEADD(YEAR, -6, :bis) AND VogDat < DATEADD(DAY, 1, :bis)\n), pos AS (\n    SELECT p.ArtNr, b.VogAdrNr AS AdrNr, b.VogDat, (DATEDIFF(MONTH, b.VogDat, :bis) - CASE WHEN DAY(b.VogDat) > DAY(:bis) THEN 1 ELSE 0 END) / 12 AS S,\n        b.Vz * p.BuchMge AS Menge, b.Vz * p.NettoPos AS Umsatz, b.Vz * p.RohertragPos AS Rohertrag\n    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID\n    WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL\n),\nk AS (\n    SELECT AdrNr,\n        SUM(CASE WHEN S = 0 THEN Menge ELSE 0 END) AS M0, SUM(CASE WHEN S = 1 THEN Menge ELSE 0 END) AS M1,\n        SUM(CASE WHEN S = 2 THEN Menge ELSE 0 END) AS M2,\n        SUM(CASE WHEN S = 0 THEN Umsatz ELSE 0 END) AS U0, SUM(CASE WHEN S = 1 THEN Umsatz ELSE 0 END) AS U1,\n        SUM(CASE WHEN S = 2 THEN Umsatz ELSE 0 END) AS U2,\n        SUM(CASE WHEN S >= 3 THEN Umsatz ELSE 0 END) AS UAelter,\n        MAX(VogDat) AS Letzter\n    FROM pos WHERE ArtNr = :artnr GROUP BY AdrNr\n), s AS (\n    SELECT k.*,\n        CASE WHEN U0 <= 0 AND (U1 > 0 OR U2 > 0) THEN 'kauft nicht mehr'\n             WHEN U0 <= 0 THEN 'früher (vor über 3 Jahren)'\n             WHEN U1 > 0 AND U0 < U1 * 0.5 THEN 'kauft deutlich weniger'\n             WHEN U1 <= 0 AND U2 <= 0 THEN 'neu'\n             ELSE 'kauft' END AS Status,\n        CASE WHEN U0 <= 0 AND (U1 > 0 OR U2 > 0) THEN 1\n             WHEN U1 > 0 AND U0 > 0 AND U0 < U1 * 0.5 THEN 2\n             WHEN U0 > 0 THEN 3 ELSE 4 END AS Rang\n    FROM k\n)\nSELECT TOP 1000 s.Status, s.AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(adr.AdrReNa2)), ''), CONCAT('Adresse ', s.AdrNr)) AS Kunde,\n    adr.AdrReOrt AS Ort, adr.AdrReTel AS Telefon, adr.AdrVtrNr AS Vertreter,\n    CONVERT(char(10), s.Letzter, 104) AS LetzterKauf,\n    CAST(s.M0 AS DECIMAL(18,2)) AS MengeAktuell, CAST(s.M1 AS DECIMAL(18,2)) AS MengeVorjahr, CAST(s.M2 AS DECIMAL(18,2)) AS MengeVor2J,\n    CAST(s.U0 AS DECIMAL(18,2)) AS UmsatzAktuell, CAST(s.U1 AS DECIMAL(18,2)) AS UmsatzVorjahr, CAST(s.U2 AS DECIMAL(18,2)) AS UmsatzVor2J,\n    CASE WHEN adr.AdrGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre,\n    CONCAT(s.AdrNr, '|', :artnr) AS KdArt\nFROM s LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = s.AdrNr\nORDER BY s.Rang, s.U1 + s.U2 + s.UAelter DESC, s.U0 DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Kunden des Artikels (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Status",
+       "target_field": "Status",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Status"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Telefon",
+       "target_field": "Telefon",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Telefon"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "LetzterKauf",
+       "target_field": "LetzterKauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterKauf"
+       }
+      },
+      {
+       "source_field": "MengeAktuell",
+       "target_field": "MengeAktuell",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "MengeAktuell"
+       }
+      },
+      {
+       "source_field": "MengeVorjahr",
+       "target_field": "MengeVorjahr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "MengeVorjahr"
+       }
+      },
+      {
+       "source_field": "MengeVor2J",
+       "target_field": "MengeVor2J",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "MengeVor2J"
+       }
+      },
+      {
+       "source_field": "UmsatzAktuell",
+       "target_field": "UmsatzAktuell",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzAktuell"
+       }
+      },
+      {
+       "source_field": "UmsatzVorjahr",
+       "target_field": "UmsatzVorjahr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVorjahr"
+       }
+      },
+      {
+       "source_field": "UmsatzVor2J",
+       "target_field": "UmsatzVor2J",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVor2J"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      },
+      {
+       "source_field": "KdArt",
+       "target_field": "KdArt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KdArt"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_v12_kd_belege",
+   "name": "büro+ GF – Belege des Kunden mit dem Artikel (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Art",
+      "Datum",
+      "Menge",
+      "Einheit",
+      "Preis",
+      "Preisfaktor",
+      "Umsatz",
+      "Rohertrag",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), sel AS (\n    SELECT TRY_CONVERT(int, LEFT(:kdart, CHARINDEX('|', :kdart) - 1)) AS AdrNr,\n        SUBSTRING(:kdart, CHARINDEX('|', :kdart) + 1, 100) AS ArtNr\n)\nSELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    CAST(SUM(b.Vz * p.BuchMge) AS DECIMAL(18,2)) AS Menge, MAX(p.Einh) AS Einheit,\n    CAST(MAX(p.EPrNt) AS DECIMAL(18,4)) AS Preis, CAST(MAX(p.EPreisFak) AS DECIMAL(9,4)) AS Preisfaktor,\n    CAST(SUM(b.Vz * p.NettoPos) AS DECIMAL(18,2)) AS Umsatz, CAST(SUM(b.Vz * p.RohertragPos) AS DECIMAL(18,2)) AS Rohertrag,\n    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID\nFROM dbo.vVorgangPosition p\nJOIN b ON b.VogID = p.VogID\nJOIN sel ON sel.AdrNr = b.VogAdrNr AND sel.ArtNr = p.ArtNr\nGROUP BY b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogVerk\nORDER BY b.VogDat DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Belege des Kunden mit dem Artikel (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "Menge",
+       "target_field": "Menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Menge"
+       }
+      },
+      {
+       "source_field": "Einheit",
+       "target_field": "Einheit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einheit"
+       }
+      },
+      {
+       "source_field": "Preis",
+       "target_field": "Preis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preis"
+       }
+      },
+      {
+       "source_field": "Preisfaktor",
+       "target_field": "Preisfaktor",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preisfaktor"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -4229,6 +4949,13 @@
       "mapping_id": "m_bp_art_ohne_verkauf",
       "pipeline_id": null,
       "label": "Artikel ohne Verkauf"
+     },
+     {
+      "id": "act_v12",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_v12_artikel",
+      "pipeline_id": null,
+      "label": "Artikel-Verkauf 12-Monats-Vergleich"
      },
      {
       "id": "act_kd_kpi",
@@ -5194,6 +5921,90 @@
        },
        "info": "Umsatz und Rohertrag seit der ersten Rechnung bis zum Ende des Zeitraums."
       }
+     },
+     {
+      "id": "w_v12",
+      "type": "gruppentabelle",
+      "label": "Artikel-Verkauf – rollierende 12-Monats-Scheiben",
+      "action_id": "act_v12",
+      "config": {
+       "width": 12,
+       "full_rows": 8000,
+       "gruppe": "Warengruppe",
+       "text_spalten": [
+        "ArtNr",
+        "Bezeichnung",
+        "Einheit",
+        "Sperre"
+       ],
+       "kennzahlen": [
+        {
+         "id": "menge",
+         "label": "Menge",
+         "praefix": "M",
+         "summe": false,
+         "dezimal": 0
+        },
+        {
+         "id": "umsatz",
+         "label": "Umsatz €",
+         "praefix": "U",
+         "summe": true,
+         "dezimal": 0
+        },
+        {
+         "id": "rohertrag",
+         "label": "Rohertrag €",
+         "praefix": "R",
+         "summe": true,
+         "dezimal": 0
+        }
+       ],
+       "scheiben": 6,
+       "zusatz_spalten": [
+        {
+         "spalte": "Kunden0",
+         "titel": "Kunden 12 M"
+        },
+        {
+         "spalte": "Kunden1",
+         "titel": "Kunden VJ"
+        },
+        {
+         "spalte": "LetzterVerkauf",
+         "titel": "zuletzt verkauft"
+        }
+       ],
+       "aktiv_spalte": "Aktuell",
+       "such_spalte": "Suchtext",
+       "drilldown": {
+        "mapping_id": "m_bp_v12_kunden",
+        "key_column": "ArtNr",
+        "param": "artnr",
+        "title": "Kunden dieses Artikels – wer kauft ihn nicht mehr?",
+        "hidden_columns": [
+         "KdArt"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_v12_kd_belege",
+          "param": "kdart",
+          "key_column": "KdArt",
+          "title": "Belege des Kunden mit diesem Artikel",
+          "hidden_columns": [
+           "VogID"
+          ]
+         },
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück) – deshalb ohne Warengruppen-Summe. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."
+      }
      }
     ],
     "result_tabs": [
@@ -5218,6 +6029,13 @@
        "act_art_unter_ek",
        "act_art_preispflege",
        "act_art_ohne"
+      ]
+     },
+     {
+      "id": "tab_v12",
+      "label": "Artikel-Verkauf",
+      "action_ids": [
+       "act_v12"
       ]
      },
      {
@@ -5247,7 +6065,8 @@
       "label": "Vertrieb & Sortiment",
       "reiter": [
        "tab_kunden",
-       "tab_artikel"
+       "tab_artikel",
+       "tab_v12"
       ]
      }
     ],
