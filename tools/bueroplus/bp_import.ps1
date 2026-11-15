@@ -50,10 +50,54 @@ function Get-Pfad([string]$p) {
 }
 $passwortDatei = Get-Pfad $cfg.PasswortDatei
 
+# Passwort-Ablage: Windows-DPAPI. Bevorzugt mit dem Schlüssel des Benutzerkontos ("CU:");
+# klappt das nicht (z. B. Domänenkonto ohne Kontakt zum Domänencontroller: „Dem Computer
+# muss für Delegierungszwecke vertraut werden“), mit dem Rechnerschlüssel ("LM:"). Dann
+# kann jedes Konto auf diesem Rechner entschlüsseln, das die Datei lesen darf – deshalb
+# werden die Dateirechte auf das aktuelle Konto, SYSTEM und die Administratoren beschränkt.
+Add-Type -AssemblyName System.Security
+$entropie = [System.Text.Encoding]::UTF8.GetBytes('bp_import/microtech-bueroplus')
+
+function Passwort-Speichern([System.Security.SecureString]$sec) {
+    $klar = [System.Net.NetworkCredential]::new('', $sec).Password
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($klar)
+    $bereich = 'CU'
+    try {
+        $enc = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $entropie,
+            [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    }
+    catch {
+        Write-Warning ("Benutzerschlüssel nicht nutzbar ({0}). Verwende den Rechnerschlüssel." -f $_.Exception.Message)
+        $enc = [System.Security.Cryptography.ProtectedData]::Protect($bytes, $entropie,
+            [System.Security.Cryptography.DataProtectionScope]::LocalMachine)
+        $bereich = 'LM'
+    }
+    Set-Content -LiteralPath $passwortDatei -Value ("{0}:{1}" -f $bereich, [Convert]::ToBase64String($enc)) -Encoding ASCII
+    # Dateirechte: nur aktuelles Konto, SYSTEM (S-1-5-18) und Administratoren (S-1-5-32-544)
+    $ich = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    & icacls.exe $passwortDatei /inheritance:r /grant:r "*${ich}:(R,W)" "*S-1-5-18:(F)" "*S-1-5-32-544:(F)" | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Warning "Dateirechte konnten nicht gesetzt werden – bitte $passwortDatei von Hand schützen." }
+    return $bereich
+}
+
+function Passwort-Lesen {
+    $inhalt = (Get-Content -LiteralPath $passwortDatei -Raw).Trim()
+    if ($inhalt -match '^(CU|LM):(.+)$') {
+        $bereich = if ($Matches[1] -eq 'LM') { [System.Security.Cryptography.DataProtectionScope]::LocalMachine }
+                   else { [System.Security.Cryptography.DataProtectionScope]::CurrentUser }
+        $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($Matches[2]), $entropie, $bereich)
+        return [System.Text.Encoding]::UTF8.GetString($bytes)
+    }
+    # älteres Format (ConvertFrom-SecureString)
+    $sec = $inhalt | ConvertTo-SecureString
+    return [System.Net.NetworkCredential]::new('', $sec).Password
+}
+
 if ($PasswortSetzen) {
     $sec = Read-Host -AsSecureString "Passwort für SQL-Benutzer '$($cfg.Benutzer)'"
-    $sec | ConvertFrom-SecureString | Set-Content -LiteralPath $passwortDatei -Encoding ASCII
-    Write-Host "Gespeichert (verschlüsselt): $passwortDatei"
+    $bereich = Passwort-Speichern $sec
+    $art = if ($bereich -eq 'LM') { 'Rechnerschlüssel, Datei nur für dieses Konto/SYSTEM/Administratoren lesbar' } else { 'Schlüssel dieses Benutzerkontos' }
+    Write-Host "Gespeichert (verschlüsselt, $art): $passwortDatei"
     return
 }
 
@@ -152,12 +196,11 @@ function Neue-Verbindung {
     if (-not (Test-Path -LiteralPath $passwortDatei)) {
         throw "Kein Passwort hinterlegt. Einmal ausführen: .\bp_import.ps1 -PasswortSetzen"
     }
-    $sec = Get-Content -LiteralPath $passwortDatei | ConvertTo-SecureString
     $sb = New-Object System.Data.SqlClient.SqlConnectionStringBuilder
     $sb['Data Source'] = $cfg.Server
     $sb['Initial Catalog'] = $cfg.Datenbank
     $sb['User ID'] = $cfg.Benutzer
-    $sb['Password'] = [System.Net.NetworkCredential]::new('', $sec).Password
+    $sb['Password'] = Passwort-Lesen
     $sb['Encrypt'] = $true
     $sb['TrustServerCertificate'] = $true
     $sb['Connect Timeout'] = 30
