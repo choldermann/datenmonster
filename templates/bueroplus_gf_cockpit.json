@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.1",
+ "version": "0.2",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -28,6 +28,12 @@
    "label": "Angebot gilt als alt ab … Tagen",
    "type": "text",
    "default": "90"
+  },
+  {
+   "key": "ek_faktor",
+   "label": "Einkaufspreis unplausibel ab dem …-fachen des Umsatzes",
+   "type": "text",
+   "default": "2"
   }
  ],
  "datasets": [],
@@ -1334,6 +1340,169 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_w_ek_unplausibel",
+   "name": "büro+ GF – Belege mit unplausiblem Einkaufspreis",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Art",
+      "Datum",
+      "AdrNr",
+      "Kunde",
+      "Umsatz",
+      "Einsatz",
+      "Verzerrung",
+      "EkFaktor",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    b.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr)) AS Kunde,\n    CAST(b.Netto AS DECIMAL(18,2)) AS Umsatz, CAST(b.Ek AS DECIMAL(18,2)) AS Einsatz,\n    CAST(b.Ek - b.Netto AS DECIMAL(18,2)) AS Verzerrung,\n    CAST(CASE WHEN b.Netto > 0 THEN b.Ek / b.Netto END AS DECIMAL(18,1)) AS EkFaktor,\n    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID\nFROM b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE b.Ek > 100 AND b.Ek > b.Netto * {{ek_faktor}}\nORDER BY b.Ek - b.Netto DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Belege mit unplausiblem Einkaufspreis",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Einsatz",
+       "target_field": "Einsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einsatz"
+       }
+      },
+      {
+       "source_field": "Verzerrung",
+       "target_field": "Verzerrung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Verzerrung"
+       }
+      },
+      {
+       "source_field": "EkFaktor",
+       "target_field": "EkFaktor",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkFaktor"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -1852,6 +2021,70 @@
      "VogID"
     ],
     "levels": []
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 2
+  },
+  {
+   "rule_key": "bp_ek_unplausibel",
+   "name": "Unplausibler Einkaufspreis",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Belege mit unplausiblem Einkaufspreis",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Verzerrung",
+    "min_count": 1,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Größter",
+     "column": "Beleg",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Datum",
+     "column": "Datum",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Umsatz",
+     "column": "Umsatz",
+     "unit": "€",
+     "decimals": 0
+    },
+    {
+     "label": "Einsatz",
+     "column": "Einsatz",
+     "unit": "€",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Belege mit unplausiblem Einkaufspreis – Rohertrag um {summe} € verfälscht",
+   "subtitle": "Einkaufspreis mehr als das eingestellte Vielfache des Umsatzes – meist ein Erfassungsfehler (z. B. Preis je Stück statt je 1.000). In büro+ korrigieren; Zeile anklicken: Belege, dann Positionen.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Belege mit unplausiblem Einkaufspreis",
+    "title": "Unplausibler Einkaufspreis",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": [
+     {
+      "mapping_name": "büro+ GF – Positionen des Belegs (Detail)",
+      "param": "vogid",
+      "key_column": "VogID",
+      "title": "Positionen des Belegs"
+     }
+    ]
    },
    "action_kind": null,
    "active": true,
