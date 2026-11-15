@@ -22,12 +22,8 @@ bp_import.ps1 (Aufgabenplanung)  →  stg.* (Rohtext)  →  dbo.bp_Uebernehmen  
 1. `bp_import.sql` auf der Kunden-Datenbank ausführen (SSMS oder Datenmonster-SQL-Konsole).
 2. Ordner z. B. `C:\Datenmonster\Import\` anlegen, `bp_import.ps1` und die Konfiguration
    (`bp_import.config.psd1`) hineinkopieren und anpassen.
-3. Passwort hinterlegen – **unter dem Konto, unter dem die Aufgabe laufen wird**:
-   `powershell -ExecutionPolicy Bypass -File C:\Datenmonster\Import\bp_import.ps1 -PasswortSetzen`
-   Verschlüsselt per Windows-DPAPI mit dem Schlüssel des Kontos; ist der nicht nutzbar (Meldung
-   „Dem Computer muss für Delegierungszwecke vertraut werden“), automatisch mit dem Rechnerschlüssel –
-   die Datei ist dann per Dateirechten nur für dieses Konto, SYSTEM und Administratoren lesbar.
-   Läuft die Aufgabe unter einem anderen Konto, `-PasswortSetzen` unter genau diesem ausführen.
+3. Passwort des SQL-Benutzers in `bp_import.config.psd1` unter `Passwort` eintragen (Klartext).
+   Die Datei per Dateirechten auf das Konto der Aufgabenplanung und die Administratoren beschränken.
 4. Probelauf ohne Schreiben: `… bp_import.ps1 -Trockenlauf` → prüft Kopfzeilen und Feldzahlen.
 5. Echter Lauf: `… bp_import.ps1` → Logdatei unter `LogVerzeichnis`, Zeilen in `dbo.ImportLog`.
 6. Aufgabenplanung: täglich nach dem büro+-Export, Programm `powershell.exe`, Argumente

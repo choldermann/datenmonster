@@ -7,9 +7,8 @@
     Server    = 'c19753.servers.ecomdata.de\SQLSERVER,50000'
     Datenbank = 'gehlen'
     Benutzer  = 'egp'
-    # Passwort wird NICHT hier eingetragen: einmal  .\bp_import.ps1 -PasswortSetzen  ausführen
-    # (unter dem Windows-Konto, unter dem später die Aufgabenplanung läuft).
-    PasswortDatei = 'bp_import.passwort'
+    # Klartext – Datei per Dateirechten auf das Konto der Aufgabenplanung und Administratoren beschränken
+    Passwort  = ''
 
     # Protokoll
     LogVerzeichnis = 'C:\Datenmonster\Export\Log'
