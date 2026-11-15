@@ -1,0 +1,1947 @@
+{
+ "format_version": "1.0",
+ "template_id": "bueroplus_gf_cockpit",
+ "template_name": "büro+ – GF-Cockpit",
+ "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
+ "category": "bueroplus-reporting",
+ "version": "0.1",
+ "author": "Datenmonster",
+ "hinweise": [
+  "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
+  "Umsatz = gebuchte Rechnungen und Sammelrechnungen; Rechnungskorrekturen werden gesondert ausgewiesen und abgezogen."
+ ],
+ "config_required": [
+  {
+   "key": "connection_bp",
+   "label": "SQL-Server mit den büro+-Exporttabellen",
+   "type": "connection",
+   "default": ""
+  },
+  {
+   "key": "lieferschein_tage",
+   "label": "Lieferschein ohne Rechnung melden ab … Tagen",
+   "type": "text",
+   "default": "7"
+  },
+  {
+   "key": "angebot_tage",
+   "label": "Angebot gilt als alt ab … Tagen",
+   "type": "text",
+   "default": "90"
+  }
+ ],
+ "datasets": [],
+ "pipelines": [],
+ "mappings": [
+  {
+   "id": "m_bp_kpi",
+   "name": "büro+ GF – Kennzahlen",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Umsatz",
+      "UmsatzVJ",
+      "KorrekturWert",
+      "KorrekturWertVJ",
+      "KorrekturAnzahl",
+      "UmsatzNachKorrektur",
+      "UmsatzNachKorrekturVJ",
+      "Warenumsatz",
+      "Wareneinsatz",
+      "WareneinsatzVJ",
+      "Rohertrag",
+      "RohertragVJ",
+      "Marge",
+      "MargeVJ",
+      "Rechnungen",
+      "RechnungenVJ",
+      "AvgRechnung",
+      "AvgRechnungVJ",
+      "AktiveKunden",
+      "AktiveKundenVJ",
+      "PosOhneEk",
+      "UmsatzOhneEk"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), p AS (\n    SELECT b.*,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM b\n), s AS (\n    SELECT\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN Netto ELSE 0 END) AS Umsatz,\n        SUM(CASE WHEN Per = 2 AND Vz = 1 THEN Netto ELSE 0 END) AS UmsatzVJ,\n        SUM(CASE WHEN Per = 1 AND Vz = -1 THEN Netto ELSE 0 END) AS KorrekturWert,\n        SUM(CASE WHEN Per = 2 AND Vz = -1 THEN Netto ELSE 0 END) AS KorrekturWertVJ,\n        SUM(CASE WHEN Per = 1 AND Vz = -1 THEN 1 ELSE 0 END) AS KorrekturAnzahl,\n        SUM(CASE WHEN Per = 1 THEN Vz * Ek ELSE 0 END) AS Wareneinsatz,\n        SUM(CASE WHEN Per = 2 THEN Vz * Ek ELSE 0 END) AS WareneinsatzVJ,\n        SUM(CASE WHEN Per = 1 THEN Vz * (Netto - Ek) ELSE 0 END) AS Rohertrag,\n        SUM(CASE WHEN Per = 2 THEN Vz * (Netto - Ek) ELSE 0 END) AS RohertragVJ,\n        SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen,\n        SUM(CASE WHEN Per = 2 AND Vz = 1 THEN 1 ELSE 0 END) AS RechnungenVJ,\n        COUNT(DISTINCT CASE WHEN Per = 1 AND Vz = 1 THEN VogAdrNr END) AS AktiveKunden,\n        COUNT(DISTINCT CASE WHEN Per = 2 AND Vz = 1 THEN VogAdrNr END) AS AktiveKundenVJ\n    FROM p WHERE Per IS NOT NULL\n), ohne_ek AS (\n    SELECT COUNT(*) AS PosOhneEk, ISNULL(SUM(pos.NettoPos), 0) AS UmsatzOhneEk\n    FROM dbo.vVorgangPosition pos\n    JOIN b ON b.VogID = pos.VogID AND b.Vz = 1\n    WHERE b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis)\n      AND pos.ArtKz = 1 AND ISNULL(pos.EEkRoh, 0) = 0 AND pos.NettoPos > 0\n)\nSELECT\n    CAST(Umsatz AS DECIMAL(18,2)) AS Umsatz, CAST(UmsatzVJ AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(KorrekturWert AS DECIMAL(18,2)) AS KorrekturWert, CAST(KorrekturWertVJ AS DECIMAL(18,2)) AS KorrekturWertVJ,\n    KorrekturAnzahl,\n    CAST(Umsatz - KorrekturWert AS DECIMAL(18,2)) AS UmsatzNachKorrektur,\n    CAST(UmsatzVJ - KorrekturWertVJ AS DECIMAL(18,2)) AS UmsatzNachKorrekturVJ,\n    CAST(Umsatz - KorrekturWert AS DECIMAL(18,2)) AS Warenumsatz,\n    CAST(Wareneinsatz AS DECIMAL(18,2)) AS Wareneinsatz, CAST(WareneinsatzVJ AS DECIMAL(18,2)) AS WareneinsatzVJ,\n    CAST(Rohertrag AS DECIMAL(18,2)) AS Rohertrag, CAST(RohertragVJ AS DECIMAL(18,2)) AS RohertragVJ,\n    CAST(CASE WHEN Umsatz - KorrekturWert > 0 THEN 100.0 * Rohertrag / (Umsatz - KorrekturWert) END AS DECIMAL(18,2)) AS Marge,\n    CAST(CASE WHEN UmsatzVJ - KorrekturWertVJ > 0 THEN 100.0 * RohertragVJ / (UmsatzVJ - KorrekturWertVJ) END AS DECIMAL(18,2)) AS MargeVJ,\n    Rechnungen, RechnungenVJ,\n    CAST(CASE WHEN Rechnungen > 0 THEN Umsatz / Rechnungen END AS DECIMAL(18,2)) AS AvgRechnung,\n    CAST(CASE WHEN RechnungenVJ > 0 THEN UmsatzVJ / RechnungenVJ END AS DECIMAL(18,2)) AS AvgRechnungVJ,\n    AktiveKunden, AktiveKundenVJ,\n    PosOhneEk, CAST(UmsatzOhneEk AS DECIMAL(18,2)) AS UmsatzOhneEk\nFROM s CROSS JOIN ohne_ek"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Kennzahlen",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "KorrekturWert",
+       "target_field": "KorrekturWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KorrekturWert"
+       }
+      },
+      {
+       "source_field": "KorrekturWertVJ",
+       "target_field": "KorrekturWertVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KorrekturWertVJ"
+       }
+      },
+      {
+       "source_field": "KorrekturAnzahl",
+       "target_field": "KorrekturAnzahl",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KorrekturAnzahl"
+       }
+      },
+      {
+       "source_field": "UmsatzNachKorrektur",
+       "target_field": "UmsatzNachKorrektur",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzNachKorrektur"
+       }
+      },
+      {
+       "source_field": "UmsatzNachKorrekturVJ",
+       "target_field": "UmsatzNachKorrekturVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzNachKorrekturVJ"
+       }
+      },
+      {
+       "source_field": "Warenumsatz",
+       "target_field": "Warenumsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Warenumsatz"
+       }
+      },
+      {
+       "source_field": "Wareneinsatz",
+       "target_field": "Wareneinsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Wareneinsatz"
+       }
+      },
+      {
+       "source_field": "WareneinsatzVJ",
+       "target_field": "WareneinsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "WareneinsatzVJ"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "RohertragVJ",
+       "target_field": "RohertragVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "RohertragVJ"
+       }
+      },
+      {
+       "source_field": "Marge",
+       "target_field": "Marge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge"
+       }
+      },
+      {
+       "source_field": "MargeVJ",
+       "target_field": "MargeVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "MargeVJ"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "RechnungenVJ",
+       "target_field": "RechnungenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "RechnungenVJ"
+       }
+      },
+      {
+       "source_field": "AvgRechnung",
+       "target_field": "AvgRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AvgRechnung"
+       }
+      },
+      {
+       "source_field": "AvgRechnungVJ",
+       "target_field": "AvgRechnungVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AvgRechnungVJ"
+       }
+      },
+      {
+       "source_field": "AktiveKunden",
+       "target_field": "AktiveKunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AktiveKunden"
+       }
+      },
+      {
+       "source_field": "AktiveKundenVJ",
+       "target_field": "AktiveKundenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AktiveKundenVJ"
+       }
+      },
+      {
+       "source_field": "PosOhneEk",
+       "target_field": "PosOhneEk",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "PosOhneEk"
+       }
+      },
+      {
+       "source_field": "UmsatzOhneEk",
+       "target_field": "UmsatzOhneEk",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzOhneEk"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_pipeline",
+   "name": "büro+ GF – Vertriebspipeline",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AngeboteOffen",
+      "AngeboteWert",
+      "AngeboteAlt",
+      "AngeboteAltWert",
+      "AngeboteFrischWert",
+      "AuftraegeOffen",
+      "AuftragsbestandWert",
+      "LieferscheineOffen",
+      "LieferscheineWert",
+      "LieferscheinAeltesterTage"
+     ],
+     "sql": "SELECT\n    SUM(CASE WHEN VogArt = 'Angebot' THEN 1 ELSE 0 END) AS AngeboteOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteWert,\n    SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS AngeboteAlt,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAltWert,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteFrischWert,\n    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN 1 ELSE 0 END) AS AuftraegeOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftragsbestandWert,\n    SUM(CASE WHEN VogArt = 'Lieferschein' THEN 1 ELSE 0 END) AS LieferscheineOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Lieferschein' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS LieferscheineWert,\n    MAX(CASE WHEN VogArt = 'Lieferschein' THEN DATEDIFF(DAY, VogDat, CAST(GETDATE() AS date)) END) AS LieferscheinAeltesterTage\nFROM dbo.Vorgang\nWHERE ISNULL(VogStorniertKz, 0) = 0"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Vertriebspipeline",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AngeboteOffen",
+       "target_field": "AngeboteOffen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteOffen"
+       }
+      },
+      {
+       "source_field": "AngeboteWert",
+       "target_field": "AngeboteWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteWert"
+       }
+      },
+      {
+       "source_field": "AngeboteAlt",
+       "target_field": "AngeboteAlt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteAlt"
+       }
+      },
+      {
+       "source_field": "AngeboteAltWert",
+       "target_field": "AngeboteAltWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteAltWert"
+       }
+      },
+      {
+       "source_field": "AngeboteFrischWert",
+       "target_field": "AngeboteFrischWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteFrischWert"
+       }
+      },
+      {
+       "source_field": "AuftraegeOffen",
+       "target_field": "AuftraegeOffen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AuftraegeOffen"
+       }
+      },
+      {
+       "source_field": "AuftragsbestandWert",
+       "target_field": "AuftragsbestandWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AuftragsbestandWert"
+       }
+      },
+      {
+       "source_field": "LieferscheineOffen",
+       "target_field": "LieferscheineOffen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LieferscheineOffen"
+       }
+      },
+      {
+       "source_field": "LieferscheineWert",
+       "target_field": "LieferscheineWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LieferscheineWert"
+       }
+      },
+      {
+       "source_field": "LieferscheinAeltesterTage",
+       "target_field": "LieferscheinAeltesterTage",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LieferscheinAeltesterTage"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_verlauf",
+   "name": "büro+ GF – Umsatzverlauf",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Monat",
+      "Umsatz",
+      "UmsatzVorjahr",
+      "Rohertrag"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), cur AS (\n    SELECT CONVERT(char(7), VogDat, 120) AS Monat, SUM(Vz * Netto) AS Umsatz, SUM(Vz * (Netto - Ek)) AS Rohertrag\n    FROM b WHERE VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis)\n    GROUP BY CONVERT(char(7), VogDat, 120)\n), vj AS (\n    SELECT CONVERT(char(7), DATEADD(YEAR, 1, VogDat), 120) AS Monat, SUM(Vz * Netto) AS UmsatzVorjahr\n    FROM b WHERE VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis))\n    GROUP BY CONVERT(char(7), DATEADD(YEAR, 1, VogDat), 120)\n)\nSELECT ISNULL(cur.Monat, vj.Monat) AS Monat,\n    CAST(ISNULL(cur.Umsatz, 0) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(ISNULL(vj.UmsatzVorjahr, 0) AS DECIMAL(18,2)) AS UmsatzVorjahr,\n    CAST(ISNULL(cur.Rohertrag, 0) AS DECIMAL(18,2)) AS Rohertrag\nFROM cur FULL OUTER JOIN vj ON cur.Monat = vj.Monat\nORDER BY Monat"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Umsatzverlauf",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Monat",
+       "target_field": "Monat",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Monat"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVorjahr",
+       "target_field": "UmsatzVorjahr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVorjahr"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_rg_monat",
+   "name": "büro+ GF – Rechnungen des Monats (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Sortierung",
+      "Beleg",
+      "Art",
+      "Datum",
+      "AdrNr",
+      "Kunde",
+      "Umsatz",
+      "Rohertrag",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n), m AS (\n    SELECT b.*, ROW_NUMBER() OVER (ORDER BY b.Netto DESC) AS rn\n    FROM b WHERE CONVERT(char(7), b.VogDat, 120) = :monat\n)\nSELECT 0 AS Sortierung, m.VogBelegNr AS Beleg, m.VogArt AS Art, CONVERT(char(10), m.VogDat, 104) AS Datum,\n    m.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', m.VogAdrNr)) AS Kunde,\n    CAST(m.Vz * m.Netto AS DECIMAL(18,2)) AS Umsatz,\n    CAST(m.Vz * (m.Netto - m.Ek) AS DECIMAL(18,2)) AS Rohertrag,\n    m.VogVerk AS Bearbeiter, CAST(m.VogID AS varchar(20)) AS VogID\nFROM m LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = m.VogAdrNr\nWHERE m.rn <= 499\nUNION ALL\nSELECT 1, '', '', '', NULL, CONCAT('… ', COUNT(*), ' weitere Belege'),\n    CAST(SUM(Vz * Netto) AS DECIMAL(18,2)), CAST(SUM(Vz * (Netto - Ek)) AS DECIMAL(18,2)), '', ''\nFROM m WHERE rn > 499\nHAVING COUNT(*) > 0\nORDER BY Sortierung, Umsatz DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Rechnungen des Monats (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Sortierung",
+       "target_field": "Sortierung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sortierung"
+       }
+      },
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_positionen",
+   "name": "büro+ GF – Positionen des Belegs (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Pos",
+      "ArtNr",
+      "Bezeichnung",
+      "Menge",
+      "Einheit",
+      "Preis",
+      "Preisfaktor",
+      "Umsatz",
+      "Einsatz",
+      "Rohertrag"
+     ],
+     "sql": "SELECT TOP 500 p.Pos, p.ArtNr, COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtBez1, 80)) AS Bezeichnung,\n    CAST(p.BuchMge AS DECIMAL(18,2)) AS Menge, p.Einh AS Einheit,\n    CAST(p.EPrNt AS DECIMAL(18,4)) AS Preis, CAST(p.EPreisFak AS DECIMAL(9,4)) AS Preisfaktor,\n    p.NettoPos AS Umsatz, p.EkPos AS Einsatz, p.RohertragPos AS Rohertrag\nFROM dbo.vVorgangPosition p\nLEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr\nWHERE p.VogID = CAST(:vogid AS int)\nORDER BY p.ZeilenNr"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Positionen des Belegs (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Pos",
+       "target_field": "Pos",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Pos"
+       }
+      },
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Bezeichnung",
+       "target_field": "Bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bezeichnung"
+       }
+      },
+      {
+       "source_field": "Menge",
+       "target_field": "Menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Menge"
+       }
+      },
+      {
+       "source_field": "Einheit",
+       "target_field": "Einheit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einheit"
+       }
+      },
+      {
+       "source_field": "Preis",
+       "target_field": "Preis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preis"
+       }
+      },
+      {
+       "source_field": "Preisfaktor",
+       "target_field": "Preisfaktor",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preisfaktor"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Einsatz",
+       "target_field": "Einsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_w_lieferscheine",
+   "name": "büro+ GF – Lieferscheine ohne Rechnung",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Datum",
+      "TageOffen",
+      "AdrNr",
+      "Kunde",
+      "Wert",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "SELECT TOP 500 b.VogBelegNr AS Beleg, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    DATEDIFF(DAY, b.VogDat, CAST(GETDATE() AS date)) AS TageOffen,\n    b.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr)) AS Kunde,\n    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID\nFROM dbo.Vorgang b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE b.VogArt = 'Lieferschein' AND ISNULL(b.VogStorniertKz, 0) = 0\n  AND b.VogDat <= DATEADD(DAY, -{{lieferschein_tage}}, CAST(GETDATE() AS date))\nORDER BY b.VogDat"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Lieferscheine ohne Rechnung",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "TageOffen",
+       "target_field": "TageOffen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "TageOffen"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Wert",
+       "target_field": "Wert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Wert"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_w_angebote",
+   "name": "büro+ GF – Alte offene Angebote",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Datum",
+      "Alter_Tage",
+      "AdrNr",
+      "Kunde",
+      "Wert",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "SELECT b.VogBelegNr AS Beleg, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    DATEDIFF(DAY, b.VogDat, CAST(GETDATE() AS date)) AS Alter_Tage,\n    b.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr)) AS Kunde,\n    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID\nFROM dbo.Vorgang b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE b.VogArt = 'Angebot' AND ISNULL(b.VogStorniertKz, 0) = 0\n  AND b.VogDat < DATEADD(DAY, -{{angebot_tage}}, CAST(GETDATE() AS date))\nORDER BY b.VogGPreisNt DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Alte offene Angebote",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "Alter_Tage",
+       "target_field": "Alter_Tage",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Alter_Tage"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Wert",
+       "target_field": "Wert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Wert"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_w_ohne_ek",
+   "name": "büro+ GF – Umsatz ohne Einkaufspreis",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "ArtNr",
+      "Bezeichnung",
+      "Positionen",
+      "Umsatz",
+      "LetzterVerkauf"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT TOP 500 p.ArtNr, MAX(COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtBez1, 80))) AS Bezeichnung,\n    COUNT(*) AS Positionen, CAST(SUM(p.NettoPos) AS DECIMAL(18,2)) AS Umsatz,\n    CONVERT(char(10), MAX(b.VogDat), 104) AS LetzterVerkauf\nFROM dbo.vVorgangPosition p\nJOIN b ON b.VogID = p.VogID AND b.Vz = 1\nLEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr\nWHERE b.VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\n  AND p.ArtKz = 1 AND ISNULL(p.EEkRoh, 0) = 0 AND p.NettoPos > 0\nGROUP BY p.ArtNr\nORDER BY SUM(p.NettoPos) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Umsatz ohne Einkaufspreis",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Bezeichnung",
+       "target_field": "Bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bezeichnung"
+       }
+      },
+      {
+       "source_field": "Positionen",
+       "target_field": "Positionen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Positionen"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "LetzterVerkauf",
+       "target_field": "LetzterVerkauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterVerkauf"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_w_gesperrt",
+   "name": "büro+ GF – Gesperrte Kunden mit Umsatz",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "GesperrtSeit",
+      "Rechnungen",
+      "Umsatz",
+      "LetzteRechnung",
+      "Sperrgrund"
+     ],
+     "sql": "WITH b AS (\n    SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT TOP 500 b.VogAdrNr AS AdrNr, MAX(COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr))) AS Kunde,\n    CONVERT(char(10), MAX(a.AdrGspDat), 104) AS GesperrtSeit,\n    COUNT(*) AS Rechnungen, CAST(SUM(b.Vz * b.Netto) AS DECIMAL(18,2)) AS Umsatz,\n    CONVERT(char(10), MAX(b.VogDat), 104) AS LetzteRechnung,\n    MAX(LEFT(REPLACE(REPLACE(a.AdrGspInfo, CHAR(13), ' '), CHAR(10), ' '), 200)) AS Sperrgrund\nFROM b JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE a.AdrGspKz = 1 AND b.VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date))\nGROUP BY b.VogAdrNr\nORDER BY SUM(b.Vz * b.Netto) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Gesperrte Kunden mit Umsatz",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "GesperrtSeit",
+       "target_field": "GesperrtSeit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "GesperrtSeit"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "LetzteRechnung",
+       "target_field": "LetzteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteRechnung"
+       }
+      },
+      {
+       "source_field": "Sperrgrund",
+       "target_field": "Sperrgrund",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperrgrund"
+       }
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "forms": [
+  {
+   "name": "büro+ GF-Cockpit",
+   "portal_config": {},
+   "schema": {
+    "fields": [
+     {
+      "id": "f_zeitraum",
+      "type": "daterange",
+      "row": 0,
+      "colSpan": 12,
+      "label": "Zeitraum",
+      "name": "zeitraum",
+      "action_ids": [],
+      "config": {
+       "param_from": "von",
+       "param_to": "bis",
+       "default": "this_year",
+       "auto_run": true
+      }
+     }
+    ],
+    "layout": [],
+    "actions": [
+     {
+      "id": "act_alerts",
+      "type": "run_alerts",
+      "mapping_id": null,
+      "pipeline_id": null,
+      "label": "Warnungen prüfen",
+      "options": {
+       "cockpits": [
+        "büro+ GF-Cockpit"
+       ]
+      }
+     },
+     {
+      "id": "act_kpi",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_kpi",
+      "pipeline_id": null,
+      "label": "Kennzahlen"
+     },
+     {
+      "id": "act_pipeline",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_pipeline",
+      "pipeline_id": null,
+      "label": "Vertriebspipeline"
+     },
+     {
+      "id": "act_verlauf",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_verlauf",
+      "pipeline_id": null,
+      "label": "Umsatzverlauf"
+     }
+    ],
+    "widgets": [
+     {
+      "id": "w_umsatz",
+      "type": "kpi",
+      "label": "Umsatz netto",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "Umsatz",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "UmsatzVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Gebuchte Rechnungen und Sammelrechnungen im Zeitraum, netto. Stornierte und nicht gebuchte Belege zählen nicht."
+      }
+     },
+     {
+      "id": "w_umsatz_nk",
+      "type": "kpi",
+      "label": "Umsatz nach Korrekturen",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "UmsatzNachKorrektur",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "UmsatzNachKorrekturVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Umsatz abzüglich der Rechnungskorrekturen – die kaufmännisch belastbare Zahl. büro+ führt Korrekturen mit positivem Betrag; sie werden hier abgezogen.",
+       "breakdown": [
+        {
+         "label": "Umsatz netto",
+         "column": "Umsatz"
+        },
+        {
+         "label": "− Rechnungskorrekturen",
+         "column": "KorrekturWert"
+        },
+        {
+         "label": "Anzahl Korrekturen",
+         "column": "KorrekturAnzahl",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "Korrekturen Vorjahr",
+         "column": "KorrekturWertVJ"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_wareneinsatz",
+      "type": "kpi",
+      "label": "Wareneinsatz",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "Wareneinsatz",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "WareneinsatzVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": true,
+       "hint": "Summe der Einkaufspreise für den Rohertrag (büro+-Feld GEkRoh) der berechneten Ware, Korrekturen gegengerechnet. Positionen ohne Einkaufspreis fehlen hier – siehe „Heute zu tun“."
+      }
+     },
+     {
+      "id": "w_rohertrag",
+      "type": "kpi",
+      "label": "Rohertrag",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "Rohertrag",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "RohertragVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Umsatz − Einkaufspreis für den Rohertrag (büro+-Feld GEkRoh), Korrekturen gegengerechnet. Positionen ohne Einkaufspreis zählen mit 100 % Marge – siehe Kachel „Umsatz ohne EK“.",
+       "breakdown": [
+        {
+         "label": "Umsatz nach Korrekturen",
+         "column": "Warenumsatz"
+        },
+        {
+         "label": "− Wareneinsatz (EK)",
+         "column": "Wareneinsatz"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_marge",
+      "type": "kpi",
+      "label": "Marge",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "Marge",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": " %",
+       "decimals": 1,
+       "compare_column": "MargeVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_rechnungen",
+      "type": "kpi",
+      "label": "Rechnungen",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "Rechnungen",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "compare_column": "RechnungenVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_avg",
+      "type": "kpi",
+      "label": "Ø Rechnungswert",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "AvgRechnung",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "compare_column": "AvgRechnungVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false
+      }
+     },
+     {
+      "id": "w_kunden",
+      "type": "kpi",
+      "label": "Aktive Kunden",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 3,
+       "column": "AktiveKunden",
+       "aggregation": "first",
+       "prefix": "",
+       "suffix": "",
+       "decimals": 0,
+       "compare_column": "AktiveKundenVJ",
+       "compare_label": "Vorjahr",
+       "invert_delta": false,
+       "hint": "Adressen mit mindestens einer Rechnung im Zeitraum. Ein Barverkaufskonto zählt als ein Kunde."
+      }
+     },
+     {
+      "id": "w_angebote",
+      "type": "kpi",
+      "label": "Offene Angebote",
+      "action_id": "act_pipeline",
+      "config": {
+       "width": 3,
+       "column": "AngeboteWert",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "hint": "Alle Angebote, die noch in der Vorgangsübersicht stehen – Stand heute, unabhängig vom gewählten Zeitraum.",
+       "breakdown": [
+        {
+         "label": "Angebote",
+         "column": "AngeboteOffen",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "davon älter als 90 Tage",
+         "column": "AngeboteAlt",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "Wert der alten Angebote",
+         "column": "AngeboteAltWert"
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_frisch",
+      "type": "kpi",
+      "label": "Angebote der letzten 90 Tage",
+      "action_id": "act_pipeline",
+      "config": {
+       "width": 3,
+       "column": "AngeboteFrischWert",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "hint": "Der realistische Teil der Pipeline: offene Angebote, die höchstens 90 Tage alt sind."
+      }
+     },
+     {
+      "id": "w_auftraege",
+      "type": "kpi",
+      "label": "Auftragsbestand",
+      "action_id": "act_pipeline",
+      "config": {
+       "width": 3,
+       "column": "AuftragsbestandWert",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "hint": "Auftragsbestätigungen in der Vorgangsübersicht: zugesagt, aber noch nicht geliefert bzw. berechnet.",
+       "breakdown": [
+        {
+         "label": "offene Auftragsbestätigungen",
+         "column": "AuftraegeOffen",
+         "prefix": "",
+         "decimals": 0
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_lieferscheine",
+      "type": "kpi",
+      "label": "Geliefert, nicht berechnet",
+      "action_id": "act_pipeline",
+      "config": {
+       "width": 3,
+       "column": "LieferscheineWert",
+       "aggregation": "first",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 2,
+       "hint": "Lieferscheine in der Vorgangsübersicht, aus denen noch keine Rechnung geworden ist.",
+       "breakdown": [
+        {
+         "label": "Lieferscheine",
+         "column": "LieferscheineOffen",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "ältester (Tage)",
+         "column": "LieferscheinAeltesterTage",
+         "prefix": "",
+         "decimals": 0
+        }
+       ]
+      }
+     },
+     {
+      "id": "w_alerts",
+      "type": "alerts",
+      "label": "📋 Heute zu tun",
+      "action_id": "act_alerts",
+      "config": {
+       "width": 12,
+       "info": "Jede Zeile ist eine Prüfregel auf den büro+-Daten. Klick öffnet die Detailliste."
+      }
+     },
+     {
+      "id": "w_verlauf",
+      "type": "line",
+      "label": "Umsatzentwicklung nach Korrekturen (aktuell vs. Vorjahr)",
+      "action_id": "act_verlauf",
+      "config": {
+       "width": 12,
+       "x_column": "Monat",
+       "y_columns": [
+        "Umsatz",
+        "UmsatzVorjahr"
+       ],
+       "curved": true,
+       "drilldown": {
+        "mapping_id": "m_bp_rg_monat",
+        "key_column": "Monat",
+        "param": "monat",
+        "title": "Rechnungen und Korrekturen dieses Monats",
+        "hidden_columns": [
+         "VogID",
+         "Sortierung"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "id": "w_ai",
+      "type": "ai_summary",
+      "label": "KI-Kurzanalyse der Kennzahlen",
+      "action_id": "act_kpi",
+      "config": {
+       "width": 12,
+       "report_layout": true,
+       "instruction": "Daten aus microtech büro+. Rechnungskorrekturen sind bereits als eigene Kennzahl ausgewiesen. Bewerte auch die Vertriebspipeline (offene Angebote, Auftragsbestand, Lieferscheine ohne Rechnung).",
+       "extra_sections": [
+        {
+         "action_id": "act_pipeline",
+         "label": "Vertriebspipeline (Stand heute)",
+         "kind": "kpi"
+        }
+       ]
+      }
+     }
+    ],
+    "result_tabs": [
+     {
+      "id": "tab_uebersicht",
+      "label": "Übersicht",
+      "action_ids": [
+       "act_alerts",
+       "act_kpi",
+       "act_pipeline",
+       "act_verlauf"
+      ]
+     }
+    ],
+    "reiter_gruppen": [
+     {
+      "id": "g_uebersicht",
+      "label": "Unternehmensübersicht",
+      "reiter": [
+       "tab_uebersicht"
+      ]
+     }
+    ],
+    "show_ai_assistant": true,
+    "rubrik": {
+     "id": "gf"
+    },
+    "doku": {
+     "intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",
+     "hinweise": [
+      "Umsatz zählt gebuchte Rechnungen, nicht Auftragseingänge.",
+      "Rechnungskorrekturen führt büro+ mit positivem Betrag; das Cockpit weist sie gesondert aus und zieht sie ab.",
+      "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum.",
+      "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg."
+     ]
+    }
+   }
+  }
+ ],
+ "alert_rules": [
+  {
+   "rule_key": "bp_lieferscheine_offen",
+   "name": "Lieferscheine ohne Rechnung",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "kritisch",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Lieferscheine ohne Rechnung",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Wert",
+    "min_count": 1,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Ältester",
+     "column": "Datum",
+     "unit": "",
+     "decimals": 0
+    },
+    {
+     "label": "Kunde",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Lieferscheine ohne Rechnung – {summe} € geliefert, aber nicht berechnet",
+   "subtitle": "Älter als die eingestellte Frist. Zeile anklicken: die Lieferscheine, älteste zuerst.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Lieferscheine ohne Rechnung",
+    "title": "Lieferscheine ohne Rechnung",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": [
+     {
+      "mapping_name": "büro+ GF – Positionen des Belegs (Detail)",
+      "param": "vogid",
+      "key_column": "VogID",
+      "title": "Positionen des Belegs"
+     }
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 1
+  },
+  {
+   "rule_key": "bp_umsatz_ohne_ek",
+   "name": "Umsatz ohne Einkaufspreis",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Umsatz ohne Einkaufspreis",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Umsatz",
+    "min_count": 1,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Größter Artikel",
+     "column": "ArtNr",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Artikel ohne Einkaufspreis verkauft (90 Tage) – {summe} € Umsatz mit 100 % Marge",
+   "subtitle": "Der Rohertrag ist um diesen Betrag geschönt. EK am Artikel in büro+ nachtragen.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Umsatz ohne Einkaufspreis",
+    "title": "Umsatz ohne Einkaufspreis",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": []
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 2
+  },
+  {
+   "rule_key": "bp_gesperrt_mit_umsatz",
+   "name": "Gesperrte Kunden mit Umsatz",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "warnung",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Gesperrte Kunden mit Umsatz",
+   "params": {},
+   "condition": {
+    "mode": "count",
+    "value_column": "Umsatz",
+    "min_count": 1,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Größter",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} gesperrte Kunden haben in 90 Tagen trotzdem Rechnungen bekommen – {summe} €",
+   "subtitle": "Entweder ist die Sperre veraltet oder sie wird umgangen. Sperrgrund steht in der Liste.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Gesperrte Kunden mit Umsatz",
+    "title": "Gesperrte Kunden mit Umsatz",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": []
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 3
+  },
+  {
+   "rule_key": "bp_angebote_alt",
+   "name": "Alte offene Angebote",
+   "category": "Geschäftsführung",
+   "cockpit": "büro+ GF-Cockpit",
+   "description": null,
+   "severity": "info",
+   "severity_levels": [],
+   "mapping_id": null,
+   "mapping_name": "büro+ GF – Alte offene Angebote",
+   "params": {},
+   "condition": {
+    "mode": "rows",
+    "value_column": "Wert",
+    "limit": 5000,
+    "value_unit": "€"
+   },
+   "facts": [
+    {
+     "label": "Größtes",
+     "column": "Kunde",
+     "unit": "",
+     "decimals": 0
+    }
+   ],
+   "title_template": "{anzahl} Angebote älter als die Frist – {summe} € in der Pipeline, die wohl nicht mehr kommt",
+   "subtitle": "Nachfassen oder in büro+ erledigen bzw. archivieren, damit die Pipeline stimmt.",
+   "drilldown": {
+    "mapping_name": "büro+ GF – Alte offene Angebote",
+    "title": "Alte offene Angebote",
+    "hidden_columns": [
+     "VogID"
+    ],
+    "levels": [
+     {
+      "mapping_name": "büro+ GF – Positionen des Belegs (Detail)",
+      "param": "vogid",
+      "key_column": "VogID",
+      "title": "Positionen des Belegs"
+     }
+    ]
+   },
+   "action_kind": null,
+   "active": true,
+   "sort": 4
+  }
+ ],
+ "knowledge": []
+}
