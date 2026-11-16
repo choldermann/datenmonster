@@ -11,8 +11,9 @@ EINTRAEGE = [
     # ── Vertrieb / Aufträge & Angebote ──────────────────────────────────────
     ("table", "JTL – Aufträge und Angebote (Verkauf.tAuftrag)",
      "Aufträge UND Angebote liegen in derselben Tabelle Verkauf.tAuftrag, unterschieden über "
-     "nType: 0 = Angebot (Nummernkreis ANG-), 1 = Auftrag (AUF-). Immer auf nType filtern, "
-     "sonst mischen sich beide. Storno: nStorno (bit) – für Auftragseingang nStorno = 0 "
+     "nType: 0 = Angebot (Nummernkreis ANG-), 1 = Auftrag (AUF-), 3 = Abo (Vorlage für "
+     "wiederkehrende Aufträge, z. B. Nummernkreis AB-; siehe Eintrag „Abos (nType 3)“). "
+     "Immer auf nType filtern, sonst mischen sich die Arten. Storno: nStorno (bit) – für Auftragseingang nStorno = 0 "
      "verlangen. Weitere Merker: nKomplettAusgeliefert (offene Aufträge), "
      "dVoraussichtlichesLieferdatum (Liefertermin), kPlattform (Verkaufskanal). "
      "Auftragseingang ist der Frühindikator VOR der Rechnung – für Vertriebsauswertungen "
@@ -28,10 +29,27 @@ EINTRAEGE = [
 
     ("rule", "JTL – Keine Verknüpfung Angebot → Auftrag",
      "Es gibt in der JTL-DB KEINE Verknüpfung zwischen Angebot und daraus entstandenem Auftrag: "
-     "kAuftragQuelle ist praktisch immer NULL, die Nummernkreise ANG-/AUF- sind getrennt, und "
+     "kAuftragQuelle ist bei Angeboten praktisch immer NULL (gefüllt wird es dagegen bei "
+     "Aufträgen aus einem Abo, siehe „Abos (nType 3)“), die Nummernkreise ANG-/AUF- sind getrennt, und "
      "ein gewandeltes Angebot behält seine ANG-Nummer nicht. Eine Angebots-Conversion kann "
      "deshalb nur als HEURISTIK berechnet werden (z. B. Auftrag desselben Kunden binnen "
      "60 Tagen nach Angebotsdatum) – und muss im Widget als Näherung gekennzeichnet werden."),
+
+    ("rule", "JTL – Abos (nType 3) sind keine Aufträge",
+     "Abos liegen ebenfalls in Verkauf.tAuftrag, mit nType = 3 (bei Hygiene Daheim "
+     "Nummernkreis AB-, echte Aufträge AU-). Sie sehen aus wie Aufträge – Kunde, Positionen, "
+     "Attribute, sogar Rückhaltegrund –, sind aber nur VORLAGEN, aus denen JTL in Intervallen "
+     "normale Aufträge (nType = 1) erzeugt. Ein Abo wird NIEMALS zu Lieferschein oder "
+     "Rechnung; das darf erst ein daraus erzeugter bzw. in einen normalen Auftrag "
+     "gewandelter Beleg (geprüft HyDa: 2.074 Abos, 0 Lieferscheine, 0 Rechnungen). "
+     "nKomplettAusgeliefert steht bei Abos meist auf 1 und ist bedeutungslos. "
+     "Verknüpfung: der erzeugte Auftrag zeigt über Verkauf.tAuftrag.kAuftragQuelle auf "
+     "das Abo (HyDa: 23.095 Aufträge mit Quelle nType 3). Verwaltung über die Views "
+     "Verkauf.lvAbonnementsverwaltung / lvAbonnementsposition, Kunde.lvAbonnements. "
+     "FOLGE: Jede Auswertung, Prüfliste („Auftrag ohne Lieferschein/Rechnung“) oder "
+     "Übergabe an Lager/Versanddienstleister/Abrechnung MUSS nType = 1 verlangen – "
+     "sonst erscheinen Hunderte Abos als vermeintlich hängende Aufträge oder werden "
+     "fälschlich verschickt/abgerechnet."),
 
     ("field_mapping", "JTL – Kundenname bei Aufträgen",
      "Kundenname zu einem Auftrag über die View Verkauf.vAuftragRechnungsadresse (Join kAuftrag): "
