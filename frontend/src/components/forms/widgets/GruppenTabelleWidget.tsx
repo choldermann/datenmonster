@@ -95,15 +95,18 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
   const werte = (row) => Array.from({ length: anzahl }, (_, i) => zahl(row[`${kz.praefix}${i}`]));
   const umsatzRef = kennzahlen.find(k => k.summe) || kz;   // Reihenfolge der Gruppen
 
+  // Suche bestimmt, was gezählt wird; der Schalter „auch ohne Verkauf …“ nur, welche Zeilen
+  // beim Aufklappen erscheinen. Gruppensummen rechnen deshalb immer über alle Treffer der Suche –
+  // sonst fehlten in den Vorjahresspalten die Artikel, die zuletzt nicht mehr verkauft wurden.
   const gefiltert = useMemo(() => {
     const woerter = suche.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!woerter.length) return rows;
     return rows.filter(r => {
-      if (nurAktuell && cfg.aktiv_spalte && !zahl(r[cfg.aktiv_spalte])) return false;
-      if (!woerter.length) return true;
       const text = String(cfg.such_spalte ? r[cfg.such_spalte] ?? "" : textSp.map(c => r[c] ?? "").join(" ")).toLowerCase();
       return woerter.every(w => text.includes(w));
     });
-  }, [rows, suche, nurAktuell, cfg.aktiv_spalte, cfg.such_spalte, textSp]);
+  }, [rows, suche, cfg.such_spalte, textSp]);
+  const sichtbar = (r) => !(nurAktuell && cfg.aktiv_spalte && !zahl(r[cfg.aktiv_spalte]));
 
   const gruppen = useMemo(() => {
     const m = new Map();
@@ -115,7 +118,8 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
     const sum = (zeilen, praefix, i) => zeilen.reduce((a, r) => a + zahl(r[`${praefix}${i}`]), 0);
     const liste = [...m.entries()].map(([name, zeilen]) => ({
       name,
-      zeilen: [...zeilen].sort((a, b) => zahl(b[`${kz.praefix}${sortIdx}`]) - zahl(a[`${kz.praefix}${sortIdx}`])),
+      zeilen: zeilen.filter(sichtbar).sort((a, b) => zahl(b[`${kz.praefix}${sortIdx}`]) - zahl(a[`${kz.praefix}${sortIdx}`])),
+      ausgeblendet: zeilen.filter(r => !sichtbar(r)).length,
       summen: kz.summe ? Array.from({ length: anzahl }, (_, i) => sum(zeilen, kz.praefix, i)) : null,
       einheiten: kz.summe === "einheit" && cfg.einheit_spalte
         ? [...new Set(zeilen.map(r => {
@@ -127,7 +131,7 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
     }));
     liste.sort((a, b) => b.ordnung - a.ordnung);
     return liste;
-  }, [gefiltert, gruppe, kz, sortIdx, anzahl, umsatzRef, cfg.einheit_spalte, cfg.einheit_gleich]);
+  }, [gefiltert, gruppe, kz, sortIdx, anzahl, umsatzRef, cfg.einheit_spalte, cfg.einheit_gleich, nurAktuell, cfg.aktiv_spalte]);
 
   if (!rows.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
@@ -136,23 +140,45 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
   const umschalten = (g) => setOffen(prev => {
     const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n;
   });
+  const anzahlAuf = gruppen.filter(g => istOffen(g.name)).length;
   const klickbar = !!(onDrilldown && dd?.mapping_id && dd?.key_column);
   const dez = kz?.dezimal ?? 0;
   const zelle = (v) => v === 0 ? <span style={{ color: S.textDim, opacity: 0.5 }}>·</span> : fmt(v, dez);
 
+  // Excel: Sind alle Gruppen zugeklappt, nur die Gruppenübersicht (Summen); sonst die Zeilen
+  // der aufgeklappten Gruppen. Bei aktiver Suche gelten alle Treffergruppen als aufgeklappt.
   const excel = async () => {
     setXlsx(true);
     try {
-      const spalten = [gruppe, ...textSp, ...titel.map((t, i) => `${kz.label} ${t.titel}${t.zeitraum ? ` (${t.zeitraum})` : ""}`),
-        ...zusatz.map(z => z.titel)];
-      const zeilen = gruppen.flatMap(g => g.zeilen.map(r => {
-        const o = { [gruppe]: g.name };
-        textSp.forEach(c => { o[c] = r[c]; });
-        werte(r).forEach((v, i) => { o[spalten[1 + textSp.length + i]] = v; });
-        zusatz.forEach(z => { o[z.titel] = r[z.spalte]; });
-        return o;
-      }));
-      await tabelleAlsExcel({ titel: widget.label || "Gruppentabelle", columns: spalten, rows: zeilen });
+      const wertTitel = titel.map(t => `${kz.label} ${t.titel}${t.zeitraum ? ` (${t.zeitraum})` : ""}`);
+      const deltaProzent = (jetzt, vorher) => vorher ? Math.round(((jetzt - vorher) / Math.abs(vorher)) * 1000) / 10 : null;
+      const aufgeklappt = gruppen.filter(g => istOffen(g.name));
+      let spalten, zeilen, titelZusatz;
+      if (!aufgeklappt.length) {
+        const mitHinweis = gruppen.some(g => g.einheiten.length > 1);
+        spalten = [gruppe, "Anzahl", ...wertTitel, "ggü. Vorjahr %", ...(mitHinweis ? ["Hinweis"] : [])];
+        zeilen = gruppen.map(g => {
+          const o = { [gruppe]: g.name, Anzahl: g.zeilen.length + g.ausgeblendet };
+          (g.summen || []).forEach((v, i) => { o[wertTitel[i]] = v; });
+          o["ggü. Vorjahr %"] = g.summen ? deltaProzent(g.summen[0], g.summen[1]) : null;
+          if (mitHinweis) o.Hinweis = g.einheiten.length > 1 ? `Summe über gemischte Einheiten: ${g.einheiten.join(", ")}` : "";
+          return o;
+        });
+        titelZusatz = "Übersicht";
+      } else {
+        spalten = [gruppe, ...textSp, ...wertTitel, "ggü. Vorjahr %", ...zusatz.map(z => z.titel)];
+        zeilen = aufgeklappt.flatMap(g => g.zeilen.map(r => {
+          const o = { [gruppe]: g.name };
+          textSp.forEach(c => { o[c] = r[c]; });
+          const w = werte(r);
+          w.forEach((v, i) => { o[wertTitel[i]] = v; });
+          o["ggü. Vorjahr %"] = deltaProzent(w[0], w[1]);
+          zusatz.forEach(z => { o[z.titel] = r[z.spalte]; });
+          return o;
+        }));
+        titelZusatz = aufgeklappt.length === 1 ? aufgeklappt[0].name : `${aufgeklappt.length} Gruppen`;
+      }
+      await tabelleAlsExcel({ titel: `${widget.label || "Gruppentabelle"} – ${titelZusatz}`, columns: spalten, rows: zeilen });
     } catch (e) {
       alert(`Excel-Export fehlgeschlagen: ${fehlerText(e)}`);
     } finally { setXlsx(false); }
@@ -200,8 +226,10 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
         <button style={knopf} onClick={() => setOffen(new Set(gruppen.map(g => g.name)))}>alle auf</button>
         <button style={knopf} onClick={() => setOffen(new Set())}>alle zu</button>
         {allowDownload !== false && (
-          <button style={{ ...knopf, cursor: xlsx ? "wait" : "pointer" }} onClick={excel} disabled={xlsx || !artikelAnzahl}>
-            <Download size={11} /> {xlsx ? "Excel …" : "Excel"}
+          <button style={{ ...knopf, cursor: xlsx ? "wait" : "pointer" }} onClick={excel} disabled={xlsx || !gruppen.length}
+            title={anzahlAuf ? `Excel: Zeilen der ${anzahlAuf === 1 ? "aufgeklappten Gruppe" : `${fmt(anzahlAuf)} aufgeklappten Gruppen`}`
+              : "Excel: Übersicht aller Gruppen (zum Export einzelner Zeilen Gruppen aufklappen)"}>
+            <Download size={11} /> {xlsx ? "Excel …" : anzahlAuf ? `Excel (${fmt(anzahlAuf)} ${anzahlAuf === 1 ? "Gruppe" : "Gruppen"})` : "Excel (Übersicht)"}
           </button>
         )}
       </div>
@@ -237,7 +265,10 @@ export default function GruppenTabelleWidget({ widget, result, params = {}, onDr
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                       {auf ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       {g.name}
-                      <span style={{ color: S.textDim, fontWeight: 400, marginLeft: 6 }}>({g.zeilen.length})</span>
+                      <span style={{ color: S.textDim, fontWeight: 400, marginLeft: 6 }}
+                        title={g.ausgeblendet ? `${fmt(g.ausgeblendet)} weitere ohne Verkauf in den letzten 12 Monaten – in der Summe enthalten` : undefined}>
+                        ({g.zeilen.length}{g.ausgeblendet ? ` + ${fmt(g.ausgeblendet)} ohne Verkauf` : ""})
+                      </span>
                     </span>
                   </td>
                   {titel.map((_, i) => (
