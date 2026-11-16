@@ -71,12 +71,17 @@ using System.Text;
 
 public static class BpCsv
 {
+    static readonly char[] FeldEnde = new char[] { ';', '\n' };
+
     // Liefert alle Datensätze inkl. Kopfzeile. Ein Feld in "..." endet erst bei
-    // '";' oder '"' + CRLF (bzw. Dateiende); innere " bleiben unverändert stehen.
+    // '";' oder '"' + Zeilenende (CRLF oder LF, bzw. Dateiende); innere " bleiben stehen.
+    // Kodierung: UTF-8 (mit/ohne BOM) oder UTF-16 per BOM. Alle Suchen sind begrenzt,
+    // damit die Laufzeit linear bleibt (früher: ohne CRLF quadratisch → „hängt“).
     public static List<string[]> Lesen(string pfad)
     {
-        string text = File.ReadAllText(pfad, new UTF8Encoding(false));
-        if (text.Length > 0 && text[0] == '\uFEFF') text = text.Substring(1);
+        string text;
+        using (StreamReader sr = new StreamReader(pfad, new UTF8Encoding(false), true)) { text = sr.ReadToEnd(); }
+        if (text.Length > 0 && text[0] == '﻿') text = text.Substring(1);
         List<string[]> saetze = new List<string[]>();
         List<string> satz = new List<string>();
         int i = 0, n = text.Length;
@@ -86,17 +91,16 @@ public static class BpCsv
             {
                 int a = text.IndexOf("\";", i + 1, StringComparison.Ordinal);
                 int grenze = (a != -1) ? a : n;
-                int b = text.IndexOf("\"\r\n", i + 1, grenze - (i + 1), StringComparison.Ordinal);
+                int b = QuoteVorZeilenende(text, i + 1, grenze);
                 if (b == -1 && a == -1)
-                {
-                    if (text.EndsWith("\"")) b = n - 1;
-                    else throw new FormatException("Nicht abgeschlossenes Textfeld ab Zeichen " + i + ": " + Ausschnitt(text, i));
-                }
+                    throw new FormatException("Nicht abgeschlossenes Textfeld ab Zeichen " + i + ": " + Ausschnitt(text, i));
                 if (b != -1)
                 {
                     satz.Add(text.Substring(i + 1, b - i - 1));
                     saetze.Add(satz.ToArray()); satz = new List<string>();
-                    i = b + 3;
+                    i = b + 1;
+                    if (i < n && text[i] == '\r') i++;
+                    i++;   // '\n'
                 }
                 else
                 {
@@ -106,19 +110,20 @@ public static class BpCsv
             }
             else
             {
-                int a = text.IndexOf(';', i);
-                int b = text.IndexOf("\r\n", i, StringComparison.Ordinal);
-                if (b == -1) b = n;
-                if (a != -1 && a < b)
+                int j = text.IndexOfAny(FeldEnde, i);
+                if (j == -1) j = n;
+                if (j < n && text[j] == ';')
                 {
-                    satz.Add(text.Substring(i, a - i));
-                    i = a + 1;
+                    satz.Add(text.Substring(i, j - i));
+                    i = j + 1;
                 }
                 else
                 {
-                    satz.Add(text.Substring(i, b - i));
+                    int e = j;
+                    if (e > i && text[e - 1] == '\r') e--;
+                    satz.Add(text.Substring(i, e - i));
                     saetze.Add(satz.ToArray()); satz = new List<string>();
-                    i = b + 2;
+                    i = j + 1;
                 }
             }
         }
@@ -126,6 +131,21 @@ public static class BpCsv
         // Leerzeilen (z. B. abschließendes CRLF) entfernen
         saetze.RemoveAll(delegate (string[] s) { return s.Length == 1 && s[0].Length == 0; });
         return saetze;
+    }
+
+    // Position eines '"', dem ein Zeilenende (CRLF/LF) oder das Dateiende folgt, im Bereich [start, grenze); sonst -1.
+    static int QuoteVorZeilenende(string t, int start, int grenze)
+    {
+        int n = t.Length;
+        int j = (start < grenze) ? t.IndexOf('"', start, grenze - start) : -1;
+        while (j != -1)
+        {
+            if (j == n - 1) return j;
+            char c = t[j + 1];
+            if (c == '\n' || (c == '\r' && j + 2 < n && t[j + 2] == '\n')) return j;
+            j = (j + 1 < grenze) ? t.IndexOf('"', j + 1, grenze - j - 1) : -1;
+        }
+        return -1;
     }
 
     static string Ausschnitt(string t, int i)
