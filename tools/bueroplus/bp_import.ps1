@@ -26,12 +26,18 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Konfig = (Join-Path $PSScriptRoot 'bp_import.config.psd1'),
+    [string]$Konfig = '',
     [switch]$Trockenlauf
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version 2.0
+
+# Windows PowerShell 5.1 füllt $PSScriptRoot im param()-Block nicht, wenn das Skript per
+# „powershell.exe -File …“ (Aufgabenplanung) gestartet wird → Vorgabe erst hier setzen.
+$skriptOrdner = $PSScriptRoot
+if ([string]::IsNullOrEmpty($skriptOrdner)) { $skriptOrdner = Split-Path -Parent $MyInvocation.MyCommand.Path }
+if ([string]::IsNullOrEmpty($Konfig)) { $Konfig = Join-Path $skriptOrdner 'bp_import.config.psd1' }
 
 # ── Konfiguration ───────────────────────────────────────────────────────────
 if (-not (Test-Path -LiteralPath $Konfig)) { throw "Konfigurationsdatei nicht gefunden: $Konfig" }
@@ -39,7 +45,7 @@ $cfg = Import-PowerShellDataFile -LiteralPath $Konfig
 
 function Get-Pfad([string]$p) {
     if ([System.IO.Path]::IsPathRooted($p)) { return $p }
-    return (Join-Path $PSScriptRoot $p)
+    return (Join-Path $skriptOrdner $p)
 }
 # ── Protokoll ───────────────────────────────────────────────────────────────
 $logDir = Get-Pfad $cfg.LogVerzeichnis
