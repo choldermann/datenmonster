@@ -156,7 +156,7 @@ WITH b AS (
 )
 SELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,
     CAST(b.Vz * b.Netto AS DECIMAL(18,2)) AS Umsatz, CAST(b.Vz * (b.Netto - b.Ek) AS DECIMAL(18,2)) AS Rohertrag,
-    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    b.VogVerk AS Bearbeiter, CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID
 FROM b
 WHERE b.VogAdrNr = CAST(:adrnr AS int)
   AND b.VogDat >= DATEADD(YEAR, -1, :von) AND b.VogDat < DATEADD(DAY, 1, :bis)

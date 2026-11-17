@@ -16,7 +16,7 @@ POS = f"""b AS (
         CASE WHEN b.VogDat >= :von THEN 1
              WHEN b.VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per
     FROM dbo.vVorgangPosition p
-    JOIN b ON b.VogID = p.VogID
+    JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
     LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr
     WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL
 )"""
@@ -46,7 +46,7 @@ s AS (
         SELECT TOP 20 SUM(Umsatz) AS u FROM pos WHERE Per = 1 GROUP BY ArtNr ORDER BY SUM(Umsatz) DESC) t
 ), letzter AS (
     SELECT p.ArtNr, MAX(k.VogDat) AS Letzter
-    FROM dbo.vVorgangPosition p JOIN dbo.vVorgang k ON k.VogID = p.VogID
+    FROM dbo.vVorgangPosition p JOIN dbo.vVorgang k ON k.VogID = p.VogID AND k.Quelle = p.Quelle
     WHERE k.VogArt IN ('Rechnung I', 'Sammel Rechnung') AND p.ArtKz = 1
     GROUP BY p.ArtNr
 ), sortiment AS (
@@ -141,12 +141,12 @@ SELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDa
     CAST(MAX(p.EPrNt) AS DECIMAL(18,4)) AS Preis, CAST(MAX(p.EEkRoh) AS DECIMAL(18,4)) AS EkPreis,
     CAST(SUM(b.Vz * p.NettoPos) AS DECIMAL(18,2)) AS Umsatz,
     CAST(SUM(b.Vz * p.RohertragPos) AS DECIMAL(18,2)) AS Rohertrag,
-    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    b.VogVerk AS Bearbeiter, CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID
 FROM dbo.vVorgangPosition p
-JOIN b ON b.VogID = p.VogID
+JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
 LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr
 WHERE p.ArtNr = :artnr AND b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis)
-GROUP BY b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogAdrNr, a.AdrReNa2, b.VogVerk
+GROUP BY b.Quelle, b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogAdrNr, a.AdrReNa2, b.VogVerk
 ORDER BY b.VogDat DESC
 """
 
@@ -180,7 +180,7 @@ WITH b AS (
 ), pos AS (
     SELECT p.ArtNr, p.NettoPos AS Umsatz, p.EkPos AS Einsatz, p.BuchMge * p.EPreisFak AS PE,
         CASE WHEN b.VogDat > DATEADD(DAY, -90, :bis) THEN 1 ELSE 2 END AS Per
-    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID
+    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
     WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL AND p.NettoPos > 0 AND p.EkPos > 0
 ), a AS (
     SELECT ArtNr,
@@ -212,7 +212,7 @@ SQL["m_bp_art_ohne_verkauf"] = f"""
 WITH letzter AS (
     SELECT p.ArtNr, MAX(k.VogDat) AS Letzter,
         SUM(CASE WHEN k.VogDat > DATEADD(YEAR, -2, :bis) THEN p.NettoPos ELSE 0 END) AS UmsatzVor12M
-    FROM dbo.vVorgangPosition p JOIN dbo.vVorgang k ON k.VogID = p.VogID
+    FROM dbo.vVorgangPosition p JOIN dbo.vVorgang k ON k.VogID = p.VogID AND k.Quelle = p.Quelle
     WHERE k.VogArt IN ('Rechnung I', 'Sammel Rechnung') AND p.ArtKz = 1
     GROUP BY p.ArtNr
 )

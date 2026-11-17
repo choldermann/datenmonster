@@ -46,3 +46,11 @@ bp_import.ps1 (Aufgabenplanung)  →  stg.* (Rohtext)  →  dbo.bp_Uebernehmen  
 - Textfelder in `"…"` setzen, Zahlen/Datum/Ja-Nein ohne.
 - Kopfzeile = büro+-Feldname ohne `«»`, ohne Anführungszeichen, ohne Punkte (`Vog.Li.AdrNr` → `VogLiAdrNr`).
 - Datum `TT.MM.JJJJ`, Zahlen mit Dezimalkomma (büro+-Standard). `30.12.1899` = leer.
+
+## Views (`views.sql`)
+
+`dbo.vVorgang` und `dbo.vVorgangPosition` vereinen Übersicht und Archiv. **büro+ vergibt Vorgangs-IDs neu**:
+dieselbe `VogID` kann im Archiv und in der Übersicht zu zwei verschiedenen Belegen gehören (bei Gehlen 323 Fälle,
+Archiv Jan. 2020 ↔ Übersicht 2026). Eindeutig ist nur `(Quelle, VogID)`. Positionen deshalb nur mit dem Kopf
+derselben Quelle verbinden; im Cockpit immer `b.VogID = p.VogID AND b.Quelle = p.Quelle`. Drilldown-Schlüssel ist
+`A<VogID>` (Archiv) bzw. `U<VogID>` (Übersicht).

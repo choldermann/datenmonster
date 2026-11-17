@@ -12,7 +12,7 @@ V12 = f"""b AS (
 ), pos AS (
     SELECT p.ArtNr, b.VogAdrNr AS AdrNr, b.VogDat, {SCHEIBE} AS S,
         b.Vz * p.BuchMge AS Menge, b.Vz * p.NettoPos AS Umsatz, b.Vz * p.RohertragPos AS Rohertrag
-    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID
+    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
     WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL
 )"""
 
@@ -100,11 +100,11 @@ SELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDa
     CAST(SUM(b.Vz * p.BuchMge) AS DECIMAL(18,2)) AS Menge, MAX(p.Einh) AS Einheit,
     CAST(MAX(p.EPrNt) AS DECIMAL(18,4)) AS Preis, CAST(MAX(p.EPreisFak) AS DECIMAL(9,4)) AS Preisfaktor,
     CAST(SUM(b.Vz * p.NettoPos) AS DECIMAL(18,2)) AS Umsatz, CAST(SUM(b.Vz * p.RohertragPos) AS DECIMAL(18,2)) AS Rohertrag,
-    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    b.VogVerk AS Bearbeiter, CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID
 FROM dbo.vVorgangPosition p
-JOIN b ON b.VogID = p.VogID
+JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
 JOIN sel ON sel.AdrNr = b.VogAdrNr AND sel.ArtNr = p.ArtNr
-GROUP BY b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogVerk
+GROUP BY b.Quelle, b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogVerk
 ORDER BY b.VogDat DESC
 """
 

@@ -5,7 +5,7 @@ CONN = "{{connection_bp}}"
 
 # Umsatzbelege: gebuchte, nicht stornierte Rechnungen und Rechnungskorrekturen.
 # Rechnungskorrekturen stehen in büro+ mit positivem Betrag und werden abgezogen.
-BELEGE = """SELECT VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,
+BELEGE = """SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,
            VogGPreisNt AS Netto, VogGEkRoh AS Ek,
            CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz
     FROM dbo.vVorgang
@@ -40,7 +40,7 @@ WITH b AS (
 ), ohne_ek AS (
     SELECT COUNT(*) AS PosOhneEk, ISNULL(SUM(pos.NettoPos), 0) AS UmsatzOhneEk
     FROM dbo.vVorgangPosition pos
-    JOIN b ON b.VogID = pos.VogID AND b.Vz = 1
+    JOIN b ON b.VogID = pos.VogID AND b.Quelle = pos.Quelle AND b.Vz = 1
     WHERE b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis)
       AND pos.ArtKz = 1 AND ISNULL(pos.EEkRoh, 0) = 0 AND pos.NettoPos > 0
 )
@@ -121,7 +121,7 @@ SELECT 0 AS Sortierung, m.VogBelegNr AS Beleg, m.VogArt AS Art, CONVERT(char(10)
     m.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', m.VogAdrNr)) AS Kunde,
     CAST(m.Vz * m.Netto AS DECIMAL(18,2)) AS Umsatz,
     CAST(m.Vz * (m.Netto - m.Ek) AS DECIMAL(18,2)) AS Rohertrag,
-    m.VogVerk AS Bearbeiter, CAST(m.VogID AS varchar(20)) AS VogID
+    m.VogVerk AS Bearbeiter, CONCAT(CASE m.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, m.VogID) AS VogID
 FROM m LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = m.VogAdrNr
 WHERE m.rn <= 499
 UNION ALL
@@ -139,7 +139,8 @@ SELECT TOP 500 p.Pos, p.ArtNr, COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtB
     p.NettoPos AS Umsatz, p.EkPos AS Einsatz, p.RohertragPos AS Rohertrag
 FROM dbo.vVorgangPosition p
 LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr
-WHERE p.VogID = CAST(:vogid AS int)
+WHERE p.VogID = CAST(SUBSTRING(:vogid, 2, 20) AS int)
+  AND p.Quelle = CASE LEFT(:vogid, 1) WHEN 'A' THEN 'Archiv' ELSE 'Übersicht' END
 ORDER BY p.ZeilenNr
 """
 
@@ -148,7 +149,7 @@ SQL["m_bp_w_lieferscheine"] = f"""
 SELECT TOP 500 b.VogBelegNr AS Beleg, CONVERT(char(10), b.VogDat, 104) AS Datum,
     DATEDIFF(DAY, b.VogDat, CAST(GETDATE() AS date)) AS TageOffen,
     b.VogAdrNr AS AdrNr, {KUNDE} AS Kunde,
-    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CONCAT('U', b.VogID) AS VogID
 FROM dbo.Vorgang b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr
 WHERE b.VogArt = 'Lieferschein' AND ISNULL(b.VogStorniertKz, 0) = 0
   AND b.VogDat <= DATEADD(DAY, -{{{{lieferschein_tage}}}}, CAST(GETDATE() AS date))
@@ -159,7 +160,7 @@ SQL["m_bp_w_angebote"] = f"""
 SELECT b.VogBelegNr AS Beleg, CONVERT(char(10), b.VogDat, 104) AS Datum,
     DATEDIFF(DAY, b.VogDat, CAST(GETDATE() AS date)) AS Alter_Tage,
     b.VogAdrNr AS AdrNr, {KUNDE} AS Kunde,
-    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    CAST(b.VogGPreisNt AS DECIMAL(18,2)) AS Wert, b.VogVerk AS Bearbeiter, CONCAT('U', b.VogID) AS VogID
 FROM dbo.Vorgang b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr
 WHERE b.VogArt = 'Angebot' AND ISNULL(b.VogStorniertKz, 0) = 0
   AND b.VogDat < DATEADD(DAY, -{{{{angebot_tage}}}}, CAST(GETDATE() AS date))
@@ -174,7 +175,7 @@ SELECT TOP 500 p.ArtNr, MAX(COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtBez1
     COUNT(*) AS Positionen, CAST(SUM(p.NettoPos) AS DECIMAL(18,2)) AS Umsatz,
     CONVERT(char(10), MAX(b.VogDat), 104) AS LetzterVerkauf
 FROM dbo.vVorgangPosition p
-JOIN b ON b.VogID = p.VogID AND b.Vz = 1
+JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle AND b.Vz = 1
 LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr
 WHERE b.VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date))
   AND p.ArtKz = 1 AND ISNULL(p.EEkRoh, 0) = 0 AND p.NettoPos > 0
@@ -206,7 +207,7 @@ SELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDa
     CAST(b.Netto AS DECIMAL(18,2)) AS Umsatz, CAST(b.Ek AS DECIMAL(18,2)) AS Einsatz,
     CAST(b.Ek - b.Netto AS DECIMAL(18,2)) AS Verzerrung,
     CAST(CASE WHEN b.Netto > 0 THEN b.Ek / b.Netto END AS DECIMAL(18,1)) AS EkFaktor,
-    b.VogVerk AS Bearbeiter, CAST(b.VogID AS varchar(20)) AS VogID
+    b.VogVerk AS Bearbeiter, CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID
 FROM b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr
 WHERE b.Ek > 100 AND b.Ek > b.Netto * {{{{ek_faktor}}}}
 ORDER BY b.Ek - b.Netto DESC
@@ -471,7 +472,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.6",
+    "version": "0.7",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
