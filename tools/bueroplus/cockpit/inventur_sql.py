@@ -49,3 +49,14 @@ ORDER BY TRY_CAST(LEFT(v.ArtNr, CHARINDEX('.', v.ArtNr + '.') - 1) AS int),
 NAMEN.update({
     "m_bp_inventurliste": "büro+ GF – Inventurliste (verkaufte Artikel)",
 })
+
+# Klick auf einen Artikel der Inventurliste: seine Belege im selben Zeitraum wie die Liste
+# (letzte {{inventur_monate}} Monate) – nicht im oben gewählten Cockpit-Zeitraum.
+SQL["m_bp_inventur_belege"] = SQL["m_bp_art_belege"].replace(
+    "b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis)",
+    "b.VogDat >= DATEADD(MONTH, -CAST('{{inventur_monate}}' AS int), CAST(GETDATE() AS date))")
+assert SQL["m_bp_inventur_belege"] != SQL["m_bp_art_belege"]
+
+NAMEN.update({
+    "m_bp_inventur_belege": "büro+ GF – Belege des Artikels für die Inventurliste (Detail)",
+})

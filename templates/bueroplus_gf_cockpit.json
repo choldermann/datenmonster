@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.8",
+ "version": "0.9",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -5127,6 +5127,180 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_inventur_belege",
+   "name": "büro+ GF – Belege des Artikels für die Inventurliste (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Art",
+      "Datum",
+      "AdrNr",
+      "Kunde",
+      "Menge",
+      "Preis",
+      "EkPreis",
+      "Umsatz",
+      "Rohertrag",
+      "Bearbeiter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT TOP 500 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    b.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr)) AS Kunde,\n    CAST(SUM(b.Vz * p.BuchMge) AS DECIMAL(18,2)) AS Menge,\n    CAST(MAX(p.EPrNt) AS DECIMAL(18,4)) AS Preis, CAST(MAX(p.EEkRoh) AS DECIMAL(18,4)) AS EkPreis,\n    CAST(SUM(b.Vz * p.NettoPos) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(b.Vz * p.RohertragPos) AS DECIMAL(18,2)) AS Rohertrag,\n    b.VogVerk AS Bearbeiter, CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID\nFROM dbo.vVorgangPosition p\nJOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle\nLEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE p.ArtNr = :artnr AND b.VogDat >= DATEADD(MONTH, -CAST('{{inventur_monate}}' AS int), CAST(GETDATE() AS date))\nGROUP BY b.Quelle, b.VogID, b.VogBelegNr, b.VogArt, b.VogDat, b.VogAdrNr, a.AdrReNa2, b.VogVerk\nORDER BY b.VogDat DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Belege des Artikels für die Inventurliste (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Menge",
+       "target_field": "Menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Menge"
+       }
+      },
+      {
+       "source_field": "Preis",
+       "target_field": "Preis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preis"
+       }
+      },
+      {
+       "source_field": "EkPreis",
+       "target_field": "EkPreis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkPreis"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -6336,10 +6510,10 @@
        "width": 12,
        "full_rows": 6000,
        "drilldown": {
-        "mapping_id": "m_bp_art_belege",
+        "mapping_id": "m_bp_inventur_belege",
         "key_column": "ArtNr",
         "param": "artnr",
-        "title": "Belege mit diesem Artikel im Zeitraum",
+        "title": "Belege mit diesem Artikel in den letzten {{inventur_monate}} Monaten",
         "hidden_columns": [
          "VogID"
         ],
@@ -6352,7 +6526,7 @@
          }
         ]
        },
-       "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren. Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit (Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. Klick auf einen Artikel: seine Belege."
+       "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren. Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit (Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. Klick auf einen Artikel: seine Belege im selben Zeitraum."
       }
      }
     ],

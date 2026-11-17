@@ -401,5 +401,19 @@
 "LetzterVerkauf",
 "Warengruppe",
 "Sperre"
+],
+"m_bp_inventur_belege": [
+"Beleg",
+"Art",
+"Datum",
+"AdrNr",
+"Kunde",
+"Menge",
+"Preis",
+"EkPreis",
+"Umsatz",
+"Rohertrag",
+"Bearbeiter",
+"VogID"
 ]
 }
