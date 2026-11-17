@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.5",
+ "version": "0.6",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -28,6 +28,12 @@
    "label": "Angebot gilt als alt ab … Tagen",
    "type": "text",
    "default": "90"
+  },
+  {
+   "key": "pipeline_monate",
+   "label": "Offene Angebote/AB zählen in der Pipeline nur bis … Monate alt",
+   "type": "text",
+   "default": "12"
   },
   {
    "key": "listenpreis",
@@ -368,13 +374,17 @@
       "AngeboteAlt",
       "AngeboteAltWert",
       "AngeboteFrischWert",
+      "AngeboteAusserFrist",
+      "AngeboteAusserFristWert",
       "AuftraegeOffen",
       "AuftragsbestandWert",
+      "AuftraegeAusserFrist",
+      "AuftraegeAusserFristWert",
       "LieferscheineOffen",
       "LieferscheineWert",
       "LieferscheinAeltesterTage"
      ],
-     "sql": "SELECT\n    SUM(CASE WHEN VogArt = 'Angebot' THEN 1 ELSE 0 END) AS AngeboteOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteWert,\n    SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS AngeboteAlt,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAltWert,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteFrischWert,\n    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN 1 ELSE 0 END) AS AuftraegeOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftragsbestandWert,\n    SUM(CASE WHEN VogArt = 'Lieferschein' THEN 1 ELSE 0 END) AS LieferscheineOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Lieferschein' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS LieferscheineWert,\n    MAX(CASE WHEN VogArt = 'Lieferschein' THEN DATEDIFF(DAY, VogDat, CAST(GETDATE() AS date)) END) AS LieferscheinAeltesterTage\nFROM dbo.Vorgang\nWHERE ISNULL(VogStorniertKz, 0) = 0"
+     "sql": "WITH v AS (\n    SELECT VogArt, VogDat, VogGPreisNt,\n        CASE WHEN VogDat >= DATEADD(MONTH, -{{pipeline_monate}}, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END AS InFrist\n    FROM dbo.Vorgang\n    WHERE ISNULL(VogStorniertKz, 0) = 0\n)\nSELECT\n    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 THEN 1 ELSE 0 END) AS AngeboteOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteWert,\n    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS AngeboteAlt,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAltWert,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteFrischWert,\n    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 0 THEN 1 ELSE 0 END) AS AngeboteAusserFrist,\n    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 0 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAusserFristWert,\n    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 1 THEN 1 ELSE 0 END) AS AuftraegeOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 1 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftragsbestandWert,\n    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 0 THEN 1 ELSE 0 END) AS AuftraegeAusserFrist,\n    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 0 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftraegeAusserFristWert,\n    SUM(CASE WHEN VogArt = 'Lieferschein' THEN 1 ELSE 0 END) AS LieferscheineOffen,\n    CAST(SUM(CASE WHEN VogArt = 'Lieferschein' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS LieferscheineWert,\n    MAX(CASE WHEN VogArt = 'Lieferschein' THEN DATEDIFF(DAY, VogDat, CAST(GETDATE() AS date)) END) AS LieferscheinAeltesterTage\nFROM v"
     }
    ],
    "agg_nodes": [],
@@ -446,6 +456,26 @@
        }
       },
       {
+       "source_field": "AngeboteAusserFrist",
+       "target_field": "AngeboteAusserFrist",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteAusserFrist"
+       }
+      },
+      {
+       "source_field": "AngeboteAusserFristWert",
+       "target_field": "AngeboteAusserFristWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AngeboteAusserFristWert"
+       }
+      },
+      {
        "source_field": "AuftraegeOffen",
        "target_field": "AuftraegeOffen",
        "target_type": "string",
@@ -463,6 +493,26 @@
        "transformer": {
         "type": "direct",
         "source_field": "AuftragsbestandWert"
+       }
+      },
+      {
+       "source_field": "AuftraegeAusserFrist",
+       "target_field": "AuftraegeAusserFrist",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AuftraegeAusserFrist"
+       }
+      },
+      {
+       "source_field": "AuftraegeAusserFristWert",
+       "target_field": "AuftraegeAusserFristWert",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AuftraegeAusserFristWert"
        }
       },
       {
@@ -5191,7 +5241,7 @@
        "prefix": "€ ",
        "suffix": "",
        "decimals": 2,
-       "hint": "Alle Angebote, die noch in der Vorgangsübersicht stehen – Stand heute, unabhängig vom gewählten Zeitraum.",
+       "hint": "Offene Angebote der letzten {{pipeline_monate}} Monate aus der Vorgangsübersicht – Stand heute, unabhängig vom gewählten Zeitraum. Ältere offene Angebote zählen nicht mit (siehe Warnung „Alte offene Angebote“).",
        "breakdown": [
         {
          "label": "Angebote",
@@ -5208,6 +5258,16 @@
         {
          "label": "Wert der alten Angebote",
          "column": "AngeboteAltWert"
+        },
+        {
+         "label": "nicht gezählt: älter als {{pipeline_monate}} Monate",
+         "column": "AngeboteAusserFrist",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "deren Wert",
+         "column": "AngeboteAusserFristWert"
         }
        ]
       }
@@ -5239,13 +5299,23 @@
        "prefix": "€ ",
        "suffix": "",
        "decimals": 2,
-       "hint": "Auftragsbestätigungen in der Vorgangsübersicht: zugesagt, aber noch nicht geliefert bzw. berechnet.",
+       "hint": "Auftragsbestätigungen der letzten {{pipeline_monate}} Monate in der Vorgangsübersicht: zugesagt, aber noch nicht geliefert bzw. berechnet. Ältere offene AB zählen nicht mit – meist sind sie in büro+ nur nicht erledigt.",
        "breakdown": [
         {
          "label": "offene Auftragsbestätigungen",
          "column": "AuftraegeOffen",
          "prefix": "",
          "decimals": 0
+        },
+        {
+         "label": "nicht gezählt: älter als {{pipeline_monate}} Monate",
+         "column": "AuftraegeAusserFrist",
+         "prefix": "",
+         "decimals": 0
+        },
+        {
+         "label": "deren Wert",
+         "column": "AuftraegeAusserFristWert"
         }
        ]
       }
@@ -6088,7 +6158,7 @@
      "hinweise": [
       "Umsatz zählt gebuchte Rechnungen, nicht Auftragseingänge.",
       "Rechnungskorrekturen führt büro+ mit positivem Betrag; das Cockpit weist sie gesondert aus und zieht sie ab.",
-      "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum.",
+      "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum. Offene Angebote und Auftragsbestätigungen zählen nur, wenn sie höchstens {{pipeline_monate}} Monate alt sind.",
       "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg."
      ]
     }

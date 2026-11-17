@@ -29,8 +29,12 @@
 "AngeboteAlt",
 "AngeboteAltWert",
 "AngeboteFrischWert",
+"AngeboteAusserFrist",
+"AngeboteAusserFristWert",
 "AuftraegeOffen",
 "AuftragsbestandWert",
+"AuftraegeAusserFrist",
+"AuftraegeAusserFristWert",
 "LieferscheineOffen",
 "LieferscheineWert",
 "LieferscheinAeltesterTage"

@@ -64,19 +64,28 @@ FROM s CROSS JOIN ohne_ek
 """
 
 SQL["m_bp_pipeline"] = """
+WITH v AS (
+    SELECT VogArt, VogDat, VogGPreisNt,
+        CASE WHEN VogDat >= DATEADD(MONTH, -{{pipeline_monate}}, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END AS InFrist
+    FROM dbo.Vorgang
+    WHERE ISNULL(VogStorniertKz, 0) = 0
+)
 SELECT
-    SUM(CASE WHEN VogArt = 'Angebot' THEN 1 ELSE 0 END) AS AngeboteOffen,
-    CAST(SUM(CASE WHEN VogArt = 'Angebot' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteWert,
-    SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS AngeboteAlt,
-    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAltWert,
+    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 THEN 1 ELSE 0 END) AS AngeboteOffen,
+    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteWert,
+    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS AngeboteAlt,
+    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 1 AND VogDat < DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAltWert,
     CAST(SUM(CASE WHEN VogArt = 'Angebot' AND VogDat >= DATEADD(DAY, -90, CAST(GETDATE() AS date)) THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteFrischWert,
-    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN 1 ELSE 0 END) AS AuftraegeOffen,
-    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftragsbestandWert,
+    SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 0 THEN 1 ELSE 0 END) AS AngeboteAusserFrist,
+    CAST(SUM(CASE WHEN VogArt = 'Angebot' AND InFrist = 0 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AngeboteAusserFristWert,
+    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 1 THEN 1 ELSE 0 END) AS AuftraegeOffen,
+    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 1 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftragsbestandWert,
+    SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 0 THEN 1 ELSE 0 END) AS AuftraegeAusserFrist,
+    CAST(SUM(CASE WHEN VogArt = 'Auftragsbestätigung' AND InFrist = 0 THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS AuftraegeAusserFristWert,
     SUM(CASE WHEN VogArt = 'Lieferschein' THEN 1 ELSE 0 END) AS LieferscheineOffen,
     CAST(SUM(CASE WHEN VogArt = 'Lieferschein' THEN VogGPreisNt ELSE 0 END) AS DECIMAL(18,2)) AS LieferscheineWert,
     MAX(CASE WHEN VogArt = 'Lieferschein' THEN DATEDIFF(DAY, VogDat, CAST(GETDATE() AS date)) END) AS LieferscheinAeltesterTage
-FROM dbo.Vorgang
-WHERE ISNULL(VogStorniertKz, 0) = 0
+FROM v
 """
 
 SQL["m_bp_verlauf"] = f"""
@@ -279,13 +288,17 @@ widgets_roh = [
     kpi("w_angebote", "Offene Angebote", "AngeboteWert", act="act_pipeline", vj=False,
         breakdown=[{"label": "Angebote", "column": "AngeboteOffen", "prefix": "", "decimals": 0},
                    {"label": "davon älter als 90 Tage", "column": "AngeboteAlt", "prefix": "", "decimals": 0},
-                   {"label": "Wert der alten Angebote", "column": "AngeboteAltWert"}],
-        hint="Alle Angebote, die noch in der Vorgangsübersicht stehen – Stand heute, unabhängig vom gewählten Zeitraum."),
+                   {"label": "Wert der alten Angebote", "column": "AngeboteAltWert"},
+                   {"label": "nicht gezählt: älter als {{pipeline_monate}} Monate", "column": "AngeboteAusserFrist", "prefix": "", "decimals": 0},
+                   {"label": "deren Wert", "column": "AngeboteAusserFristWert"}],
+        hint="Offene Angebote der letzten {{pipeline_monate}} Monate aus der Vorgangsübersicht – Stand heute, unabhängig vom gewählten Zeitraum. Ältere offene Angebote zählen nicht mit (siehe Warnung „Alte offene Angebote“)."),
     kpi("w_frisch", "Angebote der letzten 90 Tage", "AngeboteFrischWert", act="act_pipeline", vj=False,
         hint="Der realistische Teil der Pipeline: offene Angebote, die höchstens 90 Tage alt sind."),
     kpi("w_auftraege", "Auftragsbestand", "AuftragsbestandWert", act="act_pipeline", vj=False,
-        breakdown=[{"label": "offene Auftragsbestätigungen", "column": "AuftraegeOffen", "prefix": "", "decimals": 0}],
-        hint="Auftragsbestätigungen in der Vorgangsübersicht: zugesagt, aber noch nicht geliefert bzw. berechnet."),
+        breakdown=[{"label": "offene Auftragsbestätigungen", "column": "AuftraegeOffen", "prefix": "", "decimals": 0},
+                   {"label": "nicht gezählt: älter als {{pipeline_monate}} Monate", "column": "AuftraegeAusserFrist", "prefix": "", "decimals": 0},
+                   {"label": "deren Wert", "column": "AuftraegeAusserFristWert"}],
+        hint="Auftragsbestätigungen der letzten {{pipeline_monate}} Monate in der Vorgangsübersicht: zugesagt, aber noch nicht geliefert bzw. berechnet. Ältere offene AB zählen nicht mit – meist sind sie in büro+ nur nicht erledigt."),
     kpi("w_lieferscheine", "Geliefert, nicht berechnet", "LieferscheineWert", act="act_pipeline", vj=False, invert=True,
         breakdown=[{"label": "Lieferscheine", "column": "LieferscheineOffen", "prefix": "", "decimals": 0},
                    {"label": "ältester (Tage)", "column": "LieferscheinAeltesterTage", "prefix": "", "decimals": 0}],
@@ -458,7 +471,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.5",
+    "version": "0.6",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -468,6 +481,7 @@ tpl = {
         {"key": "connection_bp", "label": "SQL-Server mit den büro+-Exporttabellen", "type": "connection", "default": ""},
         {"key": "lieferschein_tage", "label": "Lieferschein ohne Rechnung melden ab … Tagen", "type": "text", "default": "7"},
         {"key": "angebot_tage", "label": "Angebot gilt als alt ab … Tagen", "type": "text", "default": "90"},
+        {"key": "pipeline_monate", "label": "Offene Angebote/AB zählen in der Pipeline nur bis … Monate alt", "type": "text", "default": "12"},
         {"key": "listenpreis", "label": "Listenpreis-Feld des Artikels (ArtVk0Preis … ArtVk9Preis)", "type": "text", "default": "ArtVk0Preis"},
         {"key": "schlaf_tage", "label": "Stammkunde gilt als schlafend nach … Tagen ohne Rechnung", "type": "text", "default": "90"},
         {"key": "schlaf_min_rechnungen", "label": "Stammkunde = mindestens … Rechnungen in 24 Monaten", "type": "text", "default": "4"},
@@ -522,7 +536,7 @@ tpl = {
             "doku": {"intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",
                      "hinweise": ["Umsatz zählt gebuchte Rechnungen, nicht Auftragseingänge.",
                                   "Rechnungskorrekturen führt büro+ mit positivem Betrag; das Cockpit weist sie gesondert aus und zieht sie ab.",
-                                  "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum.",
+                                  "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum. Offene Angebote und Auftragsbestätigungen zählen nur, wenn sie höchstens {{pipeline_monate}} Monate alt sind.",
                                   "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg."]},
         },
     }],
