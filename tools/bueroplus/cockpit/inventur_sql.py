@@ -24,7 +24,9 @@ SELECT
     CASE WHEN TRY_CAST(REPLACE(LEFT(v.ArtNr, 6), '.', '') AS int) IS NOT NULL
          THEN REPLACE(LEFT(v.ArtNr, 6), '.', '') ELSE LEFT(v.ArtNr, 6) END AS Sortierung,
     v.ArtNr,
-    COALESCE(NULLIF(LTRIM(RTRIM(art.ArtBez1)), ''), art.ArtKuBez1, '(Artikel fehlt)') AS Beschreibung,
+    -- Zeilenumbrüche in der Bezeichnung würden den CSV-Export zerreißen
+    LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(COALESCE(NULLIF(LTRIM(RTRIM(art.ArtBez1)), ''), art.ArtKuBez1, '(Artikel fehlt)'),
+        CHAR(13) + CHAR(10), ' '), CHAR(10), ' '), CHAR(13), ' '))) AS Beschreibung,
     CAST(NULL AS int) AS Paletten, CAST(NULL AS int) AS Kartons, CAST(NULL AS int) AS Stueck,
     CASE art.ArtEinh WHEN '%o' THEN 'Tsd' WHEN 'Stk' THEN 'Stück' WHEN 'Stk.' THEN 'Stück' WHEN 'Kg' THEN 'KG'
          WHEN 'Karton' THEN 'Paket' WHEN 'Pack' THEN 'Paket' ELSE COALESCE(art.ArtEinh, 'Stück') END AS Mengeneinheit,
@@ -42,6 +44,9 @@ LEFT JOIN best ON best.ArtNr = v.ArtNr AND best.rn = 1
 LEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = best.VogAdrNr
 -- DSZ-Gebühren (Verpackungslizenz) sind Rechnungspositionen ohne Ware – nicht zählbar
 WHERE ISNULL(art.ArtWgrNrInfo, '') NOT LIKE 'DSZ%' AND v.ArtNr NOT LIKE '%DSZ%'
+-- Text- und Leistungsartikel (Weihnachtstext, Ursprungserklärung, Klischeekosten …): weder Warengruppe noch EK
+  AND NOT (ISNULL(LTRIM(RTRIM(art.ArtWgrNrInfo)), '') = ''
+           AND COALESCE(NULLIF(art.ArtEkKalk, 0), NULLIF(art.ArtEkMitt, 0)) IS NULL)
 ORDER BY TRY_CAST(LEFT(v.ArtNr, CHARINDEX('.', v.ArtNr + '.') - 1) AS int),
     LEFT(v.ArtNr, CHARINDEX('.', v.ArtNr + '.') - 1), v.ArtNr
 """

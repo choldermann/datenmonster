@@ -431,7 +431,7 @@ widgets += [
                 "drilldown": {"mapping_id": "m_bp_inventur_belege", "key_column": "ArtNr", "param": "artnr",
                               "title": "Belege mit diesem Artikel in den letzten {{inventur_monate}} Monaten",
                               "hidden_columns": ["VogID"], "levels": [DD_POS]},
-                "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren. "
+                "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren und ohne Text-/Leistungsartikel (keine Warengruppe und kein EK). "
                         "Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit "
                         "(Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. "
                         "Klick auf einen Artikel: seine Belege im selben Zeitraum."}},
@@ -486,7 +486,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.9",
+    "version": "0.10",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
