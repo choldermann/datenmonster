@@ -382,5 +382,24 @@
 "Rohertrag",
 "Bearbeiter",
 "VogID"
+],
+"m_bp_inventurliste": [
+"Sortierung",
+"ArtNr",
+"Beschreibung",
+"Paletten",
+"Kartons",
+"Stueck",
+"Mengeneinheit",
+"EK",
+"Lieferant",
+"LetzteBestellung",
+"Bestelldatum",
+"EkLetzteBestellung",
+"VerkauftMenge",
+"VerkauftUmsatz",
+"LetzterVerkauf",
+"Warengruppe",
+"Sperre"
 ]
 }

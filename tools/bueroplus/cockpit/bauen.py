@@ -229,6 +229,7 @@ NAMEN = {
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "artikel_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "kunden_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "verkauf12_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "inventur_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -423,6 +424,16 @@ widgets += [
                 "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück); bei gemischten Einheiten ist die Warengruppen-Summe blass mit „≈“ markiert. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."}},
 ]
 
+# ── Reiter „Inventurliste“: verkaufte Artikel als Zählvorlage, Export CSV/Excel ──
+widgets += [
+    {"id": "w_inventur", "type": "table", "label": "Inventurliste – Artikel mit Verkauf in den letzten {{inventur_monate}} Monaten", "action_id": "act_inventur",
+     "config": {"width": 12, "full_rows": 6000, "drilldown": DD_ART,
+                "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren. "
+                        "Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit "
+                        "(Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. "
+                        "Klick auf einen Artikel: seine Belege."}},
+]
+
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):
     return {"rule_key": key, "name": name, "category": "Geschäftsführung", "cockpit": "büro+ GF-Cockpit",
             "description": None, "severity": sev, "severity_levels": [], "mapping_id": None,
@@ -472,7 +483,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.7",
+    "version": "0.8",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -483,6 +494,7 @@ tpl = {
         {"key": "lieferschein_tage", "label": "Lieferschein ohne Rechnung melden ab … Tagen", "type": "text", "default": "7"},
         {"key": "angebot_tage", "label": "Angebot gilt als alt ab … Tagen", "type": "text", "default": "90"},
         {"key": "pipeline_monate", "label": "Offene Angebote/AB zählen in der Pipeline nur bis … Monate alt", "type": "text", "default": "12"},
+        {"key": "inventur_monate", "label": "Inventurliste: Artikel mit Verkauf in den letzten … Monaten", "type": "text", "default": "12"},
         {"key": "listenpreis", "label": "Listenpreis-Feld des Artikels (ArtVk0Preis … ArtVk9Preis)", "type": "text", "default": "ArtVk0Preis"},
         {"key": "schlaf_tage", "label": "Stammkunde gilt als schlafend nach … Tagen ohne Rechnung", "type": "text", "default": "90"},
         {"key": "schlaf_min_rechnungen", "label": "Stammkunde = mindestens … Rechnungen in 24 Monaten", "type": "text", "default": "4"},
@@ -512,6 +524,7 @@ tpl = {
                 {"id": "act_art_preispflege", "type": "run_mapping", "mapping_id": "m_bp_art_preispflege", "pipeline_id": None, "label": "Preiserhöhung prüfen"},
                 {"id": "act_art_ohne", "type": "run_mapping", "mapping_id": "m_bp_art_ohne_verkauf", "pipeline_id": None, "label": "Artikel ohne Verkauf"},
                 {"id": "act_v12", "type": "run_mapping", "mapping_id": "m_bp_v12_artikel", "pipeline_id": None, "label": "Artikel-Verkauf 12-Monats-Vergleich"},
+                {"id": "act_inventur", "type": "run_mapping", "mapping_id": "m_bp_inventurliste", "pipeline_id": None, "label": "Inventurliste"},
                 {"id": "act_kd_kpi", "type": "run_mapping", "mapping_id": "m_bp_kd_kpi", "pipeline_id": None, "label": "Kunden-Kennzahlen"},
                 {"id": "act_kd_abc", "type": "run_mapping", "mapping_id": "m_bp_kd_abc", "pipeline_id": None, "label": "ABC-Kunden"},
                 {"id": "act_kd_status", "type": "run_mapping", "mapping_id": "m_bp_kd_status", "pipeline_id": None, "label": "Umsatz nach Adress-Status"},
@@ -527,18 +540,21 @@ tpl = {
                              "action_ids": ["act_art_kpi", "act_wg_top", "act_wg", "act_top_artikel", "act_art_unter_ek",
                                             "act_art_preispflege", "act_art_ohne"]},
                             {"id": "tab_v12", "label": "Artikel-Verkauf", "action_ids": ["act_v12"]},
+                            {"id": "tab_inventur", "label": "Inventurliste", "action_ids": ["act_inventur"]},
                             {"id": "tab_kunden", "label": "Kunden",
                              "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
                                             "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
-                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel", "tab_v12"]}],
+                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel", "tab_v12"]},
+                               {"id": "g_lager", "label": "Lager", "reiter": ["tab_inventur"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},
             "doku": {"intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",
                      "hinweise": ["Umsatz zählt gebuchte Rechnungen, nicht Auftragseingänge.",
                                   "Rechnungskorrekturen führt büro+ mit positivem Betrag; das Cockpit weist sie gesondert aus und zieht sie ab.",
                                   "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum. Offene Angebote und Auftragsbestätigungen zählen nur, wenn sie höchstens {{pipeline_monate}} Monate alt sind.",
-                                  "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg."]},
+                                  "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg.",
+                                  "Die Inventurliste zeigt alle in den letzten {{inventur_monate}} Monaten verkauften Artikel (Stand heute) mit Mengeneinheit und EK als Zählvorlage; Export über CSV/Excel."]},
         },
     }],
     "alert_rules": alert_rules,

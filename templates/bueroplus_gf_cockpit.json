@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.7",
+ "version": "0.8",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -32,6 +32,12 @@
   {
    "key": "pipeline_monate",
    "label": "Offene Angebote/AB zählen in der Pipeline nur bis … Monate alt",
+   "type": "text",
+   "default": "12"
+  },
+  {
+   "key": "inventur_monate",
+   "label": "Inventurliste: Artikel mit Verkauf in den letzten … Monaten",
    "type": "text",
    "default": "12"
   },
@@ -4892,6 +4898,235 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_inventurliste",
+   "name": "büro+ GF – Inventurliste (verkaufte Artikel)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Sortierung",
+      "ArtNr",
+      "Beschreibung",
+      "Paletten",
+      "Kartons",
+      "Stueck",
+      "Mengeneinheit",
+      "EK",
+      "Lieferant",
+      "LetzteBestellung",
+      "Bestelldatum",
+      "EkLetzteBestellung",
+      "VerkauftMenge",
+      "VerkauftUmsatz",
+      "LetzterVerkauf",
+      "Warengruppe",
+      "Sperre"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat >= DATEADD(MONTH, -CAST('{{inventur_monate}}' AS int), CAST(GETDATE() AS date))\n), v AS (\n    SELECT p.ArtNr, SUM(b.Vz * p.BuchMge) AS Menge, SUM(b.Vz * p.NettoPos) AS Umsatz, MAX(b.VogDat) AS Letzter\n    FROM dbo.vVorgangPosition p JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle\n    WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL AND p.ArtNr <> ''\n    GROUP BY p.ArtNr\n    HAVING SUM(CASE WHEN b.Vz = 1 THEN p.BuchMge ELSE 0 END) <> 0\n), best AS (\n    SELECT p.ArtNr, k.VogDat, k.VogBelegNr, k.VogAdrNr, p.EPrNt,\n        ROW_NUMBER() OVER (PARTITION BY p.ArtNr ORDER BY k.VogDat DESC, k.VogBelegNr DESC) AS rn\n    FROM dbo.vVorgangPosition p JOIN dbo.vVorgang k ON k.VogID = p.VogID AND k.Quelle = p.Quelle\n    WHERE k.VogArt = 'Bestellung an Lieferant' AND ISNULL(k.VogStorniertKz, 0) = 0\n      AND p.ArtNr IN (SELECT ArtNr FROM v) AND ISNULL(p.EPrNt, 0) <> 0\n)\nSELECT\n    CASE WHEN TRY_CAST(REPLACE(LEFT(v.ArtNr, 6), '.', '') AS int) IS NOT NULL\n         THEN REPLACE(LEFT(v.ArtNr, 6), '.', '') ELSE LEFT(v.ArtNr, 6) END AS Sortierung,\n    v.ArtNr,\n    COALESCE(NULLIF(LTRIM(RTRIM(art.ArtBez1)), ''), art.ArtKuBez1, '(Artikel fehlt)') AS Beschreibung,\n    CAST(NULL AS int) AS Paletten, CAST(NULL AS int) AS Kartons, CAST(NULL AS int) AS Stueck,\n    CASE art.ArtEinh WHEN '%o' THEN 'Tsd' WHEN 'Stk' THEN 'Stück' WHEN 'Stk.' THEN 'Stück' WHEN 'Kg' THEN 'KG'\n         WHEN 'Karton' THEN 'Paket' WHEN 'Pack' THEN 'Paket' ELSE COALESCE(art.ArtEinh, 'Stück') END AS Mengeneinheit,\n    CAST(COALESCE(NULLIF(art.ArtEkKalk, 0), NULLIF(art.ArtEkMitt, 0)) AS DECIMAL(18,4)) AS EK,\n    COALESCE(NULLIF(LTRIM(RTRIM(adr.AdrReNa2)), ''), adr.AdrSuchBeg) AS Lieferant,\n    best.VogBelegNr AS LetzteBestellung, CONVERT(char(10), best.VogDat, 104) AS Bestelldatum,\n    CAST(best.EPrNt AS DECIMAL(18,4)) AS EkLetzteBestellung,\n    CAST(v.Menge AS DECIMAL(18,2)) AS VerkauftMenge, CAST(v.Umsatz AS DECIMAL(18,2)) AS VerkauftUmsatz,\n    CONVERT(char(10), v.Letzter, 104) AS LetzterVerkauf,\n    COALESCE(NULLIF(LTRIM(RTRIM(art.ArtWgrNrInfo)), ''), '') AS Warengruppe,\n    CASE WHEN art.ArtGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre\nFROM v\nLEFT JOIN dbo.Artikel art ON art.ArtArtNr = v.ArtNr\nLEFT JOIN best ON best.ArtNr = v.ArtNr AND best.rn = 1\nLEFT JOIN dbo.Adressen adr ON adr.AdrAdrNr = best.VogAdrNr\n-- DSZ-Gebühren (Verpackungslizenz) sind Rechnungspositionen ohne Ware – nicht zählbar\nWHERE ISNULL(art.ArtWgrNrInfo, '') NOT LIKE 'DSZ%' AND v.ArtNr NOT LIKE '%DSZ%'\nORDER BY TRY_CAST(LEFT(v.ArtNr, CHARINDEX('.', v.ArtNr + '.') - 1) AS int),\n    LEFT(v.ArtNr, CHARINDEX('.', v.ArtNr + '.') - 1), v.ArtNr"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Inventurliste (verkaufte Artikel)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Sortierung",
+       "target_field": "Sortierung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sortierung"
+       }
+      },
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Beschreibung",
+       "target_field": "Beschreibung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beschreibung"
+       }
+      },
+      {
+       "source_field": "Paletten",
+       "target_field": "Paletten",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Paletten"
+       }
+      },
+      {
+       "source_field": "Kartons",
+       "target_field": "Kartons",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kartons"
+       }
+      },
+      {
+       "source_field": "Stueck",
+       "target_field": "Stueck",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Stueck"
+       }
+      },
+      {
+       "source_field": "Mengeneinheit",
+       "target_field": "Mengeneinheit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Mengeneinheit"
+       }
+      },
+      {
+       "source_field": "EK",
+       "target_field": "EK",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EK"
+       }
+      },
+      {
+       "source_field": "Lieferant",
+       "target_field": "Lieferant",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Lieferant"
+       }
+      },
+      {
+       "source_field": "LetzteBestellung",
+       "target_field": "LetzteBestellung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteBestellung"
+       }
+      },
+      {
+       "source_field": "Bestelldatum",
+       "target_field": "Bestelldatum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bestelldatum"
+       }
+      },
+      {
+       "source_field": "EkLetzteBestellung",
+       "target_field": "EkLetzteBestellung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkLetzteBestellung"
+       }
+      },
+      {
+       "source_field": "VerkauftMenge",
+       "target_field": "VerkauftMenge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VerkauftMenge"
+       }
+      },
+      {
+       "source_field": "VerkauftUmsatz",
+       "target_field": "VerkauftUmsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VerkauftUmsatz"
+       }
+      },
+      {
+       "source_field": "LetzterVerkauf",
+       "target_field": "LetzterVerkauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterVerkauf"
+       }
+      },
+      {
+       "source_field": "Warengruppe",
+       "target_field": "Warengruppe",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Warengruppe"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -5006,6 +5241,13 @@
       "mapping_id": "m_bp_v12_artikel",
       "pipeline_id": null,
       "label": "Artikel-Verkauf 12-Monats-Vergleich"
+     },
+     {
+      "id": "act_inventur",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_inventurliste",
+      "pipeline_id": null,
+      "label": "Inventurliste"
      },
      {
       "id": "act_kd_kpi",
@@ -6084,6 +6326,34 @@
        },
        "info": "Zwölf-Monats-Scheiben bis zum Ende des gewählten Zeitraums, Korrekturen gegengerechnet. Menge in der Einheit des Artikels (bei %o in Stück); bei gemischten Einheiten ist die Warengruppen-Summe blass mit „≈“ markiert. Suche über Artikelnummer, Bezeichnungen, Suchbegriff und Barcode; mehrere Wörter = alle müssen vorkommen. Klick auf einen Artikel: seine Kunden, wer ihn nicht mehr kauft zuerst."
       }
+     },
+     {
+      "id": "w_inventur",
+      "type": "table",
+      "label": "Inventurliste – Artikel mit Verkauf in den letzten {{inventur_monate}} Monaten",
+      "action_id": "act_inventur",
+      "config": {
+       "width": 12,
+       "full_rows": 6000,
+       "drilldown": {
+        "mapping_id": "m_bp_art_belege",
+        "key_column": "ArtNr",
+        "param": "artnr",
+        "title": "Belege mit diesem Artikel im Zeitraum",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren. Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit (Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. Klick auf einen Artikel: seine Belege."
+      }
      }
     ],
     "result_tabs": [
@@ -6118,6 +6388,13 @@
       ]
      },
      {
+      "id": "tab_inventur",
+      "label": "Inventurliste",
+      "action_ids": [
+       "act_inventur"
+      ]
+     },
+     {
       "id": "tab_kunden",
       "label": "Kunden",
       "action_ids": [
@@ -6147,6 +6424,13 @@
        "tab_artikel",
        "tab_v12"
       ]
+     },
+     {
+      "id": "g_lager",
+      "label": "Lager",
+      "reiter": [
+       "tab_inventur"
+      ]
      }
     ],
     "show_ai_assistant": true,
@@ -6159,7 +6443,8 @@
       "Umsatz zählt gebuchte Rechnungen, nicht Auftragseingänge.",
       "Rechnungskorrekturen führt büro+ mit positivem Betrag; das Cockpit weist sie gesondert aus und zieht sie ab.",
       "Die Pipeline-Kacheln zeigen den Stand heute aus der Vorgangsübersicht, unabhängig vom Zeitraum. Offene Angebote und Auftragsbestätigungen zählen nur, wenn sie höchstens {{pipeline_monate}} Monate alt sind.",
-      "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg."
+      "Warengruppen gelten in der heutigen Zuordnung des Artikels – büro+ speichert sie nicht im Beleg.",
+      "Die Inventurliste zeigt alle in den letzten {{inventur_monate}} Monaten verkauften Artikel (Stand heute) mit Mengeneinheit und EK als Zählvorlage; Export über CSV/Excel."
      ]
     }
    }
