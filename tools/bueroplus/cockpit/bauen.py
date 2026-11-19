@@ -395,7 +395,7 @@ widgets_kd = [
      "config": {"width": 12, "full_rows": True, "drilldown": DD_KD}},
     {"id": "w_kd_schlaf_tbl", "type": "table", "label": "Schlafende Stammkunden – zurückgewinnen", "action_id": "act_kd_schlafend",
      "config": {"width": 12, "full_rows": True, "drilldown": DD_KD,
-                "info": "Stand heute, unabhängig vom Zeitraum. Größter Jahresumsatz zuerst; Telefon aus der Rechnungsanschrift."}},
+                "info": "Ausgewählt sind Stammkunden mit mindestens {{schlaf_min_rechnungen}} Rechnungen in den letzten 24 Monaten, deren letzte Rechnung länger als {{schlaf_tage}} Tage zurückliegt (ohne Barverkauf). Jahresumsatz = Netto-Umsatz der 12 Monate vor ihrer letzten Rechnung. Gezählt werden gebuchte, nicht stornierte Rechnungen. Stand heute, unabhängig vom gewählten Zeitraum; größter Jahresumsatz zuerst, Telefon aus der Rechnungsanschrift. Gesperrte Adressen sind enthalten (Spalte Sperre) und lassen sich über den Filter ausblenden."}},
     {"id": "w_kd_neu_tbl", "type": "table", "label": "Neukunden im Zeitraum", "action_id": "act_kd_neu",
      "config": {"width": 12, "full_rows": True, "drilldown": DD_KD, "info": "Umsatz und Rohertrag seit der ersten Rechnung bis zum Ende des Zeitraums."}},
 ]
@@ -486,7 +486,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.10",
+    "version": "0.11",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
