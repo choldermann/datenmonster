@@ -3,6 +3,7 @@ import { useState, useMemo } from "react";
 import { Download } from "lucide-react";
 import { tabelleAlsExcel } from "../excelExport";
 import EmailTableButton from "../EmailTableButton";
+import SpaltenFilter, { filtereZeilen } from "../SpaltenFilter";
 import { sortiereZeilen } from "../tabellenSortierung";
 import { fehlerText } from "../../../api/client";
 
@@ -65,7 +66,16 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   const dezCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number" && !Number.isInteger(r[c]))));
 
   // Sortierte Zeilen: Zahlen numerisch, Datum chronologisch, sonst locale-Vergleich; Nullwerte ans Ende.
-  const sortedRows = useMemo(() => sortiereZeilen(rows, sort, numericCols), [rows, sort, numericCols]);
+  // Spaltenfilter wie in Excel – bleibt bei neuem Lauf (z. B. anderer Zeitraum) stehen,
+  // Filter auf Spalten, die es nicht mehr gibt, fallen weg. Gilt auch für CSV/Excel/E-Mail.
+  const [filterRoh, setFilter] = useState({});
+  const filter = useMemo(() => Object.fromEntries(Object.entries(filterRoh).filter(([c]) => columns.includes(c))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [filterRoh, columns.join("\u0001")]);
+  const filterAktiv = Object.keys(filter).length > 0;
+  const sortedRows = useMemo(() => sortiereZeilen(filtereZeilen(rows, filter), sort, numericCols),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, sort, filter]);
 
   if (!allColumns.length) return <p style={{ padding: "14px 16px", color: S.textDim, fontSize: 12 }}>Keine Daten</p>;
 
@@ -98,17 +108,21 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
       {(total !== undefined || canDownload) && (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
           padding: "8px 16px", borderBottom: `1px solid ${S.border}` }}>
-          {total !== undefined && <span style={{ fontSize: 11, color: S.textDim }}>{total} Zeilen</span>}
+          {total !== undefined && <span style={{ fontSize: 11, color: S.textDim }}>
+            {filterAktiv
+              ? <>{sortedRows.length.toLocaleString("de-DE")} von {total.toLocaleString("de-DE")} Zeilen (gefiltert) ·{" "}
+                  <a onClick={() => setFilter({})} style={{ color: S.accent, cursor: "pointer" }}>Filter aufheben</a></>
+              : `${total} Zeilen`}</span>}
           {canDownload && (
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <EmailTableButton columns={columns} rows={sortedRows} title={widget.label || "Tabelle"} disabled={!rows.length} />
+              <EmailTableButton columns={columns} rows={sortedRows} title={widget.label || "Tabelle"} disabled={!sortedRows.length} />
               <button onClick={downloadCsv}
                 style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
                   color: S.accent, background: "none", border: `1px solid ${S.border}`,
                   borderRadius: 5, padding: "4px 10px", cursor: "pointer" }}>
                 <Download size={11} /> CSV
               </button>
-              <button onClick={downloadXlsx} disabled={xlsxLaeuft || !rows.length}
+              <button onClick={downloadXlsx} disabled={xlsxLaeuft || !sortedRows.length}
                 style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11,
                   color: S.accent, background: "none", border: `1px solid ${S.border}`,
                   borderRadius: 5, padding: "4px 10px", cursor: xlsxLaeuft ? "wait" : "pointer" }}>
@@ -131,6 +145,8 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                   cursor: "pointer", userSelect: "none" }}>
                   {c}<span style={{ marginLeft: 4, opacity: sort?.col === c ? 1 : 0.25 }}>
                     {sort?.col === c ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                  <SpaltenFilter spalte={c} rows={rows} filter={filter} setFilter={setFilter}
+                    anzeige={(v) => fmtCell(v, dezCols.has(c))} />
                 </th>
               ))}
             </tr>
@@ -147,6 +163,12 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                 ))}
               </tr>
             ))}
+            {filterAktiv && !sortedRows.length && (
+              <tr><td colSpan={columns.length} style={{ padding: 24, textAlign: "center", color: S.textDim, fontSize: 11 }}>
+                Keine Zeile passt zum Filter ·{" "}
+                <a onClick={() => setFilter({})} style={{ color: S.accent, cursor: "pointer" }}>Filter aufheben</a>
+              </td></tr>
+            )}
           </tbody>
         </table>
       </div>
