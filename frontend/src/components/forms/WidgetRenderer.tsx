@@ -97,7 +97,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
 
   // Drilldown nur, wenn das Widget ein Detail-Mapping konfiguriert hat
   const drill = onDrilldown && widget.config?.drilldown?.mapping_id
-    ? (field, value) => onDrilldown(widget, field, value)
+    ? (field, value, row) => onDrilldown(widget, field, value, row)
     : undefined;
   // KI-Handlungsempfehlung pro Zeile, wenn config.ai_action gesetzt ist.
   const aiAct = onAiAction && widget.config?.ai_action?.mapping_id
@@ -171,14 +171,14 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
   };
 
   // Führt ein Detail-Mapping aus und legt/ersetzt den Frame auf Tiefe `depth`.
-  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter, dokument = null }) => {
+  const openLevel = async ({ mapping_id, param, value, title, field, depth, hidden, rowFilter, dokument = null, anzeige = null }) => {
     const base = cfgRef.current.base || {};
     const id = ++seqRef.current;
     // param kann fehlen (z.B. Aufgabenlisten-Detail nutzt nur die Basis-Filter).
     const params = param ? { ...base, [param]: value } : { ...base };
     // Die Anfrage bleibt am Frame: der CSV-Export lädt damit alle Zeilen nach.
     const anfrage = { mapping_id, params, row_filter: rowFilter || null };
-    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, rows: [], loading: true, error: null, hidden: hidden || [], dokument, anfrage }]);
+    setStack(prev => [...prev.slice(0, depth), { id, title, field, value, anzeige, rows: [], loading: true, error: null, hidden: hidden || [], dokument, anfrage }]);
     try {
       // Ohne max_rows deckelt der Endpunkt auf 200 Zeilen – bei einer Detailliste
       // mit mehreren hundert Artikeln (Lagerwert eines Monats) fehlte damit ein
@@ -211,14 +211,24 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
       rowFilter: detail.row_filter || null });
   };
 
+  // Was im Kopf der Detailansicht als „Feld = Wert“ steht: Ist die Schlüsselspalte ausgeblendet
+  // (technische IDs wie VogID, kRechnung), sagt sie dem Anwender nichts – dann label_column
+  // aus der Konfiguration oder die erste sichtbare Spalte der angeklickten Zeile (z. B. Beleg).
+  const anzeigeFuer = (row, keyCol, versteckt, labelCol) => {
+    if (!row) return null;
+    const sp = labelCol && labelCol in row ? labelCol
+      : (versteckt || []).includes(keyCol) ? Object.keys(row).find(c => !(versteckt || []).includes(c)) : null;
+    return sp ? { field: sp, value: row[sp] } : null;
+  };
+
   // Einstieg aus einem Widget (Chart-Segment oder Tabellenzeile).
-  const handleDrilldown = (widget, field, value) => {
+  const handleDrilldown = (widget, field, value, row = null) => {
     const dd = widget.config?.drilldown;
     if (!dd?.mapping_id) return;
     cfgRef.current = { dd, base: baseParams || {} };
     openLevel({ mapping_id: dd.mapping_id, param: dd.param || field, value,
       title: dd.title || widget.label || "Drilldown", field, depth: 0, hidden: dd.hidden_columns,
-      dokument: dokumentAus(dd) });
+      dokument: dokumentAus(dd), anzeige: anzeigeFuer(row, field, widget.config?.hidden_columns, dd.label_column) });
   };
 
   // Klick auf eine Zeile im Modal → nächste Ebene (levels[depth]).
@@ -231,7 +241,8 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     if (val === null || val === undefined || val === "") return;
     openLevel({ mapping_id: next.mapping_id, param: next.param || next.key_column, value: val,
       title: next.title || `Ebene ${depth + 1}`, field: next.key_column, depth, hidden: next.hidden_columns,
-      dokument: dokumentAus(next) });
+      dokument: dokumentAus(next),
+      anzeige: anzeigeFuer(row, next.key_column, stack[depth - 1]?.hidden, next.label_column) });
   };
 
   // Ist die aktuell oberste Ebene weiter aufklappbar?
@@ -313,12 +324,12 @@ export default function WidgetRenderer({ widgets = [], results = {}, allowDownlo
     {topFrame && (
       <DrilldownModal
         title={topFrame.title}
-        field={topFrame.field}
-        value={topFrame.value}
+        field={topFrame.anzeige?.field ?? topFrame.field}
+        value={topFrame.anzeige ? topFrame.anzeige.value : topFrame.value}
         rows={topFrame.rows}
         loading={topFrame.loading}
         error={topFrame.error}
-        trail={stack.map(f => ({ title: f.title, value: f.value }))}
+        trail={stack.map(f => ({ title: f.title, value: f.anzeige ? f.anzeige.value : f.value }))}
         hiddenColumns={topFrame.hidden || []}
         dokument={topFrame.dokument}
         canDrillDeeper={canDrillDeeper}

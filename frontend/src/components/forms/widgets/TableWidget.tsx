@@ -58,7 +58,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
     if (!onDrilldown || !dd?.mapping_id || !dd?.key_column) return;
     const v = row[dd.key_column];
     if (v === null || v === undefined || v === "") return;
-    onDrilldown(dd.key_column, v);
+    onDrilldown(dd.key_column, v, row);
   };
   // Zahlenspalten rechtsbündig (bessere Lesbarkeit der Beträge).
   const numericCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number")));
