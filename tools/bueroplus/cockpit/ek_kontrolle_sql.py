@@ -4,12 +4,13 @@
 # Fracht/Nebenkosten (27.000 …) und DSZ/DSD-Gebühren stehen getrennt: dort fehlt der EK
 # systematisch (Kosten des Spediteurs bzw. Lizenz stehen nicht im Artikel).
 
-SQL["m_bp_ek_kontrolle"] = f"""
-WITH b AS (
+EKK_POS = f"""b AS (
     {BELEGE}
       AND VogArt <> 'Rechnungskorrektur' AND VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis)
 ), pos AS (
-    SELECT p.ArtNr, b.VogDat, p.BuchMge, p.NettoPos, p.EkPos, art.ArtWgrNrInfo,
+    SELECT p.ArtNr, b.Quelle, b.VogID, b.VogBelegNr, b.VogAdrNr, b.VogVerk, b.VogDat,
+        p.BuchMge, p.EPrNt, p.EEkRoh, p.NettoPos, p.EkPos, art.ArtWgrNrInfo,
+        COUNT(*) OVER (PARTITION BY p.ArtNr) AS PosGesamt,
         CASE
             -- Gratisware (Spender o. Ä.): EK ist echt, kein Fehler – nur zur Information
             WHEN p.EkPos > 100 AND p.NettoPos = 0 THEN 'Kostenlos abgegeben'
@@ -23,11 +24,14 @@ WITH b AS (
     JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle
     LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr
     WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL AND p.ArtNr <> ''
-)
+)"""
+
+SQL["m_bp_ek_kontrolle"] = f"""
+WITH {EKK_POS}
 SELECT pos.Problem, pos.ArtNr,
     MAX(COALESCE(NULLIF(LTRIM(RTRIM(art.ArtKuBez1)), ''), LEFT(REPLACE(REPLACE(art.ArtBez1, CHAR(13), ' '), CHAR(10), ' '), 80))) AS Bezeichnung,
     MAX(ISNULL(pos.ArtWgrNrInfo, '')) AS Warengruppe,
-    COUNT(*) AS Positionen,
+    COUNT(*) AS PositionenBetroffen, MAX(pos.PosGesamt) AS PositionenGesamt,
     CAST(SUM(pos.NettoPos) AS DECIMAL(18,2)) AS Umsatz,
     CAST(SUM(pos.EkPos) AS DECIMAL(18,2)) AS Einsatz,
     -- + = Rohertrag im Cockpit zu hoch (EK fehlt), − = zu niedrig (EK zu hoch)
@@ -47,6 +51,21 @@ ORDER BY CASE pos.Problem WHEN 'EK fehlt' THEN 1 WHEN 'EK zu hoch' THEN 2 WHEN '
     ABS(CASE WHEN pos.Problem = 'EK fehlt' OR pos.Problem LIKE 'Fracht%' THEN SUM(pos.NettoPos) ELSE SUM(pos.EkPos) - SUM(pos.NettoPos) END) DESC
 """
 
+# Klick auf einen Artikel: nur seine betroffenen Positionen im Zeitraum
+SQL["m_bp_ek_kontrolle_pos"] = f"""
+WITH {EKK_POS}
+SELECT pos.VogBelegNr AS Beleg, CONVERT(char(10), pos.VogDat, 104) AS Datum,
+    pos.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', pos.VogAdrNr)) AS Kunde,
+    pos.Problem, CAST(pos.BuchMge AS DECIMAL(18,2)) AS Menge, CAST(pos.EPrNt AS DECIMAL(18,4)) AS Preis,
+    CAST(pos.EEkRoh AS DECIMAL(18,4)) AS EkPreis, CAST(pos.NettoPos AS DECIMAL(18,2)) AS Umsatz,
+    CAST(pos.EkPos AS DECIMAL(18,2)) AS Einsatz, pos.VogVerk AS Bearbeiter,
+    CONCAT(CASE pos.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, pos.VogID) AS VogID
+FROM pos LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = pos.VogAdrNr
+WHERE pos.Problem IS NOT NULL AND pos.ArtNr = :artnr
+ORDER BY pos.VogDat DESC
+"""
+
 NAMEN.update({
+    "m_bp_ek_kontrolle_pos": "büro+ GF – EK-Kontrolle: betroffene Positionen (Detail)",
     "m_bp_ek_kontrolle": "büro+ GF – EK-Kontrolle (fehlender/zu hoher Einkaufspreis)",
 })

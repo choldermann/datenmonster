@@ -459,12 +459,14 @@ widgets += [
 # ── Reiter „EK-Kontrolle“ ──
 widgets += [
     {"id": "w_ek_kontrolle", "type": "table", "label": "EK-Kontrolle – Einkaufspreis fehlt oder ist zu hoch", "action_id": "act_ek_kontrolle",
-     "config": {"width": 12, "full_rows": True, "drilldown": DD_ART,
+     "config": {"width": 12, "full_rows": True,
+                "drilldown": {"mapping_id": "m_bp_ek_kontrolle_pos", "key_column": "ArtNr", "param": "artnr",
+                              "title": "Betroffene Positionen", "hidden_columns": ["VogID"], "levels": [DD_POS]},
                 "info": "Rechnungspositionen im gewählten Zeitraum, deren Einkaufspreis in büro+ fehlt oder unplausibel hoch ist (über 100 € und mehr als das "
                         "{{ek_faktor}}-fache des Verkaufspreises) – aus diesem EK rechnet das Cockpit Wareneinsatz und Rohertrag. "
                         "„EK fehlt“ = Ware ohne EK, „Fracht/Nebenkosten ohne EK“ = 27.000 ff. und DSZ/DSD-Gebühren (dort fehlen die Kosten systematisch), "
                         "„EK zu hoch“ = vermutlich falsche Einheit oder Tippfehler. „Kostenlos abgegeben“ = Ware mit 0 € Umsatz (z. B. Spender) – EK korrekt, nur zur Information. Wirkung Rohertrag: + = Rohertrag im Cockpit zu hoch, − = zu niedrig. "
-                        "VK aktuell = Listenpreis {{listenpreis}}, EK aktuell = Kalkulations-EK aus dem Artikelstamm, beide je Preiseinheit (Tsd = je 1.000 Stück). Filter über die Spaltenköpfe, Klick auf einen Artikel: seine Belege."}},
+                        "VK aktuell = Listenpreis {{listenpreis}}, EK aktuell = Kalkulations-EK aus dem Artikelstamm, beide je Preiseinheit (Tsd = je 1.000 Stück). Positionen betroffen/gesamt zeigt, ob der EK nur in einzelnen Rechnungen fehlt (dann meist von Hand überschrieben) oder immer. Filter über die Spaltenköpfe, Klick auf einen Artikel: die betroffenen Positionen."}},
 ]
 
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):
@@ -516,7 +518,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.15",
+    "version": "0.16",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",

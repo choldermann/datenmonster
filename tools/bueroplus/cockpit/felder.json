@@ -440,7 +440,8 @@
 "ArtNr",
 "Bezeichnung",
 "Warengruppe",
-"Positionen",
+"PositionenBetroffen",
+"PositionenGesamt",
 "Umsatz",
 "Einsatz",
 "WirkungRohertrag",
@@ -450,5 +451,19 @@
 "EkAktuell",
 "LetzterVerkauf",
 "Sperre"
+],
+"m_bp_ek_kontrolle_pos": [
+"Beleg",
+"Datum",
+"AdrNr",
+"Kunde",
+"Problem",
+"Menge",
+"Preis",
+"EkPreis",
+"Umsatz",
+"Einsatz",
+"Bearbeiter",
+"VogID"
 ]
 }
