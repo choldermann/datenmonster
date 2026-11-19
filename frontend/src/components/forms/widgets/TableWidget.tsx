@@ -13,9 +13,15 @@ const S = {
 
 // Nur echte Zahlen mit deutschen Tausenderpunkten formatieren (6.000.000);
 // numerische String-IDs (Artikel-/Rechnungsnr) bleiben unverändert.
-function fmtCell(v) {
+function fmtCell(v, dez2 = false) {
   if (v === null || v === undefined) return "";
-  if (typeof v === "number") return v.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  // Kommazahlen immer mit genau 2 Stellen (1.184,40 statt 1.184,4); dez2 = die Spalte
+  // enthält irgendwo Nachkommastellen → auch ihre ganzen Werte mit ,00 (einheitlich).
+  if (typeof v === "number") {
+    const zwei = dez2 || !Number.isInteger(v);
+    return v.toLocaleString("de-DE", zwei ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                                          : { maximumFractionDigits: 0 });
+  }
   return String(v);
 }
 
@@ -55,6 +61,8 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   };
   // Zahlenspalten rechtsbündig (bessere Lesbarkeit der Beträge).
   const numericCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number")));
+  // Spalten mit Nachkommastellen → überall 2 Stellen
+  const dezCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number" && !Number.isInteger(r[c]))));
 
   // Sortierte Zeilen: Zahlen numerisch, Datum chronologisch, sonst locale-Vergleich; Nullwerte ans Ende.
   const sortedRows = useMemo(() => sortiereZeilen(rows, sort, numericCols), [rows, sort, numericCols]);
@@ -135,7 +143,7 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                 onMouseLeave={e => e.currentTarget.style.backgroundColor = ""}>
                 {columns.map(c => (
                   <td key={c} style={{ padding: "7px 12px", color: S.textMain,
-                    textAlign: numericCols.has(c) ? "right" : "left" }}>{fmtCell(row[c])}</td>
+                    textAlign: numericCols.has(c) ? "right" : "left" }}>{fmtCell(row[c], dezCols.has(c))}</td>
                 ))}
               </tr>
             ))}

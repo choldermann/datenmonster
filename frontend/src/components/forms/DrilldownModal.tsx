@@ -108,11 +108,17 @@ function toCsv(columns, rows) {
   return head + "\n" + body;
 }
 
-function fmtCell(v) {
+function fmtCell(v, dez2 = false) {
   if (v == null) return "–";
   // Nur echte Zahlen mit Tausenderpunkten formatieren – String-IDs wie Artikel-/
   // Rechnungsnummern (numerische Strings) bleiben unverändert (keine 4.038.015).
-  if (typeof v === "number") return v.toLocaleString("de-DE", { maximumFractionDigits: 2 });
+  // Kommazahlen immer mit genau 2 Stellen (1.184,40 statt 1.184,4); dez2 = die Spalte
+  // enthält irgendwo Nachkommastellen → auch ihre ganzen Werte mit ,00 (einheitlich).
+  if (typeof v === "number") {
+    const zwei = dez2 || !Number.isInteger(v);
+    return v.toLocaleString("de-DE", zwei ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+                                          : { maximumFractionDigits: 0 });
+  }
   return String(v);
 }
 
@@ -139,6 +145,8 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   const hidden = new Set(hiddenColumns || []);
   const columns = (rows.length ? Object.keys(rows[0]) : []).filter(c => !hidden.has(c));
   const numericCols = new Set(columns.filter(c => isNumericCol(c, rows)));
+  // Spalten mit Nachkommastellen → überall 2 Stellen
+  const dezCols = new Set(columns.filter(c => rows.some(r => typeof r[c] === "number" && !Number.isInteger(r[c]))));
   // Lange Textspalten (z.B. Artikelbeschreibung) umbrechen statt horizontal scrollen.
   const longTextCols = new Set(columns.filter(c => !numericCols.has(c)
     && rows.some(r => typeof r[c] === "string" && r[c].length > 60)));
@@ -312,7 +320,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
                         maxWidth: longTextCols.has(c) ? 560 : undefined,
                         wordBreak: longTextCols.has(c) ? "break-word" : undefined,
                         lineHeight: longTextCols.has(c) ? 1.45 : undefined }}>
-                        {fmtCell(row[c])}
+                        {fmtCell(row[c], dezCols.has(c))}
                       </td>
                     ))}
                   </tr>
