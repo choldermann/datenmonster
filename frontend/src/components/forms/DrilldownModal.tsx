@@ -2,6 +2,7 @@ import { csvZelle } from "../../utils/csvSicher";
 import { useEffect, useMemo, useState } from "react";
 import { X, Download, Search, Loader2, AlertCircle, ChevronLeft, ChevronRight, Info, Copy, Check } from "lucide-react";
 import EmailTableButton from "./EmailTableButton";
+import SpaltenFilter, { filtereZeilen } from "./SpaltenFilter";
 import { tabelleAlsExcel } from "./excelExport";
 import { sortiereZeilen } from "./tabellenSortierung";
 import { fehlerText } from "../../api/client";
@@ -157,9 +158,15 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
   const sort = sortRoh?.ebene === ebene ? sortRoh : null;
   const toggleSort = (col) => setSort(
     sort?.col === col ? (sort.dir === "asc" ? { col, dir: "desc", ebene } : null) : { col, dir: "asc", ebene });
-  const sortedRows = useMemo(() => sortiere(rows, sort, numericCols),
+  // Spaltenfilter (wie Excel) – gilt wie die Sortierung nur auf dieser Ebene und
+  // auch für CSV/Excel/E-Mail.
+  const [filterRoh, setFilterRoh] = useState(null);
+  const filter = filterRoh?.ebene === ebene ? filterRoh.f : {};
+  const setFilter = (f) => setFilterRoh({ ebene, f });
+  const filterAktiv = Object.keys(filter).length > 0;
+  const sortedRows = useMemo(() => sortiere(filtereZeilen(rows, filter), sort, numericCols),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, sort?.col, sort?.dir]);
+    [rows, sort?.col, sort?.dir, filter]);
 
   const handleExport = async (format = "csv") => {
     // Ist die Anzeige abgeschnitten, alle Zeilen nachladen – sonst enthielte die
@@ -180,7 +187,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
     if (format === "xlsx") {
       setExportiert("xlsx");
       try {
-        await tabelleAlsExcel({ titel: title || "Drilldown", columns, rows: sortiere(alle, sort, numericCols),
+        await tabelleAlsExcel({ titel: title || "Drilldown", columns, rows: sortiere(filtereZeilen(alle, filter), sort, numericCols),
           datei: `drilldown_${field || "wert"}_${safeVal}` });
       } catch (e) {
         setExportFehler(fehlerText(e, "Excel-Export fehlgeschlagen"));
@@ -188,7 +195,7 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
       return;
     }
     setExportiert(false);
-    const csv = toCsv(columns, sortiere(alle, sort, numericCols));
+    const csv = toCsv(columns, sortiere(filtereZeilen(alle, filter), sort, numericCols));
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -244,14 +251,17 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
             </p>
             <p style={{ fontSize: 11, color: S.textDim, margin: "2px 0 0" }}>
               {field ? <><span style={{ color: S.textMain }}>{field}</span> = <span style={{ color: ACCENT }}>{String(value)}</span> · </> : null}
-              {loading ? "lädt…" : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
+              {loading ? "lädt…" : filterAktiv
+                ? <>{sortedRows.length.toLocaleString("de-DE")} von {rows.length.toLocaleString("de-DE")} Zeilen (gefiltert) ·{" "}
+                    <a onClick={() => setFilter({})} style={{ color: ACCENT, cursor: "pointer" }}>Filter aufheben</a></>
+                : `${rows.length.toLocaleString("de-DE")} Zeile${rows.length === 1 ? "" : "n"}`}
               {!loading && begrenzt ? (ladeAlle && downloadErlaubt ? " angezeigt · CSV/Excel enthalten alle" : " angezeigt · Liste gekürzt") : ""}
               {exportFehler ? <span style={{ color: "var(--err-soft)" }}> · {exportFehler}</span> : null}
               {canDrillDeeper && !loading && rows.length > 0 ? " · Zeile klicken für Details" : ""}
             </p>
           </div>
           {downloadErlaubt && (
-            <EmailTableButton columns={columns} rows={sortedRows} title={title || "Drilldown"} disabled={!rows.length} />
+            <EmailTableButton columns={columns} rows={sortedRows} title={title || "Drilldown"} disabled={!sortedRows.length} />
           )}
           {/* CSV, Excel und E-Mail folgen alle „Download erlauben“ des Formulars (im Editor immer an). */}
           {downloadErlaubt && ([["csv", "CSV"], ["xlsx", "Excel"]] as const).map(([fmt, text]) => (
@@ -302,6 +312,8 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
                       style={{ padding: "7px 12px", textAlign: numericCols.has(c) ? "right" : "left", color: sort?.col === c ? ACCENT : S.textDim, fontWeight: 700, fontSize: 10, textTransform: "uppercase", letterSpacing: "0.05em", borderBottom: `1px solid ${S.border}`, whiteSpace: "nowrap", cursor: "pointer", userSelect: "none" }}>
                       {c}<span style={{ marginLeft: 4, opacity: sort?.col === c ? 1 : 0.25 }}>
                         {sort?.col === c ? (sort.dir === "asc" ? "▲" : "▼") : "↕"}</span>
+                      <SpaltenFilter spalte={c} rows={rows} filter={filter} setFilter={setFilter}
+                        anzeige={(v) => fmtCell(v, dezCols.has(c))} />
                     </th>
                   ))}
                 </tr>
@@ -325,6 +337,12 @@ export default function DrilldownModal({ title, field, value, rows = [], loading
                     ))}
                   </tr>
                 ))}
+                {!sortedRows.length && (
+                  <tr><td colSpan={columns.length} style={{ padding: 30, textAlign: "center", color: S.textDim }}>
+                    Keine Zeile passt zum Filter ·{" "}
+                    <a onClick={() => setFilter({})} style={{ color: ACCENT, cursor: "pointer" }}>Filter aufheben</a>
+                  </td></tr>
+                )}
               </tbody>
             </table>
           )}
