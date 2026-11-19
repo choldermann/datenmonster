@@ -434,5 +434,19 @@
 "Marge %",
 "Kunden",
 "Rechnungen"
+],
+"m_bp_ek_kontrolle": [
+"Problem",
+"ArtNr",
+"Bezeichnung",
+"Warengruppe",
+"Positionen",
+"Umsatz",
+"Einsatz",
+"WirkungRohertrag",
+"EkFaktor",
+"EkKalkHeute",
+"LetzterVerkauf",
+"Sperre"
 ]
 }

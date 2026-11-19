@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.13",
+ "version": "0.14",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -5550,6 +5550,180 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_ek_kontrolle",
+   "name": "büro+ GF – EK-Kontrolle (fehlender/zu hoher Einkaufspreis)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Problem",
+      "ArtNr",
+      "Bezeichnung",
+      "Warengruppe",
+      "Positionen",
+      "Umsatz",
+      "Einsatz",
+      "WirkungRohertrag",
+      "EkFaktor",
+      "EkKalkHeute",
+      "LetzterVerkauf",
+      "Sperre"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogArt <> 'Rechnungskorrektur' AND VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis)\n), pos AS (\n    SELECT p.ArtNr, b.VogDat, p.BuchMge, p.NettoPos, p.EkPos, art.ArtWgrNrInfo,\n        CASE\n            -- Gratisware (Spender o. Ä.): EK ist echt, kein Fehler – nur zur Information\n            WHEN p.EkPos > 100 AND p.NettoPos = 0 THEN 'Kostenlos abgegeben'\n            WHEN p.EkPos > 100 AND p.EkPos > p.NettoPos * {{ek_faktor}} THEN 'EK zu hoch'\n            WHEN ISNULL(p.EEkRoh, 0) = 0 AND p.NettoPos > 0 THEN\n                CASE WHEN p.ArtNr LIKE '27.000%' OR p.ArtNr LIKE '%DSZ%'\n                          OR ISNULL(art.ArtWgrNrInfo, '') LIKE 'DSZ%' OR ISNULL(art.ArtWgrNrInfo, '') LIKE '0 DSD%'\n                     THEN 'Fracht/Nebenkosten ohne EK' ELSE 'EK fehlt' END\n        END AS Problem\n    FROM dbo.vVorgangPosition p\n    JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle\n    LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr\n    WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL AND p.ArtNr <> ''\n)\nSELECT pos.Problem, pos.ArtNr,\n    MAX(COALESCE(NULLIF(LTRIM(RTRIM(art.ArtKuBez1)), ''), LEFT(REPLACE(REPLACE(art.ArtBez1, CHAR(13), ' '), CHAR(10), ' '), 80))) AS Bezeichnung,\n    MAX(ISNULL(pos.ArtWgrNrInfo, '')) AS Warengruppe,\n    COUNT(*) AS Positionen,\n    CAST(SUM(pos.NettoPos) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(pos.EkPos) AS DECIMAL(18,2)) AS Einsatz,\n    -- + = Rohertrag im Cockpit zu hoch (EK fehlt), − = zu niedrig (EK zu hoch)\n    CAST(CASE WHEN pos.Problem = 'EK zu hoch' THEN -(SUM(pos.EkPos) - SUM(pos.NettoPos))\n              WHEN pos.Problem = 'Kostenlos abgegeben' THEN 0 ELSE SUM(pos.NettoPos) END AS DECIMAL(18,2)) AS WirkungRohertrag,\n    CAST(CASE WHEN SUM(pos.NettoPos) > 0 THEN SUM(pos.EkPos) / SUM(pos.NettoPos) END AS DECIMAL(18,1)) AS EkFaktor,\n    CAST(MAX(art.ArtEkKalk) AS DECIMAL(18,2)) AS EkKalkHeute,\n    CONVERT(char(10), MAX(pos.VogDat), 104) AS LetzterVerkauf,\n    CASE WHEN MAX(CAST(art.ArtGspKz AS int)) = 1 THEN 'gesperrt' ELSE '' END AS Sperre\nFROM pos LEFT JOIN dbo.Artikel art ON art.ArtArtNr = pos.ArtNr\nWHERE pos.Problem IS NOT NULL\nGROUP BY pos.Problem, pos.ArtNr\nORDER BY CASE pos.Problem WHEN 'EK fehlt' THEN 1 WHEN 'EK zu hoch' THEN 2 WHEN 'Fracht/Nebenkosten ohne EK' THEN 3 ELSE 4 END,\n    ABS(CASE WHEN pos.Problem = 'EK fehlt' OR pos.Problem LIKE 'Fracht%' THEN SUM(pos.NettoPos) ELSE SUM(pos.EkPos) - SUM(pos.NettoPos) END) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – EK-Kontrolle (fehlender/zu hoher Einkaufspreis)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Problem",
+       "target_field": "Problem",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Problem"
+       }
+      },
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Bezeichnung",
+       "target_field": "Bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bezeichnung"
+       }
+      },
+      {
+       "source_field": "Warengruppe",
+       "target_field": "Warengruppe",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Warengruppe"
+       }
+      },
+      {
+       "source_field": "Positionen",
+       "target_field": "Positionen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Positionen"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Einsatz",
+       "target_field": "Einsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einsatz"
+       }
+      },
+      {
+       "source_field": "WirkungRohertrag",
+       "target_field": "WirkungRohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "WirkungRohertrag"
+       }
+      },
+      {
+       "source_field": "EkFaktor",
+       "target_field": "EkFaktor",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkFaktor"
+       }
+      },
+      {
+       "source_field": "EkKalkHeute",
+       "target_field": "EkKalkHeute",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkKalkHeute"
+       }
+      },
+      {
+       "source_field": "LetzterVerkauf",
+       "target_field": "LetzterVerkauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterVerkauf"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -5664,6 +5838,13 @@
       "mapping_id": "m_bp_v12_artikel",
       "pipeline_id": null,
       "label": "Artikel-Verkauf 12-Monats-Vergleich"
+     },
+     {
+      "id": "act_ek_kontrolle",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_ek_kontrolle",
+      "pipeline_id": null,
+      "label": "EK-Kontrolle"
      },
      {
       "id": "act_geo_bl",
@@ -6870,6 +7051,34 @@
        },
        "info": "Nach der Rechnungsanschrift des Kunden (büro+ exportiert keine Lieferadresse je Beleg); Bundesland aus der PLZ. Rechnungskorrekturen gegengerechnet; Vergleich mit dem Vorjahreszeitraum. Land = Länderschlüssel der Adresse in büro+."
       }
+     },
+     {
+      "id": "w_ek_kontrolle",
+      "type": "table",
+      "label": "EK-Kontrolle – Einkaufspreis fehlt oder ist zu hoch",
+      "action_id": "act_ek_kontrolle",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "drilldown": {
+        "mapping_id": "m_bp_art_belege",
+        "key_column": "ArtNr",
+        "param": "artnr",
+        "title": "Belege mit diesem Artikel im Zeitraum",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Rechnungspositionen im gewählten Zeitraum, deren Einkaufspreis in büro+ fehlt oder unplausibel hoch ist (über 100 € und mehr als das {{ek_faktor}}-fache des Verkaufspreises) – aus diesem EK rechnet das Cockpit Wareneinsatz und Rohertrag. „EK fehlt“ = Ware ohne EK, „Fracht/Nebenkosten ohne EK“ = 27.000 ff. und DSZ/DSD-Gebühren (dort fehlen die Kosten systematisch), „EK zu hoch“ = vermutlich falsche Einheit oder Tippfehler. „Kostenlos abgegeben“ = Ware mit 0 € Umsatz (z. B. Spender) – EK korrekt, nur zur Information. Wirkung Rohertrag: + = Rohertrag im Cockpit zu hoch, − = zu niedrig. EK Kalk heute = Kalkulations-EK im Artikelstamm. Filter über die Spaltenköpfe, Klick auf einen Artikel: seine Belege."
+      }
      }
     ],
     "result_tabs": [
@@ -6901,6 +7110,13 @@
       "label": "Artikel-Verkauf",
       "action_ids": [
        "act_v12"
+      ]
+     },
+     {
+      "id": "tab_ek_kontrolle",
+      "label": "EK-Kontrolle",
+      "action_ids": [
+       "act_ek_kontrolle"
       ]
      },
      {
@@ -6947,7 +7163,8 @@
        "tab_kunden",
        "tab_regionen",
        "tab_artikel",
-       "tab_v12"
+       "tab_v12",
+       "tab_ek_kontrolle"
       ]
      },
      {
