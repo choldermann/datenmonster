@@ -465,5 +465,30 @@
 "Einsatz",
 "Bearbeiter",
 "VogID"
+],
+"m_bp_negativ_bestand": [
+"ArtNr",
+"Bezeichnung",
+"Einheit",
+"Gezaehlt",
+"Zugaenge",
+"Abgaenge",
+"SollBestand",
+"WertFehlmenge",
+"Hinweis",
+"LetzteBewegung",
+"Warengruppe",
+"Sperre"
+],
+"m_bp_negativ_bewegungen": [
+"Datum",
+"Vorgang",
+"Beleg",
+"Partner",
+"Zugang",
+"Abgang",
+"Bestand",
+"Bearbeiter",
+"VogID"
 ]
 }

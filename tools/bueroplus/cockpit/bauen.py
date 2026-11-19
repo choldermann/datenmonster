@@ -232,6 +232,7 @@ exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("o
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "inventur_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "geo_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "ek_kontrolle_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "lager_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -456,6 +457,26 @@ widgets += [
                 "info": GEO_INFO + " Land = Länderschlüssel der Adresse in büro+."}},
 ]
 
+# ── Reiter „Negative Bestände“ (Lager) ──
+widgets += [
+    {"id": "w_negativ_anz", "type": "kpi", "label": "Artikel mit negativem Soll-Bestand", "action_id": "act_negativ",
+     "config": {"width": 6, "column": "ArtNr", "aggregation": "count", "prefix": "", "suffix": " Artikel", "decimals": 0,
+                "hint": "Seit der Inventur mehr abgegangen als gezählt und per Beleg zugebucht."}},
+    {"id": "w_negativ_wert", "type": "kpi", "label": "Fehlmenge bewertet (Kalkulations-EK)", "action_id": "act_negativ",
+     "config": {"width": 6, "column": "WertFehlmenge", "aggregation": "sum", "prefix": "€ ", "suffix": "", "decimals": 0,
+                "hint": "Summe Soll-Bestand × EK der Artikel unter null – Wert der Abgänge ohne Zugangsbeleg."}},
+    {"id": "w_negativ", "type": "table", "label": "Negative Bestände seit Inventur {{inventur_stichtag}}", "action_id": "act_negativ",
+     "config": {"width": 12, "full_rows": True,
+                "drilldown": {"mapping_id": "m_bp_negativ_bewegungen", "key_column": "ArtNr", "param": "artnr",
+                              "title": "Zu- und Abgänge seit Inventur", "hidden_columns": ["VogID"], "levels": [DD_POS]},
+                "info": "Soll-Bestand = in der Inventur gezählte Menge + Zugänge − Abgänge aus gebuchten Belegen danach "
+                        "(Zugang: Bestellung an Lieferant, Eingangsrechnung, Rechnungskorrektur; Abgang: Rechnung, Sammelrechnung, gebuchter Lieferschein, "
+                        "Rechnungskorrektur vom Lieferant). Gezeigt werden Artikel, deren Soll unter null liegt – also mehr abgegangen ist als gezählt und zugebucht. "
+                        "Ursachen: Wareneingang nicht als Beleg gebucht (beleglose Zubuchung in büro+ ist hier nicht sichtbar), Einheit falsch, Zählfehler "
+                        "oder Ware unter anderer Artikelnummer. Mengen in der büro+-Einheit (bei Tsd in Stück). Wert = Fehlmenge × Kalkulations-EK. "
+                        "Stand heute, unabhängig vom Zeitraum. Klick auf einen Artikel: alle Zu- und Abgänge mit laufendem Bestand, neueste oben, die Inventur als letzte Zeile."}},
+]
+
 # ── Reiter „EK-Kontrolle“ ──
 widgets += [
     {"id": "w_ek_kontrolle", "type": "table", "label": "EK-Kontrolle – Einkaufspreis fehlt oder ist zu hoch", "action_id": "act_ek_kontrolle",
@@ -518,7 +539,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.16",
+    "version": "0.17",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -529,6 +550,7 @@ tpl = {
         {"key": "lieferschein_tage", "label": "Lieferschein ohne Rechnung melden ab … Tagen", "type": "text", "default": "7"},
         {"key": "angebot_tage", "label": "Angebot gilt als alt ab … Tagen", "type": "text", "default": "90"},
         {"key": "pipeline_monate", "label": "Offene Angebote/AB zählen in der Pipeline nur bis … Monate alt", "type": "text", "default": "12"},
+        {"key": "inventur_stichtag", "label": "Stichtag der letzten Inventur (JJJJMMTT, Zählmengen in dbo.InventurZaehlung)", "type": "text", "default": "20251213"},
         {"key": "inventur_monate", "label": "Inventurliste: Artikel mit Verkauf in den letzten … Monaten", "type": "text", "default": "12"},
         {"key": "listenpreis", "label": "Listenpreis-Feld des Artikels (ArtVk0Preis … ArtVk9Preis)", "type": "text", "default": "ArtVk0Preis"},
         {"key": "schlaf_tage", "label": "Stammkunde gilt als schlafend nach … Tagen ohne Rechnung", "type": "text", "default": "90"},
@@ -562,6 +584,7 @@ tpl = {
                 {"id": "act_ek_kontrolle", "type": "run_mapping", "mapping_id": "m_bp_ek_kontrolle", "pipeline_id": None, "label": "EK-Kontrolle"},
                 {"id": "act_geo_bl", "type": "run_mapping", "mapping_id": "m_bp_geo_bundesland", "pipeline_id": None, "label": "Umsatz je Bundesland"},
                 {"id": "act_geo_land", "type": "run_mapping", "mapping_id": "m_bp_geo_land", "pipeline_id": None, "label": "Umsatz je Land"},
+                {"id": "act_negativ", "type": "run_mapping", "mapping_id": "m_bp_negativ_bestand", "pipeline_id": None, "label": "Negative Bestände seit Inventur"},
                 {"id": "act_inventur", "type": "run_mapping", "mapping_id": "m_bp_inventurliste", "pipeline_id": None, "label": "Inventurliste"},
                 {"id": "act_kd_kpi", "type": "run_mapping", "mapping_id": "m_bp_kd_kpi", "pipeline_id": None, "label": "Kunden-Kennzahlen"},
                 {"id": "act_kd_abc", "type": "run_mapping", "mapping_id": "m_bp_kd_abc", "pipeline_id": None, "label": "ABC-Kunden"},
@@ -581,12 +604,13 @@ tpl = {
                             {"id": "tab_ek_kontrolle", "label": "EK-Kontrolle", "action_ids": ["act_ek_kontrolle"]},
                             {"id": "tab_regionen", "label": "Regionen", "action_ids": ["act_geo_bl", "act_geo_land"]},
                             {"id": "tab_inventur", "label": "Inventurliste", "action_ids": ["act_inventur"]},
+                            {"id": "tab_negativ", "label": "Negative Bestände", "action_ids": ["act_negativ"]},
                             {"id": "tab_kunden", "label": "Kunden",
                              "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
                                             "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
                                {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_regionen", "tab_artikel", "tab_v12", "tab_ek_kontrolle"]},
-                               {"id": "g_lager", "label": "Lager", "reiter": ["tab_inventur"]}],
+                               {"id": "g_lager", "label": "Lager", "reiter": ["tab_inventur", "tab_negativ"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},
             "doku": {"intro": "Die Gesamtsicht für die Geschäftsführung auf Basis von microtech büro+: Umsatz und Rohertrag mit Vorjahresvergleich, die Vertriebspipeline von Angebot bis Lieferschein und was heute zu tun ist. Jede Kurve lässt sich bis auf den einzelnen Beleg und seine Positionen aufklappen.",
