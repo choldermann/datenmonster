@@ -269,8 +269,18 @@ function FieldInput({ field, value, onChange, onRunAction, running, inp, hasErro
     case "db_dropdown":
       return <DbDropdownField field={field} value={value} onChange={onChange} inp={s}
         onRunAction={onRunAction} running={running} />;
-    case "number":
-      return <input type="number" value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} style={s} />;
+    case "number": {
+      // Mit config.auto_run lädt Enter oder das Verlassen des Feldes die verknüpften Actions neu
+      // (z. B. „DB-Grenze %“) – nicht bei jedem Tastendruck.
+      const neuLaden = (v) => {
+        if (field.config?.auto_run && onRunAction)
+          onRunAction(field.action_ids?.length ? field.action_ids : null, { [field.name]: v });
+      };
+      return <input type="number" value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={field.placeholder} style={s}
+        onKeyDown={e => { if (e.key === "Enter") { const el = e.target as HTMLInputElement; el.dataset.start = el.value; neuLaden(el.value); } }}
+        onFocus={e => { e.target.dataset.start = e.target.value; }}
+        onBlur={e => { if (e.target.value !== (e.target.dataset.start ?? "")) neuLaden(e.target.value); }} />;
+    }
     case "date": {
       // Mit config.auto_run lädt ein vollständiges Datum die verknüpften Actions direkt neu.
       const onDatum = (v) => {

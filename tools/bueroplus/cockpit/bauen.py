@@ -233,6 +233,7 @@ exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("o
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "geo_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "ek_kontrolle_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "lager_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "marge_vertreter_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -477,6 +478,40 @@ widgets += [
                         "Stand heute, unabhängig vom Zeitraum. Klick auf einen Artikel: alle Zu- und Abgänge mit laufendem Bestand, neueste oben, die Inventur als letzte Zeile."}},
 ]
 
+# ── Reiter „Marge“: Artikel unter DB-Grenze ──
+DB_INFO_TXT = ("Artikel, deren Deckungsbeitrag (Umsatz − Wareneinsatz) im gewählten Zeitraum unter der DB-Grenze oben liegt "
+               "(Feld „DB-Grenze %“, Enter lädt neu). Rechnungskorrekturen gegengerechnet; Wareneinsatz = EK aus der Rechnungsposition. "
+               "Ø VK/EK und aktuelle Preise je Preiseinheit (Tsd = je 1.000 Stück). Größter Umsatz zuerst. "
+               "Klick auf einen Artikel: seine Rechnungspositionen mit DB je Position, schlechteste zuerst; weiter zum Beleg.")
+widgets += [
+    {"id": "w_db_anz", "type": "kpi", "label": "Artikel unter DB-Grenze", "action_id": "act_art_db",
+     "config": {"width": 4, "column": "ArtNr", "aggregation": "count", "prefix": "", "suffix": " Artikel", "decimals": 0}},
+    {"id": "w_db_ums", "type": "kpi", "label": "Umsatz dieser Artikel", "action_id": "act_art_db",
+     "config": {"width": 4, "column": "Umsatz", "aggregation": "sum", "prefix": "€ ", "suffix": "", "decimals": 0}},
+    {"id": "w_db_db", "type": "kpi", "label": "Deckungsbeitrag dieser Artikel", "action_id": "act_art_db",
+     "config": {"width": 4, "column": "DB", "aggregation": "sum", "prefix": "€ ", "suffix": "", "decimals": 0}},
+    {"id": "w_db_tbl", "type": "table", "label": "Artikel unter DB-Grenze", "action_id": "act_art_db",
+     "config": {"width": 12, "full_rows": True, "info": DB_INFO_TXT,
+                "drilldown": {"mapping_id": "m_bp_art_db_belege", "key_column": "ArtNr", "param": "artnr",
+                              "title": "Rechnungspositionen mit DB", "hidden_columns": ["VogID"], "levels": [DD_POS]}}},
+]
+
+# ── Reiter „Vertreter“ ──
+DD_VTR = {"mapping_id": "m_bp_vertreter_kunden", "key_column": "VtrNr", "param": "vtrnr",
+          "title": "Kunden des Vertreters (Zeitraum und Vorjahr)", "hidden_columns": [], "levels": [
+              {"mapping_id": "m_bp_kd_belege", "param": "adrnr", "key_column": "AdrNr",
+               "title": "Belege des Kunden (Zeitraum und Vorjahr)", "hidden_columns": ["VogID"]}, DD_POS]}
+widgets += [
+    {"id": "w_vtr_bar", "type": "bar", "label": "Umsatz je Vertreter (aktuell vs. Vorjahr)", "action_id": "act_vertreter",
+     "config": {"width": 12, "x_column": "Vertreter", "y_columns": ["Umsatz", "UmsatzVJ"], "stacked": False}},
+    {"id": "w_vtr_tbl", "type": "table", "label": "Vertreter", "action_id": "act_vertreter",
+     "config": {"width": 12, "full_rows": True, "hidden_columns": ["VtrNr"], "drilldown": DD_VTR,
+                "info": "Nach der Vertreternummer am Beleg (büro+ VogVtrNr) – Namen exportiert büro+ bisher nicht. "
+                        "Umsatz und Rohertrag nach Rechnungskorrekturen, Vergleich mit dem Vorjahreszeitraum. "
+                        "Provision = Umsatz × Provisionssatz des Belegs (VogVtrProvSz). "
+                        "Klick: Kunden des Vertreters, weiter zu den Belegen und Positionen."}},
+]
+
 # ── Reiter „EK-Kontrolle“ ──
 widgets += [
     {"id": "w_ek_kontrolle", "type": "table", "label": "EK-Kontrolle – Einkaufspreis fehlt oder ist zu hoch", "action_id": "act_ek_kontrolle",
@@ -539,7 +574,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.17",
+    "version": "0.18",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -563,9 +598,12 @@ tpl = {
     "forms": [{
         "name": "büro+ GF-Cockpit", "portal_config": {},
         "schema": {
-            "fields": [{"id": "f_zeitraum", "type": "daterange", "row": 0, "colSpan": 12, "label": "Zeitraum",
+            "fields": [{"id": "f_zeitraum", "type": "daterange", "row": 0, "colSpan": 10, "label": "Zeitraum",
                         "name": "zeitraum", "action_ids": [],
-                        "config": {"param_from": "von", "param_to": "bis", "default": "this_year", "auto_run": True}}],
+                        "config": {"param_from": "von", "param_to": "bis", "default": "this_year", "auto_run": True}},
+                       {"id": "f_db_grenze", "type": "number", "row": 0, "colSpan": 2, "label": "DB-Grenze %",
+                        "name": "db_grenze", "default": "15", "placeholder": "15", "action_ids": ["act_art_db"],
+                        "config": {"auto_run": True}}],
             "layout": [],
             "actions": [
                 {"id": "act_alerts", "type": "run_alerts", "mapping_id": None, "pipeline_id": None,
@@ -581,6 +619,8 @@ tpl = {
                 {"id": "act_art_preispflege", "type": "run_mapping", "mapping_id": "m_bp_art_preispflege", "pipeline_id": None, "label": "Preiserhöhung prüfen"},
                 {"id": "act_art_ohne", "type": "run_mapping", "mapping_id": "m_bp_art_ohne_verkauf", "pipeline_id": None, "label": "Artikel ohne Verkauf"},
                 {"id": "act_v12", "type": "run_mapping", "mapping_id": "m_bp_v12_artikel", "pipeline_id": None, "label": "Artikel-Verkauf 12-Monats-Vergleich"},
+                {"id": "act_art_db", "type": "run_mapping", "mapping_id": "m_bp_art_db", "pipeline_id": None, "label": "Artikel unter DB-Grenze"},
+                {"id": "act_vertreter", "type": "run_mapping", "mapping_id": "m_bp_vertreter", "pipeline_id": None, "label": "Vertreter"},
                 {"id": "act_ek_kontrolle", "type": "run_mapping", "mapping_id": "m_bp_ek_kontrolle", "pipeline_id": None, "label": "EK-Kontrolle"},
                 {"id": "act_geo_bl", "type": "run_mapping", "mapping_id": "m_bp_geo_bundesland", "pipeline_id": None, "label": "Umsatz je Bundesland"},
                 {"id": "act_geo_land", "type": "run_mapping", "mapping_id": "m_bp_geo_land", "pipeline_id": None, "label": "Umsatz je Land"},
@@ -601,6 +641,8 @@ tpl = {
                              "action_ids": ["act_art_kpi", "act_wg_top", "act_wg", "act_top_artikel", "act_art_unter_ek",
                                             "act_art_preispflege", "act_art_ohne"]},
                             {"id": "tab_v12", "label": "Artikel-Verkauf", "action_ids": ["act_v12"]},
+                            {"id": "tab_marge", "label": "Marge", "action_ids": ["act_art_db"]},
+                            {"id": "tab_vertreter", "label": "Vertreter", "action_ids": ["act_vertreter"]},
                             {"id": "tab_ek_kontrolle", "label": "EK-Kontrolle", "action_ids": ["act_ek_kontrolle"]},
                             {"id": "tab_regionen", "label": "Regionen", "action_ids": ["act_geo_bl", "act_geo_land"]},
                             {"id": "tab_inventur", "label": "Inventurliste", "action_ids": ["act_inventur"]},
@@ -609,7 +651,7 @@ tpl = {
                              "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
                                             "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
-                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_regionen", "tab_artikel", "tab_v12", "tab_ek_kontrolle"]},
+                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_vertreter", "tab_regionen", "tab_artikel", "tab_v12", "tab_marge", "tab_ek_kontrolle"]},
                                {"id": "g_lager", "label": "Lager", "reiter": ["tab_inventur", "tab_negativ"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},

@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.17",
+ "version": "0.18",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -6252,6 +6252,779 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_art_db",
+   "name": "büro+ GF – Artikel unter DB-Grenze",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "ArtNr",
+      "Bezeichnung",
+      "Warengruppe",
+      "Einheit",
+      "Umsatz",
+      "Einsatz",
+      "DB",
+      "DB %",
+      "DB % VJ",
+      "VkSchnitt",
+      "EkSchnitt",
+      "VkAktuell",
+      "EkAktuell",
+      "Menge",
+      "Positionen",
+      "Kunden",
+      "LetzterVerkauf",
+      "Sperre"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, :bis)\n), pos AS (\n    SELECT p.ArtNr, b.VogID, b.VogAdrNr, b.VogDat,\n        b.Vz * p.NettoPos AS Umsatz, b.Vz * p.EkPos AS Einsatz,\n        b.Vz * p.BuchMge AS Menge, b.Vz * p.BuchMge * p.EPreisFak AS PE,\n        b.Vz * p.BuchMge * p.EPreisFak * art.{{listenpreis}} AS Listenwert,\n        COALESCE(NULLIF(LTRIM(RTRIM(art.ArtWgrNrInfo)), ''), 'ohne Warengruppe') AS Warengruppe,\n        CASE WHEN b.VogDat >= :von THEN 1\n             WHEN b.VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM dbo.vVorgangPosition p\n    JOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle\n    LEFT JOIN dbo.Artikel art ON art.ArtArtNr = p.ArtNr\n    WHERE p.ArtKz = 1 AND p.ArtNr IS NOT NULL\n), a AS (\n    SELECT ArtNr,\n        SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS U1, SUM(CASE WHEN Per = 1 THEN Einsatz ELSE 0 END) AS E1,\n        SUM(CASE WHEN Per = 1 THEN Menge ELSE 0 END) AS M1, SUM(CASE WHEN Per = 1 THEN PE ELSE 0 END) AS PE1,\n        SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS U2, SUM(CASE WHEN Per = 2 THEN Einsatz ELSE 0 END) AS E2,\n        COUNT(CASE WHEN Per = 1 THEN 1 END) AS Positionen,\n        COUNT(DISTINCT CASE WHEN Per = 1 THEN VogAdrNr END) AS Kunden,\n        MAX(CASE WHEN Per = 1 THEN VogDat END) AS Letzter\n    FROM pos GROUP BY ArtNr\n)\nSELECT a.ArtNr, COALESCE(NULLIF(art.ArtKuBez1, ''), LEFT(art.ArtBez1, 80)) AS Bezeichnung, COALESCE(NULLIF(LTRIM(RTRIM(art.ArtWgrNrInfo)), ''), 'ohne Warengruppe') AS Warengruppe,\n    CASE art.ArtEinh WHEN '%o' THEN 'Tsd' ELSE ISNULL(art.ArtEinh, '') END AS Einheit,\n    CAST(a.U1 AS DECIMAL(18,2)) AS Umsatz, CAST(a.E1 AS DECIMAL(18,2)) AS Einsatz,\n    CAST(a.U1 - a.E1 AS DECIMAL(18,2)) AS DB,\n    CAST(100.0 * (a.U1 - a.E1) / NULLIF(a.U1, 0) AS DECIMAL(18,1)) AS [DB %],\n    CAST(CASE WHEN a.U2 > 0 THEN 100.0 * (a.U2 - a.E2) / a.U2 END AS DECIMAL(18,1)) AS [DB % VJ],\n    -- Durchschnittspreise je Preiseinheit (bei Tsd je 1.000 Stück), wie in büro+\n    CAST(CASE WHEN a.PE1 <> 0 THEN a.U1 / a.PE1 END AS DECIMAL(18,2)) AS VkSchnitt,\n    CAST(CASE WHEN a.PE1 <> 0 THEN a.E1 / a.PE1 END AS DECIMAL(18,2)) AS EkSchnitt,\n    CAST(art.{{listenpreis}} AS DECIMAL(18,2)) AS VkAktuell, CAST(art.ArtEkKalk AS DECIMAL(18,2)) AS EkAktuell,\n    CAST(a.M1 AS DECIMAL(18,2)) AS Menge, a.Positionen, a.Kunden,\n    CONVERT(char(10), a.Letzter, 104) AS LetzterVerkauf,\n    CASE WHEN art.ArtGspKz = 1 THEN 'gesperrt' ELSE '' END AS Sperre\nFROM a LEFT JOIN dbo.Artikel art ON art.ArtArtNr = a.ArtNr\nWHERE a.U1 > 0 AND 100.0 * (a.U1 - a.E1) / NULLIF(a.U1, 0) < ISNULL(TRY_CAST(REPLACE(NULLIF(LTRIM(RTRIM(CAST(:db_grenze AS nvarchar(20)))), ''), ',', '.') AS decimal(9,2)), 15)\nORDER BY a.U1 DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Artikel unter DB-Grenze",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "ArtNr",
+       "target_field": "ArtNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "ArtNr"
+       }
+      },
+      {
+       "source_field": "Bezeichnung",
+       "target_field": "Bezeichnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bezeichnung"
+       }
+      },
+      {
+       "source_field": "Warengruppe",
+       "target_field": "Warengruppe",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Warengruppe"
+       }
+      },
+      {
+       "source_field": "Einheit",
+       "target_field": "Einheit",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einheit"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Einsatz",
+       "target_field": "Einsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einsatz"
+       }
+      },
+      {
+       "source_field": "DB",
+       "target_field": "DB",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB"
+       }
+      },
+      {
+       "source_field": "DB %",
+       "target_field": "DB %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB %"
+       }
+      },
+      {
+       "source_field": "DB % VJ",
+       "target_field": "DB % VJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB % VJ"
+       }
+      },
+      {
+       "source_field": "VkSchnitt",
+       "target_field": "VkSchnitt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VkSchnitt"
+       }
+      },
+      {
+       "source_field": "EkSchnitt",
+       "target_field": "EkSchnitt",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkSchnitt"
+       }
+      },
+      {
+       "source_field": "VkAktuell",
+       "target_field": "VkAktuell",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VkAktuell"
+       }
+      },
+      {
+       "source_field": "EkAktuell",
+       "target_field": "EkAktuell",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkAktuell"
+       }
+      },
+      {
+       "source_field": "Menge",
+       "target_field": "Menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Menge"
+       }
+      },
+      {
+       "source_field": "Positionen",
+       "target_field": "Positionen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Positionen"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "LetzterVerkauf",
+       "target_field": "LetzterVerkauf",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzterVerkauf"
+       }
+      },
+      {
+       "source_field": "Sperre",
+       "target_field": "Sperre",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Sperre"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_art_db_belege",
+   "name": "büro+ GF – Rechnungspositionen des Artikels mit DB (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Beleg",
+      "Art",
+      "Datum",
+      "AdrNr",
+      "Kunde",
+      "Menge",
+      "Preis",
+      "EkPreis",
+      "Umsatz",
+      "Einsatz",
+      "DB",
+      "DB %",
+      "Bearbeiter",
+      "Vertreter",
+      "VogID"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis)\n)\nSELECT TOP 1000 b.VogBelegNr AS Beleg, b.VogArt AS Art, CONVERT(char(10), b.VogDat, 104) AS Datum,\n    b.VogAdrNr AS AdrNr, COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', b.VogAdrNr)) AS Kunde,\n    CAST(b.Vz * p.BuchMge AS DECIMAL(18,2)) AS Menge,\n    CAST(p.EPrNt AS DECIMAL(18,4)) AS Preis, CAST(p.EEkRoh AS DECIMAL(18,4)) AS EkPreis,\n    CAST(b.Vz * p.NettoPos AS DECIMAL(18,2)) AS Umsatz, CAST(b.Vz * p.EkPos AS DECIMAL(18,2)) AS Einsatz,\n    CAST(b.Vz * (p.NettoPos - p.EkPos) AS DECIMAL(18,2)) AS DB,\n    CAST(CASE WHEN p.NettoPos <> 0 THEN 100.0 * (p.NettoPos - p.EkPos) / p.NettoPos END AS DECIMAL(18,1)) AS [DB %],\n    b.VogVerk AS Bearbeiter, b.VogVtrNr AS Vertreter,\n    CONCAT(CASE b.Quelle WHEN 'Archiv' THEN 'A' ELSE 'U' END, b.VogID) AS VogID\nFROM dbo.vVorgangPosition p\nJOIN b ON b.VogID = p.VogID AND b.Quelle = p.Quelle\nLEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\nWHERE p.ArtNr = :artnr AND p.ArtKz = 1\nORDER BY CASE WHEN p.NettoPos <> 0 THEN (p.NettoPos - p.EkPos) / p.NettoPos END, b.VogDat DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Rechnungspositionen des Artikels mit DB (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Beleg",
+       "target_field": "Beleg",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Beleg"
+       }
+      },
+      {
+       "source_field": "Art",
+       "target_field": "Art",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Art"
+       }
+      },
+      {
+       "source_field": "Datum",
+       "target_field": "Datum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Datum"
+       }
+      },
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Menge",
+       "target_field": "Menge",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Menge"
+       }
+      },
+      {
+       "source_field": "Preis",
+       "target_field": "Preis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Preis"
+       }
+      },
+      {
+       "source_field": "EkPreis",
+       "target_field": "EkPreis",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "EkPreis"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "Einsatz",
+       "target_field": "Einsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Einsatz"
+       }
+      },
+      {
+       "source_field": "DB",
+       "target_field": "DB",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB"
+       }
+      },
+      {
+       "source_field": "DB %",
+       "target_field": "DB %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "DB %"
+       }
+      },
+      {
+       "source_field": "Bearbeiter",
+       "target_field": "Bearbeiter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bearbeiter"
+       }
+      },
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "VogID",
+       "target_field": "VogID",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VogID"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_vertreter",
+   "name": "büro+ GF – Vertreter",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Vertreter",
+      "VtrNr",
+      "Umsatz",
+      "UmsatzVJ",
+      "Veränderung %",
+      "Rohertrag",
+      "Marge %",
+      "Kunden",
+      "KundenVJ",
+      "Rechnungen",
+      "Ø Rechnung",
+      "Provision"
+     ],
+     "sql": "WITH v AS (\n    SELECT VogAdrNr, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        Vz * Netto * ISNULL(pv.VogVtrProvSz, 0) / 100.0 AS Provision,\n        ISNULL(VogVtrNr, -1) AS VtrNr,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM (SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0) b0\n    LEFT JOIN (SELECT Quelle AS Q, VogID AS VID, VogVtrProvSz FROM dbo.vVorgang) pv ON pv.Q = b0.Quelle AND pv.VID = b0.VogID\n)\nSELECT CASE WHEN VtrNr = -1 THEN 'ohne Vertreter' ELSE CONCAT('Vertreter ', VtrNr) END AS Vertreter,\n    VtrNr AS VtrNr,\n    CAST(SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(CASE WHEN SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) > 0\n              THEN 100.0 * SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) / SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) - 100 END AS DECIMAL(18,1)) AS [Veränderung %],\n    CAST(SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) > 0\n              THEN 100.0 * SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) / SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) END AS DECIMAL(18,1)) AS [Marge %],\n    COUNT(DISTINCT CASE WHEN Per = 1 AND Vz = 1 THEN VogAdrNr END) AS Kunden,\n    COUNT(DISTINCT CASE WHEN Per = 2 AND Vz = 1 THEN VogAdrNr END) AS KundenVJ,\n    SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen,\n    CAST(SUM(CASE WHEN Per = 1 AND Vz = 1 THEN Umsatz ELSE 0 END) / NULLIF(SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END), 0) AS DECIMAL(18,2)) AS [Ø Rechnung],\n    CAST(SUM(CASE WHEN Per = 1 THEN Provision ELSE 0 END) AS DECIMAL(18,2)) AS Provision\nFROM v WHERE Per IS NOT NULL\nGROUP BY VtrNr\nHAVING SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) <> 0 OR SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) <> 0\nORDER BY SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Vertreter",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Vertreter",
+       "target_field": "Vertreter",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Vertreter"
+       }
+      },
+      {
+       "source_field": "VtrNr",
+       "target_field": "VtrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "VtrNr"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Veränderung %",
+       "target_field": "Veränderung %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Veränderung %"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Marge %",
+       "target_field": "Marge %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge %"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "KundenVJ",
+       "target_field": "KundenVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "KundenVJ"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "Ø Rechnung",
+       "target_field": "Ø Rechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ø Rechnung"
+       }
+      },
+      {
+       "source_field": "Provision",
+       "target_field": "Provision",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Provision"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_vertreter_kunden",
+   "name": "büro+ GF – Kunden des Vertreters (Detail)",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "AdrNr",
+      "Kunde",
+      "Ort",
+      "Umsatz",
+      "UmsatzVJ",
+      "Veraenderung",
+      "Rohertrag",
+      "Marge %",
+      "Rechnungen",
+      "LetzteRechnung"
+     ],
+     "sql": "WITH v AS (\n    SELECT VogAdrNr, VogDat, Vz, Vz * Netto AS Umsatz, Vz * (Netto - Ek) AS Rohertrag,\n        Vz * Netto * ISNULL(pv.VogVtrProvSz, 0) / 100.0 AS Provision,\n        ISNULL(VogVtrNr, -1) AS VtrNr,\n        CASE WHEN VogDat >= :von AND VogDat < DATEADD(DAY, 1, :bis) THEN 1\n             WHEN VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 2 END AS Per\n    FROM (SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0) b0\n    LEFT JOIN (SELECT Quelle AS Q, VogID AS VID, VogVtrProvSz FROM dbo.vVorgang) pv ON pv.Q = b0.Quelle AND pv.VID = b0.VogID\n)\nSELECT v.VogAdrNr AS AdrNr,\n    COALESCE(NULLIF(LTRIM(RTRIM(ISNULL(a.AdrReNa2, ''))), ''), CONCAT('Adresse ', v.VogAdrNr)) AS Kunde, MAX(a.AdrReOrt) AS Ort,\n    CAST(SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) - SUM(CASE WHEN Per = 2 THEN Umsatz ELSE 0 END) AS DECIMAL(18,2)) AS Veraenderung,\n    CAST(SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) > 0\n              THEN 100.0 * SUM(CASE WHEN Per = 1 THEN Rohertrag ELSE 0 END) / SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) END AS DECIMAL(18,1)) AS [Marge %],\n    SUM(CASE WHEN Per = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen,\n    CONVERT(char(10), MAX(CASE WHEN Vz = 1 THEN v.VogDat END), 104) AS LetzteRechnung\nFROM v LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = v.VogAdrNr\nWHERE v.Per IS NOT NULL AND v.VtrNr = CAST(:vtrnr AS int)\nGROUP BY v.VogAdrNr, a.AdrReNa2\nORDER BY SUM(CASE WHEN Per = 1 THEN Umsatz ELSE 0 END) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Kunden des Vertreters (Detail)",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "AdrNr",
+       "target_field": "AdrNr",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "AdrNr"
+       }
+      },
+      {
+       "source_field": "Kunde",
+       "target_field": "Kunde",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunde"
+       }
+      },
+      {
+       "source_field": "Ort",
+       "target_field": "Ort",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Ort"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Veraenderung",
+       "target_field": "Veraenderung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Veraenderung"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Marge %",
+       "target_field": "Marge %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge %"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      },
+      {
+       "source_field": "LetzteRechnung",
+       "target_field": "LetzteRechnung",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "LetzteRechnung"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -6264,7 +7037,7 @@
       "id": "f_zeitraum",
       "type": "daterange",
       "row": 0,
-      "colSpan": 12,
+      "colSpan": 10,
       "label": "Zeitraum",
       "name": "zeitraum",
       "action_ids": [],
@@ -6272,6 +7045,22 @@
        "param_from": "von",
        "param_to": "bis",
        "default": "this_year",
+       "auto_run": true
+      }
+     },
+     {
+      "id": "f_db_grenze",
+      "type": "number",
+      "row": 0,
+      "colSpan": 2,
+      "label": "DB-Grenze %",
+      "name": "db_grenze",
+      "default": "15",
+      "placeholder": "15",
+      "action_ids": [
+       "act_art_db"
+      ],
+      "config": {
        "auto_run": true
       }
      }
@@ -6366,6 +7155,20 @@
       "mapping_id": "m_bp_v12_artikel",
       "pipeline_id": null,
       "label": "Artikel-Verkauf 12-Monats-Vergleich"
+     },
+     {
+      "id": "act_art_db",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_art_db",
+      "pipeline_id": null,
+      "label": "Artikel unter DB-Grenze"
+     },
+     {
+      "id": "act_vertreter",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_vertreter",
+      "pipeline_id": null,
+      "label": "Vertreter"
      },
      {
       "id": "act_ek_kontrolle",
@@ -7646,6 +8449,129 @@
       }
      },
      {
+      "id": "w_db_anz",
+      "type": "kpi",
+      "label": "Artikel unter DB-Grenze",
+      "action_id": "act_art_db",
+      "config": {
+       "width": 4,
+       "column": "ArtNr",
+       "aggregation": "count",
+       "prefix": "",
+       "suffix": " Artikel",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_db_ums",
+      "type": "kpi",
+      "label": "Umsatz dieser Artikel",
+      "action_id": "act_art_db",
+      "config": {
+       "width": 4,
+       "column": "Umsatz",
+       "aggregation": "sum",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_db_db",
+      "type": "kpi",
+      "label": "Deckungsbeitrag dieser Artikel",
+      "action_id": "act_art_db",
+      "config": {
+       "width": 4,
+       "column": "DB",
+       "aggregation": "sum",
+       "prefix": "€ ",
+       "suffix": "",
+       "decimals": 0
+      }
+     },
+     {
+      "id": "w_db_tbl",
+      "type": "table",
+      "label": "Artikel unter DB-Grenze",
+      "action_id": "act_art_db",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "info": "Artikel, deren Deckungsbeitrag (Umsatz − Wareneinsatz) im gewählten Zeitraum unter der DB-Grenze oben liegt (Feld „DB-Grenze %“, Enter lädt neu). Rechnungskorrekturen gegengerechnet; Wareneinsatz = EK aus der Rechnungsposition. Ø VK/EK und aktuelle Preise je Preiseinheit (Tsd = je 1.000 Stück). Größter Umsatz zuerst. Klick auf einen Artikel: seine Rechnungspositionen mit DB je Position, schlechteste zuerst; weiter zum Beleg.",
+       "drilldown": {
+        "mapping_id": "m_bp_art_db_belege",
+        "key_column": "ArtNr",
+        "param": "artnr",
+        "title": "Rechnungspositionen mit DB",
+        "hidden_columns": [
+         "VogID"
+        ],
+        "levels": [
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       }
+      }
+     },
+     {
+      "id": "w_vtr_bar",
+      "type": "bar",
+      "label": "Umsatz je Vertreter (aktuell vs. Vorjahr)",
+      "action_id": "act_vertreter",
+      "config": {
+       "width": 12,
+       "x_column": "Vertreter",
+       "y_columns": [
+        "Umsatz",
+        "UmsatzVJ"
+       ],
+       "stacked": false
+      }
+     },
+     {
+      "id": "w_vtr_tbl",
+      "type": "table",
+      "label": "Vertreter",
+      "action_id": "act_vertreter",
+      "config": {
+       "width": 12,
+       "full_rows": true,
+       "hidden_columns": [
+        "VtrNr"
+       ],
+       "drilldown": {
+        "mapping_id": "m_bp_vertreter_kunden",
+        "key_column": "VtrNr",
+        "param": "vtrnr",
+        "title": "Kunden des Vertreters (Zeitraum und Vorjahr)",
+        "hidden_columns": [],
+        "levels": [
+         {
+          "mapping_id": "m_bp_kd_belege",
+          "param": "adrnr",
+          "key_column": "AdrNr",
+          "title": "Belege des Kunden (Zeitraum und Vorjahr)",
+          "hidden_columns": [
+           "VogID"
+          ]
+         },
+         {
+          "mapping_id": "m_bp_positionen",
+          "param": "vogid",
+          "key_column": "VogID",
+          "title": "Positionen des Belegs"
+         }
+        ]
+       },
+       "info": "Nach der Vertreternummer am Beleg (büro+ VogVtrNr) – Namen exportiert büro+ bisher nicht. Umsatz und Rohertrag nach Rechnungskorrekturen, Vergleich mit dem Vorjahreszeitraum. Provision = Umsatz × Provisionssatz des Belegs (VogVtrProvSz). Klick: Kunden des Vertreters, weiter zu den Belegen und Positionen."
+      }
+     },
+     {
       "id": "w_ek_kontrolle",
       "type": "table",
       "label": "EK-Kontrolle – Einkaufspreis fehlt oder ist zu hoch",
@@ -7706,6 +8632,20 @@
       ]
      },
      {
+      "id": "tab_marge",
+      "label": "Marge",
+      "action_ids": [
+       "act_art_db"
+      ]
+     },
+     {
+      "id": "tab_vertreter",
+      "label": "Vertreter",
+      "action_ids": [
+       "act_vertreter"
+      ]
+     },
+     {
       "id": "tab_ek_kontrolle",
       "label": "EK-Kontrolle",
       "action_ids": [
@@ -7761,9 +8701,11 @@
       "label": "Vertrieb & Sortiment",
       "reiter": [
        "tab_kunden",
+       "tab_vertreter",
        "tab_regionen",
        "tab_artikel",
        "tab_v12",
+       "tab_marge",
        "tab_ek_kontrolle"
       ]
      },
