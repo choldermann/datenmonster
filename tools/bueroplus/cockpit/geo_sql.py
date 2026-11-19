@@ -23,6 +23,8 @@ LAENDER = {
     372: "Irland", 438: "Liechtenstein", 233: "Estland", 428: "Lettland", 440: "Litauen", 470: "Malta", 196: "Zypern",
     792: "Türkei", 688: "Serbien", 70: "Bosnien und Herzegowina", 8: "Albanien", 807: "Nordmazedonien", 499: "Montenegro",
     804: "Ukraine", 840: "Vereinigte Staaten", 124: "Kanada", 156: "China", 784: "Vereinigte Arabische Emirate",
+    # Bei Gehlen nur durch Fehlgriffe in der Länderauswahl belegt (Adressen in Karlsruhe, Bruchsal, Elsass)
+    262: "Dschibuti (prüfen)", 212: "Dominica (prüfen)", 258: "Französisch-Polynesien (prüfen)",
 }
 LAND_CASE = "CASE g.IsoNum " + " ".join(f"WHEN {k} THEN N'{v}'" for k, v in LAENDER.items()) + \
             " ELSE CONCAT(N'Land ', g.IsoNum) END"
