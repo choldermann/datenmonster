@@ -34,7 +34,10 @@ SELECT pos.Problem, pos.ArtNr,
     CAST(CASE WHEN pos.Problem = 'EK zu hoch' THEN -(SUM(pos.EkPos) - SUM(pos.NettoPos))
               WHEN pos.Problem = 'Kostenlos abgegeben' THEN 0 ELSE SUM(pos.NettoPos) END AS DECIMAL(18,2)) AS WirkungRohertrag,
     CAST(CASE WHEN SUM(pos.NettoPos) > 0 THEN SUM(pos.EkPos) / SUM(pos.NettoPos) END AS DECIMAL(18,1)) AS EkFaktor,
-    CAST(MAX(art.ArtEkKalk) AS DECIMAL(18,2)) AS EkKalkHeute,
+    -- Aktuelle Preise aus dem Artikelstamm, je Preiseinheit (bei %o je 1.000 Stück)
+    MAX(CASE art.ArtEinh WHEN '%o' THEN 'Tsd' ELSE ISNULL(art.ArtEinh, '') END) AS Einheit,
+    CAST(MAX({LISTE}) AS DECIMAL(18,2)) AS VkAktuell,
+    CAST(MAX(art.ArtEkKalk) AS DECIMAL(18,2)) AS EkAktuell,
     CONVERT(char(10), MAX(pos.VogDat), 104) AS LetzterVerkauf,
     CASE WHEN MAX(CAST(art.ArtGspKz AS int)) = 1 THEN 'gesperrt' ELSE '' END AS Sperre
 FROM pos LEFT JOIN dbo.Artikel art ON art.ArtArtNr = pos.ArtNr

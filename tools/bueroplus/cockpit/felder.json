@@ -445,7 +445,9 @@
 "Einsatz",
 "WirkungRohertrag",
 "EkFaktor",
-"EkKalkHeute",
+"Einheit",
+"VkAktuell",
+"EkAktuell",
 "LetzterVerkauf",
 "Sperre"
 ]
