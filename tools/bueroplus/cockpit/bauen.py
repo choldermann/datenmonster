@@ -230,6 +230,7 @@ exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("o
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "kunden_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "verkauf12_sql.py")).read())
 exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "inventur_sql.py")).read())
+exec(open(__import__("os").path.join(__import__("os").path.dirname(__import__("os").path.abspath(__file__)) if "__file__" in globals() else "/tmp", "geo_sql.py")).read())
 
 def aliase(sql):
     """SELECT-Aliase der äußersten Abfrage (… AS Name)."""
@@ -437,6 +438,23 @@ widgets += [
                         "Klick auf einen Artikel: seine Belege im selben Zeitraum."}},
 ]
 
+# ── Reiter „Regionen“: Karten Umsatz je Bundesland und je Land ──
+GEO_ZUSATZ = [{"spalte": "Rohertrag", "label": "Rohertrag", "einheit": "eur"},
+              {"spalte": "Marge %", "label": "Marge", "einheit": "prozent"},
+              {"spalte": "Kunden", "label": "Kunden"}, {"spalte": "Rechnungen", "label": "Rechnungen"}]
+GEO_INFO = ("Nach der Rechnungsanschrift des Kunden (büro+ exportiert keine Lieferadresse je Beleg); "
+            "Bundesland aus der PLZ. Rechnungskorrekturen gegengerechnet; Vergleich mit dem Vorjahreszeitraum.")
+widgets += [
+    {"id": "w_karte_bl", "type": "karte", "label": "Umsatz nach Bundesland", "action_id": "act_geo_bl",
+     "config": {"width": 12, "karte": "deutschland", "einheit": "eur", "hoehe": 460, "zusatz": GEO_ZUSATZ,
+                "spalten": {"schluessel": "Bundesland", "name": "Bundesland", "wert": "Umsatz", "vj": "UmsatzVJ"},
+                "info": GEO_INFO}},
+    {"id": "w_karte_land", "type": "karte", "label": "Umsatz nach Land", "action_id": "act_geo_land",
+     "config": {"width": 12, "karte": "welt", "ausschnitt": "europa", "einheit": "eur", "hoehe": 460, "zusatz": GEO_ZUSATZ,
+                "spalten": {"schluessel": "IsoNum", "name": "Land", "wert": "Umsatz", "vj": "UmsatzVJ"},
+                "info": GEO_INFO + " Land = Länderschlüssel der Adresse in büro+."}},
+]
+
 def warnung(key, name, mid, cond, facts, title, sub, sev="warnung", sort=10, dd_title=None):
     return {"rule_key": key, "name": name, "category": "Geschäftsführung", "cockpit": "büro+ GF-Cockpit",
             "description": None, "severity": sev, "severity_levels": [], "mapping_id": None,
@@ -486,7 +504,7 @@ tpl = {
     "template_name": "büro+ – GF-Cockpit",
     "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
     "category": "bueroplus-reporting",
-    "version": "0.11",
+    "version": "0.12",
     "author": "Datenmonster",
     "hinweise": [
         "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -527,6 +545,8 @@ tpl = {
                 {"id": "act_art_preispflege", "type": "run_mapping", "mapping_id": "m_bp_art_preispflege", "pipeline_id": None, "label": "Preiserhöhung prüfen"},
                 {"id": "act_art_ohne", "type": "run_mapping", "mapping_id": "m_bp_art_ohne_verkauf", "pipeline_id": None, "label": "Artikel ohne Verkauf"},
                 {"id": "act_v12", "type": "run_mapping", "mapping_id": "m_bp_v12_artikel", "pipeline_id": None, "label": "Artikel-Verkauf 12-Monats-Vergleich"},
+                {"id": "act_geo_bl", "type": "run_mapping", "mapping_id": "m_bp_geo_bundesland", "pipeline_id": None, "label": "Umsatz je Bundesland"},
+                {"id": "act_geo_land", "type": "run_mapping", "mapping_id": "m_bp_geo_land", "pipeline_id": None, "label": "Umsatz je Land"},
                 {"id": "act_inventur", "type": "run_mapping", "mapping_id": "m_bp_inventurliste", "pipeline_id": None, "label": "Inventurliste"},
                 {"id": "act_kd_kpi", "type": "run_mapping", "mapping_id": "m_bp_kd_kpi", "pipeline_id": None, "label": "Kunden-Kennzahlen"},
                 {"id": "act_kd_abc", "type": "run_mapping", "mapping_id": "m_bp_kd_abc", "pipeline_id": None, "label": "ABC-Kunden"},
@@ -543,12 +563,13 @@ tpl = {
                              "action_ids": ["act_art_kpi", "act_wg_top", "act_wg", "act_top_artikel", "act_art_unter_ek",
                                             "act_art_preispflege", "act_art_ohne"]},
                             {"id": "tab_v12", "label": "Artikel-Verkauf", "action_ids": ["act_v12"]},
+                            {"id": "tab_regionen", "label": "Regionen", "action_ids": ["act_geo_bl", "act_geo_land"]},
                             {"id": "tab_inventur", "label": "Inventurliste", "action_ids": ["act_inventur"]},
                             {"id": "tab_kunden", "label": "Kunden",
                              "action_ids": ["act_kd_kpi", "act_kd_abc", "act_kd_status", "act_kd_top", "act_kd_rueckgang",
                                             "act_kd_schlafend", "act_kd_neu"]}],
             "reiter_gruppen": [{"id": "g_uebersicht", "label": "Unternehmensübersicht", "reiter": ["tab_uebersicht"]},
-                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_artikel", "tab_v12"]},
+                               {"id": "g_vertrieb", "label": "Vertrieb & Sortiment", "reiter": ["tab_kunden", "tab_regionen", "tab_artikel", "tab_v12"]},
                                {"id": "g_lager", "label": "Lager", "reiter": ["tab_inventur"]}],
             "show_ai_assistant": True,
             "rubrik": {"id": "gf"},

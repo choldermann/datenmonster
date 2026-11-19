@@ -4,7 +4,7 @@
  "template_name": "büro+ – GF-Cockpit",
  "description": "Geschäftsführer-Cockpit für microtech büro+ auf Basis der Export-Layouts (Artikel, Adressen, Vorgänge mit Positionen, Übersicht und Archiv).",
  "category": "bueroplus-reporting",
- "version": "0.11",
+ "version": "0.12",
  "author": "Datenmonster",
  "hinweise": [
   "Erwartet im SQL-Server die Tabellen dbo.Artikel, dbo.Adressen, dbo.Vorgang, dbo.VorgangArchiv, dbo.VorgangPosition, dbo.VorgangPositionArchiv und die Views dbo.vVorgang, dbo.vVorgangPosition (Spaltennamen = büro+-Feldnamen ohne Punkte).",
@@ -5301,6 +5301,255 @@
      ]
     }
    ]
+  },
+  {
+   "id": "m_bp_geo_land",
+   "name": "büro+ GF – Umsatz je Land",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "IsoNum",
+      "Land",
+      "Umsatz",
+      "UmsatzVJ",
+      "Rohertrag",
+      "Marge %",
+      "Kunden",
+      "Rechnungen"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, :bis)\n), src AS (\n    SELECT b.VogAdrNr, b.Vz, b.Netto, b.Ek,\n        CASE WHEN b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN b.VogDat >= DATEADD(YEAR, -1, :von) AND b.VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        ISNULL(a.AdrReLand, 276) AS IsoNum,\n        TRY_CONVERT(INT, LEFT(LTRIM(a.AdrRePLZ), 2)) AS p, LTRIM(a.AdrRePLZ) AS plz\n    FROM b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\n), g AS (\n    SELECT IsoNum,\n        CAST(SUM(cur * Vz * Netto) AS DECIMAL(18,2)) AS Umsatz,\n        CAST(SUM(vj * Vz * Netto) AS DECIMAL(18,2)) AS UmsatzVJ,\n        CAST(SUM(cur * Vz * (Netto - Ek)) AS DECIMAL(18,2)) AS Rohertrag,\n        COUNT(DISTINCT CASE WHEN cur = 1 AND Vz = 1 THEN VogAdrNr END) AS Kunden,\n        SUM(CASE WHEN cur = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen\n    FROM src GROUP BY IsoNum\n)\nSELECT CAST(g.IsoNum AS VARCHAR(10)) AS IsoNum, CASE g.IsoNum WHEN 276 THEN N'Deutschland' WHEN 40 THEN N'Österreich' WHEN 756 THEN N'Schweiz' WHEN 250 THEN N'Frankreich' WHEN 56 THEN N'Belgien' WHEN 528 THEN N'Niederlande' WHEN 442 THEN N'Luxemburg' WHEN 208 THEN N'Dänemark' WHEN 752 THEN N'Schweden' WHEN 578 THEN N'Norwegen' WHEN 246 THEN N'Finnland' WHEN 380 THEN N'Italien' WHEN 724 THEN N'Spanien' WHEN 620 THEN N'Portugal' WHEN 616 THEN N'Polen' WHEN 203 THEN N'Tschechien' WHEN 703 THEN N'Slowakei' WHEN 348 THEN N'Ungarn' WHEN 705 THEN N'Slowenien' WHEN 191 THEN N'Kroatien' WHEN 642 THEN N'Rumänien' WHEN 100 THEN N'Bulgarien' WHEN 300 THEN N'Griechenland' WHEN 826 THEN N'Vereinigtes Königreich' WHEN 372 THEN N'Irland' WHEN 438 THEN N'Liechtenstein' WHEN 233 THEN N'Estland' WHEN 428 THEN N'Lettland' WHEN 440 THEN N'Litauen' WHEN 470 THEN N'Malta' WHEN 196 THEN N'Zypern' WHEN 792 THEN N'Türkei' WHEN 688 THEN N'Serbien' WHEN 70 THEN N'Bosnien und Herzegowina' WHEN 8 THEN N'Albanien' WHEN 807 THEN N'Nordmazedonien' WHEN 499 THEN N'Montenegro' WHEN 804 THEN N'Ukraine' WHEN 840 THEN N'Vereinigte Staaten' WHEN 124 THEN N'Kanada' WHEN 156 THEN N'China' WHEN 784 THEN N'Vereinigte Arabische Emirate' ELSE CONCAT(N'Land ', g.IsoNum) END AS Land,\n    g.Umsatz, g.UmsatzVJ, g.Rohertrag,\n    CAST(CASE WHEN g.Umsatz > 0 THEN 100.0 * g.Rohertrag / g.Umsatz END AS DECIMAL(18,1)) AS [Marge %],\n    g.Kunden, g.Rechnungen\nFROM g\nWHERE g.Umsatz <> 0 OR g.UmsatzVJ <> 0\nORDER BY g.Umsatz DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Umsatz je Land",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "IsoNum",
+       "target_field": "IsoNum",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "IsoNum"
+       }
+      },
+      {
+       "source_field": "Land",
+       "target_field": "Land",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Land"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Marge %",
+       "target_field": "Marge %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge %"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m_bp_geo_bundesland",
+   "name": "büro+ GF – Umsatz je Bundesland",
+   "canvas_nodes": [],
+   "joins": [],
+   "sql_nodes": [
+    {
+     "id": "sql1",
+     "x": 120,
+     "y": 40,
+     "width": 380,
+     "height": 260,
+     "connection_id": "{{connection_bp}}",
+     "mode": "transform",
+     "output_field": "sql_1",
+     "output_fields": [
+      "Bundesland",
+      "Umsatz",
+      "UmsatzVJ",
+      "Rohertrag",
+      "Marge %",
+      "Kunden",
+      "Rechnungen"
+     ],
+     "sql": "WITH b AS (\n    SELECT Quelle, VogID, VogBelegNr, VogArt, VogDat, VogAdrNr, VogVerk, VogVtrNr,\n           VogGPreisNt AS Netto, VogGEkRoh AS Ek,\n           CASE WHEN VogArt = 'Rechnungskorrektur' THEN -1 ELSE 1 END AS Vz\n    FROM dbo.vVorgang\n    WHERE VogArt IN ('Rechnung I', 'Sammel Rechnung', 'Rechnungskorrektur')\n      AND VogGebuchtKz = 1 AND ISNULL(VogStorniertKz, 0) = 0\n      AND VogDat >= DATEADD(YEAR, -1, :von) AND VogDat < DATEADD(DAY, 1, :bis)\n), src AS (\n    SELECT b.VogAdrNr, b.Vz, b.Netto, b.Ek,\n        CASE WHEN b.VogDat >= :von AND b.VogDat < DATEADD(DAY, 1, :bis) THEN 1 ELSE 0 END AS cur,\n        CASE WHEN b.VogDat >= DATEADD(YEAR, -1, :von) AND b.VogDat < DATEADD(DAY, 1, DATEADD(YEAR, -1, :bis)) THEN 1 ELSE 0 END AS vj,\n        ISNULL(a.AdrReLand, 276) AS IsoNum,\n        TRY_CONVERT(INT, LEFT(LTRIM(a.AdrRePLZ), 2)) AS p, LTRIM(a.AdrRePLZ) AS plz\n    FROM b LEFT JOIN dbo.Adressen a ON a.AdrAdrNr = b.VogAdrNr\n), k AS (\n    SELECT *,\n        CASE\n            WHEN p IS NULL OR LEN(plz) <> 5 THEN '(ohne gültige PLZ)'\n            WHEN p IN (1,2,4,8,9) THEN 'Sachsen'\n            WHEN p IN (3,15,16) THEN 'Brandenburg'\n            WHEN p IN (6,39) THEN 'Sachsen-Anhalt'\n            WHEN p IN (7,98,99) THEN 'Thüringen'\n            WHEN p IN (10,11,12,13,14) THEN 'Berlin'\n            WHEN p IN (17,18,19) THEN 'Mecklenburg-Vorpommern'\n            WHEN p IN (20,21,22) THEN 'Hamburg'\n            WHEN p IN (23,24,25) THEN 'Schleswig-Holstein'\n            WHEN p IN (26,27,29,30,31,37,38,49) THEN 'Niedersachsen'\n            WHEN p = 28 THEN 'Bremen'\n            WHEN p IN (32,33,40,41,42,44,45,46,47,48,50,51,52,53,57,58,59) THEN 'Nordrhein-Westfalen'\n            WHEN p IN (34,35,36,60,61,63,64,65) THEN 'Hessen'\n            WHEN p IN (54,55,56,67) THEN 'Rheinland-Pfalz'\n            WHEN p = 66 THEN 'Saarland'\n            WHEN p IN (68,69,88) OR p BETWEEN 70 AND 79 THEN 'Baden-Württemberg'\n            WHEN p BETWEEN 80 AND 87 OR p BETWEEN 89 AND 97 THEN 'Bayern'\n            ELSE '(unbekannt)'\n        END AS Bundesland\n    FROM src WHERE IsoNum = 276\n)\nSELECT Bundesland,\n    CAST(SUM(cur * Vz * Netto) AS DECIMAL(18,2)) AS Umsatz,\n    CAST(SUM(vj * Vz * Netto) AS DECIMAL(18,2)) AS UmsatzVJ,\n    CAST(SUM(cur * Vz * (Netto - Ek)) AS DECIMAL(18,2)) AS Rohertrag,\n    CAST(CASE WHEN SUM(cur * Vz * Netto) > 0 THEN 100.0 * SUM(cur * Vz * (Netto - Ek)) / SUM(cur * Vz * Netto) END AS DECIMAL(18,1)) AS [Marge %],\n    COUNT(DISTINCT CASE WHEN cur = 1 AND Vz = 1 THEN VogAdrNr END) AS Kunden,\n    SUM(CASE WHEN cur = 1 AND Vz = 1 THEN 1 ELSE 0 END) AS Rechnungen\nFROM k GROUP BY Bundesland\nHAVING SUM(cur * Vz * Netto) <> 0 OR SUM(vj * Vz * Netto) <> 0\nORDER BY SUM(cur * Vz * Netto) DESC"
+    }
+   ],
+   "agg_nodes": [],
+   "transform_nodes": [],
+   "constant_nodes": [],
+   "rest_nodes": [],
+   "lookup_nodes": [],
+   "calc_nodes": [],
+   "switch_nodes": [],
+   "sort_nodes": [],
+   "targets": [
+    {
+     "id": "t1",
+     "name": "büro+ GF – Umsatz je Bundesland",
+     "target_type": "dataset",
+     "target_connection_id": null,
+     "target_table": "",
+     "target_write_mode": "replace",
+     "target_options": {},
+     "fields": [
+      {
+       "source_field": "Bundesland",
+       "target_field": "Bundesland",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Bundesland"
+       }
+      },
+      {
+       "source_field": "Umsatz",
+       "target_field": "Umsatz",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Umsatz"
+       }
+      },
+      {
+       "source_field": "UmsatzVJ",
+       "target_field": "UmsatzVJ",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "UmsatzVJ"
+       }
+      },
+      {
+       "source_field": "Rohertrag",
+       "target_field": "Rohertrag",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rohertrag"
+       }
+      },
+      {
+       "source_field": "Marge %",
+       "target_field": "Marge %",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Marge %"
+       }
+      },
+      {
+       "source_field": "Kunden",
+       "target_field": "Kunden",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Kunden"
+       }
+      },
+      {
+       "source_field": "Rechnungen",
+       "target_field": "Rechnungen",
+       "target_type": "string",
+       "source_dataset_id": "__sql__sql1",
+       "transformer": {
+        "type": "direct",
+        "source_field": "Rechnungen"
+       }
+      }
+     ]
+    }
+   ]
   }
  ],
  "forms": [
@@ -5415,6 +5664,20 @@
       "mapping_id": "m_bp_v12_artikel",
       "pipeline_id": null,
       "label": "Artikel-Verkauf 12-Monats-Vergleich"
+     },
+     {
+      "id": "act_geo_bl",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_geo_bundesland",
+      "pipeline_id": null,
+      "label": "Umsatz je Bundesland"
+     },
+     {
+      "id": "act_geo_land",
+      "type": "run_mapping",
+      "mapping_id": "m_bp_geo_land",
+      "pipeline_id": null,
+      "label": "Umsatz je Land"
      },
      {
       "id": "act_inventur",
@@ -6528,6 +6791,85 @@
        },
        "info": "Stand heute, unabhängig vom gewählten Zeitraum. Alle Artikel mit Rechnung in den letzten {{inventur_monate}} Monaten, ohne DSZ-Gebühren und ohne Text-/Leistungsartikel (keine Warengruppe und kein EK). Paletten, Kartons und Stück sind leer – zum Eintragen nach dem Export (CSV/Excel). EK = Kalkulations-EK aus büro+ je Mengeneinheit (Tsd = je 1.000 Stück); zum Vergleich der EK der letzten Bestellung. Verkauft = Menge und Umsatz im selben Zeitraum, Korrekturen gegengerechnet. Klick auf einen Artikel: seine Belege im selben Zeitraum."
       }
+     },
+     {
+      "id": "w_karte_bl",
+      "type": "karte",
+      "label": "Umsatz nach Bundesland",
+      "action_id": "act_geo_bl",
+      "config": {
+       "width": 12,
+       "karte": "deutschland",
+       "einheit": "eur",
+       "hoehe": 460,
+       "zusatz": [
+        {
+         "spalte": "Rohertrag",
+         "label": "Rohertrag",
+         "einheit": "eur"
+        },
+        {
+         "spalte": "Marge %",
+         "label": "Marge",
+         "einheit": "prozent"
+        },
+        {
+         "spalte": "Kunden",
+         "label": "Kunden"
+        },
+        {
+         "spalte": "Rechnungen",
+         "label": "Rechnungen"
+        }
+       ],
+       "spalten": {
+        "schluessel": "Bundesland",
+        "name": "Bundesland",
+        "wert": "Umsatz",
+        "vj": "UmsatzVJ"
+       },
+       "info": "Nach der Rechnungsanschrift des Kunden (büro+ exportiert keine Lieferadresse je Beleg); Bundesland aus der PLZ. Rechnungskorrekturen gegengerechnet; Vergleich mit dem Vorjahreszeitraum."
+      }
+     },
+     {
+      "id": "w_karte_land",
+      "type": "karte",
+      "label": "Umsatz nach Land",
+      "action_id": "act_geo_land",
+      "config": {
+       "width": 12,
+       "karte": "welt",
+       "ausschnitt": "europa",
+       "einheit": "eur",
+       "hoehe": 460,
+       "zusatz": [
+        {
+         "spalte": "Rohertrag",
+         "label": "Rohertrag",
+         "einheit": "eur"
+        },
+        {
+         "spalte": "Marge %",
+         "label": "Marge",
+         "einheit": "prozent"
+        },
+        {
+         "spalte": "Kunden",
+         "label": "Kunden"
+        },
+        {
+         "spalte": "Rechnungen",
+         "label": "Rechnungen"
+        }
+       ],
+       "spalten": {
+        "schluessel": "IsoNum",
+        "name": "Land",
+        "wert": "Umsatz",
+        "vj": "UmsatzVJ"
+       },
+       "info": "Nach der Rechnungsanschrift des Kunden (büro+ exportiert keine Lieferadresse je Beleg); Bundesland aus der PLZ. Rechnungskorrekturen gegengerechnet; Vergleich mit dem Vorjahreszeitraum. Land = Länderschlüssel der Adresse in büro+."
+      }
      }
     ],
     "result_tabs": [
@@ -6559,6 +6901,14 @@
       "label": "Artikel-Verkauf",
       "action_ids": [
        "act_v12"
+      ]
+     },
+     {
+      "id": "tab_regionen",
+      "label": "Regionen",
+      "action_ids": [
+       "act_geo_bl",
+       "act_geo_land"
       ]
      },
      {
@@ -6595,6 +6945,7 @@
       "label": "Vertrieb & Sortiment",
       "reiter": [
        "tab_kunden",
+       "tab_regionen",
        "tab_artikel",
        "tab_v12"
       ]
