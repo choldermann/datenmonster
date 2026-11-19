@@ -91,9 +91,16 @@ export default function SpaltenFilter({ spalte, rows, filter, setFilter, anzeige
     setFilter(neu);
     setOffen(null);
   };
-  const loeschen = () => {
-    const neu = { ...(filter || {}) }; delete neu[spalte];
-    setFilter(neu); setOffen(null);
+  // Immer bedienbar: hebt den Filter dieser Spalte auf und setzt alle Häkchen zurück –
+  // auch wenn erst im Fenster abgewählt, aber noch nicht mit OK bestätigt wurde.
+  const loeschen = (e) => {
+    e?.stopPropagation();
+    setSuche(""); setAuswahl(null);
+    if (aktiv) {
+      const neu = { ...(filter || {}) }; delete neu[spalte];
+      setFilter(neu);
+    }
+    setOffen(null);
   };
 
   const btn = { padding: "4px 10px", borderRadius: 4, fontSize: 11, fontWeight: 600, cursor: "pointer",
@@ -137,10 +144,10 @@ export default function SpaltenFilter({ spalte, rows, filter, setFilter, anzeige
             {!sichtbar.length && <div style={{ padding: "6px 8px", color: S.textDim }}>Kein Treffer</div>}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 6, marginTop: 8 }}>
-            <button onClick={loeschen} disabled={!aktiv} style={{ ...btn, opacity: aktiv ? 1 : 0.4 }}>Filter löschen</button>
+            <button type="button" onClick={loeschen} style={btn}>Filter löschen</button>
             <div style={{ display: "flex", gap: 6 }}>
-              <button onClick={() => setOffen(null)} style={btn}>Abbrechen</button>
-              <button onClick={anwenden} style={{ ...btn, borderColor: S.accent, color: S.accent }}>OK</button>
+              <button type="button" onClick={() => setOffen(null)} style={btn}>Abbrechen</button>
+              <button type="button" onClick={anwenden} style={{ ...btn, borderColor: S.accent, color: S.accent }}>OK</button>
             </div>
           </div>
         </div>
