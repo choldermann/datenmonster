@@ -1,38 +1,43 @@
 /**
- * Branchenprofil eines Marktlage-Pakets auf die vorhandenen Cockpits übertragen.
+ * Branchenprofil eines Marktlage-Pakets auf die vorhandenen Cockpits übertragen – in beliebig viele
+ * Projekte und Mandanten auf einmal.
  *
  * Das Paket bleibt ERP-neutral; verknüpft wird über die Einstellungen, die die Cockpits schon haben
- * (je Projekt und Mandant, /api/business-config/…):
+ * (je Projekt und Mandant):
  *   preisindex      → GF-Cockpit, Umsatz preisbereinigt
  *   branche         → GF-Cockpit, „Ich gegen meine Branche“
  *   kundenbranchen  → GF-Cockpit, Insolvenzklima der Kundenbranchen
  *   erzeugerpreise  → Einkaufs-Cockpit, Erzeugerpreise der eingekauften Waren
- * Nichts wird von selbst übernommen: der Nutzer hakt an, was gelten soll (vorhandene Auswahl bleibt sonst).
+ * Nichts ist vorausgewählt: der Nutzer hakt Einstellungen und Ziele an.
+ * Backend: GET /api/business-config/branchenprofil/stand, PUT /api/business-config/branchenprofil.
  *
  * widget.config.profil = { preisindex?: {key, region, label}, branche?: {code, label},
  *                          kundenbranchen?: [{code, label}], erzeugerpreise?: [{code, label}] }
  */
 import { useEffect, useMemo, useState } from "react";
-import { CheckCircle, Loader2, Link2 } from "lucide-react";
+import { CheckCircle, Loader2, Link2, Search } from "lucide-react";
 import api, { fehlerText } from "../../../api/client";
 
-type Eintrag = { code: string; label: string };
-const S = { border: "var(--border)", dim: "var(--text-dim)", main: "var(--text-main)", bright: "var(--text-bright)", accent: "var(--accent)" };
+const S = { border: "var(--border)", dim: "var(--text-dim)", main: "var(--text-main)", bright: "var(--text-bright)" };
 
 const ART = {
-  preisindex: { titel: "Preisindex für die Preisbereinigung", wirkt: "GF-Cockpit › Umsatz preisbereinigt" },
-  branche: { titel: "Vergleichsbranche", wirkt: "GF-Cockpit › Ich gegen meine Branche" },
-  kundenbranchen: { titel: "Kundenbranchen (Insolvenzklima)", wirkt: "GF-Cockpit › Kunden & Zahlungsmoral" },
-  erzeugerpreise: { titel: "Erzeugerpreise der Einkaufswaren", wirkt: "Einkaufs-Cockpit › Markt, Preise & Währungen" },
+  preisindex: { titel: "Preisindex", lang: "Preisindex für die Preisbereinigung", wirkt: "GF-Cockpit › Umsatz preisbereinigt" },
+  branche: { titel: "Branche", lang: "Vergleichsbranche", wirkt: "GF-Cockpit › Ich gegen meine Branche" },
+  kundenbranchen: { titel: "Kundenbranchen", lang: "Kundenbranchen (Insolvenzklima)", wirkt: "GF-Cockpit › Kunden & Zahlungsmoral" },
+  erzeugerpreise: { titel: "Erzeugerpreise", lang: "Erzeugerpreise der Einkaufswaren", wirkt: "Einkaufs-Cockpit › Markt, Preise & Währungen" },
 } as const;
 type Art = keyof typeof ART;
+type Ziel = { project_id: number; project_name: string; mandant_id: number | null; mandant_name: string | null;
+  darf_schreiben: boolean; werte: Record<string, any> };
+
+const zielKey = (z: Ziel) => `${z.project_id}:${z.mandant_id ?? ""}`;
 
 function text(art: Art, wert: any): string {
   if (!wert) return "";
   if (art === "preisindex") return wert.label || wert.region || "";
   if (art === "branche") return wert.label || wert.code || "";
-  const liste: Eintrag[] = art === "kundenbranchen" ? wert.zweige || wert : wert.gueter || wert;
-  return (Array.isArray(liste) ? liste : []).map((x) => x.label || x.code).join(" · ");
+  const liste = Array.isArray(wert) ? wert : (art === "kundenbranchen" ? wert.zweige : wert.gueter) || [];
+  return liste.map((x) => x.label || x.code).join(" · ");
 }
 
 function gleich(art: Art, a: any, b: any) {
@@ -46,124 +51,136 @@ function gleich(art: Art, a: any, b: any) {
 export default function BranchenprofilWidget({ widget, projectId }) {
   const profil = widget.config?.profil || {};
   const arten = (Object.keys(ART) as Art[]).filter((a) => profil[a] && (!Array.isArray(profil[a]) || profil[a].length));
-  const [projekte, setProjekte] = useState<any[]>([]);
-  const [ziel, setZiel] = useState<number | null>(null);
-  const [aktuell, setAktuell] = useState<Record<string, any>>({});
-  const [mandant, setMandant] = useState<string>("");
-  const [laden, setLaden] = useState(false);
-  const [wahl, setWahl] = useState<Record<string, boolean>>({});
+  const [ziele, setZiele] = useState<Ziel[] | null>(null);
+  const [artWahl, setArtWahl] = useState<Record<string, boolean>>({});
+  const [zielWahl, setZielWahl] = useState<Record<string, boolean>>({});
+  const [suche, setSuche] = useState("");
   const [speichern, setSpeichern] = useState(false);
   const [meldung, setMeldung] = useState("");
   const [fehler, setFehler] = useState("");
 
-  useEffect(() => {
-    api.get("/api/projects/").then(({ data }) => {
-      const liste = (data || []).filter((p) => p.id !== projectId);
-      setProjekte(liste);
-      if (liste.length === 1) setZiel(liste[0].id);
-    }).catch(() => {});
-  }, [projectId]);
+  const laden = () => api.get("/api/business-config/branchenprofil/stand")
+    .then(({ data }) => setZiele((data.ziele || []).filter((z) => z.project_id !== projectId)))
+    .catch((e) => setFehler(fehlerText(e)));
+  useEffect(() => { laden(); }, [projectId]);
 
-  const holen = (pid: number, meldungBehalten = false) => {
-    setLaden(true); setFehler(""); if (!meldungBehalten) setMeldung(""); setWahl({});
-    Promise.all(arten.map((a) => api.get(`/api/business-config/${a}`, { params: { project_id: pid } })
-      .then(({ data }) => [a, data] as const)))
-      .then((xs) => {
-        setAktuell(Object.fromEntries(xs.map(([a, d]) => [a, d.auswahl])));
-        setMandant(xs[0]?.[1]?.mandant_name || "");
-      })
-      .catch((e) => setFehler(fehlerText(e)))
-      .finally(() => setLaden(false));
-  };
-  useEffect(() => { if (ziel != null) holen(ziel); }, [ziel]);
+  const sichtbar = useMemo(() => {
+    const s = suche.trim().toLowerCase();
+    return (ziele || []).filter((z) => !s || `${z.project_name} ${z.mandant_name || ""}`.toLowerCase().includes(s));
+  }, [ziele, suche]);
 
-  const gewaehlt = useMemo(() => arten.filter((a) => wahl[a]), [wahl, arten]);
+  const gewaehlteArten = arten.filter((a) => artWahl[a]);
+  const gewaehlteZiele = (ziele || []).filter((z) => zielWahl[zielKey(z)]);
+  const alleSichtbarAn = sichtbar.filter((z) => z.darf_schreiben).every((z) => zielWahl[zielKey(z)]);
 
   const uebernehmen = async () => {
-    if (ziel == null) return;
     setSpeichern(true); setFehler(""); setMeldung("");
     try {
-      for (const a of gewaehlt) {
-        const v = profil[a];
-        const body = a === "preisindex" ? { project_id: ziel, key: v.key, region: v.region, label: v.label }
-          : a === "branche" ? { project_id: ziel, code: v.code, label: v.label }
-          : a === "kundenbranchen" ? { project_id: ziel, zweige: v }
-          : { project_id: ziel, gueter: v };
-        await api.put(`/api/business-config/${a}`, body);
-      }
-      setMeldung(`${gewaehlt.length} ${gewaehlt.length === 1 ? "Einstellung" : "Einstellungen"} übernommen – die Cockpits zeigen das beim nächsten Laden.`);
-      holen(ziel, true);
+      await api.put("/api/business-config/branchenprofil", {
+        ziele: gewaehlteZiele.map((z) => ({ project_id: z.project_id, mandant_id: z.mandant_id })),
+        profil: Object.fromEntries(gewaehlteArten.map((a) => [a, profil[a]])),
+      });
+      setMeldung(`${gewaehlteArten.length} ${gewaehlteArten.length === 1 ? "Einstellung" : "Einstellungen"} in `
+        + `${gewaehlteZiele.length} ${gewaehlteZiele.length === 1 ? "Ziel" : "Ziele"} übernommen – die Cockpits zeigen das beim nächsten Laden.`);
+      setZielWahl({});
+      await laden();
     } catch (e) {
       setFehler(fehlerText(e, "Übernehmen fehlgeschlagen"));
     } finally { setSpeichern(false); }
   };
 
   if (!arten.length) return null;
+  const zelle = { padding: "7px 10px", borderTop: `1px solid ${S.border}`, verticalAlign: "top" as const };
   return (
     <div style={{ padding: "12px 16px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
       <p style={{ margin: 0, fontSize: 12.5, color: S.dim, lineHeight: 1.5 }}>
-        Dieselben Marktdaten können Ihre Cockpits direkt neben den eigenen Zahlen zeigen. Wählen Sie das Projekt mit
-        Ihren Cockpits und haken Sie an, was übernommen werden soll – vorhandene Einstellungen bleiben sonst unverändert.
+        Dieselben Marktdaten können Ihre Cockpits direkt neben den eigenen Zahlen zeigen. Haken Sie an, welche
+        Einstellungen übernommen werden sollen und in welche Projekte und Mandanten – alles andere bleibt unverändert.
       </p>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label style={{ fontSize: 12, color: S.dim }}>Projekt mit den Cockpits</label>
-        <select value={ziel ?? ""} onChange={(e) => setZiel(e.target.value ? Number(e.target.value) : null)}
-          style={{ fontSize: 13, padding: "5px 8px", borderRadius: 8, border: `1px solid ${S.border}`,
-            backgroundColor: "var(--bg-elevated)", color: S.bright }}>
-          <option value="">– wählen –</option>
-          {projekte.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-        {mandant && <span style={{ fontSize: 12, color: S.dim }}>Mandant: {mandant}</span>}
-        {laden && <Loader2 size={14} className="animate-spin" style={{ color: S.dim }} />}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={{ fontSize: 12, color: S.dim }}>1. Was übernehmen?</span>
+        {arten.map((a) => (
+          <label key={a} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13, color: S.main, cursor: "pointer" }}>
+            <input type="checkbox" checked={!!artWahl[a]} onChange={(e) => setArtWahl({ ...artWahl, [a]: e.target.checked })}
+              style={{ marginTop: 3 }} />
+            <span><b style={{ color: S.bright, fontWeight: 600 }}>{ART[a].lang}:</b> {text(a, profil[a])}
+              <span style={{ display: "block", fontSize: 11, color: S.dim }}>wirkt in {ART[a].wirkt}</span></span>
+          </label>
+        ))}
       </div>
 
-      {ziel != null && !laden && (
-        <div style={{ overflowX: "auto", border: `1px solid ${S.border}`, borderRadius: 10 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 640 }}>
-            <thead><tr style={{ color: S.dim, textAlign: "left" }}>
-              <th style={{ padding: "8px 10px", width: 28 }} />
-              <th style={{ padding: "8px 10px", fontWeight: 500 }}>Einstellung</th>
-              <th style={{ padding: "8px 10px", fontWeight: 500 }}>Bisher</th>
-              <th style={{ padding: "8px 10px", fontWeight: 500 }}>Vorschlag aus diesem Paket</th>
-            </tr></thead>
-            <tbody>
-              {arten.map((a) => {
-                const schon = gleich(a, aktuell[a], profil[a]);
-                return (
-                  <tr key={a} style={{ borderTop: `1px solid ${S.border}`, verticalAlign: "top" }}>
-                    <td style={{ padding: "8px 10px" }}>
-                      {schon ? <CheckCircle size={14} style={{ color: "var(--ok)" }} />
-                        : <input type="checkbox" checked={!!wahl[a]} onChange={(e) => setWahl({ ...wahl, [a]: e.target.checked })} />}
-                    </td>
-                    <td style={{ padding: "8px 10px", color: S.bright }}>
-                      {ART[a].titel}
-                      <div style={{ fontSize: 11, color: S.dim }}>wirkt in {ART[a].wirkt}</div>
-                    </td>
-                    <td style={{ padding: "8px 10px", color: aktuell[a] ? S.main : S.dim }}>
-                      {aktuell[a] ? text(a, aktuell[a]) : "nicht eingestellt"}
-                    </td>
-                    <td style={{ padding: "8px 10px", color: schon ? S.dim : S.main }}>
-                      {schon ? "bereits so eingestellt" : text(a, profil[a])}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12, color: S.dim }}>2. Wohin? (Projekt und Mandant)</span>
+          <div style={{ position: "relative" }}>
+            <Search size={12} style={{ position: "absolute", left: 8, top: 8, color: S.dim }} />
+            <input value={suche} onChange={(e) => setSuche(e.target.value)} placeholder="Projekt oder Mandant suchen …"
+              style={{ fontSize: 12, padding: "4px 8px 4px 24px", borderRadius: 8, border: `1px solid ${S.border}`,
+                backgroundColor: "var(--bg-elevated)", color: S.bright, outline: "none", width: 220 }} />
+          </div>
         </div>
-      )}
+        {ziele === null && !fehler && <span style={{ color: S.dim, fontSize: 12 }}><Loader2 size={13} className="animate-spin" /> Lädt …</span>}
+        {ziele && (
+          <div style={{ overflowX: "auto", border: `1px solid ${S.border}`, borderRadius: 10, maxHeight: 360, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 640 }}>
+              <thead><tr style={{ color: S.dim, textAlign: "left", position: "sticky", top: 0, background: "var(--bg-card)" }}>
+                <th style={{ padding: "7px 10px", width: 28 }}>
+                  <input type="checkbox" title="alle angezeigten" checked={sichtbar.length > 0 && alleSichtbarAn}
+                    onChange={(e) => {
+                      const n = { ...zielWahl };
+                      sichtbar.filter((z) => z.darf_schreiben).forEach((z) => { n[zielKey(z)] = e.target.checked; });
+                      setZielWahl(n);
+                    }} />
+                </th>
+                <th style={{ padding: "7px 10px", fontWeight: 500 }}>Projekt</th>
+                <th style={{ padding: "7px 10px", fontWeight: 500 }}>Mandant</th>
+                {arten.map((a) => <th key={a} style={{ padding: "7px 10px", fontWeight: 500 }}>{ART[a].titel} bisher</th>)}
+              </tr></thead>
+              <tbody>
+                {sichtbar.map((z) => (
+                  <tr key={zielKey(z)} style={{ opacity: z.darf_schreiben ? 1 : 0.5 }}>
+                    <td style={zelle}>
+                      <input type="checkbox" disabled={!z.darf_schreiben} checked={!!zielWahl[zielKey(z)]}
+                        title={z.darf_schreiben ? "" : "Keine Bearbeitungsrechte in diesem Projekt"}
+                        onChange={(e) => setZielWahl({ ...zielWahl, [zielKey(z)]: e.target.checked })} />
+                    </td>
+                    <td style={{ ...zelle, color: S.bright }}>{z.project_name}</td>
+                    <td style={{ ...zelle, color: z.mandant_name ? S.main : S.dim }}>{z.mandant_name || "–"}</td>
+                    {arten.map((a) => {
+                      const v = z.werte?.[a];
+                      return (
+                        <td key={a} style={{ ...zelle, color: v ? S.main : S.dim, maxWidth: 220 }}>
+                          {gleich(a, v, profil[a])
+                            ? <span style={{ color: "var(--ok)", display: "inline-flex", gap: 4, alignItems: "center" }}>
+                                <CheckCircle size={12} /> wie Vorschlag</span>
+                            : v ? text(a, v) : "–"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {fehler && <p style={{ margin: 0, color: "var(--err)", fontSize: 12.5 }}>{fehler}</p>}
       {meldung && <p role="status" style={{ margin: 0, color: "var(--ok)", fontSize: 12.5 }}>{meldung}</p>}
-      {ziel != null && (
-        <div>
-          <button onClick={uebernehmen} disabled={speichern || !gewaehlt.length} className="btn-primary"
-            style={{ opacity: gewaehlt.length ? 1 : 0.5 }}>
-            {speichern ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
-            {gewaehlt.length ? `${gewaehlt.length} übernehmen` : "Auswahl übernehmen"}
-          </button>
-        </div>
-      )}
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={uebernehmen} className="btn-primary"
+          disabled={speichern || !gewaehlteArten.length || !gewaehlteZiele.length}
+          style={{ opacity: gewaehlteArten.length && gewaehlteZiele.length ? 1 : 0.5 }}>
+          {speichern ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}
+          Übernehmen
+        </button>
+        <span style={{ fontSize: 12, color: S.dim }}>
+          {gewaehlteArten.length} {gewaehlteArten.length === 1 ? "Einstellung" : "Einstellungen"} → {gewaehlteZiele.length} {gewaehlteZiele.length === 1 ? "Ziel" : "Ziele"}
+          {gewaehlteZiele.some((z) => arten.some((a) => artWahl[a] && z.werte?.[a] && !gleich(a, z.werte[a], profil[a])))
+            ? " · ersetzt vorhandene Einstellungen" : ""}
+        </span>
+      </div>
     </div>
   );
 }

@@ -421,13 +421,8 @@ def get_preisindex(project_id: Optional[int] = None, db: Session = Depends(get_d
 def set_preisindex(body: PreisindexIn, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)):
     require_editor(body.project_id, user, db)
-    import re
-    if body.key not in ("preise_grosshandel", "preise_verbraucher"):
-        raise HTTPException(400, "Unbekannter Preisindex")
-    if not (body.region == "Deutschland" or re.fullmatch(r"WZ08-\d{2,5}", body.region or "")):
-        raise HTTPException(400, "Unbekannte Branche")
     mandant_id = mandant_service.aktiver(body.project_id, user, db)
-    wert = {"key": body.key, "region": body.region, "label": (body.label or "")[:160], "von": user.username}
+    wert = _wert_preisindex(body.model_dump(), user)
     cfg_service.set_value(body.project_id, db, "preisindex", "auswahl", wert, mandant_id)
     return {"auswahl": wert}
 
@@ -465,11 +460,8 @@ def get_branche(project_id: Optional[int] = None, db: Session = Depends(get_db),
 @router.put("/branche")
 def set_branche(body: BrancheIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_editor(body.project_id, user, db)
-    import re
-    if not re.fullmatch(r"G\d{0,4}(_[A-Z0-9_]{1,20})?", body.code or ""):
-        raise HTTPException(400, "Unbekannte Branche")
     mandant_id = mandant_service.aktiver(body.project_id, user, db)
-    wert = {"code": body.code, "label": (body.label or "")[:160], "von": user.username}
+    wert = _wert_branche(body.model_dump(), user)
     cfg_service.set_value(body.project_id, db, "branche", "auswahl", wert, mandant_id)
     return {"auswahl": wert}
 
@@ -506,16 +498,8 @@ def get_kundenbranchen(project_id: Optional[int] = None, db: Session = Depends(g
 @router.put("/kundenbranchen")
 def set_kundenbranchen(body: KundenbranchenIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_editor(body.project_id, user, db)
-    import re
-    zweige = []
-    for z in body.zweige[:12]:
-        code = str(z.get("code") or "")
-        if not re.fullmatch(r"WZ08-([A-U]|\d{2,5})", code):
-            raise HTTPException(400, f"Unbekannter Wirtschaftszweig: {code[:20]}")
-        if code not in {x["code"] for x in zweige}:
-            zweige.append({"code": code, "label": str(z.get("label") or "")[:120]})
     mandant_id = mandant_service.aktiver(body.project_id, user, db)
-    wert = {"zweige": zweige, "von": user.username}
+    wert = _wert_kundenbranchen(body.zweige, user)
     cfg_service.set_value(body.project_id, db, "kundenbranchen", "auswahl", wert, mandant_id)
     return {"auswahl": wert}
 
@@ -543,16 +527,8 @@ def get_erzeugerpreise(project_id: Optional[int] = None, db: Session = Depends(g
 @router.put("/erzeugerpreise")
 def set_erzeugerpreise(body: ErzeugerpreiseIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     require_editor(body.project_id, user, db)
-    import re
-    gueter = []
-    for z in body.gueter[:12]:
-        code = str(z.get("code") or "")
-        if not re.fullmatch(r"GP19-\d{2,6}", code):
-            raise HTTPException(400, f"Unbekannte Güterklasse: {code[:20]}")
-        if code not in {x["code"] for x in gueter}:
-            gueter.append({"code": code, "label": str(z.get("label") or "")[:120]})
     mandant_id = mandant_service.aktiver(body.project_id, user, db)
-    wert = {"gueter": gueter, "von": user.username}
+    wert = _wert_erzeugerpreise(body.gueter, user)
     cfg_service.set_value(body.project_id, db, "erzeugerpreise", "auswahl", wert, mandant_id)
     return {"auswahl": wert}
 
@@ -595,3 +571,119 @@ def set_arbeitstage(body: ArbeitstageIn, db: Session = Depends(get_db), user: Us
     wert = {"bundesland": body.bundesland, "samstag": body.samstag, "halbe_tage": body.halbe_tage, "von": user.username}
     cfg_service.set_value(body.project_id, db, "arbeitstage", "auswahl", wert, mandant_id)
     return {"auswahl": wert}
+
+
+# ── Prüfregeln der Umfeld-Einstellungen (Einzel-Endpunkte und Branchenprofil) ──
+import re as _re
+
+
+def _wert_preisindex(d: dict, user) -> dict:
+    key, region = d.get("key"), d.get("region") or ""
+    if key not in ("preise_grosshandel", "preise_verbraucher"):
+        raise HTTPException(400, "Unbekannter Preisindex")
+    if not (region == "Deutschland" or _re.fullmatch(r"WZ08-\d{2,5}", region)):
+        raise HTTPException(400, "Unbekannte Branche")
+    return {"key": key, "region": region, "label": str(d.get("label") or "")[:160], "von": user.username}
+
+
+def _wert_branche(d: dict, user) -> dict:
+    code = d.get("code") or ""
+    if not _re.fullmatch(r"G\d{0,4}(_[A-Z0-9_]{1,20})?", code):
+        raise HTTPException(400, "Unbekannte Branche")
+    return {"code": code, "label": str(d.get("label") or "")[:160], "von": user.username}
+
+
+def _codeliste(liste, muster: str, fehler: str) -> list:
+    aus = []
+    for z in (liste or [])[:12]:
+        code = str((z or {}).get("code") or "")
+        if not _re.fullmatch(muster, code):
+            raise HTTPException(400, f"{fehler}: {code[:20]}")
+        if code not in {x["code"] for x in aus}:
+            aus.append({"code": code, "label": str(z.get("label") or "")[:120]})
+    return aus
+
+
+def _wert_kundenbranchen(zweige, user) -> dict:
+    return {"zweige": _codeliste(zweige, r"WZ08-([A-U]|\d{2,5})", "Unbekannter Wirtschaftszweig"), "von": user.username}
+
+
+def _wert_erzeugerpreise(gueter, user) -> dict:
+    return {"gueter": _codeliste(gueter, r"GP19-\d{2,6}", "Unbekannte Güterklasse"), "von": user.username}
+
+
+PROFIL_ARTEN = ("preisindex", "branche", "kundenbranchen", "erzeugerpreise")
+
+
+def _profil_wert(art: str, v, user) -> dict:
+    if art == "preisindex":
+        return _wert_preisindex(v or {}, user)
+    if art == "branche":
+        return _wert_branche(v or {}, user)
+    if art == "kundenbranchen":
+        return _wert_kundenbranchen(v, user)
+    return _wert_erzeugerpreise(v, user)
+
+
+# ── Branchenprofil (Marktlage-Pakete): Stand und Übernahme für mehrere Projekte/Mandanten ──
+# Je Projekt die Mandanten, die der Benutzer nutzen darf (ohne Mandanten: eine Zeile mit mandant_id None).
+
+def _ziele(user, db) -> list:
+    from app.api.projects import get_accessible_project_ids
+    from app.models.project import Project
+    ids = get_accessible_project_ids(user, db)
+    q = db.query(Project)
+    if ids is not None:
+        q = q.filter(Project.id.in_(ids))
+    aus = []
+    for p in q.order_by(Project.name).all():
+        try:
+            require_editor(p.id, user, db)
+            schreiben = True
+        except HTTPException:
+            schreiben = False
+        ms = mandant_service.erlaubte(p.id, user, db)
+        for m in (ms or [None]):
+            aus.append({"project_id": p.id, "project_name": p.name, "darf_schreiben": schreiben,
+                        "mandant_id": m["connection_id"] if m else None,
+                        "mandant_name": m["name"] if m else None})
+    return aus
+
+
+@router.get("/branchenprofil/stand")
+def branchenprofil_stand(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Je Projekt und Mandant die aktuellen Umfeld-Einstellungen (für das Widget „Mit Cockpits verknüpfen“)."""
+    aus = []
+    for z in _ziele(user, db):
+        werte = {}
+        for art in PROFIL_ARTEN:
+            zeilen = cfg_service._rows(z["project_id"], db, art, z["mandant_id"], strikt=True)
+            werte[art] = dict(zeilen[0].value or {}) if zeilen else None
+        aus.append({**z, "werte": werte})
+    return {"ziele": aus}
+
+
+class BranchenprofilIn(BaseModel):
+    ziele: list[dict] = []          # [{project_id, mandant_id}]
+    profil: dict = {}               # {art: wert} – nur die zu übernehmenden Arten
+
+
+@router.put("/branchenprofil")
+def branchenprofil_uebernehmen(body: BranchenprofilIn, db: Session = Depends(get_db),
+                               user: User = Depends(get_current_user)):
+    """Übernimmt die gewählten Einstellungen in alle angegebenen Projekte/Mandanten – erst alles prüfen, dann schreiben."""
+    werte = {art: _profil_wert(art, v, user) for art, v in (body.profil or {}).items() if art in PROFIL_ARTEN}
+    if not werte or not body.ziele:
+        raise HTTPException(400, "Nichts zu übernehmen")
+    erlaubt = {(z["project_id"], z["mandant_id"]) for z in _ziele(user, db) if z["darf_schreiben"]}
+    ziele = []
+    for z in body.ziele[:200]:
+        schluessel = (z.get("project_id"), z.get("mandant_id"))
+        if schluessel not in erlaubt:
+            raise HTTPException(403, f"Kein Schreibrecht für Projekt {schluessel[0]} / Mandant {schluessel[1]}")
+        if schluessel not in ziele:
+            ziele.append(schluessel)
+    for pid, mid in ziele:
+        for art, wert in werte.items():
+            cfg_service.set_value(pid, db, art, "auswahl", wert, mid)
+    return {"ok": True, "ziele": len(ziele), "arten": list(werte)}
