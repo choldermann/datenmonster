@@ -30,12 +30,15 @@ function aktualisierung(h: number) {
   return h <= 12 ? "mehrmals täglich geprüft" : h <= 24 ? "täglich geprüft" : "wöchentlich geprüft";
 }
 
-function Detail({ g, onClose }: { g: Groesse; onClose: () => void }) {
-  const start = g.regionen.find((r) => r.code === "Deutschland" || r.code === "Insgesamt" || r.code === "BS-ESI-I")
+function Detail({ g, onClose, vorSuche = "" }: { g: Groesse; onClose: () => void; vorSuche?: string }) {
+  const treffer0 = vorSuche ? g.regionen.find((r) => r.label.toLowerCase().includes(vorSuche.toLowerCase())) : undefined;
+  const start = treffer0
+    || g.regionen.find((r) => r.code === "Deutschland" || r.code === "Insgesamt" || r.code === "BS-ESI-I")
     || g.regionen[0];
   const [regionen, setRegionen] = useState<string[]>(start ? [start.code] : []);
   const [monate, setMonate] = useState<number>(60);
-  const [suche, setSuche] = useState("");
+  // Suchbegriff der Katalogsuche mitnehmen, wenn er Regionen/Güterklassen trifft (z. B. „Papier“)
+  const [suche, setSuche] = useState(g.regionen.length > 20 && treffer0 ? vorSuche : "");
   const [daten, setDaten] = useState<any>(null);
   const [fehler, setFehler] = useState("");
   const name = (c: string) => g.regionen.find((r) => r.code === c)?.label || c;
@@ -232,7 +235,7 @@ export default function Marktdaten() {
                 border: `1px solid ${S.border}`, backgroundColor: S.bgEl, color: S.textBright, outline: "none" }} />
           </div>
 
-          {gewaehlt && <Detail key={gewaehlt.key} g={gewaehlt} onClose={() => setOffen(null)} />}
+          {gewaehlt && <Detail key={gewaehlt.key} g={gewaehlt} vorSuche={suche.trim()} onClose={() => setOffen(null)} />}
 
           {gruppen.map(([titel, liste]) => (
             <section key={titel} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
