@@ -1,0 +1,168 @@
+"""Mapping-Baukasten: Übersetzer Steinkette → SQL (ohne Datenbank).
+
+Lauf:  docker compose exec -T backend python tests/test_baukasten_uebersetzer.py
+"""
+import re
+import sys
+from contextlib import contextmanager
+sys.path.insert(0, "/app")
+
+from app.services.baukasten.uebersetzer import BaukastenFehler, Schema, uebersetzen, vorschau_begrenzen
+
+@contextmanager
+def raises(art, muster=None):
+    try:
+        yield
+    except art as e:
+        if muster and not re.search(muster, str(e)):
+            raise AssertionError(f"Meldung passt nicht: {e}")
+        return
+    raise AssertionError(f"{art.__name__} erwartet")
+
+
+SCHEMA = Schema({"tables": [
+    {"full_name": "Rechnung.tRechnung", "columns": [
+        {"name": "kRechnung", "type": "int"}, {"name": "kKunde", "type": "int"},
+        {"name": "dErstellt", "type": "datetime"}, {"name": "fWert", "type": "decimal(18,2)"},
+        {"name": "cRechnungsNr", "type": "nvarchar(50)"}]},
+    {"full_name": "dbo.tKunde", "columns": [
+        {"name": "kKunde", "type": "int"}, {"name": "cFirma", "type": "nvarchar(100)"},
+        {"name": "cLand", "type": "nvarchar(5)"}]},
+]})
+
+KETTE = [
+    {"type": "start", "trigger": "Wenn das Cockpit öffnet"},
+    {"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "dErstellt", "op": "im Jahr", "val": "2026"},
+        {"type": "join", "table": "dbo.tKunde", "links": "kKunde", "rechts": "kKunde", "inner": [
+            {"type": "filter", "col": "cLand", "op": "=", "val": "DE"}]},
+    ]},
+    {"type": "verdichten", "by": ["cFirma", {"col": "dErstellt", "teil": "monat"}],
+     "aggs": [{"fn": "Summe", "col": "fWert"}, {"fn": "Anzahl"}]},
+    {"type": "rechnen", "name": "Ø Rechnung", "a": "Summe fWert", "op": "÷", "b": "Anzahl"},
+    {"type": "filter", "col": "Summe fWert", "op": ">", "val": "1000"},
+    {"type": "sortieren", "col": "Summe fWert", "dir": "absteigend"},
+    {"type": "begrenzen", "n": 10},
+    {"type": "ausgabe", "target": "Tabelle im Cockpit"},
+]
+
+
+def test_ganze_kette_mssql():
+    e = uebersetzen(KETTE, SCHEMA, "mssql", literal=True)
+    sql = e.sql
+    assert sql.startswith("WITH s0 AS (")
+    assert "FROM [Rechnung].[tRechnung] t0" in sql
+    assert "INNER JOIN (SELECT * FROM [dbo].[tKunde] WHERE [cLand] = N'DE') j1 ON t0.[kKunde] = j1.[kKunde]" in sql
+    assert "t0.[dErstellt] >= N'20260101' AND t0.[dErstellt] < N'20270101'" in sql   # JJJJMMTT: eindeutig in SQL Server
+    assert "CONVERT(char(7), [dErstellt], 126) AS [dErstellt (Monat)]" in sql
+    assert "GROUP BY [cFirma], CONVERT(char(7), [dErstellt], 126)" in sql
+    assert "ROUND(CAST([Summe fWert] AS float) / NULLIF(CAST([Anzahl] AS float), 0), 2) AS [Ø Rechnung]" in sql
+    assert "ROUND(SUM(CAST([fWert] AS float)), 2) AS [Summe fWert]" in sql
+    assert "WHERE [Summe fWert] > 1000" in sql
+    assert sql.rstrip().endswith("SELECT TOP (10) * FROM s3\nORDER BY [Summe fWert] DESC")
+    assert [s.name for s in e.spalten] == ["cFirma", "dErstellt (Monat)", "Summe fWert", "Anzahl", "Ø Rechnung"]
+    assert ":p" not in sql                      # gespeichertes Mapping: keine ungebundenen Parameter
+
+
+def test_zaehler_und_spalten_je_block():
+    e = uebersetzen(KETTE, SCHEMA, "mssql")
+    for bid in (":1:kopf", "1:0", "1:1", "1.1:0", "1:1:fremd", ":1", ":2", ":3", ":4", ":5", ":6", ":7"):
+        assert bid in e.zaehl_sql, bid
+    # was am Trichter ankommt: Rechnungs- und Kundenspalten (Schlüssel nicht doppelt)
+    assert e.spalten_je_block[":2"] == ["kRechnung", "kKunde", "dErstellt", "fWert", "cRechnungsNr", "cFirma", "cLand"]
+    assert e.params == {"p0": "20260101", "p1": "20270101", "p2": "DE", "p3": 1000.0}
+    # Zähler „Nur die ersten“ zählt das Begrenzte (TOP mit ORDER BY ist in der Unterabfrage erlaubt)
+    assert "SELECT COUNT(*) AS n FROM (SELECT TOP (10) * FROM s3\nORDER BY [Summe fWert] DESC) z" in e.zaehl_sql[":6"]
+
+
+def test_injektion_ueber_namen_und_werte_unmoeglich():
+    boese = [{"type": "tabelle", "table": "Rechnung.tRechnung; DROP TABLE x", "inner": []}]
+    with raises(BaukastenFehler):
+        uebersetzen(boese, SCHEMA)
+    boese = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+        {"type": "filter", "col": "cRechnungsNr", "op": "=", "val": "x'; DROP TABLE y; --"}]}]
+    sql = uebersetzen(boese, SCHEMA, literal=True).sql
+    assert "N'x''; DROP TABLE y; --'" in sql
+    with raises(BaukastenFehler):
+        uebersetzen([{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+            {"type": "filter", "col": "fWert]; DROP TABLE z; --", "op": "=", "val": "1"}]}], SCHEMA)
+    with raises(BaukastenFehler):
+        uebersetzen([{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [
+            {"type": "filter", "col": "fWert", "op": "OR 1=1", "val": "1"}]}], SCHEMA)
+
+
+REGELN = [
+    ([{"type": "verdichten", "by": ["x"]}], "Zuerst eine Tabelle"),
+    ([{"type": "tabelle", "table": "dbo.tKunde", "inner": []}, {"type": "filter", "col": "cLand", "op": "=", "val": "DE"}], "Kennzahl"),
+    ([{"type": "tabelle", "table": "dbo.tKunde", "inner": []}, {"type": "ausgabe"}, {"type": "begrenzen", "n": 1}], "letzte Stein"),
+    ([{"type": "tabelle", "table": "dbo.tKunde", "inner": [{"type": "rechnen"}]}], "Winkel"),
+    ([{"type": "tabelle", "table": "dbo.tKunde", "inner": []}, {"type": "verdichten", "by": ["cLand"], "aggs": [{"fn": "Summe", "col": "cFirma"}]}], "nur mit Zahlen"),
+]
+
+
+def test_regeln():
+    for kette, meldung in REGELN:
+        with raises(BaukastenFehler, meldung):
+            uebersetzen(kette, SCHEMA)
+
+
+def test_zeitraum_des_cockpits_bleibt_parameter():
+    k = [{"type": "tabelle", "table": "Rechnung.tRechnung", "inner": [{"type": "filter", "col": "dErstellt", "op": "im Zeitraum"}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "t0.[dErstellt] >= :von AND t0.[dErstellt] < DATEADD(DAY, 1, :bis)" in e.sql
+    assert e.nutzt_zeitraum
+
+
+def test_leerer_wert_wirkt_nicht_und_enthaelt_maskiert():
+    k = [{"type": "tabelle", "table": "dbo.tKunde", "inner": [
+        {"type": "filter", "col": "cFirma", "op": "enthält", "val": ""},
+        {"type": "filter", "col": "cLand", "op": "enthält", "val": "50%_"}]}]
+    e = uebersetzen(k, SCHEMA, literal=True)
+    assert "WHERE LOWER(CAST(t0.[cLand] AS nvarchar(400))) LIKE LOWER(N'%50\\%\\_%') ESCAPE '\\'" in e.sql
+    assert "cFirma" not in e.sql.split("WHERE")[1]
+
+
+def test_andere_dialekte_und_vorschau():
+    k = [{"type": "tabelle", "table": "dbo.tKunde", "inner": []}, {"type": "sortieren", "col": "cFirma", "dir": "aufsteigend"},
+         {"type": "begrenzen", "n": 5}]
+    pg = uebersetzen(k, SCHEMA, "postgresql", literal=True).sql
+    assert 'FROM "dbo"."tKunde" t0' in pg and pg.rstrip().endswith('ORDER BY "cFirma" ASC\nLIMIT 5')
+    my = uebersetzen(k, SCHEMA, "mysql", literal=True).sql
+    assert "FROM `dbo`.`tKunde` t0" in my
+    ms = uebersetzen([k[0]], SCHEMA, "mssql").sql
+    assert vorschau_begrenzen(ms, 50, "mssql").endswith("SELECT TOP (50) * FROM s0")
+    assert vorschau_begrenzen("SELECT * FROM [dbo].[tKunde] t0", 50, "mssql") == "SELECT TOP (50) * FROM [dbo].[tKunde] t0"
+
+
+def test_spaltennamen_ohne_gross_klein():
+    """SQL Server: cUstId und cUSTID sind dieselbe Spalte – die dazugeholte bekommt einen Zusatz (Fund aus dem Live-Test)."""
+    sch = Schema({"db_type": "mssql", "tables": [
+        {"full_name": "a.R", "columns": [{"name": "kK", "type": "int"}, {"name": "cUstId", "type": "nvarchar(20)"},
+                                          {"name": "bRowversion", "type": "timestamp"}]},
+        {"full_name": "a.K", "columns": [{"name": "kK", "type": "int"}, {"name": "cUSTID", "type": "nvarchar(20)"}]}]})
+    e = uebersetzen([{"type": "tabelle", "table": "a.R", "inner": [
+        {"type": "join", "table": "a.K", "links": "kK", "rechts": "kK", "inner": []}]}], sch)
+    assert [s.name for s in e.spalten] == ["kK", "cUstId", "bRowversion", "cUSTID (K)"]
+    assert sch.tabellen["a.R"][2].typ == "text"          # timestamp = Zeilenversion, kein Datum
+
+
+def test_warnung_bei_vervielfachung():
+    from app.services.baukasten.ausfuehren import warnungen
+    k = [{"type": "tabelle", "table": "x", "inner": [
+        {"type": "filter"}, {"type": "join", "table": "dbo.tAdresse", "links": "kKunde"}]}]
+    w = warnungen(k, {":0:kopf": 30879, "0:0": 10219, "0:1": 10219})
+    assert w == {}
+    w = warnungen(k, {":0:kopf": 30879, "0:0": 10219, "0:1": 20438})
+    assert "Aus 10.219 werden 20.438 Zeilen" in w["0:1"]
+
+
+if __name__ == "__main__":
+    fehler = 0
+    for name, f in list(globals().items()):
+        if name.startswith("test_") and callable(f):
+            try:
+                f(); print("  OK  ", name)
+            except Exception as e:
+                fehler += 1; print("  FAIL", name, "→", repr(e)[:400])
+    print("Alle Prüfungen bestanden." if not fehler else f"{fehler} Fehler")
+    sys.exit(1 if fehler else 0)

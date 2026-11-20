@@ -771,6 +771,8 @@ from app.api import einrichtung as einrichtung_api
 app.include_router(einrichtung_api.router)
 from app.api import umfeld as umfeld_api  # noqa: E402
 app.include_router(umfeld_api.router)
+from app.api import baukasten as baukasten_api  # noqa: E402
+app.include_router(baukasten_api.router)
 from app.api import ustid as ustid_api  # noqa: E402
 app.include_router(ustid_api.router)
 
