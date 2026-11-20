@@ -6,6 +6,7 @@ import EmailTableButton from "../EmailTableButton";
 import SpaltenFilter, { filtereZeilen } from "../SpaltenFilter";
 import { sortiereZeilen } from "../tabellenSortierung";
 import { fehlerText } from "../../../api/client";
+import { useSprungziele, SprungLinks } from "../sprungziele";
 
 const S = {
   bgEl: "var(--bg-elevated)", border: "var(--border)",
@@ -40,6 +41,11 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
   const allColumns = result.columns || [];
   const columns = allColumns.filter(c => !hidden.has(c));
   const { rows = [], total } = result;
+  // config.sprung = { spalte: "Ziel" }: die Spalte nennt einen Widget-Typ (energie, insolvenzen …); daraus wird
+  // eine Spalte „Im Cockpit“ mit Links zu den Cockpits, die so ein Widget haben (Marktlage-Pakete)
+  const sprungSpalte = cfg.sprung?.spalte || null;
+  const sprungZiele = useSprungziele(sprungSpalte ? rows.map((r) => String(r[sprungSpalte] ?? "")) : []);
+  const mitSprung = !!sprungSpalte && Object.values(sprungZiele).some((l) => l.length);
   const [xlsxLaeuft, setXlsxLaeuft] = useState(false);
   // Zeilen sind klickbar, wenn eine KI-Aktion oder ein Detail-Mapping (+ Schlüsselspalte)
   // konfiguriert ist. KI-Aktion hat Vorrang, falls beides gesetzt wäre.
@@ -149,6 +155,10 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                     anzeige={(v) => fmtCell(v, dezCols.has(c))} />
                 </th>
               ))}
+              {mitSprung && (
+                <th style={{ padding: "8px 12px", textAlign: "left", borderBottom: `1px solid ${S.border}`, color: S.textDim,
+                  fontWeight: 600, whiteSpace: "nowrap", fontSize: 11 }}>{cfg.sprung?.titel || "Im Cockpit"}</th>
+              )}
             </tr>
           </thead>
           <tbody>
@@ -161,6 +171,11 @@ export default function TableWidget({ widget, result, allowDownload, onDrilldown
                   <td key={c} style={{ padding: "7px 12px", color: S.textMain,
                     textAlign: numericCols.has(c) ? "right" : "left" }}>{fmtCell(row[c], dezCols.has(c))}</td>
                 ))}
+                {mitSprung && (
+                  <td style={{ padding: "7px 12px", fontSize: 11.5 }}>
+                    <SprungLinks ziele={sprungZiele[String(row[sprungSpalte] ?? "")] || []} />
+                  </td>
+                )}
               </tr>
             ))}
             {filterAktiv && !sortedRows.length && (

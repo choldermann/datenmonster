@@ -143,6 +143,36 @@ def rubriken(db: Session = Depends(get_db), user: User = Depends(get_current_use
                                 lambda fid: bool(eintraege.get(fid, {}).get("gesperrt")))}
 
 
+@router.get("/sprungziele")
+def sprungziele(typen: str = "", db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Wo zeigen die sichtbaren Cockpits Widgets dieser Typen? Je Typ: Formular und Reiter.
+
+    Grundlage für Sprünge zwischen ERP-neutralen Ansichten (Marktlage) und den Cockpits: gesucht wird
+    nach Widget-Typ (energie, insolvenzen, erzeugerpreise …), nicht nach Vorlage – so zählen auch
+    Kopien, und wo es kein passendes Cockpit gibt (z. B. büro+), kommt einfach nichts.
+    """
+    gesucht = [t for t in (typen or "").split(",") if t.strip()][:20]
+    namen = _projektnamen(db)
+    liste = [f for f in _sichtbare_formulare(user, db)
+             if (f.schema or {}).get("widgets") and not _ist_startseite(f)]
+    aus: dict = {t: [] for t in gesucht}
+    for f in sorted(liste, key=lambda f: f.id):
+        c = _cockpit_out(f, namen, db)
+        if c.get("gesperrt"):
+            continue
+        schema = f.schema or {}
+        tabs = schema.get("result_tabs") or []
+        for w in schema.get("widgets") or []:
+            typ = w.get("type")
+            if typ not in aus or any(x["form_id"] == f.id for x in aus[typ]):
+                continue
+            tab = next((t for t in tabs if w.get("id") in (t.get("widget_ids") or [])
+                        or (w.get("action_id") and w.get("action_id") in (t.get("action_ids") or []))), None)
+            aus[typ].append({"form_id": f.id, "name": f.name, "projekt": c.get("projekt"),
+                             "reiter": tab.get("id") if tab else None, "reiter_label": tab.get("label") if tab else None})
+    return {"ziele": aus}
+
+
 def _einstellungen(user) -> dict:
     e = getattr(user, "einstellungen", None)
     return dict(e) if isinstance(e, dict) else {}

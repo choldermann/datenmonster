@@ -86,6 +86,16 @@ PAKETE = {
 }
 
 
+# Größe → Widget-Typ in den Cockpits, der dieselbe Größe neben den eigenen Zahlen zeigt (Sprung „Im Cockpit“)
+ZIEL_WIDGET = {
+    "erzeugerpreise": "erzeugerpreise", "wechselkurse": "waehrungen", "kraftstoff": "energie",
+    "insolvenzen": "insolvenzen", "stimmung": "stimmung", "temperatur": "umfeld",
+    "umsatz_handel": "branchenvergleich", "umsatz_handel_real": "branchenvergleich",
+    "umsatz_handel_ka": "branchenvergleich", "umsatz_handel_real_ka": "branchenvergleich",
+    "umsatz_gastgewerbe": "umfeld", "preise_grosshandel": "branchenvergleich", "preise_verbraucher": "branchenvergleich",
+}
+
+
 def _q(s: str) -> str:
     return "'" + s.replace("'", "''") + "'"
 
@@ -95,9 +105,9 @@ def _ident(s: str) -> str:
 
 
 def sql_lage(reihen) -> str:
-    werte = ",\n    ".join(f"({_q(g)}, {_q(r)}, {_q(t)}, {_q(th)}, {i}, {1 if pct else 0})"
+    werte = ",\n    ".join(f"({_q(g)}, {_q(r)}, {_q(t)}, {_q(th)}, {i}, {1 if pct else 0}, {_q(ZIEL_WIDGET.get(g, ''))})"
                            for i, (t, g, r, th, pct) in enumerate(reihen, 1))
-    return f"""WITH k(g, r, Reihe, Thema, Sort, Pct) AS (VALUES
+    return f"""WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES
     {werte}
 ), s AS (
     SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region
@@ -108,7 +118,8 @@ SELECT k.Thema, k.Reihe, a.Einheit,
     ROUND(v.Wert, 2) AS Vorjahr,
     ROUND(a.Wert - v.Wert, 2) AS "Veränderung",
     CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS "Veränderung %",
-    a.Quelle
+    a.Quelle,
+    k.Ziel
 FROM k
 JOIN s ON s.Groesse = k.g AND s.Region = k.r
 JOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p
@@ -149,12 +160,13 @@ def paket(pid: str, p: dict) -> dict:
         auswahl.setdefault(g, [])
         if r not in auswahl[g]:
             auswahl[g].append(r)
-    lage_spalten = ["Thema", "Reihe", "Einheit", "Stand", "Aktuell", "Vorjahr", "Veränderung", "Veränderung %", "Quelle"]
+    lage_spalten = ["Thema", "Reihe", "Einheit", "Stand", "Aktuell", "Vorjahr", "Veränderung", "Veränderung %", "Quelle", "Ziel"]
     verlauf_spalten = ["Periode"] + [t for t, *_ in reihen]
     themen = list(dict.fromkeys(th for *_, th, _p in reihen))
 
     widgets = [{"id": "w_lage", "type": "table", "label": "Lage auf einen Blick: letzter Wert gegen denselben Monat im Vorjahr",
-                "action_id": "act_lage", "config": {"width": 12, "full_rows": True, "hidden_columns": ["Quelle"]}}]
+                "action_id": "act_lage", "config": {"width": 12, "full_rows": True, "hidden_columns": ["Quelle", "Ziel"],
+                                                   "sprung": {"spalte": "Ziel", "titel": "Mit eigenen Zahlen im Cockpit"}}}]
     for i, th in enumerate(themen, 1):
         widgets.append({"id": f"w_verlauf_{i}", "type": "line", "label": th, "action_id": "act_verlauf",
                         "config": {"width": 6, "x_column": "Periode",

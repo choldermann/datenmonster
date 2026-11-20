@@ -12,6 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Globe, Search, X } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
+import { useSprungziele, SprungLinks } from "./sprungziele";
 
 export type MarktWahl = { groesse: string; region: string; label: string; einheit: string; quelle?: string };
 
@@ -73,6 +74,7 @@ export function MarktDialog({ projectId, aktuell, onWahl, onClose }) {
   const [katalog, setKatalog] = useState<any[] | null>(null);
   const [suche, setSuche] = useState("");
   const [fehler, setFehler] = useState("");
+  const marktlage = useSprungziele(["branchenprofil"]).branchenprofil || [];   // installierte Marktlage-Pakete
   useEffect(() => {
     vorschlaege(projectId).then(setVor);
     katalogLaden().then(setKatalog).catch((e) => setFehler(fehlerText(e)));
@@ -138,6 +140,11 @@ export function MarktDialog({ projectId, aktuell, onWahl, onClose }) {
           {suche.trim() && katalog && !treffer.length && <div style={{ padding: 10, fontSize: 12.5, color: "var(--text-dim)" }}>Nichts gefunden.</div>}
         </div>
         {fehler && <p style={{ margin: 0, fontSize: 12.5, color: "var(--err)" }}>{fehler}</p>}
+        {marktlage.length > 0 && (
+          <div style={{ fontSize: 12, color: "var(--text-dim)", display: "flex", gap: 8, alignItems: "flex-start" }}>
+            <span style={{ whiteSpace: "nowrap" }}>Ganze Marktlage:</span><SprungLinks ziele={marktlage} />
+          </div>
+        )}
         {aktuell && (
           <button onClick={() => onWahl(null)} style={{ alignSelf: "flex-start", fontSize: 12.5, padding: "6px 12px", borderRadius: 6,
             border: "1px solid var(--border)", background: "transparent", color: "var(--text-main)", cursor: "pointer" }}>

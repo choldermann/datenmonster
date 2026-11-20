@@ -137,9 +137,10 @@
             "Vorjahr",
             "Veränderung",
             "Veränderung %",
-            "Quelle"
+            "Quelle",
+            "Ziel"
           ],
-          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct) AS (VALUES\n    ('erzeugerpreise', 'GP19-172211', 'Hygienepapier (Toilettenpapier, Handtücher)', 'Einkaufspreise der Hersteller', 1, 1),\n    ('erzeugerpreise', 'GP19-1721', 'Wellpappe-Verpackungen', 'Einkaufspreise der Hersteller', 2, 1),\n    ('erzeugerpreise', 'GP19-2222', 'Kunststoffverpackungen', 'Einkaufspreise der Hersteller', 3, 1),\n    ('erzeugerpreise', 'GP19-2041', 'Seifen, Wasch- & Reinigungsmittel', 'Einkaufspreise der Hersteller', 4, 1),\n    ('preise_grosshandel', 'WZ08-46494', 'Großhandel Papier & Bürobedarf', 'Verkaufspreise', 5, 1),\n    ('preise_grosshandel', 'WZ08-46442', 'Großhandel Wasch- & Reinigungsmittel', 'Verkaufspreise', 6, 1),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Verkaufspreise', 7, 1),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 8, 1),\n    ('umsatz_gastgewerbe', 'Deutschland', 'Umsatz Gastgewerbe (nominal)', 'Nachfrage', 9, 1),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 10, 1),\n    ('insolvenzen', 'WZ08-56', 'Insolvenzen Gastronomie', 'Insolvenzen der Kundenbranchen', 11, 1),\n    ('insolvenzen', 'WZ08-55', 'Insolvenzen Beherbergung', 'Insolvenzen der Kundenbranchen', 12, 1),\n    ('insolvenzen', 'WZ08-812', 'Insolvenzen Gebäudereinigung', 'Insolvenzen der Kundenbranchen', 13, 1),\n    ('insolvenzen', 'WZ08-86', 'Insolvenzen Gesundheitswesen & Heime', 'Insolvenzen der Kundenbranchen', 14, 1),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Stimmung', 15, 0),\n    ('stimmung', 'BS-SCI-BAL', 'Dienstleister-Vertrauen (Saldo)', 'Stimmung', 16, 0)\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('erzeugerpreise', 'GP19-172211', 'Hygienepapier (Toilettenpapier, Handtücher)', 'Einkaufspreise der Hersteller', 1, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-1721', 'Wellpappe-Verpackungen', 'Einkaufspreise der Hersteller', 2, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2222', 'Kunststoffverpackungen', 'Einkaufspreise der Hersteller', 3, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2041', 'Seifen, Wasch- & Reinigungsmittel', 'Einkaufspreise der Hersteller', 4, 1, 'erzeugerpreise'),\n    ('preise_grosshandel', 'WZ08-46494', 'Großhandel Papier & Bürobedarf', 'Verkaufspreise', 5, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-46442', 'Großhandel Wasch- & Reinigungsmittel', 'Verkaufspreise', 6, 1, 'branchenvergleich'),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Verkaufspreise', 7, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 8, 1, 'branchenvergleich'),\n    ('umsatz_gastgewerbe', 'Deutschland', 'Umsatz Gastgewerbe (nominal)', 'Nachfrage', 9, 1, 'umfeld'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 10, 1, 'energie'),\n    ('insolvenzen', 'WZ08-56', 'Insolvenzen Gastronomie', 'Insolvenzen der Kundenbranchen', 11, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-55', 'Insolvenzen Beherbergung', 'Insolvenzen der Kundenbranchen', 12, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-812', 'Insolvenzen Gebäudereinigung', 'Insolvenzen der Kundenbranchen', 13, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-86', 'Insolvenzen Gesundheitswesen & Heime', 'Insolvenzen der Kundenbranchen', 14, 1, 'insolvenzen'),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Stimmung', 15, 0, 'stimmung'),\n    ('stimmung', 'BS-SCI-BAL', 'Dienstleister-Vertrauen (Saldo)', 'Stimmung', 16, 0, 'stimmung')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
         }
       ],
       "targets": [
@@ -231,6 +232,15 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Quelle"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Ziel",
+              "target_field": "Ziel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ziel"
               }
             }
           ]
@@ -499,8 +509,13 @@
               "width": 12,
               "full_rows": true,
               "hidden_columns": [
-                "Quelle"
-              ]
+                "Quelle",
+                "Ziel"
+              ],
+              "sprung": {
+                "spalte": "Ziel",
+                "titel": "Mit eigenen Zahlen im Cockpit"
+              }
             }
           },
           {

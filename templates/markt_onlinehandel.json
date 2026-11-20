@@ -133,9 +133,10 @@
             "Vorjahr",
             "Veränderung",
             "Veränderung %",
-            "Quelle"
+            "Quelle",
+            "Ziel"
           ],
-          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct) AS (VALUES\n    ('umsatz_handel_ka', 'G4791', 'Versand- & Internethandel (nominal)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 1, 1),\n    ('umsatz_handel_real_ka', 'G4791', 'Versand- & Internethandel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 2, 1),\n    ('umsatz_handel_real_ka', 'G47_NFOOD_X_G473', 'Einzelhandel ohne Lebensmittel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 3, 1),\n    ('stimmung', 'BS-CSMCI-BAL', 'Verbraucher-Vertrauen (Saldo)', 'Stimmung', 4, 0),\n    ('stimmung', 'BS-RCI-BAL', 'Einzelhandel-Vertrauen (Saldo)', 'Stimmung', 5, 0),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Preise', 6, 1),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse (Einkauf im Ausland)', 7, 1),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse (Einkauf im Ausland)', 8, 1),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 9, 1),\n    ('insolvenzen', 'WZ08-4791', 'Insolvenzen Versand- & Internethandel', 'Insolvenzen im Handel', 10, 1),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel gesamt', 'Insolvenzen im Handel', 11, 1),\n    ('temperatur', 'Deutschland', 'Temperatur Deutschland (°C)', 'Wetter', 12, 0)\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('umsatz_handel_ka', 'G4791', 'Versand- & Internethandel (nominal)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 1, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G4791', 'Versand- & Internethandel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 2, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G47_NFOOD_X_G473', 'Einzelhandel ohne Lebensmittel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 3, 1, 'branchenvergleich'),\n    ('stimmung', 'BS-CSMCI-BAL', 'Verbraucher-Vertrauen (Saldo)', 'Stimmung', 4, 0, 'stimmung'),\n    ('stimmung', 'BS-RCI-BAL', 'Einzelhandel-Vertrauen (Saldo)', 'Stimmung', 5, 0, 'stimmung'),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Preise', 6, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse (Einkauf im Ausland)', 7, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse (Einkauf im Ausland)', 8, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 9, 1, 'energie'),\n    ('insolvenzen', 'WZ08-4791', 'Insolvenzen Versand- & Internethandel', 'Insolvenzen im Handel', 10, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel gesamt', 'Insolvenzen im Handel', 11, 1, 'insolvenzen'),\n    ('temperatur', 'Deutschland', 'Temperatur Deutschland (°C)', 'Wetter', 12, 0, 'umfeld')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
         }
       ],
       "targets": [
@@ -227,6 +228,15 @@
               "transformer": {
                 "type": "direct",
                 "source_field": "Quelle"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Ziel",
+              "target_field": "Ziel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Ziel"
               }
             }
           ]
@@ -455,8 +465,13 @@
               "width": 12,
               "full_rows": true,
               "hidden_columns": [
-                "Quelle"
-              ]
+                "Quelle",
+                "Ziel"
+              ],
+              "sprung": {
+                "spalte": "Ziel",
+                "titel": "Mit eigenen Zahlen im Cockpit"
+              }
             }
           },
           {
