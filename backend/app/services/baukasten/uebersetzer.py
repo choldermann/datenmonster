@@ -240,6 +240,9 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             vorher = stufen[-1]
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT * FROM {vorher.name}" + (f"\nWHERE {bed}" if bed else ""), spalten))
             merken(bid, spalten, len(stufen) - 1)
+        elif t == "rechnen" and (not b.get("a") or b.get("b") in (None, "")):
+            erg.spalten_je_block[bid] = [x.name for x in spalten]      # halbfertig: wirkt noch nicht
+            merken(bid, spalten, len(stufen) - 1)
         elif t == "rechnen":
             spalten_in = spalten
             name = _name(b.get("name") or "Neue Spalte")
@@ -276,8 +279,10 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
                 gruppe.append(expr)
                 aus.append(f"{expr} AS {d.q(name)}")
                 neu.append(Spalte(name, typ))
-            if not gruppe:
-                raise BaukastenFehler("Zusammenfassen: mindestens eine Spalte „je …“ wählen.")
+            if not gruppe:                     # noch keine Spalte „je …“ gewählt: wirkt noch nicht
+                erg.spalten_je_block[bid] = [x.name for x in spalten_in]
+                merken(bid, spalten_in, len(stufen) - 1)
+                continue
             for a in (b.get("aggs") or [])[:8]:
                 fn = a.get("fn")
                 if fn not in AGG:
@@ -298,6 +303,8 @@ def uebersetzen(kette: list, schema: Schema, dialekt: str = "mssql", literal: bo
             stufen.append(Stufe(f"s{len(stufen)}", f"SELECT {', '.join(aus)}\nFROM {vorher.name}\nGROUP BY {', '.join(gruppe)}", neu))
             spalten = neu
             merken(bid, spalten_in, len(stufen) - 1)
+        elif t == "sortieren" and not b.get("col"):
+            erg.spalten_je_block[bid] = [x.name for x in spalten]
         elif t == "sortieren":
             s = _spalte(b.get("col"), spalten)
             sortierung = f"{d.q(s.name)} {'DESC' if b.get('dir') != 'aufsteigend' else 'ASC'}"
@@ -364,6 +371,8 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
             if bed:
                 wo.append(bed)
             merken(bid, spalten_in, None, roh_sql=aktueller_sql())
+        elif x.get("type") == "join" and (not x.get("table") or not x.get("links") or not x.get("rechts")):
+            merken(bid, spalten_in, None, roh_sql=aktueller_sql())      # noch nicht fertig eingestellt: wirkt noch nicht
         elif x.get("type") == "join":
             n_join += 1
             ja = f"j{n_join}"
@@ -438,6 +447,8 @@ def _bedingung(b: dict, spalten: list[Spalte], d: Dialekt, bind, ctx, alias=None
     op = b.get("op") or "="
     if op not in OPS:
         raise BaukastenFehler(f"Unbekannter Vergleich {op!r}.")
+    if not b.get("col"):
+        return ""                                  # Spalte noch nicht gewählt: Stein wirkt noch nicht
     s = _spalte(b.get("col"), spalten)
     x = (quelle or {}).get(s.name) or d.q(s.name)
     wert = b.get("val")

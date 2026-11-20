@@ -91,9 +91,9 @@ def mapping_laden(mapping_id: int, db: Session = Depends(get_db), user: User = D
     knoten = (m.sql_nodes or [{}])[0] if m.sql_nodes else {}
     bk = knoten.get("baukasten") if isinstance(knoten, dict) else None
     if not bk:
-        return {"baukasten": False}
+        return {"baukasten": False, "name": m.name, "project_id": m.project_id}
     andere = any(getattr(m, f, None) for f in ("canvas_nodes", "python_nodes", "ai_nodes", "rest_nodes", "lookup_nodes",
                                                 "transform_nodes", "calc_nodes", "expr_nodes"))
     geaendert = knoten.get("sql") != bk.get("sql") or len(m.sql_nodes) > 1 or andere
     return {"baukasten": True, "kette": bk.get("kette"), "connection_id": knoten.get("connection_id"),
-            "name": m.name, "profi_geaendert": geaendert}
+            "name": m.name, "project_id": m.project_id, "profi_geaendert": geaendert}

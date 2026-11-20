@@ -4,7 +4,7 @@ import SmartMappingModal from "../components/mapping/SmartMappingModal";
 import { useNavigate, useParams } from "react-router-dom";
 import { useProject } from "../context/ProjectContext";
 import { useAIAssistant } from "../contexts/AIAssistantContext";
-import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, FunctionSquare, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, ShieldCheck, Sparkles, Terminal, Trash2, Type, Wand2, X } from "lucide-react";
+import { ArrowLeft, Bug, Calculator, Check, ChevronDown, ChevronRight, Code2, Database, Download, Eye, FileText, Filter, FunctionSquare, GitBranch, Globe, GripVertical, Layers, Loader2, Pencil, Play, Plus, Save, Search, ShieldCheck, Sparkles, Terminal, ToyBrick, Trash2, Type, Wand2, X } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import XmlTemplateEditor from "../components/XmlTemplateEditor";
 import TransformNode, { TRANSFORM_TYPES, defaultConfig } from "../components/TransformNode";
@@ -1230,6 +1230,10 @@ export default function MappingEditor() {
                    borderBottom: `1px dashed ${nameFehlt ? "var(--err)" : S.border}`, padding: "2px 0" }} />
         {nameFehlt && <span style={{ fontSize: 11, color: "var(--err)", whiteSpace: "nowrap" }}>Bitte zuerst einen Namen vergeben</span>}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: "auto" }}>
+          {id && sqlNodes?.[0]?.baukasten && (
+            <button onClick={() => navigate(`/baukasten/${id}`)} className="btn-ghost text-xs" title="Dieses Mapping wurde im Baukasten gebaut">
+              <ToyBrick size={13} /> Baukasten</button>
+          )}
           <span style={{ fontSize: 11, color: S.textDim }}>{connections.length} Felder · {joins.length} Joins · {targets.length} Ziel{targets.length !== 1 ? "e" : ""}</span>
           {!canEdit && (
             <span style={{ fontSize: 11, color: "#93c5fd", padding: "3px 8px", borderRadius: 4, border: "1px solid rgba(147,197,253,0.25)", backgroundColor: "rgba(147,197,253,0.06)" }}>

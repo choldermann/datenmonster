@@ -8,7 +8,7 @@ import DbConnectionManager from "../components/DbConnectionManager";
 import XmlConfigurator from "../components/XmlConfigurator";
 import api, { fehlerText } from "../api/client";
 import { getStatus as getAiStatus } from "../services/aiService";
-import { Activity, BarChart2, Bell, Brain, Briefcase, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, Lock, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
+import { Activity, BarChart2, Bell, Brain, Briefcase, Check, ChevronRight, Database, Download, FileText, FolderKanban, FolderOpen, FolderSync, GitBranch, Globe, HardDrive, KeyRound, LayoutGrid, Loader2, Lock, LogOut, Package, Pencil, Plus, Puzzle, RefreshCw, Rocket, Server, Settings, ShieldAlert, Table, ToyBrick, Trash2, Users, Wand2, Wifi, X } from "lucide-react";
 import OnboardingWidget from "../components/onboarding/OnboardingWidget";
 
 import { S } from "../components/dashboard/constants";
@@ -682,6 +682,9 @@ export default function Dashboard() {
               {canEdit && <NewTile label="Neues Mapping" sub="Felder verbinden und transformieren" icon={GitBranch}
                 gesperrt={lizenz.kontingentGrund("mappings")}
                 onClick={() => navigate(`/mappings/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)} />}
+              {canEdit && <NewTile label="Neu im Baukasten" sub="Auswertung aus Lego-Steinen bauen – ohne SQL" icon={ToyBrick}
+                gesperrt={lizenz.kontingentGrund("mappings")}
+                onClick={() => navigate(`/baukasten/new${activeProject ? `?project_id=${activeProject.id}` : ""}`)} />}
               {mappings.map((m) => (
                 <div key={m.id} className="card group cursor-pointer transition-all"
                   style={{ borderColor: S.border }}

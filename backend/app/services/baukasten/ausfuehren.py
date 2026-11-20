@@ -16,6 +16,19 @@ VORSCHAU_ZEILEN = 50
 ZAEHL_BUDGET_S = 25          # danach keine weiteren Zähler mehr (große Tabellen)
 
 
+def _wert(x):
+    """Vorschauwert JSON-fähig machen (Binärspalten wie bRowversion, Decimal, Datum)."""
+    from decimal import Decimal
+    from datetime import date as _d, datetime as _dt, time as _t
+    if isinstance(x, (bytes, bytearray, memoryview)):
+        return "0x" + bytes(x).hex()[:32]
+    if isinstance(x, Decimal):
+        return float(x)
+    if isinstance(x, (_dt, _d, _t)):
+        return x.isoformat()
+    return x
+
+
 def verbindung(db, connection_id: int, user):
     """Verbindung samt Schema; prüft, ob der Benutzer sie nutzen darf."""
     from app.core.zugriff import lade_verbindung
@@ -81,7 +94,7 @@ def rechnen(db, user, connection_id: int, kette: list, zeige: str | None = None,
         try:
             res = con.execute(text(vsql), gebunden(vsql))
             spalten = list(res.keys())
-            zeilen = [dict(zip(spalten, r)) for r in res.fetchmany(VORSCHAU_ZEILEN)]
+            zeilen = [{k: _wert(x) for k, x in zip(spalten, r)} for r in res.fetchmany(VORSCHAU_ZEILEN)]
             vorschau = {"block": ziel, "spalten": spalten, "zeilen": zeilen}
         except Exception as e:
             vorschau = {"block": ziel, "spalten": [], "zeilen": [], "fehler": str(e).split("\n")[0][:300]}
