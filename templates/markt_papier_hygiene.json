@@ -608,6 +608,65 @@
               "full_rows": true,
               "luecken": true
             }
+          },
+          {
+            "id": "w_profil",
+            "type": "branchenprofil",
+            "label": "Mit Ihren Cockpits verknüpfen",
+            "config": {
+              "width": 12,
+              "profil": {
+                "preisindex": {
+                  "key": "preise_grosshandel",
+                  "region": "WZ08-46442",
+                  "label": "Großhandel: Großh.m. Wasch-, Putz- und Reinigungsmitteln"
+                },
+                "branche": {
+                  "code": "G464",
+                  "label": "Großhandel mit Gebrauchs- und Verbrauchsgütern"
+                },
+                "kundenbranchen": [
+                  {
+                    "code": "WZ08-56",
+                    "label": "Gastronomie"
+                  },
+                  {
+                    "code": "WZ08-55",
+                    "label": "Beherbergung"
+                  },
+                  {
+                    "code": "WZ08-812",
+                    "label": "Reinigung von Gebäuden, Straßen, Verkehrsmitteln"
+                  },
+                  {
+                    "code": "WZ08-86",
+                    "label": "Gesundheitswesen"
+                  },
+                  {
+                    "code": "WZ08-87",
+                    "label": "Heime (ohne Erholungs- und Ferienheime)"
+                  }
+                ],
+                "erzeugerpreise": [
+                  {
+                    "code": "GP19-172211",
+                    "label": "Toilettenpapier, Taschen-, Abschmink-, Handtücher"
+                  },
+                  {
+                    "code": "GP19-1721",
+                    "label": "Wellpapier und -pappe, Verpackungsmittel"
+                  },
+                  {
+                    "code": "GP19-2222",
+                    "label": "Verpackungsmittel aus Kunststoffen"
+                  },
+                  {
+                    "code": "GP19-2041",
+                    "label": "Seifen, Wasch-, Reinigungs- und Poliermittel"
+                  }
+                ]
+              }
+            }
           }
         ],
         "doku": {

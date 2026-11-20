@@ -36,6 +36,7 @@ import EnergieWidget from "./widgets/EnergieWidget";
 import StimmungWidget from "./widgets/StimmungWidget";
 import BranchenvergleichWidget from "./widgets/BranchenvergleichWidget";
 import EreignisseWidget from "./widgets/EreignisseWidget";
+import BranchenprofilWidget from "./widgets/BranchenprofilWidget";
 
 const S = {
   bgCard: "var(--bg-card)", border: "var(--border)",
@@ -52,7 +53,7 @@ const WIDGET_LABELS = {
   tasklist: "Aufgabenliste", alerts: "Unternehmenswarnungen",
   inventur: "Inventur zum Stichtag", kunden_ausschluss: "Verbundene Unternehmen",
   datenpflege: "Datenpflege", zugferd: "ZUGFeRD-Ausgang", baum: "Baumansicht",
-  ueberschrift: "Überschrift",
+  ueberschrift: "Überschrift", branchenprofil: "Mit Cockpits verknüpfen",
 };
 
 // Eigenständige Widgets brauchen kein Action-Ergebnis (rendern sofort).
@@ -61,7 +62,7 @@ export const STANDALONE_WIDGET_TYPES = new Set(["eingangsrechnung", "ean_researc
                                                 "kostenstruktur", "preisautomatik",
                                                 "debitoren", "datev_stammdaten",
                                                 "inventur", "kunden_ausschluss",
-                                                "datenpflege", "zugferd", "ereignisse"]);
+                                                "datenpflege", "zugferd", "ereignisse", "branchenprofil"]);
 
 function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiAction, onTaskClick, onAiText, projectId, formId, baseParams, onTab }) {
   // Eigenständige, interaktive Widgets (kein result nötig)
@@ -87,6 +88,7 @@ function WidgetBody({ widget, result, results, allowDownload, onDrilldown, onAiA
     return <DatenpflegeWidget widget={widget} formId={formId} />;
   if (widget.type === "zugferd") return <ZugferdWidget widget={widget} />;
   if (widget.type === "ereignisse") return <EreignisseWidget widget={widget} projectId={projectId} />;
+  if (widget.type === "branchenprofil") return <BranchenprofilWidget widget={widget} projectId={projectId} />;
 
   if (result.error) return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 16px",

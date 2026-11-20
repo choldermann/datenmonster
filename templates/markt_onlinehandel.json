@@ -575,6 +575,25 @@
               "full_rows": true,
               "luecken": true
             }
+          },
+          {
+            "id": "w_profil",
+            "type": "branchenprofil",
+            "label": "Mit Ihren Cockpits verknüpfen",
+            "config": {
+              "width": 12,
+              "profil": {
+                "preisindex": {
+                  "key": "preise_verbraucher",
+                  "region": "Deutschland",
+                  "label": "Verbraucherpreise insgesamt (für Einzelhandel/Shop)"
+                },
+                "branche": {
+                  "code": "G4791",
+                  "label": "Versand- und Internet-Einzelhandel"
+                }
+              }
+            }
           }
         ],
         "doku": {

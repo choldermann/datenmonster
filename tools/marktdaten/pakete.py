@@ -24,6 +24,20 @@ PAKETE = {
         "beschreibung": ("Einkaufs- und Verkaufspreise, Nachfrage, Transportkosten und Insolvenzen der Kundenbranchen "
                          "für den Handel mit Hygienepapier, Reinigungsmitteln und Verpackung – aus amtlichen Quellen, "
                          "monatlich aktuell, ohne eigenes Konto."),
+        # Vorschläge für die Einstellungen der vorhandenen Cockpits (Widget „Mit Cockpits verknüpfen“)
+        "profil": {
+            "preisindex": {"key": "preise_grosshandel", "region": "WZ08-46442",
+                           "label": "Großhandel: Großh.m. Wasch-, Putz- und Reinigungsmitteln"},
+            "branche": {"code": "G464", "label": "Großhandel mit Gebrauchs- und Verbrauchsgütern"},
+            "kundenbranchen": [{"code": "WZ08-56", "label": "Gastronomie"}, {"code": "WZ08-55", "label": "Beherbergung"},
+                               {"code": "WZ08-812", "label": "Reinigung von Gebäuden, Straßen, Verkehrsmitteln"},
+                               {"code": "WZ08-86", "label": "Gesundheitswesen"},
+                               {"code": "WZ08-87", "label": "Heime (ohne Erholungs- und Ferienheime)"}],
+            "erzeugerpreise": [{"code": "GP19-172211", "label": "Toilettenpapier, Taschen-, Abschmink-, Handtücher"},
+                               {"code": "GP19-1721", "label": "Wellpapier und -pappe, Verpackungsmittel"},
+                               {"code": "GP19-2222", "label": "Verpackungsmittel aus Kunststoffen"},
+                               {"code": "GP19-2041", "label": "Seifen, Wasch-, Reinigungs- und Poliermittel"}],
+        },
         "reihen": [
             ("Hygienepapier (Toilettenpapier, Handtücher)", "erzeugerpreise", "GP19-172211", "Einkaufspreise der Hersteller", True),
             ("Wellpappe-Verpackungen", "erzeugerpreise", "GP19-1721", "Einkaufspreise der Hersteller", True),
@@ -48,6 +62,12 @@ PAKETE = {
         "beschreibung": ("Umsatz im Versand- und Internethandel, Verbraucherstimmung, Preise, Wechselkurse für den "
                          "Import, Transportkosten und Insolvenzen im Handel – aus amtlichen Quellen, monatlich aktuell, "
                          "ohne eigenes Konto."),
+        # Kundenbranchen/Erzeugerpreise hängen vom Sortiment ab – bewusst kein Vorschlag
+        "profil": {
+            "preisindex": {"key": "preise_verbraucher", "region": "Deutschland",
+                           "label": "Verbraucherpreise insgesamt (für Einzelhandel/Shop)"},
+            "branche": {"code": "G4791", "label": "Versand- und Internet-Einzelhandel"},
+        },
         "reihen": [
             ("Versand- & Internethandel (nominal)", "umsatz_handel_ka", "G4791", "Nachfrage (Index 2021 = 100, kalenderbereinigt)", True),
             ("Versand- & Internethandel (real)", "umsatz_handel_real_ka", "G4791", "Nachfrage (Index 2021 = 100, kalenderbereinigt)", True),
@@ -141,6 +161,9 @@ def paket(pid: str, p: dict) -> dict:
                                    "y_columns": [t for t, *_x, th2, _p in reihen if th2 == th], "curved": True,
                                    "full_rows": True,      # sonst kappt die Vorschau nach 50 Monaten
                                    "luecken": True}})     # Reihen enden in verschiedenen Monaten
+    if p.get("profil"):
+        widgets.append({"id": "w_profil", "type": "branchenprofil", "label": "Mit Ihren Cockpits verknüpfen",
+                        "config": {"width": 12, "profil": p["profil"]}})
     quellen = "Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), " \
               "EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0)"
     return {
