@@ -10,7 +10,7 @@
  * links die Bereiche). Plan: ~/.claude/plans/ein-cockpit-rubriken.md.
  */
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
-import { Home, ListFilter, Mail, Settings, Wrench, LogOut, Star } from "lucide-react";
+import { Home, ListFilter, Mail, Settings, Wrench, LogOut, Star, Globe } from "lucide-react";
 import { useRubrikenLaden, rubrikIcon, rubrikPfad, ART_TEXT } from "./rubriken";
 import { useAuth } from "../../context/AuthContext";
 import { ThemeUmschalter, KiCredits } from "../../components/portal/PortalKopfzeile";
@@ -62,6 +62,7 @@ export default function StartLayout() {
       { to: "/start/auswertung", label: "Eigene Auswertung", icon: ListFilter },
       { to: "/start/mail", label: "Per Mail", icon: Mail },
     ]),
+    { to: "/start/marktdaten", label: "Marktdaten", icon: Globe },
     { to: "/start/einstellungen", label: "Einstellungen", icon: Settings },
   ];
 

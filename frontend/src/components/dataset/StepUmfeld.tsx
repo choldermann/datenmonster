@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckCircle, Globe, Loader2, AlertCircle, Search } from "lucide-react";
 import api, { fehlerText } from "../../api/client";
 
-type Region = { code: string; label: string };
-type Groesse = {
+export type Region = { code: string; label: string };
+export type Groesse = {
   key: string; label: string; einheit: string; quelle: string; regionen_art: string; takt: string;
   stand: string | null; von: string | null; bis: string | null; hinweis: string | null; regionen: Region[];
+  aktualisierung_h: number;
 };
 
 const S = {
@@ -24,7 +25,7 @@ const labelStyle = {
 };
 
 // Gruppen für die Übersicht – unbekannte Größen landen unter „Weitere“
-const GRUPPEN: [string, string[]][] = [
+export const GRUPPEN: [string, string[]][] = [
   ["Wetter & Gesundheit", ["temperatur", "niederschlag", "sonne", "hitzetage", "pollen", "atemwege", "grippe"]],
   ["Preise", ["preise_verbraucher", "preise_grosshandel", "erzeugerpreise", "kraftstoff", "wechselkurse"]],
   ["Branchen & Konjunktur", ["umsatz_handel", "umsatz_handel_real", "umsatz_handel_ka", "umsatz_handel_real_ka",
@@ -34,7 +35,7 @@ const GRUPPEN: [string, string[]][] = [
 
 const ZEITRAEUME = [[12, "12 Monate"], [24, "2 Jahre"], [60, "5 Jahre"], [120, "10 Jahre"], [0, "alles"]] as const;
 
-function kurzQuelle(q: string) {
+export function kurzQuelle(q: string) {
   return (q || "").split(/[,(–]/)[0].trim();
 }
 

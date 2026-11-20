@@ -20,6 +20,7 @@ import RubrikAnsicht, { ZurErstenRubrik, AlteCockpitAdresse } from "./pages/star
 import Auswertung from "./pages/start/Auswertung";
 import PerMail from "./pages/start/PerMail";
 import Einstellungen from "./pages/start/Einstellungen";
+import Marktdaten from "./pages/start/Marktdaten";
 import Einrichtung from "./pages/start/Einrichtung";
 import api from "./api/client";
 import PortalRunner from "./pages/PortalRunner";
@@ -177,6 +178,7 @@ export default function App() {
                 <Route path="cockpit/:id"   element={<AlteCockpitAdresse />} />
                 <Route path="auswertung"    element={<EditorRoute><Auswertung /></EditorRoute>} />
                 <Route path="mail"          element={<EditorRoute><PerMail /></EditorRoute>} />
+                <Route path="marktdaten"    element={<Marktdaten />} />
                 <Route path="einstellungen" element={<Einstellungen />} />
               </Route>
 
