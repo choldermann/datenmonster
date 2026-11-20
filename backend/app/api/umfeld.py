@@ -47,7 +47,8 @@ def _fragen(db: Session, pfad: str, extra: dict) -> dict:
     # Antworten mit Hinweis („wird gerade geladen“, „letzter Abruf fehlgeschlagen“) nicht 6 h festhalten,
     # sonst bliebe ein Cockpit den halben Tag leer, obwohl die Daten eine Minute später da sind.
     vorlaeufig = bool(daten.get("hinweis")) or any((x or {}).get("hinweis") for x in
-                                                   (daten.get("reihen") or []) + (daten.get("warennummern") or []))
+                                                   (daten.get("reihen") or []) + (daten.get("warennummern") or [])
+                                                   + (daten.get("groessen") or []))
     if not vorlaeufig:
         _CACHE[schluessel] = (time.time(), daten)
     return daten
@@ -81,6 +82,12 @@ def erzeugerpreise_katalog(db: Session = Depends(get_db), user: User = Depends(g
 def strukturdaten(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """Einwohner und verfügbares Einkommen je Bundesland (Destatis) – Bezugsgrößen für die Deutschlandkarte."""
     return _fragen(db, "strukturdaten", {})
+
+
+@router.get("/datenkatalog")
+def datenkatalog(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Alle Umfeldgrößen mit Quelle, Stand, Zeitraum und Regionen – für die Mapping-Quelle „Umfelddaten“."""
+    return _fragen(db, "datenkatalog", {})
 
 
 @router.get("/katalog")

@@ -17,8 +17,9 @@ def load_builtin_plugins(db=None):
     from app.plugins.registry import registry
     from app.plugins.builtin.web import ALL_PLUGINS as WEB_PLUGINS
     from app.plugins.builtin.mail import ALL_PLUGINS as MAIL_PLUGINS
+    from app.plugins.builtin.umfeld import ALL_PLUGINS as UMFELD_PLUGINS
 
-    all_plugins = WEB_PLUGINS + MAIL_PLUGINS
+    all_plugins = WEB_PLUGINS + MAIL_PLUGINS + UMFELD_PLUGINS
     loaded = 0
     for plugin_cls in all_plugins:
         try:

@@ -481,6 +481,15 @@ class PluginDatasetCreate(BaseModel):
     project_id: Optional[int] = None
 
 
+def _plugin_typen(plugin, config: dict, cols: list) -> dict:
+    """Spaltentypen, wenn das Plugin sie kennt (z. B. Umfelddaten: Wert = Dezimal, Datum = Datum)."""
+    try:
+        typen = plugin.get_column_types(config) if hasattr(plugin, "get_column_types") else {}
+    except Exception:
+        typen = {}
+    return {c: typen.get(c, "string") for c in cols}
+
+
 @router.post("/plugin")
 def create_plugin_dataset(
     body: PluginDatasetCreate,
@@ -515,7 +524,7 @@ def create_plugin_dataset(
         xml_configured=1,
         row_count=0,
         columns=cols,
-        column_types={c: "string" for c in cols},
+        column_types=_plugin_typen(plugin, body.query_config, cols),
     )
     db.add(ds)
     db.commit()

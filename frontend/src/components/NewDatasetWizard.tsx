@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Upload, Database, X, ChevronRight, ChevronLeft,
-  Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle, MousePointer,
+  Loader2, CheckCircle, FileText, Code2, AlertCircle, Puzzle, MousePointer, Globe,
 } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import VisualSelectorModal from "./dataset/VisualSelectorModal";
+import StepUmfeld from "./dataset/StepUmfeld";
 
 const S = {
   accent: "var(--accent)", bgMain: "var(--bg-main)", bgCard: "var(--bg-card)",
@@ -41,6 +42,10 @@ function StepChoose({ onChoose }) {
         {
           key: "plugin", icon: Puzzle, color: "var(--ok)", bg: "color-mix(in srgb, var(--ok) 10%, transparent)",
           title: "Plugin-Quelle", sub: "Dataset aus einem installierten Plugin generieren",
+        },
+        {
+          key: "umfeld", icon: Globe, color: "#fcd34d", bg: "rgba(252,211,77,0.1)",
+          title: "Umfelddaten", sub: "Markt- und Umfelddaten (Destatis, Eurostat, DWD …) zum Verknüpfen mit eigenen Zahlen",
         },
       ].map(({ key, icon: Icon, color, bg, title, sub }) => (
         <button
@@ -405,7 +410,8 @@ function StepPluginSource({ onDone, projectId }) {
 
   useEffect(() => {
     api.get("/api/plugins/source-types")
-      .then(({ data }) => { setSourceTypes(data); if (data.length === 1) selectType(data[0]); })
+      // Umfelddaten haben einen eigenen Schritt (StepUmfeld)
+      .then(({ data }) => { data = (data || []).filter((st) => st.category !== "umfeld"); setSourceTypes(data); if (data.length === 1) selectType(data[0]); })
       .catch(() => setError("Plugin-Quellen konnten nicht geladen werden"))
       .finally(() => setLoading(false));
   }, []);
@@ -1356,7 +1362,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
   const [step, setStep] = useState(editDataset ? "sql" : "choose");
   const [dsName, setDsName] = useState(editDataset?.name || "");
 
-  const titles = { choose: "Neues Dataset", file: "Datei hochladen", plugin: "Plugin-Quelle", sql: "SQL-Abfrage" };
+  const titles = { choose: "Neues Dataset", file: "Datei hochladen", plugin: "Plugin-Quelle", sql: "SQL-Abfrage", umfeld: "Umfelddaten" };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1407,6 +1413,7 @@ export default function NewDatasetWizard({ onDone, onCancel, editDataset, projec
           {step === "choose" && <StepChoose onChoose={(p) => setStep(p)} />}
           {step === "file" && <StepFileUpload onDone={onDone} projectId={projectId} />}
           {step === "plugin" && <StepPluginSource onDone={onDone} projectId={projectId} />}
+          {step === "umfeld" && <StepUmfeld onDone={onDone} projectId={projectId} />}
           {step === "sql" && <StepSqlQuery onDone={onDone} name={dsName} setName={setDsName} editDataset={editDataset} projectId={projectId} />}
         </div>
       </div>
