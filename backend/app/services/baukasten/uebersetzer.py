@@ -390,7 +390,8 @@ def _tabelle(b, i, schema: Schema, d: Dialekt, bind, ctx, stufen: list, merken) 
                 merken(f"{i}.{j}:{k}", fspalten, None, roh_sql=sub)
             sub = f"SELECT * FROM {d.tabelle(fremd)}" + (f" WHERE {' AND '.join(fwo)}" if fwo else "")
             links_expr = _quellen(auswahl).get(links.name, f"{alias}.{d.q(links.name)}")
-            joins.append(f"\nINNER JOIN ({sub}) {ja} ON {links_expr} = {ja}.{d.q(rechts.name)}")
+            art = "LEFT" if x.get("alle") else "INNER"   # „auch ohne Treffer behalten“
+            joins.append(f"\n{art} JOIN ({sub}) {ja} ON {links_expr} = {ja}.{d.q(rechts.name)}")
             # Namen ohne Rücksicht auf Groß-/Kleinschreibung vergleichen: für SQL Server sind cUstId und cUSTID dieselbe Spalte
             vorhanden = {s.name.lower() for s in spalten}
             for s in fspalten:

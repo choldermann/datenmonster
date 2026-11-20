@@ -377,14 +377,24 @@ export default function Baukasten() {
               {tabWahl(b.table, (v) => {
                 if (b.type === "tabelle") { aendern(key, i, { table: v, inner: [] }); return; }
                 aendern(key, i, { table: v, links: "", rechts: "" });
-                const haupt = kette[Number(key)]?.table;
-                if (haupt) api.get("/api/baukasten/verknuepfung", { params: { connection_id: connectionId, von: haupt, zu: v } })
-                  .then(({ data }) => data.vorschlag && aendern(key, i, { links: data.vorschlag.links, rechts: data.vorschlag.rechts, vorgeschlagen: true })).catch(() => {});
+                // Vorschlag gegen alle schon vorhandenen Tabellen (Haupttabelle, dann die bereits dazugeholten)
+                const vorhandene = [kette[Number(key)]?.table, ...(kette[Number(key)]?.inner || []).slice(0, i).filter((x) => x.type === "join" && x.table).map((x) => x.table)].filter(Boolean);
+                if (vorhandene.length) api.get("/api/baukasten/verknuepfung", { params: { connection_id: connectionId, von: vorhandene.join(","), zu: v } })
+                  .then(({ data }) => {
+                    const vs = data.vorschlag; if (!vs) return;
+                    // Spalte einer dazugeholten Tabelle kann umbenannt sein („cName (tkunde)“)
+                    const kurz = String(vs.von).split(".").pop();
+                    const links = cols.includes(vs.links) && vs.von === vorhandene[0] ? vs.links : cols.includes(`${vs.links} (${kurz})`) ? `${vs.links} (${kurz})` : vs.links;
+                    aendern(key, i, { links, rechts: vs.rechts, vorgeschlagen: true });
+                  }).catch(() => {});
               }, `bk-tab-${bid}`)}
               {b.type === "join" && <>
                 <span>über</span>{sel("links", cols, b.links, (v) => aendern(key, i, { links: v, vorgeschlagen: false }))}
                 <span>=</span>{sel("rechts", tabSpalten[b.table] || [], b.rechts, (v) => aendern(key, i, { rechts: v, vorgeschlagen: false }))}
                 {b.vorgeschlagen && <span className="bk-tag" title="Aus den Schlüsseln der Tabellen erkannt">✓ vorgeschlagen</span>}
+                <label className="bk-tag" style={{ display: "inline-flex", gap: 4, alignItems: "center", cursor: "pointer" }} onClick={(e) => e.stopPropagation()}
+                  title="Aus: nur Zeilen mit passendem Eintrag (INNER JOIN). An: alle Zeilen behalten, fehlende Werte bleiben leer (LEFT JOIN).">
+                  <input type="checkbox" checked={!!b.alle} onChange={(e) => aendern(key, i, { alle: e.target.checked })} /> auch ohne Treffer behalten</label>
               </>}
               {b.type === "tabelle" ? zahl(kopfId, false) : zahl(bid, true, vorher)}{weg(key, i)}{warnung(bid)}
             </div>

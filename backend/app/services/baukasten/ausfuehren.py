@@ -53,11 +53,13 @@ def verknuepfung(db, connection_id: int, user, von: str, zu: str) -> dict | None
     from app.services.schema_cache_service import beziehungen_ableiten, get_cached_schema
     conn, _schema = verbindung(db, connection_id, user)
     sj = get_cached_schema(conn) or {}
-    for b in beziehungen_ableiten(sj, von_tabellen=[von, zu], grenze=400):
-        if b["from_table"] == von and b["to_table"] == zu:
-            return {"links": b["from_col"], "rechts": b["to_col"], "quelle": b["quelle"]}
-        if b["from_table"] == zu and b["to_table"] == von:
-            return {"links": b["to_col"], "rechts": b["from_col"], "quelle": b["quelle"]}
+    # von = eine oder mehrere (kommagetrennt) schon vorhandene Tabellen – Haupttabelle zuerst
+    for v in [t.strip() for t in von.split(",") if t.strip()]:
+        for b in beziehungen_ableiten(sj, von_tabellen=[v, zu], grenze=400):
+            if b["from_table"] == v and b["to_table"] == zu:
+                return {"links": b["from_col"], "rechts": b["to_col"], "quelle": b["quelle"], "von": v}
+            if b["from_table"] == zu and b["to_table"] == v:
+                return {"links": b["to_col"], "rechts": b["from_col"], "quelle": b["quelle"], "von": v}
     return None
 
 
