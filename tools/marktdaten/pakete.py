@@ -160,7 +160,8 @@ def paket(pid: str, p: dict) -> dict:
                         "config": {"width": 6, "x_column": "Periode",
                                    "y_columns": [t for t, *_x, th2, _p in reihen if th2 == th], "curved": True,
                                    "full_rows": True,      # sonst kappt die Vorschau nach 50 Monaten
-                                   "luecken": True}})     # Reihen enden in verschiedenen Monaten
+                                   "luecken": True,       # Reihen enden in verschiedenen Monaten
+                                   "markt": False}})      # sind selbst Marktreihen – kein Schalter „Markt“
     if p.get("profil"):
         widgets.append({"id": "w_profil", "type": "branchenprofil", "label": "Mit Ihren Cockpits verknüpfen",
                         "config": {"width": 12, "profil": p["profil"]}})

@@ -519,7 +519,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {
@@ -537,7 +538,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {
@@ -554,7 +556,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {
@@ -570,7 +573,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {
@@ -589,7 +593,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {
@@ -606,7 +611,8 @@
               ],
               "curved": true,
               "full_rows": true,
-              "luecken": true
+              "luecken": true,
+              "markt": false
             }
           },
           {

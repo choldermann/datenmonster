@@ -9,6 +9,7 @@ import { useEreignisse, aufAchse, ereignisZeitraum, EreignisDialog } from "../er
 import { monatsAchse } from "./monat";
 import { usePreisindex, bereinigen, bezugText, PreisindexDialog } from "../preisbereinigung";
 import { useArbeitstageSchalter } from "../arbeitstage";
+import { useMarktvergleich } from "../marktvergleich";
 
 const S = { textDim: "var(--text-dim)" };
 
@@ -40,6 +41,8 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
   const [piDialog, setPiDialog] = useState(false);
   const monatsachse = !!monatsAchse(rows.map(r => r[x_column]));
   const at = useArbeitstageSchalter({ widget, projectId, spalten: cfg.arbeitstage?.spalten || null, monatsachse });
+  // Schalter „Markt“: Marktreihe mit eigener rechter Achse (jede Monatskurve, ERP-neutral; config.markt = false schaltet ab)
+  const markt = useMarktvergleich({ widget, projectId, moeglich: monatsachse && cfg.markt !== false });
 
   if (!x_column || !y_columns.length) return (
     <div style={{ padding: "32px 20px", textAlign: "center", color: S.textDim, fontSize: 12 }}>
@@ -67,7 +70,8 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
     pbRef = b.ref;
     if (pbRef) data.forEach((d, i) => { d[pbName] = b.werte[i]; });
   }
-  const linien = pbRef ? [...y_columns, pbName] : y_columns;
+  const mitMarkt = markt.anwenden(data, x_column);
+  const linien = [...y_columns, ...(pbRef ? [pbName] : []), ...(mitMarkt ? [markt.name] : [])];
 
   // Ereignisse auf die Achse legen (null = keine Zeitachse → keine Markierungen, kein Knopf)
   const marken = mitEreignissen ? aufAchse(data.map(d => d[x_column]), ev.ereignisse) : null;
@@ -117,8 +121,9 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
 
   return (
     <div style={{ padding: "8px 8px 16px" }}>
-      {(darfErfassen || (marken && marken.length > 0) || (pbAktiv && (pbRef || darfPreise)) || at.moeglich) && (
+      {(darfErfassen || (marken && marken.length > 0) || (pbAktiv && (pbRef || darfPreise)) || at.moeglich || markt.moeglich) && (
         <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "0 12px 4px", fontSize: 11.5, color: S.textDim, flexWrap: "wrap" }}>
+          {markt.knopf}
           {at.knopf}
           {pbAktiv && pbRef && (
             <span title={`${pi.auswahl?.label || ""}\n${pi.quelle || ""}\nBereinigt: ${pbSpalte} × Index ${bezugText(pbRef).replace("Preisstand ", "")} ÷ Index des Monats`}>
@@ -159,6 +164,11 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
           <XAxis dataKey={x_column} tick={{ fontSize: 11, fill: S.textDim }}
             tickFormatter={alsMonat || undefined} minTickGap={alsMonat ? 12 : 5} />
           <YAxis tick={{ fontSize: 11, fill: S.textDim }} width={52} />
+          {mitMarkt && (
+            <YAxis yAxisId="markt" orientation="right" width={48} domain={["auto", "auto"]}
+              tick={{ fontSize: 10.5, fill: S.textDim }}
+              label={{ value: markt.einheit, angle: 90, position: "insideRight", fontSize: 10, fill: S.textDim, dx: 6 }} />
+          )}
           {(marken || []).filter(m => m.x2 != null).map(m => (
             <ReferenceArea key={`a-${m.e.id}`} x1={m.x1} x2={m.x2} fill="var(--accent)" fillOpacity={0.08} ifOverflow="extendDomain" />
           ))}
@@ -174,6 +184,11 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
               strokeWidth={2} type={curved ? "monotone" : "linear"}
               dot={{ r: 3, fill: COLORS[i % COLORS.length] }} activeDot={{ r: 5 }} />
           ))}
+          {mitMarkt && (
+            <Line key="markt" yAxisId="markt" dataKey={markt.name} name={`${markt.name} (${markt.einheit}, rechte Achse)`}
+              stroke="var(--text-dim)" strokeWidth={2} strokeDasharray="6 4" type={curved ? "monotone" : "linear"}
+              dot={false} activeDot={{ r: 4 }} connectNulls />
+          )}
           {pbRef && (() => {
             const farbe = COLORS[y_columns.indexOf(pbSpalte) % COLORS.length];   // gehört zum Umsatz: gleiche Farbe, gestrichelt
             return <Line key={pbName} dataKey={pbName} stroke={farbe} strokeWidth={2} strokeDasharray="5 4"
@@ -186,6 +201,7 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
           onClose={() => setPiDialog(false)} />
       )}
       {at.dialog}
+      {markt.dialog}
       {dialog && (
         <EreignisDialog projectId={projectId} vorgabe={dialog} kategorien={ev.kategorien}
           mandantName={ev.mandant_name} onClose={() => setDialog(null)} />
