@@ -16,7 +16,7 @@ import api, { fehlerText } from "../../api/client";
 export const RUBRIK_ICONS = {
   gf: Gauge, monitor: Activity, vertrieb: TrendingUp, einkauf: ShoppingCart, lager: Package,
   versand: Truck, preis: Tag, health: HeartPulse, datev: FileSpreadsheet, intrastat: Globe,
-  eingangsrechnungen: Inbox,
+  eingangsrechnungen: Inbox, markt: Globe,
 };
 export const rubrikIcon = (key) => RUBRIK_ICONS[key] || LayoutGrid;
 

@@ -1,0 +1,595 @@
+{
+  "format_version": "1.0",
+  "template_id": "markt_onlinehandel",
+  "template_name": "Marktlage Online- & Einzelhandel",
+  "description": "Umsatz im Versand- und Internethandel, Verbraucherstimmung, Preise, Wechselkurse für den Import, Transportkosten und Insolvenzen im Handel – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto.",
+  "category": "marktdaten",
+  "version": "1.0",
+  "author": "Datenmonster",
+  "hinweise": [
+    "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – es wird keine Datenbankverbindung gebraucht.",
+    "Beim allerersten Öffnen holt der Datendienst manche Reihen erst von der Quelle; dann nach einer Minute erneut laden.",
+    "Die Reihen lassen sich im Dataset „Marktlage Online- & Einzelhandel – Reihen“ erweitern (Werkstatt › Datasets) oder als Mapping-Quelle mit eigenen Zahlen verknüpfen.",
+    "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0). Die Quellenangabe gehört bei Weitergabe der Zahlen dazu."
+  ],
+  "config_required": [],
+  "datasets": [
+    {
+      "id": "ds_reihen",
+      "name": "Marktlage Online- & Einzelhandel – Reihen",
+      "file_type": "umfeld",
+      "columns": [
+        "Groesse",
+        "Bezeichnung",
+        "Region",
+        "Regionname",
+        "Periode",
+        "Datum",
+        "Jahr",
+        "Monat",
+        "Wert",
+        "Einheit",
+        "Quelle",
+        "Stand"
+      ],
+      "query_config": {
+        "auswahl": [
+          {
+            "groesse": "umsatz_handel_ka",
+            "regionen": [
+              "G4791"
+            ]
+          },
+          {
+            "groesse": "umsatz_handel_real_ka",
+            "regionen": [
+              "G4791",
+              "G47_NFOOD_X_G473"
+            ]
+          },
+          {
+            "groesse": "stimmung",
+            "regionen": [
+              "BS-CSMCI-BAL",
+              "BS-RCI-BAL"
+            ]
+          },
+          {
+            "groesse": "preise_verbraucher",
+            "regionen": [
+              "Deutschland"
+            ]
+          },
+          {
+            "groesse": "wechselkurse",
+            "regionen": [
+              "USD",
+              "CNY"
+            ]
+          },
+          {
+            "groesse": "kraftstoff",
+            "regionen": [
+              "Diesel"
+            ]
+          },
+          {
+            "groesse": "insolvenzen",
+            "regionen": [
+              "WZ08-4791",
+              "WZ08-47"
+            ]
+          },
+          {
+            "groesse": "temperatur",
+            "regionen": [
+              "Deutschland"
+            ]
+          }
+        ],
+        "monate": 72,
+        "format": "lang"
+      }
+    }
+  ],
+  "mappings": [
+    {
+      "id": "m_lage",
+      "name": "Marktlage Online- & Einzelhandel – Lage",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Thema",
+            "Reihe",
+            "Einheit",
+            "Stand",
+            "Aktuell",
+            "Vorjahr",
+            "Veränderung",
+            "Veränderung %",
+            "Quelle"
+          ],
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct) AS (VALUES\n    ('umsatz_handel_ka', 'G4791', 'Versand- & Internethandel (nominal)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 1, 1),\n    ('umsatz_handel_real_ka', 'G4791', 'Versand- & Internethandel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 2, 1),\n    ('umsatz_handel_real_ka', 'G47_NFOOD_X_G473', 'Einzelhandel ohne Lebensmittel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 3, 1),\n    ('stimmung', 'BS-CSMCI-BAL', 'Verbraucher-Vertrauen (Saldo)', 'Stimmung', 4, 0),\n    ('stimmung', 'BS-RCI-BAL', 'Einzelhandel-Vertrauen (Saldo)', 'Stimmung', 5, 0),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Preise', 6, 1),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse (Einkauf im Ausland)', 7, 1),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse (Einkauf im Ausland)', 8, 1),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 9, 1),\n    ('insolvenzen', 'WZ08-4791', 'Insolvenzen Versand- & Internethandel', 'Insolvenzen im Handel', 10, 1),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel gesamt', 'Insolvenzen im Handel', 11, 1),\n    ('temperatur', 'Deutschland', 'Temperatur Deutschland (°C)', 'Wetter', 12, 0)\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Online- & Einzelhandel – Lage",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Thema",
+              "target_field": "Thema",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Thema"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Reihe",
+              "target_field": "Reihe",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Reihe"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Einheit",
+              "target_field": "Einheit",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einheit"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Stand",
+              "target_field": "Stand",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Stand"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Aktuell",
+              "target_field": "Aktuell",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Aktuell"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Vorjahr",
+              "target_field": "Vorjahr",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Vorjahr"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung",
+              "target_field": "Veränderung",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Veränderung %",
+              "target_field": "Veränderung %",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Veränderung %"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Quelle",
+              "target_field": "Quelle",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Quelle"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "m_verlauf",
+      "name": "Marktlage Online- & Einzelhandel – Verlauf",
+      "canvas_nodes": [
+        {
+          "id": "n_reihen",
+          "dataset_id": "ds_reihen",
+          "dataset_name": "reihen",
+          "x": 40,
+          "y": 40,
+          "filters": {}
+        }
+      ],
+      "joins": [],
+      "agg_nodes": [],
+      "transform_nodes": [],
+      "constant_nodes": [],
+      "rest_nodes": [],
+      "lookup_nodes": [],
+      "calc_nodes": [],
+      "switch_nodes": [],
+      "sort_nodes": [],
+      "sql_nodes": [
+        {
+          "id": "sql1",
+          "x": 380,
+          "y": 40,
+          "width": 350,
+          "height": 244,
+          "mode": "transform",
+          "output_field": "sql_1",
+          "output_fields": [
+            "Periode",
+            "Versand- & Internethandel (nominal)",
+            "Versand- & Internethandel (real)",
+            "Einzelhandel ohne Lebensmittel (real)",
+            "Verbraucher-Vertrauen (Saldo)",
+            "Einzelhandel-Vertrauen (Saldo)",
+            "Verbraucherpreise insgesamt",
+            "US-Dollar je Euro",
+            "Chinesische Yuan je Euro",
+            "Diesel (€/l)",
+            "Insolvenzen Versand- & Internethandel",
+            "Insolvenzen Einzelhandel gesamt",
+            "Temperatur Deutschland (°C)"
+          ],
+          "sql": "SELECT Periode,\n    MAX(CASE WHEN Groesse = 'umsatz_handel_ka' AND Region = 'G4791' THEN Wert END) AS \"Versand- & Internethandel (nominal)\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real_ka' AND Region = 'G4791' THEN Wert END) AS \"Versand- & Internethandel (real)\",\n    MAX(CASE WHEN Groesse = 'umsatz_handel_real_ka' AND Region = 'G47_NFOOD_X_G473' THEN Wert END) AS \"Einzelhandel ohne Lebensmittel (real)\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-CSMCI-BAL' THEN Wert END) AS \"Verbraucher-Vertrauen (Saldo)\",\n    MAX(CASE WHEN Groesse = 'stimmung' AND Region = 'BS-RCI-BAL' THEN Wert END) AS \"Einzelhandel-Vertrauen (Saldo)\",\n    MAX(CASE WHEN Groesse = 'preise_verbraucher' AND Region = 'Deutschland' THEN Wert END) AS \"Verbraucherpreise insgesamt\",\n    MAX(CASE WHEN Groesse = 'wechselkurse' AND Region = 'USD' THEN Wert END) AS \"US-Dollar je Euro\",\n    MAX(CASE WHEN Groesse = 'wechselkurse' AND Region = 'CNY' THEN Wert END) AS \"Chinesische Yuan je Euro\",\n    MAX(CASE WHEN Groesse = 'kraftstoff' AND Region = 'Diesel' THEN Wert END) AS \"Diesel (€/l)\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-4791' THEN Wert END) AS \"Insolvenzen Versand- & Internethandel\",\n    MAX(CASE WHEN Groesse = 'insolvenzen' AND Region = 'WZ08-47' THEN Wert END) AS \"Insolvenzen Einzelhandel gesamt\",\n    MAX(CASE WHEN Groesse = 'temperatur' AND Region = 'Deutschland' THEN Wert END) AS \"Temperatur Deutschland (°C)\"\nFROM reihen\nGROUP BY Periode\nORDER BY Periode"
+        }
+      ],
+      "targets": [
+        {
+          "id": "t1",
+          "name": "Marktlage Online- & Einzelhandel – Verlauf",
+          "target_type": "xlsx",
+          "target_connection_id": null,
+          "target_table": "",
+          "target_write_mode": "replace",
+          "target_options": {},
+          "fields": [
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Periode",
+              "target_field": "Periode",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Periode"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Versand- & Internethandel (nominal)",
+              "target_field": "Versand- & Internethandel (nominal)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versand- & Internethandel (nominal)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Versand- & Internethandel (real)",
+              "target_field": "Versand- & Internethandel (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Versand- & Internethandel (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Einzelhandel ohne Lebensmittel (real)",
+              "target_field": "Einzelhandel ohne Lebensmittel (real)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einzelhandel ohne Lebensmittel (real)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Verbraucher-Vertrauen (Saldo)",
+              "target_field": "Verbraucher-Vertrauen (Saldo)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verbraucher-Vertrauen (Saldo)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Einzelhandel-Vertrauen (Saldo)",
+              "target_field": "Einzelhandel-Vertrauen (Saldo)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Einzelhandel-Vertrauen (Saldo)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Verbraucherpreise insgesamt",
+              "target_field": "Verbraucherpreise insgesamt",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Verbraucherpreise insgesamt"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "US-Dollar je Euro",
+              "target_field": "US-Dollar je Euro",
+              "transformer": {
+                "type": "direct",
+                "source_field": "US-Dollar je Euro"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Chinesische Yuan je Euro",
+              "target_field": "Chinesische Yuan je Euro",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Chinesische Yuan je Euro"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Diesel (€/l)",
+              "target_field": "Diesel (€/l)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Diesel (€/l)"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Versand- & Internethandel",
+              "target_field": "Insolvenzen Versand- & Internethandel",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Versand- & Internethandel"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Insolvenzen Einzelhandel gesamt",
+              "target_field": "Insolvenzen Einzelhandel gesamt",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Insolvenzen Einzelhandel gesamt"
+              }
+            },
+            {
+              "source_dataset_id": "__sql__sql1",
+              "source_field": "Temperatur Deutschland (°C)",
+              "target_field": "Temperatur Deutschland (°C)",
+              "transformer": {
+                "type": "direct",
+                "source_field": "Temperatur Deutschland (°C)"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "pipelines": [],
+  "forms": [
+    {
+      "name": "Marktlage Online- & Einzelhandel",
+      "portal_config": {
+        "icon": "🌍"
+      },
+      "schema": {
+        "fields": [],
+        "layout": [],
+        "result_tabs": [],
+        "show_ai_assistant": false,
+        "rubrik": {
+          "id": "markt"
+        },
+        "actions": [
+          {
+            "id": "act_lage",
+            "type": "run_mapping",
+            "mapping_id": "m_lage",
+            "pipeline_id": null,
+            "label": "Lage"
+          },
+          {
+            "id": "act_verlauf",
+            "type": "run_mapping",
+            "mapping_id": "m_verlauf",
+            "pipeline_id": null,
+            "label": "Verlauf"
+          }
+        ],
+        "widgets": [
+          {
+            "id": "w_lage",
+            "type": "table",
+            "label": "Lage auf einen Blick: letzter Wert gegen denselben Monat im Vorjahr",
+            "action_id": "act_lage",
+            "config": {
+              "width": 12,
+              "full_rows": true,
+              "hidden_columns": [
+                "Quelle"
+              ]
+            }
+          },
+          {
+            "id": "w_verlauf_1",
+            "type": "line",
+            "label": "Nachfrage (Index 2021 = 100, kalenderbereinigt)",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Versand- & Internethandel (nominal)",
+                "Versand- & Internethandel (real)",
+                "Einzelhandel ohne Lebensmittel (real)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_2",
+            "type": "line",
+            "label": "Stimmung",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Verbraucher-Vertrauen (Saldo)",
+                "Einzelhandel-Vertrauen (Saldo)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_3",
+            "type": "line",
+            "label": "Preise",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Verbraucherpreise insgesamt"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_4",
+            "type": "line",
+            "label": "Wechselkurse (Einkauf im Ausland)",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "US-Dollar je Euro",
+                "Chinesische Yuan je Euro"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_5",
+            "type": "line",
+            "label": "Transportkosten",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Diesel (€/l)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_6",
+            "type": "line",
+            "label": "Insolvenzen im Handel",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Insolvenzen Versand- & Internethandel",
+                "Insolvenzen Einzelhandel gesamt"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          },
+          {
+            "id": "w_verlauf_7",
+            "type": "line",
+            "label": "Wetter",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Temperatur Deutschland (°C)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true
+            }
+          }
+        ],
+        "doku": {
+          "intro": "Umsatz im Versand- und Internethandel, Verbraucherstimmung, Preise, Wechselkurse für den Import, Transportkosten und Insolvenzen im Handel – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto. Die Tabelle zeigt je Reihe den jüngsten verfügbaren Monat gegen denselben Monat im Vorjahr, darunter der Verlauf der letzten sechs Jahre je Thema.",
+          "hinweise": [
+            "Amtliche Zahlen erscheinen mit Verzug: Preise und Umsätze meist nach 4–8 Wochen, Insolvenzen nach etwa 3 Monaten. „Stand“ nennt den Monat des jeweils letzten Werts.",
+            "Preisindizes und Umsatzindizes: 2021 = 100. Stimmung: Wirtschaftsklima mit langjährigem Durchschnitt = 100, Vertrauensindikatoren als Saldo (positiv = mehr Optimisten) – dort keine Prozentveränderung.",
+            "Insolvenzen: beantragte Verfahren je Monat; einzelne Monate schwanken stark, der Verlauf ist aussagekräftiger.",
+            "Quellen: Destatis (Datenlizenz Deutschland – Namensnennung 2.0), Eurostat (Wiederverwendung mit Quellenangabe), EZB, EU-Kommission (Weekly Oil Bulletin, CC BY 4.0), DWD (CC BY 4.0)."
+          ]
+        }
+      }
+    }
+  ],
+  "alert_rules": [],
+  "reports": [],
+  "knowledge": []
+}

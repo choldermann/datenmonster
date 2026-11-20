@@ -1060,6 +1060,11 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                 if columns:
                     existing_ds.columns = columns
                 db.commit()
+            elif file_type == "umfeld" and existing_ds.file_type == "umfeld" and ds_def.get("query_config"):
+                existing_ds.query_config = copy.deepcopy(ds_def["query_config"])
+                if columns:
+                    existing_ds.columns = columns
+                db.commit()
             ds_id_map[ds_def["id"]] = existing_ds.id
             created["datasets"].append({"id": existing_ds.id, "name": existing_ds.name,
                                         "file_type": existing_ds.file_type, "reused": True})
@@ -1182,6 +1187,17 @@ def install_template(body: InstallBody, db: Session = Depends(get_db), user: Use
                     raise HTTPException(400, f"Web-Quelle „{ds_def.get('name')}“: {k} „{qc[k]}“ "
                                              "verweist auf kein vorher definiertes Dataset")
             ds_kwargs["query_config"] = qc
+
+        elif file_type == "umfeld":
+            # Umfelddaten (monstersuite-Datendienst): Auswahl übernehmen, Spalten/Typen vom Plugin
+            qc = copy.deepcopy(ds_def.get("query_config") or {})
+            if not qc.get("auswahl"):
+                raise HTTPException(400, f"Umfelddaten „{ds_def.get('name')}“: keine Reihen (query_config.auswahl) angegeben")
+            ds_kwargs["query_config"] = qc
+            from app.plugins.builtin.umfeld import SPALTEN_LANG, spaltentypen
+            if not columns and qc.get("format") != "breit":
+                ds_kwargs["columns"] = columns = list(SPALTEN_LANG)
+            ds_kwargs["column_types"] = spaltentypen(columns, qc.get("format"))
 
         elif file_type == "static":
             # Statisches Dataset mit optionalen Initialdaten
@@ -2191,6 +2207,10 @@ def create_template_from_project(body: CreateTemplateBody, db: Session = Depends
                 ds_entry["rest_config"] = _rest_config_ohne_zugangsdaten(
                     ds.query_config if isinstance(ds.query_config, dict)
                     else json.loads(ds.query_config or "{}"))
+            elif ds.file_type == "umfeld" and ds.query_config:
+                # Umfelddaten: nur die Auswahl (Größen, Regionen, Zeitraum, Aufbau) – keine Zugangsdaten nötig
+                ds_entry["query_config"] = (ds.query_config if isinstance(ds.query_config, dict)
+                                            else json.loads(ds.query_config or "{}"))
             elif ds.file_type == "db_query" and ds.source_sql:
                 ds_entry["sql"] = ds.source_sql
                 if ds.source_connection_id:

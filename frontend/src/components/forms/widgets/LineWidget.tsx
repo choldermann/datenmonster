@@ -49,7 +49,9 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
 
   const data = rows.map(r => {
     const entry = { [x_column]: r[x_column] };
-    for (const col of y_columns) entry[col] = Number(r[col] ?? 0);
+    // config.luecken: fehlender Wert bleibt eine Lücke statt 0 (Reihen mit unterschiedlichem
+    // Datenstand, z. B. amtliche Statistik – sonst fiele die Kurve am Ende auf 0)
+    for (const col of y_columns) entry[col] = cfg.luecken && (r[col] == null || r[col] === "") ? null : Number(r[col] ?? 0);
     return entry;
   });
 
@@ -95,7 +97,7 @@ export default function LineWidget({ widget, result, onDrilldown, projectId = nu
               <span style={{ display: "inline-block", width: 8, height: 2, background: p.color, marginRight: 5, verticalAlign: "middle" }} />
               {p.name}
             </span>
-            <span style={{ color: "var(--text-main)" }}>{Number(p.value).toLocaleString("de-DE")}</span>
+            <span style={{ color: "var(--text-main)" }}>{p.value == null ? "–" : Number(p.value).toLocaleString("de-DE")}</span>
           </div>
         ))}
         {alsMonat && at.hinweis(label)}

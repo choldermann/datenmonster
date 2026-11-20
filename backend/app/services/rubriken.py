@@ -37,6 +37,7 @@ RUBRIKEN: Dict[str, dict] = {
     "versand":            {"name": "Versand",            "gruppe": "cockpit", "reihenfolge": 60, "icon": "versand"},
     "preis":              {"name": "Preis & Marge",      "gruppe": "cockpit", "reihenfolge": 70, "icon": "preis"},
     "health":             {"name": "Health-Check",       "gruppe": "cockpit", "reihenfolge": 80, "icon": "health"},
+    "markt":              {"name": "Marktlage",          "gruppe": "cockpit", "reihenfolge": 90, "icon": "markt"},
     "datev":              {"name": "DATEV-Export",       "gruppe": "aufgabe", "reihenfolge": 10, "icon": "datev"},
     "intrastat":          {"name": "Intrastat",          "gruppe": "aufgabe", "reihenfolge": 20, "icon": "intrastat"},
     "eingangsrechnungen": {"name": "Eingangsrechnungen", "gruppe": "aufgabe", "reihenfolge": 30, "icon": "eingangsrechnungen"},

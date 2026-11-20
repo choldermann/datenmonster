@@ -65,6 +65,20 @@ def _periode(p: str):
     return None, None, None
 
 
+def spaltentypen(spalten: list, format: str = "lang") -> dict:
+    """Spaltentypen ohne Abruf (auch für die Vorlagen-Installation): im Aufbau „breit“ ist jede
+    Reihenspalte ein Dezimalwert."""
+    typen = {}
+    for c in spalten:
+        if c in TYPEN_LANG:
+            typen[c] = TYPEN_LANG[c]
+        elif format == "breit" and c != "Periode":
+            typen[c] = "decimal"
+        else:
+            typen[c] = "string"
+    return typen
+
+
 def _db():
     from app.core.database import SessionLocal
     return SessionLocal()
@@ -121,12 +135,7 @@ class UmfeldSource(SourcePlugin):
         return ["Periode", "Datum", "Jahr", "Monat"] + list(dict.fromkeys(spalten))
 
     def get_column_types(self, config: dict) -> dict:
-        typen = {c: TYPEN_LANG.get(c, "string") for c in self.get_columns(config)}
-        if (config or {}).get("format") == "breit":
-            for c in typen:
-                if c not in ("Periode", "Datum", "Jahr", "Monat"):
-                    typen[c] = "decimal"
-        return typen
+        return spaltentypen(self.get_columns(config), (config or {}).get("format"))
 
     def _lang(self, config: dict) -> List[dict]:
         from fastapi import HTTPException
