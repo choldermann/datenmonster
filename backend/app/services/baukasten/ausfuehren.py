@@ -127,10 +127,14 @@ def warnungen(kette: list, zaehler: dict) -> dict:
             if x.get("type") == "join" and vorher is not None and n is not None:
                 if n > vorher:
                     aus[bid] = (f"Aus {vorher:,} werden {n:,} Zeilen: zu einer Zeile passen mehrere Einträge aus "
-                                f"„{x.get('table')}“. Summen danach wären zu hoch – im Winkel „Dazuholen“ mit "
-                                f"„Nur wenn“ auf genau einen Eintrag eingrenzen.").replace(",", ".")
+                                f"„{x.get('table')}“. Summen über Spalten der bisherigen Tabelle wären danach zu hoch. "
+                                f"Gewollt (z. B. Positionen je Rechnung)? Dann ist alles gut – sonst im Winkel „Dazuholen“ "
+                                f"mit „Nur wenn“ auf genau einen Eintrag eingrenzen.").replace(",", ".")
                 elif n == 0 and vorher > 0:
                     aus[bid] = f"Nach dem Dazuholen bleibt keine Zeile übrig – passt die Verknüpfung über „{x.get('links')}“?"
+            elif x.get("type") == "filter" and n == 0 and vorher:
+                aus[bid] = (f"„Nur wenn {x.get('col')} {x.get('op')} {x.get('val') or ''}“ lässt keine Zeile übrig – "
+                            f"passt der Wert so, wie er in der Spalte steht?")
             if n is not None:
                 vorher = n
     for i, b in enumerate(kette):

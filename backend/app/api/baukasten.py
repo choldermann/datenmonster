@@ -97,3 +97,46 @@ def mapping_laden(mapping_id: int, db: Session = Depends(get_db), user: User = D
     geaendert = knoten.get("sql") != bk.get("sql") or len(m.sql_nodes) > 1 or andere
     return {"baukasten": True, "kette": bk.get("kette"), "connection_id": knoten.get("connection_id"),
             "name": m.name, "project_id": m.project_id, "profi_geaendert": geaendert}
+
+
+@router.get("/rezepte")
+def rezepte(connection_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Fertige Steinketten, die in dieser Datenbank funktionieren."""
+    from app.services.baukasten import rezepte as rz
+    _kein_portal(user)
+    try:
+        conn, schema = ausfuehren.verbindung(db, connection_id, user)
+        return {"rezepte": rz.passende(schema, conn.db_type)}
+    except BaukastenFehler as e:
+        raise HTTPException(400, str(e))
+
+
+class KiIn(BaseModel):
+    connection_id: int
+    text: str
+
+
+@router.post("/ki")
+async def ki(body: KiIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Satz → Steinkette. Die KI baut nur mit Steinen; der Übersetzer prüft (und lässt bis zu zweimal nachbessern)."""
+    from app.api.ai import _require_ai
+    from app.services.baukasten import rezepte as rz
+    from app.services.schema_cache_service import get_cached_schema
+    _kein_portal(user)
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(400, "Bitte beschreiben, was die Auswertung zeigen soll.")
+    if len(text) > 500:
+        raise HTTPException(400, "Bitte kürzer fassen (höchstens 500 Zeichen).")
+    svc = _require_ai(db)
+    try:
+        conn, schema = ausfuehren.verbindung(db, body.connection_id, user)
+        def probe(k):
+            try:
+                w = ausfuehren.rechnen(db, user, body.connection_id, k).get("warnungen") or {}
+                return {b: t for b, t in w.items() if "keine Zeile" in t}     # nur echte Fehlgriffe zurückgeben
+            except Exception:
+                return {}
+        return await rz.ki_kette(svc, get_cached_schema(conn) or {}, schema, conn.db_type, text, probe=probe)
+    except BaukastenFehler as e:
+        raise HTTPException(400, str(e))

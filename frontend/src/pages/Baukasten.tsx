@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X } from "lucide-react";
+import { ArrowLeft, Code2, Loader2, Save, AlertTriangle, X, Sparkles, BookOpen, Undo2 } from "lucide-react";
 import api, { fehlerText } from "../api/client";
 import { useProject } from "../context/ProjectContext";
 import {
@@ -167,6 +167,11 @@ export default function Baukasten() {
   const [profiGeaendert, setProfiGeaendert] = useState(false);
   const [profiVerwerfen, setProfiVerwerfen] = useState(false);
   const [speichert, setSpeichert] = useState(false);
+  const [rezepte, setRezepte] = useState<any[]>([]);
+  const [kiText, setKiText] = useState("");
+  const [kiLaeuft, setKiLaeuft] = useState(false);
+  const [kiHinweis, setKiHinweis] = useState("");
+  const [vorher, setVorher] = useState<Stein[] | null>(null);     // für „Rückgängig“ nach Rezept/KI
   const rechenNr = useRef(0);
 
   // Laden: vorhandenes Baukasten-Mapping oder neu
@@ -191,6 +196,24 @@ export default function Baukasten() {
     api.get("/api/baukasten/tabellen", { params: { connection_id: connectionId } })
       .then(({ data }) => setTabellen(data.tabellen || [])).catch((e) => { setTabellen([]); setFehler(fehlerText(e)); });
   }, [connectionId]);
+  useEffect(() => {
+    if (!connectionId) return;
+    api.get("/api/baukasten/rezepte", { params: { connection_id: connectionId } })
+      .then(({ data }) => setRezepte(data.rezepte || [])).catch(() => setRezepte([]));
+  }, [connectionId]);
+  const ersetzen = (neu: Stein[], hinweis = "") => {
+    setVorher(kette); setKette(neu); setAuswahl(null); setZeige(null); setKiHinweis(hinweis);
+  };
+  const kiBauen = async () => {
+    if (!kiText.trim() || !connectionId) return;
+    setKiLaeuft(true); setFehler(""); setKiHinweis("");
+    try {
+      const { data } = await api.post("/api/baukasten/ki", { connection_id: connectionId, text: kiText.trim() }, { timeout: 180000 });
+      ersetzen(data.kette, data.hinweis || "Die KI hat die Steine gelegt – prüfe sie Stein für Stein.");
+      if (!name.trim()) setName(kiText.trim().slice(0, 60));
+    } catch (e) { setFehler(fehlerText(e, "Die KI konnte keine Steinkette bauen")); }
+    finally { setKiLaeuft(false); }
+  };
   const tabSpalten = useMemo(() => Object.fromEntries((tabellen || []).map((t) => [t.name, t.spalten.map((s) => s.name)])), [tabellen]);
 
   // Rechnen (Zähler + Vorschau), verzögert nach jeder Änderung
@@ -516,6 +539,25 @@ export default function Baukasten() {
               : !connectionId ? "Zuerst oben eine Datenbank wählen." : tabellen === null ? "Tabellen werden geladen …"
               : "Die Zahl an jedem Stein zeigt, wie viele Zeilen hier ankommen und weitergehen – ein Klick zeigt sie rechts."}
           </p>
+          {connectionId && (
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", margin: "0 0 12px",
+              padding: "8px 10px", background: "var(--bg-card)", border: "1px solid var(--border)", borderRadius: 10, maxWidth: 720 }}>
+              <BookOpen size={14} style={{ color: "var(--text-dim)" }} />
+              <select aria-label="Mit einem Rezept beginnen" value="" disabled={!rezepte.length}
+                onChange={(e) => { const r = rezepte.find((x) => x.key === e.target.value); if (r) { ersetzen(r.kette, r.text); if (!name.trim()) setName(r.name); } }}
+                style={{ background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }}>
+                <option value="">{rezepte.length ? `Mit einem Rezept beginnen (${rezepte.length}) …` : "Keine Rezepte für diese Datenbank"}</option>
+                {rezepte.map((r) => <option key={r.key} value={r.key}>{r.name} – {r.text}</option>)}
+              </select>
+              <span style={{ fontSize: 12, color: "var(--text-dim)" }}>oder</span>
+              <input value={kiText} onChange={(e) => setKiText(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") kiBauen(); }}
+                placeholder="In eigenen Worten: z. B. „Welche Kunden aus Österreich haben offene Rechnungen?“" aria-label="Auswertung beschreiben"
+                style={{ flex: "1 1 260px", minWidth: 0, background: "var(--bg-elevated)", color: "var(--text-bright)", border: "1px solid var(--border)", borderRadius: 7, padding: "5px 8px", fontSize: 13 }} />
+              <button className="btn-primary text-xs" onClick={kiBauen} disabled={kiLaeuft || !kiText.trim()} title="Die KI legt die Steine – du siehst danach jeden einzelnen">
+                {kiLaeuft ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {kiLaeuft ? "baut …" : "Mit KI bauen"}</button>
+              {vorher && <button className="btn-ghost text-xs" onClick={() => { setKette(vorher); setVorher(null); setKiHinweis(""); }} title="Vorherige Steine wiederherstellen"><Undo2 size={13} /> Rückgängig</button>}
+              {kiHinweis && <span style={{ flexBasis: "100%", fontSize: 12, color: "var(--text-main)" }}>💡 {kiHinweis}</span>}
+            </div>)}
           <div className="bk-stapel">{stapel(kette, "")}</div>
         </main>
 
