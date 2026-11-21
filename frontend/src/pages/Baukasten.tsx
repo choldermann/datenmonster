@@ -178,6 +178,8 @@ export default function Baukasten() {
   const [profiVerwerfen, setProfiVerwerfen] = useState(false);
   const [speichert, setSpeichert] = useState(false);
   const [rezepte, setRezepte] = useState<any[]>([]);
+  const [cockpits, setCockpits] = useState<{ id: number; name: string; reiter: { id: string; label: string }[] }[]>([]);
+  const [imCockpit, setImCockpit] = useState<{ form_id: number; name: string; reiter: string | null } | null>(null);
   const [kiText, setKiText] = useState("");
   const [kiLaeuft, setKiLaeuft] = useState(false);
   const [kiHinweis, setKiHinweis] = useState("");
@@ -206,6 +208,11 @@ export default function Baukasten() {
     api.get("/api/baukasten/tabellen", { params: { connection_id: connectionId } })
       .then(({ data }) => setTabellen(data.tabellen || [])).catch((e) => { setTabellen([]); setFehler(fehlerText(e)); });
   }, [connectionId]);
+  const cockpitsLaden = () => {
+    if (!projectId) return;
+    api.get("/api/baukasten/cockpits", { params: { project_id: projectId } }).then(({ data }) => setCockpits(data || [])).catch(() => setCockpits([]));
+  };
+  useEffect(cockpitsLaden, [projectId]);
   useEffect(() => {
     if (!connectionId) return;
     api.get("/api/baukasten/rezepte", { params: { connection_id: connectionId } })
@@ -275,7 +282,13 @@ export default function Baukasten() {
     try {
       const { data } = await api.post("/api/baukasten/speichern", { project_id: projectId, connection_id: connectionId, name: name.trim(), kette, mapping_id: mappingId });
       setMappingId(data.mapping_id); setProfiGeaendert(false); setProfiVerwerfen(false);
-      setMeldung("Gespeichert – das Mapping steht jetzt wie jedes andere im Projekt bereit.");
+      setImCockpit(data.cockpit || null);
+      if (data.cockpit) {
+        cockpitsLaden();
+        // „Neues Cockpit“ ist jetzt angelegt: der Stein zeigt ab sofort auf genau dieses
+        setKette((k) => k.map((b) => b.type === "ausgabe" && b.cockpit === "neu" ? { ...b, cockpit: data.cockpit.form_id } : b));
+        setMeldung(`Gespeichert und ins Cockpit „${data.cockpit.name}“ gestellt${data.cockpit.reiter ? ` (Reiter „${data.cockpit.reiter}“)` : ""}.`);
+      } else setMeldung("Gespeichert – das Mapping steht jetzt wie jedes andere im Projekt bereit.");
       if (!id) navigate(`/baukasten/${data.mapping_id}`, { replace: true });
     } catch (e) { setMeldung(fehlerText(e, "Speichern fehlgeschlagen")); }
     finally { setSpeichert(false); }
@@ -358,12 +371,52 @@ export default function Baukasten() {
           <input className="bk-oval kurz" value={b.n} inputMode="numeric" aria-label="Anzahl" onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { n: Number(e.target.value) || 0 })} />
           <span>Zeilen</span>{zahl(bid, false)}{weg(key, i)}
         </div>);
-      case "ausgabe": return (
-        <div className={cls("deckel")} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
-          <span>▣</span><span className="t">Ergebnis</span>
-          {sel("Ziel", ["Tabelle im Cockpit", "Excel-Datei per Mail", "Zurück in die Wawi schreiben"], b.target, (v) => aendern(key, i, { target: v }), null, "bk-chip breit")}
-          {zahl(bid, false)}{weg(key, i)}
-        </div>);
+      case "ausgabe": {
+        const ziele = ["Tabelle im Cockpit", "Balken im Cockpit", "Linie im Cockpit", "Kachel im Cockpit", "Nur als Auswertung speichern"];
+        const imC = b.target !== "Nur als Auswertung speichern";
+        const sp: { name: string; typ: string }[] = erg?.spalten || [];
+        const zahlen = sp.filter((x) => x.typ === "zahl").map((x) => x.name);
+        const akt = cockpits.find((c) => String(c.id) === String(b.cockpit));
+        const diagramm = b.target === "Balken im Cockpit" || b.target === "Linie im Cockpit";
+        const ys: string[] = b.y || [];
+        return (
+          <div className={cls("deckel")} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
+            <span>▣</span><span className="t">Ergebnis</span>
+            {sel("Ziel", ziele, b.target, (v) => aendern(key, i, { target: v }), null, "bk-chip breit")}
+            {imC && <>
+              <span>in</span>
+              <select className="bk-chip breit" aria-label="Cockpit" value={b.cockpit ?? ""} onClick={(e) => e.stopPropagation()}
+                onChange={(e) => aendern(key, i, { cockpit: e.target.value === "neu" ? "neu" : e.target.value ? Number(e.target.value) : null, reiter: null })}>
+                <option value="">Cockpit wählen …</option>
+                {cockpits.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                <option value="neu">＋ Neues Cockpit …</option>
+              </select>
+              {b.cockpit === "neu" && <input className="bk-oval" value={b.cockpit_name ?? ""} placeholder={name || "Name des Cockpits"} aria-label="Name des neuen Cockpits"
+                onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { cockpit_name: e.target.value })} />}
+              {akt && akt.reiter.length > 0 && (
+                <select className="bk-chip" aria-label="Reiter" value={b.reiter ?? ""} onClick={(e) => e.stopPropagation()} onChange={(e) => aendern(key, i, { reiter: e.target.value || null })}>
+                  <option value="">Reiter „Eigene Auswertungen“</option>
+                  {akt.reiter.filter((r) => r.label !== "Eigene Auswertungen").map((r) => <option key={r.id} value={r.id}>Reiter „{r.label}“</option>)}
+                </select>)}
+            </>}
+            {zahl(bid, false)}{weg(key, i)}
+            {imC && !b.cockpit && <span className="bk-tag" style={{ flexBasis: "100%" }}>Ohne Cockpit wird nur die Auswertung gespeichert.</span>}
+            {imC && diagramm && sp.length > 0 && (
+              <span className="bk-hex" style={{ flexBasis: "100%", flexWrap: "wrap" }}>
+                <span>Achse</span>{sel("Achse", sp.map((x) => x.name), b.x || "", (v) => aendern(key, i, { x: v }), "automatisch")}
+                <span>Werte</span>
+                {zahlen.filter((c) => c !== b.x).map((c) => (
+                  <label key={c} className="bk-tag" style={{ cursor: "pointer" }} onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={ys.length ? ys.includes(c) : zahlen.filter((x) => x !== b.x).indexOf(c) < 4}
+                      onChange={(e) => { const basis = ys.length ? ys : zahlen.filter((x) => x !== b.x).slice(0, 4);
+                        aendern(key, i, { y: e.target.checked ? [...basis, c] : basis.filter((x) => x !== c) }); }} /> {c}
+                  </label>))}
+              </span>)}
+            {imC && b.target === "Kachel im Cockpit" && zahlen.length > 0 && (
+              <span className="bk-hex" style={{ flexBasis: "100%" }}><span>Kennzahl</span>
+                {sel("Kennzahl", zahlen, b.wert || "", (v) => aendern(key, i, { wert: v }), "automatisch")}<span>(Summe aller Zeilen)</span></span>)}
+          </div>);
+      }
       case "profi": return (
         <div className={cls("profi")} style={{ "--c": farbe } as any} {...ziehbar}><Noppen />
           <span>🔒</span><span className="t">Profi-Stein</span><span style={{ fontSize: 12.5 }}>{b.label || "nur in der Profi-Ansicht bearbeitbar"}</span>{weg(key, i)}
@@ -504,7 +557,10 @@ export default function Baukasten() {
         </div>)}
       {(meldung || fehler) && (
         <div className="bk-meldung" style={{ background: "var(--bg-card)", border: `1px solid ${fehler ? "var(--err)" : "var(--border)"}`, color: fehler ? "var(--err)" : "var(--text-main)" }}>
-          {fehler || meldung}<button onClick={() => { setMeldung(""); setFehler(""); }} style={{ marginLeft: "auto", background: "none", border: 0, color: "inherit", cursor: "pointer" }} aria-label="Schließen"><X size={14} /></button>
+          {fehler || meldung}
+          {!fehler && imCockpit && meldung.startsWith("Gespeichert und ins Cockpit") && (
+            <button className="btn-primary text-xs" style={{ marginLeft: 10 }} onClick={() => navigate(`/forms/${imCockpit.form_id}/run`)}>Cockpit öffnen</button>)}
+          <button onClick={() => { setMeldung(""); setFehler(""); }} style={{ marginLeft: "auto", background: "none", border: 0, color: "inherit", cursor: "pointer" }} aria-label="Schließen"><X size={14} /></button>
         </div>)}
 
       <div className="bk">

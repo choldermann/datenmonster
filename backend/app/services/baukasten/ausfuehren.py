@@ -176,3 +176,106 @@ def speichern(db, user, project_id, connection_id: int, name: str, kette: list, 
     db.commit()
     db.refresh(m)
     return m
+
+
+# ── Ausgabe „… im Cockpit“ ─────────────────────────────────────────────────
+ZIELE = {"Tabelle im Cockpit": "table", "Balken im Cockpit": "bar", "Linie im Cockpit": "line",
+         "Kachel im Cockpit": "kpi"}
+NUR_SPEICHERN = "Nur als Auswertung speichern"
+EIGENER_REITER = "Eigene Auswertungen"
+
+
+def _widget_config(art: str, ausgabe: dict, spalten: list) -> dict:
+    """Spalten fürs Diagramm/Kachel: aus dem Stein, sonst sinnvoll vorbelegt (erste Text-/Datumsspalte als
+    Achse, Zahlenspalten als Werte)."""
+    namen = [s.name for s in spalten]
+    zahlen = [s.name for s in spalten if s.typ == "zahl"]
+    achse = next((s.name for s in spalten if s.typ in ("text", "datum")), namen[0] if namen else "")
+    if art == "table":
+        return {"width": 12}
+    if art in ("bar", "line"):
+        x = ausgabe.get("x") if ausgabe.get("x") in namen else achse
+        y = [c for c in (ausgabe.get("y") or []) if c in namen and c != x] or [c for c in zahlen if c != x][:4]
+        if not y:
+            raise BaukastenFehler("Für ein Diagramm braucht das Ergebnis mindestens eine Zahlenspalte.")
+        cfg = {"width": 12, "x_column": x, "y_columns": y}
+        if art == "line":
+            cfg["curved"] = True
+        return cfg
+    wert = ausgabe.get("wert") if ausgabe.get("wert") in zahlen else (zahlen[0] if zahlen else None)
+    if not wert:
+        raise BaukastenFehler("Für eine Kachel braucht das Ergebnis eine Zahlenspalte.")
+    return {"width": 3, "column": wert, "aggregation": "sum", "decimals": 2}
+
+
+def ins_cockpit(db, user, project_id, mapping, kette: list, spalten: list, nutzt_zeitraum: bool) -> dict | None:
+    """Widget für das Mapping in ein Cockpit (Formular) stellen – vorhandenes aktualisieren statt doppeln.
+
+    Ausgabe-Stein: {"target": "Balken im Cockpit", "cockpit": <form_id>|"neu", "cockpit_name": "…",
+                    "reiter": "<tab-id>"|None, "x": "…", "y": [...], "wert": "…"}
+    """
+    from app.api.forms import unique_slug
+    from app.models.form import Form
+    ausgabe = next((b for b in reversed(kette) if b.get("type") == "ausgabe"), None)
+    art = ZIELE.get((ausgabe or {}).get("target") or "")
+    if not ausgabe or not art or not ausgabe.get("cockpit"):
+        return None
+    cfg = _widget_config(art, ausgabe, spalten)
+
+    if ausgabe["cockpit"] == "neu":
+        name = (ausgabe.get("cockpit_name") or "").strip() or mapping.name
+        form = Form(name=name, project_id=project_id, version=1, slug=unique_slug(db, name), published=False,
+                    schema={"fields": [], "layout": [], "actions": [], "widgets": []},
+                    portal_config={"icon": "🧱"}, created_by=getattr(user, "id", None))
+        db.add(form)
+        db.flush()
+    else:
+        try:
+            form = db.get(Form, int(ausgabe["cockpit"]))
+        except (TypeError, ValueError):
+            form = None
+        if form is None or form.project_id != project_id:
+            raise BaukastenFehler("Das gewählte Cockpit gibt es in diesem Projekt nicht (mehr).")
+
+    schema = dict(form.schema or {})
+    for k in ("fields", "layout", "actions", "widgets"):
+        schema[k] = list(schema.get(k) or [])
+    # Zeitraum des Cockpits: braucht die Kette „im Zeitraum“, bekommt ein Cockpit ohne Zeitraumfeld eins
+    if nutzt_zeitraum and not any(f.get("type") == "daterange" for f in schema["fields"]):
+        schema["fields"].insert(0, {"id": "f_zeitraum", "type": "daterange", "row": 0, "colSpan": 12,
+                                    "label": "Zeitraum", "name": "zeitraum", "action_ids": [],
+                                    "config": {"param_from": "von", "param_to": "bis", "default": "this_year",
+                                               "auto_run": True}})
+    aktion = next((a for a in schema["actions"] if a.get("type") == "run_mapping" and a.get("mapping_id") == mapping.id), None)
+    if aktion is None:
+        aktion = {"id": f"act_bk_{mapping.id}", "type": "run_mapping", "mapping_id": mapping.id,
+                  "pipeline_id": None, "label": mapping.name}
+        schema["actions"].append(aktion)
+    widget = next((w for w in schema["widgets"] if w.get("action_id") == aktion["id"] and w.get("bk")), None)
+    if widget is None:
+        widget = {"id": f"w_bk_{mapping.id}", "action_id": aktion["id"], "bk": True}
+        schema["widgets"].append(widget)
+    # Breite bleibt, wenn sie im Cockpit-Editor angepasst wurde und die Art gleich bleibt; sonst frisch
+    alt = widget.get("config") or {}
+    if widget.get("type") == art and alt.get("width"):
+        cfg["width"] = alt["width"]
+    widget.update(type=art, label=mapping.name, config=cfg)
+
+    # Reiter: hat das Cockpit welche, kommt die Auswertung in den gewählten oder in „Eigene Auswertungen“
+    tabs = list(schema.get("result_tabs") or [])
+    if tabs:
+        tabs = [dict(t, action_ids=[a for a in (t.get("action_ids") or []) if a != aktion["id"]]) for t in tabs]
+        ziel = next((t for t in tabs if t.get("id") == ausgabe.get("reiter")), None)
+        if ziel is None:
+            ziel = next((t for t in tabs if t.get("label") == EIGENER_REITER), None)
+        if ziel is None:
+            ziel = {"id": "tab_bk_eigene", "label": EIGENER_REITER, "action_ids": []}
+            tabs.append(ziel)
+        ziel["action_ids"].append(aktion["id"])
+        # selbst angelegten Reiter wieder entfernen, wenn nichts mehr darin steht
+        tabs = [t for t in tabs if t.get("id") != "tab_bk_eigene" or t["action_ids"]]
+        schema["result_tabs"] = tabs
+    form.schema = schema
+    flag_modified(form, "schema")
+    db.commit()
+    return {"form_id": form.id, "name": form.name, "reiter": (ziel["label"] if tabs else None), "art": art}

@@ -189,6 +189,17 @@ def test_bueroplus_rezepte_passen_nur_zu_bueroplus():
     assert not [r for r in passende(SCHEMA, "mssql") if r["system"] == "büro+"]
 
 
+def test_widget_vorbelegung():
+    from app.services.baukasten.ausfuehren import _widget_config
+    from app.services.baukasten.uebersetzer import Spalte
+    sp = [Spalte("Monat", "text"), Spalte("Umsatz", "zahl"), Spalte("Anzahl", "zahl")]
+    assert _widget_config("bar", {}, sp) == {"width": 12, "x_column": "Monat", "y_columns": ["Umsatz", "Anzahl"]}
+    assert _widget_config("line", {"x": "Monat", "y": ["Umsatz", "gibtsnicht"]}, sp)["y_columns"] == ["Umsatz"]
+    assert _widget_config("kpi", {"wert": "Anzahl"}, sp)["column"] == "Anzahl"
+    with raises(BaukastenFehler, "Zahlenspalte"):
+        _widget_config("bar", {}, [Spalte("Monat", "text")])
+
+
 if __name__ == "__main__":
     fehler = 0
     for name, f in list(globals().items()):

@@ -74,9 +74,23 @@ def speichern(body: SpeichernIn, db: Session = Depends(get_db), user: User = Dep
     schreiben_pruefen(body.project_id, user, db)
     try:
         m = ausfuehren.speichern(db, user, body.project_id, body.connection_id, body.name, body.kette, body.mapping_id)
+        conn, schema = ausfuehren.verbindung(db, body.connection_id, user)
+        erg = ausfuehren.uebersetzen(body.kette, schema, conn.db_type, literal=True)
+        cockpit = ausfuehren.ins_cockpit(db, user, body.project_id, m, body.kette, erg.spalten, erg.nutzt_zeitraum)
     except BaukastenFehler as e:
         raise HTTPException(400, str(e))
-    return {"mapping_id": m.id, "name": m.name}
+    return {"mapping_id": m.id, "name": m.name, "cockpit": cockpit}
+
+
+@router.get("/cockpits")
+def cockpits(project_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Cockpits (Formulare) des Projekts mit ihren Reitern – Auswahl im Stein „Ausgabe“."""
+    from app.models.form import Form
+    _kein_portal(user)
+    schreiben_pruefen(project_id, user, db)
+    return [{"id": f.id, "name": f.name,
+             "reiter": [{"id": t.get("id"), "label": t.get("label")} for t in (f.schema or {}).get("result_tabs") or []]}
+            for f in db.query(Form).filter(Form.project_id == project_id).order_by(Form.name).all()]
 
 
 @router.get("/mapping/{mapping_id}")
