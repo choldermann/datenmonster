@@ -21,6 +21,7 @@ ZIEL = os.path.normpath(os.path.join(HIER, "..", "..", "templates"))
 PAKETE = {
     "papier_hygiene": {
         "name": "Marktlage Papier, Hygiene & Verpackung",
+        "version": "1.1",       # 1.1: Wirtschaftsklima (Ø = 100) eigenes Diagramm neben den Salden
         "beschreibung": ("Einkaufs- und Verkaufspreise, Nachfrage, Transportkosten und Insolvenzen der Kundenbranchen "
                          "für den Handel mit Hygienepapier, Reinigungsmitteln und Verpackung – aus amtlichen Quellen, "
                          "monatlich aktuell, ohne eigenes Konto."),
@@ -53,12 +54,13 @@ PAKETE = {
             ("Insolvenzen Beherbergung", "insolvenzen", "WZ08-55", "Insolvenzen der Kundenbranchen", True),
             ("Insolvenzen Gebäudereinigung", "insolvenzen", "WZ08-812", "Insolvenzen der Kundenbranchen", True),
             ("Insolvenzen Gesundheitswesen & Heime", "insolvenzen", "WZ08-86", "Insolvenzen der Kundenbranchen", True),
-            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Stimmung", False),
+            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Wirtschaftsklima (Ø = 100)", False),
             ("Dienstleister-Vertrauen (Saldo)", "stimmung", "BS-SCI-BAL", "Stimmung", False),
         ],
     },
     "onlinehandel": {
         "name": "Marktlage Online- & Einzelhandel",
+        "version": "1.1",       # 1.1: Dollar und Yuan je eigenes Diagramm (Maßstab 1 zu 7,5)
         "beschreibung": ("Umsatz im Versand- und Internethandel, Verbraucherstimmung, Preise, Wechselkurse für den "
                          "Import, Transportkosten und Insolvenzen im Handel – aus amtlichen Quellen, monatlich aktuell, "
                          "ohne eigenes Konto."),
@@ -75,8 +77,8 @@ PAKETE = {
             ("Verbraucher-Vertrauen (Saldo)", "stimmung", "BS-CSMCI-BAL", "Stimmung", False),
             ("Einzelhandel-Vertrauen (Saldo)", "stimmung", "BS-RCI-BAL", "Stimmung", False),
             ("Verbraucherpreise insgesamt", "preise_verbraucher", "Deutschland", "Preise", True),
-            ("US-Dollar je Euro", "wechselkurse", "USD", "Wechselkurse (Einkauf im Ausland)", True),
-            ("Chinesische Yuan je Euro", "wechselkurse", "CNY", "Wechselkurse (Einkauf im Ausland)", True),
+            ("US-Dollar je Euro", "wechselkurse", "USD", "Wechselkurs US-Dollar", True),
+            ("Chinesische Yuan je Euro", "wechselkurse", "CNY", "Wechselkurs Yuan", True),
             ("Diesel (€/l)", "kraftstoff", "Diesel", "Transportkosten", True),
             ("Insolvenzen Versand- & Internethandel", "insolvenzen", "WZ08-4791", "Insolvenzen im Handel", True),
             ("Insolvenzen Einzelhandel gesamt", "insolvenzen", "WZ08-47", "Insolvenzen im Handel", True),
@@ -85,6 +87,7 @@ PAKETE = {
     },
     "gastro_bedarf": {
         "name": "Marktlage Gastronomie-Bedarf",
+        "version": "1.1",       # 1.1: Übernachtungen (absolute Zahl) eigenes Diagramm statt neben Indizes
         "beschreibung": ("Einkaufspreise für Einweg- und Lebensmittelverpackungen und Grundzutaten, Verkaufspreise im "
                          "Lebensmittel-Großhandel, Nachfrage im Gastgewerbe, Transportkosten und Insolvenzen bei "
                          "Restaurants, Imbissen und Caterern – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto."),
@@ -115,7 +118,7 @@ PAKETE = {
             ("Verbraucherpreise insgesamt", "preise_verbraucher", "Deutschland", "Verkaufspreise", True),
             ("Umsatz Gastgewerbe (nominal)", "umsatz_gastgewerbe", "Deutschland", "Nachfrage", True),
             ("Umsatz Großhandel Nahrungsmittel (real)", "umsatz_handel_real", "G463", "Nachfrage", True),
-            ("Übernachtungen Deutschland", "uebernachtungen", "Deutschland", "Nachfrage", True),
+            ("Übernachtungen Deutschland", "uebernachtungen", "Deutschland", "Tourismus (Übernachtungen)", True),
             ("Diesel (€/l)", "kraftstoff", "Diesel", "Transportkosten", True),
             ("Insolvenzen Restaurants & Imbisse", "insolvenzen", "WZ08-561", "Insolvenzen der Kundenbranchen", True),
             ("Insolvenzen Caterer", "insolvenzen", "WZ08-562", "Insolvenzen der Kundenbranchen", True),
@@ -126,6 +129,7 @@ PAKETE = {
     },
     "medizin_bedarf": {
         "name": "Marktlage Medizin- & Praxisbedarf",
+        "version": "1.1",       # 1.1: Wirtschaftsklima (Ø = 100) eigenes Diagramm neben den Salden
         "beschreibung": ("Einkaufspreise für Medizinprodukte, Verbrauchsmaterial, Desinfektion und Arzneimittel, "
                          "Verkaufspreise im medizinischen Großhandel, Nachfrage, Transportkosten und Insolvenzen bei "
                          "Praxen, Kliniken und Pflegeheimen – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto."),
@@ -160,11 +164,12 @@ PAKETE = {
             ("Insolvenzen Pflegeheime", "insolvenzen", "WZ08-871", "Insolvenzen der Kundenbranchen", True),
             ("Insolvenzen Veterinärwesen", "insolvenzen", "WZ08-75", "Insolvenzen der Kundenbranchen", True),
             ("Dienstleister-Vertrauen (Saldo)", "stimmung", "BS-SCI-BAL", "Stimmung", False),
-            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Stimmung", False),
+            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Wirtschaftsklima (Ø = 100)", False),
         ],
     },
     "verpackung_grosshandel": {
         "name": "Marktlage Verpackung & Großhandel",
+        "version": "1.1",       # 1.1: Diesel, Dollar, Yuan, Wirtschaftsklima je eigenes Diagramm (Maßstäbe)
         "beschreibung": ("Rohstoff- und Einkaufspreise für Papier-, Kunststoff- und Aluminiumverpackungen, Verkaufspreise "
                          "im Großhandel, Nachfrage in Groß- und Einzelhandel, Wechselkurse, Transportkosten und Insolvenzen "
                          "in Handel und Herstellung – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto."),
@@ -196,15 +201,15 @@ PAKETE = {
             ("Umsatz Großhandel insgesamt (real)", "umsatz_handel_real", "G46", "Nachfrage", True),
             ("Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)", "umsatz_handel_real", "G464", "Nachfrage", True),
             ("Umsatz Einzelhandel (real)", "umsatz_handel_real", "G47_X_G473", "Nachfrage", True),
-            ("US-Dollar je Euro", "wechselkurse", "USD", "Wechselkurse & Transport", True),
-            ("Chinesische Yuan je Euro", "wechselkurse", "CNY", "Wechselkurse & Transport", True),
-            ("Diesel (€/l)", "kraftstoff", "Diesel", "Wechselkurse & Transport", True),
+            ("US-Dollar je Euro", "wechselkurse", "USD", "Wechselkurs US-Dollar", True),
+            ("Chinesische Yuan je Euro", "wechselkurse", "CNY", "Wechselkurs Yuan", True),
+            ("Diesel (€/l)", "kraftstoff", "Diesel", "Transportkosten", True),
             ("Insolvenzen Großhandel", "insolvenzen", "WZ08-46", "Insolvenzen", True),
             ("Insolvenzen Einzelhandel", "insolvenzen", "WZ08-47", "Insolvenzen", True),
             ("Insolvenzen Papier- & Pappeherstellung", "insolvenzen", "WZ08-17", "Insolvenzen", True),
             ("Insolvenzen Kunststoffwaren", "insolvenzen", "WZ08-22", "Insolvenzen", True),
             ("Industrie-Vertrauen (Saldo)", "stimmung", "BS-ICI-BAL", "Stimmung", False),
-            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Stimmung", False),
+            ("Wirtschaftsklima (ESI, Ø = 100)", "stimmung", "BS-ESI-I", "Wirtschaftsklima (Ø = 100)", False),
         ],
     },
 }
@@ -309,7 +314,7 @@ def paket(pid: str, p: dict) -> dict:
         "template_name": p["name"],
         "description": p["beschreibung"],
         "category": "marktdaten",
-        "version": VERSION,
+        "version": p.get("version", VERSION),
         "author": "Datenmonster",
         "hinweise": [
             "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – "

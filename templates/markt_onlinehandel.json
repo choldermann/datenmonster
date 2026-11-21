@@ -4,7 +4,7 @@
   "template_name": "Marktlage Online- & Einzelhandel",
   "description": "Umsatz im Versand- und Internethandel, Verbraucherstimmung, Preise, Wechselkurse für den Import, Transportkosten und Insolvenzen im Handel – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto.",
   "category": "marktdaten",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Datenmonster",
   "hinweise": [
     "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – es wird keine Datenbankverbindung gebraucht.",
@@ -136,7 +136,7 @@
             "Quelle",
             "Ziel"
           ],
-          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('umsatz_handel_ka', 'G4791', 'Versand- & Internethandel (nominal)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 1, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G4791', 'Versand- & Internethandel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 2, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G47_NFOOD_X_G473', 'Einzelhandel ohne Lebensmittel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 3, 1, 'branchenvergleich'),\n    ('stimmung', 'BS-CSMCI-BAL', 'Verbraucher-Vertrauen (Saldo)', 'Stimmung', 4, 0, 'stimmung'),\n    ('stimmung', 'BS-RCI-BAL', 'Einzelhandel-Vertrauen (Saldo)', 'Stimmung', 5, 0, 'stimmung'),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Preise', 6, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse (Einkauf im Ausland)', 7, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse (Einkauf im Ausland)', 8, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 9, 1, 'energie'),\n    ('insolvenzen', 'WZ08-4791', 'Insolvenzen Versand- & Internethandel', 'Insolvenzen im Handel', 10, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel gesamt', 'Insolvenzen im Handel', 11, 1, 'insolvenzen'),\n    ('temperatur', 'Deutschland', 'Temperatur Deutschland (°C)', 'Wetter', 12, 0, 'umfeld')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('umsatz_handel_ka', 'G4791', 'Versand- & Internethandel (nominal)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 1, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G4791', 'Versand- & Internethandel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 2, 1, 'branchenvergleich'),\n    ('umsatz_handel_real_ka', 'G47_NFOOD_X_G473', 'Einzelhandel ohne Lebensmittel (real)', 'Nachfrage (Index 2021 = 100, kalenderbereinigt)', 3, 1, 'branchenvergleich'),\n    ('stimmung', 'BS-CSMCI-BAL', 'Verbraucher-Vertrauen (Saldo)', 'Stimmung', 4, 0, 'stimmung'),\n    ('stimmung', 'BS-RCI-BAL', 'Einzelhandel-Vertrauen (Saldo)', 'Stimmung', 5, 0, 'stimmung'),\n    ('preise_verbraucher', 'Deutschland', 'Verbraucherpreise insgesamt', 'Preise', 6, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurs US-Dollar', 7, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurs Yuan', 8, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 9, 1, 'energie'),\n    ('insolvenzen', 'WZ08-4791', 'Insolvenzen Versand- & Internethandel', 'Insolvenzen im Handel', 10, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel gesamt', 'Insolvenzen im Handel', 11, 1, 'insolvenzen'),\n    ('temperatur', 'Deutschland', 'Temperatur Deutschland (°C)', 'Wetter', 12, 0, 'umfeld')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
         }
       ],
       "targets": [
@@ -531,14 +531,13 @@
           {
             "id": "w_verlauf_4",
             "type": "line",
-            "label": "Wechselkurse (Einkauf im Ausland)",
+            "label": "Wechselkurs US-Dollar",
             "action_id": "act_verlauf",
             "config": {
               "width": 6,
               "x_column": "Periode",
               "y_columns": [
-                "US-Dollar je Euro",
-                "Chinesische Yuan je Euro"
+                "US-Dollar je Euro"
               ],
               "curved": true,
               "full_rows": true,
@@ -548,6 +547,23 @@
           },
           {
             "id": "w_verlauf_5",
+            "type": "line",
+            "label": "Wechselkurs Yuan",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Chinesische Yuan je Euro"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_6",
             "type": "line",
             "label": "Transportkosten",
             "action_id": "act_verlauf",
@@ -564,7 +580,7 @@
             }
           },
           {
-            "id": "w_verlauf_6",
+            "id": "w_verlauf_7",
             "type": "line",
             "label": "Insolvenzen im Handel",
             "action_id": "act_verlauf",
@@ -582,7 +598,7 @@
             }
           },
           {
-            "id": "w_verlauf_7",
+            "id": "w_verlauf_8",
             "type": "line",
             "label": "Wetter",
             "action_id": "act_verlauf",

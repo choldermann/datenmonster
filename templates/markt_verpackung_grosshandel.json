@@ -4,7 +4,7 @@
   "template_name": "Marktlage Verpackung & Großhandel",
   "description": "Rohstoff- und Einkaufspreise für Papier-, Kunststoff- und Aluminiumverpackungen, Verkaufspreise im Großhandel, Nachfrage in Groß- und Einzelhandel, Wechselkurse, Transportkosten und Insolvenzen in Handel und Herstellung – aus amtlichen Quellen, monatlich aktuell, ohne eigenes Konto.",
   "category": "marktdaten",
-  "version": "1.0",
+  "version": "1.1",
   "author": "Datenmonster",
   "hinweise": [
     "Voraussetzung: Datenmonster ab Stand 20.11.2026 (Quelle „Umfelddaten“) und eine aktive Lizenz – es wird keine Datenbankverbindung gebraucht.",
@@ -143,7 +143,7 @@
             "Quelle",
             "Ziel"
           ],
-          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('erzeugerpreise', 'GP19-1711', 'Holz- & Zellstoff', 'Rohstoffe', 1, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-17123', 'Wellpappenrohpapier', 'Rohstoffe', 2, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-383232', 'Altpapier (Sekundärrohstoff)', 'Rohstoffe', 3, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2016', 'Kunststoffe in Primärformen', 'Rohstoffe', 4, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-1721', 'Wellpappe-Verpackungen', 'Einkaufspreise Verpackung', 5, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-172113', 'Kartons aus Wellpappe', 'Einkaufspreise Verpackung', 6, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2222', 'Kunststoffverpackungen', 'Einkaufspreise Verpackung', 7, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-22213', 'Kunststofffolien & -platten', 'Einkaufspreise Verpackung', 8, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-244225', 'Alufolie & dünne Aluminiumbänder', 'Einkaufspreise Verpackung', 9, 1, 'erzeugerpreise'),\n    ('preise_grosshandel', 'WZ08-464', 'Großhandel Gebrauchs- & Verbrauchsgüter', 'Verkaufspreise', 10, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-46494', 'Großhandel Papier & Pappe', 'Verkaufspreise', 11, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-4676', 'Großhandel sonstige Halbwaren', 'Verkaufspreise', 12, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G46', 'Umsatz Großhandel insgesamt (real)', 'Nachfrage', 13, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 14, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G47_X_G473', 'Umsatz Einzelhandel (real)', 'Nachfrage', 15, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurse & Transport', 16, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurse & Transport', 17, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Wechselkurse & Transport', 18, 1, 'energie'),\n    ('insolvenzen', 'WZ08-46', 'Insolvenzen Großhandel', 'Insolvenzen', 19, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel', 'Insolvenzen', 20, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-17', 'Insolvenzen Papier- & Pappeherstellung', 'Insolvenzen', 21, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-22', 'Insolvenzen Kunststoffwaren', 'Insolvenzen', 22, 1, 'insolvenzen'),\n    ('stimmung', 'BS-ICI-BAL', 'Industrie-Vertrauen (Saldo)', 'Stimmung', 23, 0, 'stimmung'),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Stimmung', 24, 0, 'stimmung')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
+          "sql": "WITH k(g, r, Reihe, Thema, Sort, Pct, Ziel) AS (VALUES\n    ('erzeugerpreise', 'GP19-1711', 'Holz- & Zellstoff', 'Rohstoffe', 1, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-17123', 'Wellpappenrohpapier', 'Rohstoffe', 2, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-383232', 'Altpapier (Sekundärrohstoff)', 'Rohstoffe', 3, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2016', 'Kunststoffe in Primärformen', 'Rohstoffe', 4, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-1721', 'Wellpappe-Verpackungen', 'Einkaufspreise Verpackung', 5, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-172113', 'Kartons aus Wellpappe', 'Einkaufspreise Verpackung', 6, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-2222', 'Kunststoffverpackungen', 'Einkaufspreise Verpackung', 7, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-22213', 'Kunststofffolien & -platten', 'Einkaufspreise Verpackung', 8, 1, 'erzeugerpreise'),\n    ('erzeugerpreise', 'GP19-244225', 'Alufolie & dünne Aluminiumbänder', 'Einkaufspreise Verpackung', 9, 1, 'erzeugerpreise'),\n    ('preise_grosshandel', 'WZ08-464', 'Großhandel Gebrauchs- & Verbrauchsgüter', 'Verkaufspreise', 10, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-46494', 'Großhandel Papier & Pappe', 'Verkaufspreise', 11, 1, 'branchenvergleich'),\n    ('preise_grosshandel', 'WZ08-4676', 'Großhandel sonstige Halbwaren', 'Verkaufspreise', 12, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G46', 'Umsatz Großhandel insgesamt (real)', 'Nachfrage', 13, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G464', 'Umsatz Großhandel Gebrauchs- & Verbrauchsgüter (real)', 'Nachfrage', 14, 1, 'branchenvergleich'),\n    ('umsatz_handel_real', 'G47_X_G473', 'Umsatz Einzelhandel (real)', 'Nachfrage', 15, 1, 'branchenvergleich'),\n    ('wechselkurse', 'USD', 'US-Dollar je Euro', 'Wechselkurs US-Dollar', 16, 1, 'waehrungen'),\n    ('wechselkurse', 'CNY', 'Chinesische Yuan je Euro', 'Wechselkurs Yuan', 17, 1, 'waehrungen'),\n    ('kraftstoff', 'Diesel', 'Diesel (€/l)', 'Transportkosten', 18, 1, 'energie'),\n    ('insolvenzen', 'WZ08-46', 'Insolvenzen Großhandel', 'Insolvenzen', 19, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-47', 'Insolvenzen Einzelhandel', 'Insolvenzen', 20, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-17', 'Insolvenzen Papier- & Pappeherstellung', 'Insolvenzen', 21, 1, 'insolvenzen'),\n    ('insolvenzen', 'WZ08-22', 'Insolvenzen Kunststoffwaren', 'Insolvenzen', 22, 1, 'insolvenzen'),\n    ('stimmung', 'BS-ICI-BAL', 'Industrie-Vertrauen (Saldo)', 'Stimmung', 23, 0, 'stimmung'),\n    ('stimmung', 'BS-ESI-I', 'Wirtschaftsklima (ESI, Ø = 100)', 'Wirtschaftsklima (Ø = 100)', 24, 0, 'stimmung')\n), s AS (\n    SELECT Groesse, Region, MAX(Periode) AS p FROM reihen WHERE Wert IS NOT NULL GROUP BY Groesse, Region\n)\nSELECT k.Thema, k.Reihe, a.Einheit,\n    substr(a.Periode, 6, 2) || '/' || substr(a.Periode, 1, 4) AS Stand,\n    ROUND(a.Wert, 2) AS Aktuell,\n    ROUND(v.Wert, 2) AS Vorjahr,\n    ROUND(a.Wert - v.Wert, 2) AS \"Veränderung\",\n    CASE WHEN k.Pct = 1 AND v.Wert <> 0 THEN ROUND(100.0 * (a.Wert - v.Wert) / v.Wert, 1) END AS \"Veränderung %\",\n    a.Quelle,\n    k.Ziel\nFROM k\nJOIN s ON s.Groesse = k.g AND s.Region = k.r\nJOIN reihen a ON a.Groesse = s.Groesse AND a.Region = s.Region AND a.Periode = s.p\nLEFT JOIN reihen v ON v.Groesse = a.Groesse AND v.Region = a.Region\n    AND v.Periode = (CAST(substr(a.Periode, 1, 4) AS INTEGER) - 1) || substr(a.Periode, 5)\nORDER BY k.Sort"
         }
       ],
       "targets": [
@@ -683,15 +683,13 @@
           {
             "id": "w_verlauf_5",
             "type": "line",
-            "label": "Wechselkurse & Transport",
+            "label": "Wechselkurs US-Dollar",
             "action_id": "act_verlauf",
             "config": {
               "width": 6,
               "x_column": "Periode",
               "y_columns": [
-                "US-Dollar je Euro",
-                "Chinesische Yuan je Euro",
-                "Diesel (€/l)"
+                "US-Dollar je Euro"
               ],
               "curved": true,
               "full_rows": true,
@@ -701,6 +699,40 @@
           },
           {
             "id": "w_verlauf_6",
+            "type": "line",
+            "label": "Wechselkurs Yuan",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Chinesische Yuan je Euro"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_7",
+            "type": "line",
+            "label": "Transportkosten",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
+                "Diesel (€/l)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_8",
             "type": "line",
             "label": "Insolvenzen",
             "action_id": "act_verlauf",
@@ -720,7 +752,7 @@
             }
           },
           {
-            "id": "w_verlauf_7",
+            "id": "w_verlauf_9",
             "type": "line",
             "label": "Stimmung",
             "action_id": "act_verlauf",
@@ -728,7 +760,23 @@
               "width": 6,
               "x_column": "Periode",
               "y_columns": [
-                "Industrie-Vertrauen (Saldo)",
+                "Industrie-Vertrauen (Saldo)"
+              ],
+              "curved": true,
+              "full_rows": true,
+              "luecken": true,
+              "markt": false
+            }
+          },
+          {
+            "id": "w_verlauf_10",
+            "type": "line",
+            "label": "Wirtschaftsklima (Ø = 100)",
+            "action_id": "act_verlauf",
+            "config": {
+              "width": 6,
+              "x_column": "Periode",
+              "y_columns": [
                 "Wirtschaftsklima (ESI, Ø = 100)"
               ],
               "curved": true,
